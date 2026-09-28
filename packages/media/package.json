@@ -1,0 +1,23 @@
+{
+  "name": "@bayramm/media",
+  "private": true,
+  "type": "module",
+  "description": "Фото площадок: подготовка в браузере (уменьшение, WebP/JPEG, без метаданных), проверка на сервере по байтам, ключи объектов и адреса вариантов. Экспортирует исходники TS, сборки нет.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vitest": "^5.0.1"
+  },
+  "dependencies": {
+    "@bayramm/shared": "workspace:*"
+  }
+}

@@ -66,6 +66,11 @@ jobs:
         working-directory: apps/api
         run: pnpm exec wrangler deploy --env "$TARGET" --var "GIT_SHA:${GITHUB_SHA::7}"
 
+      # Варианты фото (Supabase Storage → Cloudflare Image Transformations). Без секретов
+      - name: Deploy media
+        working-directory: apps/media
+        run: pnpm exec wrangler deploy --env "$TARGET"
+
       - name: Deploy web
         working-directory: apps/web
         run: |
@@ -111,6 +116,13 @@ jobs:
               echo "::error::CSP панели оператора без «$expected»"; exit 1
             fi
           done
+
+          # media: несуществующее фото — 404, а не 500. Путь правильной формы, поэтому воркер
+          # доходит до Storage: проверяются и воркер, и SUPABASE_URL, и разбор ошибок хранилища
+          media=$([ "$TARGET" = production ] && echo media.bayramm.uz || echo media-staging.bayramm.uz)
+          missing="listings/00000000-0000-4000-8000-000000000000/00000000-0000-4000-8000-000000000000.webp"
+          code=$(curl -sS --retry 10 --retry-delay 6 --retry-all-errors -o /dev/null -w '%{http_code}' "https://$media/640/$missing")
+          if [ "$code" != 404 ]; then echo "::error::https://$media/640/<нет такого> ответил HTTP $code, ожидался 404"; exit 1; fi
 
           if true; then
             body=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors "https://$host/api/health")

@@ -5,7 +5,8 @@
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "vars": { "APP_ENV": "local", "GIT_SHA": "dev" },
+  // SUPABASE_URL — адрес проекта Supabase (Storage для фото); ключ service_role — секрет
+  "vars": { "APP_ENV": "local", "GIT_SHA": "dev", "SUPABASE_URL": "http://127.0.0.1:54321" },
   // Локально — Postgres из `supabase start`; id нужен wrangler, но не используется
   "hyperdrive": [
     {
@@ -17,7 +18,11 @@
   "env": {
     "staging": {
       "name": "bayramm-api-staging",
-      "vars": { "APP_ENV": "staging", "GIT_SHA": "dev" },
+      "vars": {
+        "APP_ENV": "staging",
+        "GIT_SHA": "dev",
+        "SUPABASE_URL": "https://ovuzkqcxiwgdpqovsudr.supabase.co"
+      },
       // Worker рядом с базой (Supabase, eu-central-1)
       "placement": { "region": "aws:eu-central-1" },
       "routes": [{ "pattern": "api-staging.bayramm.uz", "custom_domain": true }],
@@ -25,7 +30,11 @@
     },
     "production": {
       "name": "bayramm-api",
-      "vars": { "APP_ENV": "production", "GIT_SHA": "dev" },
+      "vars": {
+        "APP_ENV": "production",
+        "GIT_SHA": "dev",
+        "SUPABASE_URL": "https://muxftjxhsfizpxqxqkbo.supabase.co"
+      },
       "placement": { "region": "aws:eu-central-1" },
       "routes": [{ "pattern": "api.bayramm.uz", "custom_domain": true }],
       "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "975a9fcde5e74e938de35af3a965e37c" }]

@@ -25,6 +25,12 @@ as $$
          set_config('app.vendor_id', coalesce(p_vendor::text, ''), true);
 $$;
 
+-- Ключ объекта фото, как его строит API: listings/<листинг>/<uuid>.webp
+create function pg_temp.photo_key(p_listing uuid)
+returns text
+language sql volatile
+as $$ select 'listings/' || p_listing || '/' || gen_random_uuid() || '.webp' $$;
+
 -- DETAIL ошибки запроса (для publish_blocked: какие пункты не выполнены).
 -- null — запрос прошёл без ошибки
 create function pg_temp.error_detail(p_sql text)
@@ -91,8 +97,11 @@ begin
     insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
       (v_listing, 'weekday', 'Будни', 'Ish kuni', 150000),
       (v_listing, 'weekend', 'Выходные', 'Dam olish', 180000);
-    insert into app.photos (listing_id, status, moderation, storage_key, public_prefix, sort, no_faces_ack)
-    select v_listing, 'ready', 'approved', 'test/' || v_listing || '/' || n, 'p/' || v_listing || '/' || n, n, true
+    -- готовые фото: файл проверен (тип, размер, размеры, sha256 известны)
+    insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
+                            sort, no_faces_ack)
+    select v_listing, 'ready', 'approved', pg_temp.photo_key(v_listing), 'image/webp', 1000, 1600, 1200,
+           sha256(convert_to(v_listing || '/' || n, 'UTF8')), n, true
     from generate_series(1, 3) n;
     update app.listings set status = 'review' where id = v_listing;
     update app.listings set status = 'active' where id = v_listing;

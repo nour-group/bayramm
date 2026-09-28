@@ -21,6 +21,9 @@ export function makeEnv(): Env {
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     ID_HASH_KEY,
     HYPERDRIVE: { connectionString: apiDatabaseUrl } as Hyperdrive,
+    // Storage нужен только тестам фото — у них свои адрес и ключ (photos.test.ts)
+    SUPABASE_URL: "http://127.0.0.1:54321",
+    SUPABASE_SERVICE_ROLE_KEY: "",
   };
 }
 

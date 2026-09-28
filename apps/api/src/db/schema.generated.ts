@@ -264,10 +264,15 @@ export interface AppPhotos {
   moderation: Generated<AppModerationStatus>;
   no_faces_ack: boolean;
   processed_at: Timestamp | null;
-  public_prefix: string | null;
+  /**
+   * sha256 файла: один и тот же файл дважды в листинг не загрузить
+   */
   sha256: Uint8Array | null;
   sort: Generated<number>;
   status: Generated<AppPhotoStatus>;
+  /**
+   * Ключ объекта в бакете listing-photos: listings/<listing_id>/<uuid>.<webp|jpg|png>
+   */
   storage_key: string;
   uploaded_by: string | null;
   width: number | null;

@@ -13,3 +13,9 @@ TELEGRAM_BOT_TOKEN=
 # Не короче 32 символов, например: openssl rand -base64 32
 # После запуска не менять: со сменой ключа клиенты не найдутся по старым хэшам
 ID_HASH_KEY=
+
+# Ключ service_role проекта Supabase — для Storage (фото листингов). Обходит RLS
+# хранилища: только на сервере. Локально — из `npx supabase status -o env`
+# (SERVICE_ROLE_KEY или SECRET_KEY), на staging/production — из настроек проекта
+# (Project Settings → API Keys). Адрес проекта — SUPABASE_URL в wrangler.jsonc
+SUPABASE_SERVICE_ROLE_KEY=

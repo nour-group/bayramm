@@ -109,9 +109,13 @@ export function fromPgError(err: PgError): ApiError {
 
   switch (err.code) {
     case "23505": // unique_violation
-      return err.constraint === "requests_client_listing_date_uq"
-        ? new ApiError(409, "duplicate_request", "Request for this listing and date already exists")
-        : new ApiError(409, "conflict", "Already exists");
+      if (err.constraint === "requests_client_listing_date_uq") {
+        return new ApiError(409, "duplicate_request", "Request for this listing and date already exists");
+      }
+      if (err.constraint === "photos_dedupe") {
+        return new ApiError(409, "duplicate_photo", "This photo is already uploaded");
+      }
+      return new ApiError(409, "conflict", "Already exists");
     // RLS (WITH CHECK) и права: чужой объект для клиента не существует — не
     // подтверждаем, что он есть. 23503 — ссылка на несуществующий объект: тоже 404,
     // иначе по разнице ответов можно перебирать id

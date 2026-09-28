@@ -20,9 +20,10 @@ insert into pii.listing_contacts (listing_id, public_phone) values ('aaaaaaaa-00
 insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
   ('aaaaaaaa-0000-0000-0000-000000000102', 'weekday', 'Будни', 'Ish kuni', 90000),
   ('aaaaaaaa-0000-0000-0000-000000000102', 'weekend', 'Выходные', 'Dam olish', 110000);
-insert into app.photos (id, listing_id, status, storage_key, public_prefix, no_faces_ack)
+insert into app.photos (id, listing_id, status, storage_key, mime, bytes, width, height, sha256, no_faces_ack)
 select ('aaaaaaaa-0000-0000-0000-00000000f00' || n)::uuid, 'aaaaaaaa-0000-0000-0000-000000000102',
-       'ready', 'test/a2/' || n, 'p/a2/' || n, true
+       'ready', pg_temp.photo_key('aaaaaaaa-0000-0000-0000-000000000102'), 'image/webp', 1000, 1600, 1200,
+       sha256(convert_to('a2/' || n, 'UTF8')), true
 from generate_series(1, 3) n;
 
 select is(
@@ -40,8 +41,9 @@ select is(
   'photos', 'с двумя фото — не на проверку');
 
 -- три обработанных фото: на проверку можно, в каталог — нет, пока фото не одобрены
-insert into app.photos (listing_id, status, storage_key, public_prefix, no_faces_ack)
-values ('aaaaaaaa-0000-0000-0000-000000000102', 'ready', 'test/a2/4', 'p/a2/4', true);
+insert into app.photos (listing_id, status, storage_key, mime, bytes, width, height, sha256, no_faces_ack)
+values ('aaaaaaaa-0000-0000-0000-000000000102', 'ready', pg_temp.photo_key('aaaaaaaa-0000-0000-0000-000000000102'),
+        'image/webp', 1000, 1600, 1200, sha256('a2/4'), true);
 select lives_ok(
   $$update app.listings set status = 'review', price_from_uzs = 90000 where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$,
   'цена и 3 фото — можно на проверку');
@@ -122,7 +124,8 @@ select throws_ok(
   'BR003', 'forbidden_for_actor', 'вендор не одобряет свою ревизию');
 select lives_ok(
   $$insert into app.photos (id, listing_id, storage_key, no_faces_ack)
-    values ('aaaaaaaa-0000-0000-0000-00000000f101', 'aaaaaaaa-0000-0000-0000-000000000101', 'test/a1/new', true)$$,
+    values ('aaaaaaaa-0000-0000-0000-00000000f101', 'aaaaaaaa-0000-0000-0000-000000000101',
+            pg_temp.photo_key('aaaaaaaa-0000-0000-0000-000000000101'), true)$$,
   'вендор загружает фото в свой листинг');
 select throws_ok(
   $$update app.photos set moderation = 'approved' where id = 'aaaaaaaa-0000-0000-0000-00000000f101'$$,
@@ -139,10 +142,11 @@ select throws_ok(
 reset role;
 select pg_temp.as_actor(null);
 insert into app.photos (listing_id, storage_key, no_faces_ack)
-select 'aaaaaaaa-0000-0000-0000-000000000101', 'test/a1/extra/' || n, true from generate_series(1, 6) n;
+select 'aaaaaaaa-0000-0000-0000-000000000101', pg_temp.photo_key('aaaaaaaa-0000-0000-0000-000000000101'), true
+from generate_series(1, 6) n;
 select throws_ok(
   $$insert into app.photos (listing_id, storage_key, no_faces_ack)
-    values ('aaaaaaaa-0000-0000-0000-000000000101', 'test/a1/extra/11', true)$$,
+    values ('aaaaaaaa-0000-0000-0000-000000000101', pg_temp.photo_key('aaaaaaaa-0000-0000-0000-000000000101'), true)$$,
   'BR011', 'too_many_photos', 'не больше 10 фото на листинг');
 
 select * from finish();
