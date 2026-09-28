@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { Client } from "pg";
+import { handleError, notFound } from "./errors";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -40,6 +41,7 @@ app.get("/health", async (c) => {
   );
 });
 
-app.notFound((c) => c.json({ error: "not_found" }, 404));
+app.notFound((c) => c.json(notFound().toBody(), 404));
+app.onError(handleError);
 
 export default app;
