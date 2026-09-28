@@ -72,10 +72,29 @@ jobs:
           CLOUDFLARE_ENV="$TARGET" pnpm build
           pnpm exec wrangler deploy
 
+      - name: Deploy vendor
+        working-directory: apps/vendor
+        run: |
+          CLOUDFLARE_ENV="$TARGET" pnpm build
+          pnpm exec wrangler deploy
+
+      # apps/admin из CI не деплоим: у панели нет домена и адресов *.workers.dev, пока перед ней
+      # не настроен Cloudflare Access. Домен, Access и шаг деплоя добавляются одним изменением
+
       - name: Smoke test
         run: |
           host=$([ "$TARGET" = production ] && echo bayramm.uz || echo staging.bayramm.uz)
           curl -sSf --retry 5 --retry-delay 3 --retry-all-errors "https://$host/" -o /dev/null
+
+          # Кабинет вендора: 200 и CSP на HTML. Свой домен wrangler deploy мог создать только что —
+          # повторов больше, чем для клиента
+          vendor=$([ "$TARGET" = production ] && echo vendor.bayramm.uz || echo vendor-staging.bayramm.uz)
+          code=$(curl -sSf --retry 10 --retry-delay 6 --retry-all-errors -D vendor-headers.txt -o /dev/null -w '%{http_code}' "https://$vendor/")
+          if [ "$code" != 200 ]; then echo "::error::https://$vendor/ ответил HTTP $code"; exit 1; fi
+          if ! grep -qi '^content-security-policy:' vendor-headers.txt; then
+            echo "::error::https://$vendor/ отдаёт HTML без Content-Security-Policy"; exit 1
+          fi
+
           if true; then
             body=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors "https://$host/api/health")
             echo "$body"
