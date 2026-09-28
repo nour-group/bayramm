@@ -70,4 +70,13 @@ describe("createSiteWorker", () => {
     expect(res.headers.get("content-security-policy")).toContain("frame-ancestors https://web.telegram.org");
     expect(res.headers.get("x-frame-options")).toBeNull();
   });
+
+  it("telegramLogin доходит до CSP, встраивать страницу по-прежнему нельзя", async () => {
+    const { get } = setup({ telegramLogin: true });
+    const res = await get("/login");
+    const csp = res.headers.get("content-security-policy") ?? "";
+    expect(csp).toBe(contentSecurityPolicy({ telegramLogin: true }));
+    expect(csp).toContain("frame-src https://oauth.telegram.org");
+    expect(res.headers.get("x-frame-options")).toBe("DENY");
+  });
 });

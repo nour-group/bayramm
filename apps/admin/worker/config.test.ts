@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { unstable_readConfig } from "wrangler";
+import { TG_BOT_USERNAMES, tgBotUsername } from "../telegram.config";
 
 const CONFIG = fileURLToPath(new URL("../wrangler.jsonc", import.meta.url));
 
@@ -9,13 +10,18 @@ const CONFIG = fileURLToPath(new URL("../wrangler.jsonc", import.meta.url));
 const read = (env?: string) => unstable_readConfig({ config: CONFIG, env }, { hideWarnings: true });
 
 const ENVS = [
-  { env: undefined, name: "bayramm-admin-dev", api: "bayramm-api-dev" },
-  { env: "staging", name: "bayramm-admin-staging", api: "bayramm-api-staging" },
-  { env: "production", name: "bayramm-admin", api: "bayramm-api" },
+  { env: undefined, name: "bayramm-admin-dev", api: "bayramm-api-dev", domain: undefined },
+  {
+    env: "staging",
+    name: "bayramm-admin-staging",
+    api: "bayramm-api-staging",
+    domain: "admin-staging.bayramm.uz",
+  },
+  { env: "production", name: "bayramm-admin", api: "bayramm-api", domain: "admin.bayramm.uz" },
 ] as const;
 
-describe("wrangler.jsonc панели оператора: до Cloudflare Access адреса в интернете нет", () => {
-  for (const { env, name, api } of ENVS) {
+describe("wrangler.jsonc панели оператора", () => {
+  for (const { env, name, api, domain } of ENVS) {
     const label = env ?? "local";
 
     it(`${label}: воркер ${name}`, () => {
@@ -28,9 +34,9 @@ describe("wrangler.jsonc панели оператора: до Cloudflare Access
       expect(config.preview_urls).toBe(false);
     });
 
-    it(`${label}: нет ни маршрутов, ни своих доменов`, () => {
+    it(`${label}: домен ${domain ?? "не задан"} и больше никаких маршрутов`, () => {
       const config = read(env);
-      expect(config.routes ?? []).toEqual([]);
+      expect(config.routes ?? []).toEqual(domain ? [{ pattern: domain, custom_domain: true }] : []);
       expect(config.route).toBeUndefined();
     });
 
@@ -42,11 +48,33 @@ describe("wrangler.jsonc панели оператора: до Cloudflare Access
     });
   }
 
-  it("в исходном файле нет ключей маршрутов ни в одном окружении", () => {
+  it("в исходном файле только эти два домена и ни одного публичного адреса workers.dev", () => {
     const raw = readFileSync(CONFIG, "utf8");
-    expect(raw).not.toMatch(/"routes?"\s*:/);
-    expect(raw).not.toMatch(/custom_domain/);
+    const patterns = [...raw.matchAll(/"pattern"\s*:\s*"([^"]+)"/g)].map(([, pattern]) => pattern);
+    expect(patterns).toEqual(["admin-staging.bayramm.uz", "admin.bayramm.uz"]);
+    expect(raw).not.toMatch(/"route"\s*:/);
     expect(raw).not.toMatch(/"workers_dev"\s*:\s*true/);
     expect(raw).not.toMatch(/"preview_urls"\s*:\s*true/);
+  });
+});
+
+describe("бот виджета входа (telegram.config.ts)", () => {
+  it("staging и production — свои боты", () => {
+    expect(tgBotUsername("staging")).toBe(TG_BOT_USERNAMES.staging);
+    expect(tgBotUsername("production")).toBe(TG_BOT_USERNAMES.production);
+    expect(TG_BOT_USERNAMES.production).not.toBe(TG_BOT_USERNAMES.staging);
+  });
+
+  it("без окружения — локальная сборка; своего бота можно подставить только локально", () => {
+    expect(tgBotUsername(undefined)).toBe(TG_BOT_USERNAMES.local);
+    expect(tgBotUsername("local", "my_local_bot")).toBe("my_local_bot");
+    expect(tgBotUsername("production", "my_local_bot")).toBe(TG_BOT_USERNAMES.production);
+    expect(tgBotUsername("staging", "my_local_bot")).toBe(TG_BOT_USERNAMES.staging);
+  });
+
+  it("неизвестное окружение и не-бот — ошибка сборки", () => {
+    expect(() => tgBotUsername("prod")).toThrow(/неизвестное окружение/);
+    expect(() => tgBotUsername("local", "not-a-bot")).toThrow(/не имя бота/);
+    expect(() => tgBotUsername("local", "someuser")).toThrow(/не имя бота/);
   });
 });

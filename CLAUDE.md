@@ -21,13 +21,13 @@
 ```
 apps/web          клиент: Telegram Mini App + сайт (Vite + React) → Cloudflare Workers (static assets)
 apps/vendor       кабинет вендора (Vite + React) → Cloudflare Workers (static assets)
-apps/admin        панель оператора (Vite + React) → Workers; без домена, пока нет Cloudflare Access
+apps/admin        панель оператора (Vite + React) → Workers; вход сотрудников — виджет Telegram
 apps/api          сервер (Hono) → Cloudflare Workers
 apps/media        варианты фото: /<ширина>/<ключ> → Supabase Storage через Image Transformations
 supabase/         миграции и сид Postgres (Supabase)
 packages/edge     воркер статических приложений: /api → API, SPA, заголовки безопасности
 packages/media    фото: сжатие в браузере, проверка байтов на сервере, ключи и адреса вариантов
-packages/tg       Telegram: проверка initData, deep links startapp, секрет вебхука
+packages/tg       Telegram: проверка initData и виджета входа, deep links startapp, секрет вебхука
 packages/shared   словари RU/UZ (типизированные), normalizeUz
 packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста
 prototypes/       client · vendor · admin — спецификация, не основа кода
@@ -55,7 +55,15 @@ pnpm test             # тесты пакетов, приложений и вс�
 `/api/*` уходит в API по сервисной привязке без префикса, остальное — статика с
 CSP и прочими заголовками безопасности. CSP пускает только свой origin и не
 допускает встроенных скриптов и стилей; нужен внешний источник (шрифт,
-`telegram-web-app.js`) — добавить его в `security-headers.ts` явно.
+`telegram-web-app.js`) — добавить его в `security-headers.ts` явно. Так сделано
+для виджета входа Telegram: опция `telegramLogin` пускает его скрипт и фрейм
+`oauth.telegram.org` — только в admin. Колбэк `data-onauth` виджет исполняет
+через `eval`, поэтому панель берёт данные через редирект `data-auth-url`.
+
+Сотрудники входят через виджет Telegram по приглашению: запись в `app.staff` и
+`pii.staff_profiles.telegram_username`, при первом входе приглашение
+привязывается к Telegram ID (`app.staff_sign_in`). У бота каждого окружения в
+@BotFather `/setdomain` — домен панели этого окружения.
 
 ---
 

@@ -4,19 +4,24 @@
 
 import { sql, type Transaction } from "kysely";
 import type { Db } from "./client";
-import type { DB } from "./schema.generated";
+import type { AppStaffRole, DB } from "./schema.generated";
+
+export type StaffRole = AppStaffRole;
 
 // kind совпадает со значениями app.actor_kind; guest — актора нет,
-// RLS показывает только публичное (активные листинги, справочники)
+// RLS показывает только публичное (активные листинги, справочники).
+// Роль сотрудника — для проверок в API (requireStaff); в базу уходят только
+// kind и id, роль там читает app.current_staff_role()
 export type Actor =
   | { readonly kind: "guest" }
   | { readonly kind: "system" }
   | { readonly kind: "client"; readonly id: string }
   | { readonly kind: "vendor_user"; readonly id: string; readonly vendorId: string }
-  | { readonly kind: "staff"; readonly id: string };
+  | { readonly kind: "staff"; readonly id: string; readonly role: StaffRole };
 
 export type ActorKind = Actor["kind"];
 export type ClientActor = Extract<Actor, { kind: "client" }>;
+export type StaffActor = Extract<Actor, { kind: "staff" }>;
 
 export type Tx = Transaction<DB>;
 

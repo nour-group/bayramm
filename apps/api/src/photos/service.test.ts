@@ -238,7 +238,7 @@ describe("addListingPhoto", () => {
   it("сотрудник загружает тем же путём", async () => {
     const db = scriptedDb();
     const { storage } = fakeStorage();
-    const staff: Actor = { kind: "staff", id: "00000000-0000-4000-8000-00000000a001" };
+    const staff: Actor = { kind: "staff", id: "00000000-0000-4000-8000-00000000a001", role: "manager" };
     await addListingPhoto({ db: db.db, storage }, staff, LISTING, WEBP, { noFacesAck: true });
     expect(setConfigs(db.queries)).toEqual(["staff", "staff", "system"]);
   });

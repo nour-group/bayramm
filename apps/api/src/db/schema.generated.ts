@@ -342,6 +342,7 @@ export interface AppSessions {
   ip_hash: Uint8Array | null;
   last_seen_at: Timestamp | null;
   revoked_at: Timestamp | null;
+  staff_id: string | null;
   token_hash: Uint8Array;
   vendor_user_id: string | null;
   via: string;
@@ -359,6 +360,11 @@ export interface AppStaff {
   created_at: Generated<Timestamp>;
   id: Generated<string>;
   role: AppStaffRole;
+  /**
+   * HMAC-SHA256(ID_HASH_KEY, Telegram ID); null — приглашение ещё не принято
+   */
+  tg_id_hash: Uint8Array | null;
+  tg_linked_at: Timestamp | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -423,9 +429,11 @@ export interface PiiRequestContacts {
 
 export interface PiiStaffProfiles {
   display_name: string;
-  email: string;
+  email: string | null;
   staff_id: string;
   telegram_chat_id: Int8 | null;
+  telegram_id: Int8 | null;
+  telegram_username: string | null;
   updated_at: Generated<Timestamp>;
 }
 
