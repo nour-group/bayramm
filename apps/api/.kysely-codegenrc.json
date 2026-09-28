@@ -1,0 +1,8 @@
+{
+  "dialect": "postgres",
+  "url": "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+  "includePattern": "{app,pii}.*",
+  "dateParser": "string",
+  "typeMapping": { "bytea": "Uint8Array" },
+  "outFile": "src/db/schema.generated.ts"
+}
