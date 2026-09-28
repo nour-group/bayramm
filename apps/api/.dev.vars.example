@@ -1,0 +1,14 @@
+# Секреты API для локального запуска: скопируйте в .dev.vars (он в .gitignore)
+# и подставьте свои значения. Здесь — только имена, без настоящих значений.
+# На staging/production — `wrangler secret put <ИМЯ> --env <окружение>`.
+#
+# Из этого файла `wrangler types` берёт имена секретов для типа Env
+# (скрипты typecheck и cf-typegen в package.json).
+
+# Токен бота, через которого открывается Mini App (от @BotFather)
+TELEGRAM_BOT_TOKEN=
+
+# Ключ HMAC для псевдонимов: app.clients.tg_id_hash = HMAC-SHA256(ID_HASH_KEY, Telegram ID).
+# Не короче 32 символов, например: openssl rand -base64 32
+# После запуска не менять: со сменой ключа клиенты не найдутся по старым хэшам
+ID_HASH_KEY=

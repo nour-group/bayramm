@@ -1,0 +1,86 @@
+// Общее для интеграционных тестов: окружение Worker'а, вызов приложения,
+// вход тестового клиента и уборка за собой.
+
+import { createHmac, randomBytes, randomInt } from "node:crypto";
+import { Client } from "pg";
+import { inject } from "vitest";
+import app from "../../src/index";
+import { initDataFor, type TestTelegramUser } from "../../src/testing/init-data";
+
+export const BOT_TOKEN = "123456:integration-test-bot-token";
+// Свой ключ псевдонимов на каждый прогон
+export const ID_HASH_KEY = randomBytes(32).toString("base64url");
+
+export const apiDatabaseUrl = inject("apiDatabaseUrl");
+export const adminDatabaseUrl = inject("adminDatabaseUrl");
+
+export function makeEnv(): Env {
+  return {
+    APP_ENV: "local",
+    GIT_SHA: "dev",
+    TELEGRAM_BOT_TOKEN: BOT_TOKEN,
+    ID_HASH_KEY,
+    HYPERDRIVE: { connectionString: apiDatabaseUrl } as Hyperdrive,
+  };
+}
+
+/** Запрос к приложению как в Worker'е; ждёт и waitUntil (закрытие пула). */
+export async function call(path: string, init: RequestInit = {}): Promise<Response> {
+  const pending: Promise<unknown>[] = [];
+  const ctx = {
+    waitUntil: (p: Promise<unknown>) => void pending.push(p),
+    passThroughOnException: () => {},
+    props: {},
+  } as unknown as ExecutionContext;
+  const res = await app.request(path, init, makeEnv(), ctx);
+  await Promise.all(pending);
+  return res;
+}
+
+export function postLogin(initData: string): Promise<Response> {
+  return call("/auth/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ initData }),
+  });
+}
+
+export const bearer = (token: string): RequestInit => ({ headers: { Authorization: `Bearer ${token}` } });
+
+// Telegram ID тестовых клиентов — случайные на каждый прогон, чтобы не мешать
+// другим данным в локальной базе; по ним же убираем за собой
+const usedTelegramIds = new Set<number>();
+
+export function newTelegramUser(patch: Partial<TestTelegramUser> = {}): TestTelegramUser {
+  const id = 7_000_000_000 + randomInt(0, 999_999_999);
+  usedTelegramIds.add(id);
+  return { id, first_name: "Test", ...patch };
+}
+
+export async function loginToken(user: TestTelegramUser): Promise<string> {
+  const res = await postLogin(await initDataFor(user, { botToken: BOT_TOKEN }));
+  if (res.status !== 200) throw new Error(`вход не удался: ${res.status} ${await res.text()}`);
+  return ((await res.json()) as { token: string }).token;
+}
+
+export function tgIdHash(telegramId: number): Buffer {
+  return createHmac("sha256", ID_HASH_KEY).update(String(telegramId)).digest();
+}
+
+export async function adminClient(): Promise<Client> {
+  const client = new Client({ connectionString: adminDatabaseUrl });
+  await client.connect();
+  return client;
+}
+
+/** Удаляет клиентов, созданных тестами (сессии, профили, сами клиенты). */
+export async function cleanup(admin: Client): Promise<void> {
+  const hashes = [...usedTelegramIds].map(tgIdHash);
+  if (hashes.length === 0) return;
+  await admin.query(
+    `with c as (select id from app.clients where tg_id_hash = any($1::bytea[]))
+     delete from app.sessions where client_id in (select id from c)`,
+    [hashes],
+  );
+  await admin.query("delete from app.clients where tg_id_hash = any($1::bytea[])", [hashes]);
+}
