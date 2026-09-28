@@ -5,9 +5,20 @@
    Картинки ещё из data: (узор гириха в data-URI) и blob: (превью фото до загрузки).
    Понадобится внешний источник — добавлять сюда явным параметром, а не ослаблять политику. */
 
+/* Виджет входа Telegram: скрипт telegram-widget.js (путь точный — остальной telegram.org не
+   нужен) и кнопка входа во фрейме с oauth.telegram.org. Колбэк data-onauth виджет собирает
+   через eval — его CSP не пропустит; панель берёт данные через редирект data-auth-url */
+export const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js";
+export const TELEGRAM_OAUTH_ORIGIN = "https://oauth.telegram.org";
+
 export interface SecurityOptions {
   /** Кому разрешено встраивать страницу во фрейм. Пусто — никому: frame-ancestors 'none' */
   readonly frameAncestors?: readonly string[];
+  /**
+   * Виджет входа Telegram: разрешить его скрипт и фрейм. Только панели оператора — у клиента
+   * и кабинета вендора этих источников нет
+   */
+  readonly telegramLogin?: boolean;
   /**
    * Сервер разработки Vite. Он вставляет в HTML встроенную преамбулу React Refresh, добавляет
    * стили из JS и держит WebSocket для HMR — без послаблений страница не запустится.
@@ -35,11 +46,17 @@ export const PERMISSIONS_POLICY = DENIED_FEATURES.map((feature) => `${feature}=(
 export const REFERRER_POLICY = "strict-origin-when-cross-origin";
 
 /** Значение Content-Security-Policy */
-export function contentSecurityPolicy({ frameAncestors = [], dev = false }: SecurityOptions = {}): string {
+export function contentSecurityPolicy({
+  frameAncestors = [],
+  telegramLogin = false,
+  dev = false,
+}: SecurityOptions = {}): string {
   const inline = dev ? ["'unsafe-inline'"] : [];
   const directives: [string, readonly string[]][] = [
     ["default-src", ["'self'"]],
-    ["script-src", ["'self'", ...inline]],
+    ["script-src", ["'self'", ...(telegramLogin ? [TELEGRAM_WIDGET_SCRIPT] : []), ...inline]],
+    // Без виджета frame-src не задаём: фреймы подчиняются default-src 'self'
+    ...(telegramLogin ? [["frame-src", [TELEGRAM_OAUTH_ORIGIN]] as [string, string[]]] : []),
     ["style-src", ["'self'", ...inline]],
     ["img-src", ["'self'", "data:", "blob:"]],
     ["font-src", ["'self'"]],
