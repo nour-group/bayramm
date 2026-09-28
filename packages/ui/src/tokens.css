@@ -1,0 +1,131 @@
+/* Дизайн-токены Bayramm. СГЕНЕРИРОВАНО из src/tokens.ts (src/css.ts) — руками не править.
+   Пересобрать: pnpm --filter @bayramm/ui css */
+
+:root {
+  /* цвета: основная тема */
+  --paper: #faf7f4;
+  --white: #ffffff;
+  --raise: #ffffff;
+  --rail-bg: #faf7f4;
+  --rule: #e4dcd6;
+  --line: #e8e2f0;
+  --lilac: #f1eaf9;
+  --ink: #2a2233;
+  --muted: #6f6580;
+  --muted-lt: #786d87;
+  --plum: #2c1b47;
+  --plum-deep: #1b1030;
+  --plum-mid: #4e3170;
+  --coral: #ed6545;
+  --coral-deep: #bb4225;
+  --coral-soft: #fde7dc;
+  --peach: #f9cdb2;
+  --accent-hover: #d74120;
+  --accent-press: #90331d;
+  --btn-ink: #ffffff;
+  --sel-ink: #ffffff;
+  --teal: #237870;
+  --teal-soft: #e2f1ef;
+  --berry: #a82f52;
+  --cell: #ffffff;
+  --cell-wk: #fbf6f1;
+  --busy: #fbeef1;
+  --busy-ink: #b57c90;
+
+  /* шрифты и кегли */
+  --font-display: "Unbounded", system-ui, sans-serif;
+  --font-body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-accent: "Cormorant", Georgia, serif;
+  --fs-10: 10px;
+  --fs-11: 11px;
+  --fs-12-5: 12.5px;
+  --fs-13-5: 13.5px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-16: 16px;
+  --fs-19: 19px;
+  --fs-22: 22px;
+  --fs-23: 23px;
+  --fs-27: 27px;
+
+  /* скругления, зазоры, иконки, зона нажатия */
+  --r-3: 3px;
+  --r-8: 8px;
+  --r-11: 11px;
+  --r-14: 14px;
+  --r-18: 18px;
+  --r-22: 22px;
+  --r-999: 999px;
+  --r-arch: 44px 44px 20px 20px;
+  --gap-3: 3px;
+  --gap-5: 5px;
+  --gap-7: 7px;
+  --gap-9: 9px;
+  --gap-12: 12px;
+  --ico-12: 12px;
+  --ico-14: 14px;
+  --ico-17: 17px;
+  --ico-20: 20px;
+  --ico-24: 24px;
+  --ico-26: 26px;
+  --hit-min: 44px;
+
+  /* движение */
+  --t1: 150ms;
+  --t2: 270ms;
+  --t3: 400ms;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-soft: cubic-bezier(0.4, 0.14, 0.3, 1);
+  --ease-in: cubic-bezier(0.55, 0.06, 0.68, 0.19);
+  --ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* безопасные зоны: Telegram → env() → 0; верх и низ складывают обе зоны */
+  --sa-t: var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sa-b: var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sa-l: var(--tg-safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --sa-r: var(--tg-safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --csa-t: var(--tg-content-safe-area-inset-top, 0px);
+  --csa-b: var(--tg-content-safe-area-inset-bottom, 0px);
+  --pad-t: calc(var(--sa-t) + var(--csa-t));
+  --pad-b: calc(var(--sa-b) + var(--csa-b));
+}
+
+/* Премиум «Suzani»: переопределяет те же базовые токены, не отдельные классы */
+[data-theme="lux"] {
+  --paper: #eee7dc;
+  --white: #faf6ef;
+  --raise: #fffdf8;
+  --rail-bg: #f3ede3;
+  --rule: rgba(30, 42, 79, 0.12);
+  --line: rgba(30, 42, 79, 0.12);
+  --lilac: rgba(163, 48, 42, 0.12);
+  --ink: #1e2a4f;
+  --muted: #625c51;
+  --muted-lt: #6a6357;
+  --plum: #1e2a4f;
+  --plum-deep: #16203c;
+  --plum-mid: #2a3a66;
+  --coral: #a3302a;
+  --coral-deep: #a3302a;
+  --coral-soft: rgba(163, 48, 42, 0.12);
+  --peach: #da756f;
+  --accent-hover: #8e2924;
+  --accent-press: #7a231f;
+  --btn-ink: #fbf3e8;
+  --sel-ink: #f6eedf;
+  --teal: #2f6b4f;
+  --teal-soft: #e4ede8;
+  --berry: #7a1e1a;
+  --cell: #f4eee4;
+  --cell-wk: #efe3d8;
+  --busy: #fffdf8;
+  --busy-ink: #9e9384;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t1: 0.01ms;
+    --t2: 0.01ms;
+    --t3: 0.01ms;
+  }
+}
