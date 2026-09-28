@@ -1,0 +1,127 @@
+-- Общие фикстуры pgTAP. Подключаются из *.test.sql через \ir внутри транзакции
+-- теста и откатываются вместе с ней. Расширение .psql — чтобы раннер не принял
+-- файл за отдельный тест.
+--
+-- Данные вымышленные и существуют только в откатываемой транзакции.
+--
+--   staff:     …a001 admin · …a002 manager
+--   vendor A:  аккаунт aaaaaaaa-…-0001, пользователь …0011, листинг A1 …0101 (active), A2 …0102 (draft)
+--   vendor B:  аккаунт bbbbbbbb-…-0001, пользователь …0011, листинг B1 …0101 (active)
+--   clients:   C1 cccccccc-…-0001 · C2 …0002
+--   requests:  RA (C1 → A1) eeeeeeee-…-00a1 · RB (C2 → B1) eeeeeeee-…-00b1
+
+-- Тест переключается в роль API; у postgres на неё только ADMIN OPTION.
+-- Функции pgTAP лежат в схеме extensions — роли API она нужна только в тестах
+grant bayramm_api to postgres with set true, inherit false;
+grant usage on schema extensions to bayramm_api;
+
+-- Актор текущей транзакции (как withActor в API). null — сброс
+create function pg_temp.as_actor(p_kind text, p_id uuid default null, p_vendor uuid default null)
+returns void
+language sql
+as $$
+  select set_config('app.actor_kind', coalesce(p_kind, ''), true),
+         set_config('app.actor_id', coalesce(p_id::text, ''), true),
+         set_config('app.vendor_id', coalesce(p_vendor::text, ''), true);
+$$;
+
+-- DETAIL ошибки запроса (для publish_blocked: какие пункты не выполнены).
+-- null — запрос прошёл без ошибки
+create function pg_temp.error_detail(p_sql text)
+returns text
+language plpgsql
+as $$
+declare
+  v_detail text;
+begin
+  execute p_sql;
+  return null;
+exception when others then
+  get stacked diagnostics v_detail = pg_exception_detail;
+  return coalesce(v_detail, '');
+end $$;
+
+do $fixtures$
+declare
+  v_listing uuid;
+begin
+  -- тексты согласий
+  insert into app.consent_texts (id, purpose, version, locale, body) values
+    ('dddddddd-0000-0000-0000-000000000001', 'request_transfer', 1, 'ru', 'Тестовый текст: передать контакты вендору'),
+    ('dddddddd-0000-0000-0000-000000000002', 'vendor_contact',   1, 'ru', 'Тестовый текст: данные контактного лица');
+
+  -- сотрудники
+  insert into app.staff (id, role) values
+    ('00000000-0000-0000-0000-00000000a001', 'admin'),
+    ('00000000-0000-0000-0000-00000000a002', 'manager');
+  insert into pii.staff_profiles (staff_id, email, display_name) values
+    ('00000000-0000-0000-0000-00000000a001', 'admin@example.test', 'Admin'),
+    ('00000000-0000-0000-0000-00000000a002', 'manager@example.test', 'Manager');
+
+  -- вендоры: проверка пройдена
+  insert into app.vendor_accounts (id, legal_form, contract_no, contract_signed_at, stir_verified_at,
+                                   contacts_confirmed_at, pd_consent_signed_at, pd_consent_text_id) values
+    ('aaaaaaaa-0000-0000-0000-000000000001', 'ooo', 'T-1', now(), now(), now(), now(),
+     'dddddddd-0000-0000-0000-000000000002'),
+    ('bbbbbbbb-0000-0000-0000-000000000001', 'yatt', 'T-2', now(), now(), now(), now(),
+     'dddddddd-0000-0000-0000-000000000002');
+  insert into pii.vendor_contacts (vendor_id, legal_name, contact_person, phone) values
+    ('aaaaaaaa-0000-0000-0000-000000000001', 'Test A', 'Person A', '+998000000101'),
+    ('bbbbbbbb-0000-0000-0000-000000000001', 'Test B', 'Person B', '+998000000201');
+  insert into app.vendor_users (id, vendor_id, phone_hash) values
+    ('aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000001', sha256('vendor-a')),
+    ('bbbbbbbb-0000-0000-0000-000000000011', 'bbbbbbbb-0000-0000-0000-000000000001', sha256('vendor-b'));
+  insert into pii.vendor_user_profiles (vendor_user_id, phone) values
+    ('aaaaaaaa-0000-0000-0000-000000000011', '+998000000111'),
+    ('bbbbbbbb-0000-0000-0000-000000000011', '+998000000211');
+
+  -- листинги: A1 и B1 — полные и опубликованные, A2 — пустой черновик
+  insert into app.listings (id, vendor_id, slug, category_code, name, district_code,
+                            description_ru, description_uz, price_from_uzs, price_unit, cap_min, cap_max) values
+    ('aaaaaaaa-0000-0000-0000-000000000101', 'aaaaaaaa-0000-0000-0000-000000000001', 'test-a1', 'hall',
+     'Test Hall A1', 'yunusobod', 'Описание', 'Tavsif', 150000, 'per_guest', 50, 300),
+    ('bbbbbbbb-0000-0000-0000-000000000101', 'bbbbbbbb-0000-0000-0000-000000000001', 'test-b1', 'hall',
+     'Test Hall B1', 'chilonzor', 'Описание', 'Tavsif', 120000, 'per_guest', 40, 250);
+  insert into app.listings (id, vendor_id, slug, category_code, name) values
+    ('aaaaaaaa-0000-0000-0000-000000000102', 'aaaaaaaa-0000-0000-0000-000000000001', 'test-a2', 'hall', 'Test Hall A2');
+
+  foreach v_listing in array array['aaaaaaaa-0000-0000-0000-000000000101',
+                                   'bbbbbbbb-0000-0000-0000-000000000101']::uuid[] loop
+    insert into pii.listing_contacts (listing_id, public_phone) values (v_listing, '+998000000999');
+    insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
+      (v_listing, 'weekday', 'Будни', 'Ish kuni', 150000),
+      (v_listing, 'weekend', 'Выходные', 'Dam olish', 180000);
+    insert into app.photos (listing_id, status, moderation, storage_key, public_prefix, sort, no_faces_ack)
+    select v_listing, 'ready', 'approved', 'test/' || v_listing || '/' || n, 'p/' || v_listing || '/' || n, n, true
+    from generate_series(1, 3) n;
+    update app.listings set status = 'review' where id = v_listing;
+    update app.listings set status = 'active' where id = v_listing;
+  end loop;
+
+  -- клиенты
+  insert into app.clients (id, tg_id_hash) values
+    ('cccccccc-0000-0000-0000-000000000001', sha256('client-1')),
+    ('cccccccc-0000-0000-0000-000000000002', sha256('client-2'));
+  insert into pii.client_profiles (client_id, telegram_id, first_name, phone) values
+    ('cccccccc-0000-0000-0000-000000000001', 1000001, 'Client1', '+998000000301'),
+    ('cccccccc-0000-0000-0000-000000000002', 1000002, 'Client2', '+998000000302');
+
+  -- согласия и заявки: C1 → A1, C2 → B1
+  insert into app.consents (id, subject_kind, subject_id, purpose, action, text_id, scope_listing_id, source) values
+    ('ffffffff-0000-0000-0000-0000000000a1', 'client', 'cccccccc-0000-0000-0000-000000000001', 'request_transfer',
+     'grant', 'dddddddd-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000101', 'tma'),
+    ('ffffffff-0000-0000-0000-0000000000b1', 'client', 'cccccccc-0000-0000-0000-000000000002', 'request_transfer',
+     'grant', 'dddddddd-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000101', 'tma');
+  insert into app.requests (id, client_id, listing_id, vendor_id, consent_id, occasion_code, event_date, guests, source)
+  values
+    ('eeeeeeee-0000-0000-0000-0000000000a1', 'cccccccc-0000-0000-0000-000000000001',
+     'aaaaaaaa-0000-0000-0000-000000000101', 'aaaaaaaa-0000-0000-0000-000000000001',
+     'ffffffff-0000-0000-0000-0000000000a1', 'toy', current_date + 60, 200, 'tma'),
+    ('eeeeeeee-0000-0000-0000-0000000000b1', 'cccccccc-0000-0000-0000-000000000002',
+     'bbbbbbbb-0000-0000-0000-000000000101', 'bbbbbbbb-0000-0000-0000-000000000001',
+     'ffffffff-0000-0000-0000-0000000000b1', 'bd', current_date + 30, 80, 'tma');
+  insert into pii.request_contacts (request_id, contact_name, contact_phone, comment) values
+    ('eeeeeeee-0000-0000-0000-0000000000a1', 'Client1', '+998000000301', 'комментарий'),
+    ('eeeeeeee-0000-0000-0000-0000000000b1', 'Client2', '+998000000302', null);
+end
+$fixtures$;
