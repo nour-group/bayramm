@@ -1,0 +1,19 @@
+{
+  "name": "@bayramm/shared",
+  "private": true,
+  "type": "module",
+  "description": "Общий код клиента, кабинета и API: словари RU/UZ и помощники. Экспортирует исходники TS, сборки нет.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./i18n": "./src/i18n/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "extract:dict": "node scripts/extract-client-dict.mjs && biome check --write src/i18n/ru.ts src/i18n/uz.ts"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vitest": "^5.0.1"
+  }
+}
