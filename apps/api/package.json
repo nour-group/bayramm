@@ -9,6 +9,7 @@
     "typecheck": "wrangler types --env-file .dev.vars.example --check && tsc --noEmit",
     "cf-typegen": "wrangler types --env-file .dev.vars.example",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:types": "kysely-codegen"
   },
   "dependencies": {
