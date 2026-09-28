@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import app from "./index";
 import { initDataFields, initDataFor, signInitData } from "./testing/init-data";
+import { signLoginWidget } from "./testing/login-widget";
 
 const BOT_TOKEN = "123456:unit-test-bot-token";
 
@@ -141,5 +142,86 @@ describe("POST /auth/telegram: отказ до базы", () => {
       makeEnv({ ID_HASH_KEY: "short" }),
     );
     expect(res.status).toBe(500);
+  });
+});
+
+function staffLogin(body: unknown, env = makeEnv()) {
+  return call(
+    "/auth/staff/telegram",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    },
+    env,
+  );
+}
+
+const STAFF_USER = { id: 100000001, first_name: "Staff", username: "test_staff" };
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+describe("POST /auth/staff/telegram: отказ до базы", () => {
+  it("тело не JSON-объект — 400", async () => {
+    for (const body of ["not json", [], "null", '"fields"', "42"]) {
+      const { res } = await staffLogin(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_request");
+    }
+  });
+
+  it("слишком большое тело — 413", async () => {
+    const { res } = await staffLogin({ ...STAFF_USER, last_name: "x".repeat(40 * 1024) });
+    expect(res.status).toBe(413);
+  });
+
+  it.each([
+    ["без hash", async () => ({ ...STAFF_USER, auth_date: nowSeconds() }), "missing_hash"],
+    ["подпись чужого бота", () => signLoginWidget(STAFF_USER, "999:other-bot"), "bad_hash"],
+    [
+      "id изменён после подписи",
+      async () => ({ ...(await signLoginWidget(STAFF_USER, BOT_TOKEN)), id: "100000002" }),
+      "bad_hash",
+    ],
+    ["старше 10 минут", () => signLoginWidget(STAFF_USER, BOT_TOKEN, nowSeconds() - 11 * 60), "expired"],
+    [
+      "вложенный объект",
+      async () => ({ ...(await signLoginWidget(STAFF_USER, BOT_TOKEN)), extra: {} }),
+      "malformed",
+    ],
+  ])("%s — 401, в базу не ходит", async (_name, fields, reason) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { res } = await staffLogin(await fields());
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: { code: "unauthorized", message: "Invalid Telegram login data" },
+    });
+    expect(warn).toHaveBeenCalledWith("auth.staff: login widget rejected", reason);
+  });
+
+  it("без токена бота — 500, а не вход без проверки", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fields = await signLoginWidget(STAFF_USER, BOT_TOKEN);
+    const { res } = await staffLogin(fields, makeEnv({ TELEGRAM_BOT_TOKEN: "" }));
+    expect(res.status).toBe(500);
+  });
+
+  it("без ID_HASH_KEY — 500 до записи в базу", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fields = await signLoginWidget(STAFF_USER, BOT_TOKEN);
+    const { res } = await staffLogin(fields, makeEnv({ ID_HASH_KEY: "short" }));
+    expect(res.status).toBe(500);
+  });
+});
+
+describe("/staff без сессии", () => {
+  it("GET /staff/me без токена — 401", async () => {
+    const { res } = await call("/staff/me");
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: { code: "unauthorized", message: "Authentication required" } });
+  });
+
+  it("кривой токен — 401 без запроса к базе", async () => {
+    const { res } = await call("/staff/me", { headers: { Authorization: "Bearer nope" } });
+    expect(res.status).toBe(401);
   });
 });

@@ -5,7 +5,8 @@
 # Из этого файла `wrangler types` берёт имена секретов для типа Env
 # (скрипты typecheck и cf-typegen в package.json).
 
-# Токен бота, через которого открывается Mini App (от @BotFather)
+# Токен бота, через которого открывается Mini App (от @BotFather). Им же проверяется
+# вход сотрудников через виджет Telegram: у бота должен быть домен панели оператора (/setdomain)
 TELEGRAM_BOT_TOKEN=
 
 # Ключ HMAC для псевдонимов: app.clients.tg_id_hash = HMAC-SHA256(ID_HASH_KEY, Telegram ID).

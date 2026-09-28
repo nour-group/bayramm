@@ -4,6 +4,7 @@ import type { AppEnv } from "./env";
 import { handleError, notFound } from "./errors";
 import { auth } from "./routes/auth";
 import { me } from "./routes/me";
+import { staff } from "./routes/staff";
 
 // Веб проксирует /api/* сюда, отрезая префикс: /api/me → /me
 const app = new Hono<AppEnv>();
@@ -47,6 +48,7 @@ app.get("/health", async (c) => {
 
 app.route("/auth", auth);
 app.route("/me", me);
+app.route("/staff", staff);
 
 app.notFound((c) => c.json(notFound().toBody(), 404));
 app.onError(handleError);

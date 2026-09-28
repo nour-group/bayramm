@@ -34,6 +34,9 @@ export class ApiError extends Error {
 
 export const notFound = () => new ApiError(404, "not_found", "Not found");
 export const unauthorized = () => new ApiError(401, "unauthorized", "Authentication required");
+// Вход есть, прав нет: чужой вид сессии, не та роль, сотрудник не найден.
+// Одинаково для всех случаев — по ответу не узнать, чего именно не хватило
+export const forbidden = () => new ApiError(403, "forbidden", "Access denied");
 export const clientBlocked = () => new ApiError(403, "client_blocked", "Account is blocked");
 const internalError = () => new ApiError(500, "internal_error", "Internal error");
 

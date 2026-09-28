@@ -15,7 +15,7 @@ describe("actorSettings", () => {
       id: CLIENT_ID,
       vendorId: "",
     });
-    expect(actorSettings({ kind: "staff", id: CLIENT_ID })).toEqual({
+    expect(actorSettings({ kind: "staff", id: CLIENT_ID, role: "moderator" })).toEqual({
       kind: "staff",
       id: CLIENT_ID,
       vendorId: "",
