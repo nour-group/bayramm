@@ -1,3 +1,4 @@
+import { trimTrailingSlashes } from "@bayramm/shared";
 import { useCallback, useEffect, useState } from "react";
 
 /* Все маршруты кабинета — в одной карте. Пути, вписанные по месту, разъезжаются
@@ -19,7 +20,7 @@ export const HOME: Route = "requests";
 
 /** Маршрут по пути. Корень — главный экран, неизвестный путь — null */
 export function matchRoute(pathname: string): Route | null {
-  const path = pathname.replace(/\/+$/, "") || "/";
+  const path = trimTrailingSlashes(pathname) || "/";
   if (path === "/") return HOME;
   return (Object.keys(ROUTES) as Route[]).find((route) => ROUTES[route] === path) ?? null;
 }

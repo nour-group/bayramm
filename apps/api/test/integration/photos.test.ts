@@ -12,6 +12,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { LISTING_PHOTOS_BUCKET } from "@bayramm/media";
 import { exifSegment, jpegFixture, webpFixture } from "@bayramm/media/testing";
+import { trimTrailingSlashes } from "@bayramm/shared";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Actor } from "../../src/db/actor";
@@ -21,7 +22,7 @@ import { addListingPhoto, removeListingPhoto } from "../../src/photos/service";
 import { type ObjectStorage, StorageError, supabaseStorage } from "../../src/storage/supabase";
 import { adminClient, apiDatabaseUrl } from "./helpers";
 
-const STORAGE_URL = (process.env.TEST_SUPABASE_URL ?? "http://127.0.0.1:54321").replace(/\/+$/, "");
+const STORAGE_URL = trimTrailingSlashes(process.env.TEST_SUPABASE_URL ?? "http://127.0.0.1:54321");
 const SERVICE_KEY = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY ?? "";
 
 /** Причина пропустить тесты настоящего Storage; null — можно запускать. */

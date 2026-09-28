@@ -18,6 +18,7 @@
 // не прокси для чего угодно и не расходует квоту преобразований на мусор.
 
 import { LISTING_PHOTOS_BUCKET, MEDIA_QUALITY, parseMediaPath } from "@bayramm/media";
+import { trimTrailingSlashes } from "@bayramm/shared";
 
 export interface MediaBindings {
   /** Адрес проекта Supabase, например https://<ref>.supabase.co */
@@ -45,7 +46,7 @@ export function negotiateFormat(accept: string | null): OutputFormat {
 }
 
 export function originUrl(supabaseUrl: string, key: string): string {
-  return `${supabaseUrl.replace(/\/+$/, "")}/storage/v1/object/public/${LISTING_PHOTOS_BUCKET}/${key}`;
+  return `${trimTrailingSlashes(supabaseUrl)}/storage/v1/object/public/${LISTING_PHOTOS_BUCKET}/${key}`;
 }
 
 function isImage(response: Response): boolean {

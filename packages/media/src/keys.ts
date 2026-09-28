@@ -6,6 +6,7 @@
 // Формат ключа проверяет и база (ограничение photos_storage_key_format), и
 // воркер: он не пойдёт в хранилище за путём, который не похож на фото листинга.
 
+import { trimTrailingSlashes } from "@bayramm/shared";
 import {
   FORMAT_EXTENSION,
   type ImageFormat,
@@ -53,7 +54,7 @@ export type MediaTarget = MediaEnv | { readonly origin: string };
 
 function originOf(target: MediaTarget): string {
   const origin = typeof target === "string" ? MEDIA_ORIGINS[target] : target.origin;
-  return origin.replace(/\/+$/, "");
+  return trimTrailingSlashes(origin);
 }
 
 /** Адрес варианта фото заданной ширины. */

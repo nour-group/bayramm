@@ -11,7 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@bayramm/media": "workspace:*"
+    "@bayramm/media": "workspace:*",
+    "@bayramm/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.2",

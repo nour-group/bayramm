@@ -9,6 +9,7 @@
 // HTTP-статус при этом у разных версий бывает 400 — смотрим на statusCode.
 
 import { LISTING_PHOTOS_BUCKET } from "@bayramm/media";
+import { trimTrailingSlashes } from "@bayramm/shared";
 
 export interface ObjectStorage {
   /** Кладёт новый объект. Уже существующий не перезаписывает — StorageError("exists"). */
@@ -77,7 +78,7 @@ function failure(status: number): StorageFailure {
 }
 
 export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage {
-  const base = options.url.replace(/\/+$/, "");
+  const base = trimTrailingSlashes(options.url);
   const doFetch = options.fetch ?? ((input, init) => fetch(input, init));
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 

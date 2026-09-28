@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@bayramm/media": "workspace:*",
+    "@bayramm/shared": "workspace:*",
     "@bayramm/tg": "workspace:*",
     "hono": "^4.13.8",
     "kysely": "^0.29.6",
