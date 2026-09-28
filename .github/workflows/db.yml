@@ -16,6 +16,8 @@ permissions:
 
 env:
   SUPABASE_CLI: supabase@2.101.0
+  # Образы — из ghcr.io: анонимный лимит public.ecr.aws на раннерах GitHub заканчивается
+  SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
   DB_CONTAINER: supabase_db_bayramm # supabase_db_<project_id из supabase/config.toml>
 
 jobs:
