@@ -23,8 +23,10 @@ apps/web          клиент: Telegram Mini App + сайт (Vite + React) → 
 apps/vendor       кабинет вендора (Vite + React) → Cloudflare Workers (static assets)
 apps/admin        панель оператора (Vite + React) → Workers; без домена, пока нет Cloudflare Access
 apps/api          сервер (Hono) → Cloudflare Workers
+apps/media        варианты фото: /<ширина>/<ключ> → Supabase Storage через Image Transformations
 supabase/         миграции и сид Postgres (Supabase)
 packages/edge     воркер статических приложений: /api → API, SPA, заголовки безопасности
+packages/media    фото: сжатие в браузере, проверка байтов на сервере, ключи и адреса вариантов
 packages/tg       Telegram: проверка initData, deep links startapp, секрет вебхука
 packages/shared   словари RU/UZ (типизированные), normalizeUz
 packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста
@@ -200,6 +202,19 @@ cd prototypes/admin  && pnpm test   # дымовые тесты панели о�
 новая пара — сначала в `pairs.ts`, потом в интерфейс.
 
 В прототипах контраст меряет `pnpm audit` (с учётом прозрачности и наследования).
+
+### Фото
+
+Один оригинал на фото, варианты — на лету. Всё из `packages/media`:
+
+- **браузер** — `compressForUpload` (`@bayramm/media/browser`): ориентация из
+  EXIF, длинная сторона ≤ 2560, WebP 0.9 (где WebP не кодируется — JPEG 0.9),
+  метаданные вырезаны. Перекодирование всегда — так GPS не уходит с телефона;
+- **сервер** — `assertUploadable` по байтам, клиенту не верим: WebP/JPEG/PNG,
+  ≤ 10 МБ, размеры, никаких EXIF/XMP. Кладёт в Storage только API ключом
+  service_role; ключ объекта `listings/<листинг>/<uuid>.<расширение>`;
+- **выдача** — `mediaUrl` / `mediaSrcSet`, ширины 320·640·960·1280·1920 и
+  никаких других: каждая новая — уникальные преобразования в квоте Cloudflare.
 
 ### Telegram
 
