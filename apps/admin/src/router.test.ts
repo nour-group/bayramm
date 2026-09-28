@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOME, matchRoute, NAV, ROUTES } from "./router";
+import { HOME, matchRoute, matchSection, NAV, ROUTES } from "./router";
 import { t } from "./texts";
 
 describe("маршруты панели оператора", () => {
@@ -9,12 +9,22 @@ describe("маршруты панели оператора", () => {
     ["/moderation/", "moderation"],
     ["/requests", "requests"],
     ["/clients", "clients"],
+    ["/login", "login"],
+    ["/login/telegram", "loginTelegram"],
   ])("%s → %s", (path, route) => {
     expect(matchRoute(path)).toBe(route);
   });
 
-  it.each(["/api", "/login", "/vendors/3", "/index.html"])("%s — не найдено", (path) => {
+  it.each(["/api", "/vendors/3", "/index.html", "/login/other"])("%s — не найдено", (path) => {
     expect(matchRoute(path)).toBeNull();
+  });
+
+  it("разделы — только из навигации; страницы входа разделами не считаются", () => {
+    expect(matchSection("/moderation")).toBe("moderation");
+    expect(matchSection("/")).toBe(HOME);
+    expect(matchSection("/login")).toBeNull();
+    expect(matchSection("/login/telegram")).toBeNull();
+    expect(matchSection("/nope")).toBeNull();
   });
 
   it("пути не повторяются; в навигации все разделы", () => {

@@ -48,6 +48,32 @@ describe("Content-Security-Policy", () => {
     expect(framed["frame-ancestors"]).toEqual(["https://web.telegram.org"]);
   });
 
+  it("по умолчанию ни telegram.org, ни frame-src", () => {
+    expect(contentSecurityPolicy()).not.toContain("telegram.org");
+    expect(csp).not.toHaveProperty("frame-src");
+  });
+
+  it("telegramLogin добавляет только скрипт виджета и фрейм oauth.telegram.org", () => {
+    const tg = parseCsp(contentSecurityPolicy({ telegramLogin: true }));
+    expect(tg["script-src"]).toEqual(["'self'", "https://telegram.org/js/telegram-widget.js"]);
+    expect(tg["frame-src"]).toEqual(["https://oauth.telegram.org"]);
+    // Остальное — как без виджета: встраивать панель нельзя, запросы — только к себе
+    const { "script-src": _s, "frame-src": _f, ...rest } = tg;
+    const { "script-src": _s2, ...strictRest } = csp;
+    expect(rest).toEqual(strictRest);
+    expect(tg["frame-ancestors"]).toEqual(["'none'"]);
+  });
+
+  it("telegramLogin и dev вместе", () => {
+    const both = parseCsp(contentSecurityPolicy({ telegramLogin: true, dev: true }));
+    expect(both["script-src"]).toEqual([
+      "'self'",
+      "https://telegram.org/js/telegram-widget.js",
+      "'unsafe-inline'",
+    ]);
+    expect(both["frame-src"]).toEqual(["https://oauth.telegram.org"]);
+  });
+
   it("dev ослабляет только скрипты, стили и WebSocket", () => {
     const dev = parseCsp(contentSecurityPolicy({ dev: true }));
     expect(dev["script-src"]).toEqual(["'self'", "'unsafe-inline'"]);

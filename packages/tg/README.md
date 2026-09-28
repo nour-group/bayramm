@@ -1,7 +1,7 @@
 # @bayramm/tg
 
-Общий код для Telegram: проверка `initData` Mini App, разбор deep link
-`startapp` и проверка секрета вебхука.
+Общий код для Telegram: проверка `initData` Mini App и данных виджета входа,
+разбор deep link `startapp` и проверка секрета вебхука.
 
 Только стандартные API (Web Crypto, `URLSearchParams`), без Node crypto —
 работает в Cloudflare Workers. Сборки нет: `exports` смотрит на исходники
@@ -52,6 +52,34 @@ Ed25519 из поля `signature` открытым ключом Telegram («thir
 validation»). Результат тот же, только причины `missing_signature` и
 `bad_signature` вместо `missing_hash` и `bad_hash`. `publicKey`: `"production"`
 (по умолчанию), `"test"` или свои 32 байта для тестов.
+
+## Виджет входа (Login Widget)
+
+Вход сотрудников в панель оператора — официальный виджет
+`telegram-widget.js`. Браузер присылает поля виджета (`id`, `first_name`,
+`last_name`, `username`, `photo_url`, `auth_date`, `hash`), сервер проверяет
+подпись:
+
+```ts
+import { verifyLoginWidget } from "@bayramm/tg";
+
+const result = await verifyLoginWidget(fields, c.env.TELEGRAM_BOT_TOKEN, { maxAgeSeconds: 600 });
+if (!result.ok) return c.json({ error: "unauthorized" }, 401); // result.reason — в лог
+const { user, authDate } = result.data; // user: { id, firstName, lastName?, username?, photoUrl? }
+```
+
+Ключ HMAC здесь — `SHA-256(токен бота)`, а не `HMAC("WebAppData", токен)`, как
+у initData: подписи Mini App и виджета не взаимозаменяемы. Строка проверки —
+все поля, кроме `hash`, отсортированные, через `\n`.
+
+`fields` — объект из JSON (строки или целые числа, как в колбэке виджета) или
+`URLSearchParams` редиректа `data-auth-url`. Причины отказа: `missing_hash`,
+`bad_hash`, `expired` (как у initData: `maxAgeSeconds`, по умолчанию сутки, и
+5 минут на расхождение часов), `malformed` (вложенные объекты, дробные числа,
+повтор ключа, больше 16 полей или 4 КБ, нет `id`/`first_name`/`auth_date`).
+
+Для виджета у бота должен быть домен сайта: `/setdomain` в @BotFather. Один
+бот — один домен.
 
 ## Deep links
 

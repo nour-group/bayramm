@@ -73,6 +73,54 @@ export async function adminClient(): Promise<Client> {
   return client;
 }
 
+// ── сотрудники ──────────────────────────────────────────────────────────────
+
+export function postStaffLogin(fields: Record<string, unknown>): Promise<Response> {
+  return call("/auth/staff/telegram", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+}
+
+// Приглашения тестов — со случайными вымышленными именами; по id убираем за собой
+const usedStaffIds = new Set<string>();
+
+export function newStaffUsername(): string {
+  return `test_${randomBytes(6).toString("hex")}`;
+}
+
+export interface Invite {
+  username: string;
+  role?: "admin" | "manager" | "moderator";
+  displayName?: string;
+  active?: boolean;
+}
+
+/** Приглашение сотрудника, как его заводят SQL-ом: строка app.staff и профиль с именем. */
+export async function inviteStaff(admin: Client, invite: Invite): Promise<string> {
+  const { rows } = await admin.query<{ id: string }>(
+    "insert into app.staff (role, active) values ($1, $2) returning id",
+    [invite.role ?? "moderator", invite.active ?? true],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error("сотрудник не создан");
+  usedStaffIds.add(id);
+  await admin.query(
+    "insert into pii.staff_profiles (staff_id, display_name, telegram_username) values ($1, $2, $3)",
+    [id, invite.displayName ?? "Test Staff", invite.username],
+  );
+  return id;
+}
+
+/** Удаляет сотрудников, созданных тестами (сессии, профили, сами сотрудники). */
+export async function cleanupStaff(admin: Client): Promise<void> {
+  const ids = [...usedStaffIds];
+  if (ids.length === 0) return;
+  await admin.query("delete from app.sessions where staff_id = any($1::uuid[])", [ids]);
+  await admin.query("delete from app.staff where id = any($1::uuid[])", [ids]);
+}
+
 /** Удаляет клиентов, созданных тестами (сессии, профили, сами клиенты). */
 export async function cleanup(admin: Client): Promise<void> {
   const hashes = [...usedTelegramIds].map(tgIdHash);

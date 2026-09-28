@@ -78,8 +78,13 @@ jobs:
           CLOUDFLARE_ENV="$TARGET" pnpm build
           pnpm exec wrangler deploy
 
-      # apps/admin из CI не деплоим: у панели нет домена и адресов *.workers.dev, пока перед ней
-      # не настроен Cloudflare Access. Домен, Access и шаг деплоя добавляются одним изменением
+      # Панель оператора: свой домен, без *.workers.dev. Бот виджета входа выбирается при
+      # сборке по CLOUDFLARE_ENV (apps/admin/telegram.config.ts)
+      - name: Deploy admin
+        working-directory: apps/admin
+        run: |
+          CLOUDFLARE_ENV="$TARGET" pnpm build
+          pnpm exec wrangler deploy
 
       - name: Smoke test
         run: |
@@ -94,6 +99,18 @@ jobs:
           if ! grep -qi '^content-security-policy:' vendor-headers.txt; then
             echo "::error::https://$vendor/ отдаёт HTML без Content-Security-Policy"; exit 1
           fi
+
+          # Панель оператора: 200 на странице входа и CSP с виджетом Telegram, без встраивания во фрейм
+          admin=$([ "$TARGET" = production ] && echo admin.bayramm.uz || echo admin-staging.bayramm.uz)
+          code=$(curl -sSf --retry 10 --retry-delay 6 --retry-all-errors -D admin-headers.txt -o /dev/null -w '%{http_code}' "https://$admin/login")
+          if [ "$code" != 200 ]; then echo "::error::https://$admin/login ответил HTTP $code"; exit 1; fi
+          csp=$(grep -i '^content-security-policy:' admin-headers.txt || true)
+          if [ -z "$csp" ]; then echo "::error::https://$admin/ отдаёт HTML без Content-Security-Policy"; exit 1; fi
+          for expected in "frame-ancestors 'none'" "frame-src https://oauth.telegram.org" "https://telegram.org/js/telegram-widget.js"; do
+            if ! grep -qiF "$expected" <<<"$csp"; then
+              echo "::error::CSP панели оператора без «$expected»"; exit 1
+            fi
+          done
 
           if true; then
             body=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors "https://$host/api/health")

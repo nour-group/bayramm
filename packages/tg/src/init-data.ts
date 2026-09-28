@@ -2,6 +2,7 @@
 // Алгоритм: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 // initDataUnsafe на клиенте ничего не доказывает — верить можно только тому, что прошло здесь.
 
+import { type Freshness, type FreshnessOptions, readAuthDate, resolveFreshness } from "./auth-date";
 import { base64UrlToBytes, hexToBytes, hmacSha256, timingSafeEqual, utf8 } from "./bytes";
 
 /** Пользователь из поля `user`. Поля переименованы в camelCase, лишние отброшены. */
@@ -45,22 +46,13 @@ export type VerifyInitDataSignatureResult =
   | { ok: true; data: InitData }
   | { ok: false; reason: InitDataSignatureFailure };
 
-export interface VerifyInitDataOptions {
-  /** Сколько секунд после подписи initData принимается. По умолчанию сутки. */
-  maxAgeSeconds?: number;
-  /** Текущее время в миллисекундах, как у Date.now. Подменяется в тестах. */
-  now?: () => number;
-}
+/** maxAgeSeconds (по умолчанию сутки) и now — см. FreshnessOptions. */
+export type VerifyInitDataOptions = FreshnessOptions;
 
 export interface VerifyInitDataSignatureOptions extends VerifyInitDataOptions {
   /** Открытый ключ Telegram: боевой (по умолчанию), тестовой среды или свои 32 байта — для тестов. */
   publicKey?: "production" | "test" | BufferSource;
 }
-
-export const DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60;
-
-// Часы телефона, серверов Telegram и Worker'а расходятся; дата из будущего дальше этого — не расхождение
-const MAX_FUTURE_SKEW_SECONDS = 5 * 60;
 
 // Настоящая initData — около килобайта. Ограничение отсекает мусор до разбора и HMAC
 const MAX_INIT_DATA_LENGTH = 16 * 1024;
@@ -79,11 +71,6 @@ const EXCLUDED_FOR_HASH: ReadonlySet<string> = new Set(["hash"]);
 const EXCLUDED_FOR_SIGNATURE: ReadonlySet<string> = new Set(["hash", "signature"]);
 
 type Fields = ReadonlyMap<string, string>;
-
-interface ResolvedOptions {
-  maxAgeSeconds: number;
-  now: () => number;
-}
 
 type VerifiedFields =
   | { ok: true; data: InitData }
@@ -104,7 +91,7 @@ export async function verifyInitData(
     // С пустым ключом подпись подделает кто угодно — это ошибка конфигурации, а не плохой запрос
     throw new Error("@bayramm/tg: не задан токен бота");
   }
-  const options = resolveOptions(opts);
+  const options = resolveFreshness(opts);
 
   const fields = parseFields(initData);
   if (fields === null) return { ok: false, reason: "malformed" };
@@ -136,7 +123,7 @@ export async function verifyInitDataSignature(
   if (!Number.isSafeInteger(botId) || botId <= 0) {
     throw new RangeError("@bayramm/tg: botId должен быть положительным целым числом");
   }
-  const options = resolveOptions(opts);
+  const options = resolveFreshness(opts);
   const publicKey = resolvePublicKey(opts.publicKey);
 
   const fields = parseFields(initData);
@@ -154,14 +141,6 @@ export async function verifyInitDataSignature(
   }
 
   return readVerified(fields, options);
-}
-
-function resolveOptions(opts: VerifyInitDataOptions): ResolvedOptions {
-  const maxAgeSeconds = opts.maxAgeSeconds ?? DEFAULT_MAX_AGE_SECONDS;
-  if (!Number.isFinite(maxAgeSeconds) || maxAgeSeconds <= 0) {
-    throw new RangeError("@bayramm/tg: maxAgeSeconds должен быть положительным конечным числом");
-  }
-  return { maxAgeSeconds, now: opts.now ?? Date.now };
 }
 
 function resolvePublicKey(key: VerifyInitDataSignatureOptions["publicKey"] = "production"): BufferSource {
@@ -195,19 +174,10 @@ function dataCheckString(fields: Fields, excluded: ReadonlySet<string>): string 
 }
 
 // Читаем поля только после проверки подписи: до неё им нельзя доверять
-function readVerified(fields: Fields, options: ResolvedOptions): VerifiedFields {
-  const authDateValue = fields.get("auth_date");
-  if (authDateValue === undefined || !/^[1-9]\d{0,11}$/.test(authDateValue)) {
-    return { ok: false, reason: "malformed" };
-  }
-  const authDate = Number(authDateValue);
-
-  const nowMs = options.now();
-  if (!Number.isFinite(nowMs)) throw new RangeError("@bayramm/tg: now() вернул не число");
-  const nowSeconds = Math.floor(nowMs / 1000);
-  if (nowSeconds - authDate > options.maxAgeSeconds || authDate - nowSeconds > MAX_FUTURE_SKEW_SECONDS) {
-    return { ok: false, reason: "expired" };
-  }
+function readVerified(fields: Fields, freshness: Freshness): VerifiedFields {
+  const date = readAuthDate(fields.get("auth_date"), freshness);
+  if (!date.ok) return date;
+  const { authDate } = date;
 
   const userValue = fields.get("user");
   if (userValue === undefined) return { ok: false, reason: "missing_user" };
