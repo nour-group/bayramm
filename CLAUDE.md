@@ -22,7 +22,8 @@
 apps/web          клиент: Telegram Mini App + сайт (Vite + React) → Cloudflare Workers (static assets)
 apps/api          сервер (Hono) → Cloudflare Workers
 supabase/         миграции и сид Postgres (Supabase)
-packages/         общий код (появится по мере надобности)
+packages/tg       Telegram: проверка initData, deep links startapp, секрет вебхука
+packages/         остальной общий код (появится по мере надобности)
 prototypes/       client · vendor · admin — спецификация, не основа кода
 internal/         приватные документы (клон bayramm-internal, в .gitignore)
 ```
@@ -34,8 +35,8 @@ pnpm install
 pnpm dev:web          # клиент локально
 pnpm dev:api          # API локально (wrangler dev)
 pnpm lint             # biome check
-pnpm typecheck        # tsc по всем apps/*
-pnpm test             # проверки всех трёх прототипов
+pnpm typecheck        # tsc по всем apps/* и packages/*
+pnpm test             # тесты пакетов, приложений и всех трёх прототипов
 ```
 
 Окружения: `local` (по умолчанию), `staging`, `production` — блоки `env` в

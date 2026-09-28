@@ -8,7 +8,7 @@
   "scripts": {
     "lint": "biome check .",
     "format": "biome check --write .",
-    "typecheck": "pnpm -r --filter './apps/*' typecheck",
+    "typecheck": "pnpm -r --filter './apps/*' --filter './packages/*' typecheck",
     "build": "pnpm -r --filter './apps/*' build",
     "test": "pnpm -r test",
     "dev:web": "pnpm --filter @bayramm/web dev",
