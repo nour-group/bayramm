@@ -1,19 +1,11 @@
+import { createSiteWorker } from "@bayramm/edge";
 import { taklifnomaRedirect } from "./legacy";
 
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-
-    const legacy = taklifnomaRedirect(url);
-    if (legacy) return legacy;
-
-    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
-      if (!env.API) return Response.json({ error: "api_unavailable" }, { status: 503 });
-      const target = new URL(url);
-      target.pathname = url.pathname.slice("/api".length) || "/";
-      return env.API.fetch(new Request(target, request));
-    }
-
-    return env.ASSETS.fetch(request);
-  },
-} satisfies ExportedHandler<Env>;
+export default createSiteWorker({
+  // Vite подставляет значение при сборке: в dist всегда false, строгий CSP
+  dev: import.meta.env?.DEV === true,
+  // Mini App в Telegram Web открывается во фрейме web.telegram.org — встраивать разрешено только ему.
+  // Подключая telegram-web-app.js, добавить https://telegram.org в script-src (@bayramm/edge)
+  frameAncestors: ["https://web.telegram.org"],
+  before: taklifnomaRedirect,
+}) satisfies ExportedHandler<Env>;
