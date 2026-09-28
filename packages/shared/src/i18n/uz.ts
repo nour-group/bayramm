@@ -125,7 +125,7 @@ export const uz: Dict = {
   d1: "Maʼlumotlarni qayta ishlash siyosati",
   d2: "Foydalanish shartlari",
   d3: "Ommaviy oferta",
-  meCo: "Rekvizitlar yuridik shaxs roʻyxatdan oʻtgach paydo boʻladi",
+  meCo: "Kompaniya rekvizitlari shu yerda eʼlon qilinadi",
   meCoNote: "Prototip. Haqiqiy maʼlumotlar hozircha yigʻilmaydi.",
   meWipeGo: "Oʻchirish",
   i_city_h: "Hozircha faqat Toshkent",
@@ -165,9 +165,7 @@ export const uz: Dict = {
   ],
   i_d1_h: "Maʼlumotlarni qayta ishlash siyosati",
   i_d1_b: [
-    p(
-      "Toʻliq matn ishga tushirishdan oldin eʼlon qilinadi va baza bilan birga Davlat reyestrida roʻyxatdan oʻtkaziladi.",
-    ),
+    p("Toʻliq matn ishga tushirishdan oldin eʼlon qilinadi."),
     p(
       "Qisqacha: raqam, ism, soʻrovlaringiz va saqlanganlarni yigʻamiz. Hamkorga faqat siz «Ruxsat va yuborish» bosganda beramiz. Raqamni eʼlon qilmaymiz va bazani sotmaymiz.",
     ),

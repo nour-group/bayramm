@@ -100,6 +100,31 @@ const REWRITES = [
     from: "Платное продвижение поднимает только в порядке по умолчанию.",
     to: "Реклама поднимается выше только в порядке по умолчанию.",
   },
+  // Юридический статус оператора в интерфейсе не озвучиваем: тексты утверждает юрист
+  {
+    key: "meCo",
+    lang: "ru",
+    from: "Реквизиты появятся после регистрации юрлица",
+    to: "Реквизиты компании будут опубликованы здесь",
+  },
+  {
+    key: "meCo",
+    lang: "uz",
+    from: "Rekvizitlar yuridik shaxs ro'yxatdan o'tgach paydo bo'ladi",
+    to: "Kompaniya rekvizitlari shu yerda e'lon qilinadi",
+  },
+  {
+    key: "i_d1_b",
+    lang: "ru",
+    from: "Полный текст будет опубликован до запуска и зарегистрирован вместе с базой в Госреестре.",
+    to: "Полный текст будет опубликован до запуска.",
+  },
+  {
+    key: "i_d1_b",
+    lang: "uz",
+    from: "To'liq matn ishga tushirishdan oldin e'lon qilinadi va baza bilan birga Davlat reyestrida ro'yxatdan o'tkaziladi.",
+    to: "To'liq matn ishga tushirishdan oldin e'lon qilinadi.",
+  },
 ];
 
 // Запрещённое в итоговом тексте. Проверяется и тестом i18n.test.ts.
