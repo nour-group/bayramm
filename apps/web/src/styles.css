@@ -1,0 +1,58 @@
+:root {
+  --plum: #2c1b47;
+  --coral-deep: #c74627;
+  --paper: #faf7f4;
+  --ink: #2a2233;
+  --muted: #6f6580;
+  --lilac: #f1eaf9;
+  --sa-t: var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sa-b: var(--tg-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.shell {
+  /* 100vh — запасной вариант для вебвью без dvh (ловушка №4 в CLAUDE.md) */
+  min-height: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: dvh fallback */
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  padding: calc(24px + var(--sa-t)) 16px calc(24px + var(--sa-b));
+  text-align: center;
+}
+
+.brand {
+  color: var(--plum);
+  font-size: 27px;
+  letter-spacing: -0.01em;
+}
+
+.line {
+  font-size: 16px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.badge {
+  justify-self: center;
+  margin-top: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--lilac);
+  color: var(--coral-deep);
+  font-size: 14px;
+  font-weight: 600;
+}

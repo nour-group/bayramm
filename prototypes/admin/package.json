@@ -1,0 +1,11 @@
+{
+  "name": "bayram-admin-prototype",
+  "private": true,
+  "description": "Прототип панели оператора Bayramm. Спецификация, а не основа кода.",
+  "scripts": {
+    "test": "node tests/admin-smoke.js && node tests/mod-smoke.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.0"
+  }
+}

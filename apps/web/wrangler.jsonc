@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "bayramm-web-dev",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Воркер решает первым: старые ссылки taklifnoma и /api/* не должны уходить в SPA
+    "run_worker_first": true
+  },
+  "services": [{ "binding": "API", "service": "bayramm-api-dev" }],
+  "env": {
+    "staging": {
+      "name": "bayramm-web-staging",
+      "routes": [{ "pattern": "staging.bayramm.uz", "custom_domain": true }],
+      "services": [{ "binding": "API", "service": "bayramm-api-staging" }]
+    },
+    "production": {
+      "name": "bayramm-web",
+      "routes": [{ "pattern": "bayramm.uz", "custom_domain": true }],
+      "services": [{ "binding": "API", "service": "bayramm-api" }]
+    }
+  }
+}

@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF7F4">
+<title>Bayram.uz — кабинет вендора</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+
+:root{
+  --paper:#FAF7F4;--white:#fff;--rule:#E4DCD6;--lilac:#F1EAF9;
+  --ink:#2A2233;--muted:#6F6580;--muted-lt:#786E84;
+  --plum:#2C1B47;--plum-mid:#4E3170;--plum-deep:#1B1030;
+  --coral:#EE6C4D;--coral-deep:#C74627;--coral-soft:#FDE7DC;--peach:#F9CDB2;
+  --teal:#2E9E93;--teal-soft:#E2F1EF;--berry:#A82F52;--berry-soft:#FAE7EC;
+  --t0:90ms;--t1:150ms;--t2:270ms;--t3:400ms;
+  --ease:cubic-bezier(.32,.72,0,1);--ease-in:cubic-bezier(.55,.06,.68,.19);--ease-io:cubic-bezier(.65,0,.35,1);
+  --star:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='52'%20height='52'%20viewBox='0%200%2052%2052'%3E%3Cg%20fill='none'%20stroke='%23FFFFFF'%20stroke-opacity='0.55'%20stroke-width='1'%3E%3Crect%20x='10'%20y='10'%20width='32'%20height='32'/%3E%3Crect%20x='10'%20y='10'%20width='32'%20height='32'%20transform='rotate(45%2026%2026)'/%3E%3Ccircle%20cx='26'%20cy='26'%20r='4'/%3E%3C/g%3E%3C/svg%3E");
+  --star-lg:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='84'%20height='84'%20viewBox='0%200%2084%2084'%3E%3Cg%20fill='none'%20stroke='%23FFFFFF'%20stroke-opacity='0.5'%20stroke-width='1.3'%3E%3Crect%20x='18'%20y='18'%20width='47'%20height='47'/%3E%3Crect%20x='18'%20y='18'%20width='47'%20height='47'%20transform='rotate(45%2042%2042)'/%3E%3Ccircle%20cx='42'%20cy='42'%20r='6'/%3E%3C/g%3E%3C/svg%3E");
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overscroll-behavior:none}
+body{font-family:'Manrope',system-ui,sans-serif;color:var(--ink);background:var(--paper);
+  -webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;display:flex;justify-content:center;overflow:hidden}
+.shell{width:100%;max-width:440px;height:100dvh;background:var(--paper);position:relative;overflow:hidden;overflow:clip;display:flex;flex-direction:column}
+h1,h2,h3,.hd{font-family:'Unbounded',sans-serif;font-weight:600;color:var(--plum);letter-spacing:-.03em;line-height:1.1}
+h1{font-size:27px;letter-spacing:-.04em}h2{font-size:23px;letter-spacing:-.035em}h3{font-size:19px}
+p{line-height:1.5}
+button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+input,textarea,select{font-family:inherit;font-size:14px;color:var(--ink);background:var(--white);border:1px solid var(--rule);border-radius:14px;padding:12px;width:100%;outline:none;transition:border-color var(--t1) var(--ease)}
+input:focus,textarea:focus,select:focus{border-color:var(--plum-mid)}
+input::placeholder,textarea::placeholder{color:var(--muted-lt)}
+textarea{resize:none;min-height:88px;line-height:1.5}
+:focus{outline:none}:focus-visible{outline:2px solid var(--coral);outline-offset:3px;border-radius:8px}
+
+/* шапка */
+.bar{flex:0 0 auto;background:var(--paper);border-bottom:1px solid var(--rule);
+  padding:calc(16px + env(safe-area-inset-top)) 18px 12px;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:6}
+.wordmark{font-family:'Unbounded',sans-serif;font-weight:700;font-size:16px;letter-spacing:-.02em;color:var(--plum);display:flex;align-items:baseline;gap:7px}
+.wordmark span{color:var(--coral)}
+.wordmark i{font-family:'Manrope',sans-serif;font-style:normal;font-size:10px;font-weight:700;color:var(--muted-lt)}
+.bar-r{display:flex;align-items:center;gap:4px}
+.gear{max-width:44vw;height:38px;padding:0 11px;border-radius:12px;color:var(--plum);display:flex;align-items:center;gap:6px;
+  font-size:12.5px;font-weight:700;background:var(--lilac);transition:background var(--t1) var(--ease)}
+.gear b{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gear:hover{background:#E6DBF3}
+.gear[aria-pressed="true"]{background:var(--plum);color:#fff}
+.lang{display:inline-flex;align-items:center;gap:9px;padding:10px 2px}
+.lang-o{font-size:11px;font-weight:700;letter-spacing:.14em;line-height:1;color:#B6AEC2;transition:color var(--t2) var(--ease)}
+.lang[aria-checked="false"] .lang-o:first-child,.lang[aria-checked="true"] .lang-o:last-child{color:var(--plum)}
+.lang-t{width:46px;height:25px;border-radius:999px;position:relative;overflow:hidden;transition:background var(--t3) var(--ease);
+  box-shadow:0 1px 1px rgba(27,16,48,.16),0 3px 8px rgba(27,16,48,.14),inset 0 0 0 1px rgba(27,16,48,.13);
+  background:linear-gradient(180deg,#E9E6EE 0 33.3%,#17418C 33.3% 66.6%,#BE2A22 66.6% 100%)}
+.lang[aria-checked="true"] .lang-t{background:linear-gradient(180deg,#0E8AA1 0 31%,#B72232 31% 34%,#E9E6EE 34% 66%,#B72232 66% 69%,#23A143 69% 100%)}
+.lang-t i{position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:linear-gradient(180deg,#FFF,#F4F2F7);
+  box-shadow:0 1px 1px rgba(27,16,48,.24),0 3px 6px rgba(27,16,48,.3),inset 0 0 0 1px rgba(27,16,48,.15);transition:transform 380ms cubic-bezier(.34,1.5,.5,1)}
+.lang[aria-checked="true"] .lang-t i{transform:translateX(21px)}
+
+/* прокрутка и блоки */
+.scroll{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding-bottom:100px}
+.scroll::-webkit-scrollbar{width:0}
+.block{padding:16px 18px 0}
+.eyebrow{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted-lt);margin-bottom:11px;display:flex;align-items:center;gap:9px}
+.eyebrow::after{content:'';flex:1;height:1px;background:var(--rule)}
+.sub{font-size:12.5px;color:var(--muted);margin-top:5px}
+.note{font-size:11px;color:var(--muted-lt);line-height:1.5}
+.card{background:var(--white);border:1px solid var(--rule);border-radius:18px;padding:14px 16px;box-shadow:0 2px 10px rgba(44,27,71,.05)}
+.row{display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid var(--rule);width:100%;text-align:left}
+.row:last-child{border-bottom:0}
+.row-i{width:32px;height:32px;border-radius:11px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;background:var(--lilac);color:var(--plum)}
+.row-b{flex:1;min-width:0}.row-b b{display:block;font-size:13.5px;font-weight:700}.row-b span{display:block;font-size:11px;color:var(--muted);margin-top:2px;line-height:1.4}
+.go{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--plum);flex:0 0 auto}
+.btn{display:inline-flex;text-decoration:none;align-items:center;justify-content:center;gap:7px;font-size:14px;font-weight:700;padding:14px 18px;border-radius:14px;
+  background:var(--coral-deep);color:#fff;transition:background var(--t1) var(--ease),transform var(--t1) var(--ease);width:100%}
+.btn:hover{background:#e2593a}.btn:active{transform:scale(.975)}
+.btn:disabled{background:var(--rule);color:var(--muted-lt);cursor:not-allowed}
+.btn.ghost{background:none;border:1px solid var(--plum);color:var(--plum)}.btn.ghost:hover{background:var(--lilac)}
+.btn.plum{background:var(--plum)}.btn.plum:hover{background:var(--plum-mid)}
+.btn.sm{padding:10px 14px;font-size:12.5px;width:auto;border-radius:11px}
+.btn.lite{background:var(--lilac);color:var(--plum)}.btn.lite:hover{background:#E6DBF3}
+.link{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--plum);border-bottom:1.5px solid var(--plum);padding:0 0 4px}
+.link:hover{color:var(--coral);border-color:var(--coral)}
+.chip{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;padding:5px 10px;border-radius:999px;background:var(--lilac);color:var(--muted);display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.chip.ok{background:var(--teal-soft);color:#1F6E66}.chip.warn{background:var(--coral-soft);color:#9E3F22}.chip.bad{background:var(--berry-soft);color:var(--berry)}
+.chip.ad{background:rgba(255,255,255,.92);color:var(--plum)}
+.pill{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;border:1px solid var(--rule);background:var(--white);color:var(--muted);padding:10px 14px;border-radius:999px;white-space:nowrap;transition:background var(--t1) var(--ease),color var(--t1) var(--ease)}
+.pill[aria-pressed="true"]{background:var(--plum);border-color:var(--plum);color:#fff}
+.pills{display:flex;flex-wrap:wrap;gap:7px}
+.tabs{display:flex;gap:7px;overflow-x:auto;margin:0 -18px;padding:0 18px 2px}
+.tabs::-webkit-scrollbar{height:0}
+.toast{position:absolute;left:18px;right:18px;bottom:92px;background:var(--plum-deep);color:#fff;border-radius:14px;padding:12px 14px;font-size:12.5px;line-height:1.5;
+  opacity:0;transform:translateY(10px) scale(.97);pointer-events:none;transition:opacity var(--t2) var(--ease),transform var(--t2) var(--ease);z-index:10;box-shadow:0 12px 30px rgba(0,0,0,.4)}
+.toast.on{opacity:1;transform:none}.toast b{color:var(--peach)}
+.empty{text-align:center;padding:50px 22px}
+.empty>span{color:var(--rule);display:flex;justify-content:center;margin-bottom:14px}
+.empty h3{font-size:16px;margin-bottom:6px}.empty p{font-size:12.5px;color:var(--muted)}
+
+/* поля */
+.fld{margin-top:18px}
+.fld-l{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted-lt);margin-bottom:10px;display:flex;align-items:center;gap:9px}
+.fld-l::after{content:'';flex:1;height:1px;background:var(--rule)}
+.fld-l em{font-style:normal;color:var(--coral-deep);letter-spacing:0;text-transform:none;font-size:10px}
+.fld-l i{font-style:normal;color:var(--muted-lt);letter-spacing:0;text-transform:none;font-size:10px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.tel-in{display:flex;gap:9px}.tel-in input{flex:1}
+.check{display:flex;align-items:flex-start;gap:12px;padding:12px 0;width:100%;text-align:left}
+.check-b{width:22px;height:22px;border-radius:8px;border:1.5px solid var(--rule);background:var(--white);flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:transparent;margin-top:1px;transition:all var(--t1) var(--ease)}
+.check[aria-checked="true"] .check-b{background:var(--coral);border-color:var(--coral);color:#fff}
+.check span{font-size:13.5px;line-height:1.5}.check small{display:block;font-size:11px;color:var(--muted)}
+.sw{width:42px;height:24px;border-radius:999px;background:var(--rule);flex:0 0 auto;position:relative;transition:background var(--t2) var(--ease)}
+.sw i{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform var(--t2) var(--ease);box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.sw.on{background:var(--teal)}.sw.on i{transform:translateX(18px)}
+.err{font-size:11px;color:var(--berry);margin-top:6px}
+.pk-row{display:grid;grid-template-columns:1fr 1fr 84px 34px;gap:7px;margin-bottom:7px;align-items:center}
+.pk-row input{padding:10px}
+.x{width:34px;height:34px;border-radius:11px;border:1px solid var(--rule);color:var(--muted);display:flex;align-items:center;justify-content:center;position:relative}
+.x::after{content:'';position:absolute;inset:-6px}
+.x:hover{color:var(--berry);border-color:var(--berry)}
+.add{width:100%;display:flex;align-items:center;justify-content:center;gap:7px;font-size:12.5px;font-weight:700;border:1px dashed var(--rule);color:var(--plum);padding:12px;border-radius:14px}
+.add:hover{background:var(--lilac);border-style:solid}
+.steps{display:flex;gap:5px;margin:14px 0 4px}
+.steps i{flex:1;height:4px;border-radius:3px;background:var(--rule)}.steps i.on{background:var(--plum)}.steps i.done{background:var(--teal)}
+
+/* лендинг */
+.hero{margin:12px 18px 0;border-radius:22px;background:var(--plum);color:#fff;padding:26px 20px 22px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:var(--star-lg);background-size:84px 84px;opacity:.35;pointer-events:none}
+.hero>*{position:relative}
+.hero h1{color:#fff;font-size:26px;max-width:16ch}
+.hero p{font-size:13.5px;color:rgba(255,255,255,.82);margin-top:12px;max-width:34ch}
+.hero .btn{margin-top:20px;background:var(--coral-deep)}
+.hero .cnt{margin-top:14px;font-size:11px;color:var(--peach);font-weight:600}
+.how{display:flex;flex-direction:column;gap:0}
+.how>div{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.how>div:last-child{border-bottom:0}
+.how-n{width:28px;height:28px;border-radius:9px;background:var(--plum);color:var(--peach);font-size:12.5px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.how b{display:block;font-size:14px}.how p{font-size:12.5px;color:var(--muted);margin-top:3px}
+.gets{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.gets>div{background:var(--white);border:1px solid var(--rule);border-radius:14px;padding:14px}
+.gets>div span{color:var(--coral);display:block;margin-bottom:8px}
+.gets b{font-size:13.5px;display:block}.gets p{font-size:11px;color:var(--muted);margin-top:3px}
+.faq details{border-bottom:1px solid var(--rule)}
+.faq summary{list-style:none;cursor:pointer;font-size:13.5px;font-weight:700;padding:14px 0;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:'+';color:var(--muted-lt);font-weight:400;font-size:18px}
+.faq details[open] summary::after{content:'–'}
+.faq details p{font-size:12.5px;color:var(--muted);padding:0 0 14px}
+.who{display:flex;flex-wrap:wrap;gap:7px}
+.who span{font-size:12.5px;font-weight:600;border:1px solid var(--rule);padding:6px 12px;border-radius:999px}
+
+/* заявки */
+.rq{background:var(--white);border:1px solid var(--rule);border-radius:18px;padding:14px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(44,27,71,.05)}
+.rq.late{border-color:var(--berry);background:#FFFBFB}
+.rq.closed{opacity:.72}
+.rq-top{display:flex;align-items:flex-start;justify-content:space-between;gap:9px}
+.rq-name{font-family:'Unbounded',sans-serif;font-size:15px;font-weight:600;color:var(--ink);letter-spacing:-.02em}
+.rq-meta{font-size:12.5px;color:var(--muted);margin-top:4px}
+.rq-svc{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--plum);margin-top:9px}
+.rq-facts{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.rq-facts span{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--muted);
+  background:var(--paper);border-radius:999px;padding:6px 11px}
+.rq.late .rq-facts span{background:#FBEFED}
+.rq-call{margin-top:12px;font-size:16px;letter-spacing:.01em;text-decoration:none;min-height:52px}
+.rq-tg{margin-top:7px;text-decoration:none;min-height:44px}
+.rq-ask{margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)}
+.rq-ask>b{display:block;font-size:12.5px;color:var(--muted);margin-bottom:9px}
+.rq-two{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.rq-two .btn{width:100%}
+.btn.ghost.dgr{border-color:var(--rule);color:var(--late)}
+.btn.ghost.dgr:hover{background:#F6E3E1;border-color:var(--late)}
+.rq-closed{margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.rq-com{font-size:13.5px;line-height:1.5;margin-top:10px;padding:10px 12px;background:var(--paper);border-radius:11px;border-left:2px solid var(--peach)}
+/* счётчик 12 часов — это обязательство перед клиентом, а не украшение */
+.tm{margin-top:12px}
+.tm-t{display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:6px}
+.tm-t b{color:var(--muted)}.tm-t i{font-style:normal;color:var(--muted-lt);font-weight:600}
+.tm-bar{height:6px;border-radius:3px;background:var(--lilac);overflow:hidden}
+.tm-bar i{display:block;height:100%;border-radius:3px;background:var(--teal);transition:width 620ms var(--ease)}
+.tm.warn .tm-bar i{background:var(--coral)}.tm.warn .tm-t b{color:var(--coral-deep)}
+.tm.late .tm-bar i{background:var(--berry);width:100%}.tm.late .tm-t b{color:var(--berry)}
+.stat3{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-bottom:14px}
+.stat3>div{background:var(--white);border:1px solid var(--rule);border-radius:14px;padding:12px 10px;text-align:center}
+.stat3 b{font-family:'Unbounded',sans-serif;font-size:22px;font-weight:600;color:var(--plum);display:block;letter-spacing:-.03em}
+.stat3 span{font-size:10px;font-weight:700;color:var(--muted-lt);text-transform:uppercase;letter-spacing:.12em}
+.stat3>div.late b{color:var(--berry)}
+
+/* календарь */
+.dp{background:var(--white);border:1px solid var(--rule);border-radius:18px;padding:14px 12px 12px}
+.dp-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding:0 2px}
+.dp-mo{font-family:'Unbounded',sans-serif;font-size:19px;font-weight:600;color:var(--plum);letter-spacing:-.035em}
+.dp-mo i{font-style:normal;color:var(--muted-lt);margin-left:7px}
+.dp-nav{display:flex;gap:5px}
+.dp-nav button{width:30px;height:30px;border-radius:8px;border:1px solid var(--rule);color:var(--plum);display:flex;align-items:center;justify-content:center;position:relative}
+.dp-nav button::after{content:'';position:absolute;inset:-9px}
+.dp-nav button:disabled{opacity:.35;cursor:not-allowed}
+.dp-g{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.dp-g em{aspect-ratio:1/.62;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:9.5px;font-weight:700;color:var(--muted-lt);text-transform:uppercase;letter-spacing:.18em}
+.dp-g em.we{color:var(--coral)}
+.dp-g b{aspect-ratio:1/1.06;border-radius:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-weight:600;position:relative;overflow:hidden;cursor:pointer;transition:transform var(--t1) var(--ease),background var(--t1) var(--ease)}
+.dp-g b.we{background:#FBF6F1}
+.dp-g b u{text-decoration:none;font-size:13.5px;color:var(--ink);line-height:1}
+.dp-g b s{text-decoration:none;font-size:10px;font-weight:600;color:var(--muted-lt);line-height:1}
+.dp-g b:hover{background:var(--lilac)}
+.dp-g b.busy{background:#FBEEF1}.dp-g b.busy u{color:#8C586B;text-decoration:line-through}
+.dp-g b.past{opacity:.28;cursor:default;pointer-events:none}
+.dp-g b.pad{visibility:hidden;pointer-events:none}
+.dp-g b.rng{background:var(--plum)}.dp-g b.rng u{color:#fff}.dp-g b.rng s{color:var(--peach)}
+.dp-g b.req::after{content:'';position:absolute;bottom:4px;width:5px;height:5px;border-radius:50%;background:var(--coral)}
+.dp-g b.today{box-shadow:inset 0 0 0 1.5px var(--plum-mid)}
+.dp-leg{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)}
+.dp-leg span{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--muted)}
+.dot{width:9px;height:9px;border-radius:3px;flex:0 0 auto}
+.dot.busy{background:#FBEEF1;border:1px solid #E7C3CD}.dot.rng{background:var(--plum)}.dot.req{width:5px;height:5px;border-radius:50%;background:var(--coral)}
+.mode{display:flex;gap:7px;margin-bottom:12px}
+.mode button{flex:1;font-size:12.5px;font-weight:700;padding:11px;border-radius:11px;border:1px solid var(--rule);background:var(--white);color:var(--muted)}
+.mode button[aria-pressed="true"]{background:var(--lilac);border-color:var(--plum-mid);color:var(--plum)}
+.rng-bar{margin-top:12px;background:var(--plum);border-radius:14px;padding:12px;display:flex;align-items:center;gap:9px;color:#fff;font-size:12.5px;font-weight:700}
+.rng-bar span{flex:1}
+.rng-bar .btn{width:auto;padding:9px 12px;font-size:11px;border-radius:9px}
+.price2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.price2 label{font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:6px}
+
+/* карточка */
+.ph-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.ph-grid>div{aspect-ratio:1;border-radius:11px;background:var(--lilac) center/cover no-repeat;position:relative;overflow:hidden}
+.ph-grid>div .x{position:absolute;right:5px;top:5px;width:26px;height:26px;background:rgba(255,255,255,.92);border:0;color:var(--plum)}
+.ph-grid label{aspect-ratio:1;border-radius:11px;border:1px dashed var(--rule);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:var(--plum);font-size:11px;font-weight:700;cursor:pointer;text-align:center;padding:6px}
+.ph-grid label:hover{background:var(--lilac)}
+.ph-grid input{display:none}
+.gate{display:flex;gap:9px;align-items:flex-start;padding:12px;border-radius:14px;font-size:12.5px;line-height:1.5}
+.gate.no{background:var(--berry-soft);color:var(--berry)}.gate.ok{background:var(--teal-soft);color:#1F6E66}
+.gate svg{flex:0 0 auto;margin-top:1px}
+.saveBar{position:absolute;left:0;right:0;bottom:calc(76px + env(safe-area-inset-bottom));padding:10px 18px;z-index:6;pointer-events:none}
+.saveBar .btn{pointer-events:auto;box-shadow:0 8px 26px rgba(27,16,48,.25)}
+/* предпросмотр: карточка как в клиентском приложении */
+.pv{padding:0 0 18px;border-bottom:1px solid var(--rule)}
+.pv-ph{aspect-ratio:3/2;border-radius:18px;background:var(--lilac) center/cover;position:relative;display:flex;align-items:flex-end;padding:12px;gap:7px}
+.pv-body{padding:12px 2px 0}
+.pv-name{font-family:'Unbounded',sans-serif;font-size:15px;font-weight:600;letter-spacing:-.02em}
+.pv-meta{font-size:12.5px;color:var(--muted);margin-top:3px}
+.pv-foot{display:flex;align-items:flex-end;justify-content:space-between;margin-top:13px}
+.pv-price{font-family:'Unbounded',sans-serif;font-size:22px;font-weight:600;color:var(--plum);letter-spacing:-.03em}
+
+/* отзывы */
+.rv{padding:14px 0;border-bottom:1px solid var(--rule)}
+.rv-h{display:flex;justify-content:space-between;align-items:center}
+.rv-h b{font-size:12.5px}.rv-h i{font-style:normal;font-size:11px;color:var(--muted-lt)}
+.rv-s{color:var(--coral-deep);font-size:11px;letter-spacing:1px;margin-top:3px}
+.rv p{font-size:12.5px;color:var(--muted);margin-top:5px}
+.rv-rep{margin-top:10px;padding:10px 12px;background:var(--lilac);border-radius:11px;font-size:12.5px;line-height:1.5}
+.rv-rep b{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--plum);display:block;margin-bottom:3px}
+.rv-form{margin-top:10px;display:flex;flex-direction:column;gap:7px}
+.rv-form .btn{align-self:flex-end}
+
+/* статистика */
+.kpi{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.kpi>div{background:var(--white);border:1px solid var(--rule);border-radius:14px;padding:14px}
+.kpi b{font-family:'Unbounded',sans-serif;font-size:23px;font-weight:600;color:var(--plum);display:block;letter-spacing:-.035em;line-height:1}
+.kpi span{font-size:11px;color:var(--muted);display:block;margin-top:6px}
+.kpi i{font-style:normal;font-size:11px;font-weight:700;color:var(--teal);margin-left:5px}
+.kpi i.dn{color:var(--berry)}
+.chart{display:flex;align-items:flex-end;gap:5px;height:120px;padding-top:10px}
+.chart>div{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;height:100%;justify-content:flex-end}
+.chart i{width:100%;background:var(--lilac);border-radius:4px 4px 0 0;position:relative;min-height:3px}
+.chart i::after{content:'';position:absolute;left:0;right:0;bottom:0;height:var(--r);background:var(--coral);border-radius:4px 4px 0 0}
+.chart s{text-decoration:none;font-size:9.5px;color:var(--muted-lt);font-weight:700}
+.chart-leg{display:flex;gap:14px;margin-top:10px;font-size:10px;font-weight:600;color:var(--muted)}
+.chart-leg span{display:inline-flex;align-items:center;gap:5px}
+.lock{position:relative;overflow:hidden;border-radius:18px}
+.lock::after{content:'';position:absolute;inset:0;background:linear-gradient(to bottom,rgba(250,247,244,.3),var(--paper) 70%);pointer-events:none}
+.lock-cta{margin-top:-60px;position:relative;z-index:1;text-align:center}
+.lock-cta p{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+
+/* тариф */
+.plan{background:var(--white);border:1px solid var(--rule);border-radius:18px;padding:16px;margin-bottom:9px;position:relative}
+.plan.cur{border-color:var(--plum);box-shadow:0 0 0 3px var(--lilac)}
+.plan-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.plan-h b{font-family:'Unbounded',sans-serif;font-size:16px;font-weight:600;color:var(--plum)}
+.plan-p{font-family:'Unbounded',sans-serif;font-size:19px;font-weight:600;color:var(--plum);letter-spacing:-.03em}
+.plan-p i{font-style:normal;font-size:11px;font-weight:600;color:var(--muted-lt);font-family:'Manrope',sans-serif;letter-spacing:0}
+.plan ul{list-style:none;margin-top:10px}
+.plan li{font-size:12.5px;padding:5px 0 5px 18px;position:relative;color:var(--ink)}
+.plan li::before{content:'';position:absolute;left:2px;top:12px;width:4px;height:4px;border-radius:50%;background:var(--teal)}
+.plan .btn{margin-top:12px}
+.freeTag{display:inline-block;background:var(--teal-soft);color:#1F6E66;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;padding:5px 10px;border-radius:999px;margin-bottom:10px}
+.bill{display:flex;justify-content:space-between;gap:9px;padding:11px 0;border-bottom:1px solid var(--rule);font-size:12.5px}
+.bill:last-child{border-bottom:0}
+.bill b{font-family:'Unbounded',sans-serif;font-weight:600;color:var(--plum);white-space:nowrap}
+.bill span{color:var(--muted)}
+.tbl-wrap{overflow-x:auto;overflow-y:hidden;border:1px solid var(--rule);border-radius:14px;background:var(--white)}
+.tbl{border-collapse:collapse;width:100%;min-width:420px;font-size:12.5px}
+.tbl th,.tbl td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--rule)}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl thead th{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted-lt)}
+.tbl tbody tr:nth-child(2n){background:var(--paper)}
+.tbl tfoot td{font-weight:800;color:var(--plum);border-bottom:0;border-top:1px solid var(--rule)}
+.adslot{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--rule);border-radius:14px;margin-bottom:9px;background:var(--white)}
+.adslot-b{flex:1;min-width:0}.adslot-b b{display:block;font-size:13.5px}.adslot-b span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+
+/* проверка */
+.pending{text-align:center;padding:40px 24px}
+.pending>span{color:var(--teal);display:flex;justify-content:center;margin-bottom:14px}
+.pending h2{margin-bottom:8px}.pending p{font-size:12.5px;color:var(--muted);max-width:32ch;margin:0 auto}
+.pending ol{text-align:left;margin:22px auto 0;max-width:300px;list-style:none}
+.pending li{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule);font-size:13.5px}
+.pending li i{width:24px;height:24px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-style:normal;font-size:11px;font-weight:800;background:var(--lilac);color:var(--muted)}
+.pending li.done i{background:var(--teal-soft);color:var(--teal)}
+
+/* навигация */
+.nav{position:absolute;left:14px;right:14px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:7;
+  background:rgba(250,247,244,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border:1px solid var(--rule);border-radius:22px;display:flex;align-items:flex-end;padding:6px 5px 10px;
+  box-shadow:0 8px 26px rgba(27,16,48,.15),0 2px 5px rgba(27,16,48,.05)}
+.nav button{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px;height:44px;justify-content:flex-end;color:var(--muted-lt);position:relative;transition:color var(--t1) var(--ease)}
+.nav .ico{position:relative;width:32px;height:32px;border-radius:11px;display:flex;align-items:center;justify-content:center;transition:background var(--t2) var(--ease),color var(--t2) var(--ease)}
+.nav .lbl{font-size:9.5px;font-weight:700;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;text-align:center}
+.nav .ico{width:30px;height:30px}
+/* шесть подписей в ряд не помещаются на узких экранах — оставляем иконки */
+@media (max-width:359px){.nav .lbl{display:none}.nav button{height:38px}}
+.nav button[aria-pressed="true"]{color:var(--coral)}
+.nav button[aria-pressed="true"] .ico{background:var(--coral);color:#fff}
+.nav .dot{position:absolute;top:-4px;right:-7px;min-width:15px;height:15px;background:var(--coral-deep);color:#fff;border-radius:999px;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;border:1.5px solid var(--paper)}
+.nav .dot.late{background:var(--berry)}
+
+
+/* шторка и диалог */
+.scrim{position:absolute;inset:0;background:rgba(20,11,36,.55);backdrop-filter:blur(2px);opacity:0;pointer-events:none;transition:opacity var(--t3) var(--ease);z-index:8}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--paper);z-index:9;border-radius:22px 22px 0 0;padding:8px 18px calc(20px + env(safe-area-inset-bottom));
+  transform:translateY(102%);transition:transform var(--t3) var(--ease);max-height:92%;overflow-y:auto;overflow-x:hidden}
+.sheet.on{transform:none}
+.sheet::-webkit-scrollbar{width:0}
+.grab{width:38px;height:4px;border-radius:999px;background:var(--rule);margin:0 auto 14px}
+.sheet h3{margin-bottom:6px}
+.sheet .row{padding:12px 0}
+.sheet .btn{margin-top:14px}
+
+/* заставка занятости на весь экран, пока карточка не сохранена */
+@keyframes riseIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.view{animation:riseIn var(--t3) var(--ease) both}
+.rq{animation:riseIn var(--t2) var(--ease) both}
+.rq:nth-child(2){animation-delay:35ms}.rq:nth-child(3){animation-delay:70ms}.rq:nth-child(n+4){animation-delay:105ms}
+button:active{transition-duration:60ms}
+.row:active,.pill:active,.link:active{opacity:.55}
+
+@media (min-width:521px) and (max-width:899px){
+  body{background:#F2EEF6}
+  .shell{border-left:1px solid var(--rule);border-right:1px solid var(--rule);box-shadow:0 0 60px rgba(44,27,71,.1)}
+}
+/* десктоп: та же разметка, навигация слева, поля шире */
+@media (min-width:900px){
+  .shell{max-width:none;display:grid;grid-template-columns:236px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);grid-template-areas:"head head" "rail body"}
+  .bar{grid-area:head;padding:18px 28px 16px}
+  .wordmark{font-size:19px}
+  .scroll{grid-area:body;padding:0 0 40px}
+  .block,.hero{max-width:820px;margin-left:auto;margin-right:auto;padding-left:32px;padding-right:32px}
+  .hero{margin-top:22px;padding:40px 44px 36px}
+  .hero h1{font-size:34px}
+  .gets{grid-template-columns:repeat(3,1fr)}
+  .nav{grid-area:rail;position:static;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:5px;background:none;backdrop-filter:none;border:0;border-right:1px solid var(--rule);border-radius:0;padding:18px 14px;box-shadow:none}
+  .nav button{flex:0 0 auto;height:46px;flex-direction:row;justify-content:flex-start;gap:12px;padding:0 12px;border-radius:14px}
+  .nav button:hover{background:var(--lilac)}
+  .nav button[aria-pressed="true"]{background:var(--lilac)}
+  .nav .lbl{font-size:13.5px}
+  .nav .dot{top:-2px;right:-4px}
+  .gear{display:none}
+  .nav .out{margin-top:auto;color:var(--muted)}
+  .saveBar{left:236px;bottom:24px;padding:0 32px}
+  .saveBar .btn{max-width:756px;margin:0 auto;display:flex}
+  .scrim{left:236px;top:71px}
+  .sheet{left:236px;right:0;max-width:520px;margin:0 auto;border-radius:22px;bottom:24px;max-height:calc(100dvh - 120px)}
+  .toast{left:auto;right:32px;bottom:32px;max-width:420px}
+  .two.desk3{grid-template-columns:1fr 1fr 1fr}
+  .rq-acts{max-width:420px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:1ms!important;animation-duration:1ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}
+}
+
+/* ===== дополнения под ТЗ: §8.2 смысловые цвета, §6 премиум, §5.1–5.2 публичные экраны ===== */
+:root{--done:#2F6B4F;--warn:#B7791F;--warn-ink:#8C5A10;--late:#7A1E1A;--gold:#7C5E28;--gold-soft:#F6EFE0}
+/* §X.4 — запасная высота для браузеров без dvh */
+.shell{height:100vh;height:100dvh}
+.chip.done{background:#E4EFE8;color:var(--done)}
+.chip.warnS{background:#FAF0DC;color:var(--warn-ink)}
+.chip.lateS{background:#F6E3E1;color:var(--late)}
+.chip.gold{background:var(--gold-soft);color:var(--gold)}
+.tm.warn .tm-bar i{background:var(--warn)}.tm.warn .tm-t b{color:var(--warn-ink)}
+.tm.late .tm-bar i{background:var(--late)}.tm.late .tm-t b{color:var(--late)}
+.rq.late{border-color:var(--late);background:#FFFBFA}
+.gate.no{background:#F6E3E1;color:var(--late)}
+.gate.ok{background:#E4EFE8;color:var(--done)}
+.gate.mod{background:#FAF0DC;color:var(--warn-ink)}
+.stat3>div.late b{color:var(--late)}
+.kpi i{color:var(--done)}.kpi i.dn{color:var(--late)}
+
+/* премиум-статус: золото, не коралл — его нельзя спутать с тарифом */
+.lux-h{background:var(--plum);color:#fff;border-radius:18px;padding:18px;position:relative;overflow:hidden}
+.lux-h::before{content:'';position:absolute;inset:0;background-image:var(--star);background-size:52px 52px;opacity:.3}
+.lux-h>*{position:relative}
+.lux-h h3{color:#fff;font-size:17px}
+.lux-h p{font-size:12.5px;color:rgba(255,255,255,.8);margin-top:6px}
+.lux-h .chip{margin-bottom:10px}
+.std{margin-top:12px}
+.std-row{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--rule);width:100%;text-align:left}
+.std-row:last-child{border-bottom:0}
+.std-row i{flex:0 0 auto;margin-top:1px;display:flex}
+.std-row b{display:block;font-size:13.5px;font-weight:700}
+.std-row span{display:block;font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5}
+.meter{margin-top:9px}
+.meter-t{display:flex;justify-content:space-between;font-size:11px;font-weight:700;margin-bottom:5px}
+.meter-b{height:6px;border-radius:3px;background:var(--lilac);overflow:hidden}
+.meter-b i{display:block;height:100%;border-radius:3px;background:var(--done)}
+.meter.warn .meter-b i{background:var(--warn)}.meter.warn .meter-t b{color:var(--warn-ink)}
+.meter.bad .meter-b i{background:var(--late)}.meter.bad .meter-t b{color:var(--late)}
+.steps-v{list-style:none;margin-top:12px}
+.steps-v li{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--rule);font-size:13.5px}
+.steps-v li:last-child{border-bottom:0}
+.steps-v li i{flex:0 0 auto;display:flex;margin-top:1px}
+.steps-v li span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+.steps-v li.off{color:var(--muted-lt)}
+.sep{font-size:12.5px;line-height:1.5;padding:12px;border-radius:14px;background:var(--lilac);color:var(--plum);margin-top:12px}
+.sep b{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;margin-bottom:4px}
+
+/* реклама: всегда с пометкой */
+.tbl-wrap{overflow-x:auto;overflow-y:hidden;border:1px solid var(--rule);border-radius:14px;background:var(--white)}
+.tbl{border-collapse:collapse;width:100%;min-width:420px;font-size:12.5px}
+.tbl th,.tbl td{padding:9px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--rule)}
+.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl thead th{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted-lt)}
+.tbl tbody tr:nth-child(2n){background:var(--paper)}
+.tbl tfoot td{font-weight:800;color:var(--plum);border-bottom:0;border-top:1px solid var(--rule)}
+.adslot{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--rule);border-radius:14px;margin-bottom:9px;background:var(--white);flex-wrap:wrap}
+.adslot-b{flex:1;min-width:140px}.adslot-b b{display:block;font-size:13.5px}.adslot-b span{display:block;font-size:11px;color:var(--muted);margin-top:2px}
+
+/* публичные экраны */
+.hero{margin:12px 18px 0;border-radius:22px;background:var(--plum);color:#fff;padding:26px 20px 22px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;inset:0;background-image:var(--star-lg);background-size:84px 84px;opacity:.35;pointer-events:none}
+.hero>*{position:relative}
+.hero h1{color:#fff;font-size:26px;max-width:16ch}
+.hero p{font-size:13.5px;color:rgba(255,255,255,.82);margin-top:12px;max-width:34ch}
+.hero .btn{margin-top:20px}
+.hero .cnt{margin-top:14px;font-size:11px;color:var(--peach);font-weight:600}
+.how>div{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.how>div:last-child{border-bottom:0}
+.how-n{width:28px;height:28px;border-radius:9px;background:var(--plum);color:var(--peach);font-size:12.5px;font-weight:800;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.how b{display:block;font-size:14px}.how p{font-size:12.5px;color:var(--muted);margin-top:3px}
+.gets{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.gets>div{background:var(--white);border:1px solid var(--rule);border-radius:14px;padding:14px}
+.gets>div span{color:var(--coral-deep);display:block;margin-bottom:8px}
+.gets b{font-size:13.5px;display:block}.gets p{font-size:11px;color:var(--muted);margin-top:3px}
+.faq details{border-bottom:1px solid var(--rule)}
+.faq summary{list-style:none;cursor:pointer;font-size:13.5px;font-weight:700;padding:14px 0;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:'+';color:var(--muted-lt);font-weight:400;font-size:18px}
+.faq details[open] summary::after{content:'–'}
+.faq details p{font-size:12.5px;color:var(--muted);padding:0 0 14px}
+.who{display:flex;flex-wrap:wrap;gap:7px}
+.who span{font-size:12.5px;font-weight:600;border:1px solid var(--rule);padding:6px 12px;border-radius:999px}
+.steps{display:flex;gap:5px;margin:14px 0 4px}
+.steps i{flex:1;height:4px;border-radius:3px;background:var(--rule)}
+.steps i.on{background:var(--plum)}.steps i.done{background:var(--done)}
+.tel-in{display:flex;gap:9px}.tel-in input{flex:1}
+.check{display:flex;align-items:flex-start;gap:12px;padding:12px 0;width:100%;text-align:left}
+.check-b{width:22px;height:22px;border-radius:8px;border:1.5px solid var(--rule);background:var(--white);flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:transparent;margin-top:1px;transition:background var(--t1) var(--ease),border-color var(--t1) var(--ease),color var(--t1) var(--ease)}
+.check[aria-checked="true"] .check-b{background:var(--coral-deep);border-color:var(--coral-deep);color:#fff}
+.check span{font-size:13.5px;line-height:1.5}.check small{display:block;font-size:11px;color:var(--muted)}
+.pending{text-align:center;padding:40px 24px}
+.pending>span{color:var(--warn);display:flex;justify-content:center;margin-bottom:14px}
+.pending h2{margin-bottom:8px}.pending p{font-size:12.5px;color:var(--muted);max-width:32ch;margin:0 auto}
+.auth{max-width:380px;margin:0 auto;padding:40px 0}
+@media (min-width:900px){
+  .hero{margin-top:22px;padding:40px 44px 36px;max-width:820px;margin-left:auto;margin-right:auto;padding-left:44px;padding-right:44px}
+  .hero h1{font-size:34px}
+  .gets{grid-template-columns:repeat(3,1fr)}
+  /* публичные экраны идут во всю ширину: панели на них нет */
+  .shell.pub{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "body"}
+}
+</style>
+</head>
+<body>
+<div class="shell" id="shell">
+  <div class="bar">
+    <div class="wordmark" id="wm"></div>
+    <div class="bar-r" id="barR"><button class="gear" id="gear" aria-label="—"></button></div>
+  </div>
+  <div class="scroll" id="scroll"></div>
+  <div class="saveBar" id="saveBar" style="display:none"></div>
+  <nav class="nav" id="nav"></nav>
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
+  <div class="toast" id="toast"></div>
+</div>
+<script>
+const IC={
+ phone:"<path d=\"M215.94,182.08A48.33,48.33,0,0,1,168,224,136,136,0,0,1,32,88,48.33,48.33,0,0,1,73.92,40.06a8,8,0,0,1,8.3,4.8l21.13,47.2a8,8,0,0,1-.66,7.53L81.32,125a7.93,7.93,0,0,0-.54,7.81c8.27,16.93,25.77,34.22,42.75,42.41a7.92,7.92,0,0,0,7.83-.59l25-21.3a8,8,0,0,1,7.59-.69l47.16,21.13A8,8,0,0,1,215.94,182.08Z\" opacity=\"0.4\"></path><path d=\"M144.27,45.93a8,8,0,0,1,9.8-5.66,86.22,86.22,0,0,1,61.66,61.66,8,8,0,0,1-5.66,9.8A8.23,8.23,0,0,1,208,112a8,8,0,0,1-7.73-5.94,70.35,70.35,0,0,0-50.33-50.33A8,8,0,0,1,144.27,45.93Zm-2.33,41.8c13.79,3.68,22.65,12.54,26.33,26.33A8,8,0,0,0,176,120a8.23,8.23,0,0,0,2.07-.27,8,8,0,0,0,5.66-9.8c-5.12-19.16-18.5-32.54-37.66-37.66a8,8,0,1,0-4.13,15.46Zm81.94,95.35A56.26,56.26,0,0,1,168,232C88.6,232,24,167.4,24,88A56.26,56.26,0,0,1,72.92,32.12a16,16,0,0,1,16.62,9.52l21.12,47.15,0,.12A16,16,0,0,1,109.39,104c-.18.27-.37.52-.57.77L88,129.45c7.49,15.22,23.41,31,38.83,38.51l24.34-20.71a8.12,8.12,0,0,1,.75-.56,16,16,0,0,1,15.17-1.4l.13.06,47.11,21.11A16,16,0,0,1,223.88,183.08Zm-15.88-2s-.07,0-.11,0h0l-47-21.05-24.35,20.71a8.44,8.44,0,0,1-.74.56,16,16,0,0,1-15.75,1.14c-18.73-9.05-37.4-27.58-46.46-46.11a16,16,0,0,1,1-15.7,6.13,6.13,0,0,1,.57-.77L96,95.15l-21-47a.61.61,0,0,1,0-.12A40.2,40.2,0,0,0,40,88,128.14,128.14,0,0,0,168,216,40.21,40.21,0,0,0,208,181.07Z\"></path>",
+ tg:"<path d=\"M223.41,32.09,80,134.87,21,123.3A6.23,6.23,0,0,1,20,111.38L222.63,32.07A1,1,0,0,1,223.41,32.09ZM80,200a8,8,0,0,0,13.76,5.56l30.61-31.76L80,134.87Z\" opacity=\"0.4\"></path><path d=\"M228.88,26.19a9,9,0,0,0-9.16-1.57L17.06,103.93a14.22,14.22,0,0,0,2.43,27.21L72,141.45V200a15.92,15.92,0,0,0,10,14.83,15.91,15.91,0,0,0,17.51-3.73l25.32-26.26L165,220a15.88,15.88,0,0,0,10.51,4,16.3,16.3,0,0,0,5-.79,15.85,15.85,0,0,0,10.67-11.63L231.77,35A9,9,0,0,0,228.88,26.19ZM78.15,126.35l-49.61-9.73,139.2-54.48ZM88,200V152.52l24.79,21.74Zm87.53,8L92.85,135.5l119-85.29Z\"></path>",
+ calendar:"<path d=\"M208,28H188V24a12,12,0,0,0-24,0v4H92V24a12,12,0,0,0-24,0v4H48A20,20,0,0,0,28,48V208a20,20,0,0,0,20,20H208a20,20,0,0,0,20-20V48A20,20,0,0,0,208,28ZM68,52a12,12,0,0,0,24,0h72a12,12,0,0,0,24,0h16V76H52V52ZM52,204V100H204V204Z\"></path>",
+ edit:"<path d=\"M230.15,70.54,185.46,25.86a20,20,0,0,0-28.28,0L33.86,149.17A19.86,19.86,0,0,0,28,163.31V208a20,20,0,0,0,20,20H216a12,12,0,0,0,0-24H125L230.15,98.83A20,20,0,0,0,230.15,70.54ZM91,204H52V165l84-84,39,39ZM192,103,153,64l18.34-18.34,39,39Z\"></path>",
+ star:"<path d=\"M234.29,114.85l-45,38.83L203,211.75a16.4,16.4,0,0,1-24.5,17.82L128,198.49,77.47,229.57A16.4,16.4,0,0,1,53,211.75l13.76-58.07-45-38.83A16.46,16.46,0,0,1,31.08,86l59-4.76,22.76-55.08a16.36,16.36,0,0,1,30.27,0l22.75,55.08,59,4.76a16.46,16.46,0,0,1,9.37,28.86Z\"></path>",
+ seal:"<path d=\"M225.86,102.82c-3.77-3.94-7.67-8-9.14-11.57-1.36-3.27-1.44-8.69-1.52-13.94-.15-9.76-.31-20.82-8-28.51s-18.75-7.85-28.51-8c-5.25-.08-10.67-.16-13.94-1.52-3.56-1.47-7.63-5.37-11.57-9.14C146.28,23.51,138.44,16,128,16s-18.27,7.51-25.18,14.14c-3.94,3.77-8,7.67-11.57,9.14C88,40.64,82.56,40.72,77.31,40.8c-9.76.15-20.82.31-28.51,8S41,67.55,40.8,77.31c-.08,5.25-.16,10.67-1.52,13.94-1.47,3.56-5.37,7.63-9.14,11.57C23.51,109.72,16,117.56,16,128s7.51,18.27,14.14,25.18c3.77,3.94,7.67,8,9.14,11.57,1.36,3.27,1.44,8.69,1.52,13.94.15,9.76.31,20.82,8,28.51s18.75,7.85,28.51,8c5.25.08,10.67.16,13.94,1.52,3.56,1.47,7.63,5.37,11.57,9.14C109.72,232.49,117.56,240,128,240s18.27-7.51,25.18-14.14c3.94-3.77,8-7.67,11.57-9.14,3.27-1.36,8.69-1.44,13.94-1.52,9.76-.15,20.82-.31,28.51-8s7.85-18.75,8-28.51c.08-5.25.16-10.67,1.52-13.94,1.47-3.56,5.37-7.63,9.14-11.57C232.49,146.28,240,138.44,240,128S232.49,109.73,225.86,102.82Zm-52.2,6.84-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z\"></path>",
+ checkFill:"<path d=\"M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm45.66,85.66-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z\"></path>",
+ caret:"<path d=\"M184.49,136.49l-80,80a12,12,0,0,1-17-17L159,128,87.51,56.49a12,12,0,1,1,17-17l80,80A12,12,0,0,1,184.49,136.49Z\"></path>",
+ caretDown:"<path d=\"M216.49,104.49l-80,80a12,12,0,0,1-17,0l-80-80a12,12,0,0,1,17-17L128,159l71.51-71.52a12,12,0,0,1,17,17Z\"></path>",
+ back:"<path d=\"M228,128a12,12,0,0,1-12,12H69l51.52,51.51a12,12,0,0,1-17,17l-72-72a12,12,0,0,1,0-17l72-72a12,12,0,0,1,17,17L69,116H216A12,12,0,0,1,228,128Z\"></path>",
+ plus:"<path d=\"M228,128a12,12,0,0,1-12,12H140v76a12,12,0,0,1-24,0V140H40a12,12,0,0,1,0-24h76V40a12,12,0,0,1,24,0v76h76A12,12,0,0,1,228,128Z\"></path>",
+ minus:"<path d=\"M228,128a12,12,0,0,1-12,12H40a12,12,0,0,1,0-24H216A12,12,0,0,1,228,128Z\"></path>",
+ prev:"<path d=\"M168.49,199.51a12,12,0,0,1-17,17l-80-80a12,12,0,0,1,0-17l80-80a12,12,0,0,1,17,17L97,128Z\"></path>",
+ next:"<path d=\"M184.49,136.49l-80,80a12,12,0,0,1-17-17L159,128,87.51,56.49a12,12,0,1,1,17-17l80,80A12,12,0,0,1,184.49,136.49Z\"></path>",
+ photo:"<path d=\"M208,64H176L160,40H96L80,64H48A16,16,0,0,0,32,80V192a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V80A16,16,0,0,0,208,64ZM128,168a36,36,0,1,1,36-36A36,36,0,0,1,128,168Z\" opacity=\"0.32\"></path><path d=\"M208,56H180.28L166.65,35.56A8,8,0,0,0,160,32H96a8,8,0,0,0-6.65,3.56L75.71,56H48A24,24,0,0,0,24,80V192a24,24,0,0,0,24,24H208a24,24,0,0,0,24-24V80A24,24,0,0,0,208,56Zm8,136a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V80a8,8,0,0,1,8-8H80a8,8,0,0,0,6.66-3.56L100.28,48h55.43l13.63,20.44A8,8,0,0,0,176,72h32a8,8,0,0,1,8,8ZM128,88a44,44,0,1,0,44,44A44.05,44.05,0,0,0,128,88Zm0,72a28,28,0,1,1,28-28A28,28,0,0,1,128,160Z\"></path>",
+ notepad:"<path d=\"M172,124a12,12,0,0,1-12,12H96a12,12,0,0,1,0-24h64A12,12,0,0,1,172,124Zm-12,28H96a12,12,0,0,0,0,24h64a12,12,0,0,0,0-24ZM220,40V200a36,36,0,0,1-36,36H72a36,36,0,0,1-36-36V40A12,12,0,0,1,48,28H72V24a12,12,0,0,1,24,0v4h20V24a12,12,0,0,1,24,0v4h20V24a12,12,0,0,1,24,0v4h24A12,12,0,0,1,220,40ZM196,52H184v4a12,12,0,0,1-24,0V52H140v4a12,12,0,0,1-24,0V52H96v4a12,12,0,0,1-24,0V52H60V200a12,12,0,0,0,12,12H184a12,12,0,0,0,12-12Z\"></path>",
+ user:"<path d=\"M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20ZM79.57,196.57a60,60,0,0,1,96.86,0,83.72,83.72,0,0,1-96.86,0ZM100,120a28,28,0,1,1,28,28A28,28,0,0,1,100,120ZM194,179.94a83.48,83.48,0,0,0-29-23.42,52,52,0,1,0-74,0,83.48,83.48,0,0,0-29,23.42,84,84,0,1,1,131.9,0Z\"></path>",
+ info:"<path d=\"M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z\" opacity=\"0.4\"></path><path d=\"M144,176a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176Zm88-48A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128ZM124,96a12,12,0,1,0-12-12A12,12,0,0,0,124,96Z\"></path>",
+ warnD:"<path d=\"M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z\" opacity=\"0.4\"></path><path d=\"M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z\"></path>",
+ clockD:"<path d=\"M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z\" opacity=\"0.4\"></path><path d=\"M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z\"></path>",
+ lock:"<path d=\"M208,88H48a8,8,0,0,0-8,8V208a8,8,0,0,0,8,8H208a8,8,0,0,0,8-8V96A8,8,0,0,0,208,88Zm-80,72a20,20,0,1,1,20-20A20,20,0,0,1,128,160Z\" opacity=\"0.4\"></path><path d=\"M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Zm-80-96a28,28,0,0,0-8,54.83V184a8,8,0,0,0,16,0V166.83A28,28,0,0,0,128,112Zm0,40a12,12,0,1,1,12-12A12,12,0,0,1,128,152Z\"></path>",
+ chatD:"<path d=\"M224,128A96,96,0,0,1,79.93,211.11h0L42.54,223.58a8,8,0,0,1-10.12-10.12l12.47-37.39h0A96,96,0,1,1,224,128Z\" opacity=\"0.4\"></path><path d=\"M128,24A104,104,0,0,0,36.18,176.88L24.83,210.93a16,16,0,0,0,20.24,20.24l34.05-11.35A104,104,0,1,0,128,24Zm0,192a87.87,87.87,0,0,1-44.06-11.81,8,8,0,0,0-4-1.08,7.85,7.85,0,0,0-2.53.42L40,216,52.47,178.6a8,8,0,0,0-.66-6.54A88,88,0,1,1,128,216Zm12-88a12,12,0,1,1-12-12A12,12,0,0,1,140,128Zm-44,0a12,12,0,1,1-12-12A12,12,0,0,1,96,128Zm88,0a12,12,0,1,1-12-12A12,12,0,0,1,184,128Z\"></path>",
+ sparkle:"<path d=\"M194.82,151.43l-55.09,20.3-20.3,55.09a7.92,7.92,0,0,1-14.86,0l-20.3-55.09-55.09-20.3a7.92,7.92,0,0,1,0-14.86l55.09-20.3,20.3-55.09a7.92,7.92,0,0,1,14.86,0l20.3,55.09,55.09,20.3A7.92,7.92,0,0,1,194.82,151.43Z\" opacity=\"0.4\"></path><path d=\"M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z\"></path>",
+ out:"<path d=\"M224,56V200a16,16,0,0,1-16,16H48V40H208A16,16,0,0,1,224,56Z\" opacity=\"0.42\"></path><path d=\"M120,216a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V40a8,8,0,0,1,8-8h64a8,8,0,0,1,0,16H56V208h56A8,8,0,0,1,120,216Zm109.66-93.66-40-40a8,8,0,0,0-11.32,11.32L204.69,120H112a8,8,0,0,0,0,16h92.69l-26.35,26.34a8,8,0,0,0,11.32,11.32l40-40A8,8,0,0,0,229.66,122.34Z\"></path>",
+ db:"<path d=\"M216,80c0,26.51-39.4,48-88,48S40,106.51,40,80s39.4-48,88-48S216,53.49,216,80Z\" opacity=\"0.42\"></path><path d=\"M128,24C74.17,24,32,48.6,32,80v96c0,31.4,42.17,56,96,56s96-24.6,96-56V80C224,48.6,181.83,24,128,24Zm80,104c0,9.62-7.88,19.43-21.61,26.92C170.93,163.35,150.19,168,128,168s-42.93-4.65-58.39-13.08C55.88,147.43,48,137.62,48,128V111.36c17.06,15,46.23,24.64,80,24.64s62.94-9.68,80-24.64ZM69.61,53.08C85.07,44.65,105.81,40,128,40s42.93,4.65,58.39,13.08C200.12,60.57,208,70.38,208,80s-7.88,19.43-21.61,26.92C170.93,115.35,150.19,120,128,120s-42.93-4.65-58.39-13.08C55.88,99.43,48,89.62,48,80S55.88,60.57,69.61,53.08ZM186.39,202.92C170.93,211.35,150.19,216,128,216s-42.93-4.65-58.39-13.08C55.88,195.43,48,185.62,48,176V159.36c17.06,15,46.23,24.64,80,24.64s62.94-9.68,80-24.64V176C208,185.62,200.12,195.43,186.39,202.92Z\"></path>",
+ bell:"<path d=\"M208,192H48a8,8,0,0,1-6.88-12C47.71,168.6,56,147.81,56,112a72,72,0,0,1,144,0c0,35.82,8.3,56.6,14.9,68A8,8,0,0,1,208,192Z\" opacity=\"0.42\"></path><path d=\"M224,71.1a8,8,0,0,1-10.78-3.42,94.13,94.13,0,0,0-33.46-36.91,8,8,0,1,1,8.54-13.54,111.46,111.46,0,0,1,39.12,43.09A8,8,0,0,1,224,71.1ZM35.71,72a8,8,0,0,0,7.1-4.32A94.13,94.13,0,0,1,76.27,30.77a8,8,0,1,0-8.54-13.54A111.46,111.46,0,0,0,28.61,60.32,8,8,0,0,0,35.71,72Zm186.1,103.94A16,16,0,0,1,208,200H167.2a40,40,0,0,1-78.4,0H48a16,16,0,0,1-13.79-24.06C43.22,160.39,48,138.28,48,112a80,80,0,0,1,160,0C208,138.27,212.78,160.38,221.81,175.94ZM150.62,200H105.38a24,24,0,0,0,45.24,0ZM208,184c-10.64-18.27-16-42.49-16-72a64,64,0,0,0-128,0c0,29.52-5.38,53.74-16,72Z\"></path>",
+ aCmp:"<path d=\"M112,48V208a8,8,0,0,1-8,8H64a8,8,0,0,1-8-8V48a8,8,0,0,1,8-8h40A8,8,0,0,1,112,48Zm80-8H152a8,8,0,0,0-8,8V208a8,8,0,0,0,8,8h40a8,8,0,0,0,8-8V48A8,8,0,0,0,192,40Z\" opacity=\"0.45\"></path><path d=\"M104,32H64A16,16,0,0,0,48,48V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,104,32Zm0,176H64V48h40ZM192,32H152a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,192,32Zm0,176H152V48h40Z\"></path>",
+ quote:"<path d=\"M108,72v72H40a8,8,0,0,1-8-8V72a8,8,0,0,1,8-8h60A8,8,0,0,1,108,72Zm108-8H156a8,8,0,0,0-8,8v64a8,8,0,0,0,8,8h68V72A8,8,0,0,0,216,64Z\" opacity=\"0.4\"></path><path d=\"M100,56H40A16,16,0,0,0,24,72v64a16,16,0,0,0,16,16h60v8a32,32,0,0,1-32,32,8,8,0,0,0,0,16,48.05,48.05,0,0,0,48-48V72A16,16,0,0,0,100,56Zm0,80H40V72h60ZM216,56H156a16,16,0,0,0-16,16v64a16,16,0,0,0,16,16h60v8a32,32,0,0,1-32,32,8,8,0,0,0,0,16,48.05,48.05,0,0,0,48-48V72A16,16,0,0,0,216,56Zm0,80H156V72h60Z\"></path>",
+ wallet:"<path d=\"M216,72H56a16,16,0,0,1,0-32H192a8,8,0,0,0,0-16H56A32,32,0,0,0,24,56V184a32,32,0,0,0,32,32H216a16,16,0,0,0,16-16V88A16,16,0,0,0,216,72Zm0,128H56a16,16,0,0,1-16-16V86.63A31.36,31.36,0,0,0,56,88H216Zm-48-60a12,12,0,1,1,12,12A12,12,0,0,1,168,140Z\"></path>",
+ globe:"<path d=\"M128,24a104,104,0,1,0,104,104A104.11,104.11,0,0,0,128,24Zm88,104a87.61,87.61,0,0,1-3.33,24H174.16a157.44,157.44,0,0,0,0-48h38.51A87.61,87.61,0,0,1,216,128ZM102,168H154a115.11,115.11,0,0,1-26,45A115.27,115.27,0,0,1,102,168Zm-3.9-16a140.84,140.84,0,0,1,0-48h59.88a140.84,140.84,0,0,1,0,48ZM40,128a87.61,87.61,0,0,1,3.33-24H81.84a157.44,157.44,0,0,0,0,48H43.33A87.61,87.61,0,0,1,40,128ZM154,88H102a115.11,115.11,0,0,1,26-45A115.27,115.27,0,0,1,154,88Zm52.33,0H170.71a135.28,135.28,0,0,0-22.3-45.6A88.29,88.29,0,0,1,206.37,88ZM107.59,42.4A135.28,135.28,0,0,0,85.29,88H49.63A88.29,88.29,0,0,1,107.59,42.4ZM49.63,168H85.29a135.28,135.28,0,0,0,22.3,45.6A88.29,88.29,0,0,1,49.63,168Zm98.78,45.6A135.28,135.28,0,0,0,170.71,168h35.66A88.29,88.29,0,0,1,148.41,213.6Z\"></path>",
+ chart:"<path d=\"M224,200h-8V40a8,8,0,0,0-8-8H152a8,8,0,0,0-8,8V80H96a8,8,0,0,0-8,8v40H48a8,8,0,0,0-8,8v64H32a8,8,0,0,0,0,16H224a8,8,0,0,0,0-16ZM160,48h40V200H160ZM104,96h40V200H104ZM56,144H88v56H56Z\"></path>"
+,
+ hall:"<path d=\"M136,32V216H40V85.35a8,8,0,0,1,3.56-6.66l80-53.33A8,8,0,0,1,136,32Z\" opacity=\"0.32\"></path><path d=\"M240,208H224V96a16,16,0,0,0-16-16H144V32a16,16,0,0,0-24.88-13.32L39.12,72A16,16,0,0,0,32,85.34V208H16a8,8,0,0,0,0,16H240a8,8,0,0,0,0-16ZM208,96V208H144V96ZM48,85.34,128,32V208H48ZM112,112v16a8,8,0,0,1-16,0V112a8,8,0,1,1,16,0Zm-32,0v16a8,8,0,0,1-16,0V112a8,8,0,1,1,16,0Zm0,56v16a8,8,0,0,1-16,0V168a8,8,0,0,1,16,0Zm32,0v16a8,8,0,0,1-16,0V168a8,8,0,0,1,16,0Z\"></path>",
+ decor:"<path d=\"M206.35,136.29c-8.87-5.13-24.46-7.38-39.4-8.29,14.94-.91,30.53-3.16,39.4-8.29a32,32,0,1,0-32-55.42c-8.87,5.12-18.61,17.48-26.87,30C154.17,80.87,160,66.25,160,56a32,32,0,0,0-64,0c0,10.25,5.83,24.87,12.52,38.26-8.26-12.49-18-24.85-26.87-30a32,32,0,1,0-32,55.42c8.87,5.13,24.46,7.38,39.4,8.29-14.94.91-30.53,3.16-39.4,8.29a32,32,0,1,0,32,55.42c8.87-5.12,18.61-17.48,26.87-30C101.83,175.13,96,189.75,96,200a32,32,0,0,0,64,0c0-10.25-5.83-24.87-12.52-38.26,8.26,12.49,18,24.85,26.87,30a32,32,0,1,0,32-55.42ZM155.71,144A32,32,0,1,1,160,128,31.74,31.74,0,0,1,155.71,144Z\" opacity=\"0.32\"></path><path d=\"M210.35,129.36c-.81-.47-1.7-.92-2.62-1.36.92-.44,1.81-.89,2.62-1.36a40,40,0,1,0-40-69.28c-.81.47-1.65,1-2.48,1.59.08-1,.13-2,.13-3a40,40,0,0,0-80,0c0,.94,0,1.94.13,3-.83-.57-1.67-1.12-2.48-1.59a40,40,0,1,0-40,69.28c.81.47,1.7.92,2.62,1.36-.92.44-1.81.89-2.62,1.36a40,40,0,1,0,40,69.28c.81-.47,1.65-1,2.48-1.59-.08,1-.13,2-.13,2.95a40,40,0,0,0,80,0c0-.94-.05-1.94-.13-2.95.83.57,1.67,1.12,2.48,1.59A39.79,39.79,0,0,0,190.29,204a40.43,40.43,0,0,0,10.42-1.38,40,40,0,0,0,9.64-73.28ZM104,128a24,24,0,1,1,24,24A24,24,0,0,1,104,128Z\"></path>",
+ food:"<path d=\"M208,40V168H152S152,64,208,40Z\" opacity=\"0.32\"></path><path d=\"M72,88V40a8,8,0,0,1,16,0V88a8,8,0,0,1-16,0ZM216,40V224a8,8,0,0,1-16,0V176H152a8,8,0,0,1-8-8,268.75,268.75,0,0,1,7.22-56.88c9.78-40.49,28.32-67.63,53.63-78.47A8,8,0,0,1,216,40ZM200,53.9c-32.17,24.57-38.47,84.42-39.7,106.1H200ZM119.89,38.69a8,8,0,1,0-15.78,2.63L112,88.63a32,32,0,0,1-64,0l7.88-47.31a8,8,0,1,0-15.78-2.63l-8,48A8.17,8.17,0,0,0,32,88a48.07,48.07,0,0,0,40,47.32V224a8,8,0,0,0,16,0V135.32A48.07,48.07,0,0,0,128,88a8.17,8.17,0,0,0-.11-1.31Z\"></path>",
+ music:"<path d=\"M208,164a28,28,0,1,1-28-28A28,28,0,0,1,208,164ZM52,168a28,28,0,1,0,28,28A28,28,0,0,0,52,168Z\" opacity=\"0.32\"></path><path d=\"M212.92,17.69a8,8,0,0,0-6.86-1.45l-128,32A8,8,0,0,0,72,56V166.08A36,36,0,1,0,88,196V110.25l112-28v51.83A36,36,0,1,0,216,164V24A8,8,0,0,0,212.92,17.69ZM52,216a20,20,0,1,1,20-20A20,20,0,0,1,52,216ZM88,93.75V62.25l112-28v31.5ZM180,184a20,20,0,1,1,20-20A20,20,0,0,1,180,184Z\"></path>",
+ car:"<path d=\"M88,176a24,24,0,1,1-24-24A24,24,0,0,1,88,176Zm104-24a24,24,0,1,0,24,24A24,24,0,0,0,192,152ZM162.34,74.34A8,8,0,0,0,156.69,72H44.28a8,8,0,0,0-6.66,3.56L8,120H208Z\" opacity=\"0.32\"></path><path d=\"M240,112H211.31L168,68.69A15.86,15.86,0,0,0,156.69,64H44.28A16,16,0,0,0,31,71.12L1.34,115.56A8.07,8.07,0,0,0,0,120v48a16,16,0,0,0,16,16H33a32,32,0,0,0,62,0h66a32,32,0,0,0,62,0h17a16,16,0,0,0,16-16V128A16,16,0,0,0,240,112ZM44.28,80H156.69l32,32H23ZM64,192a16,16,0,1,1,16-16A16,16,0,0,1,64,192Zm128,0a16,16,0,1,1,16-16A16,16,0,0,1,192,192Zm48-24H223a32,32,0,0,0-62,0H95a32,32,0,0,0-62,0H16V128H240Z\"></path>",
+ kids:"<path d=\"M137.89,199.13h0L152,232H104l14.09-32.87h0C78.59,192.18,48,144.83,48,104a80,80,0,0,1,160,0C208,144.83,177.41,192.18,137.89,199.13Z\" opacity=\"0.32\"></path><path d=\"M128,16a88.1,88.1,0,0,0-88,88c0,23.43,9.4,49.42,25.13,69.5,12.08,15.41,26.5,26,41.91,31.09L96.65,228.85A8,8,0,0,0,104,240h48a8,8,0,0,0,7.35-11.15L149,204.59c15.4-5.07,29.83-15.68,41.91-31.09C206.6,153.42,216,127.43,216,104A88.1,88.1,0,0,0,128,16Zm11.87,208H116.13l6.94-16.19c1.64.12,3.28.19,4.93.19s3.29-.07,4.93-.19Zm38.4-60.37C163.94,181.93,146.09,192,128,192s-35.94-10.07-50.27-28.37C64.12,146.27,56,124,56,104a72,72,0,0,1,144,0C200,124,191.88,146.27,178.27,163.63Z\"></path>",
+ cake:"<path d=\"M104,48c0-24,24-40,24-40s24,16,24,40a24,24,0,0,1-48,0ZM208,96H48a16,16,0,0,0-16,16v23.33c0,17.44,13.67,32.18,31.1,32.66A32,32,0,0,0,96,136a32,32,0,0,0,64,0,32,32,0,0,0,32.9,32c17.43-.48,31.1-15.22,31.1-32.66V112A16,16,0,0,0,208,96Z\" opacity=\"0.32\"></path><path d=\"M232,112a24,24,0,0,0-24-24H136V79a32.06,32.06,0,0,0,24-31c0-28-26.44-45.91-27.56-46.66a8,8,0,0,0-8.88,0C122.44,2.09,96,20,96,48a32.06,32.06,0,0,0,24,31v9H48a24,24,0,0,0-24,24v23.33a40.84,40.84,0,0,0,8,24.24V200a24,24,0,0,0,24,24H200a24,24,0,0,0,24-24V159.57a40.84,40.84,0,0,0,8-24.24ZM112,48c0-13.57,10-24.46,16-29.79,6,5.33,16,16.22,16,29.79a16,16,0,0,1-32,0ZM40,112a8,8,0,0,1,8-8H208a8,8,0,0,1,8,8v23.33c0,13.25-10.46,24.31-23.32,24.66A24,24,0,0,1,168,136a8,8,0,0,0-16,0,24,24,0,0,1-48,0,8,8,0,0,0-16,0,24,24,0,0,1-24.68,24C50.46,159.64,40,148.58,40,135.33Zm160,96H56a8,8,0,0,1-8-8V172.56A38.77,38.77,0,0,0,62.88,176a39.69,39.69,0,0,0,29-11.31A40.36,40.36,0,0,0,96,160a40,40,0,0,0,64,0,40.36,40.36,0,0,0,4.13,4.67A39.67,39.67,0,0,0,192,176c.38,0,.76,0,1.14,0A38.77,38.77,0,0,0,208,172.56V200A8,8,0,0,1,200,208Z\"></path>"
+};
+const ico=(k,s)=>'<svg width="'+(s||16)+'" height="'+(s||16)+'" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true">'+IC[k]+'</svg>';
+const T={
+ru:{forVendors:'кабинет',
+ /* публичные экраны, ТЗ 5.1–5.2 */
+ l_h1:'Получайте заявки на свадьбы и торжества в Ташкенте',l_p:'Клиенты ищут зал, фотографа, торт — и пишут напрямую вам. Комиссии нет, деньги мимо нас.',
+ l_cta:'Разместить услугу бесплатно',l_in:'У меня уже есть кабинет',l_cnt:'81 вендор в 8 категориях',
+ l_how:'Как это работает',l_h1t:'Заполните карточку',l_h1p:'Фото, цена «от», пакеты. Десять минут.',
+ l_h2t:'Получайте заявки',l_h2p:'С датой, числом гостей и бюджетом — прямо в Telegram.',
+ l_h3t:'Договаривайтесь напрямую',l_h3p:'Телефон клиента виден сразу. Ни комиссий, ни платы за заявку.',
+ l_get:'Что вы получаете',l_g1:'Заявки с деталями',l_g1p:'Дата, гости, бюджет — до первого звонка',l_g2:'Календарь занятости',l_g2p:'Занятые дни клиенты видят сразу',
+ l_g3:'Съёмка площадки',l_g3p:'Профессиональные фото за наш счёт',l_g4:'Telegram-аудитория',l_g4p:'Клиенты приходят из мини-приложения',
+ l_price:'Сколько стоит',l_pricep:'Полгода после запуска площадки — бесплатно. Базовый тариф бесплатен навсегда: карточка, заявки, календарь, значок «Проверено».',
+ l_who:'Кто уже с нами',l_faq:'Вопросы',
+ l_q1:'Сколько вы берёте с заказа?',l_a1:'Нисколько. Мы не проводим платежи и не берём комиссию. Вы договариваетесь с клиентом напрямую.',
+ l_q2:'Что значит «Проверено»?',l_a2:'Мы сверяем СТИР с открытым реестром, звоним вам и подписываем договор. Сканы документов не храним.',
+ l_q3:'Можно ли купить место в выдаче?',l_a3:'Только в сортировке «по умолчанию» и с пометкой «Реклама». В сортировке по цене и по рейтингу продвижения нет ни за какие деньги.',
+ l_q4:'Что будет, если не ответить на заявку?',l_a4:'Мы обещаем клиенту показать похожих вендоров, если вы молчите 12 часов. Просроченные заявки видны и вам, и нам.',
+ l_q5:'Премиум можно купить?',l_a5:'Нет. Премиум присваиваем вручную после личного осмотра. Верхний тариф называется «Расширенный» и статуса не даёт.',
+ a_title:'Вход',a_sub:'По телефону, который указан в договоре. Кабинет открывается только для вашей компании.',
+ a_go:'Войти',a_reg:'Ещё нет кабинета — зарегистрироваться',
+ r_title:'Регистрация',r_s1:'Кто вы',r_s2:'Услуга',r_s3:'Фотографии и проверка',
+ r_name:'Название бизнеса',r_cat:'Категория',r_catNote:'основная — остальные услуги добавите отдельными карточками',
+ r_dist:'Район',r_tel:'Телефон',r_code:'Код из SMS',r_send:'Получить код',r_sent:'Отправлен',r_person:'ФИО контактного лица',r_personPh:'Фамилия Имя',
+ r_descRu:'Описание по-русски',r_descUz:'Описание по-узбекски',r_translate:'оставьте пустым — переведём при проверке',
+ r_price:'Цена «от», млн сум',r_priceNote:'без цены карточка не публикуется',
+ r_pk:'Пакеты',r_pkNote:'от одного до четырёх',r_pkName:'Название',r_pkPrice:'Цена',r_pkAdd:'Добавить пакет',r_pkHall:'Для залов нужны минимум два: будни и выходные — из них считается цена дня.',
+ r_cap:'Вместимость, гостей',r_wd:'Будни',r_we:'Выходные',r_feats:'Удобства',r_occ:'Поводы',
+ r_photos:'Фотографии',r_photosNote:'от 3 до 10',r_photoAdd:'Добавить фото',
+ r_photoRule:'Снимаем площадку и работы. Лица людей не публикуем: если на фото гости, нужно их письменное согласие — ответственность вендора, отдельный пункт договора.',
+ r_stir:'СТИР (ИНН)',r_stirNote:'сверяем с открытым реестром, скан не храним',r_addr:'Адрес площадки',
+ r_consent:'Принимаю условия оферты',r_consentS:'Данные обрабатываются по ЗРУ-547 в редакции ЗРУ-1125. Законные получатели: хостинг и SMS-провайдер.',
+ r_next:'Дальше',r_back:'Назад',r_finish:'Отправить на проверку',
+ e_req:'Заполните это поле',e_tel:'Номер в формате +998 XX XXX XX XX',e_code:'Введите 4 цифры',e_price:'Укажите цену — без неё карточка не публикуется',
+ e_photos:n=>'Нужно ещё '+n+' фото',e_consent:'Без согласия отправить нельзя',e_pk:'Заполните название и цену хотя бы одного пакета',e_pkHall:'Для зала нужны два пакета: будни и выходные',
+ p_h:'Карточка на проверке',p_p:'Обычно два рабочих дня. Напишем в Telegram, когда закончим.',
+ p_1:'Сверка СТИР с открытым реестром',p_2:'Звонок вам',p_3:'Подписание договора',p_4:'Значок «Проверено» на карточке',p_go:'Перейти в кабинет',p_sent:'Карточка отправлена на проверку.',
+ /* кабинет */
+ n_inbox:'Заявки',n_cal:'Календарь',n_card:'Услуги',n_rev:'Отзывы',n_stats:'Статистика',n_plan:'Тариф',n_lux:'Премиум',n_co:'Моя компания',n_set:'Настройки',
+ i_title:'Заявки',i_new:'ждут ответа',i_late:'просрочено',
+ i_now:'Активные',i_done:'Завершённые',
+ i_sum1:n=>n+' ждут ответа',i_sum0:'Все заявки разобраны',
+ i_untilAt:tm=>'ответить до '+tm,i_lateAt:tm=>'нужно было ответить до '+tm,
+ i_occ:'повод',i_what:'Что получилось?',i_dealBtn:'Договорились',i_noBtn:'Не подошло',
+ i_st_ans2:'вы связались',i_callFirst:'Сначала позвоните — телефон клиента ниже.',
+ i_reopen:'Вернуть в активные',i_reopened:'Заявка снова в активных.',
+ i_dealDone:'Отмечено: договорились. Клиент видит это у себя.',
+ 
+ i_empty:'Заявок пока нет',i_emptyP:'Когда клиент отправит запрос, он появится здесь и придёт в Telegram.',
+ i_guests:n=>n+' гостей',i_left:'осталось',i_lateBy:'просрочено на',
+ i_hours:h=>h+' ч',i_min:m=>m+' мин',
+ i_tg:'Написать',i_st_new:'ждём ответа',i_st_deal:'договорились',i_st_dec:'отказ',
+ i_decTitle:'Почему отказываете?',i_decSub:'Клиент увидит причину — так он быстрее найдёт другого.',
+ i_dec1:'Занято на эту дату',i_dec2:'Не наш формат',i_dec3:'Не сходимся по цене',
+ i_promise:'Мы обещали клиенту: если вы не ответите за 12 часов, покажем ему похожих вендоров.',
+ i_seen:'Клиент видит статус у себя в «Моём событии».',i_only:'Клиент дал согласие ровно на это: имя, телефон, дата, гости, бюджет, комментарий.',
+ c_title:'Календарь',c_note:'Календарь ведёте вы. Площадка за него не отвечает: клиенты видят занятые дни, но дату подтверждают звонком.',
+ c_tap:'По одному дню',c_range:'Диапазон',c_rngHint:'Выберите первый день',c_rngEnd:'Теперь последний день',
+ c_busyRange:'Отметить занятым',c_freeRange:'Освободить',c_cancel:'Отмена',
+ c_busy:'занято',c_req:'есть заявка',c_prices:'Цена дня',c_priceNote:'Клиент видит эту цену в календаре. Для зала считается из пакетов: будни и выходные.',
+ c_sum:(b,r)=>b+' занято · '+r+' с заявками',c_tz:'Время ташкентское.',
+ k_list:'Ваши услуги',k_listS:'Одна услуга — одна категория: клиент ищет по категориям. Зал и съёмка живут отдельными карточками.',
+ k_add:'Добавить услугу',k_addH:'Какая это услуга?',k_addS:'Категорию потом не поменять: к ней привязаны заявки, отзывы и тариф.',k_addGo:'Создать карточку',
+ k_taken:'уже есть',k_allTaken:'Карточки заведены во всех восьми категориях.',
+ k_backList:'К услугам',k_created:n=>'Карточка «'+n+'» создана. Добавьте цену и фото, чтобы её увидели клиенты.',
+ k_del:'Удалить услугу',k_delH:'Удалить карточку?',k_delS:'Карточка исчезнет из поиска. Заявки и отзывы по ней останутся в архиве, но отвечать будет негде.',
+ k_delGo:'Удалить',k_deleted:n=>'Карточка «'+n+'» удалена.',
+ k_none:'Услуг пока нет',k_noneP:'Добавьте первую карточку — она появится в поиске у клиентов.',
+ k_pub:'видна клиентам',k_unpub:'не видна',k_preview:'Как видит клиент',k_edit:'Редактировать',k_save:'Сохранить',
+ k_saved:'Сохранено.',k_savedDraft:'Сохранено. Карточка станет видна, когда будут цена и три фото.',
+ k_gateOk:'Цена и фото на месте — карточка видна клиентам.',k_gateNo:'Карточка не публикуется, пока нет:',k_gPrice:'цены «от»',k_gPhotos:n=>n+' фото',
+ k_status:'Опубликована',k_statusNo:'Не опубликована',k_from:'от',k_mln:'млн сум',k_up:'до',k_verified:'Проверено',k_req:'Заявка',k_photoLimit:'Не больше 10 фото',
+ k_mod:'Изменения на проверке',k_modS:f=>'Цена, фото и описание проверяются модератором: '+f+'. Клиент пока видит прежнюю версию. Остальные правки применились сразу.',
+ k_modSent:'Изменения ушли модератору. Клиент видит прежнюю версию карточки.',
+ k_fPrice:'цена',k_fPhotos:'фото',k_fDesc:'описание',
+ k_carNote:'Название категории меняется от повода: на свадьбе «Кортеж», на корпоративе «Трансфер». Клиент видит подходящее.',
+ v_title:'Отзывы',v_avg:'средняя оценка',v_count:n=>n+' отзывов',v_answered:'с ответом',
+ v_replyPh:'Спасибо за отзыв…',v_send:'Ответить',v_yours:'Ваш ответ',
+ v_noDel:'Отзывы удалять нельзя — можно ответить или пожаловаться модератору.',
+ v_sent:'Ответ опубликован под отзывом.',v_flag:'Пожаловаться',v_flagH:'Жалоба модератору',v_flagS:'Опишите, что не так. Отзыв останется на месте, пока модератор не решит.',
+ v_flagGo:'Отправить жалобу',v_flagged:'Жалоба отправлена модератору.',v_flagOn:'Жалоба на рассмотрении',
+ v_none:'Отзывов по этой услуге пока нет.',v_locked:'Ответы на отзывы входят в тариф «Активный».',
+ s_title:'Статистика',s_period:'последние 14 дней',s_views:'показы карточки',s_opens:'открытия профиля',s_reqs:'заявки',s_resp:'среднее время ответа',s_conv:'показ → заявка',
+ s_tabOver:'Обзор',s_tabRep:'Отчёт',s_p7:'7 дней',s_p14:'14 дней',
+ s_repH:'Отчёт по услуге',s_repS:'Считается по тем же данным, что и обзор. Клиентских имён и телефонов в отчёте нет — выгрузка базы недоступна.',
+ s_tDay:'День',s_tViews:'Показы',s_tOpens:'Открытия',s_tReqs:'Заявки',s_tConv:'Конверсия',s_tTotal:'Итого',
+ s_reqH:'Чем закончились заявки',s_reqNone:'За период заявок не было.',
+ s_respH:'Как быстро отвечали',s_r1:'быстрее 3 часов',s_r2:'от 3 до 6 часов',s_r3:'от 6 до 12 часов',s_r4:'просрочено',
+ s_respLux:'Премиум требует в среднем быстрее 3 часов за два месяца.',
+ s_csv:'Скачать отчёт CSV',s_csvNote:'В файле только суммы по дням: дата, показы, открытия, заявки. Ничего о клиентах.',
+ s_csvDone:'Файл собран — сохраните его из браузера.',s_csvNo:'Скачивание недоступно в этом браузере — скопируйте таблицу выше.',
+ s_chart:'Показы и заявки по дням',s_lViews:'показы',s_lReqs:'заявки',s_none:'Данных пока нет — карточка ещё не показывалась.',
+ t_title:'Тариф',t_cur:'Ваш тариф',t_next:'следующее списание',t_free:'Бесплатно до',
+ t_freeNote:'Первые шесть месяцев после запуска площадки все тарифы бесплатны. Базовый бесплатен навсегда — это не акция: пустая категория убивает продукт.',
+ t_base:'Базовый',t_active:'Активный',t_ext:'Расширенный',t_mo:'сум / мес',t_forever:'бесплатно навсегда',
+ t_year:'Год вперёд — двенадцать месяцев по цене десяти, скидка 17%.',
+ t_b1:'Карточка с фото и ценой',t_b2:'Телефон виден клиентам',t_b3:'Заявки без ограничений',t_b4:'Календарь и значок «Проверено»',
+ t_a1:'Всё из Базового',t_a2:'До 10 фото и видео',t_a3:'Статистика показов и заявок',t_a4:'Выше в сортировке «по умолчанию»',t_a5:'Ответы на отзывы',
+ t_e1:'Всё из Активного',t_e2:'Верх выдачи «по умолчанию»',t_e3:'Одно рекламное место в месяц',t_e4:'Проверка вне очереди',
+ t_notLux:'«Расширенный» не даёт премиум-статус. Статус присваивается вручную после личного осмотра и не продаётся.',
+ t_sortNote:'Сортировка по цене и по рейтингу от тарифа не зависит — там места нет ни за какие деньги.',
+ t_choose:'Перейти',t_current:'Сейчас у вас',t_changed:p=>'Тариф изменён на «'+p+'». До запуска площадки это бесплатно.',
+ t_auto:'Автопродление',t_autoS:'Списание раз в месяц. Отключить можно в любой момент.',
+ t_hist:'Платежи',t_histEmpty:'Платежей не было — до запуска площадки всё бесплатно.',t_total:'Итого в месяц',t_perCard:'Тариф у каждой услуги свой: цена зависит от категории.',
+ t_ads:'Реклама',t_adsNote:'Каждый блок помечен словом «Реклама», не больше одного на экран. Место в сортировке по цене и рейтингу не продаётся.',
+ t_ad_banner:'Баннер на главной',t_ad_after:'Блок после отправки заявки',t_ad_tg:'Пост в Telegram-канале',
+ t_slots:n=>n+' слотов',t_week:'сум / неделя',t_adFree:'для «Расширенного» бесплатно первые полгода',t_adBook:'Занять слот',t_adBooked:'Слот занят. Блок выйдет с пометкой «Реклама».',
+ x_title:'Премиум-статус',x_not:'Статус не куплен и не может быть куплен',
+ x_sub:'Присваиваем вручную после личного осмотра. Ни подписка, ни реклама его не дают.',
+ x_has:'Статус присвоен',x_hasS:d=>'Следующий осмотр: '+d,
+ 
+ x_common:'Общие требования',x_commonS:'Обязательны все пять.',
+ x_c1:'Личный осмотр',x_c1s:'Наш человек был на площадке или видел работу вживую, не по фото',
+ x_c2:'Профессиональные фото',x_c2s:'Съёмка на камеру, минимум 8 кадров, без чужих водяных знаков',
+ x_c3:'Три подтверждённые работы',x_c3s:'Назовите три события за год — мы позвоним заказчикам',
+ x_c4:'Дисциплина ответа',x_c4s:'Среднее время ответа быстрее 3 часов по статистике кабинета за 2 месяца',
+ x_c5:'Полные документы',x_c5s:'Юрлицо или ИП, подписанный договор, СТИР сверен',
+ x_ind:'Отраслевые требования',x_indS:'Нужно не меньше трёх из четырёх.',
+ x_refs:'Контакты трёх заказчиков',x_refsPh:'Имя и телефон',
+ x_send:'Отправить заявку',x_sent:'Заявка отправлена. Свяжемся, чтобы назначить осмотр.',
+ x_needCommon:'Отметьте все пять общих требований — без них заявку не примем.',
+ x_needInd:'Нужно не меньше трёх отраслевых требований.',
+ x_needRefs:'Нужны контакты трёх заказчиков.',
+ x_state:'Статус заявки',x_s1:'Заявка подана',x_s2:'Назначен осмотр',x_s3:'На решении',x_s4:'Статус присвоен',
+ x_wait:'Заявка на рассмотрении',x_waitS:'Осмотр назначаем в течение недели.',
+ x_again:d=>'Отказ. Подать повторно можно после '+d+'.',
+ x_panel:'Показатели',x_panelS:'Проверка не разовая: статус снимается, если показатели уходят за границу. Предупредим заранее.',
+ x_mResp:'Среднее время ответа',x_mRespL:'снимаем, если выше 6 ч два месяца подряд',
+ x_mRate:'Рейтинг',x_mRateL:'снимаем, если ниже 4,5',
+ x_mComp:'Жалобы за квартал',x_mCompL:'снимаем при двух и более',
+ x_warn:'Показатель близко к границе. Поправьте, пока статус не сняли.',
+ x_lockedS:'Сначала нужен значок «Проверено»: сверка СТИР, звонок, договор.',
+ co_title:'Моя компания',co_sub:'Эти данные относятся ко всей компании. Названия и цены услуг — в разделе «Услуги».',
+ co_verified:'Проверено',co_legal:'Реквизиты',co_name:'Название компании',co_form:'Форма',
+ co_form_ooo:'ООО',co_form_ip:'ИП',co_form_self:'Самозанятый',
+ co_stir:'СТИР (ИНН)',co_addr:'Юридический адрес',co_dist:'Район',
+ co_locked:'Меняется только через поддержку: по этим полям вас проверяли.',
+ co_contacts:'Контакты',co_person:'Контактное лицо',co_role:'Должность',
+ co_tel:'Телефон для заявок',co_telNote:'его видят клиенты',co_telLocked:'Номер входа меняется через поддержку — к нему привязан ваш Telegram.',
+ co_tel2:'Запасной телефон',co_tg:'Telegram для уведомлений',
+ co_edit:'Изменить',co_save:'Сохранить',co_saved:'Данные компании сохранены.',
+ co_check:'Проверка',co_c1:'СТИР сверен с открытым реестром',co_c2:'Звонок подтверждён',co_c3:'Договор подписан',co_c4:'Значок «Проверено» в поиске',
+ co_vdate:d=>'проверено '+d,co_since:d=>'на площадке с '+d,
+ co_contract:'Договор',co_cNo:'Номер',co_cDate:'Дата',
+ co_svc:'Услуги',co_svcS:(a,b)=>a+' из '+b+' видны клиентам',co_svcGo:'Открыть услуги',
+ m_help:'Написать поддержке',m_helpS:'Отвечаем в будни с 9 до 18',
+ m_data:'Какие данные мы храним',m_dataS:'Название, район, СТИР, телефон, фото без лиц',
+ m_out:'Выйти',m_outS:'Понадобится код из SMS, чтобы войти снова',
+ d_data:'<p>О вас мы храним: название, категорию, район, фотографии без лиц, телефон, ФИО контактного лица, СТИР, адрес и отметку о проверке.</p><p>Не храним: паспорт и сканы документов, ПИНФЛ, дату рождения, фото лица, точную геолокацию.</p><p>О клиенте вам показываем ровно то, на что он дал согласие: имя, телефон, дату, гостей, бюджет, комментарий. Выгрузка базы клиентов недоступна.</p><p>Законные получатели данных: хостинг и SMS-провайдер. База внесена в Госреестр до начала обработки.</p>',
+ set_lang:'Язык кабинета',set_langS:'Русский или узбекский. Клиенты видят карточку на своём.',close:'Закрыть',out_ok:'Вы вышли из кабинета.',
+ st_changed:'Статус обновлён — клиент видит его у себя.',rq_declined:'Заявка закрыта. Клиент увидит причину.',
+ cal_saved:'Календарь обновлён — клиенты видят изменения сразу.',
+ plural:(n,a,b,c)=>{const m=n%100,k=n%10;if(m>10&&m<20)return c;if(k===1)return a;if(k>=2&&k<=4)return b;return c}},
+uz:{forVendors:'kabinet',
+ l_h1:'Toshkentda to‘y va tantanalarga so‘rovlar oling',l_p:'Mijozlar zal, fotograf, tort qidiradi va to‘g‘ridan-to‘g‘ri sizga yozadi. Komissiya yo‘q, pul biz orqali o‘tmaydi.',
+ l_cta:'Xizmatni bepul joylash',l_in:'Kabinetim bor',l_cnt:'8 kategoriyada 81 hamkor',
+ l_how:'Bu qanday ishlaydi',l_h1t:'Kartochkani to‘ldiring',l_h1p:'Foto, «dan» narx, paketlar. O‘n daqiqa.',
+ l_h2t:'So‘rovlar oling',l_h2p:'Sana, mehmonlar soni va byudjet bilan — to‘g‘ridan-to‘g‘ri Telegramga.',
+ l_h3t:'To‘g‘ridan-to‘g‘ri kelishing',l_h3p:'Mijoz telefoni darrov ko‘rinadi. Na komissiya, na so‘rov uchun to‘lov.',
+ l_get:'Nima olasiz',l_g1:'Tafsilotli so‘rovlar',l_g1p:'Sana, mehmonlar, byudjet — birinchi qo‘ng‘iroqgacha',l_g2:'Bandlik taqvimi',l_g2p:'Band kunlarni mijozlar darrov ko‘radi',
+ l_g3:'Maydonni suratga olamiz',l_g3p:'Professional foto biz hisobimizdan',l_g4:'Telegram auditoriyasi',l_g4p:'Mijozlar mini-ilovadan keladi',
+ l_price:'Qancha turadi',l_pricep:'Platforma ishga tushgandan keyin yarim yil bepul. Bazaviy tarif doim bepul: kartochka, so‘rovlar, taqvim, «Tekshirilgan» belgisi.',
+ l_who:'Kimlar biz bilan',l_faq:'Savollar',
+ l_q1:'Buyurtmadan qancha olasiz?',l_a1:'Hech qancha. To‘lovlarni o‘tkazmaymiz va komissiya olmaymiz. Mijoz bilan to‘g‘ridan-to‘g‘ri kelishasiz.',
+ l_q2:'«Tekshirilgan» nimani bildiradi?',l_a2:'STIRni ochiq reyestr bilan solishtiramiz, sizga qo‘ng‘iroq qilib shartnoma imzolaymiz. Hujjat skanlarini saqlamaymiz.',
+ l_q3:'Natijalarda joy sotib olsa bo‘ladimi?',l_a3:'Faqat «sukut bo‘yicha» tartibda va «Reklama» belgisi bilan. Narx va reyting bo‘yicha tartibda hech qanday pulga joy yo‘q.',
+ l_q4:'So‘rovga javob bermasam nima bo‘ladi?',l_a4:'Mijozga va’da berganmiz: 12 soat jim tursangiz, unga o‘xshash hamkorlarni ko‘rsatamiz. Muddati o‘tgan so‘rovlar sizga ham, bizga ham ko‘rinadi.',
+ l_q5:'Premiumni sotib olsa bo‘ladimi?',l_a5:'Yo‘q. Premiumni shaxsan ko‘rikdan keyin qo‘lda beramiz. Yuqori tarif «Kengaytirilgan» deb ataladi va status bermaydi.',
+ a_title:'Kirish',a_sub:'Shartnomadagi telefon orqali. Kabinet faqat sizning kompaniyangiz uchun ochiladi.',
+ a_go:'Kirish',a_reg:'Kabinetim yo‘q — ro‘yxatdan o‘tish',
+ r_title:'Ro‘yxatdan o‘tish',r_s1:'Siz kimsiz',r_s2:'Xizmat',r_s3:'Fotolar va tekshiruv',
+ r_name:'Biznes nomi',r_cat:'Kategoriya',r_catNote:'asosiysi — qolgan xizmatlarni alohida kartochka qilib qo‘shasiz',
+ r_dist:'Tuman',r_tel:'Telefon',r_code:'SMS kodi',r_send:'Kod olish',r_sent:'Yuborildi',r_person:'Aloqa shaxsining FIOsi',r_personPh:'Familiya Ism',
+ r_descRu:'Ruscha tavsif',r_descUz:'O‘zbekcha tavsif',r_translate:'bo‘sh qoldiring — tekshiruvda tarjima qilamiz',
+ r_price:'«Dan» narx, mln so‘m',r_priceNote:'narxsiz kartochka e’lon qilinmaydi',
+ r_pk:'Paketlar',r_pkNote:'birdan to‘rttagacha',r_pkName:'Nomi',r_pkPrice:'Narx',r_pkAdd:'Paket qo‘shish',r_pkHall:'Zallar uchun kamida ikkitasi kerak: ish kunlari va dam olish — kun narxi shulardan hisoblanadi.',
+ r_cap:'Sig‘imi, mehmon',r_wd:'Ish kunlari',r_we:'Dam olish',r_feats:'Qulayliklar',r_occ:'Sabablar',
+ r_photos:'Fotolar',r_photosNote:'3 dan 10 tagacha',r_photoAdd:'Foto qo‘shish',
+ r_photoRule:'Maydon va ishlarni suratga olamiz. Odamlar yuzini e’lon qilmaymiz: fotoda mehmonlar bo‘lsa, ularning yozma roziligi kerak — hamkor javobgar, shartnomada alohida band.',
+ r_stir:'STIR (INN)',r_stirNote:'ochiq reyestr bilan solishtiramiz, skanni saqlamaymiz',r_addr:'Maydon manzili',
+ r_consent:'Oferta shartlarini qabul qilaman',r_consentS:'Ma’lumotlar ZRU-1125 tahriridagi ZRU-547 bo‘yicha qayta ishlanadi. Qonuniy oluvchilar: hosting va SMS-provayder.',
+ r_next:'Keyingi',r_back:'Orqaga',r_finish:'Tekshiruvga yuborish',
+ e_req:'Bu maydonni to‘ldiring',e_tel:'+998 XX XXX XX XX formatida',e_code:'4 ta raqam kiriting',e_price:'Narxni ko‘rsating — usiz kartochka e’lon qilinmaydi',
+ e_photos:n=>'Yana '+n+' ta foto kerak',e_consent:'Rozilik bo‘lmasa yuborib bo‘lmaydi',e_pk:'Kamida bitta paketning nomi va narxini to‘ldiring',e_pkHall:'Zal uchun ikkita paket kerak: ish kunlari va dam olish',
+ p_h:'Kartochka tekshiruvda',p_p:'Odatda ikki ish kuni. Tugagach Telegramda yozamiz.',
+ p_1:'STIRni ochiq reyestr bilan solishtirish',p_2:'Sizga qo‘ng‘iroq',p_3:'Shartnoma imzolash',p_4:'Kartochkada «Tekshirilgan» belgisi',p_go:'Kabinetga o‘tish',p_sent:'Kartochka tekshiruvga yuborildi.',
+ n_inbox:'So‘rovlar',n_cal:'Taqvim',n_card:'Xizmatlar',n_rev:'Sharhlar',n_stats:'Statistika',n_plan:'Tarif',n_lux:'Premium',n_co:'Kompaniyam',n_set:'Sozlamalar',
+ i_title:'So‘rovlar',i_new:'javob kutmoqda',i_late:'muddati o‘tgan',
+ i_now:'Faol',i_done:'Yakunlangan',
+ i_sum1:n=>n+' ta javob kutmoqda',i_sum0:'Barcha so‘rovlar ko‘rib chiqilgan',
+ i_untilAt:tm=>tm+' gacha javob bering',i_lateAt:tm=>tm+' gacha javob berish kerak edi',
+ i_occ:'sabab',i_what:'Nima bo‘ldi?',i_dealBtn:'Kelishdik',i_noBtn:'To‘g‘ri kelmadi',
+ i_st_ans2:'bog‘landingiz',i_callFirst:'Avval qo‘ng‘iroq qiling — mijoz telefoni quyida.',
+ i_reopen:'Faollarga qaytarish',i_reopened:'So‘rov yana faollarda.',
+ i_dealDone:'Belgilandi: kelishildi. Mijoz buni o‘zida ko‘radi.',
+ 
+ i_empty:'Hozircha so‘rov yo‘q',i_emptyP:'Mijoz so‘rov yuborganda u shu yerda paydo bo‘ladi va Telegramga keladi.',
+ i_guests:n=>n+' mehmon',i_left:'qoldi',i_lateBy:'muddati o‘tdi',
+ i_hours:h=>h+' soat',i_min:m=>m+' daq',
+ i_tg:'Yozish',i_st_new:'javob kutilmoqda',i_st_deal:'kelishildi',i_st_dec:'rad etildi',
+ i_decTitle:'Nega rad etyapsiz?',i_decSub:'Mijoz sababni ko‘radi — boshqasini tezroq topadi.',
+ i_dec1:'Bu sanada band',i_dec2:'Bizning format emas',i_dec3:'Narxda kelishmadik',
+ i_promise:'Mijozga va’da berganmiz: 12 soatda javob bermasangiz, unga o‘xshash hamkorlarni ko‘rsatamiz.',
+ i_seen:'Mijoz holatni o‘zining «Tadbirim» bo‘limida ko‘radi.',i_only:'Mijoz roziligi aynan shunga: ism, telefon, sana, mehmonlar, byudjet, izoh.',
+ c_title:'Taqvim',c_note:'Taqvimni siz yuritasiz. Platforma unga javob bermaydi: mijozlar band kunlarni ko‘radi, lekin sanani qo‘ng‘iroq bilan tasdiqlaydi.',
+ c_tap:'Bittadan kun',c_range:'Oraliq',c_rngHint:'Birinchi kunni tanlang',c_rngEnd:'Endi oxirgi kunni',
+ c_busyRange:'Band deb belgilash',c_freeRange:'Bo‘shatish',c_cancel:'Bekor',
+ c_busy:'band',c_req:'so‘rov bor',c_prices:'Kun narxi',c_priceNote:'Mijoz bu narxni taqvimda ko‘radi. Zal uchun paketlardan hisoblanadi: ish kunlari va dam olish.',
+ c_sum:(b,r)=>b+' band · '+r+' so‘rovli',c_tz:'Vaqt Toshkent bo‘yicha.',
+ k_list:'Sizning xizmatlaringiz',k_listS:'Bitta xizmat — bitta kategoriya: mijoz kategoriya bo‘yicha qidiradi. Zal va suratga olish alohida kartochkada.',
+ k_add:'Xizmat qo‘shish',k_addH:'Bu qanday xizmat?',k_addS:'Kategoriyani keyin o‘zgartirib bo‘lmaydi: so‘rov, sharh va tarif unga bog‘lanadi.',k_addGo:'Kartochka yaratish',
+ k_taken:'allaqachon bor',k_allTaken:'Sakkizta kategoriyaning hammasida kartochka bor.',
+ k_backList:'Xizmatlarga',k_created:n=>'«'+n+'» kartochkasi yaratildi. Mijozlar ko‘rishi uchun narx va foto qo‘shing.',
+ k_del:'Xizmatni o‘chirish',k_delH:'Kartochka o‘chirilsinmi?',k_delS:'Kartochka qidiruvdan yo‘qoladi. So‘rov va sharhlar arxivda qoladi, lekin javob berib bo‘lmaydi.',
+ k_delGo:'O‘chirish',k_deleted:n=>'«'+n+'» kartochkasi o‘chirildi.',
+ k_none:'Hozircha xizmat yo‘q',k_noneP:'Birinchi kartochkani qo‘shing — u mijozlar qidiruvida paydo bo‘ladi.',
+ k_pub:'mijozlarga ko‘rinadi',k_unpub:'ko‘rinmaydi',k_preview:'Mijoz qanday ko‘radi',k_edit:'Tahrirlash',k_save:'Saqlash',
+ k_saved:'Saqlandi.',k_savedDraft:'Saqlandi. Narx va uchta foto bo‘lgach kartochka ko‘rinadi.',
+ k_gateOk:'Narx va foto joyida — kartochka mijozlarga ko‘rinadi.',k_gateNo:'Kartochka e’lon qilinmaydi, chunki yo‘q:',k_gPrice:'«dan» narx',k_gPhotos:n=>n+' ta foto',
+ k_status:'E’lon qilingan',k_statusNo:'E’lon qilinmagan',k_from:'',k_mln:'mln so‘m',k_up:'gacha',k_verified:'Tekshirilgan',k_req:'So‘rov',k_photoLimit:'10 tadan ko‘p foto bo‘lmaydi',
+ k_mod:'O‘zgarishlar tekshiruvda',k_modS:f=>'Narx, foto va tavsifni moderator tekshiradi: '+f+'. Mijoz hozircha avvalgi versiyani ko‘radi. Qolgan tahrirlar darrov qo‘llandi.',
+ k_modSent:'O‘zgarishlar moderatorga ketdi. Mijoz kartochkaning avvalgi versiyasini ko‘radi.',
+ k_fPrice:'narx',k_fPhotos:'foto',k_fDesc:'tavsif',
+ k_carNote:'Kategoriya nomi sababga qarab o‘zgaradi: to‘yda «Kortej», korporativda «Transfer». Mijoz mosini ko‘radi.',
+ v_title:'Sharhlar',v_avg:'o‘rtacha baho',v_count:n=>n+' ta sharh',v_answered:'javob berilgan',
+ v_replyPh:'Sharh uchun rahmat…',v_send:'Javob berish',v_yours:'Sizning javobingiz',
+ v_noDel:'Sharhlarni o‘chirib bo‘lmaydi — javob berish yoki moderatorga shikoyat qilish mumkin.',
+ v_sent:'Javob sharh ostida e’lon qilindi.',v_flag:'Shikoyat',v_flagH:'Moderatorga shikoyat',v_flagS:'Nima noto‘g‘ri ekanini yozing. Moderator qaror qilguncha sharh joyida qoladi.',
+ v_flagGo:'Shikoyatni yuborish',v_flagged:'Shikoyat moderatorga yuborildi.',v_flagOn:'Shikoyat ko‘rib chiqilmoqda',
+ v_none:'Bu xizmat bo‘yicha hozircha sharh yo‘q.',v_locked:'Sharhlarga javob «Faol» tarifga kiradi.',
+ s_title:'Statistika',s_period:'oxirgi 14 kun',s_views:'kartochka ko‘rsatuvlari',s_opens:'profil ochilishi',s_reqs:'so‘rovlar',s_resp:'o‘rtacha javob vaqti',s_conv:'ko‘rsatuv → so‘rov',
+ s_tabOver:'Umumiy',s_tabRep:'Hisobot',s_p7:'7 kun',s_p14:'14 kun',
+ s_repH:'Xizmat bo‘yicha hisobot',s_repS:'Umumiy ko‘rinish bilan bir xil ma’lumotdan hisoblanadi. Hisobotda mijoz ismi va telefoni yo‘q — bazani yuklab olish mumkin emas.',
+ s_tDay:'Kun',s_tViews:'Ko‘rsatuv',s_tOpens:'Ochilish',s_tReqs:'So‘rov',s_tConv:'Konversiya',s_tTotal:'Jami',
+ s_reqH:'So‘rovlar nima bilan tugadi',s_reqNone:'Bu davrda so‘rov bo‘lmagan.',
+ s_respH:'Qanchalik tez javob berdingiz',s_r1:'3 soatdan tez',s_r2:'3 dan 6 soatgacha',s_r3:'6 dan 12 soatgacha',s_r4:'muddati o‘tgan',
+ s_respLux:'Premium uchun ikki oy davomida o‘rtacha 3 soatdan tez javob kerak.',
+ s_csv:'CSV hisobotni yuklash',s_csvNote:'Faylda faqat kunlik summalar: sana, ko‘rsatuv, ochilish, so‘rov. Mijozlar haqida hech narsa yo‘q.',
+ s_csvDone:'Fayl tayyor — brauzerdan saqlang.',s_csvNo:'Bu brauzerda yuklash ishlamaydi — yuqoridagi jadvalni nusxalang.',
+ s_chart:'Kunlar bo‘yicha ko‘rsatuv va so‘rovlar',s_lViews:'ko‘rsatuvlar',s_lReqs:'so‘rovlar',s_none:'Hozircha ma’lumot yo‘q — kartochka hali ko‘rsatilmagan.',
+ t_title:'Tarif',t_cur:'Sizning tarifingiz',t_next:'keyingi to‘lov',t_free:'Bepul',
+ t_freeNote:'Platforma ishga tushgandan keyingi olti oy hamma tariflar bepul. Bazaviy doim bepul — bu aksiya emas: bo‘sh kategoriya mahsulotni o‘ldiradi.',
+ t_base:'Bazaviy',t_active:'Faol',t_ext:'Kengaytirilgan',t_mo:'so‘m / oy',t_forever:'doim bepul',
+ t_year:'Yil oldindan — o‘n ikki oy o‘n oy narxida, 17% chegirma.',
+ t_b1:'Foto va narxli kartochka',t_b2:'Telefon mijozlarga ko‘rinadi',t_b3:'Cheklovsiz so‘rovlar',t_b4:'Taqvim va «Tekshirilgan» belgisi',
+ t_a1:'Bazaviydagi hammasi',t_a2:'10 tagacha foto va video',t_a3:'Ko‘rsatuv va so‘rov statistikasi',t_a4:'«Sukut bo‘yicha» tartibda yuqoriroq',t_a5:'Sharhlarga javob',
+ t_e1:'Faoldagi hammasi',t_e2:'«Sukut bo‘yicha» natijalarda eng yuqori',t_e3:'Oyiga bitta reklama joyi',t_e4:'Navbatsiz tekshiruv',
+ t_notLux:'«Kengaytirilgan» premium status bermaydi. Status shaxsan ko‘rikdan keyin qo‘lda beriladi va sotilmaydi.',
+ t_sortNote:'Narx va reyting bo‘yicha tartib tarifga bog‘liq emas — u yerda hech qanday pulga joy yo‘q.',
+ t_choose:'O‘tish',t_current:'Hozir sizda',t_changed:p=>'Tarif «'+p+'»ga o‘zgardi. Ishga tushirishgacha bu bepul.',
+ t_auto:'Avto-uzaytirish',t_autoS:'Oyiga bir marta yechiladi. Istalgan payt o‘chirish mumkin.',
+ t_hist:'To‘lovlar',t_histEmpty:'To‘lovlar bo‘lmagan — ishga tushirishgacha hammasi bepul.',t_total:'Oyiga jami',t_perCard:'Har bir xizmatning tarifi alohida: narx kategoriyaga bog‘liq.',
+ t_ads:'Reklama',t_adsNote:'Har bir blok «Reklama» so‘zi bilan belgilanadi, ekranda bittadan ko‘p emas. Narx va reyting bo‘yicha tartibda joy sotilmaydi.',
+ t_ad_banner:'Bosh sahifadagi banner',t_ad_after:'So‘rov yuborilgandan keyingi blok',t_ad_tg:'Telegram-kanalda post',
+ t_slots:n=>n+' ta slot',t_week:'so‘m / hafta',t_adFree:'«Kengaytirilgan» uchun birinchi yarim yil bepul',t_adBook:'Slotni band qilish',t_adBooked:'Slot band. Blok «Reklama» belgisi bilan chiqadi.',
+ x_title:'Premium status',x_not:'Status sotib olinmagan va sotib olinmaydi',
+ x_sub:'Shaxsan ko‘rikdan keyin qo‘lda beramiz. Na obuna, na reklama uni bermaydi.',
+ x_has:'Status berilgan',x_hasS:d=>'Keyingi ko‘rik: '+d,
+ 
+ x_common:'Umumiy talablar',x_commonS:'Beshtasi ham majburiy.',
+ x_c1:'Shaxsiy ko‘rik',x_c1s:'Odamimiz maydonda bo‘lgan yoki ishni jonli ko‘rgan, foto orqali emas',
+ x_c2:'Professional fotolar',x_c2s:'Kamerada olingan, kamida 8 kadr, begona suv belgilarisiz',
+ x_c3:'Uchta tasdiqlangan ish',x_c3s:'Bir yildagi uchta tadbirni ayting — buyurtmachilarga qo‘ng‘iroq qilamiz',
+ x_c4:'Javob intizomi',x_c4s:'Kabinet statistikasi bo‘yicha 2 oyda o‘rtacha javob 3 soatdan tez',
+ x_c5:'To‘liq hujjatlar',x_c5s:'Yuridik shaxs yoki YaTT, imzolangan shartnoma, STIR solishtirilgan',
+ x_ind:'Soha talablari',x_indS:'To‘rttadan kamida uchtasi kerak.',
+ x_refs:'Uchta buyurtmachi kontakti',x_refsPh:'Ism va telefon',
+ x_send:'Arizani yuborish',x_sent:'Ariza yuborildi. Ko‘rikni belgilash uchun bog‘lanamiz.',
+ x_needCommon:'Beshta umumiy talabni ham belgilang — ularsiz arizani qabul qilmaymiz.',
+ x_needInd:'Kamida uchta soha talabi kerak.',
+ x_needRefs:'Uchta buyurtmachi kontakti kerak.',
+ x_state:'Ariza holati',x_s1:'Ariza berildi',x_s2:'Ko‘rik belgilandi',x_s3:'Qaror bosqichida',x_s4:'Status berildi',
+ x_wait:'Ariza ko‘rib chiqilmoqda',x_waitS:'Ko‘rikni bir hafta ichida belgilaymiz.',
+ x_again:d=>'Rad etildi. Qayta ariza '+d+' dan keyin.',
+ x_panel:'Ko‘rsatkichlar',x_panelS:'Tekshiruv bir martalik emas: ko‘rsatkich chegaradan chiqsa status olinadi. Oldindan ogohlantiramiz.',
+ x_mResp:'O‘rtacha javob vaqti',x_mRespL:'ketma-ket ikki oy 6 soatdan yuqori bo‘lsa olinadi',
+ x_mRate:'Reyting',x_mRateL:'4,5 dan pasaysa olinadi',
+ x_mComp:'Chorakdagi shikoyatlar',x_mCompL:'ikkita va undan ko‘p bo‘lsa olinadi',
+ x_warn:'Ko‘rsatkich chegaraga yaqin. Status olinmasidan oldin to‘g‘rilang.',
+ x_lockedS:'Avval «Tekshirilgan» belgisi kerak: STIR solishtirish, qo‘ng‘iroq, shartnoma.',
+ co_title:'Kompaniyam',co_sub:'Bu ma’lumotlar butun kompaniyaga tegishli. Xizmat nomi va narxi — «Xizmatlar» bo‘limida.',
+ co_verified:'Tekshirilgan',co_legal:'Rekvizitlar',co_name:'Kompaniya nomi',co_form:'Shakl',
+ co_form_ooo:'MChJ',co_form_ip:'YaTT',co_form_self:'O‘zini band qilgan',
+ co_stir:'STIR (INN)',co_addr:'Yuridik manzil',co_dist:'Tuman',
+ co_locked:'Faqat qo‘llab-quvvatlash orqali o‘zgaradi: shu maydonlar bo‘yicha tekshirganmiz.',
+ co_contacts:'Aloqa',co_person:'Aloqa shaxsi',co_role:'Lavozim',
+ co_tel:'So‘rovlar uchun telefon',co_telNote:'uni mijozlar ko‘radi',co_telLocked:'Kirish raqami qo‘llab-quvvatlash orqali o‘zgaradi — unga Telegramingiz bog‘langan.',
+ co_tel2:'Zaxira telefon',co_tg:'Bildirishnomalar uchun Telegram',
+ co_edit:'O‘zgartirish',co_save:'Saqlash',co_saved:'Kompaniya ma’lumotlari saqlandi.',
+ co_check:'Tekshiruv',co_c1:'STIR ochiq reyestr bilan solishtirilgan',co_c2:'Qo‘ng‘iroq tasdiqlangan',co_c3:'Shartnoma imzolangan',co_c4:'Qidiruvda «Tekshirilgan» belgisi',
+ co_vdate:d=>'tekshirilgan '+d,co_since:d=>'platformada '+d+' dan',
+ co_contract:'Shartnoma',co_cNo:'Raqam',co_cDate:'Sana',
+ co_svc:'Xizmatlar',co_svcS:(a,b)=>b+' tadan '+a+' tasi mijozlarga ko‘rinadi',co_svcGo:'Xizmatlarni ochish',
+ m_help:'Qo‘llab-quvvatlashga yozish',m_helpS:'Ish kunlari 9 dan 18 gacha javob beramiz',
+ m_data:'Qanday ma’lumot saqlaymiz',m_dataS:'Nom, tuman, STIR, telefon, yuzsiz fotolar',
+ m_out:'Chiqish',m_outS:'Qayta kirish uchun SMS kodi kerak bo‘ladi',
+ d_data:'<p>Siz haqingizda saqlaymiz: nom, kategoriya, tuman, yuzsiz fotolar, telefon, aloqa shaxsining FIOsi, STIR, manzil va tekshiruv belgisi.</p><p>Saqlamaymiz: pasport va hujjat skanlari, PINFL, tug‘ilgan sana, yuz fotosi, aniq geolokatsiya.</p><p>Mijoz haqida sizga aynan u rozilik bergan narsani ko‘rsatamiz: ism, telefon, sana, mehmonlar, byudjet, izoh. Mijozlar bazasini yuklab olish mumkin emas.</p><p>Ma’lumotlarning qonuniy oluvchilari: hosting va SMS-provayder. Baza qayta ishlashdan oldin Davlat reyestriga kiritilgan.</p>',
+ set_lang:'Kabinet tili',set_langS:'Rus yoki o‘zbek. Mijozlar kartochkani o‘z tilida ko‘radi.',close:'Yopish',out_ok:'Kabinetdan chiqdingiz.',
+ st_changed:'Holat yangilandi — mijoz uni o‘zida ko‘radi.',rq_declined:'So‘rov yopildi. Mijoz sababni ko‘radi.',
+ cal_saved:'Taqvim yangilandi — mijozlar o‘zgarishni darrov ko‘radi.',
+ plural:(n,a,b,c)=>n==1?a:b}};
+
+/* ===================================================================
+   Кабинет вендора Bayram.uz — прототип по ТЗ от 15 сентября 2026.
+   Состояние живёт в памяти вкладки: ни сети, ни хранилищ (см. ТЗ 9).
+   =================================================================== */
+
+/* §4.7 — время создания заявки обязательно: из него считается остаток 12 часов */
+const NOW=new Date(2026,8,15,14,0);   /* в проде: new Date() */
+const LAUNCH=new Date(2026,9,1);      /* запуск площадки: от него отсчёт 6 бесплатных месяцев */
+const HOURS=12;                       /* §II — 12 часов на ответ */
+const TZ='Asia/Tashkent';             /* §4.9 — часовой пояс Ташкента */
+
+const MON_N={ru:['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'],
+             uz:['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr']};
+const MONS={ru:['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'],
+            uz:['yan','fev','mar','apr','may','iyn','iyl','avg','sen','okt','noy','dek']};
+const WD={ru:['пн','вт','ср','чт','пт','сб','вс'],uz:['du','se','chor','pay','ju','sha','yak']};
+
+/* §4.2 — категории. Название зависит от повода (car: кортеж/трансфер), поэтому справочник, не константа */
+const CATS=[
+ ['hall','Площадка / То‘йхона','Maydon / To‘yxona','A'],
+ ['food','Стол / Кейтеринг','Dasturxon / Ketering','A'],
+ ['music','Музыка / Ведущий','Musiqa / Boshlovchi','A'],
+ ['decor','Декор / Оформление','Bezak / Bezash','B'],
+ ['cake','Торт','Tort','B'],
+ ['photo','Фото и видео','Foto va video','B'],
+ ['car','Транспорт / Кортеж','Transport / Kortej','C'],
+ ['kids','Аниматоры','Animatorlar','C']];
+const CAT_BY_OCC={car:{toy:['Кортеж','Kortej'],corp:['Трансфер','Transfer']}};
+/* §4.4 — районы */
+const DIST=[['Юнусабад','Yunusobod'],['Мирзо-Улугбек','Mirzo Ulug‘bek'],['Чиланзар','Chilonzor'],['Яшнабад','Yashnobod'],
+ ['Шайхантахур','Shayxontohur'],['Сергели','Sergeli'],['Алмазар','Olmazor'],['Мирабад','Mirobod'],['Учтепа','Uchtepa'],['Бектемир','Bektemir']];
+/* §4.3 — поводы */
+const OCC=[['toy','Свадьба','To‘y'],['beshik','Бешик той','Beshik to‘y'],['bd','День рождения','Tug‘ilgan kun'],
+ ['corp','Корпоратив','Korporativ'],['small','Частное','Yopiq davra']];
+/* §4.5 — удобства, справочник администратора */
+const FEATS={
+ hall:[['park','Парковка 60 мест','60 o‘rinli parking'],['kitchen','Своя кухня','O‘z oshxonasi'],['sound','Звук и свет','Ovoz va yorug‘lik'],['ac','Кондиционеры','Konditsionerlar']],
+ photo:[['optics','Полный комплект оптики','To‘liq optika'],['drone','Съёмка с дрона','Dron bilan suratga olish'],['light','Студийный свет','Studiya yorug‘ligi']],
+ decor:[['lights','Световое оформление','Yorug‘lik bezagi'],['visit','Выезд и замеры','Chiqib o‘lchash']],
+ cake:[['bakery','Своя кондитерская','O‘z qandolatxonasi']],
+ kids:[['gear','Своя аппаратура','O‘z jihozlari'],['show','Шоу-программа','Shou-dastur']],
+ music:[['equip','Аппаратура включена','Jihoz narxda']],
+ food:[['own','Собственное производство','O‘z ishlab chiqarishi'],['taste','Дегустация','Degustatsiya']],
+ car:[['new','Машины не старше 5 лет','5 yoshgacha mashinalar'],['decorInc','Украшение включено','Bezak narxda']]};
+/* §VII — тарифы по группам категорий. Верхний называется «Расширенный»: см. §6.1 */
+const PLANS={A:[0,390000,990000],B:[0,240000,590000],C:[0,140000,340000]};
+const PLAN_KEYS=['base','active','ext'];
+/* §7.1 — три рекламных места, других в интерфейсе нет */
+const ADS=[['banner',5,900000],['after',6,600000],['tg',4,450000]];
+const BUDGETS={ru:['до 30 млн','30–50 млн','50–80 млн','больше 80 млн','не указан'],
+               uz:['30 mln gacha','30–50 mln','50–80 mln','80 mln dan ortiq','ko‘rsatilmagan']};
+/* §6.3 — отраслевые требования: не меньше трёх из четырёх */
+const STD={
+ hall:[['Состояние зала не старше 5 лет с ремонта','Zal ta’miridan 5 yildan oshmagan'],['Своя кухня с шеф-поваром в штате','Shtatda oshpazi bor o‘z oshxonasi'],['Парковка от 40 мест','40 o‘rindan parking'],['Отдельный вход и гардероб','Alohida kirish va garderob']],
+ photo:[['Полнокадровая техника','To‘liq kadrli texnika'],['Второй оператор в пакете','Paketda ikkinchi operator'],['Срок сдачи закреплён в договоре','Topshirish muddati shartnomada'],['Портфолио от 20 съёмок','20 tadan portfolio']],
+ decor:[['Свой склад конструкций','O‘z konstruksiya ombori'],['Живые цветы, не искусственные','Tirik gullar, sun’iy emas'],['Эскиз до подписания договора','Shartnomadan oldin eskiz'],['Монтаж своей бригадой','O‘z brigadasi bilan montaj']],
+ food:[['Собственное производство, не перекуп','O‘z ishlab chiqarishi'],['Дегустация до договора','Shartnomadan oldin degustatsiya'],['Официанты в форме','Formadagi ofitsiantlar'],['Шеф-повар в штате','Shtatda oshpaz']],
+ music:[['Живые инструменты, не только фонограмма','Tirik cholg‘ular'],['Своя аппаратура','O‘z jihozlari'],['Репетиция с заказчиком','Buyurtmachi bilan repetitsiya'],['Программа на двух языках','Ikki tilda dastur']],
+ cake:[['Своя кондитерская','O‘z qandolatxonasi'],['Согласование макета','Maketni kelishish'],['Доставка с температурным режимом','Harorat rejimi bilan yetkazish'],['Работа с аллергенами','Allergenlar bilan ishlash']],
+ kids:[['Программа под событие, не шаблон','Tadbirga moslangan dastur'],['Свой реквизит','O‘z rekviziti'],['Аниматоры с опытом от двух лет','2 yildan tajribali animatorlar'],['Сценарий согласуется заранее','Ssenariy oldindan kelishiladi']],
+ car:[['Автомобили не старше пяти лет','Besh yoshgacha avtomobillar'],['Водители в форме','Formadagi haydovchilar'],['Запасная машина в подаче','Zaxira mashina'],['Украшение включено','Bezak narxda']]};
+
+const svgPh=(a,b,i)=>'data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="320" height="320" fill="url(#g)"/><path fill="#F6D9C2" opacity=".9" d="M${90+i*20} 260 L${90+i*20} 150 Q160 60 ${230-i*20} 150 L${230-i*20} 260 Z"/><circle cx="160" cy="70" r="9" fill="#F9CDB2"/></svg>`);
+
+/* §9.1 — что храним о вендоре. Паспорта, ПИНФЛ и сканов здесь нет и быть не может */
+const ACC={co:'Bisyor Group',form:'ooo',stir:'305 412 887',addr:'Юнусабад, 11-квартал, 8',dist:0,
+ person:'Азиз Каримов',role:'Директор',tel:'+998 00 100 10 10',tel2:'+998 00 100 10 11',tg:'@bisyor_uz',
+ ok:true,vdate:new Date(2026,2,18),since:new Date(2026,2,20),cNo:'BY-2026-0184',cDate:new Date(2026,2,20)};
+
+const days14=s=>Array.from({length:14},(_,i)=>({
+  views:Math.round([210,240,190,320,410,380,260,230,250,300,440,470,310,280][i]*s),
+  opens:Math.round([31,38,27,52,70,66,41,35,39,48,74,80,50,44][i]*s),
+  reqs:Math.round([1,2,1,3,4,3,2,1,2,3,5,4,2,2][i]*s)}));
+let seq=2;
+/* §4.1 — карточка услуги. lux присваивается вручную и не продаётся (§6.1) */
+let CARDS=[
+ {id:1,n:'Bisyor',c:'hall',dist:0,ru:'Зал на 300 мест в Юнусабаде. Своя кухня, парковка, отдельный вход.',
+  uz:'Yunusobodda 300 o‘rinli zal. O‘z oshxonasi, parkovka, alohida kirish.',
+  price:45,pk:[['Будни','Ish kuni',45],['Выходные','Dam olish',52]],cap:300,feats:['park','kitchen','sound'],
+  occ:['toy','beshik','corp','small'],photos:[svgPh('#E4D6F5','#C9B2E8',0),svgPh('#EFE7DA','#DCCBB2',1),svgPh('#E9E2F7','#CFC0EC',2)],
+  addr:'Юнусабад, 11-квартал, 8',ok:true,plan:'base',r:4.8,nrev:128,lux:false,luxApp:null,complaints:0,
+  busy:new Set(['2026-9-10','2026-9-11','2026-9-12','2026-9-18','2026-9-19','2026-9-25','2026-9-26','2026-10-14','2026-10-15','2026-8-20']),
+  days:days14(1),mod:null,
+  revs:[{n:'Дилшод',r:5,d:new Date(2026,7,12),ru:'Всё прошло чётко. Договорились по телефону, приехали — как на фото.',uz:'Hammasi aniq o‘tdi. Telefonda kelishdik, keldik — fotodagidek.',rep:'',flag:''},
+        {n:'Малика',r:5,d:new Date(2026,6,3),ru:'Цену не меняли после подтверждения. Это главное.',uz:'Tasdiqdan keyin narxni o‘zgartirmadi. Eng muhimi shu.',rep:'Спасибо! Цена «от» фиксируется после звонка.',flag:''},
+        {n:'Азиз',r:4,d:new Date(2026,5,28),ru:'Хорошо, но отвечали не сразу. Лучше звонить.',uz:'Yaxshi, lekin darrov javob bermadi. Qo‘ng‘iroq qilgan ma’qul.',rep:'',flag:''}]},
+ {id:2,n:'Bisyor Foto',c:'photo',dist:0,ru:'Съёмка свадеб и торжеств. Два оператора, дрон, монтаж за 14 дней.',
+  uz:'To‘y va tantanalarni suratga olish. Ikki operator, dron, 14 kunda montaj.',
+  price:12,pk:[['Фото','Foto',12],['Фото и видео','Foto va video',22]],cap:'',feats:['optics','drone'],
+  occ:['toy','beshik','bd','corp'],photos:[svgPh('#E9E2F7','#CFC0EC',1),svgPh('#EFE7DA','#DCCBB2',2)],
+  addr:'Юнусабад, 11-квартал, 8',ok:true,plan:'active',r:4.6,nrev:23,lux:false,luxApp:null,complaints:0,
+  busy:new Set(['2026-9-19','2026-9-26']),days:days14(.35),mod:null,
+  revs:[{n:'Севара',r:5,d:new Date(2026,7,2),ru:'Прислали исходники на следующий день, как обещали.',uz:'Va’da qilganidek, ertasiga xom kadrlarni yuborishdi.',rep:'',flag:''}]}];
+
+/* §4.7 — заявка: только то, на что клиент дал согласие (§9.4) */
+const hAgo=n=>new Date(NOW.getTime()-n*3600000),dd=(m,d)=>new Date(2026,m,d);
+let REQS=[
+ {id:1,card:1,occ:'toy',name:'Нодира',tel:'+998 00 123 45 67',date:dd(9,17),g:280,bud:2,com:'Нужен детский стол и место для дойры. Свадьба, около 280 человек.',at:hAgo(14.5),st:'new',log:[]},
+ {id:2,card:2,occ:'toy',name:'Жасур',tel:'+998 00 555 10 20',date:dd(9,24),g:200,bud:1,com:'Нужна съёмка с дрона.',at:hAgo(3.2),st:'new',log:[]},
+ {id:3,card:1,occ:'beshik',name:'Малика',tel:'+998 00 800 60 40',date:dd(10,7),g:150,bud:0,com:'Бешик той, днём. Есть ли скидка на будни?',at:hAgo(9.1),st:'new',log:[]},
+ {id:4,card:1,occ:'corp',name:'Азиз',tel:'+998 00 222 33 44',date:dd(9,31),g:300,bud:3,com:'Корпоратив, нужна сцена и проектор.',at:hAgo(30),st:'ans',ansAt:1.4,log:[]},
+ {id:5,card:2,occ:'toy',name:'Дилшод',tel:'+998 00 700 70 07',date:dd(10,14),g:250,bud:2,com:'',at:hAgo(52),st:'deal',ansAt:.5,log:[]},
+ {id:6,card:1,occ:'toy',name:'Севара',tel:'+998 00 121 21 21',date:dd(9,10),g:400,bud:4,com:'Хотим 400 гостей.',at:hAgo(70),st:'dec',ansAt:2.1,reason:2,log:[]}];
+
+/* ---------- состояние ---------- */
+const blank=()=>({n:'',c:'hall',dist:0,tel:'',code:'',codeSent:false,person:'',ru:'',uz:'',price:'',
+ pk:[['','',''],['','','']],cap:'',feats:[],occ:['toy'],photos:[],stir:'',addr:'',consent:false});
+let lang='ru',route='cab',tab='inbox',filter='now',calMode='tap',rngStart=null,calMonth=new Date(2026,8,1),
+    cardId=1,openCard=null,editing=false,coEdit=false,regStep=1,reg=blank(),auth={tel:'',code:'',sent:false},
+    statTab='over',statDays=14,luxDraft=null,decId=null,delId=null,flagId=null,newCat=null,errs={};
+
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const t=()=>T[lang];
+const card=()=>CARDS.find(c=>c.id===cardId)||CARDS[0];
+const byId=id=>CARDS.find(c=>c.id===id);
+const dkey=d=>d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate();
+const dateStr=d=>lang==='ru'?d.getDate()+' '+MONS.ru[d.getMonth()]:d.getDate()+'-'+MONS.uz[d.getMonth()];
+const dateFull=d=>dateStr(d)+' '+d.getFullYear();
+const money=n=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+const esc=s=>String(s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+const group=c=>(CATS.find(k=>k[0]===c)||[])[3]||'A';
+const freeCats=()=>CATS.filter(c=>!CARDS.some(x=>x.c===c[0]));
+const model=()=>route==='reg'?reg:(openCard!=null?byId(openCard):card());
+/* §II — цена и три фото обязательны, иначе карточка не публикуется */
+const canPublish=m=>Number(m.price)>0&&m.photos.length>=3;
+/* §4.2 — название категории зависит от повода */
+function catName(c,occ){const x=CATS.find(k=>k[0]===c);if(!x)return c;
+  const alt=CAT_BY_OCC[c]&&occ&&CAT_BY_OCC[c][occ];
+  return alt?alt[lang==='ru'?0:1]:x[lang==='ru'?1:2]}
+/* §4.6 — цена дня у зала считается из пакетов */
+function dayPrice(m,date){if(m.c==='hall'&&m.pk.length>1&&date){const we=date.getDay()===0||date.getDay()===6;
+    return Number(m.pk[we?1:0][2])||Number(m.price)||0}
+  return Number(m.price)||0}
+function timing(r){const el=(NOW-r.at)/3600000,left=HOURS-el;
+  return {el,left,late:left<=0&&r.st==='new',warn:left>0&&left<3&&r.st==='new'}}
+const hm=x=>{const T_=t(),hh=Math.floor(Math.abs(x)),mm=Math.round((Math.abs(x)-hh)*60);
+  return hh?T_.i_hours(hh)+(mm?' '+T_.i_min(mm):''):T_.i_min(mm)};
+/* среднее время ответа — из него считается дисциплина для премиума (§6.2) */
+function avgResp(cid){const m=REQS.filter(r=>(cid==null||r.card===cid)&&r.ansAt!=null);
+  return m.length?m.reduce((a,r)=>a+r.ansAt,0)/m.length:null}
+
+let toastTimer;
+function toast(m){const el=$('#toast');el.innerHTML=m;el.classList.add('on');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('on'),4200)}
+function openSheet(html){$('#sheetBody').innerHTML=html;$('#sheet').classList.add('on');$('#scrim').classList.add('on')}
+function closeSheet(){$('#sheet').classList.remove('on');$('#scrim').classList.remove('on')}
+
+/* ---------- общие поля формы ---------- */
+const fld=(k,label,inner,note)=>`<div class="fld"><div class="fld-l">${label}${note?`<i>${note}</i>`:''}</div>${inner}${errs[k]?`<div class="err">${errs[k]}</div>`:''}</div>`;
+const inp=(m,k,ph,type)=>`<input data-mk="${k}" type="${type||'text'}" value="${esc(m[k]??'')}" placeholder="${ph||''}"${type==='number'?' inputmode="decimal" min="0"':''}${type==='tel'?' inputmode="tel"':''}>`;
+const sel=(m,k,opts)=>`<select data-mk="${k}">${opts.map(([v,l])=>`<option value="${v}"${String(m[k])===String(v)?' selected':''}>${l}</option>`).join('')}</select>`;
+const chk=(k,on,label,small)=>`<button class="check" role="checkbox" aria-checked="${on}" data-chk="${k}"><span class="check-b">${ico('checkFill',14)}</span><span>${label}${small?`<small>${small}</small>`:''}</span></button>`;
+
+function fldService(m){const T_=t(),feats=FEATS[m.c]||[];
+  return fld('ru',T_.r_descRu,`<textarea data-mk="ru" maxlength="220">${esc(m.ru)}</textarea>`)+
+  fld('uz',T_.r_descUz,`<textarea data-mk="uz" maxlength="220" placeholder="${T_.r_translate}">${esc(m.uz)}</textarea>`)+
+  fld('price',T_.r_price,inp(m,'price','45','number'),T_.r_priceNote)+
+  fld('pk',T_.r_pk,m.pk.map((p,i)=>`<div class="pk-row">
+      <input data-pkf="${i}-0" value="${esc(p[0])}" placeholder="${T_.r_pkName} RU">
+      <input data-pkf="${i}-1" value="${esc(p[1])}" placeholder="${T_.r_pkName} UZ">
+      <input data-pkf="${i}-2" type="number" inputmode="decimal" value="${esc(p[2])}" placeholder="${T_.r_pkPrice}">
+      <button class="x" data-rmpk="${i}" aria-label="−" ${m.pk.length>1?'':'disabled'}>${ico('minus',12)}</button></div>`).join('')+
+    (m.pk.length<4?`<button class="add" data-act="addpk">${ico('plus',13)}${T_.r_pkAdd}</button>`:'')+
+    (m.c==='hall'?`<p class="note" style="margin-top:9px">${T_.r_pkHall}</p>`:''),T_.r_pkNote)+
+  (m.c==='hall'?fld('cap',T_.r_cap,inp(m,'cap','300','number')):'')+
+  (m.c==='car'?`<p class="note" style="margin-top:-4px">${T_.k_carNote}</p>`:'')+
+  (feats.length?fld('feats',T_.r_feats,`<div class="pills">${feats.map(f=>`<button class="pill" data-tog="feats" data-v="${f[0]}" aria-pressed="${m.feats.includes(f[0])}">${f[lang==='ru'?1:2]}</button>`).join('')}</div>`):'')+
+  fld('occ',T_.r_occ,`<div class="pills">${OCC.map(o=>`<button class="pill" data-tog="occ" data-v="${o[0]}" aria-pressed="${m.occ.includes(o[0])}">${o[lang==='ru'?1:2]}</button>`).join('')}</div>`);
+}
+function fldPhotos(m){const T_=t();
+  return fld('photos',T_.r_photos,`<div class="ph-grid">${m.photos.map((p,i)=>`<div style="background-image:url(${p})"><button class="x" data-rmph="${i}" aria-label="−">${ico('minus',12)}</button></div>`).join('')}
+    ${m.photos.length<10?`<label>${ico('photo',22)}${T_.r_photoAdd}<input type="file" accept="image/*" multiple data-act="addph"></label>`:''}</div>
+    <p class="note" style="margin-top:9px">${T_.r_photoRule}</p>`,m.photos.length<3?T_.r_photosNote:'');
+}
+function cardPills(){if(CARDS.length<2)return '';
+  return `<div class="tabs" style="margin-bottom:14px">${CARDS.map(c=>`<button class="pill" data-card="${c.id}" aria-pressed="${c.id===cardId}">${ico(c.c,15)}${esc(c.n)||catName(c.c)}</button>`).join('')}</div>`}
+
+/* ---------- §5.1 лендинг ---------- */
+function renderLand(){const T_=t();
+  return `<div class="view">
+  <div class="hero"><h1>${T_.l_h1}</h1><p>${T_.l_p}</p>
+    <button class="btn" data-go="reg">${T_.l_cta}</button><div class="cnt">${T_.l_cnt}</div></div>
+  <div class="block" style="padding-top:12px"><button class="link" data-go="login">${T_.l_in}</button></div>
+  <div class="block"><div class="eyebrow">${T_.l_how}</div><div class="how">
+    ${[1,2,3].map(i=>`<div><span class="how-n">${i}</span><div><b>${T_['l_h'+i+'t']}</b><p>${T_['l_h'+i+'p']}</p></div></div>`).join('')}</div></div>
+  <div class="block"><div class="eyebrow">${T_.l_get}</div><div class="gets">
+    ${[['notepad','g1'],['calendar','g2'],['photo','g3'],['tg','g4']].map(([i,k])=>`<div><span>${ico(i,22)}</span><b>${T_['l_'+k]}</b><p>${T_['l_'+k+'p']}</p></div>`).join('')}</div></div>
+  <div class="block"><div class="eyebrow">${T_.l_price}</div><p style="font-size:13.5px">${T_.l_pricep}</p></div>
+  <div class="block"><div class="eyebrow">${T_.l_who}</div><div class="who">${['Bisyor','ASR','Studio Nur','Zarafshon dekor','Ziyofat','Sweet Nur','Bolajon show','Kortej Lux'].map(n=>`<span>${n}</span>`).join('')}</div></div>
+  <div class="block"><div class="eyebrow">${T_.l_faq}</div><div class="faq">
+    ${[1,2,3,4,5].map(i=>`<details${i===1?' open':''}><summary>${T_['l_q'+i]}</summary><p>${T_['l_a'+i]}</p></details>`).join('')}</div></div>
+  <div class="block" style="padding-bottom:34px"><button class="btn" data-go="reg">${T_.l_cta}</button></div></div>`;
+}
+
+/* ---------- §III вход по телефону ---------- */
+function renderLogin(){const T_=t();
+  return `<div class="view block"><div class="auth">
+    <button class="link" data-go="land">${ico('back',12)} ${T_.r_back}</button>
+    <h2 style="margin-top:18px">${T_.a_title}</h2><p class="sub">${T_.a_sub}</p>
+    ${fld('tel',T_.r_tel,`<div class="tel-in"><input data-ak2="tel" type="tel" inputmode="tel" value="${esc(auth.tel)}" placeholder="+998 __ ___ __ __"><button class="btn sm lite" data-act="authcode">${auth.sent?T_.r_sent:T_.r_send}</button></div>`)}
+    ${auth.sent?fld('code',T_.r_code,`<input data-ak2="code" type="tel" inputmode="numeric" maxlength="4" value="${esc(auth.code)}" placeholder="••••">`):''}
+    <button class="btn" style="margin-top:20px" data-act="authgo">${T_.a_go}</button>
+    <button class="link" style="margin-top:20px;display:inline-block" data-go="reg">${T_.a_reg}</button>
+  </div></div>`;
+}
+
+/* ---------- §5.2 регистрация, три шага ---------- */
+function regWho(m){const T_=t();
+  return fld('n',T_.r_name,inp(m,'n','Bisyor'))+
+    fld('c',T_.r_cat,sel(m,'c',CATS.map(c=>[c[0],c[lang==='ru'?1:2]])),T_.r_catNote)+
+    fld('dist',T_.r_dist,sel(m,'dist',DIST.map((d,i)=>[i,d[lang==='ru'?0:1]])))+
+    fld('tel',T_.r_tel,`<div class="tel-in">${inp(m,'tel','+998 __ ___ __ __','tel')}<button class="btn sm lite" data-act="regcode">${m.codeSent?T_.r_sent:T_.r_send}</button></div>`)+
+    (m.codeSent?fld('code',T_.r_code,inp(m,'code','••••','tel')):'')+
+    fld('person',T_.r_person,inp(m,'person',T_.r_personPh));
+}
+function regCheck(m){const T_=t();
+  return fldPhotos(m)+fld('stir',T_.r_stir,inp(m,'stir','305 000 000','tel'),T_.r_stirNote)+
+    fld('addr',T_.r_addr,inp(m,'addr','Юнусабад, 11-квартал'))+
+    `<div class="fld">${chk('consent',m.consent,T_.r_consent,T_.r_consentS)}${errs.consent?`<div class="err">${errs.consent}</div>`:''}</div>`;
+}
+function renderReg(){const T_=t(),m=reg;
+  return `<div class="view block">
+    <button class="link" data-go="${regStep>1?'regback':'land'}">${ico('back',12)} ${T_.r_back}</button>
+    <div class="steps">${[1,2,3].map(i=>`<i class="${i<regStep?'done':i===regStep?'on':''}"></i>`).join('')}</div>
+    <h2>${T_['r_s'+regStep]}</h2><p class="sub">${regStep} / 3 · ${T_.r_title}</p>
+    ${[regWho,fldService,regCheck][regStep-1](m)}
+    <button class="btn" style="margin-top:22px" data-act="regnext">${regStep<3?T_.r_next:T_.r_finish}</button>
+    <div style="height:24px"></div></div>`;
+}
+function renderPending(){const T_=t();
+  return `<div class="view pending"><span>${ico('clockD',54)}</span><h2>${T_.p_h}</h2><p>${T_.p_p}</p>
+    <ol class="steps-v" style="max-width:320px;margin:22px auto 0;text-align:left">
+      ${[1,2,3,4].map(i=>`<li class="${i===1?'':'off'}"><i>${ico(i===1?'checkFill':'clockD',18)}</i>${T_['p_'+i]}</li>`).join('')}</ol>
+    <button class="btn ghost" style="margin-top:22px;max-width:300px" data-go="cab">${T_.p_go}</button></div>`;
+}
+
+/* ---------- §5.3 заявки ---------- */
+function reqCard(r){const T_=t(),tm=timing(r),c=byId(r.card);
+  const active=r.st==='new'||r.st==='ans';
+  const due=new Date(r.at.getTime()+HOURS*3600000);
+  const clock=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  const occName=(OCC.find(o=>o[0]===r.occ)||OCC[0])[lang==='ru'?1:2];
+  const chip=tm.late?['lateS',T_.i_late]:r.st==='new'?['warnS',T_.i_st_new]
+    :r.st==='ans'?['','' +T_.i_st_ans2]:r.st==='deal'?['done',T_.i_st_deal]:['lateS',T_.i_st_dec];
+  /* один счётчик вместо двух: срок и сколько осталось в одной строке */
+  const timer=r.st==='new'?`<div class="tm${tm.late?' late':tm.warn?' warn':''}">
+      <div class="tm-t"><b>${tm.late?T_.i_lateBy+' '+hm(tm.left):T_.i_left+' '+hm(tm.left)}</b>
+        <i>${tm.late?T_.i_lateAt(clock(due)):T_.i_untilAt(clock(due))}</i></div>
+      <div class="tm-bar"><i style="width:${Math.max(0,Math.min(100,tm.left/HOURS*100))}%"></i></div></div>`:'';
+  return `<article class="rq${tm.late?' late':''}${active?'':' closed'}" data-rq="${r.id}">
+    <div class="rq-top"><div><div class="rq-name">${esc(r.name)}</div>
+      <div class="rq-meta">${occName} · ${dateStr(r.date)}, ${WD[lang][(r.date.getDay()+6)%7]}</div></div>
+      <span class="chip ${chip[0]}">${chip[1]}</span></div>
+    <div class="rq-facts">
+      <span>${ico('user',13)}${T_.i_guests(r.g)}</span>
+      <span>${ico('wallet',13)}${BUDGETS[lang][r.bud]}</span>
+      ${CARDS.length>1&&c?`<span>${ico(c.c,13)}${esc(c.n)}</span>`:''}</div>
+    ${r.com?`<div class="rq-com">${esc(r.com)}</div>`:''}
+    ${timer}
+    ${active?`<a class="btn rq-call" href="tel:${r.tel.replace(/\s/g,'')}" data-contact="${r.id}">${ico('phone',18)}${esc(r.tel)}</a>
+      <a class="btn lite rq-tg" href="https://t.me/${r.tel.replace(/\D/g,'')}" target="_blank" rel="noopener" data-contact="${r.id}">${ico('tg',16)}${T_.i_tg}</a>
+      ${r.st==='ans'
+        ?`<div class="rq-ask"><b>${T_.i_what}</b>
+           <div class="rq-two"><button class="btn sm ghost" data-close="deal-${r.id}">${ico('checkFill',15)}${T_.i_dealBtn}</button>
+             <button class="btn sm ghost dgr" data-dec="${r.id}">${T_.i_noBtn}</button></div></div>`
+        :`<p class="note" style="margin-top:10px">${T_.i_callFirst}</p>`}`
+    :`<div class="rq-closed">${r.st==='dec'?T_['i_dec'+(r.reason+1)]:esc(r.tel)}
+        <button class="link" data-reopen="${r.id}">${T_.i_reopen}</button></div>`}
+  </article>`;
+}
+function renderInbox(){const T_=t();
+  const act=REQS.filter(r=>r.st==='new'||r.st==='ans'),nnew=REQS.filter(r=>r.st==='new').length;
+  const late=REQS.filter(r=>timing(r).late).length;
+  const list=(filter==='now'?act:REQS.filter(r=>r.st==='deal'||r.st==='dec'))
+    .sort((a,b)=>(timing(b).late-timing(a).late)||((a.st==='new'?0:1)-(b.st==='new'?0:1))||(timing(a).left-timing(b).left));
+  return `<div class="view block"><h2>${T_.i_title}</h2>
+    <p class="sub">${nnew?T_.i_sum1(nnew):T_.i_sum0}</p>
+    ${late?`<div class="gate no" style="margin-top:14px">${ico('warnD',18)}<span>${T_.i_promise}</span></div>`:''}
+    <div class="tabs" style="margin:14px 0 12px">
+      <button class="pill" data-filter="now" aria-pressed="${filter==='now'}">${T_.i_now} · ${act.length}</button>
+      <button class="pill" data-filter="done" aria-pressed="${filter==='done'}">${T_.i_done} · ${REQS.length-act.length}</button></div>
+    ${list.length?list.map(reqCard).join(''):`<div class="empty"><span>${ico('notepad',40)}</span><h3>${T_.i_empty}</h3><p>${T_.i_emptyP}</p></div>`}
+    <p class="note" style="margin-top:14px">${T_.i_only}</p></div>`;
+}
+
+/* ---------- §5.4 календарь ---------- */
+const MIN_M=new Date(NOW.getFullYear(),NOW.getMonth(),1),MAX_M=new Date(NOW.getFullYear()+2,NOW.getMonth(),1);
+function renderCal(){const T_=t(),m=card();if(!m)return renderNoCards();
+  const y=calMonth.getFullYear(),mo=calMonth.getMonth(),last=new Date(y,mo+1,0).getDate(),lead=(new Date(y,mo,1).getDay()+6)%7;
+  const reqDays=new Set(REQS.filter(r=>r.st!=='dec'&&r.card===m.id).map(r=>dkey(r.date)));
+  let g=WD[lang].map((w,i)=>`<em class="${i>4?'we':''}">${w}</em>`).join('');
+  for(let i=0;i<lead;i++)g+='<b class="pad"></b>';
+  let nb=0,nr=0;
+  for(let d=1;d<=last;d++){const dt=new Date(y,mo,d),k=dkey(dt),we=dt.getDay()===0||dt.getDay()===6,
+    past=dt<NOW&&k!==dkey(NOW),busy=m.busy.has(k),hasReq=reqDays.has(k);
+    if(busy)nb++;if(hasReq)nr++;
+    const inRng=rngStart&&dkey(rngStart)===k,price=busy?'':(m.c==='hall'?dayPrice(m,dt):'');
+    g+=`<b class="${past?'past':''}${busy?' busy':''}${we?' we':''}${inRng?' rng':''}${hasReq?' req':''}${k===dkey(NOW)?' today':''}" data-day="${k}" tabindex="0" role="button" aria-pressed="${busy}"><u>${d}</u>${price?`<s>${price}</s>`:''}</b>`}
+  return `<div class="view block"><h2>${T_.c_title}</h2><p class="sub">${T_.c_note}</p>
+    <div style="height:14px"></div>${cardPills()}
+    <div class="mode"><button data-mode="tap" aria-pressed="${calMode==='tap'}">${T_.c_tap}</button><button data-mode="range" aria-pressed="${calMode==='range'}">${T_.c_range}</button></div>
+    <div class="dp"><div class="dp-h"><span class="dp-mo">${MON_N[lang][mo]}<i>${y}</i></span>
+      <div class="dp-nav"><button data-mo="-1" aria-label="←" ${calMonth>MIN_M?'':'disabled'}>${ico('prev',14)}</button><button data-mo="1" aria-label="→" ${calMonth<MAX_M?'':'disabled'}>${ico('next',14)}</button></div></div>
+      <div class="dp-g">${g}</div>
+      <div class="dp-leg"><span><i class="dot busy"></i>${T_.c_busy}</span><span><i class="dot req"></i>${T_.c_req}</span><span style="margin-left:auto">${T_.c_sum(nb,nr)}</span></div>
+      ${calMode==='range'?`<div class="rng-bar">${ico('sparkle',16)}<span>${rngStart?dateStr(rngStart)+' → '+T_.c_rngEnd:T_.c_rngHint}</span>${rngStart?`<button class="btn lite" data-act="rngcancel">${T_.c_cancel}</button>`:''}</div>`:''}
+    </div>
+    ${m.c==='hall'?`<div class="fld"><div class="fld-l">${T_.c_prices}</div>
+      <div class="price2"><div><label>${T_.r_wd}, ${T_.k_mln}</label><input data-pkf="0-2" type="number" inputmode="decimal" value="${esc(m.pk[0]?m.pk[0][2]:'')}"></div>
+      <div><label>${T_.r_we}, ${T_.k_mln}</label><input data-pkf="1-2" type="number" inputmode="decimal" value="${esc(m.pk[1]?m.pk[1][2]:'')}"></div></div>
+      <p class="note" style="margin-top:9px">${T_.c_priceNote}</p></div>`:''}
+    <p class="note" style="margin-top:12px">${T_.c_tz}</p></div>`;
+}
+function applyRange(set,a,b,busy){const [s,e]=a<b?[a,b]:[b,a];
+  for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1)){busy?set.add(dkey(d)):set.delete(dkey(d))}}
+
+/* ---------- §5.5 карточка услуги ---------- */
+function preview(m){const T_=t(),occ=(m.occ&&m.occ[0])||'toy';
+  const price=lang==='ru'?`${T_.k_from} ${m.price||'—'} ${T_.k_mln}`:`${m.price||'—'} ${T_.k_mln}dan`;
+  const meta=m.c==='hall'&&m.cap?`${DIST[m.dist][lang==='ru'?0:1]} · ${T_.k_up} ${m.cap} ${lang==='ru'?'гостей':'mehmon'}`:`${DIST[m.dist][lang==='ru'?0:1]} · ${catName(m.c,occ)}`;
+  return `<div class="pv"><div class="pv-ph" style="${m.photos[0]?`background-image:url(${m.photos[0]})`:''}">
+      ${m.ok?`<span class="chip done">${ico('seal',13)}${T_.k_verified}</span>`:''}
+      ${m.lux?`<span class="chip gold">${ico('sparkle',13)}${T_.x_title}</span>`:''}</div>
+    <div class="pv-body"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:9px">
+      <div class="pv-name">${esc(m.n)||'—'}</div>
+      ${m.nrev?`<div style="font-size:12.5px;font-weight:700;color:var(--coral-deep);white-space:nowrap">${ico('star',13)} ${m.r} <span style="color:var(--muted-lt);font-weight:600">· ${m.nrev}</span></div>`:''}</div>
+      <div class="pv-meta">${meta}</div>
+      <div class="pv-foot"><span class="pv-price">${price}</span><span class="link">${T_.k_req}</span></div></div></div>`;
+}
+function renderNoCards(){const T_=t();
+  return `<div class="view block"><div class="empty"><span>${ico('photo',40)}</span><h3>${T_.k_none}</h3><p>${T_.k_noneP}</p>
+    <button class="btn" style="max-width:300px;margin:18px auto 0" data-act="newcard">${ico('plus',15)}${T_.k_add}</button></div></div>`;
+}
+function renderCardList(){const T_=t();
+  if(!CARDS.length)return renderNoCards();
+  return `<div class="view block"><h2>${T_.k_list}</h2><p class="sub">${T_.k_listS}</p>
+    <div style="margin-top:14px">${CARDS.map(c=>{const ok=canPublish(c),nq=REQS.filter(r=>r.card===c.id&&r.st==='new').length;
+      return `<button class="row" data-open="${c.id}"><span class="row-i">${ico(c.c,17)}</span>
+        <span class="row-b"><b>${esc(c.n)||catName(c.c)}</b><span>${catName(c.c)} · ${c.price?(lang==='ru'?T_.k_from+' '+c.price+' '+T_.k_mln:c.price+' '+T_.k_mln+'dan'):'—'}${nq?' · '+nq+' '+T_.i_new:''}${c.mod?' · '+T_.k_mod.toLowerCase():''}</span></span>
+        <span class="chip ${ok?'done':'lateS'}">${ok?T_.k_pub:T_.k_unpub}</span></button>`}).join('')}</div>
+    ${freeCats().length?`<button class="add" style="margin-top:14px" data-act="newcard">${ico('plus',13)}${T_.k_add}</button>`
+      :`<p class="note" style="margin-top:14px">${T_.k_allTaken}</p>`}</div>`;
+}
+function renderCardOne(){const T_=t(),m=byId(openCard);if(!m){openCard=null;return renderCardList()}
+  const ok=canPublish(m),missing=[];
+  if(!(Number(m.price)>0))missing.push(T_.k_gPrice);
+  if(m.photos.length<3)missing.push(T_.k_gPhotos(3-m.photos.length));
+  const modNames=m.mod?m.mod.map(f=>T_['k_f'+f[0].toUpperCase()+f.slice(1)]).join(', '):'';
+  return `<div class="view block"><button class="link" data-act="backlist">${ico('back',12)} ${T_.k_backList}</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px">
+      <h2>${esc(m.n)||catName(m.c)}</h2><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">
+        ${m.mod?`<span class="chip warnS">${T_.k_mod}</span>`:''}<span class="chip ${ok?'done':'lateS'}">${ok?T_.k_status:T_.k_statusNo}</span></div></div>
+    <p class="sub">${catName(m.c)}${m.lux?' · '+T_.x_title:''}</p>
+    <div class="gate ${ok?'ok':'no'}" style="margin-top:14px">${ico(ok?'checkFill':'warnD',18)}<span>${ok?T_.k_gateOk:T_.k_gateNo+' '+missing.join(', ')+'.'}</span></div>
+    ${m.mod?`<div class="gate mod" style="margin-top:9px">${ico('clockD',18)}<span>${T_.k_modS(modNames)}</span></div>`:''}
+    ${editing
+      ?`${fld('n',T_.r_name,inp(m,'n'))}${fld('dist',T_.r_dist,sel(m,'dist',DIST.map((d,i)=>[i,d[lang==='ru'?0:1]])))}
+        ${fldService(m)}${fldPhotos(m)}${fld('addr',T_.r_addr,inp(m,'addr'))}
+        <button class="link" style="margin-top:22px;color:var(--late);border-color:var(--late)" data-del="${m.id}">${T_.k_del}</button>
+        <div style="height:90px"></div>`
+      :`<div class="fld"><div class="fld-l">${T_.k_preview}</div>${preview(m)}</div>
+        <button class="btn ghost" style="margin-top:18px" data-act="edit">${ico('edit',16)}${T_.k_edit}</button>
+        <button class="row" style="margin-top:14px" data-tab2="lux"><span class="row-i" style="background:var(--gold-soft);color:var(--gold)">${ico('sparkle',17)}</span>
+          <span class="row-b"><b>${T_.x_title}</b><span>${m.lux?T_.x_has:T_.x_sub}</span></span><span class="go">${ico('caret',12)}</span></button>`}
+  </div>`;
+}
+const renderCard=()=>openCard!=null?renderCardOne():renderCardList();
+function newCardSheet(){const T_=t(),left=freeCats();
+  openSheet(`<h3>${T_.k_addH}</h3><p class="sub">${T_.k_addS}</p>
+    <div class="pills" style="margin-top:14px">${CATS.map(c=>{const taken=!left.includes(c);
+      return `<button class="pill" data-newcat="${c[0]}" aria-pressed="${newCat===c[0]}"${taken?' disabled style="opacity:.4"':''}>${ico(c[0],15)}${c[lang==='ru'?1:2]}${taken?' · '+T_.k_taken:''}</button>`}).join('')}</div>
+    <button class="btn" data-act="createcard"${newCat?'':' disabled'}>${T_.k_addGo}</button>`);
+}
+
+/* ---------- §5.6 отзывы ---------- */
+function renderRev(){const T_=t(),m=card();if(!m)return renderNoCards();
+  const canReply=m.plan!=='base';
+  return `<div class="view block"><h2>${T_.v_title}</h2><div style="height:14px"></div>${cardPills()}
+    <div class="stat3"><div><b>${m.r||'—'}</b><span>${T_.v_avg}</span></div><div><b>${m.nrev}</b><span>${T_.v_count(m.nrev)}</span></div>
+      <div><b>${m.revs.filter(r=>r.rep).length}/${m.revs.length}</b><span>${T_.v_answered}</span></div></div>
+    <p class="note" style="margin-bottom:6px">${T_.v_noDel}</p>
+    ${m.revs.length?m.revs.map((r,i)=>`<div class="rv"><div class="rv-h"><b>${esc(r.n)}</b><i>${dateStr(r.d)}</i></div>
+      <div class="rv-s">${'★'.repeat(r.r)}</div><p>${esc(r[lang])}</p>
+      ${r.rep?`<div class="rv-rep"><b>${T_.v_yours}</b>${esc(r.rep)}</div>`
+        :canReply?`<div class="rv-form"><textarea data-rep="${i}" placeholder="${T_.v_replyPh}" style="min-height:64px"></textarea>
+          <div style="display:flex;gap:7px;justify-content:flex-end"><button class="btn sm lite" data-flag="${i}">${T_.v_flag}</button><button class="btn sm plum" data-sendrep="${i}">${T_.v_send}</button></div></div>`
+        :`<div style="display:flex;gap:9px;align-items:center;margin-top:10px;flex-wrap:wrap"><span class="note">${T_.v_locked}</span><button class="btn sm lite" data-flag="${i}">${T_.v_flag}</button></div>`}
+      ${r.flag?`<div class="chip warnS" style="margin-top:9px">${ico('clockD',13)}${T_.v_flagOn}</div>`:''}
+    </div>`).join(''):`<div class="empty"><span>${ico('chatD',36)}</span><p>${T_.v_none}</p></div>`}</div>`;
+}
+
+/* ---------- §5.7 статистика ---------- */
+function renderStats(){const T_=t(),m=card();if(!m)return renderNoCards();
+  const sum=k=>m.days.reduce((a,d)=>a+d[k],0),views=sum('views'),opens=sum('opens'),reqs=sum('reqs');
+  const avg=avgResp(m.id),late=REQS.filter(r=>r.card===m.id&&timing(r).late).length;
+  const mx=Math.max(1,...m.days.map(d=>d.views)),mr=Math.max(1,...m.days.map(d=>d.reqs));
+  const over=statTab==='over';
+  return `<div class="view block"><h2>${T_.s_title}</h2><p class="sub">${over?T_.s_period:T_['s_p'+statDays]}</p>
+    <div style="height:14px"></div>${cardPills()}
+    <div class="tabs" style="margin-bottom:12px">
+      <button class="pill" data-stab="over" aria-pressed="${over}">${T_.s_tabOver}</button>
+      <button class="pill" data-stab="rep" aria-pressed="${!over}">${T_.s_tabRep}</button>
+      ${over?'':[7,14].map(p=>`<button class="pill" data-sdays="${p}" aria-pressed="${statDays===p}">${T_['s_p'+p]}</button>`).join('')}</div>
+    ${!views?'':over?'':renderReport(m)}
+    ${over&&views?`<div class="kpi">
+      <div><b>${money(views)}</b><span>${T_.s_views}</span></div><div><b>${money(opens)}</b><span>${T_.s_opens}</span></div>
+      <div><b>${reqs}</b><span>${T_.s_reqs}</span></div>
+      <div><b>${avg!=null?hm(avg):'—'}</b><span>${T_.s_resp}${late?`<i class="dn">${late} ${T_.i_late}</i>`:''}</span></div>
+      <div style="grid-column:1/-1"><b>${(reqs/views*100).toFixed(1)}%</b><span>${T_.s_conv}</span></div></div>
+    <div class="card" style="margin-top:12px"><div class="eyebrow">${T_.s_chart}</div>
+      <div class="chart">${m.days.map((d,i)=>{const dt=new Date(NOW);dt.setDate(dt.getDate()-13+i);
+        return `<div><i style="height:${d.views/mx*100}%;--r:${Math.round(d.reqs/mr*100)}%"></i><s>${dt.getDate()}</s></div>`}).join('')}</div>
+      <div class="chart-leg"><span><i class="dot" style="background:var(--lilac)"></i>${T_.s_lViews}</span><span><i class="dot" style="background:var(--coral)"></i>${T_.s_lReqs}</span></div></div>`:''}
+    ${views?'':`<div class="empty"><span>${ico('chart',36)}</span><p>${T_.s_none}</p></div>`}</div>`;
+}
+
+/* ---------- отчёт: те же данные, сведённые по дням и по исходам ---------- */
+function repRows(m){const out=[];
+  for(let i=14-statDays;i<14;i++){const dt=new Date(NOW);dt.setDate(dt.getDate()-13+i);
+    out.push({dt,...m.days[i]})}
+  return out}
+function renderReport(m){const T_=t(),rows=repRows(m);
+  const sum=k=>rows.reduce((a,r)=>a+r[k],0),v=sum('views'),o=sum('opens'),q=sum('reqs');
+  const from=rows[0].dt,to=rows[rows.length-1].dt;
+  /* заявки за период — по времени поступления */
+  const since=new Date(NOW);since.setDate(since.getDate()-statDays);
+  const mine=REQS.filter(r=>r.card===m.id&&r.at>=since);
+  const byState=[['new','i_st_new'],['ans','i_st_ans'],['deal','i_st_deal'],['dec','i_st_dec']]
+    .map(([k,l])=>[T_[l],mine.filter(r=>r.st===k).length]);
+  const answered=mine.filter(r=>r.ansAt!=null);
+  const buckets=[['s_r1',answered.filter(r=>r.ansAt<3).length],['s_r2',answered.filter(r=>r.ansAt>=3&&r.ansAt<6).length],
+    ['s_r3',answered.filter(r=>r.ansAt>=6&&r.ansAt<12).length],['s_r4',mine.filter(r=>timing(r).late||r.ansAt>=12).length]];
+  const maxB=Math.max(1,...buckets.map(b=>b[1]));
+  return `<div class="fld"><div class="fld-l">${T_.s_repH}<i>${dateStr(from)} — ${dateFull(to)}</i></div>
+    <p class="note" style="margin-bottom:10px">${T_.s_repS}</p>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr>
+      <th>${T_.s_tDay}</th><th>${T_.s_tViews}</th><th>${T_.s_tOpens}</th><th>${T_.s_tReqs}</th><th>${T_.s_tConv}</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${dateStr(r.dt)}, ${WD[lang][(r.dt.getDay()+6)%7]}</td><td>${r.views}</td><td>${r.opens}</td><td>${r.reqs}</td>
+        <td>${r.views?(r.reqs/r.views*100).toFixed(1)+'%':'—'}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>${T_.s_tTotal}</td><td>${money(v)}</td><td>${money(o)}</td><td>${q}</td><td>${v?(q/v*100).toFixed(1)+'%':'—'}</td></tr></tfoot>
+    </table></div></div>
+  <div class="fld"><div class="fld-l">${T_.s_reqH}<i>${mine.length}</i></div>
+    ${mine.length?byState.map(([l,c])=>`<div class="bill"><span>${l}</span><b>${c}</b></div>`).join('')
+      :`<p class="note">${T_.s_reqNone}</p>`}</div>
+  <div class="fld"><div class="fld-l">${T_.s_respH}</div>
+    ${buckets.map(([k,c],i)=>`<div class="meter ${i===3&&c?'bad':i===2&&c?'warn':''}" style="margin-top:9px">
+      <div class="meter-t"><b>${T_[k]}</b><i style="font-style:normal;color:var(--muted-lt)">${c}</i></div>
+      <div class="meter-b"><i style="width:${c/maxB*100}%"></i></div></div>`).join('')}
+    <p class="note" style="margin-top:10px">${T_.s_respLux}</p></div>
+  <div class="fld"><button class="btn ghost" data-act="csv">${ico('db',16)}${T_.s_csv}</button>
+    <p class="note" style="margin-top:9px">${T_.s_csvNote}</p></div>`;
+}
+/* выгрузка только сумм по дням: клиентских данных в файле нет (§9.4) */
+function csvText(m){const rows=repRows(m),T_=t();
+  const head=[T_.s_tDay,T_.s_tViews,T_.s_tOpens,T_.s_tReqs].join(';');
+  const body=rows.map(r=>[r.dt.getFullYear()+'-'+String(r.dt.getMonth()+1).padStart(2,'0')+'-'+String(r.dt.getDate()).padStart(2,'0'),
+    r.views,r.opens,r.reqs].join(';'));
+  return [head,...body].join('\n')}
+
+const planTotal=()=>CARDS.reduce((a,c)=>a+PLANS[group(c.c)][PLAN_KEYS.indexOf(c.plan)],0);
+
+/* ---------- §5.8 тариф, §7.1 реклама ---------- */
+function renderPlan(){const T_=t(),m=card();if(!m)return renderNoCards();
+  const g=group(m.c),freeTill=new Date(LAUNCH);freeTill.setMonth(freeTill.getMonth()+6);
+  const feats={base:['b1','b2','b3','b4'],active:['a1','a2','a3','a4','a5'],ext:['e1','e2','e3','e4']};
+  const total=planTotal();
+  return `<div class="view block"><button class="link" data-tab2="co">${ico('back',12)} ${T_.n_co}</button>
+    <h2 style="margin-top:14px">${T_.t_title}</h2><div style="height:14px"></div>${cardPills()}
+    <div class="card"><span class="freeTag">${T_.t_free} ${dateFull(freeTill)}</span>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:9px">
+        <span style="font-size:12.5px;color:var(--muted)">${T_.t_cur} · ${catName(m.c)}</span><b class="hd" style="font-size:16px">${T_['t_'+m.plan]}</b></div>
+      <p class="note" style="margin-top:8px">${T_.t_freeNote}</p></div>
+    <div style="margin-top:14px">${PLAN_KEYS.map((k,i)=>`<div class="plan${m.plan===k?' cur':''}">
+      <div class="plan-h"><b>${T_['t_'+k]}</b><span class="plan-p">${i?money(PLANS[g][i]):'0'}<i> ${i?T_.t_mo:T_.t_forever}</i></span></div>
+      <ul>${feats[k].map(f=>`<li>${T_['t_'+f]}</li>`).join('')}</ul>
+      ${m.plan===k?`<div class="chip done" style="margin-top:12px">${T_.t_current}</div>`:`<button class="btn ${i?'plum':'ghost'}" data-plan="${k}">${T_.t_choose}</button>`}</div>`).join('')}
+      <p class="note">${T_.t_year}</p></div>
+    <div class="sep"><b>${T_.x_title}</b>${T_.t_notLux}</div>
+    <p class="note" style="margin-top:9px">${T_.t_sortNote}</p>
+    ${CARDS.length>1?`<div class="fld"><div class="fld-l">${T_.t_total}</div>
+      ${CARDS.map(c=>`<div class="bill"><span>${esc(c.n)} · ${T_['t_'+c.plan]}</span><b>${money(PLANS[group(c.c)][PLAN_KEYS.indexOf(c.plan)])}</b></div>`).join('')}
+      <div class="bill"><span>${T_.t_total}</span><b>${money(total)} ${T_.t_mo}</b></div>
+      <p class="note" style="margin-top:9px">${T_.t_perCard}</p></div>`:''}
+    <div class="fld"><div class="fld-l">${T_.t_hist}</div>
+      <button class="row" data-act="autorenew"><span class="row-i">${ico('wallet',17)}</span>
+        <span class="row-b"><b>${T_.t_auto}</b><span>${T_.t_autoS}</span></span><span class="sw${ACC.autorenew===false?'':' on'}"><i></i></span></button>
+      <div class="bill"><span>${T_.t_next}</span><b>${dateFull(freeTill)}</b></div>
+      <p class="note" style="margin-top:9px">${T_.t_histEmpty}</p></div>
+    <div class="fld"><div class="fld-l">${T_.t_ads}</div>
+      ${ADS.map(([k,n,p])=>`<div class="adslot"><span class="chip warnS">${T_.t_ads}</span>
+        <div class="adslot-b"><b>${T_['t_ad_'+k]}</b><span>${T_.t_slots(n)} · ${money(p)} ${T_.t_week}${m.plan==='ext'?' · '+T_.t_adFree:''}</span></div>
+        <button class="btn sm lite" data-ad="${k}">${T_.t_adBook}</button></div>`).join('')}
+      <p class="note">${T_.t_adsNote}</p></div></div>`;
+}
+
+/* ---------- §VI премиум-статус: присваивается вручную, не покупается ---------- */
+function luxDraftNew(){return {common:[],ind:[],refs:['','','']}}
+function renderLux(){const T_=t(),m=card();if(!m)return renderNoCards();
+  const avg=avgResp(m.id),std=STD[m.c]||[];
+  const head=`<div class="lux-h"><span class="chip gold">${ico('sparkle',13)}${m.lux?T_.x_has:T_.x_not}</span>
+    <h3>${T_.x_title}</h3><p>${m.lux?T_.x_hasS(dateFull(new Date(2027,2,18))):T_.x_sub}</p></div>`;
+  /* §6.4 — показатели с предупреждением заранее */
+  if(m.lux){
+    const meters=[
+      ['x_mResp',avg!=null?hm(avg):'—',avg==null?0:Math.min(100,avg/6*100),avg!=null&&avg>6?'bad':avg!=null&&avg>4.5?'warn':'',T_.x_mRespL],
+      ['x_mRate',String(m.r),Math.min(100,(5-m.r)/(5-4)*100),m.r<4.5?'bad':m.r<4.7?'warn':'',T_.x_mRateL],
+      ['x_mComp',String(m.complaints),Math.min(100,m.complaints/2*100),m.complaints>=2?'bad':m.complaints===1?'warn':'',T_.x_mCompL]];
+    const warn=meters.some(x=>x[3]);
+    return `<div class="view block"><h2>${T_.x_title}</h2><div style="height:14px"></div>${cardPills()}${head}
+      <div class="fld"><div class="fld-l">${T_.x_panel}</div><p class="note" style="margin-bottom:10px">${T_.x_panelS}</p>
+        ${meters.map(([k,v,pct,cls,lbl])=>`<div class="meter ${cls}"><div class="meter-t"><b>${T_[k]}</b><i style="font-style:normal;color:var(--muted-lt)">${v}</i></div>
+          <div class="meter-b"><i style="width:${Math.max(4,pct)}%"></i></div><p class="note" style="margin-top:4px">${lbl}</p></div>`).join('')}
+        ${warn?`<div class="gate mod" style="margin-top:12px">${ico('warnD',18)}<span>${T_.x_warn}</span></div>`:''}</div></div>`;
+  }
+  if(m.luxApp){const a=m.luxApp;
+    const steps=[['x_s1',1],['x_s2',2],['x_s3',3],['x_s4',4]];
+    return `<div class="view block"><h2>${T_.x_title}</h2><div style="height:14px"></div>${cardPills()}${head}
+      <div class="fld"><div class="fld-l">${T_.x_state}</div>
+        <ol class="steps-v">${steps.map(([k,n])=>`<li class="${n<=a.step?'':'off'}"><i>${ico(n<=a.step?'checkFill':'clockD',18)}</i>${T_[k]}</li>`).join('')}</ol>
+        <div class="gate mod" style="margin-top:12px">${ico('clockD',18)}<span>${T_.x_wait} — ${T_.x_waitS}</span></div></div></div>`;
+  }
+  /* §6.5 — форма заявки */
+  const d=luxDraft||(luxDraft=luxDraftNew());
+  const locked=!m.ok;
+  return `<div class="view block"><h2>${T_.x_title}</h2><div style="height:14px"></div>${cardPills()}${head}
+    <div class="fld"><div class="fld-l">${T_.x_common}<i>${T_.x_commonS}</i></div>
+      ${[1,2,3,4,5].map(i=>{const on=d.common.includes(i),auto=i===4&&avg!=null&&avg<3;
+        return `<button class="std-row" role="checkbox" aria-checked="${on}" data-lux="c${i}">
+          <i style="color:${on?'var(--done)':'var(--muted-lt)'}">${ico(on?'checkFill':'seal',20)}</i>
+          <span style="flex:1"><b>${T_['x_c'+i]}</b><span>${T_['x_c'+i+'s']}${auto?' · '+hm(avg):''}</span></span></button>`}).join('')}
+      ${errs.common?`<div class="err">${errs.common}</div>`:''}</div>
+    <div class="fld"><div class="fld-l">${T_.x_ind}<i>${T_.x_indS}</i></div>
+      ${std.map((s,i)=>{const on=d.ind.includes(i);
+        return `<button class="std-row" role="checkbox" aria-checked="${on}" data-lux="i${i}">
+          <i style="color:${on?'var(--done)':'var(--muted-lt)'}">${ico(on?'checkFill':'seal',20)}</i>
+          <span style="flex:1"><b>${s[lang==='ru'?0:1]}</b></span></button>`}).join('')}
+      ${errs.ind?`<div class="err">${errs.ind}</div>`:''}</div>
+    <div class="fld"><div class="fld-l">${T_.x_refs}<i>${T_.x_c3s}</i></div>
+      ${[0,1,2].map(i=>`<input data-ref="${i}" value="${esc(d.refs[i])}" placeholder="${T_.x_refsPh}" style="margin-bottom:7px">`).join('')}
+      ${errs.refs?`<div class="err">${errs.refs}</div>`:''}</div>
+    ${locked?`<div class="gate no">${ico('warnD',18)}<span>${T_.x_lockedS}</span></div>`
+      :`<button class="btn" data-act="luxsend">${ico('sparkle',16)}${T_.x_send}</button>`}
+    <div style="height:20px"></div></div>`;
+}
+
+/* ---------- моя компания ---------- */
+function renderCo(){const T_=t(),a=ACC,pub=CARDS.filter(canPublish).length;
+  const ro=(l,v,note)=>`<div class="bill"><span>${l}${note?`<i style="display:block;font-style:normal;font-size:11px;color:var(--muted-lt)">${note}</i>`:''}</span><b>${esc(v)||'—'}</b></div>`;
+  const forms=[['ooo',T_.co_form_ooo],['ip',T_.co_form_ip],['self',T_.co_form_self]];
+  const formName=(forms.find(f=>f[0]===a.form)||[])[1]||'—';
+  return `<div class="view block"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <h2>${T_.co_title}</h2>${a.ok?`<span class="chip done">${ico('seal',13)}${T_.co_verified}</span>`:''}</div>
+    <p class="sub">${T_.co_sub}</p>
+    <div class="fld"><div class="fld-l">${T_.co_legal}</div>
+      ${ro(T_.co_name,a.co)}${ro(T_.co_form,formName)}${ro(T_.co_stir,a.stir)}
+      ${coEdit?`<p class="note" style="margin:9px 0 0">${T_.co_locked}</p>`+fld('addr',T_.co_addr,inp(a,'addr'))+fld('dist',T_.co_dist,sel(a,'dist',DIST.map((d,i)=>[i,d[lang==='ru'?0:1]])))
+        :ro(T_.co_addr,a.addr)+ro(T_.co_dist,DIST[a.dist][lang==='ru'?0:1])+`<p class="note" style="margin:9px 0 0">${T_.co_locked}</p>`}</div>
+    <div class="fld"><div class="fld-l">${T_.co_contacts}</div>
+      ${coEdit?fld('person',T_.co_person,inp(a,'person'))+fld('role',T_.co_role,inp(a,'role'))+
+        ro(T_.co_tel,a.tel,T_.co_telNote)+`<p class="note" style="margin:9px 0 0">${T_.co_telLocked}</p>`+
+        fld('tel2',T_.co_tel2,inp(a,'tel2','+998 __ ___ __ __','tel'))+fld('tg',T_.co_tg,inp(a,'tg','@'))
+        :ro(T_.co_person,a.person)+ro(T_.co_role,a.role)+ro(T_.co_tel,a.tel,T_.co_telNote)+ro(T_.co_tel2,a.tel2)+ro(T_.co_tg,a.tg)}
+      <button class="btn ${coEdit?'':'ghost'}" style="margin-top:16px" data-act="${coEdit?'cosave':'coedit'}">${coEdit?ico('checkFill',16)+T_.co_save:ico('edit',16)+T_.co_edit}</button></div>
+    <div class="fld"><div class="fld-l">${T_.co_check}</div>
+      <div class="card"><ol class="steps-v">${[1,2,3,4].map(i=>`<li><i style="color:${a.ok?'var(--done)':'var(--muted-lt)'}">${ico(a.ok?'checkFill':'clockD',18)}</i>${T_['co_c'+i]}</li>`).join('')}</ol>
+        <p class="note" style="margin-top:10px">${a.ok?T_.co_vdate(dateFull(a.vdate))+' · ':''}${T_.co_since(dateFull(a.since))}</p></div></div>
+    <div class="fld"><div class="fld-l">${T_.co_contract}</div>
+      ${ro(T_.co_cNo,a.cNo)}${ro(T_.co_cDate,dateFull(a.cDate))}</div>
+    <div class="fld"><div class="fld-l">${T_.co_svc}<i>${T_.co_svcS(pub,CARDS.length)}</i></div>
+      <button class="row" data-tab2="card"><span class="row-i">${ico('photo',17)}</span><span class="row-b"><b>${T_.co_svcGo}</b></span><span class="go">${ico('caret',12)}</span></button>
+      <button class="row" data-tab2="plan"><span class="row-i">${ico('wallet',17)}</span>
+        <span class="row-b"><b>${T_.n_plan}</b><span>${CARDS.map(c=>T_['t_'+c.plan]).join(', ')} · ${money(planTotal())} ${T_.t_mo}</span></span>
+        <span class="go">${ico('caret',12)}</span></button></div>
+    <div class="fld"><div class="fld-l">${T_.n_set}</div>
+      <div class="row" style="cursor:default"><span class="row-i">${ico('globe',17)}</span>
+        <span class="row-b"><b>${T_.set_lang}</b><span>${T_.set_langS}</span></span>${langSwitch('lang')}</div>
+      <button class="row" data-more="help"><span class="row-i">${ico('tg',17)}</span><span class="row-b"><b>${T_.m_help}</b><span>${T_.m_helpS}</span></span><span class="go">${ico('caret',12)}</span></button>
+      <button class="row" data-more="data"><span class="row-i">${ico('db',17)}</span><span class="row-b"><b>${T_.m_data}</b><span>${T_.m_dataS}</span></span><span class="go">${ico('caret',12)}</span></button>
+      <button class="row" data-more="out"><span class="row-i">${ico('out',17)}</span><span class="row-b"><b>${T_.m_out}</b><span>${T_.m_outS}</span></span><span class="go">${ico('caret',12)}</span></button></div>
+    <div style="height:14px"></div></div>`;
+}
+
+/* ---------- сборка ---------- */
+const TABS=[['inbox','notepad'],['cal','calendar'],['card','photo'],['rev','chatD'],['stats','chart']];
+const VIEWS={inbox:renderInbox,cal:renderCal,card:renderCard,rev:renderRev,stats:renderStats,plan:renderPlan,lux:renderLux,co:renderCo};
+function renderNav(){const T_=t(),nnew=REQS.filter(r=>r.st==='new').length,late=REQS.some(r=>timing(r).late);
+  const b=(k,i,extra)=>`<button data-tab="${k}" aria-pressed="${tab===k}" class="${extra||''}"><span class="ico">${ico(i,17)}${k==='inbox'&&nnew?`<i class="dot${late?' late':''}">${nnew}</i>`:''}</span><span class="lbl">${T_['n_'+k]}</span></button>`;
+  $('#nav').innerHTML=TABS.map(([k,i])=>b(k,i)).join('')+
+    `<button class="desk out" data-tab="lux" aria-pressed="${tab==='lux'}"><span class="ico">${ico('sparkle',17)}</span><span class="lbl">${T_.n_lux}</span></button>
+     <button class="desk" data-tab="co" aria-pressed="${tab==='co'||tab==='plan'}"><span class="ico">${ico('seal',17)}</span><span class="lbl">${T_.n_co}</span></button>`;
+}
+function langSwitch(id){return `<button class="lang" id="${id}" role="switch" aria-checked="${lang==='uz'}" aria-label="RU / UZ"><span class="lang-o">RU</span><span class="lang-t"><i></i></span><span class="lang-o">UZ</span></button>`}
+function render(){const T_=t(),cab=route==='cab';
+  document.documentElement.lang=lang;
+  $('#wm').innerHTML=`bayram<span>.</span>uz <i>${T_.forVendors}</i>`;
+  /* в кабинете язык переключается в «Настройках» на странице компании */
+  $('#shell').classList.toggle('pub',!cab);
+  $('#nav').style.display=cab?'':'none';
+  $('#barR').innerHTML=(cab?'':langSwitch('lang'))+`<button class="gear" id="gear"${cab?'':' style="display:none"'} aria-label="—"></button>`;
+  const short=ACC.co.length>18?ACC.co.slice(0,17)+'…':ACC.co;
+  $('#gear').innerHTML=ico(ACC.ok?'seal':'clockD',16)+`<b>${esc(short)}</b>`;
+  $('#gear').setAttribute('aria-label',T_.n_co);$('#gear').setAttribute('aria-pressed',tab==='co');
+  $('#scroll').innerHTML=cab?VIEWS[tab]():({land:renderLand,login:renderLogin,reg:renderReg,pending:renderPending})[route]();
+  if(cab)renderNav();
+  const sb=$('#saveBar'),show=cab&&tab==='card'&&openCard!=null&&editing;
+  sb.style.display=show?'':'none';
+  if(show)sb.innerHTML=`<button class="btn" data-act="save">${T_.k_save}</button>`;
+}
+function goCab(k){route='cab';tab=k;openCard=null;editing=false;coEdit=false;errs={};render();$('#scroll').scrollTop=0}
+function dataSheet(){const T_=t();
+  openSheet(`<h3>${T_.m_data}</h3><div style="font-size:13.5px">${T_.d_data}</div><button class="btn ghost" data-act="closesheet">${T_.close}</button>`)}
+
+/* ---------- проверки форм ---------- */
+const telOk=s=>/^\+998[\s\d]{9,14}$/.test(String(s).trim());
+function validateReg(step){const T_=t(),m=reg;errs={};
+  if(step===1){if(!m.n.trim())errs.n=T_.e_req;if(!telOk(m.tel))errs.tel=T_.e_tel;
+    if(!m.codeSent||!/^\d{4}$/.test(m.code))errs.code=T_.e_code;if(!m.person.trim())errs.person=T_.e_req}
+  if(step===2){if(!m.ru.trim()&&!m.uz.trim())errs.ru=T_.e_req;
+    if(!(Number(m.price)>0))errs.price=T_.e_price;
+    const filled=m.pk.filter(p=>p[0].trim()&&Number(p[2])>0).length;
+    if(!filled)errs.pk=T_.e_pk;else if(m.c==='hall'&&filled<2)errs.pk=T_.e_pkHall}
+  if(step===3){if(m.photos.length<3)errs.photos=T_.e_photos(3-m.photos.length);
+    if(!m.stir.trim())errs.stir=T_.e_req;if(!m.addr.trim())errs.addr=T_.e_req;
+    if(!m.consent)errs.consent=T_.e_consent}
+  return !Object.keys(errs).length;
+}
+function validateCard(m){const T_=t();errs={};
+  if(!m.n.trim())errs.n=T_.e_req;
+  if(!m.ru.trim()&&!m.uz.trim())errs.ru=T_.e_req;
+  if(!(Number(m.price)>0))errs.price=T_.e_price;
+  if(m.c==='hall'&&m.pk.filter(p=>p[0].trim()&&Number(p[2])>0).length<2)errs.pk=T_.e_pkHall;
+  return !Object.keys(errs).length;
+}
+/* §5.5 — цена, фото и описание уходят на модерацию, остальное применяется сразу */
+let cardSnapshot=null;
+const snap=m=>JSON.stringify({price:m.price,photos:m.photos.length,ru:m.ru,uz:m.uz,pk:m.pk});
+function modFields(m){if(!cardSnapshot)return [];const was=JSON.parse(cardSnapshot),out=[];
+  if(String(was.price)!==String(m.price)||JSON.stringify(was.pk)!==JSON.stringify(m.pk))out.push('price');
+  if(was.photos!==m.photos.length)out.push('photos');
+  if(was.ru!==m.ru||was.uz!==m.uz)out.push('desc');
+  return out;
+}
+
+/* ---------- события. §X.1: атрибуты data-* не пересекаются ---------- */
+document.addEventListener('input',e=>{const el=e.target,m=model();
+  if(el.dataset.ak2!==undefined){auth[el.dataset.ak2]=el.value;return}
+  if(el.dataset.ref!==undefined){luxDraft.refs[+el.dataset.ref]=el.value;return}
+  if(el.dataset.mk!==undefined){
+    const host=(route==='cab'&&tab==='co')?ACC:m;
+    host[el.dataset.mk]=el.type==='number'?(el.value===''?'':Number(el.value)):el.value;return}
+  if(el.dataset.pkf!==undefined){const [i,f]=el.dataset.pkf.split('-').map(Number);
+    while(m.pk.length<=i)m.pk.push(['','','']);
+    m.pk[i][f]=f===2?(el.value===''?'':Number(el.value)):el.value;
+    if(f===2&&i===0&&m.c==='hall')m.price=Number(el.value)||m.price;return}
+});
+document.addEventListener('change',e=>{const el=e.target;
+  if(el.dataset.act==='addph'){const m=model(),files=[...el.files].slice(0,10-m.photos.length);
+    if([...el.files].length>files.length)toast(t().k_photoLimit);
+    let n=files.length;if(!n)return;
+    files.forEach(f=>{const r=new FileReader();r.onload=()=>{m.photos.push(r.result);if(!--n)render()};r.readAsDataURL(f)});return}
+  if(el.tagName==='SELECT'&&el.dataset.mk){const host=(route==='cab'&&tab==='co')?ACC:model();
+    host[el.dataset.mk]=el.dataset.mk==='dist'?+el.value:el.value;
+    if(el.dataset.mk==='c'){host.feats=[]}
+    render()}
+});
+document.addEventListener('click',e=>{const T_=t(),q=s=>e.target.closest(s),m=model();
+  if(q('.lang')){lang=lang==='ru'?'uz':'ru';render();return}
+  if(q('#gear')){goCab('co');return}
+  if(q('#scrim')){closeSheet();return}
+
+  const go=q('[data-go]');
+  if(go){const k=go.dataset.go;
+    if(k==='reg'){reg=blank();regStep=1;errs={};route='reg'}
+    else if(k==='regback'){regStep--;errs={}}
+    else if(k==='land'){route='land'}
+    else if(k==='login'){auth={tel:'',code:'',sent:false};errs={};route='login'}
+    else if(k==='cab'){goCab('card');return}
+    render();$('#scroll').scrollTop=0;return}
+
+  const act=q('[data-act]');
+  if(act){const a=act.dataset.act;
+    if(a==='authcode'){if(!telOk(auth.tel)){errs={tel:T_.e_tel};render();return}
+      auth.sent=true;errs={};render();toast(T_.r_sent+': <b>'+esc(auth.tel)+'</b>');return}
+    if(a==='authgo'){errs={};
+      if(!telOk(auth.tel))errs.tel=T_.e_tel;
+      else if(!auth.sent||!/^\d{4}$/.test(auth.code))errs.code=T_.e_code;
+      if(Object.keys(errs).length){render();return}
+      goCab('inbox');return}
+    if(a==='regcode'){if(!telOk(reg.tel)){errs={tel:T_.e_tel};render();return}
+      reg.codeSent=true;errs={};render();toast(T_.r_sent+': <b>'+esc(reg.tel)+'</b>');return}
+    if(a==='regnext'){if(!validateReg(regStep)){render();return}
+      if(regStep<3){regStep++;render();$('#scroll').scrollTop=0}
+      else{route='pending';render();toast(T_.p_sent)}return}
+    if(a==='addpk'){if(m.pk.length<4)m.pk.push(['','','']);render();return}
+    if(a==='edit'){editing=true;cardSnapshot=snap(m);render();$('#scroll').scrollTop=0;return}
+    if(a==='save'){if(!validateCard(m)){render();return}
+      const f=modFields(m);editing=false;errs={};
+      if(f.length){m.mod=f;render();toast(T_.k_modSent)}
+      else{render();toast(canPublish(m)?T_.k_saved:T_.k_savedDraft)}
+      cardSnapshot=null;$('#scroll').scrollTop=0;return}
+    if(a==='backlist'){openCard=null;editing=false;errs={};render();$('#scroll').scrollTop=0;return}
+    if(a==='newcard'){newCat=freeCats()[0]?freeCats()[0][0]:null;newCardSheet();return}
+    if(a==='createcard'){if(!newCat)return;
+      const c={id:++seq,n:'',c:newCat,dist:ACC.dist,ru:'',uz:'',price:'',pk:[['','',''],['','','']],cap:'',
+        feats:[],occ:['toy'],photos:[],addr:ACC.addr,ok:false,plan:'base',r:0,nrev:0,lux:false,luxApp:null,
+        complaints:0,busy:new Set(),days:days14(0),mod:null,revs:[]};
+      CARDS.push(c);cardId=c.id;openCard=c.id;editing=true;cardSnapshot=snap(c);newCat=null;
+      closeSheet();tab='card';render();$('#scroll').scrollTop=0;toast(T_.k_created(catName(c.c)));return}
+    if(a==='delgo'){const c=byId(delId),nm=c.n||catName(c.c);CARDS=CARDS.filter(x=>x.id!==delId);
+      if(cardId===delId)cardId=CARDS[0]?CARDS[0].id:null;
+      openCard=null;editing=false;delId=null;closeSheet();render();toast(T_.k_deleted(nm));return}
+    if(a==='coedit'){coEdit=true;render();return}
+    if(a==='cosave'){errs={};
+      if(!ACC.person.trim())errs.person=T_.e_req;
+      if(ACC.tel2&&!telOk(ACC.tel2))errs.tel2=T_.e_tel;
+      render();if(!Object.keys(errs).length){coEdit=false;render();toast(T_.co_saved)}return}
+    if(a==='csv'){const m=card(),text=csvText(m);
+      try{const blob=new Blob([text],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a2=document.createElement('a');
+        a2.href=url;a2.download='bayram-'+(m.n||m.c)+'-'+statDays+'d.csv';document.body.appendChild(a2);a2.click();
+        a2.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);toast(T_.s_csvDone)}
+      catch(err){toast(T_.s_csvNo)}
+      return}
+    if(a==='autorenew'){ACC.autorenew=ACC.autorenew===false;render();return}
+    if(a==='rngcancel'){rngStart=null;render();return}
+    if(a==='closesheet'){closeSheet();return}
+    if(a==='luxsend'){const d=luxDraft,c=card();errs={};
+      if(d.common.length<5)errs.common=T_.x_needCommon;
+      if(d.ind.length<3)errs.ind=T_.x_needInd;
+      if(d.refs.filter(r=>r.trim()).length<3)errs.refs=T_.x_needRefs;
+      if(Object.keys(errs).length){render();return}
+      c.luxApp={step:1,at:NOW};luxDraft=null;render();toast(T_.x_sent);return}
+    if(a==='flaggo'){const c=card(),v=($('#flagText')||{}).value||'';
+      c.revs[flagId].flag=v.trim()||'—';c.complaints++;closeSheet();render();toast(T_.v_flagged);return}
+  }
+
+  const tb=q('[data-tab]');if(tb){closeSheet();goCab(tb.dataset.tab);return}
+  const tb2=q('[data-tab2]');if(tb2){goCab(tb2.dataset.tab2);return}
+  const mr=q('[data-more]');if(mr){const k=mr.dataset.more;
+    if(k==='help'){window.open('https://t.me/bayramuz_help','_blank','noopener');return}
+    if(k==='data'){dataSheet();return}
+    if(k==='out'){route='land';render();$('#scroll').scrollTop=0;toast(T_.out_ok);return}
+    return}
+  const nc=q('[data-newcat]');if(nc){newCat=nc.dataset.newcat;newCardSheet();return}
+  const op=q('[data-open]');if(op){openCard=+op.dataset.open;cardId=openCard;editing=false;render();$('#scroll').scrollTop=0;return}
+  const dl=q('[data-del]');if(dl){delId=+dl.dataset.del;
+    openSheet(`<h3>${T_.k_delH}</h3><p class="sub">${T_.k_delS}</p>
+      <div style="display:flex;gap:9px;margin-top:16px"><button class="btn ghost" data-act="closesheet">${T_.c_cancel}</button>
+      <button class="btn" style="background:var(--late)" data-act="delgo">${T_.k_delGo}</button></div>`);return}
+  const cp=q('[data-card]');if(cp){cardId=+cp.dataset.card;luxDraft=null;errs={};render();return}
+  const rmpk=q('[data-rmpk]');if(rmpk){m.pk.splice(+rmpk.dataset.rmpk,1);render();return}
+  const rmph=q('[data-rmph]');if(rmph){m.photos.splice(+rmph.dataset.rmph,1);render();return}
+  const ck=q('[data-chk]');if(ck){m[ck.dataset.chk]=!m[ck.dataset.chk];render();return}
+  const tg=q('[data-tog]');if(tg){const arr=m[tg.dataset.tog],v=tg.dataset.v,i=arr.indexOf(v);
+    i<0?arr.push(v):arr.splice(i,1);render();return}
+  const lx=q('[data-lux]');if(lx){const v=lx.dataset.lux,d=luxDraft||(luxDraft=luxDraftNew());
+    const arr=v[0]==='c'?d.common:d.ind,n=+v.slice(1),i=arr.indexOf(n);
+    i<0?arr.push(n):arr.splice(i,1);render();return}
+  const sb2=q('[data-stab]');if(sb2){statTab=sb2.dataset.stab;render();$('#scroll').scrollTop=0;return}
+  const sd=q('[data-sdays]');if(sd){statDays=+sd.dataset.sdays;render();return}
+  const fl=q('[data-filter]');if(fl){filter=fl.dataset.filter;render();return}
+  const ct=q('[data-contact]');if(ct){const r=REQS.find(x=>x.id===+ct.dataset.contact);
+    if(r&&r.st==='new'){r.st='ans';r.ansAt=(NOW-r.at)/3600000;r.log.push({from:'new',to:'ans',at:NOW});
+      setTimeout(render,0)}   /* ссылка должна успеть сработать */
+    return}
+  const cl=q('[data-close]');if(cl){const [to,id]=cl.dataset.close.split('-');
+    const r=REQS.find(x=>x.id===+id),from=r.st;r.st=to;
+    if(r.ansAt==null)r.ansAt=(NOW-r.at)/3600000;
+    r.log.push({from,to,at:NOW});render();toast(T_.i_dealDone+' '+T_.i_seen);return}
+  const ro=q('[data-reopen]');if(ro){const r=REQS.find(x=>x.id===+ro.dataset.reopen),from=r.st;
+    r.st='ans';r.log.push({from,to:'ans',at:NOW});filter='now';render();toast(T_.i_reopened);return}
+  const dc=q('[data-dec]');if(dc){decId=+dc.dataset.dec;
+    openSheet(`<h3>${T_.i_decTitle}</h3><p class="sub">${T_.i_decSub}</p>
+      <div style="margin-top:10px">${[1,2,3].map(i=>`<button class="row" data-reason="${i-1}"><span class="row-b"><b>${T_['i_dec'+i]}</b></span><span class="go">${ico('caret',12)}</span></button>`).join('')}</div>
+      <button class="btn ghost" data-act="closesheet">${T_.c_cancel}</button>`);return}
+  const rs=q('[data-reason]');if(rs){const r=REQS.find(x=>x.id===decId),from=r.st;
+    r.st='dec';r.reason=+rs.dataset.reason;
+    if(r.ansAt==null)r.ansAt=(NOW-r.at)/3600000;
+    r.log.push({from,to:'dec',reason:r.reason,at:NOW});
+    if(r.reason===0){const c=byId(r.card);if(c)c.busy.add(dkey(r.date))}
+    closeSheet();render();toast(T_.rq_declined);return}
+  const md=q('[data-mode]');if(md){calMode=md.dataset.mode;rngStart=null;render();return}
+  const mo=q('[data-mo]');if(mo){calMonth=new Date(calMonth.getFullYear(),calMonth.getMonth()+ +mo.dataset.mo,1);render();return}
+  const day=q('[data-day]');if(day){const [y,mm,d]=day.dataset.day.split('-').map(Number),dt=new Date(y,mm,d),set=card().busy;
+    if(calMode==='tap'){set.has(day.dataset.day)?set.delete(day.dataset.day):set.add(day.dataset.day);render();toast(T_.cal_saved)}
+    else if(!rngStart){rngStart=dt;render()}
+    else{const a=rngStart;rngStart=null;
+      openSheet(`<h3>${dateStr(a<dt?a:dt)} — ${dateStr(a<dt?dt:a)}</h3>
+        <div style="display:flex;gap:9px;margin-top:14px"><button class="btn" data-rng="busy">${T_.c_busyRange}</button>
+        <button class="btn ghost" data-rng="free">${T_.c_freeRange}</button></div>`);
+      $('#sheet').dataset.a=a.getTime();$('#sheet').dataset.b=dt.getTime()}
+    return}
+  const rg=q('[data-rng]');if(rg){const sh=$('#sheet');
+    applyRange(card().busy,new Date(+sh.dataset.a),new Date(+sh.dataset.b),rg.dataset.rng==='busy');
+    closeSheet();render();toast(T_.cal_saved);return}
+  const sr=q('[data-sendrep]');if(sr){const i=+sr.dataset.sendrep,el=$('[data-rep="'+i+'"]'),v=(el&&el.value||'').trim();
+    if(!v)return;card().revs[i].rep=v;render();toast(T_.v_sent);return}
+  const fg=q('[data-flag]');if(fg){flagId=+fg.dataset.flag;
+    openSheet(`<h3>${T_.v_flagH}</h3><p class="sub">${T_.v_flagS}</p>
+      <textarea id="flagText" style="margin-top:12px" placeholder="${T_.v_flagH}"></textarea>
+      <div style="display:flex;gap:9px;margin-top:12px"><button class="btn ghost" data-act="closesheet">${T_.c_cancel}</button>
+      <button class="btn plum" data-act="flaggo">${T_.v_flagGo}</button></div>`);return}
+  const pl=q('[data-plan]');if(pl){card().plan=pl.dataset.plan;render();
+    toast(T_.t_changed(T_['t_'+card().plan]));$('#scroll').scrollTop=0;return}
+  if(q('[data-ad]')){toast(T_.t_adBooked);return}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if($('#sheet').classList.contains('on'))closeSheet();return}
+  if((e.key==='Enter'||e.key===' ')&&document.activeElement&&document.activeElement.matches('[data-day]')){
+    e.preventDefault();document.activeElement.click()}
+});
+render();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+build/
+.wrangler/
+.turbo/
+*.tsbuildinfo
+
+# env & secrets — never commit
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+supabase/.temp/
+supabase/.branches/
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.log
+
+# prototype shots output
+prototypes/client/mob-*.png
+
+# Claude Code (локальные worktree агентов и личные настройки)
+.claude/worktrees/
+.claude/settings.local.json
+
+# Приватные документы (клон nour-group/bayramm-internal) — никогда не в публичный репозиторий
+internal/

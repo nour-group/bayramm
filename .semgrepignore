@@ -1,0 +1,7 @@
+:include .gitignore
+
+# Прототипы — спецификация интерфейса, не деплоятся
+prototypes/
+
+# Сгенерированные типы
+**/worker-configuration.d.ts

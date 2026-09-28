@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="ru">
+<script>try{const x=JSON.parse(localStorage.getItem("bayram_admin_v1"));if(x&&x.theme&&x.theme!=="auto")document.documentElement.setAttribute("data-theme",x.theme)}catch(e){}</script>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BAYRAMM — панель оператора</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F5F4;--card:#FFFFFF;--ink:#171717;--muted:#6B6B6B;--line:#E5E5E3;--soft:#FAFAF9;
+  --side:#FFFFFF;--side-ink:#171717;--side-muted:#737373;--side-hover:#F2F2F0;--side-on:#171717;--side-on-ink:#FFFFFF;--side-line:#E5E5E3;
+  --coral:#C2410C;--coral-ink:#FFFFFF;--coral-soft:#FFEDE3;
+  --berry:#C2410C;--berry-soft:#FFEDE3;--teal:#171717;--teal-soft:#EDEDEB;--amber:#9A3412;--amber-soft:#FFF4EC;
+  --sky:#525252;--sky-soft:#F0F0EE;--grey-soft:#EDEDEB;--ring:#EA580C;--grey:#171717;
+  --r-s:6px;--r-m:10px;--r-l:16px;
+  --h:'Unbounded',system-ui,sans-serif;--b:'Manrope',system-ui,-apple-system,'Segoe UI',sans-serif;color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#0A0A0A;--card:#161616;--ink:#F5F5F5;--muted:#A3A3A3;--line:#2A2A2A;--soft:#1D1D1D;
+  --side:#000000;--side-ink:#F5F5F5;--side-muted:#8A8A8A;--side-hover:#1A1A1A;--side-on:#F5F5F5;--side-on-ink:#0A0A0A;--side-line:#262626;
+  --coral:#FF7A2F;--coral-ink:#0A0A0A;--coral-soft:#2E1A0F;
+  --berry:#FF8A45;--berry-soft:#2E1A0F;--teal:#F5F5F5;--teal-soft:#262626;--amber:#FFB27A;--amber-soft:#26190F;
+  --sky:#BDBDBD;--sky-soft:#232323;--grey-soft:#2A2A2A;--ring:#FF7A2F;color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --paper:#0A0A0A;--card:#161616;--ink:#F5F5F5;--muted:#A3A3A3;--line:#2A2A2A;--soft:#1D1D1D;
+  --side:#000000;--side-ink:#F5F5F5;--side-muted:#8A8A8A;--side-hover:#1A1A1A;--side-on:#F5F5F5;--side-on-ink:#0A0A0A;--side-line:#262626;
+  --coral:#FF7A2F;--coral-ink:#0A0A0A;--coral-soft:#2E1A0F;
+  --berry:#FF8A45;--berry-soft:#2E1A0F;--teal:#F5F5F5;--teal-soft:#262626;--amber:#FFB27A;--amber-soft:#26190F;
+  --sky:#BDBDBD;--sky-soft:#232323;--grey-soft:#2A2A2A;--ring:#FF7A2F;color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 var(--b)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--coral);outline-offset:2px}
+.app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+/* sidebar */
+.side{background:var(--side);color:var(--side-ink);border-right:1px solid var(--side-line);padding:22px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:18px;overflow:auto}
+.brand{font-family:var(--h);font-size:19px;letter-spacing:.01em;padding:0 10px}
+.brand small{display:block;font:500 12px var(--b);color:var(--side-muted);margin-top:2px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--r-s);color:var(--side-ink);text-decoration:none;font-weight:600;font-size:14px}
+.nav a:hover{background:var(--side-hover)}
+.nav a.on{background:var(--side-on);color:var(--side-on-ink)}
+.nav a svg{width:18px;height:18px;flex:none;opacity:.85}
+.nav .badge{margin-left:auto;background:var(--coral);color:#fff;border-radius:20px;font-size:11px;font-weight:800;padding:1px 7px}
+.nav .sep{height:1px;background:var(--side-line);margin:8px 10px}
+.side-foot{margin-top:auto;padding:0 10px;display:flex;flex-direction:column;align-items:flex-start;gap:10px;font-size:13px;color:var(--side-muted)}
+.seg{display:inline-flex;border:1px solid var(--side-line);border-radius:20px;overflow:hidden;width:max-content}
+.seg button{background:none;border:0;padding:4px 12px;cursor:pointer;color:var(--side-muted);font-weight:700;font-size:12px}
+.seg button.on{background:var(--side-on);color:var(--side-on-ink)}
+/* main */
+main{min-width:0;padding:24px 32px 60px}
+.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+.top h1{font-family:var(--h);font-weight:600;font-size:24px;margin:0;margin-right:auto;line-height:1.2}
+.btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--card);border-radius:var(--r-s);padding:8px 14px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.pri{background:var(--coral);border-color:var(--coral);color:var(--coral-ink)}
+.btn.pri:hover{filter:brightness(1.07)}
+.btn.good{background:var(--ink);border-color:var(--ink);color:var(--card)}
+.btn.bad{color:var(--berry);border-color:var(--berry-soft)}
+.btn.sm{padding:4px 10px;font-size:13px}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.search{border:1px solid var(--line);background:var(--card);border-radius:var(--r-s);padding:8px 12px;min-width:220px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r-m);padding:18px 20px}
+.panel h2{font-family:var(--h);font-weight:600;font-size:15px;margin:0 0 12px;line-height:1.3}
+.panel h2 .n{color:var(--muted);font-family:var(--b);font-weight:700;margin-left:6px}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:1.4fr 1fr}
+.g3{grid-template-columns:repeat(3,1fr)}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.empty{padding:26px;text-align:center;color:var(--muted)}
+/* pipeline — the one bold element */
+.pipe{display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--card);border:1px solid var(--line);border-radius:var(--r-l);overflow:hidden;margin-bottom:16px}
+.stage{padding:18px 20px 16px;border-right:1px solid var(--line);cursor:pointer;background:none;border-top:0;border-bottom:0;border-left:0;text-align:left;position:relative}
+.stage:last-child{border-right:0}
+.stage:hover{background:var(--soft)}
+.stage .num{font-family:var(--h);font-size:34px;line-height:1}
+.stage .lbl{font-weight:700;margin-top:8px}
+.stage .hint{font-size:13px;color:var(--muted)}
+.stage.active{background:var(--ink);color:var(--card)}
+.stage.active .hint{color:var(--muted)}.stage.active .num{color:var(--ring)}
+.stage.active:hover{background:var(--ink);opacity:.92}
+.target{grid-column:1/-1;border-top:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:14px;font-size:13px}
+.bar{flex:1;height:8px;background:var(--grey-soft);border-radius:8px;overflow:hidden;display:flex}
+.bar i{display:block;height:100%}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r-m);padding:14px 16px}
+.kpi b{display:block;font-size:22px;font-weight:800}
+.kpi span{font-size:13px;color:var(--muted)}
+.kpi.warn b{color:var(--berry)}
+.todo{display:flex;flex-direction:column}
+.todo button{display:flex;align-items:center;gap:12px;padding:11px 4px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;cursor:pointer}
+.todo button:last-child{border-bottom:0}
+.todo button:hover{background:var(--soft)}
+.todo .c{min-width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:800}
+.todo .t{flex:1}
+/* table */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-m);background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-weight:700;color:var(--muted);font-size:13px;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;background:var(--soft)}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.click{cursor:pointer}
+tr.click:hover td{background:var(--soft)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.nm{font-weight:700}
+.id{font-size:12px;color:var(--muted)}
+.pill{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.s-lead{background:var(--grey-soft);color:var(--muted)}
+.s-draft{background:var(--amber-soft);color:var(--amber)}
+.s-review{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.s-active{background:var(--ink);color:var(--card)}
+.s-suspended,.s-rejected,.s-overdue,.s-blocked{background:var(--berry-soft);color:var(--berry)}
+.s-new{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.s-viewed{background:var(--amber-soft);color:var(--amber)}
+.s-replied{background:var(--grey-soft);color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:5px 12px;font-size:13px;font-weight:700;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--card);border-color:var(--ink)}
+.chip span{opacity:.6;margin-left:4px}
+.chips select{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:5px 10px;font-size:13px;font-weight:600}
+.chips .search{margin-left:auto}
+/* readiness ring */
+.ring{--p:0;width:30px;height:30px;border-radius:50%;display:inline-grid;place-items:center;font-size:11px;font-weight:800;
+  background:conic-gradient(var(--ring) calc(var(--p)*1%),var(--grey-soft) 0)}
+.ring::before{content:attr(data-v);width:22px;height:22px;border-radius:50%;background:var(--card);display:grid;place-items:center}
+.rate{display:inline-flex;align-items:center;gap:6px}
+.rate i{width:40px;height:5px;border-radius:5px;background:var(--grey-soft);position:relative;overflow:hidden}
+.rate i::after{content:"";position:absolute;inset:0;width:var(--w);background:var(--c,var(--teal))}
+/* drawer */
+.scrim{position:fixed;inset:0;background:rgba(20,10,22,.42);z-index:40;display:none}
+.scrim.on{display:block}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(620px,100%);background:var(--paper);z-index:41;transform:translateX(100%);transition:transform .22s ease;display:flex;flex-direction:column;box-shadow:-10px 0 40px rgba(20,10,22,.18)}
+.drawer.on{transform:none}
+.dh{padding:18px 22px;border-bottom:1px solid var(--line);background:var(--card);display:flex;gap:12px;align-items:flex-start}
+.dh h3{font-family:var(--h);font-weight:600;font-size:19px;margin:0 0 4px;line-height:1.25}
+.dh .x{margin-left:auto;border:0;background:none;font-size:22px;cursor:pointer;line-height:1;padding:4px 8px;color:var(--muted)}
+.db{overflow:auto;padding:18px 22px 40px;display:flex;flex-direction:column;gap:14px}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.check{display:flex;flex-direction:column}
+.check label{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.check label:last-child{border-bottom:0}
+.check input{width:18px;height:18px;accent-color:var(--ring)}
+.check .auto{margin-left:auto;font-size:12px;color:var(--muted)}
+.dl{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:14px;margin:0}
+.dl dt{color:var(--muted)}
+.dl dd{margin:0;font-weight:600;overflow-wrap:anywhere}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.ph{aspect-ratio:4/3;border-radius:var(--r-s);background-size:cover;background-position:center;position:relative;overflow:hidden;border:1px solid var(--line)}
+.ph.seed{background:radial-gradient(circle at 50% 50%,transparent 9px,var(--muted) 9.5px,var(--muted) 10.5px,transparent 11px),var(--grey-soft)}
+.ph button{position:absolute;top:3px;right:3px;border:0;border-radius:50%;width:22px;height:22px;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;line-height:1}
+.alert{border-radius:var(--r-m);padding:10px 14px;font-size:14px;border:1px solid}
+.alert.info{background:var(--soft);color:var(--ink);border-color:var(--line)}
+.alert.warn{background:var(--coral-soft);color:var(--ink);border-color:transparent;border-left:3px solid var(--coral)}
+.alert.bad{background:var(--berry-soft);color:var(--berry);border-color:transparent}
+.notes{display:flex;flex-direction:column;gap:8px}
+.note{background:var(--soft);border-radius:var(--r-s);padding:8px 12px;font-size:14px}
+.note .m{font-size:12px;color:var(--muted)}
+textarea,.field input,.field select{width:100%;border:1px solid var(--line);background:var(--card);border-radius:var(--r-s);padding:8px 10px}
+textarea{min-height:70px;resize:vertical}
+/* form */
+.form{display:grid;gap:16px;max-width:980px}
+.fs{background:var(--card);border:1px solid var(--line);border-radius:var(--r-m);padding:18px 20px;display:grid;grid-template-columns:200px 1fr;gap:20px}
+.fs>div:first-child h2{font-family:var(--h);font-weight:600;font-size:15px;margin:0 0 6px}
+.fs>div:first-child p{margin:0;font-size:13px;color:var(--muted)}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700}
+.field.full{grid-column:1/-1}
+.field .err{color:var(--berry);font-weight:600;font-size:12px}
+.field.bad input,.field.bad select{border-color:var(--berry)}
+.upload{border:1.5px dashed var(--line);border-radius:var(--r-m);padding:16px;text-align:center;cursor:pointer;color:var(--muted);font-size:14px}
+.upload:hover{border-color:var(--muted)}
+.formbar{position:sticky;bottom:0;background:var(--paper);padding:12px 0;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--line)}
+/* moderation */
+.mod{display:grid;gap:12px}
+.diff{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:14px;margin:10px 0}
+.diff div{border-radius:var(--r-s);padding:8px 10px}
+.diff .was{background:var(--berry-soft)}
+.diff .now{background:var(--grey-soft)}
+.diff b{display:block;font-size:12px;color:var(--muted)}
+.stars{color:var(--ring);letter-spacing:2px}
+/* modal & toast */
+.modal{position:fixed;inset:0;display:none;place-items:center;z-index:60;background:rgba(20,10,22,.45);padding:16px}
+.modal.on{display:grid}
+.mbox{background:var(--card);border-radius:var(--r-l);width:min(460px,100%);padding:20px 22px;display:flex;flex-direction:column;gap:12px}
+.mbox.wide{width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto}
+.mbox h4{font-weight:800;font-size:13px;color:var(--muted);margin:6px 0 0}
+.linkrow{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:var(--r-s);padding:6px 6px 6px 10px;background:var(--soft)}
+.linkrow code{flex:1;font:600 13px var(--b);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.person{border:1px solid var(--line);border-radius:var(--r-m);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.person .nm{font-size:16px}
+.mbox h3{font-family:var(--h);font-weight:600;font-size:17px;margin:0}
+.mbox .acts{justify-content:flex-end}
+.toasts{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:70;display:flex;flex-direction:column;gap:8px;align-items:center}
+.toast{background:var(--ink);color:var(--card);padding:10px 16px;border-radius:var(--r-s);font-weight:600;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.2)}
+.switch{position:relative;width:38px;height:22px;flex:none}
+.switch input{opacity:0;width:100%;height:100%;margin:0;position:absolute;cursor:pointer;z-index:1}
+.switch i{position:absolute;inset:0;border-radius:22px;background:var(--grey-soft);transition:.15s}
+.switch i::after{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:var(--card);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:.15s}
+.switch input:checked+i{background:var(--ring)}
+.switch input:checked+i::after{left:19px}
+.switch input:disabled+i{opacity:.5}
+.row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .grow{flex:1}
+.yes{color:var(--ring);font-weight:800}.no{color:var(--muted)}
+@media (max-width:1100px){.g2,.g3{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{position:sticky;height:auto;flex-direction:row;align-items:center;padding:10px 12px;z-index:30;gap:10px}
+  .side::after{display:none}
+  .brand small{display:none}.brand{font-size:16px;padding:0 4px}
+  .nav{flex-direction:row;overflow-x:auto;flex:1}
+  .nav a{white-space:nowrap}.nav .sep{display:none}
+  .side-foot{margin:0;padding:0}.side-foot .who{display:none}
+  main{padding:18px 14px 60px}
+  .pipe{grid-template-columns:repeat(2,1fr)}.stage:nth-child(2){border-right:0}.stage:nth-child(-n+2){border-bottom:1px solid var(--line)}
+  .fs{grid-template-columns:1fr}.fields{grid-template-columns:1fr}
+  .dl{grid-template-columns:1fr}.dl dt{margin-top:6px}
+  .chips .search{margin-left:0;width:100%}
+  .search{min-width:0}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">BAYRAMM<small id="brandSub"></small></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">
+      <div class="seg" id="langSeg"><button data-l="ru">RU</button><button data-l="uz">UZ</button></div>
+      <div class="seg" id="themeSeg"></div>
+      <div class="who" id="who"></div>
+    </div>
+  </aside>
+  <main>
+    <div class="top"><h1 id="title"></h1><div id="topActs" class="acts"></div></div>
+    <div id="view"></div>
+  </main>
+</div>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true"></aside>
+<div class="modal" id="modal"><div class="mbox" id="mbox" role="dialog" aria-modal="true"></div></div>
+<div class="toasts" id="toasts"></div>
+<input type="file" id="fileIn" accept="image/*" multiple hidden>
+
+<script>
+(function(){
+"use strict";
+const LS='bayram_admin_v1', DAY=864e5, HOUR=36e5;
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- i18n ---------- */
+const L={
+ sub:['Панель оператора','Operator paneli'],
+ dashboard:['Обзор','Umumiy koʻrinish'],vendors:['Партнёры','Hamkorlar'],add:['Новый партнёр','Yangi hamkor'],
+ requests:['Заявки','Soʻrovlar'],clients:['Клиенты','Mijozlar'],moderation:['Модерация','Moderatsiya'],
+ payments:['Оплаты','Toʻlovlar'],team:['Команда','Jamoa'],audit:['Журнал действий','Harakatlar jurnali'],settings:['Настройки','Sozlamalar'],
+ addVendor:['Добавить партнёра','Hamkor qoʻshish'],editVendor:['Редактировать партнёра','Hamkorni tahrirlash'],
+ lead:['Лид','Lid'],draft:['Черновик','Qoralama'],review:['На проверке','Tekshiruvda'],active:['Активен','Faol'],suspended:['Приостановлен','Toʻxtatilgan'],rejected:['Отклонён','Rad etilgan'],
+ leadH:['контакт есть, карточки нет','aloqa bor, kartochka yoʻq'],draftH:['заполняется','toʻldirilmoqda'],reviewH:['ждут решения','qaror kutmoqda'],activeH:['видны клиентам','mijozlarga koʻrinadi'],
+ targetOf:['Цель запуска','Ishga tushirish maqsadi'],activeShort:['активны','faol'],inReview:['на проверке','tekshiruvda'],
+ req7:['Заявок за 7 дней','7 kunda soʻrovlar'],replyRate:['Доля ответов партнёров','Hamkorlar javob ulushi'],avgReply:['Среднее время ответа','Oʻrtacha javob vaqti'],overdueN:['Без ответа дольше SLA','SLA dan uzoq javobsiz'],
+ needAction:['Требует действия','Harakat talab qiladi'],todoReview:['партнёров ждут проверки и активации','hamkor tekshiruv va faollashtirishni kutmoqda'],
+ todoOverdue:['заявок без ответа дольше {h} ч','{h} soatdan uzoq javobsiz soʻrov'],todoMod:['изменений ждут модерации','oʻzgarish moderatsiyani kutmoqda'],
+ todoFree:['бесплатных периодов заканчиваются за 14 дней','bepul davr 14 kun ichida tugaydi'],todoDraft:['черновиков без движения больше 7 дней','7 kundan ortiq harakatsiz qoralama'],
+ allDone:['Всё разобрано. Новые задачи появятся здесь.','Hammasi hal qilingan. Yangi vazifalar shu yerda chiqadi.'],
+ slowVendors:['Партнёры, которые медленно отвечают','Sekin javob beradigan hamkorlar'],
+ all:['Все','Hammasi'],district:['Район','Tuman'],allDistricts:['Все районы','Barcha tumanlar'],searchV:['Поиск по названию, телефону, СТИР','Nomi, telefon, STIR boʻyicha qidirish'],
+ name:['Название','Nomi'],capacity:['Вместимость','Sigʻim'],priceFrom:['Цена от, за гостя','Narx, mehmon uchun'],ready:['Готовность','Tayyorlik'],req30:['Заявки 30 д','Soʻrov 30 k'],replies:['Ответы','Javoblar'],status:['Статус','Holat'],manager:['Менеджер','Menejer'],
+ noVendors:['Партнёров с такими условиями нет. Измените фильтр или добавьте партнёра.','Bunday hamkorlar yoʻq. Filtrni oʻzgartiring yoki hamkor qoʻshing.'],
+ guests:['гостей','mehmon'],sum:['сум','soʻm'],
+ contract:['Договор подписан','Shartnoma imzolangan'],stir:['СТИР проверен','STIR tekshirilgan'],photos:['Фото загружены (мин. {n})','Rasmlar yuklangan (kamida {n})'],prices:['Цены и вместимость указаны','Narx va sigʻim koʻrsatilgan'],contacts:['Контакты подтверждены звонком','Kontaktlar qoʻngʻiroq bilan tasdiqlangan'],consent:['Согласие на обработку ПДн подписано','ShM qayta ishlashga rozilik imzolangan'],
+ auto:['автоматически','avtomatik'],
+ activate:['Активировать','Faollashtirish'],suspend:['Приостановить','Toʻxtatish'],reject:['Отклонить','Rad etish'],restore:['Возобновить','Qayta faollashtirish'],toReview:['Отправить на проверку','Tekshiruvga yuborish'],toDraft:['Вернуть в черновик','Qoralamaga qaytarish'],edit:['Редактировать','Tahrirlash'],startCard:['Начать карточку','Kartochkani boshlash'],
+ activated:['Партнёр активирован и виден клиентам','Hamkor faollashtirildi va mijozlarga koʻrinadi'],suspendedT:['Партнёр приостановлен и скрыт из выдачи','Hamkor toʻxtatildi va roʻyxatdan yashirildi'],rejectedT:['Партнёр отклонён','Hamkor rad etildi'],sentReview:['Отправлено на проверку','Tekshiruvga yuborildi'],
+ missing:['Чтобы активировать, закройте пункты:','Faollashtirish uchun quyidagilarni bajaring:'],
+ readiness:['Готовность к активации','Faollashtirishga tayyorlik'],details:['Данные партнёра','Hamkor maʼlumotlari'],stats:['Работа с заявками','Soʻrovlar bilan ishlash'],notesH:['Заметки','Izohlar'],history:['История','Tarix'],
+ legal:['Юр. форма','Yuridik shakl'],address:['Адрес','Manzil'],contactP:['Контактное лицо','Aloqa shaxsi'],phone:['Телефон','Telefon'],halls:['Залов','Zallar'],freeUntil:['Бесплатно до','Bepul muddati'],created:['Добавлен','Qoʻshilgan'],
+ addNote:['Добавить заметку','Izoh qoʻshish'],notePh:['Что обсудили, о чём договорились','Nima kelishildi'],noNotes:['Заметок пока нет.','Hozircha izoh yoʻq.'],
+ reason:['Причина','Sabab'],reasonPh:['Будет видна команде в истории','Jamoaga tarixda koʻrinadi'],reasonReq:['Укажите причину','Sababni koʻrsating'],cancel:['Отмена','Bekor qilish'],
+ changeMgr:['Сменить менеджера','Menejerni almashtirish'],
+ fBiz:['Бизнес','Biznes'],fBizP:['Юридические данные для договора и проверки.','Shartnoma va tekshiruv uchun yuridik maʼlumotlar.'],
+ fContact:['Контакт','Aloqa'],fContactP:['Кому звонить. Номер увидят клиенты на карточке.','Kimga qoʻngʻiroq qilish. Raqam kartochkada koʻrinadi.'],
+ fCard:['Карточка','Kartochka'],fCardP:['Цены показываются клиенту сразу, без запроса.','Narxlar mijozga soʻrovsiz koʻrsatiladi.'],
+ fPhotos:['Фото','Rasmlar'],fPhotosP:['Без фото карточка не публикуется.','Rasmsiz kartochka eʼlon qilinmaydi.'],
+ fDocs:['Документы и проверка','Hujjatlar va tekshiruv'],fDocsP:['Отмечайте только то, что проверено лично.','Faqat shaxsan tekshirilganini belgilang.'],
+ category:['Категория','Toifa'],descRu:['Описание (RU)','Tavsif (RU)'],descUz:['Описание (UZ)','Tavsif (UZ)'],capMin:['Гостей от','Mehmon dan'],capMax:['Гостей до','Mehmon gacha'],tg:['Telegram','Telegram'],
+ uploadT:['Перетащите фото или нажмите, чтобы выбрать','Rasmlarni tashlang yoki tanlash uchun bosing'],photoCount:['Загружено {a} из минимум {n}','{a} ta yuklandi, kamida {n}'],
+ saveDraft:['Сохранить черновик','Qoralamani saqlash'],saveChanges:['Сохранить изменения','Oʻzgarishlarni saqlash'],
+ eName:['Введите название','Nomini kiriting'],ePhone:['Формат +998 XX XXX XX XX','Format +998 XX XXX XX XX'],eStir:['СТИР — 9 цифр','STIR — 9 raqam'],eCap:['«До» должно быть больше «от»','«Gacha» «dan»dan katta boʻlishi kerak'],ePrice:['Укажите цену','Narxni kiriting'],ePhotos:['Нужно минимум {n} фото','Kamida {n} ta rasm kerak'],eDistrict:['Выберите район','Tumanni tanlang'],eContact:['Укажите контактное лицо','Aloqa shaxsini kiriting'],
+ fixErrors:['Проверьте отмеченные поля','Belgilangan maydonlarni tekshiring'],saved:['Сохранено','Saqlandi'],
+ overdue:['Без ответа','Javobsiz'],new:['Новая','Yangi'],viewed:['Просмотрена','Koʻrilgan'],replied:['Есть ответ','Javob berilgan'],
+ client:['Клиент','Mijoz'],eventDate:['Дата события','Tadbir sanasi'],vendor:['Партнёр','Hamkor'],waiting:['Ждёт','Kutmoqda'],
+ nudge:['Напомнить','Eslatish'],reassign:['Передать другому','Boshqasiga berish'],markReplied:['Отметить ответ','Javobni belgilash'],
+ nudged:['Партнёру отправлено напоминание','Hamkorga eslatma yuborildi'],reassigned:['Заявка передана','Soʻrov berildi'],chooseVendor:['Кому передать','Kimga berish'],
+ noRequests:['Заявок с таким статусом нет.','Bunday holatdagi soʻrovlar yoʻq.'],
+ tgUser:['Telegram','Telegram'],reqs:['Заявок','Soʻrovlar'],firstSeen:['Впервые','Birinchi marta'],show:['Показать','Koʻrsatish'],block:['Заблокировать','Bloklash'],unblock:['Разблокировать','Blokdan chiqarish'],blocked:['Заблокирован','Bloklangan'],okStatus:['Активен','Faol'],
+ piiNote:['Телефоны клиентов скрыты. Каждый просмотр записывается в журнал действий.','Mijoz telefonlari yashirilgan. Har bir koʻrish jurnalga yoziladi.'],
+ approve:['Одобрить','Tasdiqlash'],decline:['Отклонить','Rad etish'],was:['Было','Edi'],now:['Стало','Boʻldi'],
+ mCard:['Изменение карточки','Kartochka oʻzgarishi'],mPhotos:['Новые фото','Yangi rasmlar'],mReview:['Отзыв клиента','Mijoz fikri'],
+ noMod:['Очередь пуста. Изменения от партнёров появятся здесь.','Navbat boʻsh. Hamkorlar oʻzgarishlari shu yerda chiqadi.'],approved:['Одобрено и опубликовано','Tasdiqlandi va eʼlon qilindi'],declined:['Отклонено','Rad etildi'],
+ phase1:['Первый релиз: партнёры работают бесплатно, оплаты вносятся вручную. Payme и Click подключаются позже.','Birinchi reliz: hamkorlar bepul ishlaydi, toʻlovlar qoʻlda kiritiladi. Payme va Click keyinroq ulanadi.'],
+ plan:['Тариф','Tarif'],free:['Бесплатный период','Bepul davr'],daysLeft:['Осталось','Qoldi'],days:['дн.','kun'],lastPay:['Последняя оплата','Oxirgi toʻlov'],recordPay:['Внести оплату','Toʻlov kiritish'],
+ amount:['Сумма, сум','Summa, soʻm'],method:['Способ','Usul'],cash:['Наличные','Naqd'],transfer:['Перечисление на р/с','Hisob raqamiga oʻtkazma'],period:['Период, мес.','Davr, oy'],ledger:['Внесённые оплаты','Kiritilgan toʻlovlar'],paySaved:['Оплата записана','Toʻlov yozildi'],extend:['Продлить бесплатно','Bepul uzaytirish'],extended:['Бесплатный период продлён на 30 дней','Bepul davr 30 kunga uzaytirildi'],
+ noPays:['Оплат пока не было.','Hozircha toʻlov yoʻq.'],date:['Дата','Sana'],
+ role:['Роль','Rol'],admin:['Администратор','Administrator'],sales:['Менеджер по партнёрам','Hamkorlar menejeri'],moder:['Модератор','Moderator'],
+ addMember:['Добавить сотрудника','Xodim qoʻshish'],memberAdded:['Сотрудник добавлен','Xodim qoʻshildi'],perms:['Права ролей','Rollar huquqlari'],vendorsCount:['Партнёров','Hamkorlar'],
+ pVendors:['Добавлять и редактировать партнёров','Hamkor qoʻshish va tahrirlash'],pActivate:['Активировать и приостанавливать','Faollashtirish va toʻxtatish'],pRequests:['Работать с заявками','Soʻrovlar bilan ishlash'],pPii:['Видеть телефоны клиентов','Mijoz telefonlarini koʻrish'],pMod:['Модерировать карточки и отзывы','Kartochka va fikrlarni moderatsiya qilish'],pPay:['Вносить оплаты','Toʻlov kiritish'],pTeam:['Управлять командой и настройками','Jamoa va sozlamalarni boshqarish'],
+ when:['Когда','Qachon'],who:['Кто','Kim'],action:['Действие','Harakat'],object:['Объект','Obyekt'],searchLog:['Поиск по журналу','Jurnal boʻyicha qidirish'],
+ categories:['Категории','Toifalar'],catNote:['В первом релизе открыты только тойханы. Остальные категории включаются, когда наберётся база.','Birinchi relizda faqat toʻyxonalar ochiq. Boshqalari baza yigʻilganda yoqiladi.'],
+ rules:['Правила','Qoidalar'],sla:['SLA ответа партнёра, часов','Hamkor javobi SLA, soat'],minPhotos:['Минимум фото для публикации','Eʼlon uchun kamida rasm'],freeDays:['Бесплатный период, дней','Bepul davr, kun'],target:['Цель по партнёрам на запуск','Ishga tushirishda hamkorlar maqsadi'],
+ later:['Следующие релизы','Keyingi relizlar'],laterNote:['Выключены в первом релизе. Premium присваивается только после проверки на месте.','Birinchi relizda oʻchirilgan. Premium faqat joyida tekshiruvdan keyin beriladi.'],
+ mPremium:['Premium-статус','Premium maqomi'],mAds:['Реклама в выдаче','Roʻyxatda reklama'],mSubs:['Подписки партнёров','Hamkor obunalari'],mPay:['Payme и Click','Payme va Click'],
+ demo:['Демо-данные','Demo maʼlumotlar'],reset:['Сбросить демо-данные','Demo maʼlumotlarni tiklash'],resetQ:['Все изменения в этом браузере будут удалены.','Ushbu brauzerdagi barcha oʻzgarishlar oʻchiriladi.'],resetDone:['Демо-данные восстановлены','Demo maʼlumotlar tiklandi'],
+ confirm:['Подтвердить','Tasdiqlash'],save:['Сохранить','Saqlash'],nameP:['Имя','Ism'],
+ justNow:['только что','hozirgina'],h:['ч','soat'],d:['д','kun'],ago:['назад','oldin'],
+ aActivate:['Активировал партнёра','Hamkorni faollashtirdi'],aSuspend:['Приостановил партнёра','Hamkorni toʻxtatdi'],aReject:['Отклонил партнёра','Hamkorni rad etdi'],aRestore:['Возобновил партнёра','Hamkorni qayta faollashtirdi'],aReview:['Отправил на проверку','Tekshiruvga yubordi'],aDraft:['Вернул в черновик','Qoralamaga qaytardi'],
+ aCreate:['Добавил партнёра','Hamkor qoʻshdi'],aEdit:['Изменил данные партнёра','Hamkor maʼlumotlarini oʻzgartirdi'],aCheck:['Отметил пункт проверки','Tekshiruv bandini belgiladi'],aUncheck:['Снял пункт проверки','Tekshiruv bandini olib tashladi'],aNote:['Добавил заметку','Izoh qoʻshdi'],aMgr:['Сменил менеджера','Menejerni almashtirdi'],
+ aNudge:['Напомнил партнёру о заявке','Hamkorga soʻrov haqida eslatdi'],aReassign:['Передал заявку','Soʻrovni berdi'],aReplied:['Отметил ответ на заявку','Soʻrovga javobni belgiladi'],
+ aPii:['Просмотрел телефон клиента','Mijoz telefonini koʻrdi'],aBlock:['Заблокировал клиента','Mijozni blokladi'],aUnblock:['Разблокировал клиента','Mijozni blokdan chiqardi'],
+ aApprove:['Одобрил изменение','Oʻzgarishni tasdiqladi'],aDecline:['Отклонил изменение','Oʻzgarishni rad etdi'],aPay:['Внёс оплату','Toʻlov kiritdi'],aExtend:['Продлил бесплатный период','Bepul davrni uzaytirdi'],
+ aMember:['Добавил сотрудника','Xodim qoʻshdi'],aSettings:['Изменил настройки','Sozlamalarni oʻzgartirdi'],
+themeLight:['Светлая','Yorugʻ'],themeDark:['Тёмная','Qorongʻi'],themeAuto:['Как в системе','Tizim boʻyicha'],
+ modDetails:['Подробнее','Batafsil'],service:['Услуга','Xizmat'],cardLink:['Ссылка на карточку','Kartochka havolasi'],openLink:['Открыть','Ochish'],copy:['Скопировать','Nusxalash'],copied:['Ссылка скопирована','Havola nusxalandi'],
+ submittedBy:['Кто отправил','Kim yubordi'],reviewAuthor:['Автор отзыва','Fikr muallifi'],
+ hintVendor:['Позвоните партнёру и убедитесь, что изменение отправил он.','Hamkorga qoʻngʻiroq qiling va oʻzgarishni u yuborganiga ishonch hosil qiling.'],
+ hintClient:['Свяжитесь с клиентом и уточните, что отзыв оставил он и событие действительно было.','Mijoz bilan bogʻlaning: fikrni u qoldirganini va tadbir haqiqatan boʻlganini aniqlang.'],
+ call:['Позвонить','Qoʻngʻiroq qilish'],writeTg:['Написать в Telegram','Telegramda yozish'],change:['Изменение','Oʻzgarish'],sentAt:['Отправлено','Yuborilgan'],
+ clientReq:['Заявки этого клиента партнёру','Mijozning ushbu hamkorga soʻrovlari'],noClientReq:['Заявок от этого клиента к партнёру нет. Проверьте отзыв особенно внимательно.','Bu mijozdan hamkorga soʻrov yoʻq. Fikrni ayniqsa diqqat bilan tekshiring.'],
+ closeB:['Закрыть','Yopish'],siteUrl:['Адрес сайта для ссылок','Havolalar uchun sayt manzili'],
+ noLog:['Записей не найдено.','Yozuvlar topilmadi.'],yunusabadPilot:['пилот','pilot'],
+};
+const C={hall:['Тойханы','Toʻyxonalar'],photo:['Фотографы','Fotograflar'],decor:['Декор','Bezak'],catering:['Кейтеринг','Keytering'],music:['Музыканты','Musiqachilar'],cake:['Торты','Tortlar'],anim:['Аниматоры','Animatorlar'],cars:['Свадебный транспорт','Toʻy transporti']};
+const DIST=[['Юнусабад','Yunusobod'],['Мирзо-Улугбек','Mirzo Ulugʻbek'],['Чиланзар','Chilonzor'],['Яккасарай','Yakkasaroy'],['Шайхантахур','Shayxontohur'],['Мирабад','Mirobod'],['Сергели','Sergeli'],['Учтепа','Uchtepa'],['Алмазар','Olmazor'],['Яшнабад','Yashnobod'],['Бектемир','Bektemir'],['Янгихаят','Yangihayot']];
+const MON={ru:['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'],uz:['yan','fev','mar','apr','may','iyn','iyl','avg','sen','okt','noy','dek']};
+const CHECK=['contract','stir','photos','prices','contacts','consent'];
+
+let S, UI={vf:'all',vd:'',vq:'',rf:'all',lq:'',open:null,form:null,editId:null,errors:{},revealed:{}};
+const t=(k,vars)=>{let s=(L[k]||[k,k])[S.lang==='uz'?1:0];if(vars)for(const x in vars)s=s.replace('{'+x+'}',vars[x]);return s};
+const cn=k=>C[k][S.lang==='uz'?1:0];
+const dn=i=>i==null||i===''?'—':DIST[i][S.lang==='uz'?1:0];
+const money=n=>(+n||0).toLocaleString('ru-RU').replace(/,/g,' ')+' '+t('sum');
+const fdate=ts=>{const d=new Date(ts);return d.getDate()+' '+MON[S.lang][d.getMonth()]};
+const ftime=ts=>{const d=new Date(ts);return fdate(ts)+', '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+const ago=ts=>{const m=Date.now()-ts;if(m<HOUR)return t('justNow');if(m<DAY)return Math.floor(m/HOUR)+' '+t('h');return Math.floor(m/DAY)+' '+t('d')};
+const me=()=>S.team.find(u=>u.id===S.me);
+const user=id=>S.team.find(u=>u.id===id)||{name:'—'};
+const V=id=>S.vendors.find(v=>v.id===id);
+
+/* ---------- seed ---------- */
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function seed(){
+  const r=rng(11),pick=a=>a[Math.floor(r()*a.length)],now=Date.now();
+  const names=['Oq Saroy','Navroʻz Palace','Bahor toʻyxonasi','Afsona Hall','Grand Sayohat','Zarafshon','Koʻkaldosh','Sitora','Gulshan','Anor Bogʻi','Lazzat','Registon Hall','Tumaris','Oltin Vodiy','Nurafshon','Chorsu Hall','Humo Saroyi','Buxoro','Ipak Yoʻli','Mehrigiyo','Shodlik','Farovon','Visol','Baxt uyi','Orzu','Nafosat','Bogʻishamol','Toshkent Palace','Olmazor Hall','Dilkusho','Muhabbat','Yangi Asr','Saodat','Ziyofat'];
+  const people=['Ботир Алиев','Шахноза Юсупова','Акмаль Каримов','Дильфуза Рахимова','Равшан Турсунов','Нодира Исмаилова','Фаррух Назаров','Гульнора Саидова','Улугбек Хамидов','Малика Азимова'];
+  const team=[{id:'u1',name:'Нур',tg:'@nour',role:'admin'},{id:'u2',name:'Дилшод Р.',tg:'@dilshod_r',role:'sales'},{id:'u3',name:'Мадина К.',tg:'@madina_k',role:'moder'},{id:'u4',name:'Санжар А.',tg:'@sanjar_a',role:'sales'}];
+  const plan=['active','active','active','active','active','active','active','active','active','active','active','active','active','active','review','review','review','review','review','draft','draft','draft','draft','draft','draft','lead','lead','lead','lead','lead','lead','lead','suspended','suspended'];
+  const vendors=names.map((nm,i)=>{
+    const st=plan[i],full=st==='active'||st==='suspended';
+    const d=i<9?0:Math.floor(r()*DIST.length);
+    const capMin=[80,120,150,200,250][Math.floor(r()*5)],capMax=capMin+[150,250,350,500,700][Math.floor(r()*5)];
+    const nPh=full?6+Math.floor(r()*8):st==='review'?(i===17?3:5+Math.floor(r()*4)):st==='draft'?Math.floor(r()*5):0;
+    const ck={contract:full,stir:full,contacts:full||st!=='lead',consent:full};
+    if(st==='review'){ck.contract=i!==16;ck.stir=true;ck.consent=i!==18;ck.contacts=true}
+    if(st==='draft'){ck.stir=r()>.5;ck.contract=r()>.7}
+    const created=now-(full?40+Math.floor(r()*30):st==='review'?4+Math.floor(r()*8):3+Math.floor(r()*20))*DAY;
+    return {id:'V'+String(101+i),name:nm,cat:'hall',legal:r()>.55?'OOO':'YATT',stir:st==='lead'?'':String(300000000+Math.floor(r()*99999999)).slice(0,9),
+      district:d,address:st==='lead'?'':(DIST[d][1]+', '+(1+Math.floor(r()*60))+'-uy'),contact:pick(people),phone:'+99890'+String(1000000+Math.floor(r()*8999999)),tg:'@'+nm.toLowerCase().replace(/[^a-z]/g,'').slice(0,12),
+      capMin:st==='lead'?0:capMin,capMax:st==='lead'?0:capMax,halls:1+Math.floor(r()*3),priceFrom:st==='lead'?0:(90+Math.floor(r()*16)*10)*1000,
+      descRu:'',descUz:'',photos:Array.from({length:nPh},()=>'seed'),check:ck,status:st,manager:pick(['u2','u4']),
+      created,activated:full?created+5*DAY:null,freeUntil:full?created+5*DAY+90*DAY:null,notes:st==='suspended'?[{by:'u2',at:now-6*DAY,text:'Зал на ремонте до конца месяца, попросили скрыть карточку.'}]:[],
+      slow:i===3||i===8||i===12};
+  });
+  vendors[2].freeUntil=now+9*DAY;vendors[6].freeUntil=now+12*DAY;
+  const fn=['Азиза','Жасур','Севара','Бекзод','Камола','Отабек','Мохира','Шерзод','Лола','Тимур','Зарина','Алишер','Нигора','Сардор','Феруза','Дониёр','Юлдуз','Азамат','Гулноза','Ильхом'];
+  const clients=Array.from({length:42},(_,i)=>({id:'C'+(501+i),name:pick(fn)+' '+'АБВГДКМНРСТХШЮ'[Math.floor(r()*14)]+'.',tg:'@user'+(4000+Math.floor(r()*5000)),phone:'+99893'+String(1000000+Math.floor(r()*8999999)),first:now-Math.floor(r()*40)*DAY-Math.floor(r()*20)*HOUR,blocked:i===7}));
+  const act=vendors.filter(v=>v.status==='active');
+  const requests=Array.from({length:74},(_,i)=>{
+    const v=pick(act),cr=now-Math.floor(r()*30*24)*HOUR-Math.floor(r()*50)*60e3;
+    let st;const age=now-cr,x=r();
+    if(v.slow)st=x<.35?'replied':x<.7?'viewed':'new';else st=x<.82?'replied':x<.92?'viewed':'new';
+    if(age<3*HOUR&&x>.5)st='new';
+    return {id:'R'+(9001+i),client:pick(clients).id,vendor:v.id,created:cr,event:now+(20+Math.floor(r()*120))*DAY,guests:(15+Math.floor(r()*40))*10,status:st,replyH:st==='replied'?(v.slow?8+Math.floor(r()*30):1+Math.floor(r()*6)):null,nudges:0};
+  }).sort((a,b)=>b.created-a.created);
+  const moderation=[
+    {id:'M1',type:'card',vendor:'V103',at:now-5*HOUR,field:'priceFrom',before:'150 000',after:'165 000',status:'pending'},
+    {id:'M2',type:'photos',vendor:'V107',at:now-9*HOUR,count:4,status:'pending'},
+    {id:'M3',type:'review',vendor:'V101',at:now-26*HOUR,client:'C503',rating:5,text:'Зал чистый, администратор ответил в тот же день, цены совпали с карточкой.',status:'pending'},
+    {id:'M4',type:'card',vendor:'V110',at:now-30*HOUR,field:'capacity',before:'150–400',after:'150–520',status:'pending'},
+    {id:'M5',type:'review',vendor:'V104',at:now-2*DAY,client:'C511',rating:2,text:'Долго не отвечали на заявку, пришлось звонить самим.',status:'pending'},
+  ];
+  const payments=[{id:'P1',vendor:'V101',at:now-3*DAY,amount:500000,method:'transfer',months:1,by:'u1'}];
+  const audit=[
+    {at:now-2*HOUR,by:'u2',a:'aCreate',obj:'V130 Olmazor Hall'},
+    {at:now-7*HOUR,by:'u3',a:'aApprove',obj:'V112 Registon Hall'},
+    {at:now-DAY,by:'u1',a:'aActivate',obj:'V114 Oltin Vodiy'},
+  ];
+  return {v:1,lang:'ru',me:'u1',team,vendors,clients,requests,moderation,payments,audit,
+    settings:{sla:24,minPhotos:5,freeDays:90,target:50,cats:{hall:true,photo:false,decor:false,catering:false,music:false,cake:false,anim:false,cars:false}}};
+}
+function load(){try{const x=JSON.parse(localStorage.getItem(LS));if(x&&x.v===1)return x}catch(e){}return seed()}
+function save(){try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}}
+function log(a,obj){S.audit.unshift({at:Date.now(),by:S.me,a,obj});S.audit=S.audit.slice(0,500)}
+
+/* ---------- derived ---------- */
+function checks(v){return {contract:!!v.check.contract,stir:!!v.check.stir,photos:v.photos.length>=S.settings.minPhotos,prices:v.priceFrom>0&&v.capMax>0,contacts:!!v.check.contacts,consent:!!v.check.consent}}
+const readyN=v=>Object.values(checks(v)).filter(Boolean).length;
+const overdue=r=>r.status!=='replied'&&Date.now()-r.created>S.settings.sla*HOUR;
+const rStatus=r=>overdue(r)?'overdue':r.status;
+function vStats(v){const rs=S.requests.filter(r=>r.vendor===v.id&&Date.now()-r.created<30*DAY);const rep=rs.filter(r=>r.status==='replied');
+  return {n:rs.length,rate:rs.length?Math.round(rep.length/rs.length*100):null,avg:rep.length?Math.round(rep.reduce((s,r)=>s+r.replyH,0)/rep.length):null,over:rs.filter(overdue).length}}
+const pill=(s,label)=>`<span class="pill s-${s}">${esc(label||t(s))}</span>`;
+const ring=v=>{const n=readyN(v);return `<span class="ring" style="--p:${Math.round(n/6*100)}" data-v="${n}" title="${n}/6"></span>`};
+const rate=p=>p==null?'<span class="muted">—</span>':`<span class="rate"><i style="--w:${p}%;--c:${p<60?'var(--coral)':p<80?'var(--muted)':'var(--ink)'}"></i>${p}%</span>`;
+const fmtPhone=p=>{const d=(p||'').replace(/\D/g,'');return d.length===12?`+${d.slice(0,3)} ${d.slice(3,5)} ${d.slice(5,8)} ${d.slice(8,10)} ${d.slice(10)}`:(p||'—')};
+const mask=p=>{const d=(p||'').replace(/\D/g,'');return d.length===12?`+${d.slice(0,3)} ${d.slice(3,5)} ••• •• ${d.slice(10)}`:'—'};
+
+/* ---------- icons ---------- */
+const I=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const ICON={dashboard:I('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'),vendors:I('<path d="M4 20V10l8-5 8 5v10"/><path d="M9 20v-6h6v6"/>'),add:I('<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>'),
+ requests:I('<path d="M4 6h16v10H8l-4 4z"/>'),clients:I('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-4 4-6 7-6s6 2 7 6"/>'),moderation:I('<path d="M5 12l4 4 10-10"/>'),
+ payments:I('<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>'),team:I('<circle cx="9" cy="9" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3 19c.8-3 3-5 6-5s5.2 2 6 5M15 15c2.5 0 4.5 1.5 5.5 4"/>'),
+ audit:I('<path d="M6 4h9l3 3v13H6z"/><path d="M9 11h6M9 15h6"/>'),settings:I('<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>')};
+
+/* ---------- shell ---------- */
+const ROUTES=['dashboard','vendors','add','requests','clients','moderation','payments','team','audit','settings'];
+function route(){const h=(location.hash||'#dashboard').slice(1);return ROUTES.includes(h)?h:'dashboard'}
+function renderShell(){
+  const r=route();
+  const badges={vendors:S.vendors.filter(v=>v.status==='review').length,requests:S.requests.filter(overdue).length,moderation:S.moderation.filter(m=>m.status==='pending').length};
+  $('#nav').innerHTML=ROUTES.map((k,i)=>(i===5||i===7?'<div class="sep"></div>':'')+`<a href="#${k}" class="${r===k?'on':''}">${ICON[k]}<span>${t(k)}</span>${badges[k]?`<span class="badge">${badges[k]}</span>`:''}</a>`).join('');
+  $('#brandSub').textContent=t('sub');
+  document.querySelectorAll('#langSeg button').forEach(b=>b.classList.toggle('on',b.dataset.l===S.lang));
+  $('#who').innerHTML=`${esc(me().name)}<br>${t(me().role)}`;
+  document.documentElement.lang=S.lang;
+  const th=S.theme||'auto';
+  if(th==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',th);
+  $('#themeSeg').innerHTML=[['light','☀','themeLight'],['dark','☾','themeDark'],['auto','A','themeAuto']].map(([k,ic,lb])=>`<button data-th="${k}" class="${th===k?'on':''}" title="${t(lb)}" aria-label="${t(lb)}">${ic}</button>`).join('');
+}
+function render(){
+  const r=route();renderShell();
+  $('#title').textContent=r==='add'?(UI.editId?t('editVendor'):t('addVendor')):t(r);
+  $('#topActs').innerHTML=r==='add'?'':`<button class="btn pri" data-act="goAdd">${ICON.add.replace('<svg','<svg width="16" height="16"')}${t('addVendor')}</button>`;
+  $('#view').innerHTML=VIEWS[r]();
+  if(r==='add')bindForm();
+  if(UI.open)renderDrawer();
+}
+
+/* ---------- views ---------- */
+const VIEWS={};
+VIEWS.dashboard=()=>{
+  const cnt=s=>S.vendors.filter(v=>v.status===s).length;
+  const act=cnt('active'),rev=cnt('review'),tg=S.settings.target;
+  const r7=S.requests.filter(r=>Date.now()-r.created<7*DAY),rep=r7.filter(r=>r.status==='replied');
+  const rr=r7.length?Math.round(rep.length/r7.length*100):0,avg=rep.length?Math.round(rep.reduce((s,r)=>s+r.replyH,0)/rep.length):0;
+  const ov=S.requests.filter(overdue).length;
+  const stale=S.vendors.filter(v=>v.status==='draft'&&Date.now()-v.created>7*DAY).length;
+  const freeEnd=S.vendors.filter(v=>v.status==='active'&&v.freeUntil&&v.freeUntil-Date.now()<14*DAY).length;
+  const modN=S.moderation.filter(m=>m.status==='pending').length;
+  const todo=[
+    [rev,'todoReview','grey','review'],[ov,'todoOverdue','coral','overdue'],[modN,'todoMod','grey','mod'],[freeEnd,'todoFree','coral','free'],[stale,'todoDraft','grey','draft']
+  ].filter(x=>x[0]>0);
+  const slow=S.vendors.filter(v=>v.status==='active').map(v=>({v,s:vStats(v)})).filter(x=>x.s.n>0).sort((a,b)=>(a.s.rate??100)-(b.s.rate??100)).slice(0,5);
+  const stages=['lead','draft','review','active'];
+  return `
+  <section class="pipe" aria-label="Pipeline">
+    ${stages.map(s=>`<button class="stage ${s==='active'?'active':''}" data-act="vfilter" data-v="${s}"><div class="num">${cnt(s)}</div><div class="lbl">${t(s)}</div><div class="hint">${t(s+'H')}</div></button>`).join('')}
+    <div class="target"><span>${t('targetOf')}: <b>${tg}</b></span>
+      <span class="bar" role="img" aria-label="${act}/${tg}"><i style="width:${Math.min(100,act/tg*100)}%;background:var(--ring)"></i><i style="width:${Math.min(100-act/tg*100,rev/tg*100)}%;background:var(--muted);opacity:.4"></i></span>
+      <span><b>${act}</b> ${t('activeShort')}, ${rev} ${t('inReview')}</span></div>
+  </section>
+  <div class="kpis">
+    <div class="kpi"><b>${r7.length}</b><span>${t('req7')}</span></div>
+    <div class="kpi ${rr<70?'warn':''}"><b>${rr}%</b><span>${t('replyRate')}</span></div>
+    <div class="kpi"><b>${avg} ${t('h')}</b><span>${t('avgReply')}</span></div>
+    <div class="kpi ${ov?'warn':''}"><b>${ov}</b><span>${t('overdueN')} (${S.settings.sla} ${t('h')})</span></div>
+  </div>
+  <div class="grid g2">
+    <section class="panel"><h2>${t('needAction')}</h2>
+      ${todo.length?`<div class="todo">${todo.map(([n,k,c,go])=>`<button data-act="todo" data-v="${go}"><span class="c" style="background:var(--${c}-soft);color:var(--${c==="grey"?"ink":c})">${n}</span><span class="t">${t(k,{h:S.settings.sla})}</span><span class="muted">›</span></button>`).join('')}</div>`:`<div class="empty">${t('allDone')}</div>`}
+    </section>
+    <section class="panel"><h2>${t('slowVendors')}</h2>
+      ${slow.length?`<div class="todo">${slow.map(({v,s})=>`<button data-act="openV" data-v="${v.id}"><span class="t"><span class="nm">${esc(v.name)}</span><br><span class="small muted">${s.n} ${t('reqs').toLowerCase()}, ${s.avg??'—'} ${t('h')}</span></span>${rate(s.rate)}</button>`).join('')}</div>`:`<div class="empty">—</div>`}
+    </section>
+  </div>`;
+};
+
+VIEWS.vendors=()=>{
+  const all=S.vendors,q=UI.vq.trim().toLowerCase();
+  const sts=['all','lead','draft','review','active','suspended','rejected'];
+  const list=all.filter(v=>(UI.vf==='all'||v.status===UI.vf)&&(UI.vd===''||String(v.district)===UI.vd)&&(!q||(v.name+' '+v.phone+' '+v.stir+' '+v.id+' '+v.contact).toLowerCase().includes(q)))
+    .sort((a,b)=>sts.indexOf(a.status)-sts.indexOf(b.status)||b.created-a.created);
+  return `
+  <div class="chips">
+    ${sts.map(s=>{const n=s==='all'?all.length:all.filter(v=>v.status===s).length;return (n||s==='all')?`<button class="chip ${UI.vf===s?'on':''}" data-act="vfilter" data-v="${s}">${t(s)}<span>${n}</span></button>`:''}).join('')}
+    <select data-act="vdist" aria-label="${t('district')}"><option value="">${t('allDistricts')}</option>${DIST.map((d,i)=>`<option value="${i}" ${UI.vd===String(i)?'selected':''}>${dn(i)}</option>`).join('')}</select>
+    <input class="search" id="vq" type="search" placeholder="${t('searchV')}" value="${esc(UI.vq)}">
+  </div>
+  ${list.length?`<div class="tw"><table>
+    <thead><tr><th>${t('name')}</th><th>${t('district')}</th><th class="num">${t('capacity')}</th><th class="num">${t('priceFrom')}</th><th>${t('ready')}</th><th class="num">${t('req30')}</th><th>${t('replies')}</th><th>${t('status')}</th><th>${t('manager')}</th></tr></thead>
+    <tbody>${list.map(v=>{const s=vStats(v);return `<tr class="click" data-act="openV" data-v="${v.id}" tabindex="0">
+      <td><div class="nm">${esc(v.name)}</div><div class="id">${v.id}</div></td><td>${dn(v.district)}</td>
+      <td class="num">${v.capMax?`${v.capMin}–${v.capMax}`:'—'}</td><td class="num">${v.priceFrom?money(v.priceFrom):'—'}</td>
+      <td>${ring(v)}</td><td class="num">${v.status==='active'?s.n:'—'}</td><td>${v.status==='active'?rate(s.rate):'<span class="muted">—</span>'}</td>
+      <td>${pill(v.status)}</td><td class="small">${esc(user(v.manager).name)}</td></tr>`}).join('')}</tbody></table></div>`:`<div class="panel empty">${t('noVendors')}</div>`}`;
+};
+
+function vendorActions(v){
+  const b=(act,label,cls='')=>`<button class="btn ${cls}" data-act="${act}" data-v="${v.id}">${label}</button>`;
+  const full=readyN(v)===6;
+  switch(v.status){
+    case 'lead':return b('edit',t('startCard'),'pri')+b('reject',t('reject'),'bad');
+    case 'draft':return b('edit',t('edit'))+b('toReview',t('toReview'),'pri')+b('reject',t('reject'),'bad');
+    case 'review':return `<button class="btn good" data-act="activate" data-v="${v.id}" ${full?'':'disabled'}>${t('activate')}</button>`+b('edit',t('edit'))+b('toDraft',t('toDraft'))+b('reject',t('reject'),'bad');
+    case 'active':return b('edit',t('edit'))+b('suspend',t('suspend'),'bad');
+    case 'suspended':return `<button class="btn good" data-act="restore" data-v="${v.id}" ${full?'':'disabled'}>${t('restore')}</button>`+b('edit',t('edit'));
+    case 'rejected':return b('toDraft',t('toDraft'));
+  }return '';
+}
+function renderDrawer(){
+  const v=V(UI.open);if(!v){closeDrawer();return}
+  const ck=checks(v),miss=CHECK.filter(k=>!ck[k]),s=vStats(v);
+  const hist=S.audit.filter(a=>a.obj&&a.obj.startsWith(v.id)).slice(0,12);
+  const reqs=S.requests.filter(r=>r.vendor===v.id).slice(0,5);
+  $('#drawer').innerHTML=`
+  <div class="dh"><div><h3>${esc(v.name)}</h3><div class="acts" style="align-items:center">${pill(v.status)}<span class="small muted">${v.id}, ${cn(v.cat)}, ${dn(v.district)}</span></div></div>
+    <button class="x" data-act="close" aria-label="Close">×</button></div>
+  <div class="db">
+    <div class="acts">${vendorActions(v)}</div>
+    ${(v.status==='review'||v.status==='suspended')&&miss.length?`<div class="alert warn">${t('missing')} ${miss.map(k=>t(k,{n:S.settings.minPhotos}).toLowerCase()).join('; ')}.</div>`:''}
+    <section class="panel"><h2>${t('readiness')}<span class="n">${readyN(v)}/6</span></h2><div class="check">
+      ${CHECK.map(k=>{const autoK=k==='photos'||k==='prices';return `<label><input type="checkbox" ${ck[k]?'checked':''} ${autoK?'disabled':''} data-act="check" data-v="${v.id}" data-k="${k}"><span>${t(k,{n:S.settings.minPhotos})}</span>${autoK?`<span class="auto">${t('auto')}</span>`:''}</label>`}).join('')}
+    </div></section>
+    <section class="panel"><h2>${t('details')}</h2><dl class="dl">
+      <dt>${t('legal')}</dt><dd>${v.legal==='OOO'?'ООО':'ЯТТ'}${v.stir?`, СТИР ${esc(v.stir)}`:''}</dd>
+      <dt>${t('address')}</dt><dd>${esc(v.address)||'—'}</dd>
+      <dt>${t('contactP')}</dt><dd>${esc(v.contact)||'—'}</dd>
+      <dt>${t('phone')}</dt><dd>${fmtPhone(v.phone)} ${v.tg?`<span class="muted">${esc(v.tg)}</span>`:''}</dd>
+      <dt>${t('capacity')}</dt><dd>${v.capMax?`${v.capMin}–${v.capMax} ${t('guests')}, ${t('halls').toLowerCase()}: ${v.halls}`:'—'}</dd>
+      <dt>${t('priceFrom')}</dt><dd>${v.priceFrom?money(v.priceFrom):'—'}</dd>
+      <dt>${t('created')}</dt><dd>${fdate(v.created)}</dd>
+      ${v.freeUntil?`<dt>${t('freeUntil')}</dt><dd>${fdate(v.freeUntil)}</dd>`:''}
+      <dt>${t('manager')}</dt><dd><select data-act="mgr" data-v="${v.id}" aria-label="${t('changeMgr')}" style="border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--card)">${S.team.filter(u=>u.role!=='moder').map(u=>`<option value="${u.id}" ${u.id===v.manager?'selected':''}>${esc(u.name)}</option>`).join('')}</select></dd>
+    </dl>
+    ${v.photos.length?`<div class="photos" style="margin-top:14px">${v.photos.map(p=>`<div class="ph ${p==='seed'?'seed':''}" ${p!=='seed'?`style="background-image:url(${p})"`:''}></div>`).join('')}</div>`:''}
+    </section>
+    ${v.status==='active'||v.status==='suspended'?`<section class="panel"><h2>${t('stats')}</h2>
+      <div class="kpis" style="grid-template-columns:repeat(3,1fr);margin:0 0 10px"><div class="kpi"><b>${s.n}</b><span>${t('req30')}</span></div><div class="kpi ${s.rate!=null&&s.rate<70?'warn':''}"><b>${s.rate??'—'}%</b><span>${t('replies')}</span></div><div class="kpi"><b>${s.avg??'—'} ${t('h')}</b><span>${t('avgReply')}</span></div></div>
+      ${reqs.length?`<div class="tw"><table><tbody>${reqs.map(r=>`<tr><td class="small">${ftime(r.created)}</td><td class="small">${r.guests} ${t('guests')}</td><td>${pill(rStatus(r),t(rStatus(r)))}</td></tr>`).join('')}</tbody></table></div>`:''}
+    </section>`:''}
+    <section class="panel"><h2>${t('notesH')}</h2><div class="notes">
+      ${v.notes.length?v.notes.slice().reverse().map(n=>`<div class="note">${esc(n.text)}<div class="m">${esc(user(n.by).name)}, ${ftime(n.at)}</div></div>`).join(''):`<div class="muted small">${t('noNotes')}</div>`}
+      <textarea id="noteIn" placeholder="${t('notePh')}"></textarea>
+      <div><button class="btn sm" data-act="note" data-v="${v.id}">${t('addNote')}</button></div>
+    </div></section>
+    ${hist.length?`<section class="panel"><h2>${t('history')}</h2>${hist.map(a=>`<div class="row small"><span class="grow">${t(a.a)}${a.detail?`: ${esc(a.detail)}`:''}</span><span class="muted">${esc(user(a.by).name)}, ${ftime(a.at)}</span></div>`).join('')}</section>`:''}
+  </div>`;
+}
+function openDrawer(id){UI.open=id;renderDrawer();$('#drawer').classList.add('on');$('#scrim').classList.add('on');$('#drawer').setAttribute('aria-hidden','false');setTimeout(()=>{const x=$('#drawer .x');x&&x.focus()},50)}
+function closeDrawer(){UI.open=null;$('#drawer').classList.remove('on');$('#scrim').classList.remove('on');$('#drawer').setAttribute('aria-hidden','true')}
+
+/* ---------- add / edit form ---------- */
+function blankForm(){return {name:'',cat:'hall',legal:'YATT',stir:'',district:'',address:'',contact:'',phone:'+998',tg:'',capMin:'',capMax:'',halls:1,priceFrom:'',descRu:'',descUz:'',photos:[],check:{contract:false,stir:false,contacts:false,consent:false},manager:S.me==='u3'?'u2':S.me}}
+VIEWS.add=()=>{
+  if(!UI.form){if(UI.editId){const v=V(UI.editId);UI.form=JSON.parse(JSON.stringify(v));}else UI.form=blankForm()}
+  const f=UI.form,E=UI.errors;
+  const inp=(k,label,type='text',extra='',cls='')=>`<label class="field ${cls} ${E[k]?'bad':''}">${label}<input name="${k}" type="${type}" value="${esc(f[k])}" ${extra}>${E[k]?`<span class="err">${E[k]}</span>`:''}</label>`;
+  const editing=!!UI.editId;
+  return `<div class="form" id="vform">
+    <section class="fs"><div><h2>${t('fBiz')}</h2><p>${t('fBizP')}</p></div><div class="fields">
+      ${inp('name',t('name'),'text','autocomplete="off"','full')}
+      <label class="field">${t('category')}<select name="cat">${Object.keys(C).filter(k=>S.settings.cats[k]||f.cat===k).map(k=>`<option value="${k}" ${f.cat===k?'selected':''}>${cn(k)}</option>`).join('')}</select></label>
+      <label class="field">${t('legal')}<select name="legal"><option value="YATT" ${f.legal==='YATT'?'selected':''}>ЯТТ / YATT</option><option value="OOO" ${f.legal==='OOO'?'selected':''}>ООО / MChJ</option></select></label>
+      ${inp('stir','СТИР / STIR','text','inputmode="numeric" maxlength="9"')}
+      <label class="field ${E.district?'bad':''}">${t('district')}<select name="district"><option value="">—</option>${DIST.map((d,i)=>`<option value="${i}" ${String(f.district)===String(i)?'selected':''}>${dn(i)}${i===0?' ('+t('yunusabadPilot')+')':''}</option>`).join('')}</select>${E.district?`<span class="err">${E.district}</span>`:''}</label>
+      ${inp('address',t('address'),'text','','full')}
+    </div></section>
+    <section class="fs"><div><h2>${t('fContact')}</h2><p>${t('fContactP')}</p></div><div class="fields">
+      ${inp('contact',t('contactP'))}${inp('phone',t('phone'),'tel','inputmode="tel"')}${inp('tg',t('tg'),'text','placeholder="@username"')}
+      <label class="field">${t('manager')}<select name="manager">${S.team.filter(u=>u.role!=='moder').map(u=>`<option value="${u.id}" ${f.manager===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}</select></label>
+    </div></section>
+    <section class="fs"><div><h2>${t('fCard')}</h2><p>${t('fCardP')}</p></div><div class="fields">
+      ${inp('capMin',t('capMin'),'number','min="0"')}${inp('capMax',t('capMax'),'number','min="0"')}
+      ${inp('priceFrom',t('priceFrom')+', '+t('sum'),'number','min="0" step="1000"')}${inp('halls',t('halls'),'number','min="1"')}
+      <label class="field full">${t('descRu')}<textarea name="descRu">${esc(f.descRu)}</textarea></label>
+      <label class="field full">${t('descUz')}<textarea name="descUz">${esc(f.descUz)}</textarea></label>
+    </div></section>
+    <section class="fs"><div><h2>${t('fPhotos')}</h2><p>${t('fPhotosP')}</p></div><div>
+      <div class="upload" id="drop" tabindex="0" role="button">${t('uploadT')}</div>
+      <p class="small ${E.photos?'':'muted'}" id="phCount" style="${E.photos?'color:var(--berry)':''}">${E.photos||t('photoCount',{a:f.photos.length,n:S.settings.minPhotos})}</p>
+      <div class="photos" id="phGrid">${photoGrid()}</div>
+    </div></section>
+    <section class="fs"><div><h2>${t('fDocs')}</h2><p>${t('fDocsP')}</p></div><div class="check">
+      ${['contract','stir','contacts','consent'].map(k=>`<label><input type="checkbox" name="ck_${k}" ${f.check[k]?'checked':''}><span>${t(k)}</span></label>`).join('')}
+    </div></section>
+    <div class="formbar">
+      <button class="btn" data-act="cancelForm">${t('cancel')}</button>
+      ${editing?`<button class="btn pri" data-act="saveForm" data-v="keep">${t('saveChanges')}</button>`:
+        `<button class="btn" data-act="saveForm" data-v="draft">${t('saveDraft')}</button><button class="btn pri" data-act="saveForm" data-v="review">${t('toReview')}</button>`}
+    </div></div>`;
+};
+function photoGrid(){return UI.form.photos.map((p,i)=>`<div class="ph ${p==='seed'?'seed':''}" ${p!=='seed'?`style="background-image:url(${p})"`:''}><button type="button" data-act="rmPhoto" data-v="${i}" aria-label="Remove">×</button></div>`).join('')}
+function refreshPhotos(){$('#phGrid').innerHTML=photoGrid();const c=$('#phCount');delete UI.errors.photos;c.style.color='';c.className='small muted';c.textContent=t('photoCount',{a:UI.form.photos.length,n:S.settings.minPhotos})}
+function bindForm(){
+  const form=$('#vform');
+  form.addEventListener('input',e=>{const el=e.target;if(!el.name)return;
+    if(el.name.startsWith('ck_'))UI.form.check[el.name.slice(3)]=el.checked;else UI.form[el.name]=el.value});
+  form.addEventListener('change',e=>{const el=e.target;if(el.name&&el.name.startsWith('ck_'))UI.form.check[el.name.slice(3)]=el.checked;else if(el.name)UI.form[el.name]=el.value});
+  const drop=$('#drop');
+  drop.onclick=()=>$('#fileIn').click();
+  drop.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#fileIn').click()}};
+  drop.ondragover=e=>{e.preventDefault();drop.style.borderColor='var(--coral)'};
+  drop.ondragleave=()=>drop.style.borderColor='';
+  drop.ondrop=e=>{e.preventDefault();drop.style.borderColor='';addFiles(e.dataTransfer.files)};
+}
+function addFiles(files){
+  [...files].filter(f=>f.type.startsWith('image/')).slice(0,20).forEach(file=>{
+    const rd=new FileReader();rd.onload=()=>{const img=new Image();img.onload=()=>{
+      const w=360,h=Math.round(img.height*w/img.width),cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);
+      UI.form.photos.push(cv.toDataURL('image/jpeg',.72));refreshPhotos()};img.src=rd.result};rd.readAsDataURL(file)});
+}
+function validate(f,mode){
+  const E={},strict=mode!=='draft';
+  if(!f.name.trim())E.name=t('eName');
+  const ph=f.phone.replace(/[^\d+]/g,'');
+  if(strict||ph.length>4){if(!/^\+998\d{9}$/.test(ph))E.phone=t('ePhone')}
+  if((strict||f.stir)&&!/^\d{9}$/.test(String(f.stir).trim()))E.stir=t('eStir');
+  if(strict){
+    if(f.district===''||f.district==null)E.district=t('eDistrict');
+    if(!String(f.contact).trim())E.contact=t('eContact');
+    if(!(+f.priceFrom>0))E.priceFrom=t('ePrice');
+    if(!(+f.capMax>0)||+f.capMax<=+f.capMin)E.capMax=t('eCap');
+    if(f.photos.length<S.settings.minPhotos)E.photos=t('ePhotos',{n:S.settings.minPhotos});
+  }
+  return E;
+}
+function saveForm(mode){
+  const f=UI.form,v0=UI.editId?V(UI.editId):null;
+  const strictMode=mode==='keep'?(v0&&['review','active'].includes(v0.status)?'review':'draft'):mode;
+  UI.errors=validate(f,strictMode);
+  if(Object.keys(UI.errors).length){render();toast(t('fixErrors'));const b=$('.field.bad,#phCount[style*=berry]');b&&b.scrollIntoView&&b.scrollIntoView({block:'center',behavior:'smooth'});return}
+  const clean={name:f.name.trim(),cat:f.cat,legal:f.legal,stir:String(f.stir).trim(),district:f.district===''?'':+f.district,address:f.address.trim(),contact:String(f.contact).trim(),
+    phone:f.phone.replace(/[^\d+]/g,''),tg:f.tg.trim(),capMin:+f.capMin||0,capMax:+f.capMax||0,halls:+f.halls||1,priceFrom:+f.priceFrom||0,descRu:f.descRu,descUz:f.descUz,photos:f.photos,check:{...f.check},manager:f.manager};
+  let id;
+  if(v0){Object.assign(v0,clean);if(v0.status==='lead')v0.status='draft';id=v0.id;log('aEdit',id+' '+v0.name)}
+  else{
+    const n=Math.max(100,...S.vendors.map(v=>+v.id.slice(1)))+1;id='V'+n;
+    S.vendors.push({id,...clean,status:mode==='review'?'review':'draft',created:Date.now(),activated:null,freeUntil:null,notes:[]});
+    log('aCreate',id+' '+clean.name);if(mode==='review')log('aReview',id+' '+clean.name);
+  }
+  save();UI.form=null;UI.editId=null;UI.errors={};
+  toast(mode==='review'?t('sentReview'):t('saved'));
+  location.hash='vendors';setTimeout(()=>openDrawer(id),30);
+}
+
+VIEWS.requests=()=>{
+  const fs=['all','overdue','new','viewed','replied'];
+  const cnt=s=>s==='all'?S.requests.length:S.requests.filter(r=>rStatus(r)===s).length;
+  const list=S.requests.filter(r=>UI.rf==='all'||rStatus(r)===UI.rf).slice(0,120);
+  return `<div class="chips">${fs.map(s=>`<button class="chip ${UI.rf===s?'on':''}" data-act="rfilter" data-v="${s}">${t(s)}<span>${cnt(s)}</span></button>`).join('')}</div>
+  ${list.length?`<div class="tw"><table><thead><tr><th>№</th><th>${t('date')}</th><th>${t('client')}</th><th>${t('eventDate')}</th><th class="num">${t('guests')}</th><th>${t('vendor')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
+  ${list.map(r=>{const c=S.clients.find(x=>x.id===r.client)||{},v=V(r.vendor)||{name:'—'},st=rStatus(r);
+    return `<tr><td class="id">${r.id}</td><td class="small" style="white-space:nowrap">${ftime(r.created)}<br><span class="muted">${ago(r.created)} ${t('ago')}</span></td>
+    <td>${esc(c.name)}</td><td class="small">${fdate(r.event)}</td><td class="num">${r.guests}</td>
+    <td><button class="btn sm" style="border:0;padding:0;background:none" data-act="openV" data-v="${r.vendor}"><span class="nm">${esc(v.name)}</span></button>${r.nudges?`<div class="id">${t('nudge')}: ${r.nudges}</div>`:''}</td>
+    <td>${pill(st,t(st))}</td>
+    <td><div class="acts" style="flex-wrap:nowrap">${st!=='replied'?`<button class="btn sm" data-act="nudge" data-v="${r.id}">${t('nudge')}</button><button class="btn sm" data-act="reassign" data-v="${r.id}">${t('reassign')}</button><button class="btn sm" data-act="replied" data-v="${r.id}">${t('markReplied')}</button>`:''}</div></td></tr>`}).join('')}
+  </tbody></table></div>`:`<div class="panel empty">${t('noRequests')}</div>`}`;
+};
+
+VIEWS.clients=()=>`<div class="alert info" style="margin-bottom:12px">${t('piiNote')}</div>
+  <div class="tw"><table><thead><tr><th>ID</th><th>${t('nameP')}</th><th>${t('tgUser')}</th><th>${t('phone')}</th><th class="num">${t('reqs')}</th><th>${t('firstSeen')}</th><th>${t('status')}</th><th></th></tr></thead><tbody>
+  ${S.clients.slice().sort((a,b)=>b.first-a.first).map(c=>{const n=S.requests.filter(r=>r.client===c.id).length;
+    return `<tr><td class="id">${c.id}</td><td class="nm">${esc(c.name)}</td><td class="small">${esc(c.tg)}</td>
+    <td style="white-space:nowrap">${UI.revealed[c.id]?fmtPhone(c.phone):`${mask(c.phone)} <button class="btn sm" data-act="reveal" data-v="${c.id}">${t('show')}</button>`}</td>
+    <td class="num">${n}</td><td class="small">${fdate(c.first)}</td><td>${c.blocked?pill('blocked',t('blocked')):pill('active',t('okStatus'))}</td>
+    <td><button class="btn sm ${c.blocked?'':'bad'}" data-act="block" data-v="${c.id}">${c.blocked?t('unblock'):t('block')}</button></td></tr>`}).join('')}
+  </tbody></table></div>`;
+
+VIEWS.moderation=()=>{
+  const list=S.moderation.filter(m=>m.status==='pending');
+  if(!list.length)return `<div class="panel empty">${t('noMod')}</div>`;
+  return `<div class="mod">${list.map(m=>{const v=V(m.vendor)||{name:'—'};let body='';
+    if(m.type==='card')body=`<div class="diff"><div class="was"><b>${t('was')}</b>${esc(m.before)}</div><div class="now"><b>${t('now')}</b>${esc(m.after)}</div></div><div class="small muted">${m.field==='priceFrom'?t('priceFrom'):t('capacity')}</div>`;
+    if(m.type==='photos')body=`<div class="photos" style="margin:10px 0">${Array.from({length:m.count},()=>'<div class="ph seed"></div>').join('')}</div>`;
+    if(m.type==='review'){const c=S.clients.find(x=>x.id===m.client)||{};body=`<p style="margin:10px 0"><span class="stars" aria-label="${m.rating}/5">${'●'.repeat(m.rating)}${'○'.repeat(5-m.rating)}</span> <span class="small muted">${esc(c.name)}</span><br>${esc(m.text)}</p>`}
+    return `<section class="panel"><div class="acts" style="align-items:center"><h2 style="margin:0">${t(m.type==='card'?'mCard':m.type==='photos'?'mPhotos':'mReview')}</h2>
+      <button class="btn sm" style="border:0;background:none" data-act="openV" data-v="${m.vendor}"><span class="nm">${esc(v.name)}</span></button><span class="small muted" style="margin-left:auto">${ago(m.at)} ${t('ago')}</span></div>
+      ${body}<div class="acts"><button class="btn sm" data-act="modInfo" data-v="${m.id}">${t('modDetails')}</button><button class="btn good sm" data-act="modOk" data-v="${m.id}">${t('approve')}</button><button class="btn bad sm" data-act="modNo" data-v="${m.id}">${t('decline')}</button></div></section>`}).join('')}</div>`;
+};
+
+VIEWS.payments=()=>{
+  const act=S.vendors.filter(v=>v.status==='active').sort((a,b)=>(a.freeUntil||0)-(b.freeUntil||0));
+  return `<div class="alert info" style="margin-bottom:14px">${t('phase1')}</div>
+  <div class="tw" style="margin-bottom:18px"><table><thead><tr><th>${t('vendor')}</th><th>${t('plan')}</th><th>${t('freeUntil')}</th><th class="num">${t('daysLeft')}</th><th>${t('lastPay')}</th><th></th></tr></thead><tbody>
+  ${act.map(v=>{const left=Math.ceil((v.freeUntil-Date.now())/DAY),lp=S.payments.filter(p=>p.vendor===v.id).sort((a,b)=>b.at-a.at)[0];
+    return `<tr><td><button class="btn sm" style="border:0;background:none;padding:0" data-act="openV" data-v="${v.id}"><span class="nm">${esc(v.name)}</span></button></td><td class="small">${t('free')}</td><td class="small">${fdate(v.freeUntil)}</td>
+    <td class="num" style="${left<=14?'color:var(--berry);font-weight:800':''}">${left} ${t('days')}</td><td class="small">${lp?`${money(lp.amount)}, ${fdate(lp.at)}`:'—'}</td>
+    <td><div class="acts" style="flex-wrap:nowrap"><button class="btn sm" data-act="extend" data-v="${v.id}">${t('extend')}</button><button class="btn sm" data-act="pay" data-v="${v.id}">${t('recordPay')}</button></div></td></tr>`}).join('')}
+  </tbody></table></div>
+  <section class="panel"><h2>${t('ledger')}</h2>${S.payments.length?`<div class="tw"><table><thead><tr><th>${t('date')}</th><th>${t('vendor')}</th><th class="num">${t('amount')}</th><th>${t('method')}</th><th class="num">${t('period')}</th><th>${t('who')}</th></tr></thead><tbody>
+    ${S.payments.slice().sort((a,b)=>b.at-a.at).map(p=>`<tr><td class="small">${ftime(p.at)}</td><td class="nm">${esc((V(p.vendor)||{}).name)}</td><td class="num">${money(p.amount)}</td><td class="small">${t(p.method)}</td><td class="num">${p.months}</td><td class="small">${esc(user(p.by).name)}</td></tr>`).join('')}
+  </tbody></table></div>`:`<div class="muted">${t('noPays')}</div>`}</section>`;
+};
+
+const PERMS={pVendors:['admin','sales'],pActivate:['admin','moder'],pRequests:['admin','sales'],pPii:['admin'],pMod:['admin','moder'],pPay:['admin'],pTeam:['admin']};
+VIEWS.team=()=>`<div class="grid g2"><div class="tw"><table><thead><tr><th>${t('nameP')}</th><th>Telegram</th><th>${t('role')}</th><th class="num">${t('vendorsCount')}</th></tr></thead><tbody>
+  ${S.team.map(u=>`<tr><td class="nm">${esc(u.name)}</td><td class="small">${esc(u.tg)}</td><td>${t(u.role)}</td><td class="num">${S.vendors.filter(v=>v.manager===u.id).length||'—'}</td></tr>`).join('')}
+  </tbody></table><div style="padding:12px"><button class="btn" data-act="member">${t('addMember')}</button></div></div>
+  <section class="panel"><h2>${t('perms')}</h2><div class="tw"><table><thead><tr><th></th><th>${t('admin')}</th><th>${t('sales')}</th><th>${t('moder')}</th></tr></thead><tbody>
+  ${Object.entries(PERMS).map(([k,roles])=>`<tr><td class="small">${t(k)}</td>${['admin','sales','moder'].map(r=>`<td>${roles.includes(r)?'<span class="yes">✓</span>':'<span class="no">—</span>'}</td>`).join('')}</tr>`).join('')}
+  </tbody></table></div></section></div>`;
+
+VIEWS.audit=()=>{const q=UI.lq.trim().toLowerCase();
+  const list=S.audit.filter(a=>!q||(t(a.a)+' '+a.obj+' '+user(a.by).name+' '+(a.detail||'')).toLowerCase().includes(q)).slice(0,200);
+  return `<div class="chips"><input class="search" id="lq" type="search" placeholder="${t('searchLog')}" value="${esc(UI.lq)}" style="margin-left:0"></div>
+  ${list.length?`<div class="tw"><table><thead><tr><th>${t('when')}</th><th>${t('who')}</th><th>${t('action')}</th><th>${t('object')}</th></tr></thead><tbody>
+  ${list.map(a=>`<tr><td class="small" style="white-space:nowrap">${ftime(a.at)}</td><td>${esc(user(a.by).name)}</td><td>${t(a.a)}${a.detail?`<div class="small muted">${esc(a.detail)}</div>`:''}</td><td class="small">${esc(a.obj)}</td></tr>`).join('')}
+  </tbody></table></div>`:`<div class="panel empty">${t('noLog')}</div>`}`;
+};
+
+VIEWS.settings=()=>{const st=S.settings;
+  const num=(k,label)=>`<div class="row"><label class="grow" for="set_${k}">${label}</label><input id="set_${k}" type="number" min="1" value="${st[k]}" data-set="${k}" style="width:90px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--card)"></div>`;
+  return `<div class="grid g2">
+  <section class="panel"><h2>${t('categories')}</h2><p class="small muted" style="margin-top:0">${t('catNote')}</p>
+    ${Object.keys(C).map(k=>`<div class="row"><span class="grow">${cn(k)}</span><span class="small muted">${S.vendors.filter(v=>v.cat===k).length||''}</span><span class="switch"><input type="checkbox" data-cat="${k}" ${st.cats[k]?'checked':''} aria-label="${cn(k)}"><i></i></span></div>`).join('')}
+  </section>
+  <div class="grid" style="align-content:start">
+    <section class="panel"><h2>${t('rules')}</h2>${num('sla',t('sla'))}${num('minPhotos',t('minPhotos'))}${num('freeDays',t('freeDays'))}${num('target',t('target'))}<div class="row"><label class="grow" for="set_url">${t('siteUrl')}</label><input id="set_url" type="url" value="${esc(siteUrl())}" data-seturl="1" style="width:200px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--card)"></div></section>
+    <section class="panel"><h2>${t('later')}</h2><p class="small muted" style="margin-top:0">${t('laterNote')}</p>
+      ${['mPremium','mAds','mSubs','mPay'].map(k=>`<div class="row"><span class="grow">${t(k)}</span><span class="switch"><input type="checkbox" disabled aria-label="${t(k)}"><i></i></span></div>`).join('')}</section>
+    <section class="panel"><h2>${t('demo')}</h2><button class="btn bad" data-act="reset">${t('reset')}</button></section>
+  </div></div>`;
+};
+
+/* ---------- modal & toast ---------- */
+let modalCb=null,lastFocus=null;
+function modal(title,body,okLabel,cb,okCls='pri'){
+  lastFocus=document.activeElement;$('#mbox').className='mbox';
+  $('#mbox').innerHTML=`<h3>${title}</h3>${body}<div class="acts"><button class="btn" data-act="mCancel">${t('cancel')}</button><button class="btn ${okCls}" data-act="mOk">${okLabel}</button></div>`;
+  modalCb=cb;$('#modal').classList.add('on');setTimeout(()=>{const f=$('#mbox input,#mbox textarea,#mbox select');(f||$('#mbox [data-act=mOk]')).focus()},30);
+}
+function closeModal(){$('#modal').classList.remove('on');modalCb=null;lastFocus&&lastFocus.focus&&lastFocus.focus()}
+function toast(msg){const el=document.createElement('div');el.className='toast';el.setAttribute('role','status');el.textContent=msg;$('#toasts').appendChild(el);setTimeout(()=>el.remove(),2600)}
+const reasonBody=()=>`<label class="field">${t('reason')}<textarea id="mReason" placeholder="${t('reasonPh')}"></textarea><span class="err" id="mErr"></span></label>`;
+function withReason(cb){return ()=>{const r=$('#mReason').value.trim();if(!r){$('#mErr').textContent=t('reasonReq');return false}cb(r)}}
+
+/* ---------- actions ---------- */
+function refresh(){save();render()}
+const siteUrl=()=>(S.settings.siteUrl||'https://bayramm.uz').replace(/\/+$/,'');
+const cardUrl=v=>`${siteUrl()}/v/${v.id}`;
+const tgLink=h=>h?`https://t.me/${encodeURIComponent(h.replace(/^@/,''))}`:'';
+function modBody(m){const v=V(m.vendor)||{};
+  if(m.type==='card')return `<div class="diff" style="margin:0"><div class="was"><b>${t('was')}</b>${esc(m.before)}</div><div class="now"><b>${t('now')}</b>${esc(m.after)}</div></div><div class="small muted">${m.field==='priceFrom'?t('priceFrom'):t('capacity')}</div>`;
+  if(m.type==='photos')return `<div class="photos">${Array.from({length:m.count},()=>'<div class="ph seed"></div>').join('')}</div>`;
+  return `<p style="margin:0"><span class="stars" aria-label="${m.rating}/5">${'●'.repeat(m.rating)}${'○'.repeat(5-m.rating)}</span><br>${esc(m.text)}</p>`}
+function renderModInfo(id){
+  const m=S.moderation.find(x=>x.id===id);if(!m)return closeModal();const v=V(m.vendor)||{};
+  const isRev=m.type==='review',c=isRev?(S.clients.find(x=>x.id===m.client)||{}):null;
+  const reqs=isRev?S.requests.filter(r=>r.client===m.client&&r.vendor===m.vendor):[];
+  const person=isRev?{name:c.name,phone:c.phone,tg:c.tg,role:t('reviewAuthor'),hint:t('hintClient'),masked:!UI.revealed[c.id]}
+                    :{name:v.contact,phone:v.phone,tg:v.tg,role:t('submittedBy')+', '+t('contactP').toLowerCase(),hint:t('hintVendor'),masked:false};
+  const tel=(person.phone||'').replace(/[^\d+]/g,'');
+  $('#mbox').className='mbox wide';
+  $('#mbox').innerHTML=`
+   <div class="acts" style="align-items:center"><h3 style="margin-right:auto">${t(m.type==='card'?'mCard':m.type==='photos'?'mPhotos':'mReview')}</h3><span class="small muted">${t('sentAt')}: ${ftime(m.at)}</span></div>
+   <h4>${t('change')}</h4>${modBody(m)}
+   <h4>${t('service')}</h4>
+   <dl class="dl"><dt>${t('name')}</dt><dd>${esc(v.name)} <span class="muted">${esc(v.id)}</span></dd>
+     <dt>${t('category')}</dt><dd>${v.cat?cn(v.cat):'—'}</dd><dt>${t('district')}</dt><dd>${dn(v.district)}</dd>
+     <dt>${t('address')}</dt><dd>${esc(v.address)||'—'}</dd>
+     <dt>${t('capacity')}</dt><dd>${v.capMax?`${v.capMin}–${v.capMax} ${t('guests')}`:'—'}</dd>
+     <dt>${t('priceFrom')}</dt><dd>${v.priceFrom?money(v.priceFrom):'—'}</dd><dt>${t('status')}</dt><dd>${v.status?pill(v.status):'—'}</dd></dl>
+   <h4>${t('cardLink')}</h4>
+   <div class="linkrow"><code>${esc(cardUrl(v))}</code><button class="btn sm" data-act="copyLink" data-v="${esc(cardUrl(v))}">${t('copy')}</button><a class="btn sm" href="${esc(cardUrl(v))}" target="_blank" rel="noopener">${t('openLink')}</a></div>
+   <h4>${esc(person.role)}</h4>
+   <div class="person"><span class="nm">${esc(person.name)||'—'}</span>
+     <span>${person.masked?`${mask(person.phone)} <button class="btn sm" data-act="modReveal" data-v="${m.id}">${t('show')}</button>`:fmtPhone(person.phone)}${person.tg?` <span class="muted">${esc(person.tg)}</span>`:''}</span>
+     <div class="acts">${!person.masked&&tel?`<a class="btn sm" href="tel:${esc(tel)}">${t('call')}</a>`:''}${person.tg?`<a class="btn sm" href="${esc(tgLink(person.tg))}" target="_blank" rel="noopener">${t('writeTg')}</a>`:''}</div>
+     <span class="small muted">${person.hint}</span></div>
+   ${isRev?`<h4>${t('clientReq')}</h4>${reqs.length?reqs.map(r=>`<div class="row small"><span class="grow">${ftime(r.created)}, ${r.guests} ${t('guests')}, ${t('eventDate').toLowerCase()} ${fdate(r.event)}</span>${pill(rStatus(r),t(rStatus(r)))}</div>`).join(''):`<div class="alert warn">${t('noClientReq')}</div>`}`:''}
+   <div class="acts" style="margin-top:6px"><button class="btn" data-act="mCancel">${t('closeB')}</button><button class="btn bad" data-act="modNo" data-v="${m.id}">${t('decline')}</button><button class="btn good" data-act="modOk" data-v="${m.id}">${t('approve')}</button></div>`;
+}
+const A={
+  modInfo(id){lastFocus=document.activeElement;modalCb=null;renderModInfo(id);$('#modal').classList.add('on');setTimeout(()=>{const b=$('#mbox [data-act=mCancel]');b&&b.focus()},30)},
+  modReveal(id){const m=S.moderation.find(x=>x.id===id),c=S.clients.find(x=>x.id===m.client);UI.revealed[c.id]=true;log('aPii',c.id+' '+c.name);save();renderModInfo(id)},
+  copyLink(u){const done=()=>toast(t('copied'));try{navigator.clipboard.writeText(u).then(done,()=>{})}catch(e){}},
+  goAdd(){UI.form=null;UI.editId=null;UI.errors={};closeDrawer();if(route()==='add')render();else location.hash='add'},
+  vfilter(v){UI.vf=v;if(route()!=='vendors')location.hash='vendors';else render()},
+  rfilter(v){UI.rf=v;render()},
+  todo(v){if(v==='review'){UI.vf='review';location.hash='vendors'}else if(v==='overdue'){UI.rf='overdue';location.hash='requests'}else if(v==='mod')location.hash='moderation';else if(v==='free')location.hash='payments';else{UI.vf='draft';location.hash='vendors'}},
+  openV:openDrawer,close:closeDrawer,
+  edit(id){UI.editId=id;UI.form=null;UI.errors={};closeDrawer();location.hash='add';if(route()==='add')render()},
+  cancelForm(){UI.form=null;const id=UI.editId;UI.editId=null;UI.errors={};location.hash='vendors';if(id)setTimeout(()=>openDrawer(id),30)},
+  saveForm:saveForm,
+  rmPhoto(i){UI.form.photos.splice(+i,1);refreshPhotos()},
+  activate(id){const v=V(id);if(readyN(v)<6)return;v.status='active';v.activated=Date.now();v.freeUntil=Date.now()+S.settings.freeDays*DAY;log('aActivate',id+' '+v.name);toast(t('activated'));refresh()},
+  restore(id){const v=V(id);if(readyN(v)<6)return;v.status='active';log('aRestore',id+' '+v.name);toast(t('activated'));refresh()},
+  toReview(id){const v=V(id),E=validate({...v,phone:v.phone,district:v.district},'review');
+    if(Object.keys(E).length){UI.editId=id;UI.form=JSON.parse(JSON.stringify(v));UI.errors=E;closeDrawer();location.hash='add';if(route()==='add')render();toast(t('fixErrors'));return}
+    v.status='review';log('aReview',id+' '+v.name);toast(t('sentReview'));refresh()},
+  toDraft(id){const v=V(id);v.status='draft';log('aDraft',id+' '+v.name);refresh()},
+  suspend(id){const v=V(id);modal(t('suspend')+': '+esc(v.name),reasonBody(),t('suspend'),withReason(r=>{v.status='suspended';v.notes.push({by:S.me,at:Date.now(),text:r});S.audit.unshift({at:Date.now(),by:S.me,a:'aSuspend',obj:id+' '+v.name,detail:r});toast(t('suspendedT'));refresh()}),'bad')},
+  reject(id){const v=V(id);modal(t('reject')+': '+esc(v.name),reasonBody(),t('reject'),withReason(r=>{v.status='rejected';v.notes.push({by:S.me,at:Date.now(),text:r});S.audit.unshift({at:Date.now(),by:S.me,a:'aReject',obj:id+' '+v.name,detail:r});toast(t('rejectedT'));refresh()}),'bad')},
+  note(id){const v=V(id),tx=$('#noteIn').value.trim();if(!tx)return;v.notes.push({by:S.me,at:Date.now(),text:tx});log('aNote',id+' '+v.name);refresh()},
+  nudge(id){const r=S.requests.find(x=>x.id===id);r.nudges=(r.nudges||0)+1;log('aNudge',(V(r.vendor)||{}).id+' '+id);toast(t('nudged'));refresh()},
+  replied(id){const r=S.requests.find(x=>x.id===id);r.status='replied';r.replyH=Math.max(1,Math.round((Date.now()-r.created)/HOUR));log('aReplied',r.vendor+' '+id);refresh()},
+  reassign(id){const r=S.requests.find(x=>x.id===id),cur=V(r.vendor);
+    const opts=S.vendors.filter(v=>v.status==='active'&&v.id!==r.vendor&&v.capMax>=r.guests).map(v=>{const s=vStats(v);return `<option value="${v.id}">${esc(v.name)}, ${dn(v.district)}, ${v.capMin}–${v.capMax}, ${s.rate??'—'}%</option>`}).join('');
+    modal(t('reassign')+' '+id,`<p class="small muted" style="margin:0">${esc(cur?cur.name:'')}, ${r.guests} ${t('guests')}, ${fdate(r.event)}</p><label class="field">${t('chooseVendor')}<select id="mSel">${opts}</select></label>`,t('reassign'),()=>{
+      const nv=$('#mSel').value;if(!nv)return false;const old=r.vendor;r.vendor=nv;r.status='new';r.created=Date.now();r.nudges=0;
+      S.audit.unshift({at:Date.now(),by:S.me,a:'aReassign',obj:id,detail:old+' › '+nv});toast(t('reassigned'));refresh()})},
+  reveal(id){UI.revealed[id]=true;const c=S.clients.find(x=>x.id===id);log('aPii',id+' '+c.name);refresh()},
+  block(id){const c=S.clients.find(x=>x.id===id);
+    if(c.blocked){c.blocked=false;log('aUnblock',id+' '+c.name);refresh();return}
+    modal(t('block')+': '+esc(c.name),reasonBody(),t('block'),withReason(r=>{c.blocked=true;S.audit.unshift({at:Date.now(),by:S.me,a:'aBlock',obj:id+' '+c.name,detail:r});refresh()}),'bad')},
+  modOk(id){if($('#modal').classList.contains('on'))closeModal();const m=S.moderation.find(x=>x.id===id),v=V(m.vendor);m.status='approved';
+    if(m.type==='card'&&v){if(m.field==='priceFrom')v.priceFrom=+m.after.replace(/\D/g,'');if(m.field==='capacity'){const [a,b]=m.after.split('–');v.capMin=+a;v.capMax=+b}}
+    if(m.type==='photos'&&v)for(let i=0;i<m.count;i++)v.photos.push('seed');
+    log('aApprove',m.vendor+' '+(v?v.name:''));toast(t('approved'));refresh()},
+  modNo(id){const m=S.moderation.find(x=>x.id===id),v=V(m.vendor);modal(t('decline'),reasonBody(),t('decline'),withReason(r=>{m.status='declined';S.audit.unshift({at:Date.now(),by:S.me,a:'aDecline',obj:m.vendor+' '+(v?v.name:''),detail:r});toast(t('declined'));refresh()}),'bad')},
+  extend(id){const v=V(id);v.freeUntil+=30*DAY;log('aExtend',id+' '+v.name);toast(t('extended'));refresh()},
+  pay(id){const v=V(id);modal(t('recordPay')+': '+esc(v.name),`<label class="field">${t('amount')}<input id="mAmt" type="number" min="0" step="1000"></label>
+    <label class="field">${t('method')}<select id="mMeth"><option value="transfer">${t('transfer')}</option><option value="cash">${t('cash')}</option></select></label>
+    <label class="field">${t('period')}<input id="mMon" type="number" min="1" value="1"></label><span class="err small" id="mErr" style="color:var(--berry)"></span>`,t('recordPay'),()=>{
+      const amt=+$('#mAmt').value;if(!(amt>0)){$('#mErr').textContent=t('ePrice');return false}
+      S.payments.push({id:'P'+(S.payments.length+1),vendor:id,at:Date.now(),amount:amt,method:$('#mMeth').value,months:+$('#mMon').value||1,by:S.me});
+      S.audit.unshift({at:Date.now(),by:S.me,a:'aPay',obj:id+' '+v.name,detail:money(amt)});toast(t('paySaved'));refresh()})},
+  member(){modal(t('addMember'),`<label class="field">${t('nameP')}<input id="mName"></label><label class="field">Telegram<input id="mTg" placeholder="@username"></label>
+    <label class="field">${t('role')}<select id="mRole"><option value="sales">${t('sales')}</option><option value="moder">${t('moder')}</option><option value="admin">${t('admin')}</option></select></label><span class="err small" id="mErr" style="color:var(--berry)"></span>`,t('addMember'),()=>{
+      const n=$('#mName').value.trim();if(!n){$('#mErr').textContent=t('eName');return false}
+      S.team.push({id:'u'+(S.team.length+1+Math.floor(Math.random()*1000)),name:n,tg:$('#mTg').value.trim(),role:$('#mRole').value});log('aMember',n);toast(t('memberAdded'));refresh()})},
+  reset(){modal(t('reset'),`<p style="margin:0">${t('resetQ')}</p>`,t('reset'),()=>{const lang=S.lang;S=seed();S.lang=lang;UI.revealed={};closeDrawer();save();toast(t('resetDone'));render()},'bad')},
+  mCancel:closeModal,
+  mOk(){if(modalCb&&modalCb()===false)return;closeModal()},
+};
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  const th=e.target.closest('#themeSeg button');if(th){S.theme=th.dataset.th;save();render();return}
+  const l=e.target.closest('#langSeg button');if(l){S.lang=l.dataset.l;save();render();return}
+  const el=e.target.closest('[data-act]');if(!el)return;
+  const act=el.dataset.act;if(['check','mgr','vdist'].includes(act))return;
+  if(A[act]){e.preventDefault();A[act](el.dataset.v)}
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if($('#modal').classList.contains('on'))closeModal();else if(UI.open)closeDrawer()}
+  if(e.key==='Enter'&&e.target.matches('tr.click'))A.openV(e.target.dataset.v);
+});
+document.addEventListener('change',e=>{
+  const el=e.target;
+  if(el.dataset.act==='check'){const v=V(el.dataset.v),k=el.dataset.k;v.check[k]=el.checked;S.audit.unshift({at:Date.now(),by:S.me,a:el.checked?'aCheck':'aUncheck',obj:v.id+' '+v.name,detail:t(k,{n:S.settings.minPhotos})});refresh()}
+  if(el.dataset.act==='mgr'){const v=V(el.dataset.v);v.manager=el.value;S.audit.unshift({at:Date.now(),by:S.me,a:'aMgr',obj:v.id+' '+v.name,detail:user(el.value).name});refresh()}
+  if(el.dataset.act==='vdist'){UI.vd=el.value;render()}
+  if(el.dataset.cat){S.settings.cats[el.dataset.cat]=el.checked;S.audit.unshift({at:Date.now(),by:S.me,a:'aSettings',obj:cn(el.dataset.cat),detail:el.checked?'on':'off'});refresh()}
+  if(el.dataset.seturl){const u=el.value.trim();if(/^https?:\/\/\S+$/.test(u)){S.settings.siteUrl=u;S.audit.unshift({at:Date.now(),by:S.me,a:'aSettings',obj:'siteUrl',detail:u});refresh()}else{el.value=siteUrl()}}
+  if(el.dataset.set){const n=Math.max(1,+el.value||1);S.settings[el.dataset.set]=n;S.audit.unshift({at:Date.now(),by:S.me,a:'aSettings',obj:el.dataset.set,detail:String(n)});refresh()}
+});
+document.addEventListener('input',e=>{
+  if(e.target.id==='vq'){UI.vq=e.target.value;const pos=e.target.selectionStart;render();const i=$('#vq');i.focus();i.setSelectionRange(pos,pos)}
+  if(e.target.id==='lq'){UI.lq=e.target.value;const pos=e.target.selectionStart;render();const i=$('#lq');i.focus();i.setSelectionRange(pos,pos)}
+});
+$('#scrim').onclick=closeDrawer;
+$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeModal()});
+$('#fileIn').onchange=e=>{addFiles(e.target.files);e.target.value=''};
+window.addEventListener('hashchange',()=>{if(route()!=='add'){UI.form=null;UI.editId=null;UI.errors={}}render();window.scrollTo(0,0)});
+
+S=load();render();
+window.__bayramAdmin={get S(){return S},A,UI};
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+const {JSDOM}=require('jsdom');const fs=require('fs');
+const dom=new JSDOM(fs.readFileSync(require('path').join(__dirname,'..','admin.html'),'utf8'),{runScripts:'dangerously',url:'https://x.test/#moderation',pretendToBeVisual:true});
+const w=dom.window,d=w.document;let f=0;const ok=(c,m)=>{console.log((c?'✓ ':'✗ ')+m);if(!c)f++};
+w.addEventListener('error',e=>{console.log('ERR',e.message);f++});
+setTimeout(()=>{const {S,A}=w.__bayramAdmin;
+ ok(d.querySelectorAll('[data-act=modInfo]').length===5,'details buttons');
+ d.querySelector('[data-act=modInfo][data-v=M1]').click();
+ ok(d.querySelector('#modal.on .linkrow code').textContent.endsWith('/v/V103'),'card link');
+ ok(d.querySelector('a[href^="tel:"]')&&d.querySelector('a[href^="https://t.me/"]'),'vendor call + telegram');
+ d.querySelector('[data-act=modInfo][data-v=M3]').click();
+ ok(d.querySelector('[data-act=modReveal]'),'client phone masked');
+ d.querySelector('[data-act=modReveal]').click();ok(S.audit[0].a==='aPii'&&d.querySelector('a[href^="tel:"]'),'reveal logged, call shown');
+ d.querySelector('#mbox [data-act=modOk]').click();ok(!d.querySelector('#modal.on')&&S.moderation.find(m=>m.id==='M3').status==='approved','approve from details');
+ d.querySelector('[data-act=modInfo][data-v=M1]').click();d.querySelector('#mbox [data-act=modNo]').click();ok(d.querySelector('#mReason'),'decline asks reason');
+ console.log(f?'FAILED':'ALL PASSED');process.exit(f?1:0)},60);

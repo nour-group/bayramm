@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "prototypes/*"
+
+# Supply chain: не ставить версии младше 7 дней, запрещать git/tarball-зависимости
+# в транзитивных пакетах и откат уровня доверия (provenance) между версиями
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: true

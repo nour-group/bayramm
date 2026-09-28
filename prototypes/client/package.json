@@ -1,0 +1,13 @@
+{
+  "name": "bayram-client-prototype",
+  "private": true,
+  "description": "Прототип клиентской части Bayram.uz. Спецификация, а не основа кода.",
+  "scripts": {
+    "test": "node smoke.js",
+    "audit": "node audit.js",
+    "shots": "node shots.js"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.0"
+  }
+}

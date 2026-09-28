@@ -1,0 +1,20 @@
+{
+  "name": "bayramm",
+  "private": true,
+  "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "typecheck": "pnpm -r --filter './apps/*' typecheck",
+    "build": "pnpm -r --filter './apps/*' build",
+    "test": "pnpm -r test",
+    "dev:web": "pnpm --filter @bayramm/web dev",
+    "dev:api": "pnpm --filter @bayramm/api dev"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14"
+  }
+}
