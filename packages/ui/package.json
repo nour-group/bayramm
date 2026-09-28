@@ -1,0 +1,19 @@
+{
+  "name": "@bayramm/ui",
+  "private": true,
+  "type": "module",
+  "description": "Дизайн-токены Bayramm: палитра двух тем, шкалы, движение, безопасные зоны. Экспортирует исходники TS и CSS, сборки нет.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokens.css": "./src/tokens.css"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "css": "vitest run -u src/tokens.test.ts"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vitest": "^5.0.1"
+  }
+}
