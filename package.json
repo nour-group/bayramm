@@ -13,6 +13,7 @@
     "test": "pnpm -r test",
     "dev:web": "pnpm --filter @bayramm/web dev",
     "dev:vendor": "pnpm --filter @bayramm/vendor dev",
+    "dev:admin": "pnpm --filter @bayramm/admin dev",
     "dev:api": "pnpm --filter @bayramm/api dev"
   },
   "devDependencies": {

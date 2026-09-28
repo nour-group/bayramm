@@ -1,0 +1,193 @@
+/* Панель оператора: оболочка. Цвета, кегли, скругления и зазоры — только переменные
+   из @bayramm/ui/tokens.css; значения здесь не повторяются. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-15);
+  line-height: 1.5;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  /* 100vh — запасной вариант для браузеров без dvh (ловушка №4 в CLAUDE.md) */
+  min-height: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: dvh fallback */
+  min-height: 100dvh;
+}
+
+/* Ссылка «К содержимому»: видна только в фокусе с клавиатуры */
+.skip {
+  position: absolute;
+  top: 8px;
+  left: 16px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  padding: 0 16px;
+  border-radius: var(--r-11);
+  background: var(--coral-deep);
+  color: var(--btn-ink);
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(calc(-100% - 16px));
+}
+
+.skip:focus {
+  transform: none;
+}
+
+/* Шапка */
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "brand nav";
+  align-items: center;
+  gap: var(--gap-12);
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--white);
+}
+
+.brand {
+  grid-area: brand;
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--hit-min);
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-19);
+  font-weight: 700;
+  line-height: 1.1;
+  text-decoration: none;
+}
+
+.brand-area {
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+}
+
+/* Разделы: на узком экране отдельной строкой с прокруткой вбок.
+   Обе оси заданы явно (ловушка №2) */
+.nav {
+  grid-area: nav;
+  display: flex;
+  gap: var(--gap-5);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.nav a,
+.action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  min-height: var(--hit-min);
+  padding: 0 16px;
+  border-radius: var(--r-999);
+  color: var(--ink);
+  font-size: var(--fs-14);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--t1) var(--ease-soft);
+}
+
+.action {
+  border: 1px solid var(--rule);
+  background: var(--raise);
+  color: var(--plum);
+}
+
+/* Наведение — только там, где есть курсор (ловушка №6) */
+@media (hover: hover) {
+  .nav a:hover {
+    background: var(--lilac);
+  }
+}
+
+/* Выбранное — после наведения, чтобы наведение его не перекрывало (ловушка №7) */
+.nav a[aria-current="page"] {
+  background: var(--plum);
+  color: var(--sel-ink);
+}
+
+/* Содержимое */
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.page {
+  max-width: 640px;
+}
+
+.page-title {
+  margin: 0 0 8px;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-22);
+  line-height: 1.2;
+}
+
+.lead {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+.soon {
+  display: inline-flex;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: var(--r-999);
+  background: var(--lilac);
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+/* Фокус с клавиатуры: кольцо --coral, 3:1 на всех фонах шапки и страницы */
+:focus-visible {
+  outline: 3px solid var(--coral);
+  outline-offset: 2px;
+}
+
+/* Программный фокус на заголовке и main — для диктора, рамка не нужна */
+[tabindex="-1"]:focus {
+  outline: none;
+}
+
+@media (max-width: 719px) {
+  .top {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "brand"
+      "nav";
+    row-gap: var(--gap-7);
+  }
+}
