@@ -12,6 +12,8 @@ function makeEnv(overrides: Partial<Env> = {}): Env {
     GIT_SHA: "dev",
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     ID_HASH_KEY: "unit-test-id-hash-key-0123456789abcdef",
+    SUPABASE_URL: "http://127.0.0.1:54321",
+    SUPABASE_SERVICE_ROLE_KEY: "unit-test-service-role-key",
     // Порт 1: соединение, если бы до него дошло, сразу упало бы
     HYPERDRIVE: { connectionString: "postgresql://nobody:nothing@127.0.0.1:1/none" } as Hyperdrive,
     ...overrides,

@@ -57,6 +57,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@bayramm/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@bayramm/tg':
         specifier: workspace:*
         version: link:../../packages/tg

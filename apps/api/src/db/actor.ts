@@ -63,9 +63,25 @@ export function actorSettings(actor: Actor): ActorSettings {
 export async function withActor<T>(db: Db, actor: Actor, fn: (trx: Tx) => Promise<T>): Promise<T> {
   const s = actorSettings(actor);
   return db.transaction().execute(async (trx) => {
-    await sql`select set_config('app.actor_kind', ${s.kind}, true),
-                     set_config('app.actor_id', ${s.id}, true),
-                     set_config('app.vendor_id', ${s.vendorId}, true)`.execute(trx);
+    await setActor(trx, s);
     return fn(trx);
   });
+}
+
+async function setActor(trx: Tx, s: ActorSettings): Promise<void> {
+  await sql`select set_config('app.actor_kind', ${s.kind}, true),
+                   set_config('app.actor_id', ${s.id}, true),
+                   set_config('app.vendor_id', ${s.vendorId}, true)`.execute(trx);
+}
+
+/**
+ * Переключает уже открытую транзакцию на актора system до её конца.
+ *
+ * Только для служебного шага в конце транзакции, начатой под настоящим
+ * актором: например, отметить фото, загруженное вендором, как проверенное
+ * сервером — это не может делать сам вендор (триггер photos_guard). Всё, что
+ * выполняется после вызова, видит и меняет всё, как system.
+ */
+export async function continueAsSystem(trx: Tx): Promise<void> {
+  await setActor(trx, actorSettings(SYSTEM));
 }

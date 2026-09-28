@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fakeDb } from "../testing/fake-db";
-import { type Actor, actorSettings, GUEST, SYSTEM, withActor } from "./actor";
+import { type Actor, actorSettings, continueAsSystem, GUEST, SYSTEM, withActor } from "./actor";
 
 const CLIENT_ID = "cccccccc-0000-0000-0000-000000000001";
 const VENDOR_USER_ID = "aaaaaaaa-0000-0000-0000-000000000011";
@@ -89,5 +89,25 @@ describe("withActor", () => {
       TypeError,
     );
     expect(fake.log).toEqual([]);
+  });
+});
+
+describe("continueAsSystem", () => {
+  it("в той же транзакции переключает GUC на system — дальше запросы идут как system", async () => {
+    const fake = fakeDb();
+    const vendor: Actor = { kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID };
+    await withActor(fake.db, vendor, async (trx) => {
+      await trx.selectFrom("app.photos").select("id").execute();
+      await continueAsSystem(trx);
+      await trx.selectFrom("app.photos").select("id").execute();
+    });
+    expect(fake.log.filter((entry) => entry === "begin")).toHaveLength(1);
+    expect(fake.queries.map((q) => q.parameters)).toEqual([
+      ["vendor_user", VENDOR_USER_ID, VENDOR_ID],
+      [],
+      ["system", "", ""],
+      [],
+    ]);
+    expect(fake.log.at(-1)).toBe("commit");
   });
 });

@@ -43,6 +43,10 @@ describe("toApiError: коды Postgres", () => {
       status: 409,
       code: "duplicate_request",
     });
+    expect(mapped(pgError("23505", { constraint: "photos_dedupe" }))).toMatchObject({
+      status: 409,
+      code: "duplicate_photo",
+    });
   });
 
   it("42501 (RLS, права) и 23503 → 404: существование чужого не подтверждаем", () => {

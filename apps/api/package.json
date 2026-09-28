@@ -13,6 +13,7 @@
     "db:types": "kysely-codegen"
   },
   "dependencies": {
+    "@bayramm/media": "workspace:*",
     "@bayramm/tg": "workspace:*",
     "hono": "^4.13.8",
     "kysely": "^0.29.6",
