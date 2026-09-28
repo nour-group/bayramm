@@ -1,8 +1,8 @@
 name: DB
 
 # Миграции и pgTAP на чистом локальном Postgres (Docker на раннере), затем на той же
-# базе — сверка типов Kysely и интеграционные тесты API.
-# Удалённые базы здесь не трогаются: только `supabase db start` / `test db --local`.
+# базе — сверка типов Kysely и интеграционные тесты API (с локальным Storage).
+# Удалённые базы здесь не трогаются: только локальный `supabase start` / `test db --local`.
 on:
   pull_request:
   push:
@@ -48,8 +48,11 @@ jobs:
           done
           exit "$status"
 
-      - name: Start Postgres (applies migrations and seed)
-        run: npx --yes "$SUPABASE_CLI" db start
+      # Postgres и Storage API (он нужен тестам фото), остальные сервисы стека не нужны
+      - name: Start Postgres and Storage (applies migrations and seed)
+        run: >-
+          npx --yes "$SUPABASE_CLI" start
+          -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
 
       - name: Roll back everything, then migrate again
         run: |
@@ -77,5 +80,11 @@ jobs:
             exit 1
           fi
 
+      # Ключ service_role локального стека — для тестов фото с настоящим Storage
+      # (без ключа они пропускаются). В лог не печатается
       - name: API integration tests
-        run: pnpm --filter @bayramm/api test:integration
+        run: |
+          TEST_SUPABASE_SERVICE_ROLE_KEY=$(npx --yes "$SUPABASE_CLI" status -o env | sed -n 's/^SERVICE_ROLE_KEY="\(.*\)"$/\1/p')
+          if [ -z "$TEST_SUPABASE_SERVICE_ROLE_KEY" ]; then echo "::error::supabase status не отдал SERVICE_ROLE_KEY"; exit 1; fi
+          export TEST_SUPABASE_SERVICE_ROLE_KEY
+          pnpm --filter @bayramm/api test:integration
