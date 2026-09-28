@@ -6,8 +6,8 @@
     "dev": "wrangler dev",
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env production",
-    "typecheck": "wrangler types --check && tsc --noEmit",
-    "cf-typegen": "wrangler types",
+    "typecheck": "wrangler types --env-file .dev.vars.example --check && tsc --noEmit",
+    "cf-typegen": "wrangler types --env-file .dev.vars.example",
     "test": "vitest run",
     "db:types": "kysely-codegen"
   },

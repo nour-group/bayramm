@@ -1,8 +1,12 @@
 import { Hono } from "hono";
 import { Client } from "pg";
+import type { AppEnv } from "./env";
 import { handleError, notFound } from "./errors";
+import { auth } from "./routes/auth";
+import { me } from "./routes/me";
 
-const app = new Hono<{ Bindings: Env }>();
+// Веб проксирует /api/* сюда, отрезая префикс: /api/me → /me
+const app = new Hono<AppEnv>();
 
 type DbStatus = "ok" | "error" | "not_configured";
 
@@ -40,6 +44,9 @@ app.get("/health", async (c) => {
     ok ? 200 : 503,
   );
 });
+
+app.route("/auth", auth);
+app.route("/me", me);
 
 app.notFound((c) => c.json(notFound().toBody(), 404));
 app.onError(handleError);
