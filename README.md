@@ -5,6 +5,8 @@ Toshkentdagi bayramlar uchun pudratchilar platformasi — Telegram Mini App va s
 | Qism | Papka | Stek |
 |---|---|---|
 | Klient (TMA + sayt) | `apps/web` | Vite · React · Cloudflare Workers |
+| Vendor kabineti | `apps/vendor` | Vite · React · Cloudflare Workers |
+| Operator paneli | `apps/admin` | Vite · React · Cloudflare Workers |
 | API | `apps/api` | Hono · Cloudflare Workers |
 | Baza | `supabase/` | Postgres (Supabase), migratsiyalar |
 | Umumiy kod | `packages/` | TypeScript |
@@ -15,6 +17,8 @@ Toshkentdagi bayramlar uchun pudratchilar platformasi — Telegram Mini App va s
 ```bash
 pnpm install
 pnpm dev:web
+pnpm dev:vendor
+pnpm dev:admin
 pnpm dev:api
 ```
 

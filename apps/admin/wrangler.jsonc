@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "bayramm-admin-dev",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  // Панель оператора не должна быть доступна из интернета, пока перед ней не стоит
+  // Cloudflare Access: ни адреса *.workers.dev, ни preview-адресов версий
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Воркер решает первым: /api/* не должен уходить в SPA, HTML — без заголовков безопасности
+    "run_worker_first": true
+  },
+  "services": [{ "binding": "API", "service": "bayramm-api-dev" }],
+  // Домены (routes) не заданы намеренно: домен подключается вместе с приложением
+  // Cloudflare Access, в одном изменении. До этого воркер не деплоится из CI
+  "env": {
+    "staging": {
+      "name": "bayramm-admin-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "services": [{ "binding": "API", "service": "bayramm-api-staging" }]
+    },
+    "production": {
+      "name": "bayramm-admin",
+      "workers_dev": false,
+      "preview_urls": false,
+      "services": [{ "binding": "API", "service": "bayramm-api" }]
+    }
+  }
+}

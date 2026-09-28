@@ -1,0 +1,19 @@
+{
+  "name": "@bayramm/edge",
+  "private": true,
+  "type": "module",
+  "description": "Общий код воркеров статических приложений: прокси /api на API, отдача SPA, заголовки безопасности. Экспортирует исходники TS, сборки нет.",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vitest": "^5.0.1"
+  }
+}

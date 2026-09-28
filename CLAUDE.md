@@ -20,8 +20,11 @@
 
 ```
 apps/web          клиент: Telegram Mini App + сайт (Vite + React) → Cloudflare Workers (static assets)
+apps/vendor       кабинет вендора (Vite + React) → Cloudflare Workers (static assets)
+apps/admin        панель оператора (Vite + React) → Workers; без домена, пока нет Cloudflare Access
 apps/api          сервер (Hono) → Cloudflare Workers
 supabase/         миграции и сид Postgres (Supabase)
+packages/edge     воркер статических приложений: /api → API, SPA, заголовки безопасности
 packages/tg       Telegram: проверка initData, deep links startapp, секрет вебхука
 packages/shared   словари RU/UZ (типизированные), normalizeUz
 packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста
@@ -34,6 +37,8 @@ internal/         приватные документы (клон bayramm-intern
 ```bash
 pnpm install
 pnpm dev:web          # клиент локально
+pnpm dev:vendor       # кабинет вендора локально
+pnpm dev:admin        # панель оператора локально
 pnpm dev:api          # API локально (wrangler dev)
 pnpm lint             # biome check
 pnpm typecheck        # tsc по всем apps/* и packages/*
@@ -43,6 +48,12 @@ pnpm test             # тесты пакетов, приложений и вс�
 Окружения: `local` (по умолчанию), `staging`, `production` — блоки `env` в
 `wrangler.jsonc` каждого приложения. Секреты — только `wrangler secret put` и
 `.dev.vars` (в `.gitignore`), никогда не в репозитории.
+
+Воркеры web, vendor и admin собраны на `createSiteWorker` из `packages/edge`:
+`/api/*` уходит в API по сервисной привязке без префикса, остальное — статика с
+CSP и прочими заголовками безопасности. CSP пускает только свой origin и не
+допускает встроенных скриптов и стилей; нужен внешний источник (шрифт,
+`telegram-web-app.js`) — добавить его в `security-headers.ts` явно.
 
 ---
 
