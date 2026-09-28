@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Варианты фото листингов: /<ширина>/<ключ> → Supabase Storage через Cloudflare
+  // Image Transformations. Отдельно от API: без базы и без секретов, работает в
+  // ближайшем к зрителю дата-центре (у API placement рядом с базой)
+  "name": "bayramm-media-dev",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  // Порт совпадает с MEDIA_ORIGINS.local в @bayramm/media
+  "dev": { "port": 8790 },
+  // Локально — Storage из `supabase start`; преобразования wrangler dev только имитирует
+  "vars": { "SUPABASE_URL": "http://127.0.0.1:54321" },
+  "env": {
+    "staging": {
+      "name": "bayramm-media-staging",
+      "vars": { "SUPABASE_URL": "https://ovuzkqcxiwgdpqovsudr.supabase.co" },
+      "routes": [{ "pattern": "media-staging.bayramm.uz", "custom_domain": true }]
+    },
+    "production": {
+      "name": "bayramm-media",
+      "vars": { "SUPABASE_URL": "https://muxftjxhsfizpxqxqkbo.supabase.co" },
+      "routes": [{ "pattern": "media.bayramm.uz", "custom_domain": true }]
+    }
+  }
+}

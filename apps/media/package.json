@@ -1,0 +1,21 @@
+{
+  "name": "@bayramm/media-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "typecheck": "wrangler types --check && tsc --noEmit",
+    "cf-typegen": "wrangler types",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bayramm/media": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vitest": "^5.0.1",
+    "wrangler": "^4.135.0"
+  }
+}
