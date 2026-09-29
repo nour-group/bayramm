@@ -35,5 +35,6 @@ export async function bootstrap(): Promise<Services> {
   // Входим сразу, не дожидаясь первой заявки: «Мои заявки» откроются без задержки.
   // Ошибку покажет экран, которому нужна сессия
   if (webApp) auth.token().catch(() => {});
-  return { api: createHttpApi({ auth }), identity: webApp ? "telegram" : "guest", webApp, mediaEnv, now };
+  const api = createHttpApi({ auth, source: webApp ? "tma" : "web" });
+  return { api, identity: webApp ? "telegram" : "guest", webApp, mediaEnv, now };
 }

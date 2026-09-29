@@ -12,6 +12,7 @@ import {
   busyLast,
   type CatalogFilters,
   DATE_HORIZON_DAYS,
+  DEFAULT_SORT,
   filtersQuery,
   hasFilters,
   MAX_GUESTS,
@@ -197,10 +198,12 @@ export function Catalog() {
           <Icon name="sliders" size={14} />
           <select
             id={sortId}
-            value={filters.sort ?? ""}
-            onChange={(event) => setFilters({ sort: SORTS.find((s) => s === event.target.value) ?? null })}
+            value={filters.sort ?? DEFAULT_SORT}
+            onChange={(event) => {
+              const sort = SORTS.find((s) => s === event.target.value) ?? DEFAULT_SORT;
+              setFilters({ sort: sort === DEFAULT_SORT ? null : sort });
+            }}
           >
-            <option value="">{t.s_def}</option>
             {SORTS.map((sort) => (
               <option key={sort} value={sort}>
                 {t[SORT_LABEL[sort]]}

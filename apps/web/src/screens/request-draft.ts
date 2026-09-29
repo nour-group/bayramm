@@ -37,7 +37,8 @@ export const BUDGETS: readonly ({ readonly min?: number; readonly max?: number }
   null,
 ];
 
-export const NAME_MAX = 100;
+/** Как у API (CONTACT_NAME_MAX) */
+export const NAME_MAX = 80;
 export const COMMENT_MAX = 1000;
 
 const draftKey = (slug: string) => `bayramm.web.draft.${slug}`;

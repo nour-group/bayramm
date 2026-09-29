@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { dictionaries, LANGS } from "@bayramm/shared";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ApiError } from "./api/errors";
 import { createMockApi } from "./api/mock";
 import { LANG_KEY } from "./context";
 import {
@@ -186,6 +187,22 @@ describe("заявка от начала до конца", () => {
     // После отправки звонок — первым делом, черновик стёрт
     expect(document.querySelector(`.sent a[href="tel:${VENUE.phone}"]`)).not.toBeNull();
     expect(window.sessionStorage.getItem(`bayramm.web.draft.${VENUE.slug}`)).toBeNull();
+  });
+
+  it("отказ сервера (лимит заявок) — понятный текст, форма и комментарий на месте", async () => {
+    await mount({
+      path: FORM_PATH,
+      mock: {
+        failWith: (method) => (method === "createRequest" ? new ApiError(429, "daily_request_limit") : null),
+      },
+    });
+    await waitFor(() => transferCheckbox(), "форма заявки");
+    await fillForm("Сцена и детский стол");
+    await click(transferCheckbox());
+    await click(byText("button", "Отправить заявку"));
+    await waitFor(() => byText(".form-error", /слишком много заявок/), "текст ошибки");
+    expect(field("Комментарий")?.value).toBe("Сцена и детский стол");
+    expect(transferCheckbox()?.checked).toBe(true);
   });
 
   it("гости сверяются с вместимостью", async () => {

@@ -1,3 +1,4 @@
+import type { Dict } from "@bayramm/shared";
 import type { ConsentText, ListingDetail, RequestCreated } from "@bayramm/shared/api";
 import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { isApiError, isNotFound } from "../api/errors";
@@ -40,6 +41,27 @@ import {
 } from "./request-draft";
 
 const GUESTS_STEP = 20;
+
+/** Текст ошибки отправки по коду API (контракт: ClientErrorCode) */
+function sendErrorText(error: unknown, t: Dict, capMax: number): string {
+  if (!isApiError(error)) return t.errSend;
+  if (error.status === 401 || error.code === "no_session") return t.signInFailed;
+  switch (error.code) {
+    case "client_blocked":
+      return t.errBlocked;
+    case "daily_request_limit":
+      return t.errDailyLimit;
+    case "guests_over_capacity":
+      return t.errGuestsMax(capMax);
+    case "consent_text_not_current":
+    case "consent_required":
+      return t.errConsentOutdated;
+    case "listing_not_active":
+      return t.venueGoneP;
+    default:
+      return t.errSend;
+  }
+}
 
 /** Поле формы: подпись, пометка «обязательно/по желанию», ошибка под полем */
 function Fld({
@@ -207,6 +229,7 @@ interface FormProps {
   readonly occasions: readonly { code: string; name: { ru: string; uz: string } }[];
   readonly consents: readonly ConsentText[];
   readonly onCreated: (created: RequestCreated) => void;
+  readonly onConsentsOutdated: () => void;
 }
 
 function initialDraft(
@@ -227,7 +250,7 @@ function initialDraft(
   };
 }
 
-function Form({ listing, occasions, consents, onCreated }: FormProps) {
+function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: FormProps) {
   const { api, webApp, now } = useServices();
   const { t, lang } = useLang();
   const { query, navigate, back } = useNav();
@@ -247,6 +270,16 @@ function Form({ listing, occasions, consents, onCreated }: FormProps) {
 
   const transferText = consents.find((c) => c.purpose === "request_transfer") ?? null;
   const notifyText = consents.find((c) => c.purpose === "bot_notifications") ?? null;
+
+  // Другой текст (новая версия или другой язык) — согласие на него ещё не дано
+  const transferId = transferText?.id;
+  const notifyId = notifyText?.id;
+  useEffect(() => {
+    if (transferId) setTransfer(false);
+  }, [transferId]);
+  useEffect(() => {
+    if (notifyId) setNotify(false);
+  }, [notifyId]);
   const errors = submitted ? validate(draft, { listing, busy, today, transferChecked: transfer }, t) : {};
   const guests = parseGuests(draft.guests);
   const price = formatPriceFrom(listing.priceFromUzs, listing.priceUnit, t);
@@ -288,10 +321,9 @@ function Form({ listing, occasions, consents, onCreated }: FormProps) {
         navigate(hrefFor({ name: "requests" }, { open: error.existingId }));
         return;
       }
-      if (isApiError(error) && (error.status === 401 || error.code === "no_session"))
-        setSendError(t.signInFailed);
-      else if (isApiError(error) && error.code === "client_blocked") setSendError(t.errBlocked);
-      else setSendError(t.errSend);
+      setSendError(sendErrorText(error, t, listing.capMax));
+      // Текст согласия сменился на сервере: перечитываем, галочки ставятся заново
+      if (isApiError(error) && error.code === "consent_text_not_current") onConsentsOutdated();
     } finally {
       setSending(false);
     }
@@ -561,6 +593,7 @@ export function RequestForm({ slug }: { slug: string }) {
   const listing = useAsync(`listing:${slug}`, (signal) => api.listing(slug, signal));
   // Итог — здесь, а не в форме: смена языка перезагружает тексты согласий и форму
   const [created, setCreated] = useState<RequestCreated | null>(null);
+  const lastConsents = useRef<readonly ConsentText[] | null>(null);
   const signedIn = canSignIn(identity);
   const consents = useAsync(`consents:${lang}:${signedIn}`, (signal) =>
     signedIn ? api.consentTexts(lang, signal) : Promise.resolve({ items: [] }),
@@ -594,16 +627,18 @@ export function RequestForm({ slug }: { slug: string }) {
     );
   if (dicts.status === "error") return <ErrorState onRetry={dicts.reload} />;
   if (consents.status === "error") return <ErrorState message={t.consentMissing} onRetry={consents.reload} />;
-  if (listing.status === "loading" || dicts.status === "loading" || consents.status === "loading")
-    return <Loading />;
+  // Пока тексты согласий перечитываются (смена языка, новая версия), форма остаётся на месте
+  if (consents.status === "ready") lastConsents.current = consents.data.items;
+  if (listing.status === "loading" || dicts.status === "loading" || !lastConsents.current) return <Loading />;
 
   return (
     <Form
       key={slug}
       listing={listing.data}
       occasions={dicts.data.occasions}
-      consents={consents.data.items}
+      consents={lastConsents.current}
       onCreated={setCreated}
+      onConsentsOutdated={consents.reload}
     />
   );
 }

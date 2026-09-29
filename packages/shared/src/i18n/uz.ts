@@ -389,6 +389,8 @@ export const uz: Dict = {
   sending: "Yuborilmoqda…",
   errSend: "Soʻrovni yuborib boʻlmadi. Qayta urinib koʻring.",
   errBlocked: "Bu hisobdan soʻrov yuborish cheklangan. Bizga yozing.",
+  errDailyLimit: "Bugun bu hisobdan juda koʻp soʻrov yuborildi. Ertaga urinib koʻring.",
+  errConsentOutdated: "Rozilik matni yangilandi. Uni oʻqib, qayta belgilang.",
   tgOnlyH: "Soʻrovlar — Telegram orqali",
   tgOnlyP:
     "Hamkor javob berishi uchun Bayramm ilovasini Telegramda oching: hisobingiz orqali kirasiz, parol kerak emas.",

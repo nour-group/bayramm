@@ -9,6 +9,9 @@ import { addDays, isIsoDate } from "../format";
 
 export const SORTS = ["price_asc", "price_desc", "capacity_desc"] as const satisfies readonly CatalogSort[];
 
+/** Порядок, если sort не передан: так же решает сервер. В адресе его не пишем */
+export const DEFAULT_SORT = "price_asc" satisfies CatalogSort;
+
 export const MAX_GUESTS = 5000;
 /** Насколько вперёд можно выбрать дату */
 export const DATE_HORIZON_DAYS = 365;
@@ -37,8 +40,9 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
   return {
     date: isIsoDate(date) && date >= today && date <= addDays(today, DATE_HORIZON_DAYS) ? date : null,
     guests: parseGuests(query.get("guests")),
-    district: district && /^[a-z0-9_]{1,40}$/.test(district) ? district : null,
-    sort: SORTS.find((s) => s === sort) ?? null,
+    // Код района — как проверяет API: иначе 400 вместо выдачи
+    district: district && /^[a-z_]{2,30}$/.test(district) ? district : null,
+    sort: SORTS.find((s) => s === sort && s !== DEFAULT_SORT) ?? null,
   };
 }
 

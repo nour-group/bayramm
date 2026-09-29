@@ -297,11 +297,11 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           .filter((l) => !query.district || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax >= query.guests)
           .map((l) => toCard(l, query.date));
+        // Без sort — по возрастанию цены, как у сервера
         const order = (a: ListingCard, b: ListingCard) => {
-          if (query.sort === "price_asc") return a.priceFromUzs - b.priceFromUzs;
           if (query.sort === "price_desc") return b.priceFromUzs - a.priceFromUzs;
           if (query.sort === "capacity_desc") return b.capMax - a.capMax;
-          return 0;
+          return a.priceFromUzs - b.priceFromUzs;
         };
         // Занятые на дату — в конце при любом порядке; оплаты в демо нет вовсе
         rows.sort((a, b) => Number(a.busyOnDate === true) - Number(b.busyOnDate === true) || order(a, b));

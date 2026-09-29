@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { CreateRequest } from "@bayramm/shared/api";
+import { CLIENT_SOURCE_HEADER, type CreateRequest } from "@bayramm/shared/api";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ApiError } from "./errors";
 import { createHttpApi, telegramSignIn } from "./http";
@@ -55,7 +55,7 @@ function setup(routes: Record<string, (() => Response)[]>, userId: number | null
     signIn: telegramSignIn(fetch),
     now: () => NOW,
   });
-  return { api: createHttpApi({ auth, fetch }), seen, auth };
+  return { api: createHttpApi({ auth, fetch, source: "tma" }), seen, auth };
 }
 
 beforeEach(() => {
@@ -111,6 +111,8 @@ describe("HTTP-клиент API", () => {
     });
     expect(seen[1]).toMatchObject({ url: "/api/requests", method: "POST", body: BODY });
     expect(seen[1]?.headers.authorization).toBe("Bearer tok-1");
+    // Заявка из Mini App помечена источником tma (контракт: CLIENT_SOURCE_HEADER)
+    expect(seen[1]?.headers[CLIENT_SOURCE_HEADER]).toBe("tma");
     expect(JSON.parse(window.sessionStorage.getItem(SESSION_KEY) ?? "{}")).toMatchObject({
       token: "tok-1",
       userId: 42,
@@ -173,6 +175,14 @@ describe("HTTP-клиент API", () => {
     const { api } = setup({ "GET /api/dictionaries": [() => new Response("<html>", { status: 200 })] });
     await expect(api.dictionaries()).rejects.toMatchObject({ code: "bad_response" });
     await expect(api.dictionaries()).rejects.toMatchObject({ status: 0, code: "network" });
+  });
+
+  it("каталог и сайт: источник не шлётся", async () => {
+    const { fetch, seen } = fakeFetch({
+      "GET /api/catalog/listings": [json(200, { items: [], nextCursor: null })],
+    });
+    await createHttpApi({ auth: guestAuth, fetch }).catalog({});
+    expect(seen[0]?.headers[CLIENT_SOURCE_HEADER]).toBeUndefined();
   });
 
   it("вне Telegram заявки не уходят в сеть: no_session", async () => {

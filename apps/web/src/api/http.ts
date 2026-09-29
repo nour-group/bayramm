@@ -1,14 +1,16 @@
-import type {
-  CatalogPage,
-  CatalogQuery,
-  ClientRequest,
-  ClientRequests,
-  ConsentTexts,
-  CreateRequest,
-  Dictionaries,
-  ListingDetail,
-  Locale,
-  RequestCreated,
+import {
+  type CatalogPage,
+  type CatalogQuery,
+  CLIENT_SOURCE_HEADER,
+  type ClientRequest,
+  type ClientRequests,
+  type ClientSource,
+  type ConsentTexts,
+  type CreateRequest,
+  type Dictionaries,
+  type ListingDetail,
+  type Locale,
+  type RequestCreated,
 } from "@bayramm/shared/api";
 import { ApiError, errorFromResponse, isAbort } from "./errors";
 import type { Auth } from "./session";
@@ -27,6 +29,8 @@ interface CallOptions {
   readonly body?: unknown;
   /** Нужна сессия клиента: Authorization: Bearer, при 401 — один повторный вход */
   readonly auth?: Auth;
+  /** Откуда заявка: tma — Mini App в Telegram (заголовок CLIENT_SOURCE_HEADER) */
+  readonly source?: ClientSource;
   readonly signal?: AbortSignal | undefined;
 }
 
@@ -40,12 +44,13 @@ function url(base: string, path: string, query: CallOptions["query"]): string {
 }
 
 async function call<T>(fetchFn: Fetch, base: string, path: string, options: CallOptions = {}): Promise<T> {
-  const { method = "GET", query, body, auth, signal } = options;
+  const { method = "GET", query, body, auth, signal, source } = options;
   const target = url(base, path, query);
 
   for (let attempt = 0; ; attempt++) {
     const headers: Record<string, string> = { accept: "application/json" };
     if (body !== undefined) headers["content-type"] = "application/json";
+    if (source === "tma") headers[CLIENT_SOURCE_HEADER] = source;
     if (auth) headers.authorization = `Bearer ${await auth.token()}`;
 
     let res: Response;
@@ -86,12 +91,15 @@ export function telegramSignIn(fetchFn: Fetch, base: string = API_BASE) {
 
 export interface HttpApiOptions {
   readonly auth: Auth;
+  /** tma — внутри Telegram; сайт заголовок не шлёт, сервер пишет web */
+  readonly source?: ClientSource;
   readonly fetch?: Fetch;
   readonly base?: string;
 }
 
 export function createHttpApi({
   auth,
+  source = "web",
   fetch: fetchFn = (input, init) => globalThis.fetch(input, init),
   base = API_BASE,
 }: HttpApiOptions): ClientApi {
@@ -115,12 +123,13 @@ export function createHttpApi({
     consentTexts: (locale: Locale, signal) => get<ConsentTexts>("/consent-texts", signal, { locale }),
     bot: (signal) => get<BotInfo>("/telegram/bot", signal),
     createRequest: (body: CreateRequest) =>
-      call<RequestCreated>(fetchFn, base, "/requests", { method: "POST", body, auth }),
-    myRequests: (signal) => call<ClientRequests>(fetchFn, base, "/requests", { auth, signal }),
+      call<RequestCreated>(fetchFn, base, "/requests", { method: "POST", body, auth, source }),
+    myRequests: (signal) => call<ClientRequests>(fetchFn, base, "/requests", { auth, signal, source }),
     withdrawRequest: (id) =>
       call<ClientRequest>(fetchFn, base, `/requests/${encodeURIComponent(id)}/withdraw`, {
         method: "POST",
         auth,
+        source,
       }),
   };
 }
