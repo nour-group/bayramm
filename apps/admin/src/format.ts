@@ -33,6 +33,11 @@ export function formatDay(day: string): string {
     : new Intl.DateTimeFormat("ru-RU", { dateStyle: "long", timeZone: "UTC" }).format(date);
 }
 
+/** «Название · V101»; без названия — только код */
+export function vendorLabel(vendor: { readonly name: string | null; readonly code: string }): string {
+  return vendor.name ? `${vendor.name} · ${vendor.code}` : vendor.code;
+}
+
 /** 150000 → «150 000 сум» */
 export function formatSum(value: number | null): string {
   if (value === null) return t.none;

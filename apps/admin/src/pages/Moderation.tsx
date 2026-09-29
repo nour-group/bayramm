@@ -2,7 +2,7 @@
 
 import type { ListingList } from "@bayramm/shared/api/staff";
 import { useLoad } from "../api";
-import { formatMoment, formatPrice } from "../format";
+import { formatMoment, formatPrice, vendorLabel } from "../format";
 import { t } from "../texts";
 import { Blockers, Link, LoadedView, publishBlockers } from "../ui";
 
@@ -22,8 +22,7 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
                     {listing.name}
                   </Link>
                   <span className="sub">
-                    {listing.vendor.name ?? listing.vendor.code} · {listing.vendor.code} · {t.submittedAt}{" "}
-                    {formatMoment(listing.submittedAt)}
+                    {vendorLabel(listing.vendor)} · {t.submittedAt} {formatMoment(listing.submittedAt)}
                   </span>
                   <span className="sub">
                     {formatPrice(listing.priceFromUzs, listing.priceUnit)}

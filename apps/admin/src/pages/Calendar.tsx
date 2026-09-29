@@ -30,7 +30,13 @@ export function shiftMonth(month: string, delta: number): string {
   return date.toISOString().slice(0, 7);
 }
 
-const monthTitle = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric", timeZone: "UTC" });
+const monthFormat = new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric", timeZone: "UTC" });
+
+/** «Сентябрь 2026» — без «г.» и с заглавной */
+export function monthTitle(month: string): string {
+  const text = monthFormat.format(new Date(`${month}-01T00:00:00Z`)).replace(/\s*г\.?$/, "");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 const dayTitle = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 
 export function Calendar({ listingId }: { listingId: string }) {
@@ -77,7 +83,7 @@ export function Calendar({ listingId }: { listingId: string }) {
           ←
         </button>
         <p className="cal-title" aria-live="polite">
-          {monthTitle.format(new Date(`${month}-01T00:00:00Z`))}
+          {monthTitle(month)}
         </p>
         <button
           type="button"

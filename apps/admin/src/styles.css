@@ -12,6 +12,10 @@ html {
   text-size-adjust: 100%;
 }
 
+a {
+  color: var(--plum);
+}
+
 body {
   margin: 0;
   background: var(--paper);
@@ -933,7 +937,6 @@ textarea.input {
 .cal-title {
   margin: 0;
   font-weight: 700;
-  text-transform: capitalize;
 }
 
 .cal {

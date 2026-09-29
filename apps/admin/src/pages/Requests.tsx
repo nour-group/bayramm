@@ -1,6 +1,7 @@
 /* Заявки: без ответа — сверху, ближайший срок первым. Фильтр по состоянию срока ответа.
    Заявка: данные, история, телефоны — скрыты до «Показать» (просмотр — в журнал). */
 
+import { formatUzPhone } from "@bayramm/shared";
 import type {
   RequestVendorPhones,
   RevealedPhone,
@@ -11,7 +12,7 @@ import type {
 } from "@bayramm/shared/api/staff";
 import { type FormEvent, useCallback, useId, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
-import { formatDay, formatMoment, formatSum } from "../format";
+import { formatDay, formatMoment, formatSum, vendorLabel } from "../format";
 import { apiErrorText, t } from "../texts";
 import { ErrorText, Link, LoadedView, PhoneReveal, Pill, type Tone, useEntityTitle } from "../ui";
 
@@ -117,9 +118,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                         </td>
                         <td>
                           <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
-                          <span className="sub">
-                            {request.vendor.name ?? request.vendor.code} · {request.vendor.code}
-                          </span>
+                          <span className="sub">{vendorLabel(request.vendor)}</span>
                         </td>
                         <td>
                           {formatDay(request.eventDate)}
@@ -193,9 +192,7 @@ function RequestView({
               <dt>{t.colVendor}</dt>
               <dd>
                 <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link> ·{" "}
-                <Link to={{ name: "vendor", id: request.vendor.id }}>
-                  {request.vendor.name ?? request.vendor.code}
-                </Link>
+                <Link to={{ name: "vendor", id: request.vendor.id }}>{vendorLabel(request.vendor)}</Link>
               </dd>
               <dt>{t.colEvent}</dt>
               <dd>
@@ -299,7 +296,7 @@ function ClientPhone({ requestId }: { requestId: string }) {
         <span className="phone-label">{t.clientPhone}</span>
         {phone ? (
           <a className="phone-value" href={`tel:${phone}`}>
-            {phone}
+            {formatUzPhone(phone)}
           </a>
         ) : (
           <span className="muted">{t.notSet}</span>

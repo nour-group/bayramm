@@ -144,7 +144,7 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
                     >
                       →
                     </button>
-                    {!photo.isCover && (
+                    {!isCover(photo, index) && (
                       <button
                         type="button"
                         className="btn btn-sm"

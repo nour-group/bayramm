@@ -12,7 +12,7 @@ import type {
 } from "@bayramm/shared/api/staff";
 import { type FormEvent, useCallback, useId, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
-import { formatMoment } from "../format";
+import { formatMoment, vendorLabel } from "../format";
 import { t } from "../texts";
 import {
   Blockers,
@@ -130,9 +130,7 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
     <div className="stack">
       <div className="listing-head">
         <p className="sub">
-          <Link to={{ name: "vendor", id: listing.vendor.id }}>
-            {listing.vendor.name ?? listing.vendor.code} · {listing.vendor.code}
-          </Link>
+          <Link to={{ name: "vendor", id: listing.vendor.id }}>{vendorLabel(listing.vendor)}</Link>
           {" · "}/{listing.slug}
         </p>
         <p>
@@ -279,7 +277,6 @@ function StatusActions({
         </form>
       )}
       {failure && <ErrorText failure={failure} />}
-      {failure?.code === "publish_blocked" && <Blockers title={t.blockersActive} codes={failure.details} />}
     </section>
   );
 }
