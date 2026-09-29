@@ -12,6 +12,10 @@
 export const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js";
 export const TELEGRAM_OAUTH_ORIGIN = "https://oauth.telegram.org";
 
+/* SDK Mini App: telegram-web-app.js (путь точный). С клиентом Telegram он говорит через
+   postMessage и мост вебвью — других источников ему не нужно */
+export const TELEGRAM_WEB_APP_SCRIPT = "https://telegram.org/js/telegram-web-app.js";
+
 export interface SecurityOptions {
   /** Кому разрешено встраивать страницу во фрейм. Пусто — никому: frame-ancestors 'none' */
   readonly frameAncestors?: readonly string[];
@@ -20,6 +24,8 @@ export interface SecurityOptions {
    * и кабинета вендора этих источников нет
    */
   readonly telegramLogin?: boolean;
+  /** SDK Mini App (telegram-web-app.js): клиент и кабинет вендора, открытые в Telegram */
+  readonly telegramWebApp?: boolean;
   /**
    * Откуда ещё можно грузить картинки (img-src): origin вида https://host[:port], без пути.
    * Для фото площадок — воркер media. http: допустим только вместе с dev
@@ -72,6 +78,7 @@ function assertOrigin(value: string, dev: boolean): string {
 export function contentSecurityPolicy({
   frameAncestors = [],
   telegramLogin = false,
+  telegramWebApp = false,
   imageOrigins = [],
   dev = false,
 }: SecurityOptions = {}): string {
@@ -79,7 +86,15 @@ export function contentSecurityPolicy({
   const inline = dev ? ["'unsafe-inline'"] : [];
   const directives: [string, readonly string[]][] = [
     ["default-src", ["'self'"]],
-    ["script-src", ["'self'", ...(telegramLogin ? [TELEGRAM_WIDGET_SCRIPT] : []), ...inline]],
+    [
+      "script-src",
+      [
+        "'self'",
+        ...(telegramLogin ? [TELEGRAM_WIDGET_SCRIPT] : []),
+        ...(telegramWebApp ? [TELEGRAM_WEB_APP_SCRIPT] : []),
+        ...inline,
+      ],
+    ],
     // Без виджета frame-src не задаём: фреймы подчиняются default-src 'self'
     ...(telegramLogin ? [["frame-src", [TELEGRAM_OAUTH_ORIGIN]] as [string, string[]]] : []),
     ["style-src", ["'self'", ...inline]],

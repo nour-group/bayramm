@@ -6,6 +6,7 @@ export {
   type SecurityOptions,
   securityHeaders,
   TELEGRAM_OAUTH_ORIGIN,
+  TELEGRAM_WEB_APP_SCRIPT,
   TELEGRAM_WIDGET_SCRIPT,
   withSecurityHeaders,
 } from "./security-headers";
