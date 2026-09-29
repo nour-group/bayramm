@@ -7,7 +7,7 @@
 // перечисляет их явно.
 //
 // Телефоны клиентов, кроме этой проверки, база отдаёт только администратору
-// и только с причиной (pii.read_request_phone / pii.read_client_phone).
+// и только с причиной (функции базы read_request_phone / read_client_phone).
 
 import type { StaffPermission } from "@bayramm/shared/api/staff";
 import { requireStaff } from "../auth/session";

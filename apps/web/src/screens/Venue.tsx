@@ -36,7 +36,9 @@ function Gallery({ listing }: { listing: ListingDetail }) {
 
   return (
     <div className="gallery">
-      <ul className="gallery-track" aria-label={t.photos} onScroll={onScroll}>
+      {/* Лента прокручивается вбок — с клавиатуры тоже: в фокусе её листают стрелки (WCAG 2.1.1) */}
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: прокручиваемая область обязана принимать фокус */}
+      <ul className="gallery-track" aria-label={t.photos} tabIndex={0} onScroll={onScroll}>
         {photos.map((photo, i) => (
           <li key={photo?.key ?? i} className="gallery-item">
             <Photo

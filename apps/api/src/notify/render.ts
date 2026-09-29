@@ -6,6 +6,7 @@
 import type { Lang } from "@bayramm/shared";
 import { sql } from "kysely";
 import type { Tx } from "../db/actor";
+import { clientProfilesAs, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
 import type { AppActorKind, Json } from "../db/schema.generated";
 import type { ReplyMarkup, SendMessageParams } from "../telegram/client";
 import {
@@ -89,7 +90,7 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
     case "vendor_user": {
       const user = await trx
         .selectFrom("app.vendor_users as u")
-        .leftJoin("pii.vendor_user_profiles as p", "p.vendor_user_id", "u.id")
+        .leftJoin(vendorUserProfilesAs("p"), "p.vendor_user_id", "u.id")
         .select(["u.vendor_id", "u.locale", "u.disabled_at", "u.tg_linked_at", "p.telegram_chat_id"])
         .where("u.id", "=", id)
         .executeTakeFirst();
@@ -102,7 +103,7 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
     case "client": {
       const client = await trx
         .selectFrom("app.clients as c")
-        .leftJoin("pii.client_profiles as p", "p.client_id", "c.id")
+        .leftJoin(clientProfilesAs("p"), "p.client_id", "c.id")
         .select(["c.locale", "p.telegram_id", sql<boolean>`app.client_notifiable(c.id)`.as("notifiable")])
         .where("c.id", "=", id)
         .executeTakeFirst();
@@ -115,7 +116,7 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
     case "staff": {
       const staff = await trx
         .selectFrom("app.staff as s")
-        .innerJoin("pii.staff_profiles as p", "p.staff_id", "s.id")
+        .innerJoin(staffProfilesAs("p"), "p.staff_id", "s.id")
         .select(["s.active", "s.role", "p.telegram_chat_id"])
         .where("s.id", "=", id)
         .executeTakeFirst();

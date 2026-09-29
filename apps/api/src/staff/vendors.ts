@@ -1,5 +1,5 @@
 // Вендоры в панели оператора: аккаунт (название, форма, договор, менеджер),
-// реквизиты и контакты (pii.vendor_contacts), чек-лист проверки, пользователи
+// реквизиты и контакты (vendor_contacts, db/pii), чек-лист проверки, пользователи
 // кабинета. Контракт — @bayramm/shared/api/staff.
 //
 //   GET   /staff/vendors?q=&listingStatus=&limit=&offset=   список и поиск
@@ -13,7 +13,7 @@
 //   POST  /staff/vendors/:id/users/:userId/disable | enable | unlink (снять привязку Telegram)
 //   POST  /staff/vendors/:id/users/:userId/phone { reason? } телефон входа (в журнал)
 //
-// Телефоны только пишутся: прочитать их можно лишь через pii.read_* — каждое
+// Телефоны только пишутся: прочитать их можно лишь функциями базы read_* — каждое
 // чтение ложится в app.pii_access_log. Telegram ID пользователя наружу не
 // отдаётся — только «привязан / нет». Журнал действий пишет база (триггер
 // audit_staff), API его не трогает.
@@ -34,6 +34,16 @@ import { sql } from "kysely";
 import { phoneHash } from "../auth/crypto";
 import { staffOf } from "../auth/session";
 import { type Tx, withActor } from "../db/actor";
+import {
+  clearVendorUserTelegram,
+  insertVendorUserProfile,
+  readVendorContactPhones,
+  readVendorUserPhone,
+  saveVendorContacts,
+  updateVendorUserProfile,
+  vendorContactsAs,
+  vendorUserProfilesAs,
+} from "../db/pii";
 import type { AppVendorAccounts, PiiVendorContacts } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
@@ -131,29 +141,12 @@ async function assertManager(trx: Tx, managerId: string | null | undefined): Pro
   if (!found) throw invalidInput(["managerId"]);
 }
 
-// Телефонные столбцы API не читает, поэтому не INSERT … ON CONFLICT (DO UPDATE читал
-// бы их), а UPDATE, и если строки ещё нет — INSERT
-async function saveContacts(trx: Tx, id: string, contacts: ContactFields): Promise<void> {
-  if (Object.keys(contacts).length === 0) return;
-  const updated = await trx
-    .updateTable("pii.vendor_contacts")
-    .set(contacts)
-    .where("vendor_id", "=", id)
-    .returning("vendor_id")
-    .executeTakeFirst();
-  if (!updated)
-    await trx
-      .insertInto("pii.vendor_contacts")
-      .values({ vendor_id: id, ...contacts })
-      .execute();
-}
-
 // ── чтение ──────────────────────────────────────────────────────────────────
 
 export async function loadVendor(trx: Tx, id: string): Promise<VendorDetail> {
   const row = await trx
     .selectFrom("app.vendor_accounts as v")
-    .leftJoin("pii.vendor_contacts as vc", "vc.vendor_id", "v.id")
+    .leftJoin(vendorContactsAs("vc"), "vc.vendor_id", "v.id")
     .select([
       "v.id",
       "v.public_code",
@@ -218,7 +211,7 @@ export async function loadVendor(trx: Tx, id: string): Promise<VendorDetail> {
 const selectUsers = (trx: Tx) =>
   trx
     .selectFrom("app.vendor_users as u")
-    .leftJoin("pii.vendor_user_profiles as p", "p.vendor_user_id", "u.id")
+    .leftJoin(vendorUserProfilesAs("p"), "p.vendor_user_id", "u.id")
     .select([
       "u.id",
       "u.role",
@@ -263,7 +256,7 @@ vendors.get("/", requirePermission("catalog.read"), async (c) => {
   const rows = await withActor(c.var.db, staffOf(c), (trx) => {
     let query = trx
       .selectFrom("app.vendor_accounts as v")
-      .leftJoin("pii.vendor_contacts as vc", "vc.vendor_id", "v.id")
+      .leftJoin(vendorContactsAs("vc"), "vc.vendor_id", "v.id")
       .select([
         "v.id",
         "v.public_code",
@@ -368,7 +361,7 @@ vendors.post("/", requirePermission("vendors.write"), limitJson, async (c) => {
       .values(account)
       .returning("id")
       .executeTakeFirstOrThrow();
-    await saveContacts(trx, created.id, contacts);
+    await saveVendorContacts(trx, created.id, contacts);
     return loadVendor(trx, created.id);
   });
   return c.json(vendor, 201);
@@ -396,7 +389,7 @@ vendors.patch("/:id", requirePermission("vendors.write"), limitJson, async (c) =
       // Есть ли вендор: иначе контакты упали бы на внешнем ключе
       await loadVendor(trx, id);
     }
-    await saveContacts(trx, id, contacts);
+    await saveVendorContacts(trx, id, contacts);
     return loadVendor(trx, id);
   });
   return c.json(vendor);
@@ -416,7 +409,7 @@ vendors.post("/:id/checklist", requirePermission("vendors.write"), limitJson, as
   const vendor = await withActor(c.var.db, actor, async (trx) => {
     const current = await trx
       .selectFrom("app.vendor_accounts as v")
-      .leftJoin("pii.vendor_contacts as vc", "vc.vendor_id", "v.id")
+      .leftJoin(vendorContactsAs("vc"), "vc.vendor_id", "v.id")
       .select(["v.id", "vc.stir"])
       .where("v.id", "=", id)
       .executeTakeFirst();
@@ -488,11 +481,7 @@ export async function readVendorPhones(
   vendorId: string,
   reason: string | null,
 ): Promise<VendorPhones> {
-  const { rows } = await sql<{ phone: string | null; phone_alt: string | null }>`
-    select phone, phone_alt from pii.read_vendor_contact_phones(${vendorId}::uuid, ${reason}::text)`.execute(
-    trx,
-  );
-  return { phone: rows[0]?.phone ?? null, phoneAlt: rows[0]?.phone_alt ?? null };
+  return readVendorContactPhones(trx, vendorId, reason);
 }
 
 vendors.post("/:id/phones", requirePermission("vendor_phones.read"), limitJson, async (c) => {
@@ -539,10 +528,7 @@ vendors.post("/:id/users", requirePermission("vendor_users.write"), limitJson, a
       .values({ vendor_id: id, phone_hash: hash, role, ...(locale ? { locale } : {}) })
       .returning("id")
       .executeTakeFirstOrThrow();
-    await trx
-      .insertInto("pii.vendor_user_profiles")
-      .values({ vendor_user_id: created.id, phone, full_name: fullName ?? null })
-      .execute();
+    await insertVendorUserProfile(trx, created.id, phone, fullName ?? null);
     return loadUser(trx, id, created.id);
   });
   return c.json(user, 201);
@@ -574,11 +560,7 @@ vendors.patch("/:id/users/:userId", requirePermission("vendor_users.write"), lim
     }
     const profile = definedOnly({ phone: phone ?? undefined, full_name: fullName });
     if (Object.keys(profile).length > 0) {
-      await trx
-        .updateTable("pii.vendor_user_profiles")
-        .set(profile)
-        .where("vendor_user_id", "=", ids.user)
-        .execute();
+      await updateVendorUserProfile(trx, ids.user, profile);
     }
     return loadUser(trx, ids.vendor, ids.user);
   });
@@ -628,11 +610,7 @@ vendors.post("/:id/users/:userId/unlink", requirePermission("vendor_users.write"
       .set({ tg_user_hash: null, tg_linked_at: null })
       .where("id", "=", ids.user)
       .execute();
-    await trx
-      .updateTable("pii.vendor_user_profiles")
-      .set({ telegram_user_id: null, telegram_chat_id: null })
-      .where("vendor_user_id", "=", ids.user)
-      .execute();
+    await clearVendorUserTelegram(trx, ids.user);
     await trx
       .updateTable("app.sessions")
       .set({ revoked_at: sql<Date>`now()` })
@@ -649,9 +627,7 @@ vendors.post("/:id/users/:userId/phone", requirePermission("vendor_phones.read")
   const reason = await readReason(c.req.raw);
   const body: RevealedPhone = await withActor(c.var.db, staffOf(c), async (trx) => {
     await loadUser(trx, ids.vendor, ids.user);
-    const { rows } = await sql<{ phone: string | null }>`
-      select pii.read_vendor_user_phone(${ids.user}::uuid, ${reason}::text) as phone`.execute(trx);
-    return { phone: rows[0]?.phone ?? null };
+    return { phone: await readVendorUserPhone(trx, ids.user, reason) };
   });
   return c.json(body);
 });

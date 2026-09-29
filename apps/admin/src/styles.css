@@ -310,6 +310,8 @@ body {
   flex: none;
   align-items: center;
   justify-content: center;
+  /* Кнопка-стрелка «←» тоже не уже 44px */
+  min-width: var(--hit-min);
   min-height: var(--hit-min);
   padding: 0 16px;
   border: 1px solid var(--rule);

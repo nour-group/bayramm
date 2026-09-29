@@ -1,0 +1,18 @@
+{
+  "name": "@bayramm/e2e",
+  "private": true,
+  "type": "module",
+  "description": "Сквозные проверки трёх приложений в браузере: правила продукта и доступность. Без сети: демо-API клиента, перехваченный /api у кабинета и панели.",
+  "scripts": {
+    "e2e": "playwright test",
+    "e2e:install": "playwright install chromium",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@bayramm/shared": "workspace:*",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.2",
+    "typescript": "^6.0.2"
+  }
+}

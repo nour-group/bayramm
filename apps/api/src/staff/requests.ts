@@ -5,7 +5,7 @@
 //   GET  /staff/requests?status=&sla=&q=&limit=&offset=   список: сначала без ответа
 //   GET  /staff/requests/:id                              заявка и история статусов
 //   POST /staff/requests/:id/client-phone  { reason }     телефон клиента — только
-//        администратор, причина обязательна (так же проверяет pii.read_request_phone)
+//        администратор, причина обязательна (так же проверяет функция базы read_request_phone)
 //   POST /staff/requests/:id/vendor-phone  { reason? }    кому звонить: контакт вендора
 //        и телефон карточки
 
@@ -21,6 +21,7 @@ import { Hono } from "hono";
 import { type RawBuilder, sql } from "kysely";
 import { staffOf } from "../auth/session";
 import { type Tx, withActor } from "../db/actor";
+import { readListingPhone, readRequestPhone, requestContactsAs } from "../db/pii";
 import type { AppEnv } from "../env";
 import { notFound } from "../errors";
 import { requirePermission } from "./access";
@@ -160,7 +161,7 @@ requests.get("/:id", requirePermission("requests.read"), async (c) => {
   const id = pathId(c.req.param("id"));
   const body: StaffRequestDetail = await withActor(c.var.db, staffOf(c), async (trx) => {
     const row = await selectRequests(trx)
-      .leftJoin("pii.request_contacts as rc", "rc.request_id", "r.id")
+      .leftJoin(requestContactsAs("rc"), "rc.request_id", "r.id")
       .select([
         "r.budget_min_uzs",
         "r.budget_max_uzs",
@@ -228,9 +229,7 @@ requests.post(
     const reason = await readReason(c.req.raw, true);
     const body: RevealedPhone = await withActor(c.var.db, staffOf(c), async (trx) => {
       await requestRefs(trx, id);
-      const { rows } = await sql<{ phone: string | null }>`
-        select pii.read_request_phone(${id}::uuid, ${reason}::text) as phone`.execute(trx);
-      return { phone: rows[0]?.phone ?? null };
+      return { phone: await readRequestPhone(trx, id, reason) };
     });
     return c.json(body);
   },
@@ -242,9 +241,7 @@ requests.post("/:id/vendor-phone", requirePermission("requests.read"), limitJson
   const body: RequestVendorPhones = await withActor(c.var.db, staffOf(c), async (trx) => {
     const refs = await requestRefs(trx, id);
     const phones = await readVendorPhones(trx, refs.vendor_id, reason);
-    const { rows } = await sql<{ phone: string | null }>`
-      select pii.read_listing_phone(${refs.listing_id}::uuid, ${reason}::text) as phone`.execute(trx);
-    return { ...phones, listingPhone: rows[0]?.phone ?? null };
+    return { ...phones, listingPhone: await readListingPhone(trx, refs.listing_id, reason) };
   });
   return c.json(body);
 });

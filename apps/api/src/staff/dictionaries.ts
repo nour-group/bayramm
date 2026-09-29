@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
 import { withActor } from "../db/actor";
+import { staffProfilesAs } from "../db/pii";
 import type { AppEnv } from "../env";
 import { requirePermission } from "./access";
 
@@ -32,7 +33,7 @@ dictionaries.get("/", requirePermission("catalog.read"), async (c) => {
       .execute();
     const staff = await trx
       .selectFrom("app.staff as s")
-      .innerJoin("pii.staff_profiles as p", "p.staff_id", "s.id")
+      .innerJoin(staffProfilesAs("p"), "p.staff_id", "s.id")
       .select(["s.id", "s.role", "p.display_name"])
       .where("s.active", "=", true)
       .orderBy("p.display_name")
