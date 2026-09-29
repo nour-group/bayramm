@@ -10,8 +10,9 @@
 // журналом (так делает и выгрузка). Контракт — @bayramm/shared/api/me.
 // Выгрузка, отзыв и удаление — функции app.client_* (миграция
 // 20260930140000_platform_hardening.sql): там же журнал согласий и статусов.
+// Источник записи в журналах (tma или web) — заголовок X-Bayramm-Source, как у заявок.
 
-import type { ClientConsentPurpose } from "@bayramm/shared/api";
+import { CLIENT_SOURCE_HEADER, type ClientConsentPurpose } from "@bayramm/shared/api";
 import type { ClientDataExport, ConsentWithdrawn } from "@bayramm/shared/api/me";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -22,13 +23,11 @@ import { withActor } from "../db/actor";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
+import { clientSource } from "./requests";
 
 export const me = new Hono<AppEnv>();
 
 me.use(database, authenticate);
-
-// Клиент входит только через Mini App (initData Telegram) — его действия идут с источником tma
-const CLIENT_SOURCE = "tma";
 
 const WITHDRAWABLE: readonly ClientConsentPurpose[] = [
   "client_service",
@@ -84,12 +83,13 @@ me.get("/export", async (c) => {
 me.post("/consents/withdraw", limitBody, async (c) => {
   const { actor } = requireClient(c);
   const { purpose, listingId } = parseWithdrawConsent(await readJson(c.req.raw));
+  const source = clientSource(c.req.header(CLIENT_SOURCE_HEADER));
   const ipHash = await requestIpHash(c.req.raw.headers, c.env.ID_HASH_KEY);
 
   const id = await withActor(c.var.db, actor, async (trx) => {
     const { rows } = await sql<{ id: string | null }>`
       select app.client_withdraw_consent(${purpose}::app.consent_purpose, ${listingId}::uuid,
-                                         ${CLIENT_SOURCE}::app.source, ${ipHash}::bytea) as id`.execute(trx);
+                                         ${source}::app.source, ${ipHash}::bytea) as id`.execute(trx);
     return rows[0]?.id ?? null;
   });
 
@@ -99,10 +99,11 @@ me.post("/consents/withdraw", limitBody, async (c) => {
 // Удаление аккаунта. Сессия этого запроса отзывается вместе с остальными
 me.delete("/", async (c) => {
   const { actor } = requireClient(c);
+  const source = clientSource(c.req.header(CLIENT_SOURCE_HEADER));
   const ipHash = await requestIpHash(c.req.raw.headers, c.env.ID_HASH_KEY);
 
   await withActor(c.var.db, actor, (trx) =>
-    sql`select * from app.client_delete_account(${CLIENT_SOURCE}::app.source, ${ipHash}::bytea)`.execute(trx),
+    sql`select * from app.client_delete_account(${source}::app.source, ${ipHash}::bytea)`.execute(trx),
   );
   return c.body(null, 204);
 });

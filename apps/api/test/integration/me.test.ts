@@ -142,7 +142,11 @@ describe("POST /me/consents/withdraw", () => {
 
     await grantBotNotifications(clientId);
     const ip = "198.51.100.23";
-    const first = await withdraw(token, { purpose: "bot_notifications" }, { "CF-Connecting-IP": ip });
+    const first = await withdraw(
+      token,
+      { purpose: "bot_notifications" },
+      { "CF-Connecting-IP": ip, "X-Bayramm-Source": "tma" },
+    );
     expect(first.status).toBe(200);
     expect(await first.json()).toEqual({ withdrawn: true });
     expect(await (await withdraw(token, { purpose: "bot_notifications" })).json()).toEqual({
@@ -182,7 +186,11 @@ describe("DELETE /me", () => {
       clientId,
     ]);
     expect(open.rows).toHaveLength(0);
-    expect((await consentActions(clientId)).map((a) => a.action)).toEqual(["grant", "withdraw"]);
+    // без X-Bayramm-Source — сайт
+    expect((await consentActions(clientId)).map((a) => [a.action, a.source])).toEqual([
+      ["grant", "tma"],
+      ["withdraw", "web"],
+    ]);
 
     // Новый вход: тот же псевдонимный аккаунт, профиль заново, согласий нет
     const fresh = await loginToken({ ...user, first_name: "Back" });
