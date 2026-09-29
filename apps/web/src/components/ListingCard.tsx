@@ -3,6 +3,7 @@ import { useDictionaries, useLang } from "../context";
 import { formatDayMonth, formatMoney, formatPriceFrom } from "../format";
 import { hrefFor } from "../router";
 import { Link } from "./Link";
+import { NewBadge } from "./NewBadge";
 import { Photo } from "./Photo";
 
 interface ListingCardProps {
@@ -46,9 +47,7 @@ export function ListingCard({ card, date, guests, eager }: ListingCardProps) {
         <div className="card-body">
           <div className="card-top">
             <h2 className="card-name">{card.name}</h2>
-            <span className="badge-new" title={t.newBadgeHint}>
-              {t.newBadge}
-            </span>
+            <NewBadge />
           </div>
           <p className="card-meta">{[district, t.people(card.capMax)].filter(Boolean).join(" · ")}</p>
           <p className="card-price">

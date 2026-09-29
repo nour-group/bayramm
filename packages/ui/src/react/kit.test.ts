@@ -142,13 +142,24 @@ describe("kit.css", () => {
       ".ui-btn:focus-visible",
       ".ui-icon-btn:focus-visible",
       ".ui-select:focus-visible",
-      ".ui-cal-day:focus-visible",
+      ".ui-cal .ui-cal-day:focus-visible",
       ".ui-native:focus-visible + .ui-check-box",
       ".ui-native:focus-visible + .ui-switch-track",
       ".ui-native:focus-visible + .ui-drop-face",
       ".ui-radio:focus-within",
     ])
       expect(declarationsOf(selector), selector).toMatch(/outline:\s*3px solid var\(--coral\)/);
+  });
+
+  it("занятый день выцветает, а не краснеет", () => {
+    const busy = declarationsOf(".ui-cal-day.is-busy");
+    expect(busy).toMatch(/color:\s*var\(--busy-ink\)/);
+    expect(busy).not.toMatch(/coral|berry/);
+  });
+
+  it("день календаря с фокусом виден и под [tabindex=\"-1\"]:focus приложений", () => {
+    // Вес (0,3,0) выше (0,2,0) у правила приложений «программный фокус без рамки»
+    expect(declarationsOf(".ui-cal .ui-cal-day:focus-visible")).toMatch(/outline:\s*3px solid/);
   });
 
   it("движение отключается при prefers-reduced-motion", () => {

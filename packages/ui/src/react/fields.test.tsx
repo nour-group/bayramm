@@ -248,6 +248,20 @@ describe("Tooltip вместо title", () => {
     );
   });
 
+  it("describe={false} — без aria-describedby: текст уже в имени элемента", () => {
+    render(
+      <Tooltip text="12 октября — занято" describe={false}>
+        {(trigger) => (
+          <button type="button" aria-label="12 октября — занято" {...trigger}>
+            12
+          </button>
+        )}
+      </Tooltip>,
+    );
+    expect(document.querySelector("button")?.hasAttribute("aria-describedby")).toBe(false);
+    expect(document.querySelector("[hidden]")).toBeNull();
+  });
+
   it("мышь — показывает с задержкой, Esc прячет; касание — не показывает", () => {
     vi.useFakeTimers();
     render(<Lang />);

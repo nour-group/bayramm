@@ -22,7 +22,7 @@ import { surroundings } from "./overlay";
 
 export interface TooltipTriggerProps {
   readonly ref: RefCallback<HTMLElement>;
-  readonly "aria-describedby": string;
+  readonly "aria-describedby"?: string;
   readonly onPointerEnter: (event: PointerEvent<HTMLElement>) => void;
   readonly onPointerLeave: () => void;
   readonly onFocus: (event: FocusEvent<HTMLElement>) => void;
@@ -31,6 +31,11 @@ export interface TooltipTriggerProps {
 
 export interface TooltipProps {
   readonly text: string;
+  /**
+   * Связать текст с элементом через aria-describedby (по умолчанию да). Нет — если текст
+   * повторяет имя элемента (aria-label) или уже есть в разметке для диктора
+   */
+  readonly describe?: boolean;
   /** Элемент, к которому подсказка: получает ref, обработчики и aria-describedby */
   readonly children: (trigger: TooltipTriggerProps) => ReactNode;
 }
@@ -47,7 +52,7 @@ function focusVisible(element: Element): boolean {
   }
 }
 
-export function Tooltip({ text, children }: TooltipProps) {
+export function Tooltip({ text, describe = true, children }: TooltipProps) {
   const id = useId();
   const anchor = useRef<HTMLElement | null>(null);
   const bubble = useRef<HTMLSpanElement>(null);
@@ -90,7 +95,7 @@ export function Tooltip({ text, children }: TooltipProps) {
     ref: (element) => {
       anchor.current = element;
     },
-    "aria-describedby": id,
+    ...(describe ? { "aria-describedby": id } : {}),
     onPointerEnter: (event) => {
       if (event.pointerType === "mouse") later(true, SHOW_MS);
     },
@@ -106,9 +111,11 @@ export function Tooltip({ text, children }: TooltipProps) {
   return (
     <>
       {children(trigger)}
-      <span id={id} hidden>
-        {text}
-      </span>
+      {describe ? (
+        <span id={id} hidden>
+          {text}
+        </span>
+      ) : null}
       {visible
         ? createPortal(
             // Текст уже связан через aria-describedby — пузырь для глаз, диктору не дублируем

@@ -1034,11 +1034,12 @@ button.ui-cal-day {
 
 /* ---------- фокус ---------- */
 
-/* Фокус с клавиатуры: кольцо --coral, 3:1 на всех фонах */
+/* Фокус с клавиатуры: кольцо --coral, 3:1 на всех фонах. День календаря — с весом выше
+   [tabindex="-1"]:focus приложений: у дней roving tabindex, стрелки ставят фокус на -1 */
 .ui-btn:focus-visible,
 .ui-icon-btn:focus-visible,
 .ui-select:focus-visible,
-.ui-cal-day:focus-visible,
+.ui-cal .ui-cal-day:focus-visible,
 .ui-number-input:focus-visible,
 .ui-search-input:focus-visible,
 .ui-native:focus-visible + .ui-check-box,
