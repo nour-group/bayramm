@@ -48,7 +48,23 @@ export const unauthorized = () => new ApiError(401, "unauthorized", "Authenticat
 // Одинаково для всех случаев — по ответу не узнать, чего именно не хватило
 export const forbidden = () => new ApiError(403, "forbidden", "Access denied");
 export const clientBlocked = () => new ApiError(403, "client_blocked", "Account is blocked");
+// Оптимистичная блокировка: запись изменили после того, как её прочли
+export const versionConflict = () =>
+  new ApiError(409, "version_conflict", "Record was changed by someone else — reload it");
 const internalError = () => new ApiError(500, "internal_error", "Internal error");
+
+// Уникальные ограничения, о которых интерфейсу нужно сказать по-человечески
+const UNIQUE_CONSTRAINTS: Readonly<Record<string, { code: string; message: string }>> = {
+  requests_client_listing_date_uq: {
+    code: "duplicate_request",
+    message: "Request for this listing and date already exists",
+  },
+  photos_dedupe: { code: "duplicate_photo", message: "This photo is already uploaded" },
+  listings_slug_key: { code: "slug_taken", message: "This address is already taken" },
+  vendor_contacts_stir_key: { code: "stir_taken", message: "This STIR belongs to another vendor" },
+  vendor_users_phone_hash_key: { code: "phone_taken", message: "This phone is already used for sign-in" },
+  listing_packages_day_kind: { code: "duplicate_package", message: "Package of this kind already exists" },
+};
 
 // ── ошибки Postgres ────────────────────────────────────────────────────────
 
@@ -121,14 +137,12 @@ export function fromPgError(err: PgError): ApiError {
   }
 
   switch (err.code) {
-    case "23505": // unique_violation
-      if (err.constraint === "requests_client_listing_date_uq") {
-        return new ApiError(409, "duplicate_request", "Request for this listing and date already exists");
-      }
-      if (err.constraint === "photos_dedupe") {
-        return new ApiError(409, "duplicate_photo", "This photo is already uploaded");
-      }
+    case "23505": {
+      // unique_violation
+      const known = err.constraint === undefined ? undefined : UNIQUE_CONSTRAINTS[err.constraint];
+      if (known) return new ApiError(409, known.code, known.message);
       return new ApiError(409, "conflict", "Already exists");
+    }
     // RLS (WITH CHECK) и права: чужой объект для клиента не существует — не
     // подтверждаем, что он есть. 23503 — ссылка на несуществующий объект: тоже 404,
     // иначе по разнице ответов можно перебирать id
