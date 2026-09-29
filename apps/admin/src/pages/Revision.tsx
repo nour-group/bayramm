@@ -111,7 +111,7 @@ function RevisionView({
         <table className="table">
           <thead>
             <tr>
-              <th scope="col">{t.colDetail}</th>
+              <th scope="col">{t.revisionField}</th>
               <th scope="col">{t.revisionNow}</th>
               <th scope="col">{t.revisionProposed}</th>
             </tr>

@@ -437,6 +437,9 @@ textarea.input {
 
 /* Таблицы: на узком экране — прокрутка вбок внутри рамки; обе оси явно (ловушка №2) */
 .table-wrap {
+  /* Скрытые подписи (visually-hidden, position: absolute) в ячейках — внутри рамки, а не
+     за краем страницы */
+  position: relative;
   overflow-x: auto;
   overflow-y: hidden;
   border: 1px solid var(--rule);
