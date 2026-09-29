@@ -112,6 +112,25 @@ describe("Calendar", () => {
     expect(document.activeElement).toBe(prev);
   });
 
+  it("фильтр дат: открывается на defaultMonth, без пометок «свободно/занято» и легенды", () => {
+    render(
+      <Calendar
+        label="С"
+        min="2024-10-01"
+        max="2026-10-01"
+        defaultMonth="2026-10-01"
+        selected={null}
+        onSelect={() => {}}
+        legend={false}
+        texts={{ ...TEXTS, free: "", busy: "", selected: "", summary: undefined }}
+      />,
+    );
+    expect(document.querySelector(".ui-cal-title")?.textContent).toBe("окт 2026");
+    expect(day("1 окт")?.getAttribute("aria-label")).toBe("1 окт");
+    expect(day("2 окт")?.getAttribute("aria-disabled")).toBe("true");
+    expect(document.querySelector(".ui-cal-legend")).toBeNull();
+  });
+
   it("без onSelect — только показывает занятость, кнопок нет", () => {
     render(
       <Calendar

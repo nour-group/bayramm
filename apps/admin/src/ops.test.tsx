@@ -588,7 +588,8 @@ describe("команда", () => {
     expect(rows[0]?.querySelector("button")).toBeNull();
     expect(rows[1]?.textContent).toContain(t.memberPending);
 
-    await click(rows[1]?.querySelector("button") ?? undefined);
+    // Первая кнопка строки — список ролей (Select набора), отключение — по тексту
+    await click([...(rows[1]?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.deactivate));
     expect(calls.some((c) => c.url.endsWith("/deactivate"))).toBe(false);
     const confirm = container.querySelector(".confirm") as HTMLFormElement;
     await click([...confirm.querySelectorAll("button")].find((b) => b.textContent === t.deactivate));
@@ -606,7 +607,12 @@ describe("команда", () => {
     const [name, username] = [...form.querySelectorAll("input")];
     await type(name ?? null, "Новый модератор");
     await type(username ?? null, "@new_moderator");
-    await type(form.querySelector("select"), "moderator");
+    // Роль — свой список (Select): открыть и выбрать вариант; системного select нет
+    expect(form.querySelector("select")).toBeNull();
+    await click(form.querySelector("button[aria-haspopup=listbox]") ?? undefined);
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.roles.moderator),
+    );
     await click(button(t.invite));
     expect(lastCall("/team")?.body).toEqual({
       displayName: "Новый модератор",

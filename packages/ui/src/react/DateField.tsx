@@ -23,6 +23,10 @@ export interface DateFieldProps {
   readonly texts: CalendarTexts;
   /** Кнопка «любая дата» под календарём: сбрасывает выбор */
   readonly clearLabel?: string;
+  /** Какой месяц открыть без выбранной даты; по умолчанию — месяц min */
+  readonly defaultMonth?: string;
+  /** Легенда «свободно · занято» под календарём (в фильтре дат не нужна) */
+  readonly legend?: boolean;
   readonly id?: string;
   readonly disabled?: boolean;
   readonly "aria-invalid"?: boolean;
@@ -43,6 +47,8 @@ export function DateField({
   format,
   texts,
   clearLabel,
+  defaultMonth,
+  legend = true,
   id,
   disabled = false,
   icon,
@@ -125,6 +131,8 @@ export function DateField({
               onSelect={pick}
               label={label}
               texts={texts}
+              legend={legend}
+              defaultMonth={defaultMonth}
             />
             {clearLabel ? (
               <div className="ui-date-actions">

@@ -561,6 +561,8 @@ export const t = {
   auditAction: "Действие (начало кода)",
   auditFrom: "С",
   auditTo: "По",
+  auditAnyDate: "любая дата",
+  auditNoDate: "Без даты",
   auditApply: "Показать",
   auditReset: "Сбросить",
   auditEmpty: "Записей нет.",

@@ -13,6 +13,7 @@ export interface SearchFieldProps {
   readonly onChange: (value: string) => void;
   /** Имя поля для диктора, если рядом нет видимой подписи */
   readonly "aria-label"?: string;
+  readonly "aria-describedby"?: string;
   readonly placeholder?: string;
   readonly id?: string;
   readonly maxLength?: number;
@@ -27,6 +28,7 @@ export function SearchField({
   maxLength = 100,
   className,
   "aria-label": ariaLabel,
+  "aria-describedby": describedBy,
 }: SearchFieldProps) {
   const texts = useUiTexts();
   const input = useRef<HTMLInputElement>(null);
@@ -43,6 +45,7 @@ export function SearchField({
         value={value}
         placeholder={placeholder}
         aria-label={ariaLabel}
+        aria-describedby={describedBy}
         maxLength={maxLength}
         onChange={(event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
       />

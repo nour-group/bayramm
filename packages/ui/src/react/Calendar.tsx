@@ -56,6 +56,7 @@ export interface CalendarTexts {
   readonly monthTitle: (month: string) => string;
   /** Начало имени дня для диктора: «15 окт» */
   readonly dayLabel: (date: string) => string;
+  /** «свободно» / «занято» — в легенде и в имени дня; пустая строка — без пометки (фильтр дат) */
   readonly free: string;
   readonly busy: string;
   /** Подпись выбранного дня в легенде: «ваша дата» */
@@ -80,6 +81,8 @@ export interface CalendarProps {
   readonly legend?: boolean;
   /** Сразу поставить фокус на выбранный или первый доступный день (календарь в шторке) */
   readonly autoFocus?: boolean;
+  /** Какой месяц показать без выбранной даты; по умолчанию — месяц min */
+  readonly defaultMonth?: string;
 }
 
 const NO_BUSY: ReadonlySet<string> = new Set();
@@ -94,9 +97,12 @@ export function Calendar({
   texts,
   legend = true,
   autoFocus = false,
+  defaultMonth,
 }: CalendarProps) {
   const base = useId();
-  const [month, setMonth] = useState(() => monthOf(selected && selected >= min ? selected : min));
+  const [month, setMonth] = useState(() =>
+    monthOf(selected && selected >= min && selected <= max ? selected : clamp(defaultMonth ?? min, min, max)),
+  );
   const [focusDay, setFocusDay] = useState<string | null>(null);
   const moved = useRef(autoFocus);
   const prevButton = useRef<HTMLButtonElement>(null);
@@ -219,7 +225,8 @@ export function Calendar({
           ]
             .filter(Boolean)
             .join(" ");
-          const name = `${texts.dayLabel(day)}${outside ? "" : `, ${isBusy ? texts.busy : texts.free}`}`;
+          const status = outside ? "" : isBusy ? texts.busy : texts.free;
+          const name = status ? `${texts.dayLabel(day)}, ${status}` : texts.dayLabel(day);
           if (!onSelect)
             return (
               <span key={day} className={classes}>
