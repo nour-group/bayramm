@@ -8,6 +8,7 @@ import type {
   StaffDictionaries,
   StaffListingPackage,
 } from "@bayramm/shared/api/staff";
+import { Select, type SelectOption } from "@bayramm/ui/react";
 import { type FormEvent, useState } from "react";
 import type { Failure } from "../api";
 import { t } from "../texts";
@@ -41,6 +42,11 @@ interface Values {
 }
 
 const TEXT_KEYS = ["name", "addressRu", "addressUz", "descriptionRu", "descriptionUz"] as const;
+
+const PRICE_UNITS: readonly SelectOption<PriceUnit>[] = [
+  { value: "per_guest", label: t.priceUnits.per_guest },
+  { value: "per_event", label: t.priceUnits.per_event },
+];
 const NUMBER_KEYS = ["priceFromUzs", "capMin", "capMax"] as const;
 
 let rowKey = 0;
@@ -170,10 +176,11 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
   const [saved, setSaved] = useState(false);
   const errors = fieldErrors(failure, t.listingFieldErrors);
 
-  const set = (key: keyof Values) => (event: { target: { value: string } }) => {
+  const put = (key: keyof Values) => (value: string) => {
     setSaved(false);
-    setValues((prev) => ({ ...prev, [key]: event.target.value }));
+    setValues((prev) => ({ ...prev, [key]: value }));
   };
+  const set = (key: keyof Values) => (event: { target: { value: string } }) => put(key)(event.target.value);
   const setRow = (key: number, patch: Partial<PackageRow>) => {
     setSaved(false);
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -261,20 +268,21 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
           </Field>
           <Field label={t.listingFields.districtCode ?? ""} error={errors.districtCode}>
             {(props) => (
-              <select
+              <Select
                 {...props}
                 className="input"
+                label={t.listingFields.districtCode ?? ""}
                 value={values.districtCode}
-                onChange={set("districtCode")}
+                onChange={put("districtCode")}
                 disabled={readOnly}
-              >
-                <option value="">{t.none}</option>
-                {(dictionaries?.districts ?? []).map((district) => (
-                  <option key={district.code} value={district.code}>
-                    {district.nameRu}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: t.none },
+                  ...(dictionaries?.districts ?? []).map((district) => ({
+                    value: district.code,
+                    label: district.nameRu,
+                  })),
+                ]}
+              />
             )}
           </Field>
           <Field label={t.category}>
@@ -293,10 +301,17 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
           {creating && (
             <Field label={t.startAs}>
               {(props) => (
-                <select {...props} className="input" value={values.status} onChange={set("status")}>
-                  <option value="draft">{t.status.draft}</option>
-                  <option value="lead">{t.status.lead}</option>
-                </select>
+                <Select
+                  {...props}
+                  className="input"
+                  label={t.startAs}
+                  value={values.status}
+                  onChange={put("status")}
+                  options={[
+                    { value: "draft", label: t.status.draft },
+                    { value: "lead", label: t.status.lead },
+                  ]}
+                />
               )}
             </Field>
           )}
@@ -325,16 +340,15 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
           {input("priceFromUzs", t.listingFields.priceFromUzs ?? "", { maxLength: 16, numeric: true })}
           <Field label={t.listingFields.priceUnit ?? ""}>
             {(props) => (
-              <select
+              <Select
                 {...props}
                 className="input"
+                label={t.listingFields.priceUnit ?? ""}
                 value={values.priceUnit}
-                onChange={set("priceUnit")}
+                onChange={put("priceUnit")}
                 disabled={readOnly}
-              >
-                <option value="per_guest">{t.priceUnits.per_guest}</option>
-                <option value="per_event">{t.priceUnits.per_event}</option>
-              </select>
+                options={PRICE_UNITS}
+              />
             )}
           </Field>
           {input("capMin", t.listingFields.capMin ?? "", { maxLength: 5, numeric: true })}
@@ -386,16 +400,15 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
               </Field>
               <Field label={t.listingFields.priceUnit ?? ""}>
                 {(props) => (
-                  <select
+                  <Select
                     {...props}
                     className="input"
+                    label={`${t.listingFields.priceUnit ?? ""} · ${t.packageKinds[row.kind]}`}
                     value={row.priceUnit}
                     disabled={readOnly}
-                    onChange={(event) => setRow(row.key, { priceUnit: event.target.value as PriceUnit })}
-                  >
-                    <option value="per_guest">{t.priceUnits.per_guest}</option>
-                    <option value="per_event">{t.priceUnits.per_event}</option>
-                  </select>
+                    onChange={(priceUnit) => setRow(row.key, { priceUnit })}
+                    options={PRICE_UNITS}
+                  />
                 )}
               </Field>
               {row.kind === "custom" && !readOnly && (

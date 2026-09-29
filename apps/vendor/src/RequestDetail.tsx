@@ -11,6 +11,7 @@ import {
   type VendorRequestDetail,
   type VendorRequestPatch,
 } from "@bayramm/shared/api/vendor";
+import { RadioGroup } from "@bayramm/ui/react";
 import { type FormEvent, type MouseEvent, useCallback, useId, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { formatBudget, formatDate, formatGuests, formatMoment, formatPhone, slaView } from "./format";
@@ -43,18 +44,13 @@ function DeclineForm({ t, busy, onSubmit, onCancel }: DeclineFormProps) {
       <fieldset className="choices">
         <legend className="panel-title">{t.declineTitle}</legend>
         <p className="note">{t.declineSub}</p>
-        {DECLINE_REASONS.map((code) => (
-          <label key={code} className="choice">
-            <input
-              type="radio"
-              name="decline-reason"
-              value={code}
-              checked={reason === code}
-              onChange={() => setReason(code)}
-            />
-            <span>{textOf(t, `reason_${code}`)}</span>
-          </label>
-        ))}
+        <RadioGroup
+          variant="row"
+          name="decline-reason"
+          value={reason}
+          options={DECLINE_REASONS.map((code) => ({ value: code, label: textOf(t, `reason_${code}`) }))}
+          onChange={setReason}
+        />
       </fieldset>
       {reason === "busy" ? <p className="note">{t.declineBusyNote}</p> : null}
       <label className="field-label" htmlFor={noteId}>
