@@ -35,8 +35,8 @@ describe("cron", () => {
     const env = makeEnv();
     await expect(runCron(env)).resolves.toBe(false);
     const logged = JSON.stringify(errors.mock.calls);
-    for (const step of ["sla", "outbox", "telegram_updates"])
-      expect(logged).toContain(`cron: ${step} failed`);
+    expect(logged).toContain("cron: step failed");
+    for (const step of ["sla", "outbox", "telegram_updates"]) expect(logged).toContain(`"step":"${step}"`);
     for (const secret of [BOT_TOKEN, env.ID_HASH_KEY, "nothing"]) expect(logged).not.toContain(secret);
     expect(fetch).not.toHaveBeenCalled();
   });

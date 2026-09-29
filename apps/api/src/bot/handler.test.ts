@@ -1,6 +1,6 @@
 // Обработка сообщений бота без базы: fakeDb отвечает на отметку update_id и на
 // функции app.telegram_started / app.vendor_user_claim_telegram
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
@@ -8,7 +8,8 @@ import { type BotConfig, type ClaimResult, handleUpdate } from "./handler";
 import { BOT_TEXTS, STAFF_STARTED } from "./texts";
 import type { BotUpdate } from "./update";
 
-const KEY = "unit-test-id-hash-key-0123456789abcdef";
+// Свой ключ псевдонимов на каждый прогон
+const KEY = randomBytes(32).toString("base64url");
 const CONFIG: BotConfig = {
   idHashKey: KEY,
   webAppUrl: "https://app.example",

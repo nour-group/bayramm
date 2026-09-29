@@ -1,10 +1,11 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { verifyWebhookSecret, WEBHOOK_SECRET_HEADER } from "@bayramm/tg";
 import { describe, expect, it } from "vitest";
 import { telegramIdHash, toBase64Url } from "../auth/crypto";
 import { webhookSecret } from "./webhook-secret";
 
-const KEY = "unit-test-id-hash-key-0123456789abcdef";
+// Свой ключ на каждый прогон
+const KEY = randomBytes(32).toString("base64url");
 
 describe("webhookSecret", () => {
   it("HMAC-SHA256(ID_HASH_KEY, «telegram-webhook:v1») в base64url", async () => {

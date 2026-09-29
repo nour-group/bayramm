@@ -29,10 +29,11 @@ async function purgeTelegramUpdates(db: Db): Promise<number> {
 async function step(name: string, run: () => Promise<unknown>): Promise<boolean> {
   try {
     const report = await run();
-    console.info(`cron: ${name}`, report);
+    console.info("cron: step done", { step: name, report });
     return true;
   } catch (err) {
-    console.error(`cron: ${name} failed`, {
+    console.error("cron: step failed", {
+      step: name,
       error: isPgError(err)
         ? `pg ${err.code}`
         : err instanceof Error
