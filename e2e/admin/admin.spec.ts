@@ -157,6 +157,27 @@ test.describe("работа сотрудника", () => {
     });
   }
 
+  test("команда: приглашение по телефону — своё поле номера, неверный номер — ошибка у поля", async ({
+    page,
+  }) => {
+    const api = await start(page);
+    await page.goto("/team");
+    await expect(page.locator(".who").getByText(STAFF.displayName)).toBeVisible();
+    const form = page.locator("form.fs");
+    await form.getByRole("radio", { name: t.inviteByPhone }).check();
+    // Вход по телефону в окружении выключен — подсказка честно об этом
+    await expect(form).toContainText(t.inviteHintPhoneOff);
+    const phone = form.getByLabel(t.invitePhone);
+    await expect(phone).toHaveAttribute("type", "tel");
+    await form.getByLabel(t.inviteName).fill("Новый менеджер");
+    await phone.fill("+7 900 123 45 67");
+    await form.getByRole("button", { name: t.invite }).click();
+    await expect(form.locator(".field-error")).toHaveText(t.fieldErrors.phone ?? "");
+    await expectNoAxeViolations(page, "команда: приглашение по телефону");
+    await expectHitAreas(page, "команда: приглашение по телефону", CONTROLS);
+    expect(api.unexpected).toEqual([]);
+  });
+
   test("вендоры: фокус с клавиатуры виден", async ({ page }) => {
     await start(page);
     await page.goto("/vendors");

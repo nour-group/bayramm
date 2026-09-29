@@ -148,6 +148,15 @@ describe("вход в панель оператора", () => {
     expect(link(t.loginOpenBot).getAttribute("href")).toBe(`https://t.me/${BOT}?start=admin`);
     // Без токена: вход ещё не выполнен
     expect(calls.every((c) => c.authorization === null)).toBe(true);
+    // Вход по телефону в окружении выключен — о телефоне ни слова
+    expect(container.querySelector(".lead")?.textContent).toBe(t.loginLeadTelegram);
+    expect(container.textContent).not.toMatch(/телефон/i);
+  });
+
+  it("вход по телефону включён — страница входа называет и его", async () => {
+    mockApi({ "GET /api/auth/methods": json({ ...METHODS, phone: true }) });
+    await mount("/login");
+    expect(container.querySelector(".lead")?.textContent).toBe(t.loginLead);
   });
 
   it("«Войти через Bayramm» — в хаб с app=admin, state и challenge = S256(verifier)", async () => {

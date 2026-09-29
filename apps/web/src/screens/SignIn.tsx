@@ -84,7 +84,12 @@ function useContinue(setPhase: (phase: Phase) => void) {
   }, [api, identity, t, setPhase, navigate]);
 }
 
-function TelegramBlock({ methods, link }: { methods: AuthMethods; link: boolean }) {
+/**
+ * Вход через Telegram: виджет (только на домене бота) и ссылка на бота. Подсказка под
+ * виджетом — на случай, когда он сам показывает ошибку (домен боту ещё не задан): тогда
+ * выход — Bayramm в Telegram, а телефон упоминается, только если вход по нему здесь есть
+ */
+function TelegramBlock({ methods, link, phone }: { methods: AuthMethods; link: boolean; phone: boolean }) {
   const { t } = useLang();
   const [failed, setFailed] = useState(false);
   const onError = useCallback(() => setFailed(true), []);
@@ -101,7 +106,7 @@ function TelegramBlock({ methods, link }: { methods: AuthMethods; link: boolean 
       {here && bot && !failed ? (
         <>
           <TelegramLogin bot={bot} onLoadError={onError} />
-          <p className="muted small">{t.authTelegramHint}</p>
+          {link ? null : <p className="muted small">{phone ? t.authTelegramHint : t.authTelegramHintBot}</p>}
         </>
       ) : (
         <p className="muted small">{t.authTelegramOff}</p>
@@ -193,7 +198,7 @@ export function SignIn() {
           {methods.status === "loading" ? <Loading /> : null}
           {methods.status === "ready" ? (
             <>
-              <TelegramBlock methods={methods.data} link={link} />
+              <TelegramBlock methods={methods.data} link={link} phone={methods.data.phone && !link} />
               {methods.data.phone && !link ? (
                 <section className="section auth-block" aria-labelledby="auth-phone">
                   <h2 className="section-title" id="auth-phone">

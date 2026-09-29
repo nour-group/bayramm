@@ -1064,6 +1064,12 @@ textarea.input {
   margin-top: 12px;
 }
 
+/* Приглашение: «Как войдёт» — над полями, не шире нужного */
+.invite-by {
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
 /* Настройка: подпись, поля, «Сохранить» в одну строку */
 .setting {
   display: flex;

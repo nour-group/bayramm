@@ -928,6 +928,64 @@ body {
   white-space: pre-line;
 }
 
+/* Изменения карточки: предложение партнёра, проверка командой */
+.proposal-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+.field[aria-invalid="true"] {
+  border-color: var(--berry);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--berry);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.package-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+}
+
+.package-row-bad {
+  border-color: var(--berry);
+}
+
+.package-kind {
+  margin: 0;
+  color: var(--plum);
+  font-weight: 700;
+}
+
+/* Единица цены — сегменты по содержимому, а не во всю ширину формы */
+.proposal-form .ui-radios-segmented {
+  align-self: flex-start;
+}
+
+.proposal-pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.proposal-pending p {
+  margin: 0;
+}
+
 /* Нижняя панель разделов: над безопасной зоной снизу */
 /* Аккаунт партнёра: выбор вендора и ссылки на другие роли того же аккаунта */
 .vendor-choice {
