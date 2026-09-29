@@ -82,6 +82,7 @@ describe("POST /auth/telegram → GET /me", () => {
       lastName: "Тестов",
       username: "aziz_test",
       canMessage: true,
+      notifications: false,
     });
   });
 

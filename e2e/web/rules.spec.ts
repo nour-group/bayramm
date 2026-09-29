@@ -1,5 +1,5 @@
 import { LANGS } from "@bayramm/shared";
-import type { ListingDetail } from "@bayramm/shared/api";
+import { comparablePriceUzs, type ListingDetail } from "@bayramm/shared/api";
 import type { Locator, Page } from "@playwright/test";
 import { formatDayMonth, formatPhone } from "../../apps/web/src/format";
 import { expect, test } from "../support/offline";
@@ -140,9 +140,11 @@ test.describe("согласие", () => {
 
 test.describe("занятые на дату", () => {
   const busyOn = (l: ListingDetail) => l.busyDates.includes(BUSY_DAY);
+  // Цены за гостя и за мероприятие — на одной шкале, как у API (без числа гостей — на гостя)
+  const price = (l: ListingDetail) => comparablePriceUzs(l, null);
   const ORDERS = {
-    price_asc: (a: ListingDetail, b: ListingDetail) => a.priceFromUzs - b.priceFromUzs,
-    price_desc: (a: ListingDetail, b: ListingDetail) => b.priceFromUzs - a.priceFromUzs,
+    price_asc: (a: ListingDetail, b: ListingDetail) => price(a) - price(b),
+    price_desc: (a: ListingDetail, b: ListingDetail) => price(b) - price(a),
     capacity_desc: (a: ListingDetail, b: ListingDetail) => b.capMax - a.capMax,
   } as const;
 

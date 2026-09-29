@@ -240,6 +240,10 @@ importers:
         version: 6.0.3
 
   packages/edge:
+    dependencies:
+      '@bayramm/tg':
+        specifier: workspace:*
+        version: link:../tg
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -281,6 +285,9 @@ importers:
 
   packages/ui:
     devDependencies:
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
       typescript:
         specifier: ^6.0.2
         version: 6.0.3

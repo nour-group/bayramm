@@ -109,7 +109,10 @@ export interface VendorRequestItem {
 }
 
 /**
- * GET /vendor/requests?tab=new&cursor=…&limit=… → 200. Новые сверху.
+ * GET /vendor/requests?tab=new&cursor=…&limit=… → 200.
+ * Порядок: «Новые» и «В работе» — сначала ждущие ответа, по сроку ответа (ближайший и
+ * просроченный сверху), затем ответившие; «Закрытые» — новые сверху.
+ * cursor — непрозрачная строка из nextCursor той же вкладки.
  * counts — сколько заявок в каждой вкладке (для подписей вкладок).
  */
 export interface VendorRequestPage {

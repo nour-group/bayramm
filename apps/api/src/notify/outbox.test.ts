@@ -67,6 +67,7 @@ function db(world: World = {}) {
           created_at: CREATED,
           sla_due_at: new Date(CREATED.getTime() + 12 * 3_600_000),
           listing: "Test Hall",
+          district_code: "chilonzor",
           name_ru: "Свадьба",
           name_uz: "Toʻy",
           public_code: "V101",
@@ -179,7 +180,7 @@ describe("dispatchOutbox: сообщения", () => {
     });
   });
 
-  it("клиенту — на его языке; отказ — кнопка «похожие» в Mini App", async () => {
+  it("клиенту — на его языке; отказ — «похожие»: каталог на дату, гостей и район заявки", async () => {
     const { tg } = await run({
       rows: [
         outboxRow({
@@ -193,8 +194,35 @@ describe("dispatchOutbox: сообщения", () => {
     expect(tg.calls[0]?.chat_id).toBe(7001);
     expect(tg.calls[0]?.text).toContain("soʻrovni qabul qila olmaydi");
     expect(tg.calls[0]?.reply_markup).toEqual({
-      inline_keyboard: [[{ text: "Oʻxshashlarini koʻrish", web_app: { url: "https://app.example" } }]],
+      inline_keyboard: [
+        [
+          {
+            text: "Oʻxshashlarini koʻrish",
+            web_app: { url: "https://app.example/?date=2026-12-12&guests=200&district=chilonzor" },
+          },
+        ],
+      ],
     });
+  });
+
+  it("клиенту о статусе — кнопка открывает эту заявку в «Моих заявках»", async () => {
+    for (const status of ["contacted", "deal"]) {
+      const { tg } = await run({
+        rows: [
+          outboxRow({
+            kind: "client.request_status",
+            recipient_kind: "client",
+            recipient_id: CLIENT_ID,
+            payload: { request_id: REQUEST_ID, status },
+          }),
+        ],
+      });
+      expect(tg.calls[0]?.reply_markup, status).toEqual({
+        inline_keyboard: [
+          [{ text: "Soʻrovni ochish", web_app: { url: `https://app.example/requests?open=${REQUEST_ID}` } }],
+        ],
+      });
+    }
   });
 
   it("просрочка: клиенту — предложение посмотреть похожие, администратору — оповещение по-русски", async () => {
@@ -210,6 +238,16 @@ describe("dispatchOutbox: сообщения", () => {
       ],
     });
     expect(tg.calls[0]?.text).toContain("12 soat ichida javob bermadi");
+    expect(tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          {
+            text: "Oʻxshashlarini koʻrish",
+            web_app: { url: "https://app.example/?date=2026-12-12&guests=200&district=chilonzor" },
+          },
+        ],
+      ],
+    });
     expect(tg.calls[1]?.chat_id).toBe(9001);
     expect(tg.calls[1]?.text).toContain("V101");
   });

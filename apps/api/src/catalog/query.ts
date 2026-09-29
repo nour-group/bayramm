@@ -1,11 +1,12 @@
 // Параметры каталога и курсор выдачи: разбор и проверка до базы.
 //
 // Курсор — непрозрачная строка для клиента: base64url от JSON-массива
-// [версия, сортировка, дата, занята, ключ, id] последней карточки страницы.
+// [версия, сортировка, дата, гости, занята, ключ, id] последней карточки страницы.
 // Выдача упорядочена по (занята, ключ сортировки, id) — ключ у каждой
-// сортировки свой (цена, минус цена, минус вместимость), поэтому страница
-// продолжается строго после курсора без смещений. Курсор от другой сортировки
-// или даты не подходит — 400 invalid_cursor: ключи там другие.
+// сортировки свой (сравнимая цена, минус она, минус вместимость; сравнимая цена
+// зависит от числа гостей), поэтому страница продолжается строго после курсора
+// без смещений. Курсор от другой сортировки, даты или числа гостей не подходит —
+// 400 invalid_cursor: ключи там другие.
 
 import type { CatalogSort } from "@bayramm/shared/api";
 import { ApiError } from "../errors";
@@ -21,14 +22,16 @@ const CODE_RE = /^[a-z_]{2,30}$/;
 const POSITIVE_INT_RE = /^[1-9][0-9]{0,5}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const BASE64URL_RE = /^[A-Za-z0-9_-]{1,512}$/;
-const CURSOR_VERSION = 1;
+// 2 — в курсоре появилось число гостей (сравнимая цена зависит от него)
+const CURSOR_VERSION = 2;
 
 /** Позиция последней карточки страницы */
 export interface CatalogCursor {
   readonly sort: CatalogSort;
   readonly date: string | null;
+  readonly guests: number | null;
   readonly busy: boolean;
-  /** Ключ сортировки: цена, минус цена или минус вместимость (целое) */
+  /** Ключ сортировки: сравнимая цена, минус она или минус вместимость (целое) */
   readonly key: number;
   readonly id: string;
 }
@@ -117,8 +120,9 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
   let after: CatalogCursor | null = null;
   if (cursorValue !== null) {
     after = decodeCursor(cursorValue);
-    // Курсор другой сортировки или даты указывает в другую выдачу
-    if (after === null || after.sort !== sort || after.date !== date) throw invalidCursor();
+    // Курсор другой сортировки, даты или числа гостей указывает в другую выдачу
+    if (after === null || after.sort !== sort || after.date !== date || after.guests !== guests)
+      throw invalidCursor();
   }
   return { category, district, date, guests, sort, limit, after };
 }
@@ -141,7 +145,15 @@ function fromBase64Url(value: string): string | null {
 export function encodeCursor(cursor: CatalogCursor): string {
   // В курсоре только ASCII: коды, дата, число, uuid — btoa хватает
   return toBase64Url(
-    JSON.stringify([CURSOR_VERSION, cursor.sort, cursor.date, cursor.busy ? 1 : 0, cursor.key, cursor.id]),
+    JSON.stringify([
+      CURSOR_VERSION,
+      cursor.sort,
+      cursor.date,
+      cursor.guests,
+      cursor.busy ? 1 : 0,
+      cursor.key,
+      cursor.id,
+    ]),
   );
 }
 
@@ -155,13 +167,16 @@ export function decodeCursor(value: string): CatalogCursor | null {
   } catch {
     return null;
   }
-  if (!Array.isArray(parsed) || parsed.length !== 6) return null;
-  const [version, sort, date, busy, key, id] = parsed as unknown[];
+  if (!Array.isArray(parsed) || parsed.length !== 7) return null;
+  const [version, sort, date, guests, busy, key, id] = parsed as unknown[];
   if (version !== CURSOR_VERSION) return null;
   if (typeof sort !== "string" || !(CATALOG_SORTS as readonly string[]).includes(sort)) return null;
   if (date !== null && (typeof date !== "string" || !isIsoDate(date))) return null;
+  const guestsOk =
+    typeof guests === "number" && Number.isInteger(guests) && guests >= 1 && guests <= MAX_GUESTS;
+  if (guests !== null && !guestsOk) return null;
   if (busy !== 0 && busy !== 1) return null;
   if (typeof key !== "number" || !Number.isSafeInteger(key)) return null;
   if (typeof id !== "string" || !UUID_RE.test(id)) return null;
-  return { sort: sort as CatalogSort, date, busy: busy === 1, key, id };
+  return { sort: sort as CatalogSort, date, guests: guests as number | null, busy: busy === 1, key, id };
 }

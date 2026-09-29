@@ -24,8 +24,11 @@ export interface RequestFacts {
 }
 
 export interface Buttons {
+  /** Вендору: заявка в кабинете */
   readonly openRequest: string;
-  readonly openApp: string;
+  /** Клиенту: его заявка в «Моих заявках» */
+  readonly myRequest: string;
+  /** Клиенту: каталог похожих на дату и число гостей заявки */
   readonly similar: string;
 }
 
@@ -53,7 +56,11 @@ export interface NoticeTexts {
 
 export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
   ru: {
-    buttons: { openRequest: "Открыть в кабинете", openApp: "Открыть Bayramm", similar: "Посмотреть похожие" },
+    buttons: {
+      openRequest: "Открыть в кабинете",
+      myRequest: "Открыть заявку",
+      similar: "Посмотреть похожие",
+    },
     requestNew: (f) =>
       `Новая заявка №${f.no}\n${summaryRu(f)}\n\n` +
       `Контакты клиента и детали — в кабинете. Ответьте за ${hoursRu(f.slaHours)}: если зал молчит, ` +
@@ -77,7 +84,7 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
   uz: {
     buttons: {
       openRequest: "Kabinetda ochish",
-      openApp: "Bayramm ilovasini ochish",
+      myRequest: "Soʻrovni ochish",
       similar: "Oʻxshashlarini koʻrish",
     },
     requestNew: (f) =>

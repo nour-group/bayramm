@@ -34,6 +34,7 @@ export const TEXT_PAIRS: readonly TextPair[] = [
   small("ink", "cell", "число дня в календаре"),
   small("ink", "cellWk", "число выходного дня"),
   small("ink", "busy", "занятый день в календаре кабинета: его можно освободить"),
+  small("muted", "busy", "занятый день в календаре площадки (только показ): выцветает, но читается"),
   small("muted", "paper", "вторичный текст на фоне"),
   small("muted", "white", "вторичный текст в карточках"),
   small("muted", "raise", "вторичный текст приподнятых кнопок"),
@@ -79,5 +80,9 @@ export const TEXT_PAIRS: readonly TextPair[] = [
 /* Пары, которым контраст не нужен: неактивные элементы WCAG 1.4.3 не касается.
    Держим список, чтобы исключение было видно, а не забыто. */
 export const EXEMPT_PAIRS: readonly { fg: ColorToken; bg: ColorToken; why: string }[] = [
-  { fg: "busyInk", bg: "busy", why: "занятый день выбрать нельзя — он намеренно выцветает" },
+  {
+    fg: "busyInk",
+    bg: "busy",
+    why: "занятый день в выборе даты — неактивная кнопка, выбрать нельзя; он намеренно выцветает",
+  },
 ];

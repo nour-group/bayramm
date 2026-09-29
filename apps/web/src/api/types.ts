@@ -10,6 +10,13 @@ import type {
   Locale,
   RequestCreated,
 } from "@bayramm/shared/api";
+import type {
+  ClientDataExport,
+  ClientMe,
+  ClientMePatch,
+  ConsentWithdrawn,
+  WithdrawConsent,
+} from "@bayramm/shared/api/me";
 
 /** GET /telegram/bot */
 export interface BotInfo {
@@ -40,4 +47,12 @@ export interface ClientApi {
   createRequest(body: CreateRequest): Promise<RequestCreated>;
   myRequests(signal?: AbortSignal): Promise<ClientRequests>;
   withdrawRequest(id: string): Promise<ClientRequest>;
+  /* Свой профиль и права на свои данные (@bayramm/shared/api/me) */
+  me(signal?: AbortSignal): Promise<ClientMe>;
+  /** Язык — в профиль: по нему пишет бот */
+  updateMe(patch: ClientMePatch): Promise<ClientMe>;
+  exportMyData(): Promise<ClientDataExport>;
+  withdrawConsent(body: WithdrawConsent): Promise<ConsentWithdrawn>;
+  /** Удалить аккаунт. После него вход в этой вкладке закрыт: новый вход создал бы аккаунт заново */
+  deleteAccount(): Promise<void>;
 }

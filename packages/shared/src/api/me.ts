@@ -1,6 +1,8 @@
-/* Контракт API клиента: права на свои данные. Все адреса — с сессией клиента
-   (Authorization: Bearer <token> из POST /auth/telegram), только над собой.
+/* Контракт API клиента: свой профиль и права на свои данные. Все адреса — с сессией
+   клиента (Authorization: Bearer <token> из POST /auth/telegram), только над собой.
 
+     GET    /me                    → 200 ClientMe
+     PATCH  /me                    ClientMePatch → 200 ClientMe; неверный язык — 422 invalid_input
      GET    /me/export             → 200 ClientDataExport (JSON-файл, Content-Disposition: attachment)
      POST   /me/consents/withdraw  WithdrawConsent → 200 ConsentWithdrawn
      DELETE /me                    → 204; сессия и все остальные сессии клиента больше не действуют
@@ -11,6 +13,25 @@
    Источник записи в журналах — заголовок CLIENT_SOURCE_HEADER, как у заявок. */
 
 import type { ClientConsentPurpose, DeclineReason, Locale, RequestStatus } from "./client";
+
+/** Свой профиль. Телефона здесь нет: его отдаёт только выгрузка (чтение — в журнал) */
+export interface ClientMe {
+  readonly id: string;
+  /** Язык интерфейса и сообщений бота */
+  readonly locale: Locale;
+  readonly firstName: string | null;
+  readonly lastName: string | null;
+  readonly username: string | null;
+  /** Telegram разрешил боту писать первым */
+  readonly canMessage: boolean;
+  /** Действует согласие на уведомления в боте (последняя запись журнала — grant) */
+  readonly notifications: boolean;
+}
+
+/** PATCH /me: язык сохраняется в профиле — по нему пишет и бот */
+export interface ClientMePatch {
+  readonly locale: Locale;
+}
 
 /** Тело POST /me/consents/withdraw. listingId — обязателен для request_transfer и только для него */
 export interface WithdrawConsent {

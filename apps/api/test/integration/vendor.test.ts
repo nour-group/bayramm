@@ -410,6 +410,8 @@ describe("заявки вендора A", () => {
     expect(Date.parse(item.sla.dueAt) - Date.parse(item.createdAt)).toBe(12 * 3600 * 1000);
     expect(item.sla).toMatchObject({ firstResponseAt: null, breached: false });
     expect(JSON.stringify(page)).not.toContain("+998");
+    // Сначала та, где время истекает раньше: ra1 подана раньше ra2 — её срок ближе
+    expect(page.items.map((r) => r.id)).toEqual([ra1.id, ra2.id]);
   });
 
   it("постранично: курсор продолжает с того же места", async () => {
@@ -422,7 +424,11 @@ describe("заявки вендора A", () => {
       await call(`/vendor/requests?tab=new&limit=1&cursor=${first.nextCursor}`, bearer(A.token))
     ).json()) as VendorRequestPage;
     expect(second.items).toHaveLength(1);
-    expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
+    expect([first.items[0]?.id, second.items[0]?.id]).toEqual([ra1.id, ra2.id]);
+    expect(second.nextCursor).toBeNull();
+    // Курсор открытой вкладки не подходит закрытой
+    const other = await call(`/vendor/requests?tab=closed&cursor=${first.nextCursor}`, bearer(A.token));
+    expect(other.status).toBe(422);
   });
 
   it("открытие новой заявки: просмотрена, телефон клиента — с записью в журнал", async () => {
@@ -499,6 +505,25 @@ describe("заявки вендора A", () => {
       [ra1.id],
     );
     expect(rows[0]?.first_response_by).toBe("vendor_user");
+  });
+
+  it("«В работе»: ждущая ответа выше ответившей, хотя её срок позже", async () => {
+    // ra1 уже «связались»; ra2 открываем — просмотрена, ответа ещё нет
+    expect((await call(`/vendor/requests/${ra2.id}`, bearer(A.token))).status).toBe(200);
+    const page = (await (
+      await call("/vendor/requests?tab=active", bearer(A.token))
+    ).json()) as VendorRequestPage;
+    expect(page.items.map((r) => [r.id, r.status])).toEqual([
+      [ra2.id, "viewed"],
+      [ra1.id, "contacted"],
+    ]);
+    const first = (await (
+      await call("/vendor/requests?tab=active&limit=1", bearer(A.token))
+    ).json()) as VendorRequestPage;
+    const second = (await (
+      await call(`/vendor/requests?tab=active&limit=1&cursor=${first.nextCursor}`, bearer(A.token))
+    ).json()) as VendorRequestPage;
+    expect([first.items[0]?.id, second.items[0]?.id]).toEqual([ra2.id, ra1.id]);
   });
 
   it("отказ без причины — 422; «занято» занимает дату, возврат её освобождает", async () => {

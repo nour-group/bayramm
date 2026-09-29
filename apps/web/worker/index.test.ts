@@ -73,11 +73,18 @@ describe("воркер клиента", () => {
 describe("index.html клиента", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
-  it("SDK Mini App подключён до бандла приложения, обычным скриптом", () => {
-    const sdk = html.indexOf('<script src="https://telegram.org/js/telegram-web-app.js"></script>');
-    const app = html.indexOf('<script type="module" src="/src/main.tsx"></script>');
-    expect(sdk).toBeGreaterThan(-1);
-    expect(app).toBeGreaterThan(sdk);
+  it("сторонних скриптов нет: SDK Mini App грузит код и только внутри Telegram", () => {
+    const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]);
+    expect(scripts).toEqual(["/src/main.tsx"]);
+    expect(html).not.toContain("telegram.org");
+    expect(html).not.toContain("nosemgrep");
+  });
+
+  it("основной шрифт предзагружается со своего origin", () => {
+    expect(html).toContain(
+      '<link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />',
+    );
+    for (const host of ["fonts.googleapis.com", "fonts.gstatic.com"]) expect(html).not.toContain(host);
   });
 
   it("встроенных скриптов и стилей нет (CSP их не пропустит)", () => {

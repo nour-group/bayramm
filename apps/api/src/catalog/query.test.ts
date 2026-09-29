@@ -88,7 +88,14 @@ describe("parseCatalogQuery", () => {
 });
 
 describe("курсор", () => {
-  const cursor: CatalogCursor = { sort: "price_desc", date: "2026-10-03", busy: true, key: -150000, id: ID };
+  const cursor: CatalogCursor = {
+    sort: "price_desc",
+    date: "2026-10-03",
+    guests: null,
+    busy: true,
+    key: -150000,
+    id: ID,
+  };
 
   it("туда и обратно; строка — base64url без дополнения", () => {
     const encoded = encodeCursor(cursor);
@@ -100,6 +107,8 @@ describe("курсор", () => {
       busy: false,
       key: 0,
     });
+    const withGuests = { ...cursor, guests: 300, key: -45_000_000 };
+    expect(decodeCursor(encodeCursor(withGuests))).toEqual(withGuests);
   });
 
   it("параметр cursor продолжает ту же выдачу", () => {
@@ -115,14 +124,17 @@ describe("курсор", () => {
     ["не base64url", "not a cursor!"],
     ["не JSON", Buffer.from("{oops").toString("base64url")],
     ["объект вместо массива", b64({ sort: "price_asc" })],
-    ["другая версия", b64([2, "price_desc", "2026-10-03", 1, -150000, ID])],
-    ["неизвестная сортировка", b64([1, "promo", "2026-10-03", 1, -150000, ID])],
-    ["кривая дата", b64([1, "price_desc", "2026-02-30", 1, -150000, ID])],
-    ["busy не 0/1", b64([1, "price_desc", "2026-10-03", true, -150000, ID])],
-    ["ключ дробный", b64([1, "price_desc", "2026-10-03", 1, 1.5, ID])],
-    ["ключ строкой", b64([1, "price_desc", "2026-10-03", 1, "1; drop table", ID])],
-    ["id не uuid", b64([1, "price_desc", "2026-10-03", 1, -150000, "1 or 1=1"])],
-    ["лишнее поле", b64([1, "price_desc", "2026-10-03", 1, -150000, ID, 0])],
+    ["старая версия без гостей", b64([1, "price_desc", "2026-10-03", 1, -150000, ID])],
+    ["другая версия", b64([3, "price_desc", "2026-10-03", null, 1, -150000, ID])],
+    ["неизвестная сортировка", b64([2, "promo", "2026-10-03", null, 1, -150000, ID])],
+    ["кривая дата", b64([2, "price_desc", "2026-02-30", null, 1, -150000, ID])],
+    ["гости строкой", b64([2, "price_desc", "2026-10-03", "300", 1, -150000, ID])],
+    ["гостей больше 5000", b64([2, "price_desc", "2026-10-03", 5001, 1, -150000, ID])],
+    ["busy не 0/1", b64([2, "price_desc", "2026-10-03", null, true, -150000, ID])],
+    ["ключ дробный", b64([2, "price_desc", "2026-10-03", null, 1, 1.5, ID])],
+    ["ключ строкой", b64([2, "price_desc", "2026-10-03", null, 1, "1; drop table", ID])],
+    ["id не uuid", b64([2, "price_desc", "2026-10-03", null, 1, -150000, "1 or 1=1"])],
+    ["лишнее поле", b64([2, "price_desc", "2026-10-03", null, 1, -150000, ID, 0])],
     ["слишком длинный", "A".repeat(600)],
   ])("%s — null, в запросе — 400 invalid_cursor", (_, value) => {
     expect(decodeCursor(value)).toBeNull();
@@ -132,12 +144,14 @@ describe("курсор", () => {
     expect(err).toMatchObject({ status: 400, code: "invalid_cursor" });
   });
 
-  it("курсор другой сортировки или даты — 400 invalid_cursor", () => {
+  it("курсор другой сортировки, даты или числа гостей — 400 invalid_cursor", () => {
     const encoded = encodeCursor(cursor);
     const variants: Record<string, string>[] = [
       { sort: "price_asc", date: "2026-10-03" },
       { sort: "price_desc", date: "2026-10-04" },
       { sort: "price_desc" },
+      // сравнимая цена зависит от числа гостей: ключи другой выдачи
+      { sort: "price_desc", date: "2026-10-03", guests: "300" },
     ];
     for (const params of variants) {
       const err = rejection(() => parseCatalogQuery(q({ ...params, cursor: encoded })));

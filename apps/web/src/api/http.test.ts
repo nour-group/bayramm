@@ -200,4 +200,38 @@ describe("HTTP-клиент API", () => {
     await expect(api.withdrawRequest("r-1")).resolves.toMatchObject({ status: "withdrawn" });
     expect(seen.at(-1)).toMatchObject({ url: "/api/requests/r-1/withdraw", method: "POST" });
   });
+
+  it("свой профиль и данные: GET/PATCH /me, выгрузка, отзыв согласия — с сессией", async () => {
+    const me = { id: "c-1", locale: "uz", notifications: true };
+    const { api, seen } = setup({
+      "POST /api/auth/telegram": [json(200, SESSION)],
+      "GET /api/me": [json(200, me)],
+      "PATCH /api/me": [json(200, { ...me, locale: "ru" })],
+      "GET /api/me/export": [json(200, { version: 1 })],
+      "POST /api/me/consents/withdraw": [json(200, { withdrawn: true })],
+    });
+    await api.me();
+    await expect(api.updateMe({ locale: "ru" })).resolves.toMatchObject({ locale: "ru" });
+    await expect(api.exportMyData()).resolves.toEqual({ version: 1 });
+    await expect(api.withdrawConsent({ purpose: "bot_notifications" })).resolves.toEqual({ withdrawn: true });
+    expect(seen.slice(1).map((s) => [s.method, s.url, s.body, s.headers.authorization])).toEqual([
+      ["GET", "/api/me", undefined, "Bearer tok-1"],
+      ["PATCH", "/api/me", { locale: "ru" }, "Bearer tok-1"],
+      ["GET", "/api/me/export", undefined, "Bearer tok-1"],
+      ["POST", "/api/me/consents/withdraw", { purpose: "bot_notifications" }, "Bearer tok-1"],
+    ]);
+  });
+
+  it("удаление аккаунта: DELETE /me → 204; дальше в этой вкладке вход закрыт", async () => {
+    const { api, seen } = setup({
+      "POST /api/auth/telegram": [json(200, SESSION), json(200, SESSION)],
+      "DELETE /api/me": [() => new Response(null, { status: 204 })],
+    });
+    await expect(api.deleteAccount()).resolves.toBeUndefined();
+    expect(window.sessionStorage.getItem(SESSION_KEY)).toBeNull();
+    // Новый вход создал бы аккаунт заново — его нет, запросов в сеть тоже
+    await expect(api.myRequests()).rejects.toMatchObject({ status: 401, code: "account_deleted" });
+    await expect(api.updateMe({ locale: "ru" })).rejects.toMatchObject({ code: "account_deleted" });
+    expect(seen.map((s) => `${s.method} ${s.url}`)).toEqual(["POST /api/auth/telegram", "DELETE /api/me"]);
+  });
 });

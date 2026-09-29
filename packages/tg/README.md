@@ -81,6 +81,22 @@ const { user, authDate } = result.data; // user: { id, firstName, lastName?, use
 Для виджета у бота должен быть домен сайта: `/setdomain` в @BotFather. Один
 бот — один домен.
 
+## Mini App в браузере
+
+`@bayramm/tg/webapp` — только для браузера: тип SDK, `getWebApp()` и загрузчик SDK.
+
+```ts
+import { loadTelegramWebApp } from "@bayramm/tg/webapp";
+
+const webApp = await loadTelegramWebApp(); // null — обычный браузер или SDK не загрузился
+```
+
+`loadTelegramWebApp` грузит `telegram-web-app.js` (`TELEGRAM_WEB_APP_SCRIPT` — тот же
+адрес пускает CSP в `@bayramm/edge`) только если страницу открыл Telegram: параметры
+запуска `tgWebApp*` в адресе или сохранённые SDK в `sessionStorage`. В обычном браузере
+сторонний скрипт не грузится вовсе. Ждёт не дольше 8 секунд; несколько вызовов при старте
+делят одну загрузку.
+
 ## Deep links
 
 Ссылка на карточку вендора: `t.me/<бот>/<приложение>?startapp=vendor_<id>`.

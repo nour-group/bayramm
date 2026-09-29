@@ -635,6 +635,12 @@ textarea.field-input {
   pointer-events: none;
 }
 
+/* Как сравнили цены за гостя и за мероприятие — строкой под заголовком и порядком */
+.list-head .sort-hint {
+  flex-basis: 100%;
+  margin-top: 0;
+}
+
 .cards {
   display: grid;
   gap: var(--gap-12);
@@ -706,6 +712,11 @@ textarea.field-input {
 
 .card-price {
   margin-top: 4px;
+}
+
+.card-estimate {
+  color: var(--muted);
+  font-size: var(--fs-12-5);
 }
 
 .card-price b,
@@ -813,6 +824,12 @@ button.cal-day {
   background: var(--busy);
   color: var(--busy-ink);
   text-decoration: line-through;
+}
+
+/* Календарь только для показа (карточка площадки): число — текст, а не неактивная
+   кнопка, ему нужен контраст 4,5:1. Приглушённый цвет и зачёркивание — не красный */
+.cal-view .cal-day.busy {
+  color: var(--muted);
 }
 
 .cal-legend {
@@ -1418,6 +1435,38 @@ button.cal-day {
 .doc .prose {
   padding-bottom: 12px;
   font-size: var(--fs-14);
+}
+
+/* Мои данные: выгрузка, уведомления, удаление — блоки друг под другом */
+.data-block {
+  display: grid;
+  justify-items: start;
+  gap: var(--gap-9);
+  margin-top: 12px;
+}
+
+.data-block .doc,
+.data-block .confirm {
+  justify-self: stretch;
+}
+
+.data-dump {
+  max-height: 320px;
+  margin: 0 0 12px;
+  overflow: auto;
+  font-size: var(--fs-12-5);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.delete-what {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: var(--fs-13-5);
+}
+
+.delete-what li + li {
+  margin-top: 4px;
 }
 
 .tg-cta {

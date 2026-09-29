@@ -3,7 +3,8 @@
 // писать (отозвал согласие, отключён, отвязан), не ищем обходными путями —
 // строка уходит в dead с причиной.
 
-import type { Lang } from "@bayramm/shared";
+import { type Lang, trimTrailingSlashes } from "@bayramm/shared";
+import { type CatalogLinkFilters, clientCatalogPath, clientRequestPath } from "@bayramm/shared/api";
 import { sql } from "kysely";
 import type { Tx } from "../db/actor";
 import { clientProfilesAs, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
@@ -60,11 +61,21 @@ export type Rendered =
 const skip = (reason: string): Rendered => ({ ok: false, reason });
 
 // ── ссылки ─────────────────────────────────────────────────────────────────
-// Заявка в кабинете вендора — /requests/<id>. Клиенту — корень Mini App: там
-// «Мои заявки» и каталог (куда вести на «похожие», решает клиентское приложение)
+// Кнопка открывает Mini App сразу на нужном экране (web_app с путём):
+//   · вендору — заявка в кабинете, /requests/<id>;
+//   · клиенту о статусе — эта заявка в «Моих заявках»;
+//   · клиенту об отказе и просрочке — каталог «похожих»: та же дата, столько же
+//     гостей, тот же район, что в заявке (пути — @bayramm/shared/api, их же
+//     разбирает apps/web).
 
 export const vendorRequestUrl = (urls: Urls, requestId: string) =>
-  `${urls.vendorAppUrl}/requests/${requestId}`;
+  `${trimTrailingSlashes(urls.vendorAppUrl)}/requests/${requestId}`;
+
+export const clientRequestUrl = (urls: Urls, requestId: string) =>
+  `${trimTrailingSlashes(urls.webAppUrl)}${clientRequestPath(requestId)}`;
+
+export const clientSimilarUrl = (urls: Urls, filters: CatalogLinkFilters) =>
+  `${trimTrailingSlashes(urls.webAppUrl)}${clientCatalogPath(filters)}`;
 
 const button = (text: string, url: string): ReplyMarkup => ({
   inline_keyboard: [[{ text, web_app: { url } }]],
@@ -139,6 +150,8 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
 
 interface RequestRow {
   readonly facts: Readonly<Record<Lang, RequestFacts>>;
+  /** Фильтры «похожих»: дата события, гости, район площадки */
+  readonly similar: CatalogLinkFilters;
   readonly clientId: string;
   readonly vendorId: string;
   readonly vendorCode: string;
@@ -160,6 +173,7 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
       "r.created_at",
       "r.sla_due_at",
       "l.name as listing",
+      "l.district_code",
       "o.name_ru",
       "o.name_uz",
       "v.public_code",
@@ -176,6 +190,7 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
   };
   return {
     facts: { ru: { ...base, occasion: row.name_ru }, uz: { ...base, occasion: row.name_uz } },
+    similar: { date: row.event_date, guests: row.guests, district: row.district_code },
     clientId: row.client_id,
     vendorId: row.vendor_id,
     vendorCode: row.public_code,
@@ -260,16 +275,19 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
     case "client.request_status":
       switch (field(row.payload, "status")) {
         case "contacted":
-          return message(t.contacted(facts), button(t.buttons.openApp, urls.webAppUrl));
+          return message(t.contacted(facts), button(t.buttons.myRequest, clientRequestUrl(urls, requestId)));
         case "deal":
-          return message(t.deal(facts), button(t.buttons.openApp, urls.webAppUrl));
+          return message(t.deal(facts), button(t.buttons.myRequest, clientRequestUrl(urls, requestId)));
         case "declined":
-          return message(t.declined(facts), button(t.buttons.similar, urls.webAppUrl));
+          return message(
+            t.declined(facts),
+            button(t.buttons.similar, clientSimilarUrl(urls, request.similar)),
+          );
         default:
           return skip("bad_payload");
       }
     case "client.sla_breach":
-      return message(t.slaBreach(facts), button(t.buttons.similar, urls.webAppUrl));
+      return message(t.slaBreach(facts), button(t.buttons.similar, clientSimilarUrl(urls, request.similar)));
     case "ops.sla_breach": {
       const ops: OpsSlaFacts = { ...request.facts.ru, vendorCode: request.vendorCode };
       return message(opsSlaBreach(ops));

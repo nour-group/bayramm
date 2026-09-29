@@ -19,7 +19,7 @@ import {
   type Section,
   useRoute,
 } from "./router";
-import { announceReady, launchedFromTelegram, loadTelegramSdk } from "./telegram";
+import { announceReady, launchedFromTelegram, loadTelegramWebApp } from "./telegram";
 import { Heading } from "./ui";
 import { Venue } from "./Venue";
 
@@ -38,7 +38,7 @@ const NAV_ICON: Readonly<Record<Section, IconName>> = {
  * ошибка с повтором.
  */
 async function startSession(): Promise<Auth> {
-  const webApp = await loadTelegramSdk();
+  const webApp = await loadTelegramWebApp();
   if (!webApp) return { kind: launchedFromTelegram() ? "error" : "outside" };
   announceReady(webApp);
   try {

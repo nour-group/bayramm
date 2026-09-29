@@ -43,9 +43,12 @@ describe("listCatalog", () => {
     expect(fake.log.at(-1)).toBe("commit");
   });
 
+  const PER_GUEST_OR_EVENT =
+    "(case when l.price_unit = 'per_guest' then l.price_from_uzs else (l.price_from_uzs + l.cap_max - 1) / l.cap_max end)";
+
   it.each<[CatalogSort, string]>([
-    ["price_asc", "l.price_from_uzs"],
-    ["price_desc", "(-l.price_from_uzs)"],
+    ["price_asc", PER_GUEST_OR_EVENT],
+    ["price_desc", `(-${PER_GUEST_OR_EVENT})`],
     ["capacity_desc", "(-l.cap_max)::bigint"],
   ])("%s: занятые в конце, затем ключ сортировки, затем id", async (sort, key) => {
     const fake = fakeDb();
@@ -53,6 +56,24 @@ describe("listCatalog", () => {
     const query = fake.queries.find(isCatalog);
     expect(query?.sql).toContain(`order by (av.listing_id is not null), ${key}, "l"."id" limit`);
     expect(query?.sql).toContain(`${key} as "sort_key"`);
+  });
+
+  it("с числом гостей цена сравнивается как сумма на них: за гостя × гости, за мероприятие как есть", async () => {
+    const fake = fakeDb();
+    await listCatalog(fake.db, parseCatalogQuery({ guests: ["300"] }));
+    const query = fake.queries.find(isCatalog);
+    expect(query?.sql).toMatch(
+      /order by \(av\.listing_id is not null\), \(case when l\.price_unit = 'per_guest' then l\.price_from_uzs \* \$(\d+)::bigint else l\.price_from_uzs end\), "l"\."id"/,
+    );
+    const placeholder = Number(/l\.price_from_uzs \* \$(\d+)::bigint/.exec(query?.sql ?? "")?.[1]);
+    expect(query?.parameters[placeholder - 1]).toBe(300);
+  });
+
+  it("курсор страницы с гостями помнит их число", async () => {
+    const rows = [cardRow(1), cardRow(2)];
+    const fake = fakeDb((q) => (isCatalog(q) ? rows : []));
+    const page = await listCatalog(fake.db, parseCatalogQuery({ limit: ["1"], guests: ["120"] }));
+    expect(decodeCursor(page.nextCursor ?? "")).toMatchObject({ guests: 120, id: ID(1) });
   });
 
   it("только публичное: активный листинг включённой категории, цена, вместимость, ≥ 3 одобренных фото", async () => {
@@ -94,6 +115,7 @@ describe("listCatalog", () => {
     expect(decodeCursor(page.nextCursor ?? "")).toEqual({
       sort: "price_asc",
       date: "2026-10-03",
+      guests: null,
       busy: false,
       key: 200_000,
       id: ID(2),
@@ -112,6 +134,7 @@ describe("listCatalog", () => {
     const cursor = encodeCursor({
       sort: "price_desc",
       date: "2026-10-03",
+      guests: null,
       busy: true,
       key: -500_000,
       id: ID(5),
@@ -121,9 +144,8 @@ describe("listCatalog", () => {
       parseCatalogQuery({ sort: ["price_desc"], date: ["2026-10-03"], cursor: [cursor] }),
     );
     const query = fake.queries.find(isCatalog);
-    expect(query?.sql).toMatch(
-      /\(\(av\.listing_id is not null\), \(-l\.price_from_uzs\), l\.id\) > \(\$\d+::boolean, \$\d+::bigint, \$\d+::uuid\)/,
-    );
+    expect(query?.sql).toContain(`((av.listing_id is not null), (-${PER_GUEST_OR_EVENT}), l.id) > ($`);
+    expect(query?.sql).toMatch(/\) > \(\$\d+::boolean, \$\d+::bigint, \$\d+::uuid\)/);
     expect(query?.parameters).toEqual(expect.arrayContaining([true, -500_000, ID(5)]));
     expect(query?.sql).not.toContain(ID(5));
   });
