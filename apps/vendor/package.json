@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@bayramm/edge": "workspace:*",
+    "@bayramm/media": "workspace:*",
     "@bayramm/shared": "workspace:*",
     "@bayramm/ui": "workspace:*",
     "react": "^19.3.0",

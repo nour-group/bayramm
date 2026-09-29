@@ -1,5 +1,6 @@
 import { contentSecurityPolicy } from "@bayramm/edge";
 import { echoApi, SPA_FILES, spaAssets } from "@bayramm/edge/testing";
+import { mediaImageOrigins } from "@bayramm/media";
 import { describe, expect, it, vi } from "vitest";
 
 // Под Vitest import.meta.env.DEV = true; проверяем воркер таким, каким он будет в сборке
@@ -43,7 +44,9 @@ describe("воркер кабинета вендора", () => {
   it("HTML с заголовками безопасности", async () => {
     const { get } = setup();
     const { headers } = await get("/calendar");
-    expect(headers.get("content-security-policy")).toBe(contentSecurityPolicy());
+    expect(headers.get("content-security-policy")).toBe(
+      contentSecurityPolicy({ imageOrigins: mediaImageOrigins() }),
+    );
     expect(headers.get("x-content-type-options")).toBe("nosniff");
     expect(headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
     expect(headers.get("permissions-policy")).toContain("camera=()");
@@ -57,5 +60,9 @@ describe("воркер кабинета вендора", () => {
     expect(csp).not.toContain("ws:");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("script-src 'self';");
+    expect(csp).toContain(
+      "img-src 'self' data: blob: https://media-staging.bayramm.uz https://media.bayramm.uz;",
+    );
+    expect(csp).not.toContain("localhost");
   });
 });

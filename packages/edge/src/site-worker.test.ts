@@ -71,6 +71,18 @@ describe("createSiteWorker", () => {
     expect(res.headers.get("x-frame-options")).toBeNull();
   });
 
+  it("imageOrigins доходит до img-src", async () => {
+    const { get } = setup({ imageOrigins: ["https://media.example"] });
+    const res = await get("/");
+    expect(res.headers.get("content-security-policy")).toContain(
+      "img-src 'self' data: blob: https://media.example;",
+    );
+  });
+
+  it("неверный источник — ошибка при создании воркера, а не на запросе", () => {
+    expect(() => createSiteWorker({ imageOrigins: ["https://media.example/x"] })).toThrow(TypeError);
+  });
+
   it("telegramLogin доходит до CSP, встраивать страницу по-прежнему нельзя", async () => {
     const { get } = setup({ telegramLogin: true });
     const res = await get("/login");

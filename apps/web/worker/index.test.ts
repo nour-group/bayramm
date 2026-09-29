@@ -1,5 +1,6 @@
 import { contentSecurityPolicy } from "@bayramm/edge";
 import { echoApi, SPA_FILES, spaAssets } from "@bayramm/edge/testing";
+import { mediaImageOrigins } from "@bayramm/media";
 import { describe, expect, it, vi } from "vitest";
 
 // Под Vitest import.meta.env.DEV = true; проверяем воркер таким, каким он будет в сборке
@@ -43,7 +44,16 @@ describe("воркер клиента", () => {
   it("в сборке CSP строгий, встраивать может только Telegram Web", async () => {
     const { get } = setup();
     const csp = (await get("/")).headers.get("content-security-policy");
-    expect(csp).toBe(contentSecurityPolicy({ frameAncestors: ["https://web.telegram.org"] }));
+    expect(csp).toBe(
+      contentSecurityPolicy({
+        frameAncestors: ["https://web.telegram.org"],
+        imageOrigins: mediaImageOrigins(),
+      }),
+    );
+    expect(csp).toContain(
+      "img-src 'self' data: blob: https://media-staging.bayramm.uz https://media.bayramm.uz;",
+    );
+    expect(csp).not.toContain("localhost");
     expect(csp).not.toContain("'unsafe-inline'");
     expect(csp).toContain("frame-ancestors https://web.telegram.org");
   });

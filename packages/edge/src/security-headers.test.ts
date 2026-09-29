@@ -29,6 +29,36 @@ describe("Content-Security-Policy", () => {
     expect(csp["img-src"]).toEqual(["'self'", "data:", "blob:"]);
   });
 
+  it("imageOrigins добавляет источники только в img-src", () => {
+    const origins = ["https://media.example", "https://media-staging.example"];
+    const withImages = parseCsp(contentSecurityPolicy({ imageOrigins: origins }));
+    expect(withImages["img-src"]).toEqual(["'self'", "data:", "blob:", ...origins]);
+    for (const [name, sources] of Object.entries(withImages)) {
+      if (name !== "img-src") expect(sources).toEqual(csp[name]);
+    }
+  });
+
+  it("imageOrigins принимает только чистый https-origin", () => {
+    for (const bad of [
+      "https://media.example/",
+      "https://media.example/path",
+      "https://*.example",
+      "https://media.example 'unsafe-inline'",
+      "http://media.example",
+      "media.example",
+      "data:",
+      "",
+    ]) {
+      expect(() => contentSecurityPolicy({ imageOrigins: [bad] }), bad).toThrow(TypeError);
+    }
+  });
+
+  it("http-origin для картинок — только в dev", () => {
+    const local = "http://localhost:8790";
+    expect(() => contentSecurityPolicy({ imageOrigins: [local] })).toThrow(TypeError);
+    expect(parseCsp(contentSecurityPolicy({ imageOrigins: [local], dev: true }))["img-src"]).toContain(local);
+  });
+
   it("без встроенного кода, eval, плагинов и подмены base", () => {
     const all = Object.values(csp).flat();
     expect(all).not.toContain("'unsafe-inline'");

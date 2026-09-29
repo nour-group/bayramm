@@ -55,7 +55,8 @@ pnpm test             # тесты пакетов, приложений и вс�
 `/api/*` уходит в API по сервисной привязке без префикса, остальное — статика с
 CSP и прочими заголовками безопасности. CSP пускает только свой origin и не
 допускает встроенных скриптов и стилей; нужен внешний источник (шрифт,
-`telegram-web-app.js`) — добавить его в `security-headers.ts` явно. Так сделано
+`telegram-web-app.js`) — добавить его в `security-headers.ts` явно. Фото с воркера
+media — параметр `imageOrigins: mediaImageOrigins(dev)` (только чистый origin). Так сделано
 для виджета входа Telegram: опция `telegramLogin` пускает его скрипт и фрейм
 `oauth.telegram.org` — только в admin. Колбэк `data-onauth` виджет исполняет
 через `eval`, поэтому панель берёт данные через редирект `data-auth-url`.

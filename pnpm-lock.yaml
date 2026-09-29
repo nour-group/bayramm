@@ -17,6 +17,9 @@ importers:
       '@bayramm/edge':
         specifier: workspace:*
         version: link:../../packages/edge
+      '@bayramm/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@bayramm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -119,6 +122,9 @@ importers:
       '@bayramm/edge':
         specifier: workspace:*
         version: link:../../packages/edge
+      '@bayramm/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@bayramm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -165,6 +171,9 @@ importers:
       '@bayramm/edge':
         specifier: workspace:*
         version: link:../../packages/edge
+      '@bayramm/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       react:
         specifier: ^19.3.0
         version: 19.3.0

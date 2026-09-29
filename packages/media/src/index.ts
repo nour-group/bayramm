@@ -15,6 +15,7 @@ export {
   type MediaEnv,
   type MediaWidth,
   MIN_SHORT_SIDE,
+  mediaImageOrigins,
   UPLOAD_MIME_TYPES,
   UPLOAD_QUALITY,
   type UploadMime,
