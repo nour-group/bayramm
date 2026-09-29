@@ -138,19 +138,22 @@ export function Catalog() {
           <label className="field-label" htmlFor={districtId}>
             {t.fDistrict}
           </label>
-          <select
-            id={districtId}
-            className="field-input"
-            value={filters.district ?? ""}
-            onChange={(event) => setFilters({ district: event.target.value || null })}
-          >
-            <option value="">{t.anyDistrict}</option>
-            {districts.map((district) => (
-              <option key={district.code} value={district.code}>
-                {pick(district.name, lang)}
-              </option>
-            ))}
-          </select>
+          <span className="select">
+            <select
+              id={districtId}
+              className="field-input"
+              value={filters.district ?? ""}
+              onChange={(event) => setFilters({ district: event.target.value || null })}
+            >
+              <option value="">{t.anyDistrict}</option>
+              {districts.map((district) => (
+                <option key={district.code} value={district.code}>
+                  {pick(district.name, lang)}
+                </option>
+              ))}
+            </select>
+            <Icon name="caretDown" size={14} className="select-caret" />
+          </span>
         </div>
       </section>
 
@@ -196,29 +199,33 @@ export function Catalog() {
             {t.sortBy}
           </label>
           <Icon name="sliders" size={14} />
-          <select
-            id={sortId}
-            value={filters.sort ?? DEFAULT_SORT}
-            onChange={(event) => {
-              const sort = SORTS.find((s) => s === event.target.value) ?? DEFAULT_SORT;
-              setFilters({ sort: sort === DEFAULT_SORT ? null : sort });
-            }}
-          >
-            {SORTS.map((sort) => (
-              <option key={sort} value={sort}>
-                {t[SORT_LABEL[sort]]}
-              </option>
-            ))}
-          </select>
+          <span className="select">
+            <select
+              id={sortId}
+              value={filters.sort ?? DEFAULT_SORT}
+              onChange={(event) => {
+                const sort = SORTS.find((s) => s === event.target.value) ?? DEFAULT_SORT;
+                setFilters({ sort: sort === DEFAULT_SORT ? null : sort });
+              }}
+            >
+              {SORTS.map((sort) => (
+                <option key={sort} value={sort}>
+                  {t[SORT_LABEL[sort]]}
+                </option>
+              ))}
+            </select>
+            <Icon name="caretDown" size={14} className="select-caret" />
+          </span>
         </div>
       </div>
 
       {feed.status === "loading" ? <Loading /> : null}
       {feed.status === "error" ? <ErrorState onRetry={feed.retry} /> : null}
+      {/* Пусто без фильтров — площадок ещё нет: «под эти условия никого» тут было бы неправдой */}
       {feed.status !== "loading" && feed.status !== "error" && items.length === 0 ? (
         <EmptyState
-          title={t.empty_h}
-          text={t.emptyHint}
+          title={hasFilters(filters) ? t.empty_h : t.noVenues_h}
+          text={hasFilters(filters) ? t.emptyHint : t.noVenues}
           action={
             hasFilters(filters) ? (
               <button

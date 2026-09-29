@@ -145,6 +145,15 @@ describe("styles.css клиента", () => {
     expect(declarationsOf(":focus-visible")).toMatch(/outline:\s*3px solid var\(--coral\)/);
   });
 
+  it("выпадающий список — своя стрелка с отступом от рамки, после правил, которые переопределяет", () => {
+    const select = declarationsOf(".select select");
+    expect(select).toMatch(/(^|[;\s])appearance:\s*none/);
+    expect(select).toMatch(/padding-right:\s*40px/);
+    expect(declarationsOf(".select-caret")).toMatch(/pointer-events:\s*none/);
+    expect(css.indexOf(".select select {")).toBeGreaterThan(css.indexOf(".sort select {"));
+    expect(css.indexOf(".select select {")).toBeGreaterThan(css.indexOf(".field-input {"));
+  });
+
   it("узор в data-URI без «#»", () => {
     for (const [uri] of css.matchAll(/url\("data:[^"]+"\)/g)) expect(uri).not.toContain("#");
   });

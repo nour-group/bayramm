@@ -413,9 +413,11 @@ export const ru = {
   withdrawKeep: "Оставить",
   errWithdraw: "Не удалось отозвать заявку. Попробуйте ещё раз.",
   duplicateNote: "Заявка на эту дату уже отправлена — вот она.",
-  cp_client_service: "Обслуживание на площадке",
+  cp_client_service: "Аккаунт и мои заявки",
   cp_request_transfer: "Передача заявки вендору",
   cp_bot_notifications: "Уведомления в Telegram-боте",
   consentVersion: (v: number) => `версия ${v}`,
   docsEmpty: "Документы пока не опубликованы.",
+  noVenues_h: "Залы скоро появятся",
+  noVenues: "Мы подключаем первые площадки Ташкента. Загляните чуть позже.",
 };

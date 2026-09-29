@@ -610,6 +610,31 @@ textarea.field-input {
   font-weight: 600;
 }
 
+/* Выпадающий список: своя стрелка вместо системной. Системную Chrome и Safari прижимают
+   к рамке и не отодвигают отступом. Стрелка не ловит нажатия — тап приходится в select.
+   Правило после .field-input и .sort select, которые оно переопределяет (ловушка №7) */
+.select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.select select {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  padding-right: 40px;
+  cursor: pointer;
+}
+
+.select-caret {
+  position: absolute;
+  right: 14px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
 .cards {
   display: grid;
   gap: var(--gap-12);
