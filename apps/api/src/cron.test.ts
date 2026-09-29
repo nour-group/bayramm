@@ -40,6 +40,13 @@ describe("cron", () => {
     for (const secret of [BOT_TOKEN, env.ID_HASH_KEY, "nothing"]) expect(logged).not.toContain(secret);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("обслуживание — только в окне 21:00 UTC (02:00 по Ташкенту)", async () => {
+    await runCron(makeEnv(), new Date("2026-09-29T20:59:00Z"));
+    expect(JSON.stringify(errors.mock.calls)).not.toContain('"step":"daily_maintenance"');
+    await runCron(makeEnv(), new Date("2026-09-29T21:00:00Z"));
+    expect(JSON.stringify(errors.mock.calls)).toContain('"step":"daily_maintenance"');
+  });
 });
 
 describe("outboxKick", () => {

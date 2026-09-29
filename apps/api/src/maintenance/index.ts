@@ -3,16 +3,12 @@
 // в app.run_daily_maintenance() (миграция 20260930140000_platform_hardening.sql),
 // здесь только вызов под актором system.
 //
-// Отдельного Cron Trigger нет (на бесплатном тарифе их пять на аккаунт): вызов
-// встраивается в ежеминутный scheduled-обработчик воркера API —
-//
-//   if (isDailyMaintenanceTick(controller.scheduledTime)) {
-//     ctx.waitUntil(runDailyMaintenance(env).then(logDailyMaintenance, …));
-//   }
-//
-// Окно — час с 21:00 UTC (02:00 по Ташкенту). База сама пропускает повтор в тот
-// же день, а упавший запуск откатывается целиком — следующая минута окна его
-// повторит. Лишние вызовы в окне стоят одного короткого запроса.
+// Отдельного Cron Trigger нет (на бесплатном тарифе их пять на аккаунт): шаг
+// встроен в ежеминутный cron API (src/cron.ts) и срабатывает в окне — час с
+// 21:00 UTC (02:00 по Ташкенту). База сама пропускает повтор в тот же день, а
+// упавший запуск откатывается целиком — следующая минута окна его повторит.
+// Лишние вызовы в окне стоят одного короткого запроса. runDailyMaintenance —
+// тот же запуск со своим подключением (ручной вызов, тесты).
 
 import { sql } from "kysely";
 import { SYSTEM, withActor } from "../db/actor";
@@ -71,9 +67,4 @@ export async function runDailyMaintenance(env: Pick<Env, "HYPERDRIVE">): Promise
   } finally {
     await db.destroy().catch((err: unknown) => console.error("maintenance: pool close failed", err));
   }
-}
-
-/** Строка в лог воркера: только числа. */
-export function logDailyMaintenance(result: DailyMaintenanceResult): void {
-  if (result.ran) console.log("maintenance: daily run", result);
 }

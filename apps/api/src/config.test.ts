@@ -53,7 +53,6 @@ describe("cron в wrangler.jsonc API", () => {
   // SLA и outbox — раз в минуту в каждом окружении
   it.each([undefined, "staging", "production"])("%s — раз в минуту", (env) => {
     expect(read(API_CONFIG, env).triggers.crons).toEqual(["* * * * *"]);
-    });
   });
 });
 

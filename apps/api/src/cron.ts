@@ -3,13 +3,17 @@
 //   2. outbox: отправка подошедших уведомлений, в том числе только что
 //      поставленных шагом 1 (notify/outbox.ts);
 //   3. чистка: update_id вебхука старше трёх дней (Telegram повторяет доставку
-//      не дольше суток).
+//      не дольше суток);
+//   4. раз в день, в окне 21:00–21:59 UTC (02:00 по Ташкенту): истечение заявок
+//      и сроки хранения (maintenance/index.ts). База сама пропускает повтор в тот
+//      же день, упавший запуск повторит следующая минута окна.
 // Шаги независимы: сбой одного — в лог, остальные выполняются.
 
 import { sql } from "kysely";
 import { SYSTEM, withActor } from "./db/actor";
 import { createDb, type Db } from "./db/client";
 import { isPgError } from "./errors";
+import { dailyMaintenance, isDailyMaintenanceTick } from "./maintenance";
 import { outboxDeps } from "./notify/kick";
 import { dispatchOutbox } from "./notify/outbox";
 import { sweepSla } from "./notify/sla";
@@ -53,7 +57,10 @@ export async function runCron(env: Env, now: Date = new Date()): Promise<boolean
       dispatchOutbox({ db, ...outboxDeps(env), now: () => new Date() }),
     );
     const purge = await step("telegram_updates", () => purgeTelegramUpdates(db));
-    return sla && outbox && purge;
+    const daily = isDailyMaintenanceTick(now.getTime())
+      ? await step("daily_maintenance", () => dailyMaintenance(db))
+      : true;
+    return sla && outbox && purge && daily;
   } finally {
     await db.destroy().catch(() => {});
   }
