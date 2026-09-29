@@ -4,10 +4,10 @@
 //   GET  /requests                → 200 ClientRequests
 //   POST /requests/:id/withdraw   → 200 ClientRequest
 //
-// Без токена — 401, сессия сотрудника — 403, чужая заявка — 404. Откуда пришла
-// заявка (tma или web), говорит заголовок X-Bayramm-Source (CLIENT_SOURCE_HEADER
-// контракта): "tma" шлёт Mini App внутри Telegram, всё остальное — web. Ответы
-// с данными клиента не кэшируются.
+// Без токена — 401, сессия сотрудника — 403, чужая заявка — 404, слишком часто —
+// 429 rate_limited (src/ratelimit.ts). Откуда пришла заявка (tma или web), говорит
+// заголовок X-Bayramm-Source (CLIENT_SOURCE_HEADER контракта): "tma" шлёт Mini App
+// внутри Telegram, всё остальное — web. Ответы с данными клиента не кэшируются.
 
 import { CLIENT_SOURCE_HEADER, type ClientRequests, type ClientSource } from "@bayramm/shared/api";
 import { Hono } from "hono";
@@ -17,6 +17,7 @@ import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
 import { outboxKick } from "../notify/kick";
+import { limitByActor } from "../ratelimit";
 import { parseCreateRequest } from "../requests/input";
 import { createRequest, listClientRequests, withdrawRequest } from "../requests/service";
 import { tashkentToday } from "../time";
@@ -52,8 +53,9 @@ requests.use(async (c, next) => {
 });
 requests.use(database, authenticate);
 
+// Лимит частоты по клиенту — после authenticate (по IP — ещё до маршрута, src/ratelimit.ts).
 // Уведомление вендору ставит триггер базы; outboxKick отправляет его сразу после ответа
-requests.post("/", limitBody, outboxKick, async (c) => {
+requests.post("/", limitByActor("RATE_LIMIT_REQUESTS_ACTOR"), limitBody, outboxKick, async (c) => {
   const { actor } = requireClient(c);
   const input = parseCreateRequest(await readJson(c.req.raw), tashkentToday());
   const created = await createRequest(

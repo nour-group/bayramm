@@ -8,21 +8,20 @@
 //   POST /requests  — по IP                 RATE_LIMIT_REQUESTS_IP     20 в минуту
 //                   — по актору (клиенту)   RATE_LIMIT_REQUESTS_ACTOR   5 в минуту
 //
-// Ключ по IP — HMAC(ID_HASH_KEY, IP) (auth/ip.ts): адрес не уходит даже в счётчик.
+// Лимиты по IP ставит mountRateLimits до маршрутов — до базы и проверки сессии.
+// Ключ — HMAC(ID_HASH_KEY, IP) (auth/ip.ts): адрес не уходит даже в счётчик.
 // Лимит по IP щедрый: у мобильных операторов за одним адресом много людей.
-// Ключ по актору — id клиента из сессии; для этого перед лимитом стоят database и
-// authenticate — маршрут /requests их не повторяет (оба пропускают уже сделанное).
+// Лимит по актору (limitByActor) стоит в самом маршруте после authenticate:
+// ключ — вид и id актора из сессии (routes/requests.ts).
 //
-// Превышение — 429 { error: { code: "rate_limited" } } и Retry-After в секундах.
+// Превышение — 429 { error: { code: "rate_limited" } }, Retry-After в секундах, no-store.
 // Нет привязки или она упала — запрос проходит, причина в логе: лимит защищает от
 // злоупотреблений, но сам не должен ронять вход.
 
 import type { Context, Hono, MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import { clientIp, ipKey } from "./auth/ip";
-import { authenticate } from "./auth/session";
 import type { Actor } from "./db/actor";
-import { database } from "./db/middleware";
 import type { AppEnv } from "./env";
 import { ApiError } from "./errors";
 
@@ -34,7 +33,10 @@ export type RateLimitBinding = "RATE_LIMIT_AUTH_IP" | "RATE_LIMIT_REQUESTS_IP" |
 export const rateLimited = () => new ApiError(429, "rate_limited", "Too many requests");
 
 function tooManyRequests(c: Context<AppEnv>): Response {
-  return c.json(rateLimited().toBody(), 429, { "Retry-After": String(RATE_LIMIT_PERIOD_SECONDS) });
+  return c.json(rateLimited().toBody(), 429, {
+    "Retry-After": String(RATE_LIMIT_PERIOD_SECONDS),
+    "Cache-Control": "no-store",
+  });
 }
 
 /** true — пропустить; false — лимит исчерпан. Сбой привязки — пропустить. */
@@ -83,15 +85,8 @@ export function limitByActor(binding: RateLimitBinding): MiddlewareHandler<AppEn
   });
 }
 
-/** Ставит лимиты перед маршрутами. Вызывать до app.route(...). */
+/** Лимиты по IP перед маршрутами. Вызывать до app.route(...). */
 export function mountRateLimits(app: Hono<AppEnv>): void {
   app.on("POST", "/auth/*", limitByIp("RATE_LIMIT_AUTH_IP"));
-  app.on(
-    "POST",
-    "/requests",
-    limitByIp("RATE_LIMIT_REQUESTS_IP"),
-    database,
-    authenticate,
-    limitByActor("RATE_LIMIT_REQUESTS_ACTOR"),
-  );
+  app.on("POST", "/requests", limitByIp("RATE_LIMIT_REQUESTS_IP"));
 }

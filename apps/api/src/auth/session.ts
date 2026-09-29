@@ -29,15 +29,8 @@ import { hashToken, parseAuthorization } from "./crypto";
  *
  * Сессии кабинета вендора появятся вместе со входом вендора — до тех пор их
  * токены получают 401.
- *
- * Актор уже определён раньше по цепочке (лимит по актору в ratelimit.ts) —
- * повторно сессию не ищем.
  */
 export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
-  if (c.get("actor") !== undefined) {
-    await next();
-    return;
-  }
   const bearer = parseAuthorization(c.req.header("Authorization"));
   if (bearer.kind === "none") {
     c.set("actor", GUEST);

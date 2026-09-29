@@ -31,7 +31,8 @@ export type ClientSource = "tma" | "web";
  *   409 duplicate_request (+ existingId), listing_not_active, consent_text_not_current,
  *       illegal_transition (отозвать можно только new/viewed/contacted) ·
  *   413 payload_too_large · 422 consent_required (details — поле), guests_over_capacity,
- *       invalid_input · 429 daily_request_limit · 503 service_unavailable · 500 internal_error
+ *       invalid_input · 429 daily_request_limit, rate_limited (Retry-After, секунды) ·
+ *   503 service_unavailable · 500 internal_error
  */
 export type ClientErrorCode =
   | "invalid_request"
@@ -49,6 +50,7 @@ export type ClientErrorCode =
   | "guests_over_capacity"
   | "invalid_input"
   | "daily_request_limit"
+  | "rate_limited"
   | "service_unavailable"
   | "internal_error";
 

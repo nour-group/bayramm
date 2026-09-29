@@ -1,12 +1,10 @@
 // Ограничение частоты: без базы, с поддельными привязками Rate Limiting
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { authenticate } from "./auth/session";
 import type { Actor } from "./db/actor";
-import { database } from "./db/middleware";
 import type { AppEnv } from "./env";
 import { handleError } from "./errors";
-import { limitByActor, mountRateLimits, RATE_LIMIT_PERIOD_SECONDS } from "./ratelimit";
+import { limitByActor, RATE_LIMIT_PERIOD_SECONDS } from "./ratelimit";
 import { allowAllLimiter, call, makeCtx, makeEnv } from "./testing/worker";
 
 afterEach(() => vi.restoreAllMocks());
@@ -40,6 +38,7 @@ describe("POST /auth/*: лимит по IP", () => {
     );
     expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBe(String(RATE_LIMIT_PERIOD_SECONDS));
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(await res.json()).toEqual({ error: { code: "rate_limited", message: "Too many requests" } });
     expect(limiter.calls).toHaveLength(1);
     // пул базы не открывался
@@ -150,22 +149,6 @@ describe("POST /requests", () => {
     );
     expect(res.status).toBe(401);
     expect(actorLimiter.calls).toHaveLength(0);
-  });
-
-  it("маршрут со своими database и authenticate не открывает второй пул", async () => {
-    const app = new Hono<AppEnv>();
-    mountRateLimits(app);
-    const requests = new Hono<AppEnv>();
-    requests.use(database, authenticate);
-    requests.post("/", (c) => c.json({ actor: c.var.actor.kind }));
-    app.route("/requests", requests);
-
-    const { ctx, pending } = makeCtx();
-    const res = await app.request("/requests", post(), makeEnv(), ctx);
-    await Promise.all(pending);
-    expect(await res.json()).toEqual({ actor: "guest" });
-    // закрытие пула — одно
-    expect(pending).toHaveLength(1);
   });
 });
 
