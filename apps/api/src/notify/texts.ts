@@ -48,6 +48,11 @@ export interface NoticeTexts {
   opsReminder(f: RequestFacts): string;
   /** client.request_status */
   contacted(f: RequestFacts): string;
+  /**
+   * client.request_status, «связались» отметил сотрудник (first_response_by = staff): не
+   * «площадка ответила», а команда Bayramm связалась с ней за клиента
+   */
+  contactedByTeam(f: RequestFacts): string;
   deal(f: RequestFacts): string;
   declined(f: RequestFacts): string;
   /** client.sla_breach: предложение, а не действие — заявка остаётся в силе */
@@ -73,6 +78,9 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
       "Клиент ждёт — ответьте в кабинете или позвоните ему.",
     contacted: (f) =>
       `«${f.listing}» ответил на заявку №${f.no} (${f.date}). Подробности — в «Моих заявках».`,
+    contactedByTeam: (f) =>
+      `Команда Bayramm связалась с «${f.listing}» по вашей заявке №${f.no} (${f.date}). ` +
+      "Площадка знает о заявке и свяжется с вами сама. Статус — в «Моих заявках».",
     deal: (f) => `Вы договорились с «${f.listing}» по заявке №${f.no} (${f.date}). Хорошего праздника!`,
     declined: (f) =>
       `«${f.listing}» не сможет принять заявку №${f.no} на ${f.date}. Посмотрите похожие залы — ` +
@@ -99,6 +107,9 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
       "Mijoz kutmoqda — kabinetda javob bering yoki unga qoʻngʻiroq qiling.",
     contacted: (f) =>
       `«${f.listing}» №${f.no} soʻrovga javob berdi (${f.date}). Batafsil — «Mening soʻrovlarim»da.`,
+    contactedByTeam: (f) =>
+      `Bayramm jamoasi №${f.no} soʻrovingiz (${f.date}) boʻyicha «${f.listing}» bilan bogʻlandi. ` +
+      "Maydon soʻrovdan xabardor va siz bilan oʻzi bogʻlanadi. Holati — «Mening soʻrovlarim»da.",
     deal: (f) =>
       `«${f.listing}» bilan №${f.no} soʻrov boʻyicha kelishdingiz (${f.date}). Bayramingiz muborak boʻlsin!`,
     declined: (f) =>
@@ -122,6 +133,34 @@ export function opsSlaBreach(f: OpsSlaFacts): string {
     `SLA: заявка №${f.no} без ответа ${hoursRu(f.slaHours)}.\n` +
     `Вендор ${f.vendorCode} · ${f.listing} · ${f.date} · ${guestsRu(f.guests)}.\n` +
     "Клиенту предложены похожие; позвоните вендору."
+  );
+}
+
+/** Правка карточки от партнёра — команде: площадка, код вендора, какие поля */
+export interface OpsRevisionFacts {
+  /** Название площадки */
+  readonly listing: string;
+  /** Публичный код вендора (V101) */
+  readonly vendorCode: string;
+  /** Ключи payload правки (как столбцы базы) */
+  readonly fields: readonly string[];
+}
+
+const REVISION_FIELDS_RU: Readonly<Record<string, string>> = {
+  name: "название",
+  price_from_uzs: "цена",
+  price_unit: "за что цена",
+  description_ru: "описание (рус.)",
+  description_uz: "описание (узб.)",
+  packages: "пакеты",
+};
+
+export function opsRevisionSubmitted(f: OpsRevisionFacts): string {
+  const fields = f.fields.map((key) => REVISION_FIELDS_RU[key] ?? key).join(", ");
+  return (
+    `Правка карточки на проверке: ${f.listing} (вендор ${f.vendorCode}).\n` +
+    `Меняет: ${fields || "—"}.\n` +
+    "Решение — в панели, раздел «Модерация»."
   );
 }
 

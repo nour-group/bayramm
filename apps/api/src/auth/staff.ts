@@ -88,7 +88,7 @@ export async function signInStaffWebApp(db: Db, env: Secrets, initData: string):
   return signInAndElevate(db, env, await verifyWebApp(env, initData), "admin");
 }
 
-/** Виджет входа Telegram на домене панели (POST /auth/staff/telegram) */
+/** @deprecated Виджет входа Telegram на домене панели (устаревший POST /auth/staff/telegram) */
 export async function signInStaff(db: Db, env: Secrets, params: LoginWidgetParams): Promise<StaffSession> {
   return signInAndElevate(db, env, await verifyWidget(env, params), "admin");
 }

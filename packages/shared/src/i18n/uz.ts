@@ -467,6 +467,8 @@ export const uz: Dict = {
     "Bu saytda Telegram orqali kirish tugmasi hali yoqilmagan. Bayrammni Telegramda oching — u yerda parolsiz kirasiz.",
   authTelegramHint:
     "Telegram tugmasi xato koʻrsatsa, Bayrammni Telegramda oching yoki telefon orqali kiring.",
+  authTelegramHintBot:
+    "Telegram tugmasi xato koʻrsatsa, Bayrammni Telegramda oching — u yerda parolsiz kirasiz.",
   authOpenBot: "Bayrammni Telegramda ochish",
   authPhone: "Telefon raqami orqali",
   authPhoneLabel: "Telefon raqami",
@@ -492,6 +494,7 @@ export const uz: Dict = {
   authErr: "Kirib boʻlmadi. Qayta urinib koʻring.",
   accTitle: "Hisob",
   accSignInLead: "Soʻrov yuborish va javoblarni koʻrish uchun kiring: Telegram yoki telefon raqami orqali.",
+  accSignInLeadTelegram: "Soʻrov yuborish va javoblarni koʻrish uchun Telegram orqali kiring.",
   accSignIn: "Kirish",
   accSignOut: "Chiqish",
   accRoles: "Kabinetlar",

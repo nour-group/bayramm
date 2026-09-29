@@ -1,5 +1,6 @@
 import type {
   BusyDay,
+  ListingRevisionPayload,
   RequestTab,
   VendorCalendar,
   VendorListing,
@@ -7,6 +8,7 @@ import type {
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPatch,
+  VendorRevision,
 } from "@bayramm/shared/api/vendor";
 import { TAB_STATUSES } from "@bayramm/shared/api/vendor";
 import type { Page, Route } from "@playwright/test";
@@ -35,6 +37,10 @@ export interface VendorApi {
   readonly patches: { readonly id: string; readonly body: VendorRequestPatch }[];
   readonly calls: string[];
   readonly busy: Map<string, BusyDay>;
+  /** Предложения правок карточки, новые первыми */
+  readonly revisions: VendorRevision[];
+  /** Чем входили: тело POST /auth/telegram */
+  readonly signIns: unknown[];
 }
 
 function item(
@@ -138,7 +144,14 @@ export async function mockVendorApi(
   page: Page,
   { signIn = "ok", staff = false, hub, match = isApi }: VendorApiOptions = {},
 ): Promise<VendorApi> {
-  const state: VendorApi = { unexpected: [], patches: [], calls: [], busy: new Map() };
+  const state: VendorApi = {
+    unexpected: [],
+    patches: [],
+    calls: [],
+    busy: new Map(),
+    revisions: [],
+    signIns: [],
+  };
   let locale: "ru" | "uz" = "ru";
   const requests = new Map<string, VendorRequestDetail>([
     [
@@ -189,7 +202,11 @@ export async function mockVendorApi(
         ? json(route, 200, { token: TOKEN, expiresAt: new Date(NOW.getTime() + 7 * 24 * HOUR).toISOString() })
         : fail(route, 400, "invalid_code");
     }
-    if (key === "POST /auth/vendor/telegram") {
+    // Кабинет входит общим адресом с app: "vendor"; устаревший /auth/vendor/telegram — в unexpected
+    if (key === "POST /auth/telegram") {
+      const body = request.postDataJSON() as { app?: unknown };
+      state.signIns.push(body);
+      if (body.app !== "vendor") return fail(route, 400, "invalid_request");
       if (signIn === "not_linked") return fail(route, 403, "vendor_not_linked");
       if (signIn === "disabled") return fail(route, 403, "vendor_disabled");
       if (signIn === "expired") return fail(route, 401, "invalid_init_data");
@@ -259,6 +276,31 @@ export async function mockVendorApi(
       }
     }
     if (key === `GET /vendor/listings/${LISTING_ID}`) return json(route, 200, LISTING);
+    const revisions = `/vendor/listings/${LISTING_ID}/revisions`;
+    if (key === `GET ${revisions}`) return json(route, 200, { items: state.revisions });
+    if (key === `POST ${revisions}`) {
+      if (state.revisions.some((r) => r.status === "pending")) return fail(route, 409, "revision_pending");
+      const revision: VendorRevision = {
+        id: `00000000-0000-4000-8700-00000000000${state.revisions.length + 1}`,
+        status: "pending",
+        submittedAt: NOW.toISOString(),
+        decidedAt: null,
+        decisionReason: null,
+        payload: request.postDataJSON() as ListingRevisionPayload,
+      };
+      state.revisions.unshift(revision);
+      return json(route, 201, revision);
+    }
+    const withdraw = new RegExp(`^${revisions}/([0-9a-f-]{36})/withdraw$`).exec(path);
+    if (withdraw && method === "POST") {
+      const index = state.revisions.findIndex((r) => r.id === withdraw[1]);
+      const current = state.revisions[index];
+      if (!current) return fail(route, 404, "not_found");
+      if (current.status !== "pending") return fail(route, 409, "illegal_transition");
+      const next: VendorRevision = { ...current, status: "withdrawn" };
+      state.revisions[index] = next;
+      return json(route, 200, next);
+    }
     if (key === `GET /vendor/listings/${LISTING_ID}/calendar`) {
       const month = url.searchParams.get("month") ?? "2026-10";
       const calendar: VendorCalendar = {

@@ -5,6 +5,7 @@
 
 import { createHash, createHmac, randomBytes, randomInt, randomUUID } from "node:crypto";
 import type { AccountMe, SessionToken } from "@bayramm/shared/api/account";
+import type { TeamList, TeamMember } from "@bayramm/shared/api/staff";
 import type { Client } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { initDataFor, type TestTelegramUser } from "../../src/testing/init-data";
@@ -21,6 +22,7 @@ import {
   inviteStaff,
   newStaffUsername,
   newTelegramUser,
+  trackStaff,
 } from "./helpers";
 
 let admin: Client;
@@ -118,6 +120,25 @@ async function minutePassed(phone: string): Promise<void> {
      where phone_hash = $1`,
     [phoneHash(phone)],
   );
+}
+
+/** Сессия сотрудника этой роли: приглашение по имени, вход виджетом, повышение */
+async function staffSession(role: "admin" | "manager" | "moderator"): Promise<string> {
+  const username = newStaffUsername();
+  await inviteStaff(admin, { username, role });
+  const account = await widgetSignIn(newTelegramUser({ username }));
+  return (await ok<SessionToken>(call("/auth/staff/elevate", withToken(account)))).token;
+}
+
+/** Приглашение из панели (POST /staff/team) → приглашённый; убирается после тестов */
+async function invite(staffToken: string, body: Record<string, unknown>): Promise<TeamMember> {
+  const res = await call("/staff/team", withToken(staffToken, body));
+  if (res.status !== 201) throw new Error(`приглашение: ${res.status} ${await res.text()}`);
+  const list = (await res.json()) as TeamList;
+  const member = list.items.find((m) => m.displayName === body.displayName);
+  if (!member) throw new Error("приглашённого нет в списке");
+  trackStaff(member.id);
+  return member;
 }
 
 async function phoneSignIn(phone: string): Promise<string> {
@@ -261,6 +282,55 @@ describe("сессия сотрудника — только по свежему
       [staffId],
     );
     expect(rows.at(-1)?.detail).toMatchObject({ via: "tg_widget", role: "manager" });
+  });
+
+  it("приглашение из панели по телефону: номер в любой записи, хранится только HMAC; вход кодом принимает его", async () => {
+    const adminToken = await staffSession("admin");
+    const phone = randomPhone();
+    const local = `${phone.slice(4, 6)} ${phone.slice(6, 9)}-${phone.slice(9, 11)}-${phone.slice(11)}`;
+    const invited = await invite(adminToken, { phone: local, displayName: `Phone ${run}`, role: "manager" });
+    expect(invited).toMatchObject({ invitedBy: "phone", username: null, accepted: false, linked: false });
+    const { rows } = await admin.query<{ hashed: boolean }>(
+      "select phone_hash = $2 as hashed from app.staff where id = $1",
+      [invited.id, phoneHash(phone)],
+    );
+    expect(rows).toEqual([{ hashed: true }]);
+
+    const token = await phoneSignIn(phone);
+    const account = await me(token);
+    if (account.id) phoneAccounts.push(account.id);
+    expect(account.roles.staff).toEqual({ role: "manager" });
+    const staff = await ok<SessionToken>(call("/auth/staff/elevate", withToken(token)));
+    expect((await call("/staff/me", bearer(staff.token))).status).toBe(200);
+
+    // Номер у действующего сотрудника — второе приглашение не создаётся
+    expect(
+      await errorOf(
+        call("/staff/team", withToken(adminToken, { phone, displayName: "Twin", role: "manager" })),
+      ),
+    ).toEqual({ status: 409, code: "staff_phone_taken" });
+  });
+
+  it("номер уже подтверждён у аккаунта — приглашение по нему принято сразу; неверный номер — 422", async () => {
+    const adminToken = await staffSession("admin");
+    const phone = randomPhone();
+    const token = await phoneSignIn(phone);
+    const before = await me(token);
+    if (before.id) phoneAccounts.push(before.id);
+    expect(before.roles.staff).toBeNull();
+
+    const invited = await invite(adminToken, { phone, displayName: `Known ${run}`, role: "moderator" });
+    expect(invited).toMatchObject({ invitedBy: "phone", accepted: true });
+    expect((await me(token)).roles.staff).toEqual({ role: "moderator" });
+
+    for (const body of [
+      { phone: "+7 900 000 00 00", displayName: "X", role: "manager" },
+      { phone, username: newStaffUsername(), displayName: "X", role: "manager" },
+    ]) {
+      const res = await call("/staff/team", withToken(adminToken, body));
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as { error: { details?: string[] } }).error.details).toEqual(["phone"]);
+    }
   });
 
   it("доказательство старше 12 часов — 401 reauth_required, и код хаба для панели не выдаётся", async () => {

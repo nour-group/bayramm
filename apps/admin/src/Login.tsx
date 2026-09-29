@@ -1,27 +1,21 @@
+import type { AuthMethods } from "@bayramm/shared/api/account";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchMethods, type SignInError } from "./session";
+import { useAuthMethods } from "./api";
+import type { SignInError } from "./session";
 import { t } from "./texts";
 
-/* Страница входа в панель. Вход — аккаунтом Bayramm через хаб входа на сайте (Telegram
-   или телефон): панель уводит туда браузер с PKCE и получает назад одноразовый код. В
-   Telegram панель открывается кнопкой «Панель оператора» в боте — там вход сам, по
-   initData. Здесь — кнопка хаба и ссылка на бота окружения (его имя — у API). */
+/* Страница входа в панель. Вход — аккаунтом Bayramm через хаб входа на сайте (Telegram,
+   а где включён — и код на телефон): панель уводит туда браузер с PKCE и получает назад
+   одноразовый код. В Telegram панель открывается кнопкой «Панель оператора» в боте — там
+   вход сам, по initData. Здесь — кнопка хаба и ссылка на бота окружения (его имя и то,
+   есть ли вход по телефону, — у API: GET /auth/methods). */
 
 // Имя бота: 5–32 символа латиницы, цифр и _, в конце — bot (правила @BotFather)
 const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
 
-function BotLink() {
-  const [bot, setBot] = useState<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    void fetchMethods().then((methods) => {
-      const name = methods?.telegram.bot;
-      if (active && name && BOT_USERNAME_RE.test(name)) setBot(name);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
+function BotLink({ methods }: { methods: AuthMethods | null }) {
+  const name = methods?.telegram.bot;
+  const bot = name && BOT_USERNAME_RE.test(name) ? name : null;
   if (bot === null) return null;
   return (
     <p className="login-bot">
@@ -45,6 +39,8 @@ export function Login({ checking, error, onSignIn }: LoginProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Пока идёт проверка входа, страница может и не понадобиться — не спрашиваем
+  const methods = useAuthMethods(!checking);
 
   useEffect(() => {
     document.title = `${t.login} · Bayramm`;
@@ -76,7 +72,8 @@ export function Login({ checking, error, onSignIn }: LoginProps) {
           <h1 id="login-title" className="page-title" ref={heading} tabIndex={-1}>
             {t.login}
           </h1>
-          <p className="lead">{t.loginLead}</p>
+          {/* Телефон — только если вход по нему в этом окружении включён */}
+          <p className="lead">{methods?.phone === true ? t.loginLead : t.loginLeadTelegram}</p>
           {shown && (
             <p className="login-error" role="alert">
               {t.errors[shown]}
@@ -96,7 +93,7 @@ export function Login({ checking, error, onSignIn }: LoginProps) {
               >
                 {starting ? t.loginStarting : t.loginHub}
               </button>
-              <BotLink />
+              <BotLink methods={methods} />
             </>
           )}
         </section>

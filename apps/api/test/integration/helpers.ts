@@ -131,6 +131,11 @@ export async function inviteStaff(admin: Client, invite: Invite): Promise<string
   return id;
 }
 
+/** Сотрудник, которого тест завёл через API (приглашение из панели): убрать вместе с остальными */
+export function trackStaff(id: string): void {
+  usedStaffIds.add(id);
+}
+
 /**
  * Удаляет аккаунты и их роли клиента; роли партнёра и сотрудника отвязываются (их
  * убирают тесты, которые их завели). Сессии, способы входа и профили уходят с аккаунтом.
@@ -178,6 +183,7 @@ export async function cleanupStaff(admin: Client): Promise<void> {
     [ids],
   );
   await admin.query("delete from app.sessions where staff_id = any($1::uuid[])", [ids]);
+  await admin.query("delete from pii.staff_profiles where staff_id = any($1::uuid[])", [ids]);
   await admin.query("delete from app.staff where id = any($1::uuid[])", [ids]);
   await deleteAccounts(
     admin,

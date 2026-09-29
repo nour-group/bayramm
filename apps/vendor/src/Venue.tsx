@@ -1,7 +1,7 @@
-/* Площадка — карточка как есть в базе, только чтение. Правки в v0.1 вносит менеджер
-   (цена, фото и описание опубликованной площадки проходят проверку), поэтому здесь —
-   подсказка «напишите менеджеру» и код вендора для разговора. Рейтинга нет: его на
-   первом запуске не показываем. */
+/* Площадка — карточка как есть в базе (то, что видит клиент). Название, цену, описания и
+   пакеты партнёр меняет предложением (Proposal.tsx): его проверяет команда, до одобрения
+   клиенты видят прежнюю карточку. Фото, адрес и вместимость меняет менеджер — для
+   разговора с ним здесь код вендора. Рейтинга нет: его на первом запуске не показываем. */
 
 import type { VendorListing, VendorListingRef } from "@bayramm/shared/api/vendor";
 import { api } from "./api";
@@ -9,6 +9,7 @@ import { formatMoney, formatPhone } from "./format";
 import { fill, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
+import { Proposal } from "./Proposal";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -159,6 +160,9 @@ export function Venue({ t, lang, headingRef, listings, listingId, onListing, ven
             <p className="panel-title">{t.description}</p>
             <p className="description">{listing.data.description[lang] || t.notSet}</p>
           </div>
+
+          {/* Ключ — площадка: при смене площадки форма и предложения — заново */}
+          <Proposal key={listing.data.id} listing={listing.data} t={t} lang={lang} />
         </article>
       ) : null}
     </section>

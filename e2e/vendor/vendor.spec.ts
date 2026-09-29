@@ -157,6 +157,38 @@ test.describe("кабинет", () => {
     expect(api.unexpected).toEqual([]);
   });
 
+  test("изменения карточки: форма из набора контролов, предложение ждёт проверки, отзыв — через подтверждение", async ({
+    page,
+  }) => {
+    const api = await start(page);
+    await page.goto("/card");
+    await expect(heading(page)).toHaveText(t.card);
+    // Вход — общим адресом с app: vendor (в разработке StrictMode входит дважды)
+    expect(api.signIns.length).toBeGreaterThan(0);
+    for (const body of api.signIns) expect(body).toMatchObject({ app: "vendor" });
+
+    await page.getByRole("button", { name: t.proposalStart }).click();
+    const form = page.locator("form.proposal-form");
+    await expect(form).toBeVisible();
+    await expectNoAxeViolations(page, "изменения карточки: форма");
+    await expectHitAreas(page, "изменения карточки: форма", CONTROLS);
+
+    await form.getByLabel(t.priceFromLabel).fill("27 000 000");
+    await form.getByRole("button", { name: t.proposalSubmit }).click();
+    await expect(page.getByText(t.proposalSent)).toBeVisible();
+    expect(api.revisions.map((r) => r.payload)).toEqual([{ price_from_uzs: 27_000_000 }]);
+    await expectNoAxeViolations(page, "изменения карточки: на проверке");
+
+    await page.getByRole("button", { name: t.proposalWithdraw }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText(t.proposalWithdrawQ);
+    await expectNoAxeViolations(page, "изменения карточки: отзыв");
+    await dialog.getByRole("button", { name: t.proposalWithdraw }).click();
+    await expect(page.getByRole("button", { name: t.proposalStart })).toBeVisible();
+    expect(api.revisions.map((r) => r.status)).toEqual(["withdrawn"]);
+    expect(api.unexpected).toEqual([]);
+  });
+
   for (const path of ["/requests", "/calendar"]) {
     test(`${path}: фокус с клавиатуры виден`, async ({ page }) => {
       await start(page);

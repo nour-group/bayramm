@@ -140,7 +140,8 @@ export function AccountSection() {
         <h2 className="section-title" id="profile-account">
           {t.accTitle}
         </h2>
-        <p className="muted small">{t.accSignInLead}</p>
+        {/* Телефон — только если вход по нему здесь включён (пока не ответили — не обещаем) */}
+        <p className="muted small">{ready?.phone === true ? t.accSignInLead : t.accSignInLeadTelegram}</p>
         <a className="btn btn-primary wide" href={authHref({ return: hrefFor({ name: "profile" }) })}>
           {t.accSignIn}
         </a>

@@ -29,9 +29,14 @@ const ru = {
   gateOutsideTitle: "Войдите в кабинет",
   gateOutsideText:
     "Войдите через сайт Bayramm — через Telegram или по номеру, который вы дали менеджеру. Или откройте кабинет из нашего бота.",
+  // …Telegram — когда входа по телефону на сайте нет (GET /auth/methods → phone: false)
+  gateOutsideTextTelegram:
+    "Войдите через сайт Bayramm — через Telegram. Или откройте кабинет из нашего бота.",
   gateNotLinkedTitle: "Сначала привяжите номер",
   gateNotLinkedText:
     "Этот аккаунт ещё не связан с площадкой. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm, или войдите по этому номеру на сайте.",
+  gateNotLinkedTextBot:
+    "Этот аккаунт ещё не связан с площадкой. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm.",
   gateDisabledTitle: "Доступ отключён",
   gateDisabledText: "Свяжитесь с вашим менеджером Bayramm.",
   gateExpiredTitle: "Сессия закончилась",
@@ -179,7 +184,7 @@ const ru = {
 
   // площадка
   venueNote:
-    "Карточку меняет ваш менеджер: цена, фото и описание проходят проверку. Нужно что-то изменить — напишите ему.",
+    "Название, цену, описание и пакеты вы предлагаете здесь: изменения проверит команда Bayramm, клиенты увидят их после одобрения. Фото, адрес и вместимость меняет ваш менеджер.",
   vendorCode: "Ваш код для менеджера: {code}",
   priceLabel: "Цена",
   priceFrom: "от {price}",
@@ -216,6 +221,37 @@ const ru = {
   blocker_stir: "проверка СТИР",
   blocker_contacts: "подтверждение контактов",
   blocker_pd_consent: "согласие на обработку данных",
+
+  // правки карточки (предложение → проверка командой)
+  proposalTitle: "Изменения карточки",
+  proposalLead: "Предложите новое название, цену, описание или пакеты — команда Bayramm проверит их.",
+  proposalStart: "Предложить изменения",
+  proposalPending: "Предложение на проверке с {date}. Клиенты пока видят прежнюю карточку.",
+  proposalWithdraw: "Отозвать предложение",
+  proposalWithdrawQ: "Отозвать предложение?",
+  proposalWithdrawText: "Команда не будет его проверять. Потом можно предложить заново.",
+  proposalDeclined: "Прошлое предложение отклонено. Причина: {reason}",
+  proposalApproved: "Прошлое предложение одобрено {date} — карточка обновлена.",
+  proposalSubmit: "Отправить на проверку",
+  proposalSent: "Отправлено на проверку. Решение появится здесь.",
+  proposalNoChanges: "Вы ничего не изменили.",
+  proposalInvalid: "Проверьте выделенные поля.",
+  proposalPendingExists: "Предложение уже на проверке: дождитесь решения или отзовите его.",
+  nameLabel: "Название",
+  priceFromLabel: "Цена от, сум",
+  priceUnitLabel: "Цена указана",
+  descriptionRuLabel: "Описание на русском",
+  descriptionUzLabel: "Описание на узбекском",
+  packageNameRu: "Название на русском",
+  packageNameUz: "Название на узбекском",
+  packagePrice: "Цена, сум",
+  packageAdd: "Добавить пакет",
+  packageRemove: "Убрать пакет",
+  pk_weekday: "Будни",
+  pk_weekend: "Выходные",
+  pk_custom: "Свой пакет",
+  fieldInvalid: "Проверьте это поле",
+  priceInvalid: "Цена — целое число сум больше нуля. Без цены карточку не опубликуют.",
 
   // поводы и районы (коды — из справочников базы)
   occ_toy: "Свадьба",
@@ -265,9 +301,12 @@ const uz: VendorDict = {
   gateOutsideTitle: "Kabinetga kiring",
   gateOutsideText:
     "Bayramm sayti orqali kiring — Telegram yoki menejerga bergan raqamingiz bilan. Yoki kabinetni botimizdan oching.",
+  gateOutsideTextTelegram: "Bayramm sayti orqali Telegram bilan kiring. Yoki kabinetni botimizdan oching.",
   gateNotLinkedTitle: "Avval raqamni ulang",
   gateNotLinkedText:
     "Bu hisob hali maydonga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing yoki saytda shu raqam bilan kiring.",
+  gateNotLinkedTextBot:
+    "Bu hisob hali maydonga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing.",
   gateDisabledTitle: "Kirish oʻchirilgan",
   gateDisabledText: "Bayramm menejeringiz bilan bogʻlaning.",
   gateExpiredTitle: "Sessiya tugadi",
@@ -412,7 +451,7 @@ const uz: VendorDict = {
   dateFormat: "{d}-{m}",
 
   venueNote:
-    "Kartochkani menejeringiz oʻzgartiradi: narx, foto va tavsif tekshiruvdan oʻtadi. Biror narsani oʻzgartirish kerak boʻlsa, unga yozing.",
+    "Nom, narx, tavsif va paketlarni shu yerda taklif qilasiz: oʻzgarishlarni Bayramm jamoasi tekshiradi, mijozlar ularni tasdiqlangandan keyin koʻradi. Foto, manzil va sigʻimni menejeringiz oʻzgartiradi.",
   vendorCode: "Menejer uchun kodingiz: {code}",
   priceLabel: "Narx",
   priceFrom: "{price} dan",
@@ -449,6 +488,36 @@ const uz: VendorDict = {
   blocker_stir: "STIR tekshiruvi",
   blocker_contacts: "kontaktlarni tasdiqlash",
   blocker_pd_consent: "maʼlumotlarni qayta ishlashga rozilik",
+
+  proposalTitle: "Kartochkadagi oʻzgarishlar",
+  proposalLead: "Yangi nom, narx, tavsif yoki paketlarni taklif qiling — Bayramm jamoasi ularni tekshiradi.",
+  proposalStart: "Oʻzgarish taklif qilish",
+  proposalPending: "Taklif {date} dan beri tekshiruvda. Mijozlar hozircha avvalgi kartochkani koʻradi.",
+  proposalWithdraw: "Taklifni qaytarib olish",
+  proposalWithdrawQ: "Taklif qaytarib olinsinmi?",
+  proposalWithdrawText: "Jamoa uni tekshirmaydi. Keyin qayta taklif qilish mumkin.",
+  proposalDeclined: "Oldingi taklif rad etildi. Sabab: {reason}",
+  proposalApproved: "Oldingi taklif {date} da tasdiqlandi — kartochka yangilandi.",
+  proposalSubmit: "Tekshiruvga yuborish",
+  proposalSent: "Tekshiruvga yuborildi. Qaror shu yerda chiqadi.",
+  proposalNoChanges: "Siz hech narsani oʻzgartirmadingiz.",
+  proposalInvalid: "Belgilangan maydonlarni tekshiring.",
+  proposalPendingExists: "Taklif allaqachon tekshiruvda: qarorni kuting yoki uni qaytarib oling.",
+  nameLabel: "Nomi",
+  priceFromLabel: "Narx, soʻmdan",
+  priceUnitLabel: "Narx hisobi",
+  descriptionRuLabel: "Ruscha tavsif",
+  descriptionUzLabel: "Oʻzbekcha tavsif",
+  packageNameRu: "Ruscha nomi",
+  packageNameUz: "Oʻzbekcha nomi",
+  packagePrice: "Narx, soʻm",
+  packageAdd: "Paket qoʻshish",
+  packageRemove: "Paketni olib tashlash",
+  pk_weekday: "Ish kunlari",
+  pk_weekend: "Dam olish kunlari",
+  pk_custom: "Boshqa paket",
+  fieldInvalid: "Bu maydonni tekshiring",
+  priceInvalid: "Narx — noldan katta butun son, soʻmda. Narxsiz kartochka eʼlon qilinmaydi.",
 
   occ_toy: "Toʻy",
   occ_beshik: "Beshik toʻyi",

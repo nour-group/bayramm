@@ -1,6 +1,13 @@
 import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
-import { formatDate, NOTICE_TEXTS, opsOutboxDead, opsSlaBreach, type RequestFacts } from "./texts";
+import {
+  formatDate,
+  NOTICE_TEXTS,
+  opsOutboxDead,
+  opsRevisionSubmitted,
+  opsSlaBreach,
+  type RequestFacts,
+} from "./texts";
 
 const FACTS: RequestFacts = {
   no: "1001",
@@ -20,6 +27,7 @@ function rendered(lang: "ru" | "uz", facts = FACTS): string[] {
     t.slaReminder(facts, 0),
     t.opsReminder(facts),
     t.contacted(facts),
+    t.contactedByTeam(facts),
     t.deal(facts),
     t.declined(facts),
     t.slaBreach(facts),
@@ -82,6 +90,26 @@ describe("тексты уведомлений", () => {
         error: "e",
       }),
     ).not.toContain("№");
+  });
+
+  it("«связались» от команды: не «площадка ответила», а команда связалась с ней за клиента", () => {
+    const ru = NOTICE_TEXTS.ru.contactedByTeam(FACTS);
+    for (const part of ["Команда Bayramm", "Test Hall", "№1001", "12.10.2026", "свяжется с вами"])
+      expect(ru).toContain(part);
+    expect(ru).not.toContain("ответил");
+    const uz = NOTICE_TEXTS.uz.contactedByTeam(FACTS);
+    for (const part of ["Bayramm jamoasi", "Test Hall", "№1001", "12.10.2026"]) expect(uz).toContain(part);
+    expect(uz).not.toContain("javob berdi");
+  });
+
+  it("правка карточки — команде: площадка, код вендора, поля словами", () => {
+    const text = opsRevisionSubmitted({
+      listing: "Test Hall",
+      vendorCode: "V101",
+      fields: ["price_from_uzs", "packages", "unknown_key"],
+    });
+    for (const part of ["Test Hall", "V101", "цена, пакеты, unknown_key", "«Модерация»"])
+      expect(text).toContain(part);
   });
 
   it("дата события — ДД.ММ.ГГГГ", () => {

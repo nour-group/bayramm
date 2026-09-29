@@ -461,6 +461,9 @@ export const ru = {
     "Кнопка входа через Telegram на этом сайте пока не включена. Откройте Bayramm в Telegram — там вход без пароля.",
   authTelegramHint:
     "Если кнопка Telegram показывает ошибку, откройте Bayramm в Telegram или войдите по телефону.",
+  // то же, когда входа по телефону здесь нет (GET /auth/methods → phone: false)
+  authTelegramHintBot:
+    "Если кнопка Telegram показывает ошибку, откройте Bayramm в Telegram — там вход без пароля.",
   authOpenBot: "Открыть Bayramm в Telegram",
   authPhone: "По номеру телефона",
   authPhoneLabel: "Номер телефона",
@@ -486,6 +489,7 @@ export const ru = {
   authErr: "Не получилось войти. Попробуйте ещё раз.",
   accTitle: "Аккаунт",
   accSignInLead: "Войдите, чтобы отправлять заявки и видеть ответы: через Telegram или по номеру телефона.",
+  accSignInLeadTelegram: "Войдите через Telegram, чтобы отправлять заявки и видеть ответы.",
   accSignIn: "Войти",
   accSignOut: "Выйти",
   accRoles: "Кабинеты",

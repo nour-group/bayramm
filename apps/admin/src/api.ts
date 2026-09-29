@@ -3,8 +3,10 @@
    details: имена неверных полей или недостающие пункты публикации. 401 — сессия
    кончилась: панель возвращает на вход. */
 
+import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { StaffMe, StaffPermission } from "@bayramm/shared/api/staff";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { fetchMethods } from "./session";
 
 const API = "/api";
 
@@ -137,4 +139,24 @@ export function useLoad<T>(path: string | null) {
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
   const set = useCallback((data: T) => setLoaded({ state: "ready", data }), []);
   return { loaded, reload, set } as const;
+}
+
+/**
+ * Способы входа окружения (GET /auth/methods, без токена): бот и есть ли вход по телефону.
+ * null — ещё не спрашивали, не ответили или API недоступно: тогда телефон не обещаем.
+ * enabled = false — не спрашивать (страница входа, пока проверяется сохранённый вход)
+ */
+export function useAuthMethods(enabled = true): AuthMethods | null {
+  const [methods, setMethods] = useState<AuthMethods | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let active = true;
+    void fetchMethods().then((found) => {
+      if (active) setMethods(found);
+    });
+    return () => {
+      active = false;
+    };
+  }, [enabled]);
+  return methods;
 }

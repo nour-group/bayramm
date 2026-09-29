@@ -114,6 +114,23 @@ describe("хаб входа /auth", () => {
     expect(replaced).toEqual(["/auth"]);
   });
 
+  it("вход по телефону выключен: ни формы, ни слов о телефоне; кнопка Telegram с запасным выходом — бот", async () => {
+    await mount({ path: "/auth", identity: "guest", api: api({ phone: false, loginDomain: "localhost" }) });
+    await waitFor(() => document.querySelector(".tg-login"), "виджет Telegram");
+    expect(document.querySelector("form.phone-code")).toBeNull();
+    expect(text()).not.toMatch(/телефон/i);
+    expect(text()).toContain("откройте Bayramm в Telegram — там вход без пароля");
+    expect(byText("a", /Открыть Bayramm в Telegram/)?.getAttribute("href")).toBe(
+      "https://t.me/bayramm_demo_bot?startapp",
+    );
+  });
+
+  it("вход по телефону включён: подсказка под кнопкой Telegram упоминает и телефон", async () => {
+    await mount({ path: "/auth", identity: "guest", api: api({ phone: true, loginDomain: "localhost" }) });
+    await waitFor(() => document.querySelector("form.phone-code"), "форма телефона");
+    expect(text()).toContain("откройте Bayramm в Telegram или войдите по телефону");
+  });
+
   it("уже вошли: сразу код хаба и уход в кабинет с тем же state", async () => {
     const mock = api();
     await mount({
@@ -216,6 +233,14 @@ describe("профиль: аккаунт", () => {
     await mount({ path: "/profile", identity: "guest", api: api() });
     const link = await waitFor(() => byText("a", "Войти"), "ссылка входа");
     expect(link.getAttribute("href")).toBe("/auth?return=%2Fprofile");
+    await waitFor(() => text().includes("или по номеру телефона"), "вход и по телефону");
+  });
+
+  it("гость, вход по телефону выключен — о телефоне ни слова", async () => {
+    await mount({ path: "/profile", identity: "guest", api: api({ phone: false }) });
+    await waitFor(() => byText("a", "Войти"), "ссылка входа");
+    await waitFor(() => text().includes("Войдите через Telegram"), "только Telegram");
+    expect(text()).not.toContain("по номеру телефона");
   });
 
   it("на сайте — «Выйти»: сессия отзывается, страница — заново", async () => {
