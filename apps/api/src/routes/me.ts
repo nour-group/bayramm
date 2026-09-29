@@ -1,7 +1,8 @@
 // Свой профиль клиента и права на свои данные. Всё — с сессией клиента и под его
 // актором: чужую строку RLS не отдаст, функции базы берут id только из актора.
 //
-//   GET    /me                   (Bearer) → 200 { id, locale, firstName, … }
+//   GET    /me                   (Bearer) → 200 ClientMe: язык, имя, уведомления
+//   PATCH  /me                   (Bearer) { locale } → 200 ClientMe
 //   GET    /me/export            (Bearer) → 200 JSON-файл: аккаунт, профиль, согласия, заявки
 //   POST   /me/consents/withdraw (Bearer) { purpose, listingId? } → 200 { withdrawn }
 //   DELETE /me                   (Bearer) → 204
@@ -12,14 +13,14 @@
 // 20260930140000_platform_hardening.sql): там же журнал согласий и статусов.
 // Источник записи в журналах (tma или web) — заголовок X-Bayramm-Source, как у заявок.
 
-import { CLIENT_SOURCE_HEADER, type ClientConsentPurpose } from "@bayramm/shared/api";
-import type { ClientDataExport, ConsentWithdrawn } from "@bayramm/shared/api/me";
+import { CLIENT_SOURCE_HEADER, type ClientConsentPurpose, type Locale } from "@bayramm/shared/api";
+import type { ClientDataExport, ClientMe, ConsentWithdrawn } from "@bayramm/shared/api/me";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { sql } from "kysely";
 import { requestIpHash } from "../auth/ip";
 import { authenticate, requireClient } from "../auth/session";
-import { withActor } from "../db/actor";
+import { type ClientActor, type Tx, withActor } from "../db/actor";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
@@ -41,26 +42,59 @@ const limitBody = bodyLimit({
   onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),
 });
 
-me.get("/", async (c) => {
-  const { actor } = requireClient(c);
-  const row = await withActor(c.var.db, actor, (trx) =>
-    trx
-      .selectFrom("app.clients as cl")
-      .leftJoin("pii.client_profiles as p", "p.client_id", "cl.id")
-      .select(["cl.id", "cl.locale", "cl.can_message", "p.first_name", "p.last_name", "p.username"])
-      .where("cl.id", "=", actor.id)
-      .executeTakeFirst(),
-  );
-  if (row === undefined) throw notFound();
+const LOCALES: readonly Locale[] = ["ru", "uz"];
 
-  return c.json({
+// Ответы /me — персональные: ни браузеру, ни прокси их не хранить
+me.use(async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-store");
+});
+
+async function readMe(trx: Tx, actor: ClientActor): Promise<ClientMe> {
+  const row = await trx
+    .selectFrom("app.clients as cl")
+    .leftJoin("pii.client_profiles as p", "p.client_id", "cl.id")
+    .select([
+      "cl.id",
+      "cl.locale",
+      "cl.can_message",
+      "p.first_name",
+      "p.last_name",
+      "p.username",
+      // Уведомления включены, если последняя запись журнала по этой цели — grant (как у бота)
+      sql<boolean>`coalesce((select c.action = 'grant' from app.consents c
+                             where c.subject_kind = 'client' and c.subject_id = cl.id
+                               and c.purpose = 'bot_notifications'
+                             order by c.created_at desc limit 1), false)`.as("notifications"),
+    ])
+    .where("cl.id", "=", actor.id)
+    .executeTakeFirst();
+  if (row === undefined) throw notFound();
+  return {
     id: row.id,
     locale: row.locale,
     firstName: row.first_name,
     lastName: row.last_name,
     username: row.username,
     canMessage: row.can_message,
+    notifications: row.notifications,
+  };
+}
+
+me.get("/", async (c) => {
+  const { actor } = requireClient(c);
+  return c.json(await withActor(c.var.db, actor, (trx) => readMe(trx, actor)));
+});
+
+// Язык клиента: интерфейс и сообщения бота (render уведомлений читает app.clients.locale)
+me.patch("/", limitBody, async (c) => {
+  const { actor } = requireClient(c);
+  const { locale } = parseMePatch(await readJson(c.req.raw));
+  const body = await withActor(c.var.db, actor, async (trx) => {
+    await trx.updateTable("app.clients").set({ locale }).where("id", "=", actor.id).execute();
+    return readMe(trx, actor);
   });
+  return c.json(body);
 });
 
 // Выгрузка своих данных — файлом, без кэширования (в ответе ПДн)
@@ -114,6 +148,18 @@ async function readJson(request: Request): Promise<unknown> {
   } catch {
     throw new ApiError(400, "invalid_request", "Body must be JSON");
   }
+}
+
+/** Тело PATCH /me: только язык, ru или uz; иначе — 422 invalid_input с полем locale */
+export function parseMePatch(body: unknown): { locale: Locale } {
+  const locale =
+    typeof body === "object" && body !== null && !Array.isArray(body)
+      ? (body as { locale?: unknown }).locale
+      : undefined;
+  if (!(LOCALES as readonly unknown[]).includes(locale)) {
+    throw new ApiError(422, "invalid_input", "Invalid input", ["locale"]);
+  }
+  return { locale: locale as Locale };
 }
 
 /**

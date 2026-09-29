@@ -84,6 +84,46 @@ function withdraw(token: string, body: unknown, headers: Record<string, string> 
   });
 }
 
+describe("GET и PATCH /me", () => {
+  it("язык сохраняется в профиле; уведомления — по последней записи журнала", async () => {
+    const user = newTelegramUser({ language_code: "ru" });
+    const token = await loginToken(user);
+    const clientId = await clientIdOf(user.id);
+
+    const me = await call("/me", bearer(token));
+    expect(me.status).toBe(200);
+    expect(me.headers.get("cache-control")).toBe("no-store");
+    expect(await me.json()).toMatchObject({ id: clientId, locale: "ru", notifications: false });
+
+    const patch = (body: unknown) =>
+      call("/me", {
+        method: "PATCH",
+        headers: { ...bearer(token).headers, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const changed = await patch({ locale: "uz" });
+    expect(changed.status).toBe(200);
+    expect(await changed.json()).toMatchObject({ id: clientId, locale: "uz" });
+    const { rows } = await admin.query<{ locale: string }>("select locale from app.clients where id = $1", [
+      clientId,
+    ]);
+    expect(rows[0]?.locale).toBe("uz");
+
+    const bad = await patch({ locale: "en" });
+    expect(bad.status).toBe(422);
+    expect(await bad.json()).toMatchObject({ error: { code: "invalid_input", details: ["locale"] } });
+
+    // Новый вход язык не сбрасывает: его выбрал клиент
+    const again = await loginToken(user);
+    expect(await (await call("/me", bearer(again))).json()).toMatchObject({ locale: "uz" });
+
+    await grantBotNotifications(clientId);
+    expect(await (await call("/me", bearer(token))).json()).toMatchObject({ notifications: true });
+    await withdraw(token, { purpose: "bot_notifications" });
+    expect(await (await call("/me", bearer(token))).json()).toMatchObject({ notifications: false });
+  });
+});
+
 describe("GET /me/export", () => {
   it("свои данные файлом JSON, без кэша", async () => {
     const user = newTelegramUser({ first_name: "Export", username: "export_user", language_code: "ru" });

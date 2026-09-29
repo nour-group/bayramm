@@ -1,10 +1,34 @@
-// /me без базы: разбор тела отзыва согласия и отказ без сессии. С базой — test/integration/me.test.ts
+// /me без базы: разбор тел (язык, отзыв согласия) и отказ без сессии. С базой — test/integration/me.test.ts
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../errors";
 import { call } from "../testing/worker";
-import { parseWithdrawConsent } from "./me";
+import { parseMePatch, parseWithdrawConsent } from "./me";
 
 const LISTING = "aaaaaaaa-0000-0000-0000-000000000101";
+
+describe("parseMePatch", () => {
+  it("язык ru или uz", () => {
+    expect(parseMePatch({ locale: "uz" })).toEqual({ locale: "uz" });
+    expect(parseMePatch({ locale: "ru" })).toEqual({ locale: "ru" });
+  });
+
+  it.each([
+    ["без языка", {}],
+    ["другой язык", { locale: "en" }],
+    ["заглавными", { locale: "RU" }],
+    ["не объект", "ru"],
+    ["массив", ["ru"]],
+    ["null", null],
+  ])("%s — 422 invalid_input с полем locale", (_name, body) => {
+    try {
+      parseMePatch(body);
+      expect.unreachable();
+    } catch (err) {
+      expect(err).toBeInstanceOf(ApiError);
+      expect(err).toMatchObject({ status: 422, code: "invalid_input", details: ["locale"] });
+    }
+  });
+});
 
 describe("parseWithdrawConsent", () => {
   it("цели клиента; листинг — только у request_transfer", () => {
@@ -45,6 +69,8 @@ describe("parseWithdrawConsent", () => {
 
 describe("без сессии — 401", () => {
   it.each([
+    ["GET", "/me"],
+    ["PATCH", "/me"],
     ["GET", "/me/export"],
     ["DELETE", "/me"],
     ["POST", "/me/consents/withdraw"],

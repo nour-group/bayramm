@@ -45,22 +45,57 @@ export function idOrNotFound(value: string): string {
 const invalid = (field: string) => new ApiError(422, "invalid_input", "Invalid input", [field]);
 
 // ── разбор запроса ─────────────────────────────────────────────────────────
+//
+// Порядок входящих (кабинет, раздел «Заявки»: сначала те, где время истекает):
+//   · «Новые» и «В работе» — сначала ждущие ответа (new/viewed без первого ответа),
+//     среди них — по сроку ответа, ближайший сверху; просроченные — самые ранние
+//     сроки, поэтому они выше всех. Ответившие («связались») — ниже, тоже по сроку;
+//   · «Закрытые» — новые сверху (по номеру заявки).
+// Курсор — позиция последней заявки страницы в этом порядке:
+//   открытые — "<ответили 0|1>.<срок в микросекундах эпохи>.<номер>", закрытые — "<номер>".
+
+/** Позиция последней заявки страницы */
+export type InboxCursor =
+  | { readonly kind: "deadline"; readonly answered: boolean; readonly dueUs: number; readonly no: number }
+  | { readonly kind: "newest"; readonly no: number };
 
 export interface ListQuery {
   tab: RequestTab;
-  /** Номер заявки, после которой продолжать (строго меньше) */
-  before: number | null;
+  /** После какой заявки продолжать; null — первая страница */
+  after: InboxCursor | null;
   limit: number;
+}
+
+const NEWEST_CURSOR_RE = /^[1-9][0-9]{0,15}$/;
+const DEADLINE_CURSOR_RE = /^([01])\.([1-9][0-9]{0,16})\.([1-9][0-9]{0,15})$/;
+
+/** Курсор вкладки: у закрытой — номер заявки, у открытых — срок ответа и номер */
+export function parseInboxCursor(tab: RequestTab, value: string): InboxCursor | null {
+  if (tab === "closed") {
+    return NEWEST_CURSOR_RE.test(value) ? { kind: "newest", no: Number(value) } : null;
+  }
+  const match = DEADLINE_CURSOR_RE.exec(value);
+  if (!match) return null;
+  const dueUs = Number(match[2]);
+  const no = Number(match[3]);
+  if (!Number.isSafeInteger(dueUs) || !Number.isSafeInteger(no)) return null;
+  return { kind: "deadline", answered: match[1] === "1", dueUs, no };
+}
+
+export function formatInboxCursor(cursor: InboxCursor): string {
+  return cursor.kind === "newest"
+    ? String(cursor.no)
+    : `${cursor.answered ? 1 : 0}.${cursor.dueUs}.${cursor.no}`;
 }
 
 export function parseListQuery(query: Record<string, string | undefined>): ListQuery {
   const tab = query.tab ?? "new";
   if (!(REQUEST_TABS as readonly string[]).includes(tab)) throw invalid("tab");
 
-  let before: number | null = null;
+  let after: InboxCursor | null = null;
   if (query.cursor !== undefined) {
-    if (!/^[1-9][0-9]{0,15}$/.test(query.cursor)) throw invalid("cursor");
-    before = Number(query.cursor);
+    after = parseInboxCursor(tab as RequestTab, query.cursor);
+    if (after === null) throw invalid("cursor");
   }
 
   let limit = PAGE_LIMIT_DEFAULT;
@@ -69,7 +104,7 @@ export function parseListQuery(query: Record<string, string | undefined>): ListQ
     limit = Number(query.limit);
     if (limit < 1 || limit > PAGE_LIMIT_MAX) throw invalid("limit");
   }
-  return { tab: tab as RequestTab, before, limit };
+  return { tab: tab as RequestTab, after, limit };
 }
 
 export function parsePatch(body: unknown): VendorRequestPatch {
@@ -168,15 +203,37 @@ function emptyCounts(): Record<RequestTab, number> {
 const tabOf = (status: RequestStatus): RequestTab =>
   REQUEST_TABS.find((tab) => TAB_STATUSES[tab].includes(status)) ?? "closed";
 
-/** GET /vendor/requests: страница вкладки, новые сверху, и счётчики вкладок */
+// Ответили ли уже (зеркало awaitsAnswer кабинета) и срок ответа в микросекундах эпохи:
+// timestamptz хранит микросекунды, целое сравнение в курсоре — без потерь
+const ANSWERED = sql<boolean>`(r.status not in ('new', 'viewed') or r.first_response_at is not null)`;
+const DUE_US = sql<string>`(extract(epoch from r.sla_due_at) * 1000000)::bigint`;
+
+/** GET /vendor/requests: страница вкладки в порядке входящих (см. выше) и счётчики вкладок */
 export async function listRequests(db: Db, actor: VendorActor, query: ListQuery): Promise<VendorRequestPage> {
   return withActor(db, actor, async (trx) => {
-    let page = requestsOf(trx, actor).where("r.status", "in", [...TAB_STATUSES[query.tab]]);
-    if (query.before !== null) page = page.where("r.public_no", "<", String(query.before));
-    const rows = await page
-      .orderBy("r.public_no", "desc")
-      .limit(query.limit + 1)
-      .execute();
+    const base = requestsOf(trx, actor)
+      .select([ANSWERED.as("answered"), DUE_US.as("due_us")])
+      .where("r.status", "in", [...TAB_STATUSES[query.tab]]);
+    const { after } = query;
+    const rows =
+      query.tab === "closed"
+        ? await base
+            .$if(after?.kind === "newest", (qb) => qb.where("r.public_no", "<", String(after?.no)))
+            .orderBy("r.public_no", "desc")
+            .limit(query.limit + 1)
+            .execute()
+        : await base
+            .$if(after?.kind === "deadline", (qb) => {
+              const c = after as Extract<InboxCursor, { kind: "deadline" }>;
+              return qb.where(
+                sql<boolean>`(${ANSWERED}, ${DUE_US}, r.public_no) > (${c.answered}::boolean, ${c.dueUs}::bigint, ${c.no}::bigint)`,
+              );
+            })
+            .orderBy(ANSWERED)
+            .orderBy(DUE_US)
+            .orderBy("r.public_no")
+            .limit(query.limit + 1)
+            .execute();
 
     const byStatus = await trx
       .selectFrom("app.requests")
@@ -188,13 +245,18 @@ export async function listRequests(db: Db, actor: VendorActor, query: ListQuery)
     const counts = emptyCounts();
     for (const { status, n } of byStatus) counts[tabOf(status)] += Number(n);
 
-    const items = rows.slice(0, query.limit).map(toItem);
-    const last = items[items.length - 1];
-    return {
-      items,
-      nextCursor: rows.length > query.limit && last ? String(last.publicNo) : null,
-      counts,
-    };
+    const page = rows.slice(0, query.limit);
+    const last = page.at(-1);
+    let nextCursor: string | null = null;
+    if (rows.length > query.limit && last) {
+      const no = Number(last.public_no);
+      nextCursor = formatInboxCursor(
+        query.tab === "closed"
+          ? { kind: "newest", no }
+          : { kind: "deadline", answered: last.answered, dueUs: Number(last.due_us), no },
+      );
+    }
+    return { items: page.map(toItem), nextCursor, counts };
   });
 }
 

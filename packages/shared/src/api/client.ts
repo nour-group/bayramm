@@ -93,8 +93,10 @@ export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc";
  * GET /catalog/listings — параметры строки запроса. Всё необязательно.
  * guests — отсекает площадки, где cap_max меньше. date — не отсекает, а опускает
  * занятые в конец выдачи (при любой сортировке). Оплата на порядок не влияет.
- * sort по умолчанию — price_asc. Неверный параметр — 400 invalid_request (details —
- * имена параметров); курсор от другой сортировки или даты — 400 invalid_cursor.
+ * sort по умолчанию — price_asc; цены сравниваются по comparablePriceUzs, а не как есть:
+ * у одних залов цена за гостя, у других — за мероприятие. Неверный параметр — 400
+ * invalid_request (details — имена параметров); курсор от другой сортировки, даты или
+ * числа гостей — 400 invalid_cursor.
  */
 export interface CatalogQuery {
   readonly category?: string;
@@ -123,6 +125,29 @@ export interface ListingCard {
   readonly photoCount: number;
   /** Занята ли площадка на дату из запроса; null — дата не задана */
   readonly busyOnDate: boolean | null;
+}
+
+type PricedCard = Pick<ListingCard, "priceFromUzs" | "priceUnit" | "capMax">;
+
+/**
+ * Примерная сумма за мероприятие на guests гостей: цена за гостя × гости, цена за
+ * мероприятие — как есть. Столько показывает карточка при заданном числе гостей
+ */
+export function estimatedTotalUzs(card: PricedCard, guests: number): number {
+  return card.priceUnit === "per_guest" ? card.priceFromUzs * guests : card.priceFromUzs;
+}
+
+/**
+ * Цена для сортировки price_asc / price_desc — одна шкала для обеих единиц цены:
+ *   · задано число гостей — примерная сумма на это число (estimatedTotalUzs);
+ *   · не задано — цена за гостя: цена за мероприятие делится на вместимость зала (cap_max)
+ *     с округлением вверх, то есть «от» на гостя, если зал заполнен.
+ * Ту же формулу считает SQL каталога (apps/api/src/catalog/service.ts) и демо-API.
+ * Оплата, премиум и продвижение в ней не участвуют — правило продукта
+ */
+export function comparablePriceUzs(card: PricedCard, guests: number | null): number {
+  if (guests !== null) return estimatedTotalUzs(card, guests);
+  return card.priceUnit === "per_guest" ? card.priceFromUzs : Math.ceil(card.priceFromUzs / card.capMax);
 }
 
 /** GET /catalog/listings → 200 */
@@ -233,3 +258,33 @@ export interface ClientRequests {
 
 // POST /requests/:id/withdraw → 200 ClientRequest. Уже отозванная — 200 без изменений;
 // чужая или несуществующая — 404; в итоговом статусе (deal, declined, expired) — 409
+
+// ── ссылки на экраны клиентского приложения ─────────────────────────────────
+// Кнопки бота открывают Mini App сразу на нужном экране: адрес WEB_APP_URL + путь.
+// Пути и параметры — те же, что разбирает apps/web (router.ts, catalog-feed.ts;
+// сверяет тест приложения). Параметры — только маршрут, прав они не дают.
+
+/** Строка запроса без пустых значений: ?a=1&b=2 (или пусто). Пакет без DOM — без URLSearchParams */
+function queryString(params: Readonly<Record<string, string | number | null | undefined>>): string {
+  const pairs = Object.entries(params)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+  return pairs.length > 0 ? `?${pairs.join("&")}` : "";
+}
+
+/** «Мои заявки» с раскрытой заявкой: /requests?open=<id> */
+export function clientRequestPath(requestId: string): string {
+  return `/requests${queryString({ open: requestId })}`;
+}
+
+/** Фильтры каталога в адресе; пустые не пишутся */
+export interface CatalogLinkFilters {
+  readonly date?: string | null;
+  readonly guests?: number | null;
+  readonly district?: string | null;
+}
+
+/** Каталог с фильтрами — «похожие» на заявку: та же дата, столько же гостей, тот же район */
+export function clientCatalogPath({ date, guests, district }: CatalogLinkFilters): string {
+  return `/${queryString({ date, guests, district })}`;
+}

@@ -3,11 +3,14 @@ import type { VendorActor } from "../db/actor";
 import { ApiError } from "../errors";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
 import {
+  formatInboxCursor,
   getRequest,
+  type InboxCursor,
   idOrNotFound,
   listRequests,
   logCallAttempt,
   PAGE_LIMIT_DEFAULT,
+  parseInboxCursor,
   parseListQuery,
   parsePatch,
   updateRequestStatus,
@@ -80,16 +83,27 @@ describe("разбор запроса", () => {
   });
 
   it("список: вкладка, курсор и размер страницы", () => {
-    expect(parseListQuery({})).toEqual({ tab: "new", before: null, limit: PAGE_LIMIT_DEFAULT });
+    expect(parseListQuery({})).toEqual({ tab: "new", after: null, limit: PAGE_LIMIT_DEFAULT });
     expect(parseListQuery({ tab: "closed", cursor: "1042", limit: "10" })).toEqual({
       tab: "closed",
-      before: 1042,
+      after: { kind: "newest", no: 1042 },
       limit: 10,
+    });
+    expect(parseListQuery({ tab: "active", cursor: "1.1790000000123456.1042" })).toEqual({
+      tab: "active",
+      after: { kind: "deadline", answered: true, dueUs: 1790000000123456, no: 1042 },
+      limit: PAGE_LIMIT_DEFAULT,
     });
     for (const query of [
       { tab: "all" },
-      { cursor: "0" },
-      { cursor: "-1" },
+      { tab: "closed", cursor: "0" },
+      { tab: "closed", cursor: "-1" },
+      // курсор другой вкладки: у открытых — срок и номер, у закрытой — только номер
+      { tab: "closed", cursor: "0.1790000000123456.1042" },
+      { tab: "new", cursor: "1042" },
+      { tab: "new", cursor: "2.1790000000123456.1042" },
+      { tab: "new", cursor: "0.1790000000123456.0" },
+      { tab: "new", cursor: "0.99999999999999999.1" },
       { limit: "0" },
       { limit: "51" },
     ]) {
@@ -137,8 +151,35 @@ describe("разбор запроса", () => {
   });
 });
 
+describe("курсор входящих", () => {
+  it("туда и обратно", () => {
+    for (const cursor of [
+      { kind: "newest", no: 7 },
+      { kind: "deadline", answered: false, dueUs: 1790000000123456, no: 1001 },
+    ] satisfies InboxCursor[]) {
+      const tab = cursor.kind === "newest" ? "closed" : "new";
+      expect(parseInboxCursor(tab, formatInboxCursor(cursor))).toEqual(cursor);
+    }
+  });
+});
+
 describe("listRequests", () => {
-  it("под актором вендора, по его вендору, статусы вкладки, новые сверху", async () => {
+  it("открытые вкладки: сначала ждущие ответа, по сроку — ближайший (и просроченный) сверху", async () => {
+    const fake = fakeDb();
+    await listRequests(fake.db, ACTOR, {
+      tab: "new",
+      after: { kind: "deadline", answered: false, dueUs: 1790000000123456, no: 1042 },
+      limit: 20,
+    });
+    const list = fake.queries.find(isItemQuery);
+    const answered = "(r.status not in ('new', 'viewed') or r.first_response_at is not null)";
+    const due = "(extract(epoch from r.sla_due_at) * 1000000)::bigint";
+    expect(list?.sql).toContain(`order by ${answered}, ${due}, "r"."public_no" limit $`);
+    expect(list?.sql).toContain(`(${answered}, ${due}, r.public_no) > ($`);
+    expect(list?.parameters).toEqual(expect.arrayContaining([false, 1790000000123456, 1042, 21]));
+  });
+
+  it("под актором вендора, по его вендору, статусы вкладки; закрытые — новые сверху", async () => {
     const fake = dbWith(row(), (q) =>
       q.sql.includes("group by")
         ? [
@@ -148,15 +189,27 @@ describe("listRequests", () => {
           ]
         : null,
     );
-    const page = await listRequests(fake.db, ACTOR, { tab: "active", before: 1050, limit: 20 });
+    const page = await listRequests(fake.db, ACTOR, {
+      tab: "closed",
+      after: { kind: "newest", no: 1050 },
+      limit: 20,
+    });
 
     const [settings, list] = fake.queries;
     expect(settings?.parameters).toEqual(["vendor_user", ACTOR.id, ACTOR.vendorId]);
     expect(list?.sql).toContain(
-      'where "r"."vendor_id" = $1 and "r"."status" in ($2, $3) and "r"."public_no" < $4',
+      'where "r"."vendor_id" = $1 and "r"."status" in ($2, $3, $4, $5) and "r"."public_no" < $6',
     );
-    expect(list?.sql).toContain('order by "r"."public_no" desc limit $5');
-    expect(list?.parameters).toEqual([ACTOR.vendorId, "viewed", "contacted", "1050", 21]);
+    expect(list?.sql).toContain('order by "r"."public_no" desc limit $7');
+    expect(list?.parameters).toEqual([
+      ACTOR.vendorId,
+      "deal",
+      "declined",
+      "withdrawn",
+      "expired",
+      "1050",
+      21,
+    ]);
     // Телефон в список не попадает — только имя из видимого по согласию контакта
     expect(list?.sql).not.toContain("read_request_phone");
     expect(list?.sql).not.toContain("contact_phone");
@@ -182,12 +235,21 @@ describe("listRequests", () => {
     ]);
   });
 
-  it("строк больше страницы — курсор на последний номер страницы", async () => {
-    const rows = [row({ public_no: "1003" }), row({ public_no: "1002" }), row({ public_no: "1001" })];
-    const fake = fakeDb((q) => (isItemQuery(q) ? rows : []));
-    const page = await listRequests(fake.db, ACTOR, { tab: "new", before: null, limit: 2 });
-    expect(page.items.map((i) => i.publicNo)).toEqual([1003, 1002]);
-    expect(page.nextCursor).toBe("1002");
+  it("строк больше страницы — курсор на последнюю заявку страницы", async () => {
+    const open = [
+      row({ public_no: "1001", answered: false, due_us: "1790000000000001" }),
+      row({ public_no: "1003", answered: false, due_us: "1790000000000002" }),
+      row({ public_no: "1002", answered: true, due_us: "1790000000000000" }),
+    ];
+    const fake = fakeDb((q) => (isItemQuery(q) ? open : []));
+    const page = await listRequests(fake.db, ACTOR, { tab: "new", after: null, limit: 2 });
+    expect(page.items.map((i) => i.publicNo)).toEqual([1001, 1003]);
+    expect(page.nextCursor).toBe("0.1790000000000002.1003");
+
+    const closed = [row({ public_no: "1003" }), row({ public_no: "1002" }), row({ public_no: "1001" })];
+    const fakeClosed = fakeDb((q) => (isItemQuery(q) ? closed : []));
+    const last = await listRequests(fakeClosed.db, ACTOR, { tab: "closed", after: null, limit: 2 });
+    expect(last.nextCursor).toBe("1002");
   });
 });
 

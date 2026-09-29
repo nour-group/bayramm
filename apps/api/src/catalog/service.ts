@@ -10,6 +10,10 @@
 //     в этот день (строка в app.availability) идут в конце при любой сортировке;
 //   · порядок — только по цене или вместимости, затем по id. Оплата, премиум и
 //     продвижение на порядок не влияют (их в v0.1 и нет);
+//   · цены сравниваются на одной шкале, хотя у одних залов цена за гостя, у других —
+//     за мероприятие (comparablePriceUzs в @bayramm/shared/api): с числом гостей —
+//     примерная сумма на это число, без него — цена за гостя (цена за мероприятие,
+//     делённая на cap_max с округлением вверх);
 //   · телефон площадки отдаётся в карточке до заявки — pii.read_listing_phone:
 //     у активного листинга он публичен.
 
@@ -111,13 +115,31 @@ export async function getConsentTexts(db: Db, locale: Locale | null): Promise<Co
 
 // ── каталог ────────────────────────────────────────────────────────────────
 
+/**
+ * Сравнимая цена в SQL — то же, что comparablePriceUzs из @bayramm/shared/api:
+ * с гостями — цена за гостя × гости или цена за мероприятие как есть; без гостей —
+ * цена за гостя или цена за мероприятие / cap_max вверх (целочисленно: (p + c − 1) / c).
+ * Целое bigint: 1e11 сумов × 5000 гостей помещается и в bigint, и в курсор
+ */
+function comparablePrice(guests: number | null): RawBuilder<string> {
+  if (guests !== null) {
+    return sql<string>`(case when l.price_unit = 'per_guest' then l.price_from_uzs * ${guests}::bigint else l.price_from_uzs end)`;
+  }
+  return sql<string>`(case when l.price_unit = 'per_guest' then l.price_from_uzs else (l.price_from_uzs + l.cap_max - 1) / l.cap_max end)`;
+}
+
 // Ключ сортировки — всегда по возрастанию: «дороже» и «больше мест» — минус
-// цена и минус вместимость. Так курсор — одно сравнение строк (занята, ключ, id)
-const SORT_KEYS: Readonly<Record<CatalogSort, RawBuilder<string>>> = {
-  price_asc: sql<string>`l.price_from_uzs`,
-  price_desc: sql<string>`(-l.price_from_uzs)`,
-  capacity_desc: sql<string>`(-l.cap_max)::bigint`,
-};
+// сравнимая цена и минус вместимость. Так курсор — одно сравнение строк (занята, ключ, id)
+export function sortKey(sort: CatalogSort, guests: number | null): RawBuilder<string> {
+  switch (sort) {
+    case "price_asc":
+      return comparablePrice(guests);
+    case "price_desc":
+      return sql<string>`(-${comparablePrice(guests)})`;
+    case "capacity_desc":
+      return sql<string>`(-l.cap_max)::bigint`;
+  }
+}
 
 // Занята ли площадка в день date: строка app.availability присоединяется
 // левым соединением по (листинг, день); без даты не присоединяется ничего
@@ -224,7 +246,7 @@ function toCard(row: CardRow, date: string | null): ListingCard {
 /** GET /catalog/listings: страница выдачи и курсор следующей (null — последняя) */
 export async function listCatalog(db: Db, params: CatalogParams): Promise<CatalogPage> {
   const { category, district, date, guests, sort, limit, after } = params;
-  const key = SORT_KEYS[sort];
+  const key = sortKey(sort, guests);
   const rows = await withActor(db, GUEST, (trx) =>
     publicListings(trx, date)
       .select(key.as("sort_key"))
@@ -243,7 +265,7 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
   const last = page.at(-1);
   const nextCursor =
     rows.length > limit && last !== undefined
-      ? encodeCursor({ sort, date, busy: last.busy, key: Number(last.sort_key), id: last.id })
+      ? encodeCursor({ sort, date, guests, busy: last.busy, key: Number(last.sort_key), id: last.id })
       : null;
   return { items: page.map((row) => toCard(row, date)), nextCursor } satisfies CatalogPage;
 }

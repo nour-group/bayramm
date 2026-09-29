@@ -31,21 +31,24 @@ const run = randomBytes(3).toString("hex");
 const vendor = randomUUID();
 
 // Площадки прогона (район — Бектемир, категория — залы):
-//   cheap — самая дешёвая, но занята в BUSY_DAY; small — 80 мест; draft — не опубликована
+//   cheap — самая дешёвая, но занята в BUSY_DAY; small — 80 мест; draft — не опубликована;
+//   event — цена за мероприятие: 33 млн на 300 мест = 110 000 за гостя при полном зале
 interface TestListing {
   id: string;
   slug: string;
   price: number;
+  unit: "per_guest" | "per_event";
   capMin: number;
   capMax: number;
   publish: boolean;
 }
 const L = {
-  cheap: { price: 90_000, capMin: 50, capMax: 500, publish: true },
-  mid: { price: 100_000, capMin: 100, capMax: 400, publish: true },
-  small: { price: 120_000, capMin: 20, capMax: 80, publish: true },
-  big: { price: 150_000, capMin: 100, capMax: 1000, publish: true },
-  draft: { price: 110_000, capMin: 10, capMax: 300, publish: false },
+  cheap: { price: 90_000, unit: "per_guest", capMin: 50, capMax: 500, publish: true },
+  mid: { price: 100_000, unit: "per_guest", capMin: 100, capMax: 400, publish: true },
+  small: { price: 120_000, unit: "per_guest", capMin: 20, capMax: 80, publish: true },
+  big: { price: 150_000, unit: "per_guest", capMin: 100, capMax: 1000, publish: true },
+  event: { price: 33_000_000, unit: "per_event", capMin: 100, capMax: 300, publish: true },
+  draft: { price: 110_000, unit: "per_guest", capMin: 10, capMax: 300, publish: false },
 } as const;
 type Name = keyof typeof L;
 const listings = Object.fromEntries(
@@ -69,8 +72,8 @@ async function createListing(l: TestListing): Promise<void> {
   await admin.query(
     `insert into app.listings (id, vendor_id, slug, category_code, name, district_code, address_ru, address_uz,
                                description_ru, description_uz, price_from_uzs, price_unit, cap_min, cap_max)
-     values ($1, $2, $3, 'hall', $4, 'bektemir', 'Адрес', 'Manzil', 'Описание', 'Tavsif', $5, 'per_guest', $6, $7)`,
-    [l.id, vendor, l.slug, `Test ${l.slug}`, l.price, l.capMin, l.capMax],
+     values ($1, $2, $3, 'hall', $4, 'bektemir', 'Адрес', 'Manzil', 'Описание', 'Tavsif', $5, $6, $7, $8)`,
+    [l.id, vendor, l.slug, `Test ${l.slug}`, l.price, l.unit, l.capMin, l.capMax],
   );
   await admin.query(
     "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000777')",
@@ -263,26 +266,59 @@ const BASE = "category=hall&district=bektemir";
 
 describe("GET /catalog/listings", () => {
   it("только опубликованные; по умолчанию — сначала дешевле", async () => {
-    expect((await catalogNames(BASE)).names).toEqual(["cheap", "mid", "small", "big"]);
+    expect((await catalogNames(BASE)).names).toEqual(["cheap", "mid", "event", "small", "big"]);
+  });
+
+  it("цена за мероприятие сравнивается честно: без гостей — на гостя по вместимости, с гостями — сумма", async () => {
+    // Без гостей event = 33 млн / 300 = 110 000 за гостя: между mid (100 000) и small (120 000)
+    expect((await catalogNames(`${BASE}&sort=price_desc`)).names).toEqual([
+      "big",
+      "small",
+      "event",
+      "mid",
+      "cheap",
+    ]);
+    // 100 гостей: cheap 9 млн, mid 10 млн, big 15 млн, event 33 млн — зал за мероприятие дороже всех
+    expect((await catalogNames(`${BASE}&guests=100`)).names).toEqual(["cheap", "mid", "big", "event"]);
+    // 250 гостей: cheap 22,5 млн, mid 25 млн, event 33 млн, big 37,5 млн
+    expect((await catalogNames(`${BASE}&guests=250`)).names).toEqual(["cheap", "mid", "event", "big"]);
+    expect((await catalogNames(`${BASE}&guests=250&sort=price_desc`)).names).toEqual([
+      "big",
+      "event",
+      "mid",
+      "cheap",
+    ]);
   });
 
   it("date не отсекает, а опускает занятых в конец — при любой сортировке", async () => {
     const q = `${BASE}&date=${BUSY_DAY}`;
     expect(await catalogNames(`${q}&sort=price_asc`)).toEqual({
-      names: ["mid", "small", "big", "cheap"],
-      busy: [false, false, false, true],
+      names: ["mid", "event", "small", "big", "cheap"],
+      busy: [false, false, false, false, true],
     });
-    expect((await catalogNames(`${q}&sort=price_desc`)).names).toEqual(["big", "small", "mid", "cheap"]);
-    expect((await catalogNames(`${q}&sort=capacity_desc`)).names).toEqual(["big", "mid", "small", "cheap"]);
+    expect((await catalogNames(`${q}&sort=price_desc`)).names).toEqual([
+      "big",
+      "small",
+      "event",
+      "mid",
+      "cheap",
+    ]);
+    expect((await catalogNames(`${q}&sort=capacity_desc`)).names).toEqual([
+      "big",
+      "mid",
+      "event",
+      "small",
+      "cheap",
+    ]);
     // Без даты занятость не знаем: busyOnDate = null, порядок — только по вместимости
     expect(await catalogNames(`${BASE}&sort=capacity_desc`)).toEqual({
-      names: ["big", "cheap", "mid", "small"],
-      busy: [null, null, null, null],
+      names: ["big", "cheap", "mid", "event", "small"],
+      busy: [null, null, null, null, null],
     });
   });
 
   it("guests отсекает площадки, где мест меньше", async () => {
-    expect((await catalogNames(`${BASE}&guests=100`)).names).toEqual(["cheap", "mid", "big"]);
+    expect((await catalogNames(`${BASE}&guests=100`)).names).not.toContain("small");
     expect((await catalogNames(`${BASE}&guests=1000`)).names).toEqual(["big"]);
   });
 
@@ -319,6 +355,8 @@ describe("GET /catalog/listings", () => {
     expect(first.nextCursor).not.toBeNull();
     const other = await call(`/catalog/listings?${BASE}&limit=1&sort=price_desc&cursor=${first.nextCursor}`);
     expect((await json<ApiErrorBody>(other, 400)).error.code).toBe("invalid_cursor");
+    const guests = await call(`/catalog/listings?${BASE}&limit=1&guests=100&cursor=${first.nextCursor}`);
+    expect((await json<ApiErrorBody>(guests, 400)).error.code).toBe("invalid_cursor");
     const garbage = await call("/catalog/listings?cursor=not-a-cursor");
     expect((await json<ApiErrorBody>(garbage, 400)).error.code).toBe("invalid_cursor");
   });
