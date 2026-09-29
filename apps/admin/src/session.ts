@@ -5,14 +5,12 @@
    общем компьютере. Если sessionStorage недоступен (приватный режим, запрет) — только
    в памяти, до перезагрузки. */
 
-export type StaffRole = "admin" | "manager" | "moderator";
+import type { StaffMe, StaffPermission, StaffRole } from "@bayramm/shared/api/staff";
 
-export interface Staff {
-  id: string;
-  role: StaffRole;
-  displayName: string;
-  username: string | null;
-}
+export type { StaffRole };
+
+/** Вошедший сотрудник: GET /staff/me */
+export type Staff = StaffMe;
 
 /** Почему не вошли: подпись не прошла или устарела · нет доступа · API не ответило */
 export type SignInError = "invalid" | "denied" | "unavailable";
@@ -106,7 +104,15 @@ export async function fetchStaff(token: string): Promise<Staff | null | "unavail
   const res = await request("/staff/me", { headers: bearer(token) });
   if (res === null || res.status >= 500) return "unavailable";
   if (!res.ok) return null;
-  return ((await res.json().catch(() => null)) as Staff | null) ?? "unavailable";
+  const body = (await res.json().catch(() => null)) as
+    | (Omit<Staff, "permissions"> & { permissions?: unknown })
+    | null;
+  if (body === null) return "unavailable";
+  // Права — только для показа кнопок; нет списка — кнопок нет, решает всё равно сервер
+  const permissions = Array.isArray(body.permissions)
+    ? body.permissions.filter((p): p is StaffPermission => typeof p === "string")
+    : [];
+  return { ...body, permissions };
 }
 
 /** Отзывает сессию на сервере. Ошибку сети не показываем: токен всё равно стирается у нас. */

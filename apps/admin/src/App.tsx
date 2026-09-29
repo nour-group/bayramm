@@ -1,14 +1,13 @@
-import {
-  type MouseEvent,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import type { StaffDictionaries } from "@bayramm/shared/api/staff";
+import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createApi, type Session, SessionContext, useLoad } from "./api";
 import { Login } from "./Login";
-import { HOME, matchRoute, NAV, ROUTES, type Section, useRoute } from "./router";
+import { ListingNewPage, ListingPage } from "./pages/Listing";
+import { ModerationPage } from "./pages/Moderation";
+import { RequestPage, RequestsPage } from "./pages/Requests";
+import { VendorNewPage, VendorPage } from "./pages/Vendor";
+import { VendorsPage } from "./pages/Vendors";
+import { HOME, matchRoute, NAV, pathOf, ROUTES, sectionOf, useRoute, type View } from "./router";
 import {
   fetchStaff,
   readWidgetCallback,
@@ -19,57 +18,85 @@ import {
   tokenStore,
 } from "./session";
 import { t } from "./texts";
+import { Link, NavigateContext, TitleContext } from "./ui";
 
-interface NavLinkProps {
-  to: Section;
-  current: boolean;
-  onNavigate: (section: Section) => void;
-  className?: string;
-  children: ReactNode;
-}
-
-function NavLink({ to, current, onNavigate, className, children }: NavLinkProps) {
-  const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    // Новая вкладка, окно, скачивание — пусть решает браузер
-    if (event.defaultPrevented || event.button !== 0) return;
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    onNavigate(to);
-  };
-  return (
-    <a href={ROUTES[to]} className={className} aria-current={current ? "page" : undefined} onClick={onClick}>
-      {children}
-    </a>
-  );
+/** Заголовок экрана: раздел — его название, страница объекта — вид объекта */
+export function titleOf(view: View | null): string {
+  if (!view) return t.notFound;
+  switch (view.name) {
+    case "vendorNew":
+    case "vendor":
+    case "listingNew":
+    case "listing":
+    case "request":
+      return t.views[view.name];
+    default:
+      return t[view.name];
+  }
 }
 
 interface PageProps {
-  route: Section | null;
+  view: View | null;
+  title: string;
   headingRef: RefObject<HTMLHeadingElement | null>;
-  onNavigate: (section: Section) => void;
+  dictionaries: StaffDictionaries | null;
 }
 
-function Page({ route, headingRef, onNavigate }: PageProps) {
-  if (!route)
+function Page({ view, title, headingRef, dictionaries }: PageProps) {
+  const heading = (
+    <h1 id="page-title" className="page-title" ref={headingRef} tabIndex={-1}>
+      {title}
+    </h1>
+  );
+  if (!view)
     return (
       <section className="page" aria-labelledby="page-title">
-        <h1 id="page-title" className="page-title" ref={headingRef} tabIndex={-1}>
-          {t.notFound}
-        </h1>
+        {heading}
         <p className="lead">{t.notFoundLead}</p>
-        <NavLink to={HOME} current={false} onNavigate={onNavigate} className="action">
+        <Link to={{ name: HOME }} className="action">
           {t.toHome}
-        </NavLink>
+        </Link>
       </section>
     );
 
+  let content: ReactNode;
+  switch (view.name) {
+    case "vendors":
+      content = <VendorsPage />;
+      break;
+    case "vendorNew":
+      content = <VendorNewPage dictionaries={dictionaries} />;
+      break;
+    case "vendor":
+      content = <VendorPage key={view.id} id={view.id} dictionaries={dictionaries} />;
+      break;
+    case "listingNew":
+      content = <ListingNewPage key={view.vendorId} vendorId={view.vendorId} dictionaries={dictionaries} />;
+      break;
+    case "listing":
+      content = <ListingPage key={view.id} id={view.id} dictionaries={dictionaries} />;
+      break;
+    case "moderation":
+      content = <ModerationPage minPhotos={dictionaries?.settings.minPhotos ?? 3} />;
+      break;
+    case "requests":
+      content = <RequestsPage dictionaries={dictionaries} />;
+      break;
+    case "request":
+      content = <RequestPage key={view.id} id={view.id} dictionaries={dictionaries} />;
+      break;
+    case "clients":
+      content = <p className="soon">{t.soon}</p>;
+      break;
+  }
+
+  const section = sectionOf(view);
+  const lead = view.name === section ? t[`${section}Lead`] : null;
   return (
-    <section className="page" aria-labelledby="page-title">
-      <h1 id="page-title" className="page-title" ref={headingRef} tabIndex={-1}>
-        {t[route]}
-      </h1>
-      <p className="lead">{t[`${route}Lead`]}</p>
-      <p className="soon">{t.soon}</p>
+    <section className={`page${view.name === section ? "" : " page-wide"}`} aria-labelledby="page-title">
+      {heading}
+      {lead && <p className="lead">{lead}</p>}
+      {content}
     </section>
   );
 }
@@ -79,56 +106,75 @@ interface ShellProps {
   onSignOut: () => void;
 }
 
-/** Панель вошедшего сотрудника: шапка с разделами и именем, содержимое раздела */
+/** Панель вошедшего сотрудника: шапка с разделами и именем, содержимое экрана */
 function Shell({ staff, onSignOut }: ShellProps) {
-  const [route, navigate] = useRoute();
+  const [view, navigate] = useRoute();
   const heading = useRef<HTMLHeadingElement>(null);
-  const shownRoute = useRef(route);
+  const shownPath = useRef(view ? pathOf(view) : null);
+  const path = view ? pathOf(view) : null;
+  // Справочники — один раз на сессию: районы, сотрудники, настройки
+  const { loaded: dict } = useLoad<StaffDictionaries>("/staff/dictionaries");
+  const dictionaries = dict.state === "ready" ? dict.data : null;
+  // Страница объекта называет себя сама, когда данные загрузились; новый экран — сброс
+  const [entityTitle, setEntityTitle] = useState<{ path: string | null; title: string | null }>({
+    path: null,
+    title: null,
+  });
+  const setTitle = useCallback(
+    (title: string | null) => setEntityTitle({ path: window.location.pathname, title }),
+    [],
+  );
+  const title = (entityTitle.path === window.location.pathname ? entityTitle.title : null) ?? titleOf(view);
 
   useEffect(() => {
-    document.title = `${route ? t[route] : t.notFound} · Bayramm`;
-  }, [route]);
+    document.title = `${title} · Bayramm`;
+  }, [title]);
 
-  // После перехода фокус — на заголовок нового раздела, чтобы экранный диктор его прочёл.
+  // После перехода фокус — на заголовок нового экрана, чтобы экранный диктор его прочёл.
   // При первом показе фокус не трогаем. Без прокрутки (ловушка №3); scrollTo есть не везде (ловушка №5)
   useEffect(() => {
-    if (shownRoute.current === route) return;
-    shownRoute.current = route;
+    if (shownPath.current === path) return;
+    shownPath.current = path;
     heading.current?.focus({ preventScroll: true });
     window.scrollTo?.(0, 0);
-  }, [route]);
+  }, [path]);
 
+  const current = view ? sectionOf(view) : null;
   return (
-    <div className="app">
-      <a className="skip" href="#main">
-        {t.skip}
-      </a>
-      <header className="top">
-        <NavLink to={HOME} current={false} onNavigate={navigate} className="brand">
-          Bayramm <span className="brand-area">{t.area}</span>
-        </NavLink>
-        <nav className="nav" aria-label={t.sections}>
-          {NAV.map((item) => (
-            <NavLink key={item} to={item} current={route === item} onNavigate={navigate}>
-              {t[item]}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="who">
-          <p className="who-name">
-            <span className="visually-hidden">{t.signedInAs} </span>
-            {staff.displayName}
-            <span className="who-role">{t.roles[staff.role]}</span>
-          </p>
-          <button type="button" className="action" onClick={onSignOut}>
-            {t.signOut}
-          </button>
-        </div>
-      </header>
-      <main id="main" className="main" tabIndex={-1}>
-        <Page route={route} headingRef={heading} onNavigate={navigate} />
-      </main>
-    </div>
+    <NavigateContext.Provider value={navigate}>
+      <div className="app">
+        <a className="skip" href="#main">
+          {t.skip}
+        </a>
+        <header className="top">
+          <Link to={{ name: HOME }} className="brand">
+            Bayramm <span className="brand-area">{t.area}</span>
+          </Link>
+          <nav className="nav" aria-label={t.sections}>
+            {NAV.map((item) => (
+              <Link key={item} to={{ name: item }} current={current === item}>
+                {t[item]}
+              </Link>
+            ))}
+          </nav>
+          <div className="who">
+            <p className="who-name">
+              <span className="visually-hidden">{t.signedInAs} </span>
+              {staff.displayName}
+              <span className="who-role">{t.roles[staff.role]}</span>
+            </p>
+            <button type="button" className="action" onClick={onSignOut}>
+              {t.signOut}
+            </button>
+          </div>
+        </header>
+        <main id="main" className="main" tabIndex={-1}>
+          <TitleContext.Provider value={setTitle}>
+            <Page view={view} title={title} headingRef={heading} dictionaries={dictionaries} />
+          </TitleContext.Provider>
+        </main>
+      </div>
+    </NavigateContext.Provider>
   );
 }
 
@@ -190,6 +236,25 @@ export function App() {
     setAuth({ kind: "signedOut", error: null });
   }, [auth]);
 
-  if (auth.kind === "signedIn") return <Shell staff={auth.staff} onSignOut={onSignOut} />;
+  // Сессия кончилась посреди работы (401) — на страницу входа, токен стираем
+  const onExpired = useCallback(() => {
+    tokenStore.clear();
+    window.history.replaceState(null, "", ROUTES.login);
+    setAuth({ kind: "signedOut", error: null });
+  }, []);
+
+  const token = auth.kind === "signedIn" ? auth.token : null;
+  const staff = auth.kind === "signedIn" ? auth.staff : null;
+  const session = useMemo<Session | null>(
+    () => (token && staff ? { api: createApi(token, onExpired), staff } : null),
+    [token, staff, onExpired],
+  );
+
+  if (session && staff)
+    return (
+      <SessionContext.Provider value={session}>
+        <Shell staff={staff} onSignOut={onSignOut} />
+      </SessionContext.Provider>
+    );
   return <Login checking={auth.kind === "checking"} error={auth.kind === "signedOut" ? auth.error : null} />;
 }

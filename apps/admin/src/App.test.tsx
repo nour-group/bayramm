@@ -147,8 +147,9 @@ describe("вход в панель оператора", () => {
     });
     await mount(`/login/telegram?${new URLSearchParams(WIDGET_FIELDS)}`);
 
-    // Вошли — имя бота не понадобилось
-    expect(summary()).toEqual(["POST /api/auth/staff/telegram", "GET /api/staff/me"]);
+    // Вошли — имя бота не понадобилось; дальше — данные панели
+    expect(summary().slice(0, 2)).toEqual(["POST /api/auth/staff/telegram", "GET /api/staff/me"]);
+    expect(summary()).not.toContain("GET /api/telegram/bot");
     const [login, me] = calls;
     expect(login?.method).toBe("POST");
     expect(login?.url).toBe("/api/auth/staff/telegram");
@@ -267,9 +268,10 @@ describe("сессия сотрудника", () => {
     signedIn();
     await mount("/requests");
     expect(heading()).toBe("Заявки");
-    expect(calls.map((c) => `${c.method} ${c.url} ${c.authorization}`)).toEqual([
-      `GET /api/staff/me Bearer ${TOKEN}`,
-    ]);
+    expect(calls[0]).toMatchObject({ method: "GET", url: "/api/staff/me", authorization: `Bearer ${TOKEN}` });
+    // Данные панели — только с токеном; кнопка входа не нужна
+    expect(calls.every((c) => c.authorization === `Bearer ${TOKEN}`)).toBe(true);
+    expect(summary()).not.toContain("GET /api/telegram/bot");
   });
 
   it("токен больше не действует — стирается, страница входа без ошибки", async () => {
