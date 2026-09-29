@@ -2,6 +2,7 @@
    знает (его видно только по «Показать»); пустое поле при правке — «не менять». */
 
 import type { StaffDictionaries, VendorDetail, VendorInput } from "@bayramm/shared/api/staff";
+import { Select } from "@bayramm/ui/react";
 import { type FormEvent, useState } from "react";
 import type { Failure } from "../api";
 import { t } from "../texts";
@@ -70,10 +71,11 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
   const errors = fieldErrors(failure, t.fieldErrors);
   const creating = vendor === null;
 
-  const set = (key: keyof Values) => (event: { target: { value: string } }) => {
+  const put = (key: keyof Values) => (value: string) => {
     setSaved(false);
-    setValues((prev) => ({ ...prev, [key]: event.target.value }));
+    setValues((prev) => ({ ...prev, [key]: value }));
   };
+  const set = (key: keyof Values) => (event: { target: { value: string } }) => put(key)(event.target.value);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -136,20 +138,21 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           {text("name", { maxLength: 120 })}
           <Field label={t.fields.legalForm ?? ""}>
             {(props) => (
-              <select
+              <Select
                 {...props}
                 className="input"
+                label={t.fields.legalForm ?? ""}
                 value={values.legalForm}
-                onChange={set("legalForm")}
+                onChange={put("legalForm")}
                 disabled={readOnly}
-              >
-                <option value="">{t.none}</option>
-                {(["ooo", "yatt", "self_employed"] as const).map((form) => (
-                  <option key={form} value={form}>
-                    {t.legalForms[form]}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: t.none },
+                  ...(["ooo", "yatt", "self_employed"] as const).map((form) => ({
+                    value: form,
+                    label: t.legalForms[form],
+                  })),
+                ]}
+              />
             )}
           </Field>
           {text("legalName", { maxLength: 200 })}
@@ -158,20 +161,21 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           {text("contractNo", { maxLength: 64 })}
           <Field label={t.fields.managerId ?? ""} error={errors.managerId}>
             {(props) => (
-              <select
+              <Select
                 {...props}
                 className="input"
+                label={t.fields.managerId ?? ""}
                 value={values.managerId}
-                onChange={set("managerId")}
+                onChange={put("managerId")}
                 disabled={readOnly}
-              >
-                <option value="">{t.noManager}</option>
-                {(dictionaries?.staff ?? []).map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.displayName} · {t.roles[member.role]}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: t.noManager },
+                  ...(dictionaries?.staff ?? []).map((member) => ({
+                    value: member.id,
+                    label: `${member.displayName} · ${t.roles[member.role]}`,
+                  })),
+                ]}
+              />
             )}
           </Field>
         </div>

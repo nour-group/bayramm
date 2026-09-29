@@ -639,7 +639,7 @@ body {
   flex: 1 1 160px;
 }
 
-/* Отказ с причиной */
+/* Отказ с причиной: варианты — RadioGroup из @bayramm/ui/react (строки с кружком) */
 .choices {
   display: flex;
   flex-direction: column;
@@ -647,26 +647,6 @@ body {
   margin: 0;
   padding: 0;
   border: 0;
-}
-
-.choice {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-9);
-  min-height: var(--hit-min);
-  padding: 0 12px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-11);
-  background: var(--white);
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.choice input {
-  width: 20px;
-  height: 20px;
-  margin: 0;
-  accent-color: var(--coral-deep);
 }
 
 .field-label {

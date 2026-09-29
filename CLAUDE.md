@@ -29,7 +29,8 @@ packages/edge     воркер статических приложений: /api
 packages/media    фото: сжатие в браузере, проверка байтов на сервере, ключи и адреса вариантов
 packages/tg       Telegram: проверка initData и виджета входа, deep links startapp, секрет вебхука
 packages/shared   словари RU/UZ (типизированные), normalizeUz
-packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста, свои шрифты (fonts.css)
+packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста, свои шрифты (fonts.css);
+                  свои контролы на React вместо системных (@bayramm/ui/react + kit.css)
 prototypes/       client · vendor · admin — спецификация, не основа кода
 e2e/              сквозные проверки в браузере (Playwright + axe): правила продукта, доступность
 internal/         приватные документы (клон bayramm-internal, в .gitignore)
@@ -233,6 +234,20 @@ cd prototypes/admin  && pnpm test   # дымовые тесты панели о�
 зазоры 3·5·7·9·12, отступы только чётные, иконки 12·14·17·20·24·26.
 
 Зона нажатия минимум 44px — расширять невидимым слоем, не увеличивая рисунок.
+
+### Контролы — только свои
+
+Системные `<select>`, `<input type="checkbox|radio|number|date|file|search">`,
+`<dialog>`, `window.confirm/alert/prompt` и подсказки `title=` в приложениях не
+используются: в Telegram и старых вебвью они выглядят чужими, а список и календарь
+не знают про безопасные зоны. Вместо них — `@bayramm/ui/react`: `Select`,
+`Checkbox`, `Switch`, `RadioGroup`, `NumberStepper`, `DateField`/`Calendar`,
+`FileDrop`, `SearchField`, `ConfirmSheet`/`Dialog`, `useToast`, `Tooltip`; стили —
+`@bayramm/ui/kit.css` (подключать между `tokens.css` и стилями приложения). Под
+рисунком галочек, радиокнопок и выбора файлов — настоящий `<input>`. Список и
+календарь на телефоне — шторка снизу, на компьютере — панель у поля; страница под
+ними inert. Слов в наборе нет: «Закрыть»/«Очистить» — `UiTextsProvider` в корне
+приложения, остальное — пропсами. Страж — `packages/ui/src/react/native-controls.test.ts`.
 
 ### Иконки и узор
 

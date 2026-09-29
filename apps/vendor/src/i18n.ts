@@ -20,6 +20,9 @@ const ru = {
   retry: "Повторить",
   loading: "Загрузка…",
   loadFailed: "Не удалось загрузить. Проверьте интернет и попробуйте ещё раз.",
+  // кнопки своих контролов (@bayramm/ui/react): крестик шторки и очистка поля
+  close: "Закрыть",
+  clear: "Очистить",
 
   // вход
   gateLoading: "Входим в кабинет…",
@@ -244,6 +247,8 @@ const uz: VendorDict = {
   retry: "Qayta urinish",
   loading: "Yuklanmoqda…",
   loadFailed: "Yuklab boʻlmadi. Internetni tekshiring va qayta urinib koʻring.",
+  close: "Yopish",
+  clear: "Tozalash",
 
   gateLoading: "Kabinetga kirilmoqda…",
   gateOutsideTitle: "Kabinetni botdan oching",

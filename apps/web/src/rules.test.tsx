@@ -7,12 +7,14 @@ import { LANG_KEY } from "./context";
 import {
   allHumanText,
   byText,
+  calendarDay,
   cleanup,
   click,
   field,
   LISTINGS,
   mount,
   NOW,
+  pickDate,
   settle,
   text,
   type,
@@ -41,8 +43,8 @@ afterEach(cleanup);
 
 /** Заполнить форму заявки полностью, кроме согласия */
 async function fillForm(comment = "Нужен детский стол") {
-  await click(byText("label.choice", "Свадьба"));
-  await click(document.querySelector('button.cal-day[aria-label^="15 окт"]'));
+  await click(byText("label.ui-radio", "Свадьба"));
+  await pickDate(field("Дата события"), "15 окт");
   await type(field("Гостей"), "100");
   await type(field("Как к вам обращаться"), "Азиза");
   await type(field("Телефон"), "90 123 45 67");
@@ -81,13 +83,18 @@ describe("правила продукта", () => {
     await mount({ path: "/" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const cards = [...document.querySelectorAll(".card")];
-    for (const card of cards) expect(card.querySelector(".badge-new")?.textContent).toBe("Новый");
+    // На глаз — «Новый», диктору — полный смысл «Новый на площадке»; подсказка мыши — не title
+    for (const card of cards) {
+      expect(card.querySelector('.badge-new [aria-hidden="true"]')?.textContent).toBe("Новый");
+      expect(card.querySelector(".badge-new .sr-only")?.textContent).toBe("Новый на площадке");
+      expect(card.querySelector(".badge-new")?.hasAttribute("title")).toBe(false);
+    }
     expect(allHumanText()).not.toMatch(/★|рейтинг|reyting|отзыв|sharh/i);
     cleanup();
 
     await mount({ path: VENUE_PATH });
     await waitFor(() => document.querySelector("h1")?.textContent === VENUE.name, "карточка площадки");
-    expect(document.querySelector(".venue-head .badge-new")?.textContent).toBe("Новый");
+    expect(document.querySelector('.venue-head .badge-new [aria-hidden="true"]')?.textContent).toBe("Новый");
     expect(allHumanText()).not.toMatch(/★|рейтинг|reyting|отзыв|sharh/i);
   });
 
@@ -220,21 +227,27 @@ describe("заявка от начала до конца", () => {
     await mount({ path: `${FORM_PATH}?date=2026-10-01` });
     await waitFor(() => transferCheckbox(), "форма заявки");
     // Сегодняшняя дата из фильтра в форму не переносится
-    expect(document.querySelector(".field-button")?.textContent).toContain("Выберите дату");
-    expect(document.querySelector<HTMLButtonElement>('button.cal-day[aria-label="1 окт"]')?.disabled).toBe(
-      true,
-    );
-    expect(
-      document.querySelector<HTMLButtonElement>('button.cal-day[aria-label="2 окт, свободно"]')?.disabled,
-    ).toBe(false);
+    const date = field("Дата события");
+    expect(date?.textContent).toContain("Выберите дату");
+    await click(date);
+    expect(calendarDay("1 окт")?.getAttribute("aria-label")).toBe("1 окт");
+    expect(calendarDay("1 окт")?.getAttribute("aria-disabled")).toBe("true");
+    expect(calendarDay("2 окт")?.getAttribute("aria-label")).toBe("2 окт, свободно");
+    expect(calendarDay("2 окт")?.hasAttribute("aria-disabled")).toBe(false);
   });
 
   it("занятую дату выбрать нельзя", async () => {
     await mount({ path: FORM_PATH });
     await waitFor(() => transferCheckbox(), "форма заявки");
-    const busyDay = document.querySelector<HTMLButtonElement>('button.cal-day[aria-label^="8 окт"]');
-    expect(busyDay?.disabled).toBe(true);
+    const date = field("Дата события");
+    await click(date);
+    const busyDay = calendarDay("8 окт");
+    expect(busyDay?.getAttribute("aria-disabled")).toBe("true");
     expect(busyDay?.getAttribute("aria-label")).toBe("8 окт, занято");
+    // Нажатие ничего не выбирает: календарь открыт, в поле — «Выберите дату»
+    await click(busyDay);
+    expect(calendarDay("8 окт")).not.toBeNull();
+    expect(date?.textContent).toContain("Выберите дату");
   });
 
   it("повторная заявка на ту же дату (409) открывает уже отправленную", async () => {

@@ -1,6 +1,7 @@
 /* Вендоры: поиск, фильтр по статусу карточек, таблица. Строка ведёт на страницу вендора. */
 
 import type { ListingStatus, VendorList } from "@bayramm/shared/api/staff";
+import { SearchField } from "@bayramm/ui/react";
 import { useEffect, useState } from "react";
 import { useCan, useLoad } from "../api";
 import { t } from "../texts";
@@ -39,11 +40,10 @@ export function VendorsPage() {
   return (
     <div className="stack">
       <div className="toolbar">
-        <input
-          className="input search"
-          type="search"
+        <SearchField
+          className="search"
           value={q}
-          onChange={(event) => setQ(event.target.value)}
+          onChange={setQ}
           placeholder={t.vendorsSearch}
           aria-label={t.search}
           maxLength={100}

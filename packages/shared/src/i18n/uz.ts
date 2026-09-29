@@ -334,6 +334,7 @@ export const uz: Dict = {
   emptyHint: "Boshqa sana, kamroq mehmon yoki boshqa tumanni tanlab koʻring.",
   loadMore: "Yana koʻrsatish",
   done: "Tayyor",
+  clearField: "Tozalash",
   newBadge: "Yangi",
   newBadgeHint: "Platformada yangi",
   capRange: (min: number, max: number) => `${min}–${max} mehmon`,

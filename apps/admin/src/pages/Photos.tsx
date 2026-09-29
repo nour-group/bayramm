@@ -1,11 +1,13 @@
 /* Фото карточки: загрузка (сжатие в браузере, без метаданных), порядок, обложка,
    решение модератора, удаление. На фото не должно быть лиц — предупреждение всегда на
-   виду, без подтверждения файлы не выбрать. */
+   виду, без подтверждения файлы не выбрать. Выбор файлов — FileDrop: системный выбор
+   или перетаскивание на компьютере. */
 
 import { isImageError } from "@bayramm/media";
 import { compressForUpload } from "@bayramm/media/browser";
 import type { StaffPhoto } from "@bayramm/shared/api/staff";
-import { type ChangeEvent, useId, useState } from "react";
+import { Checkbox, FileDrop } from "@bayramm/ui/react";
+import { useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
 import { photoSrc, photoSrcSet } from "../format";
 import { apiErrorText, t } from "../texts";
@@ -23,7 +25,6 @@ interface PhotosProps {
 export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: PhotosProps) {
   const { api } = useSession();
   const can = useCan();
-  const inputId = useId();
   const [ack, setAck] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [problems, setProblems] = useState<string[]>([]);
@@ -35,9 +36,8 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
   const hasCover = photos.some((photo) => photo.isCover);
   const isCover = (photo: StaffPhoto, index: number) => photo.isCover || (!hasCover && index === 0);
 
-  const upload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = [...(event.target.files ?? [])].slice(0, Math.max(0, maxPhotos - photos.length));
-    event.target.value = "";
+  const upload = async (picked: readonly File[]) => {
+    const files = picked.slice(0, Math.max(0, maxPhotos - photos.length));
     if (files.length === 0) return;
     setProblems([]);
     setFailure(null);
@@ -198,25 +198,16 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
 
       {editable && photos.length < maxPhotos && (
         <div className="upload">
-          <label className="check-line">
-            <input type="checkbox" checked={ack} onChange={(event) => setAck(event.target.checked)} />
-            <span>{t.noFacesAck}</span>
-          </label>
-          <label
-            htmlFor={inputId}
-            className={`btn${ack && !progress ? "" : " btn-disabled"}`}
-            aria-disabled={!ack}
-          >
-            {t.addPhotos}
-          </label>
-          <input
-            id={inputId}
-            className="visually-hidden"
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          <Checkbox checked={ack} onChange={setAck}>
+            {t.noFacesAck}
+          </Checkbox>
+          <FileDrop
+            title={t.addPhotos}
+            hint={t.photosDrop}
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
             multiple
             disabled={!ack || progress !== null}
-            onChange={(event) => void upload(event)}
+            onFiles={(files) => void upload(files)}
           />
           {progress && (
             <p role="status" className="muted">

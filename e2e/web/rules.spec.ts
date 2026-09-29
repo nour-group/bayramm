@@ -19,10 +19,11 @@ const RATINGS = /★|☆|⭐|рейтинг|reyting|отзыв|sharh|\bbaho(?!r)
 /** Заполнить форму заявки целиком, кроме согласий */
 async function fillRequest(page: Page, comment: string) {
   const form = page.locator("form.request");
-  await form.locator("label.choice").first().click();
-  // Первый свободный день в открытом календаре
-  await form.locator("button.cal-day:not([disabled])").first().click();
-  await form.locator('input[type="number"]').fill("100");
+  await form.locator("label.ui-radio").first().click();
+  // Первый свободный день в календаре поля даты (панель или шторка — в портале body)
+  await form.locator("button[aria-haspopup=dialog]").click();
+  await page.locator(".ui-layer button.ui-cal-day:not([aria-disabled])").first().click();
+  await form.getByRole("spinbutton").fill("100");
   await form.locator('input[autocomplete="name"]').fill("Азиза");
   await form.locator('input[type="tel"]').fill("90 123 45 67");
   await form.locator("textarea").fill(comment);
@@ -86,7 +87,9 @@ test.describe("тексты экранов", () => {
       expect(seen).toHaveLength(SCREENS.length + 4);
       // Вместо рейтинга — «Новый»
       await open(page, PATHS.catalog, ".card");
-      await expect(page.locator(".card .badge-new").first()).toHaveText(T[lang].newBadge);
+      await expect(page.locator('.card .badge-new [aria-hidden="true"]').first()).toHaveText(
+        T[lang].newBadge,
+      );
     });
   }
 });

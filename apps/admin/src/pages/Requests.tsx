@@ -12,6 +12,7 @@ import type {
   StaffRequestDetail,
   StaffRequestList,
 } from "@bayramm/shared/api/staff";
+import { SearchField } from "@bayramm/ui/react";
 import { type FormEvent, useCallback, useId, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { formatDay, formatMoment, formatSum, vendorLabel } from "../format";
@@ -85,11 +86,10 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
           setQuery(q.trim());
         }}
       >
-        <input
-          className="input search"
-          type="search"
+        <SearchField
+          className="search"
           value={q}
-          onChange={(event) => setQ(event.target.value)}
+          onChange={setQ}
           placeholder={t.requestsSearch}
           aria-label={t.search}
           maxLength={100}

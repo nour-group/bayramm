@@ -330,6 +330,7 @@ export const ru = {
   emptyHint: "Попробуйте другую дату, меньше гостей или другой район.",
   loadMore: "Показать ещё",
   done: "Готово",
+  clearField: "Очистить",
   newBadge: "Новый",
   newBadgeHint: "Новый на площадке",
   capRange: (min: number, max: number) => `от ${min} до ${max} гостей`,

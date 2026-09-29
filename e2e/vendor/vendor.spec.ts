@@ -19,7 +19,7 @@ const CONTROLS = [
   ".icon-btn",
   ".back-link",
   ".rq",
-  ".choice",
+  "label.ui-radio",
 ].join(", ");
 
 async function start(page: Page, { telegram = true, signIn = "ok" as SignIn } = {}) {
