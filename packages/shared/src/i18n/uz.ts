@@ -419,9 +419,11 @@ export const uz: Dict = {
   withdrawKeep: "Qoldirish",
   errWithdraw: "Soʻrovni qaytarib olib boʻlmadi. Qayta urinib koʻring.",
   duplicateNote: "Bu sanaga soʻrov allaqachon yuborilgan — mana u.",
-  cp_client_service: "Platformada xizmat koʻrsatish",
+  cp_client_service: "Akkaunt va arizalarim",
   cp_request_transfer: "Soʻrovni hamkorga berish",
   cp_bot_notifications: "Telegram-botdagi bildirishnomalar",
   consentVersion: (v: number) => `${v}-versiya`,
   docsEmpty: "Hujjatlar hali eʼlon qilinmagan.",
+  noVenues_h: "Zallar tez orada qoʻshiladi",
+  noVenues: "Toshkentdagi birinchi maydonlarni ulayapmiz. Birozdan keyin qarab koʻring.",
 };

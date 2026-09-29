@@ -75,6 +75,24 @@ describe("каталог", () => {
     expect(window.location.search).toBe("");
   });
 
+  it("площадок ещё нет — «скоро появятся», без сброса фильтров", async () => {
+    await mount({ mock: { listings: [] } });
+    await waitFor(() => byText("h2", "Залы скоро появятся"), "пустой каталог без фильтров");
+    expect(document.body.textContent).not.toContain("Под эти условия никого");
+    expect(document.body.textContent).not.toContain("Сбросить фильтры");
+  });
+
+  it("у выпадающих списков своя стрелка", async () => {
+    await mount();
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "каталог");
+    const selects = [...document.querySelectorAll("select")];
+    expect(selects.length).toBeGreaterThanOrEqual(2);
+    for (const select of selects) {
+      expect(select.parentElement?.classList.contains("select")).toBe(true);
+      expect(select.parentElement?.querySelector(".select-caret")).not.toBeNull();
+    }
+  });
+
   it("карточка ведёт на площадку и передаёт дату и гостей", async () => {
     await mount({ path: "/?date=2026-10-20&guests=100" });
     const link = await waitFor(() => document.querySelector<HTMLAnchorElement>(".card-link"), "карточка");
