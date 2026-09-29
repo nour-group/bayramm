@@ -59,7 +59,7 @@ describe("исходники клиента", () => {
       .filter((s) => s.path !== "icons.tsx")
       .map((s) => s.code)
       .join("\n");
-    const dead = ICON_NAMES.filter((name) => !new RegExp(`["']${name}["']`).test(code));
+    const dead = ICON_NAMES.filter((name) => !code.includes(`"${name}"`) && !code.includes(`'${name}'`));
     expect(dead).toEqual([]);
   });
 

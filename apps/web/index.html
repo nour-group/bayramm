@@ -11,6 +11,7 @@
          Вне Telegram он ничего не делает; не загрузился — приложение работает как сайт.
          Без integrity: Telegram обновляет файл по тому же адресу, хеш сломал бы Mini App.
          Источник ограничивает CSP — только этот путь (telegramWebApp в @bayramm/edge) -->
+    <!-- nosemgrep: html.security.audit.missing-integrity.missing-integrity -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
