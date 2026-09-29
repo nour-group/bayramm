@@ -17,7 +17,7 @@
     "extract:dict": "node scripts/extract-client-dict.mjs && biome check --write src/i18n/ru.ts src/i18n/uz.ts"
   },
   "devDependencies": {
-    "typescript": "^6.0.2",
+    "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   }
 }
