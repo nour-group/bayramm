@@ -77,6 +77,9 @@ export interface AppAvailability {
   day: string;
   listing_id: string;
   request_id: string | null;
+  /**
+   * vendor — отметил вендор; request_decline — отказ «занято» по заявке request_id; staff — закрыл сотрудник
+   */
   source: Generated<string>;
 }
 
