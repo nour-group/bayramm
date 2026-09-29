@@ -98,7 +98,7 @@ test.describe("вне Telegram", () => {
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1", { guest: true });
     // SDK нет — своя кнопка заявки на месте
     await page.locator(".venue-bar").getByRole("link", { name: ru.pfReq }).click();
-    await expect(page).toHaveURL(new RegExp(`${PATHS.request(VENUE.slug)}(\\?|$)`));
+    await expect(page).toHaveURL((url) => url.pathname === PATHS.request(VENUE.slug));
 
     await expect(page.getByRole("heading", { level: 1, name: ru.tgOnlyH })).toBeVisible();
     const bot = page.getByRole("link", { name: ru.openInTg });

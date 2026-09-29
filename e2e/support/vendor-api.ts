@@ -240,11 +240,9 @@ export async function mockVendorApi(
       };
       return json(route, 200, calendar);
     }
-    const dayMatch = new RegExp(`^/vendor/listings/${LISTING_ID}/calendar/(\\d{4}-\\d{2}-\\d{2})$`).exec(
-      path,
-    );
-    if (dayMatch?.[1]) {
-      const day = dayMatch[1];
+    const dayPrefix = `/vendor/listings/${LISTING_ID}/calendar/`;
+    const day = path.startsWith(dayPrefix) ? path.slice(dayPrefix.length) : "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
       if (state.busy.get(day)?.source === "staff") return fail(route, 403, "forbidden_for_actor");
       if (method === "PUT") {
         const busy: BusyDay = { day, source: "vendor", requestId: null };

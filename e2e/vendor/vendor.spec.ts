@@ -31,9 +31,7 @@ async function start(page: Page, { telegram = true, signIn = "ok" as SignIn } = 
 
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
 const dayButton = (page: Page, day: number) =>
-  page
-    .locator("button.cal-day")
-    .filter({ has: page.locator(".cal-num", { hasText: new RegExp(`^${day}$`) }) });
+  page.locator("button.cal-day").filter({ has: page.getByText(String(day), { exact: true }) });
 
 test.describe("до входа", () => {
   test("вне Telegram: «откройте из бота» и ссылка на бота окружения", async ({ page }) => {
