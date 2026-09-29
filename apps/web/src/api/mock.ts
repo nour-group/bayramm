@@ -566,5 +566,6 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       }),
 
     signOut: () => respond("signOut", undefined, () => undefined),
+    forgetSession: () => {},
   };
 }

@@ -196,6 +196,7 @@ export function createHttpApi({
       }),
     linkTelegram: (body: LinkTelegram) =>
       call<Me>(fetchFn, base, "/me/identities/telegram", { method: "POST", body, auth: session, source }),
+    forgetSession: () => auth.invalidate(),
     signOut: async () => {
       try {
         await call<void>(fetchFn, base, "/auth/logout", { method: "POST", auth: session });

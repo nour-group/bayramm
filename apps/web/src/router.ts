@@ -9,6 +9,10 @@ export const ROUTES = {
   request: "/venue/:slug/request",
   requests: "/requests",
   profile: "/profile",
+  // Хаб входа: вход на сайт и вход в кабинет и панель (hub.ts). Ссылки сюда — только
+  // полной загрузкой: CSP виджета Telegram — у страниц /auth
+  auth: "/auth",
+  authTelegram: "/auth/telegram",
 } as const;
 
 export type RouteName = keyof typeof ROUTES;
@@ -18,7 +22,9 @@ export type Match =
   | { readonly name: "venue"; readonly slug: string }
   | { readonly name: "request"; readonly slug: string }
   | { readonly name: "requests" }
-  | { readonly name: "profile" };
+  | { readonly name: "profile" }
+  | { readonly name: "auth" }
+  | { readonly name: "authTelegram" };
 
 /** Вкладки нижней панели, по порядку */
 export const TABS = ["catalog", "requests", "profile"] as const satisfies readonly RouteName[];
@@ -35,6 +41,8 @@ export function matchRoute(pathname: string): Match | null {
   if (path === ROUTES.catalog) return { name: "catalog" };
   if (path === ROUTES.requests) return { name: "requests" };
   if (path === ROUTES.profile) return { name: "profile" };
+  if (path === ROUTES.auth) return { name: "auth" };
+  if (path === ROUTES.authTelegram) return { name: "authTelegram" };
   const venue = VENUE_RE.exec(path)?.[1];
   if (venue) return { name: "venue", slug: venue };
   const request = REQUEST_RE.exec(path)?.[1];
@@ -64,7 +72,7 @@ export function parentOf(match: Match | null): Match | null {
 
 /** Вкладка, к которой относится экран: внутренние экраны — к каталогу */
 export function tabOf(match: Match | null): Tab | null {
-  if (!match) return null;
+  if (!match || match.name === "auth" || match.name === "authTelegram") return null;
   if (match.name === "requests" || match.name === "profile") return match.name;
   return "catalog";
 }

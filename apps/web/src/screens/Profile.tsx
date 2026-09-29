@@ -10,6 +10,7 @@ import { useAsync, useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
 import { hrefFor } from "../router";
 import { haptic } from "../telegram";
+import { AccountSection } from "./AccountSection";
 import { clearDrafts } from "./request-draft";
 
 const PURPOSE_TITLE = {
@@ -237,11 +238,17 @@ function MyData() {
 
 export function Profile() {
   const { webApp, identity } = useServices();
-  const { deleted } = useAccount();
+  const { deleted, me } = useAccount();
   const { t } = useLang();
   useDocumentTitle(t.navProfile);
   const user = deleted ? undefined : webApp?.initDataUnsafe.user;
-  const name = user ? [user.first_name, user.last_name].filter(Boolean).join(" ") : null;
+  // Имя: из Telegram (Mini App), на сайте — из профиля аккаунта
+  const own = !deleted && me.status === "ready" && me.data ? me.data : null;
+  const name = user
+    ? [user.first_name, user.last_name].filter(Boolean).join(" ")
+    : own
+      ? [own.firstName, own.lastName].filter(Boolean).join(" ") || null
+      : null;
 
   return (
     <div className="screen profile">
@@ -256,6 +263,8 @@ export function Profile() {
         </h2>
         <LangSwitch className="lang lang-wide" />
       </section>
+
+      <AccountSection />
 
       <Link className="row-link" href={hrefFor({ name: "requests" })}>
         <Icon name="notepad" size={20} />

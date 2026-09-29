@@ -76,4 +76,6 @@ export interface ClientApi {
   linkTelegram(body: LinkTelegram): Promise<Me>;
   /** Выйти: отозвать сессию этой вкладки */
   signOut(): Promise<void>;
+  /** Забыть токен вкладки (вход был давно): следующий запрос внутри Telegram войдёт заново */
+  forgetSession(): void;
 }

@@ -12,6 +12,7 @@ import { Catalog } from "./screens/Catalog";
 import { MyRequests } from "./screens/MyRequests";
 import { Profile } from "./screens/Profile";
 import { RequestForm } from "./screens/RequestForm";
+import { SignIn, TelegramCallback } from "./screens/SignIn";
 import { Venue } from "./screens/Venue";
 import { hasNativeBack, useBackButton } from "./telegram";
 
@@ -24,6 +25,8 @@ const TAB_VIEW = {
 
 /** Внутренние экраны: без нижней панели, с «назад» */
 const isInner = (match: Match | null) => match?.name === "venue" || match?.name === "request";
+/** Хаб входа: без нижней панели и без «назад» — дальше ведёт он сам */
+const isAuth = (match: Match | null) => match?.name === "auth" || match?.name === "authTelegram";
 
 function NotFound() {
   const { t } = useLang();
@@ -54,6 +57,10 @@ function Screen({ match }: { match: Match | null }) {
       return <MyRequests />;
     case "profile":
       return <Profile />;
+    case "auth":
+      return <SignIn />;
+    case "authTelegram":
+      return <TelegramCallback />;
     default:
       return <NotFound />;
   }
@@ -156,7 +163,7 @@ function Shell() {
         <main id="main" className="main" tabIndex={-1} ref={main}>
           <Screen match={match} />
         </main>
-        {inner ? null : <Tabs current={tabOf(match)} />}
+        {inner || isAuth(match) ? null : <Tabs current={tabOf(match)} />}
       </div>
     </UiTextsProvider>
   );
