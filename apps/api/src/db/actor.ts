@@ -22,6 +22,7 @@ export type Actor =
 export type ActorKind = Actor["kind"];
 export type ClientActor = Extract<Actor, { kind: "client" }>;
 export type StaffActor = Extract<Actor, { kind: "staff" }>;
+export type VendorActor = Extract<Actor, { kind: "vendor_user" }>;
 
 export type Tx = Transaction<DB>;
 

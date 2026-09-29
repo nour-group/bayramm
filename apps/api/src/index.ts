@@ -11,6 +11,7 @@ import { reference } from "./routes/reference";
 import { requests } from "./routes/requests";
 import { staff } from "./routes/staff";
 import { telegram } from "./routes/telegram";
+import { vendor } from "./routes/vendor";
 
 // Веб проксирует /api/* сюда, отрезая префикс: /api/me → /me
 const app = new Hono<AppEnv>();
@@ -63,6 +64,7 @@ app.route("/catalog", catalog);
 app.route("/requests", requests);
 app.route("/staff", staff);
 app.route("/telegram", telegram);
+app.route("/vendor", vendor);
 
 app.notFound((c) => c.json(notFound().toBody(), 404));
 app.onError(handleError);

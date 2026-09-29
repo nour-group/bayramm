@@ -2,12 +2,14 @@
 //
 //   POST /auth/telegram        { initData }      → 200 { token, expiresAt }  клиент, Mini App
 //   POST /auth/staff/telegram  { поля виджета }  → 200 { token, expiresAt }  сотрудник, панель оператора
+//   POST /auth/vendor/telegram { initData }      → 200 { token, expiresAt }  вендор, кабинет (Mini App)
 //   POST /auth/logout          (Bearer)          → 204                       любая сессия
 //
 // Подписанные данные Telegram проверяются токеном бота; всё, что в них есть,
 // читается только после проверки. Клиент — псевдоним в app.clients (HMAC от
 // Telegram ID), Telegram ID и имя — в pii.client_profiles. Сотрудник — см.
-// auth/staff.ts. Сессия — случайный токен, в базе только его sha256.
+// auth/staff.ts, вендор — auth/vendor.ts. Сессия — случайный токен, в базе
+// только его sha256.
 //
 // Ограничение частоты попыток входа сюда не входит: оно встаёт middleware перед
 // маршрутами (src/ratelimit.ts), сами обработчики от него не зависят.
@@ -19,6 +21,7 @@ import { sql } from "kysely";
 import { generateToken, hashToken, telegramIdHash } from "../auth/crypto";
 import { authenticate, requireSession } from "../auth/session";
 import { signInStaff } from "../auth/staff";
+import { signInVendor } from "../auth/vendor";
 import { SYSTEM, type Tx, withActor } from "../db/actor";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
@@ -84,6 +87,13 @@ auth.post("/telegram", limitBody, async (c) => {
 auth.post("/staff/telegram", limitBody, async (c) => {
   const fields = await readJsonObject(c.req.raw);
   const session = await signInStaff(c.var.db, c.env, fields);
+  return c.json({ token: session.token, expiresAt: session.expiresAt.toISOString() });
+});
+
+// Кабинет вендора: та же initData, что у клиента, но пользователь — из app.vendor_users
+auth.post("/vendor/telegram", limitBody, async (c) => {
+  const initData = await readInitData(c.req.raw);
+  const session = await signInVendor(c.var.db, c.env, initData);
   return c.json({ token: session.token, expiresAt: session.expiresAt.toISOString() });
 });
 
