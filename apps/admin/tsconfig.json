@@ -14,5 +14,5 @@
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "vite.config.ts", "telegram.config.ts"]
+  "include": ["src", "vite.config.ts"]
 }

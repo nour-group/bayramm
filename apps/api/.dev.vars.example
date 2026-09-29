@@ -6,8 +6,15 @@
 # (скрипты typecheck и cf-typegen в package.json).
 
 # Токен бота, через которого открывается Mini App (от @BotFather). Им же проверяется
-# вход сотрудников через виджет Telegram: у бота должен быть домен панели оператора (/setdomain)
+# вход сотрудников через виджет Telegram: у бота должен быть домен панели оператора (/setdomain).
+# Имя бота нигде не вписано: API узнаёт его по токену (getMe) и отдаёт в GET /telegram/bot
 TELEGRAM_BOT_TOKEN=
+
+# Ключ для POST /telegram/sync — настройка бота из кода (команды, описания, кнопка меню),
+# её вызывает деплой. Не короче 32 символов, например: openssl rand -hex 32.
+# Тот же ключ — секрет TELEGRAM_SYNC_KEY в GitHub Environment окружения.
+# Пусто — /telegram/sync отвечает 404: локально его можно не задавать
+TELEGRAM_SYNC_KEY=
 
 # Ключ HMAC для псевдонимов: app.clients.tg_id_hash = HMAC-SHA256(ID_HASH_KEY, Telegram ID).
 # Не короче 32 символов, например: openssl rand -base64 32

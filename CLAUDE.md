@@ -65,6 +65,14 @@ CSP и прочими заголовками безопасности. CSP пу�
 привязывается к Telegram ID (`app.staff_sign_in`). У бота каждого окружения в
 @BotFather `/setdomain` — домен панели этого окружения.
 
+Имя бота нигде не вписано: у каждого окружения свой бот, API узнаёт его по
+токену (`getMe`, кэш на час) и отдаёт в `GET /api/telegram/bot` вместе с
+адресом Mini App (`WEB_APP_URL`); панель берёт имя оттуда. Команды, описания и
+кнопку меню задаёт код — `apps/api/src/telegram/bot-profile.ts`; деплой
+применяет его через `POST /telegram/sync` (секрет `TELEGRAM_SYNC_KEY` в воркере
+API и в GitHub Environment). В @BotFather вручную — только `/setdomain` и
+основное Mini App.
+
 ---
 
 ## Что делать в первую очередь

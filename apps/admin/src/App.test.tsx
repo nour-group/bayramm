@@ -12,7 +12,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const TOKEN_KEY = "bayramm.admin.session";
 const TOKEN = "T".repeat(43);
-const BOT = "bayramm_test_bot";
+const BOT = "example_login_bot";
 const STAFF = {
   id: "00000000-0000-0000-0000-00000000b001",
   role: "moderator",
@@ -82,9 +82,13 @@ async function mount(path: string) {
   await settle();
 }
 
+// Имя бота виджета: панель спрашивает его у API на странице входа
+const BOT_INFO = { "GET /api/telegram/bot": json({ username: BOT, miniAppUrl: "https://app.example" }) };
+
 function signedIn() {
   window.sessionStorage.setItem(TOKEN_KEY, TOKEN);
   mockApi({
+    ...BOT_INFO,
     "GET /api/staff/me": json(STAFF),
     "POST /api/auth/logout": () => new Response(null, { status: 204 }),
   });
@@ -93,6 +97,8 @@ function signedIn() {
 const heading = () => container.querySelector("h1")?.textContent;
 const alertText = () => container.querySelector("[role=alert]")?.textContent;
 const widget = () => container.querySelector("script");
+const statusText = () => container.querySelector("[role=status]")?.textContent;
+const summary = () => calls.map((c) => `${c.method} ${c.url}`);
 const link = (name: string) =>
   [...container.querySelectorAll("a")].find((a) => a.textContent?.trim() === name) as HTMLAnchorElement;
 const button = (name: string) =>
@@ -100,7 +106,6 @@ const button = (name: string) =>
 
 beforeEach(() => {
   calls = [];
-  vi.stubEnv("VITE_TG_BOT_USERNAME", BOT);
   // В jsdom scrollTo не реализован и пишет об этом в консоль
   window.scrollTo = () => {};
 });
@@ -112,16 +117,18 @@ afterEach(() => {
   window.sessionStorage.clear();
   window.localStorage.clear();
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
 });
 
 describe("вход в панель оператора", () => {
-  it("без сессии — страница входа с официальным виджетом Telegram, API не спрашиваем", async () => {
-    mockApi({});
+  it("без сессии — страница входа с официальным виджетом Telegram; имя бота — у API", async () => {
+    mockApi(BOT_INFO);
     await mount("/moderation");
     expect(heading()).toBe(t.login);
     expect(window.location.pathname).toBe("/login");
-    expect(calls).toEqual([]);
+    // Только имя бота, без токена: вход ещё не выполнен
+    expect(calls.map((c) => `${c.method} ${c.url} ${c.authorization}`)).toEqual([
+      "GET /api/telegram/bot null",
+    ]);
 
     const script = widget();
     expect(script?.src).toBe(TELEGRAM_WIDGET_SRC);
@@ -134,11 +141,14 @@ describe("вход в панель оператора", () => {
 
   it("возврат виджета: адрес чистится до запроса, токен — только в sessionStorage, открывается панель", async () => {
     mockApi({
+      ...BOT_INFO,
       "POST /api/auth/staff/telegram": json({ token: TOKEN, expiresAt: "2026-09-29T12:00:00.000Z" }),
       "GET /api/staff/me": json(STAFF),
     });
     await mount(`/login/telegram?${new URLSearchParams(WIDGET_FIELDS)}`);
 
+    // Вошли — имя бота не понадобилось
+    expect(summary()).toEqual(["POST /api/auth/staff/telegram", "GET /api/staff/me"]);
     const [login, me] = calls;
     expect(login?.method).toBe("POST");
     expect(login?.url).toBe("/api/auth/staff/telegram");
@@ -162,13 +172,16 @@ describe("вход в панель оператора", () => {
     [401, "invalid"],
     [502, "unavailable"],
   ] as const)("API ответило %s — сообщение, токена нет, виджет снова на месте", async (status, error) => {
-    mockApi({ "POST /api/auth/staff/telegram": json({ error: { code: "x", message: "x" } }, status) });
+    mockApi({
+      ...BOT_INFO,
+      "POST /api/auth/staff/telegram": json({ error: { code: "x", message: "x" } }, status),
+    });
     await mount(`/login/telegram?${new URLSearchParams(WIDGET_FIELDS)}`);
     expect(alertText()).toBe(t.errors[error]);
     expect(window.location.pathname).toBe("/login");
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(widget()).not.toBeNull();
-    expect(calls).toHaveLength(1);
+    expect(widget()?.getAttribute("data-telegram-login")).toBe(BOT);
+    expect(summary()).toEqual(["POST /api/auth/staff/telegram", "GET /api/telegram/bot"]);
   });
 
   it("API недоступно (сеть) — «сервер не отвечает»", async () => {
@@ -177,25 +190,80 @@ describe("вход в панель оператора", () => {
     expect(alertText()).toBe(t.errors.unavailable);
   });
 
-  it("возврат без подписанных полей — ошибка без запроса к API", async () => {
-    mockApi({});
+  it("возврат без подписанных полей — ошибка без запроса входа к API", async () => {
+    mockApi(BOT_INFO);
     await mount("/login/telegram?id=1");
     expect(alertText()).toBe(t.errors.invalid);
-    expect(calls).toEqual([]);
+    expect(summary()).toEqual(["GET /api/telegram/bot"]);
     expect(window.location.search).toBe("");
   });
+});
 
-  it("имя бота не задано при сборке — вход не настроен, виджета нет", async () => {
-    vi.stubEnv("VITE_TG_BOT_USERNAME", "");
-    mockApi({});
+describe("имя бота для виджета входа", () => {
+  it("пока API не ответило — статус «загружаем», виджета нет", async () => {
+    let answer: (res: Response | PromiseLike<Response>) => void = () => {};
+    mockApi({ "GET /api/telegram/bot": () => new Promise<Response>((resolve) => (answer = resolve)) });
     await mount("/login");
-    expect(container.textContent).toContain(t.loginNotConfigured);
+    expect(statusText()).toBe(t.loginBotLoading);
     expect(widget()).toBeNull();
+
+    await act(async () => answer(json({ username: BOT, miniAppUrl: "https://app.example" })()));
+    await settle();
+    expect(statusText()).toBeUndefined();
+    expect(widget()?.getAttribute("data-telegram-login")).toBe(BOT);
+  });
+
+  it.each([
+    ["API ответило 503", () => json({ error: { code: "telegram_unavailable", message: "x" } }, 503)()],
+    ["в ответе нет имени", () => json({ miniAppUrl: "https://app.example" })()],
+    ["имя не похоже на бота", () => json({ username: "someone", miniAppUrl: "https://app.example" })()],
+    ["имя с посторонними символами", () => json({ username: 'x" onload="bot', miniAppUrl: "x" })()],
+    ["не JSON", () => new Response("<html>", { status: 200 })],
+  ])("%s — ошибка и «Повторить», виджета нет", async (_name, respond) => {
+    mockApi({ "GET /api/telegram/bot": respond });
+    await mount("/login");
+    expect(alertText()).toBe(t.loginBotFailed);
+    expect(button(t.retry)).toBeDefined();
+    expect(widget()).toBeNull();
+  });
+
+  it("сеть недоступна — ошибка; «Повторить» спрашивает снова и ставит виджет", async () => {
+    let attempts = 0;
+    mockApi({
+      "GET /api/telegram/bot": () => {
+        attempts++;
+        if (attempts === 1) throw new TypeError("Failed to fetch");
+        return json({ username: BOT, miniAppUrl: "https://app.example" })();
+      },
+    });
+    await mount("/login");
+    expect(alertText()).toBe(t.loginBotFailed);
+
+    await act(async () => button(t.retry).click());
+    await settle();
+    expect(attempts).toBe(2);
+    expect(alertText()).toBeUndefined();
+    expect(widget()?.getAttribute("data-telegram-login")).toBe(BOT);
+    // Кнопка «Повторить» исчезла — фокус на заголовке страницы
+    expect(document.activeElement).toBe(container.querySelector("h1"));
+  });
+
+  it("скрипт виджета не загрузился — ошибка; «Повторить» ставит виджет заново", async () => {
+    mockApi(BOT_INFO);
+    await mount("/login");
+    await act(async () => widget()?.dispatchEvent(new Event("error")));
+    expect(alertText()).toBe(t.loginWidgetFailed);
+    expect(widget()).toBeNull();
+
+    await act(async () => button(t.retry).click());
+    await settle();
+    expect(widget()?.getAttribute("data-telegram-login")).toBe(BOT);
+    expect(summary()).toEqual(["GET /api/telegram/bot", "GET /api/telegram/bot"]);
   });
 });
 
 describe("сессия сотрудника", () => {
-  it("сохранённый токен — сразу панель", async () => {
+  it("сохранённый токен — сразу панель; имя бота не спрашиваем", async () => {
     signedIn();
     await mount("/requests");
     expect(heading()).toBe("Заявки");
@@ -206,10 +274,11 @@ describe("сессия сотрудника", () => {
 
   it("токен больше не действует — стирается, страница входа без ошибки", async () => {
     window.sessionStorage.setItem(TOKEN_KEY, TOKEN);
-    mockApi({ "GET /api/staff/me": json({ error: { code: "unauthorized" } }, 401) });
+    mockApi({ ...BOT_INFO, "GET /api/staff/me": json({ error: { code: "unauthorized" } }, 401) });
     await mount("/vendors");
     expect(heading()).toBe(t.login);
     expect(alertText()).toBeUndefined();
+    expect(widget()?.getAttribute("data-telegram-login")).toBe(BOT);
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
   });
 
@@ -219,11 +288,13 @@ describe("сессия сотрудника", () => {
     await act(async () => button(t.signOut).click());
     await settle();
 
-    expect(calls.at(-1)).toMatchObject({
+    expect(calls.find((c) => c.url === "/api/auth/logout")).toMatchObject({
       method: "POST",
-      url: "/api/auth/logout",
       authorization: `Bearer ${TOKEN}`,
     });
+    // На странице входа — снова кнопка Telegram
+    expect(summary().at(-1)).toBe("GET /api/telegram/bot");
+    expect(widget()?.getAttribute("data-telegram-login")).toBe(BOT);
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(heading()).toBe(t.login);
     expect(window.location.pathname).toBe("/login");

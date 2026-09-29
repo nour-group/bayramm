@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { unstable_readConfig } from "wrangler";
-import { TG_BOT_USERNAMES, tgBotUsername } from "../telegram.config";
 
 const CONFIG = fileURLToPath(new URL("../wrangler.jsonc", import.meta.url));
 
@@ -55,26 +54,5 @@ describe("wrangler.jsonc панели оператора", () => {
     expect(raw).not.toMatch(/"route"\s*:/);
     expect(raw).not.toMatch(/"workers_dev"\s*:\s*true/);
     expect(raw).not.toMatch(/"preview_urls"\s*:\s*true/);
-  });
-});
-
-describe("бот виджета входа (telegram.config.ts)", () => {
-  it("staging и production — свои боты", () => {
-    expect(tgBotUsername("staging")).toBe(TG_BOT_USERNAMES.staging);
-    expect(tgBotUsername("production")).toBe(TG_BOT_USERNAMES.production);
-    expect(TG_BOT_USERNAMES.production).not.toBe(TG_BOT_USERNAMES.staging);
-  });
-
-  it("без окружения — локальная сборка; своего бота можно подставить только локально", () => {
-    expect(tgBotUsername(undefined)).toBe(TG_BOT_USERNAMES.local);
-    expect(tgBotUsername("local", "my_local_bot")).toBe("my_local_bot");
-    expect(tgBotUsername("production", "my_local_bot")).toBe(TG_BOT_USERNAMES.production);
-    expect(tgBotUsername("staging", "my_local_bot")).toBe(TG_BOT_USERNAMES.staging);
-  });
-
-  it("неизвестное окружение и не-бот — ошибка сборки", () => {
-    expect(() => tgBotUsername("prod")).toThrow(/неизвестное окружение/);
-    expect(() => tgBotUsername("local", "not-a-bot")).toThrow(/не имя бота/);
-    expect(() => tgBotUsername("local", "someuser")).toThrow(/не имя бота/);
   });
 });

@@ -6,6 +6,7 @@ import {
   isWellFormedToken,
   MIN_ID_HASH_KEY_LENGTH,
   parseAuthorization,
+  secretsEqual,
   TOKEN_BYTES,
   telegramIdHash,
   toBase64Url,
@@ -80,6 +81,16 @@ describe("parseAuthorization", () => {
       `Bearer ${"a".repeat(42)}=`,
     ]) {
       expect(parseAuthorization(header), JSON.stringify(header)).toEqual({ kind: "invalid" });
+    }
+  });
+});
+
+describe("secretsEqual", () => {
+  it("совпадает только та же строка", async () => {
+    const secret = "s".repeat(40);
+    expect(await secretsEqual(secret, secret)).toBe(true);
+    for (const other of ["", secret.slice(1), `${secret}s`, `S${secret.slice(1)}`, "x"]) {
+      expect(await secretsEqual(other, secret), JSON.stringify(other)).toBe(false);
     }
   });
 });

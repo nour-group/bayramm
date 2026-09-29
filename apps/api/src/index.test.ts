@@ -1,42 +1,9 @@
 // Приложение целиком, без базы: маршруты, формат ошибок и всё, что отсекается
 // до первого запроса к Postgres. С базой — test/integration
 import { afterEach, describe, expect, it, vi } from "vitest";
-import app from "./index";
 import { initDataFields, initDataFor, signInitData } from "./testing/init-data";
 import { signLoginWidget } from "./testing/login-widget";
-
-const BOT_TOKEN = "123456:unit-test-bot-token";
-
-function makeEnv(overrides: Partial<Env> = {}): Env {
-  return {
-    APP_ENV: "local",
-    GIT_SHA: "dev",
-    TELEGRAM_BOT_TOKEN: BOT_TOKEN,
-    ID_HASH_KEY: "unit-test-id-hash-key-0123456789abcdef",
-    SUPABASE_URL: "http://127.0.0.1:54321",
-    SUPABASE_SERVICE_ROLE_KEY: "unit-test-service-role-key",
-    // Порт 1: соединение, если бы до него дошло, сразу упало бы
-    HYPERDRIVE: { connectionString: "postgresql://nobody:nothing@127.0.0.1:1/none" } as Hyperdrive,
-    ...overrides,
-  };
-}
-
-function makeCtx() {
-  const pending: Promise<unknown>[] = [];
-  const ctx = {
-    waitUntil: (p: Promise<unknown>) => void pending.push(p),
-    passThroughOnException: () => {},
-    props: {},
-  } as unknown as ExecutionContext;
-  return { ctx, pending };
-}
-
-async function call(path: string, init: RequestInit = {}, env = makeEnv()) {
-  const { ctx, pending } = makeCtx();
-  const res = await app.request(path, init, env, ctx);
-  await Promise.all(pending);
-  return { res, pending };
-}
+import { BOT_TOKEN, call, makeEnv } from "./testing/worker";
 
 function login(body: unknown) {
   return call("/auth/telegram", {
