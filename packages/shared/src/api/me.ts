@@ -1,8 +1,9 @@
-/* Контракт API клиента: свой профиль и права на свои данные. Все адреса — с сессией
-   клиента (Authorization: Bearer <token> из POST /auth/telegram), только над собой.
+/* Контракт API клиента: свой профиль и права на свои данные. Адреса — с сессией
+   аккаунта (Authorization: Bearer <token> из POST /auth/telegram, /auth/widget,
+   /auth/phone/verify), только над собой. GET /me — и с сессией сотрудника.
 
-     GET    /me                    → 200 ClientMe
-     PATCH  /me                    ClientMePatch → 200 ClientMe; неверный язык — 422 invalid_input
+     GET    /me                    → 200 Me: аккаунт, способы входа, роли и поля клиента
+     PATCH  /me                    ClientMePatch → 200 Me; неверный язык — 422 invalid_input
      GET    /me/export             → 200 ClientDataExport (JSON-файл, Content-Disposition: attachment)
      POST   /me/consents/withdraw  WithdrawConsent → 200 ConsentWithdrawn
      DELETE /me                    → 204; сессия и все остальные сессии клиента больше не действуют
@@ -12,6 +13,7 @@
    Новый вход через Telegram создаёт аккаунт заново — с пустым профилем согласий.
    Источник записи в журналах — заголовок CLIENT_SOURCE_HEADER, как у заявок. */
 
+import type { AccountMe } from "./account";
 import type { ClientConsentPurpose, DeclineReason, Locale, RequestStatus } from "./client";
 
 /** Свой профиль. Телефона здесь нет: его отдаёт только выгрузка (чтение — в журнал) */
@@ -27,6 +29,21 @@ export interface ClientMe {
   /** Действует согласие на уведомления в боте (последняя запись журнала — grant) */
   readonly notifications: boolean;
 }
+
+/**
+ * Поля клиента в GET /me. У аккаунта без роли клиента (только партнёр или сотрудник)
+ * id — null, язык и имена — аккаунта, уведомлений нет
+ */
+export type MeClient =
+  | ClientMe
+  | (Omit<ClientMe, "id" | "canMessage" | "notifications"> & {
+      readonly id: null;
+      readonly canMessage: false;
+      readonly notifications: false;
+    });
+
+/** GET /me: аккаунт и роли (кнопки «Кабинет партнёра», «Панель оператора») + поля клиента */
+export type Me = AccountMe & MeClient;
 
 /** PATCH /me: язык сохраняется в профиле — по нему пишет и бот */
 export interface ClientMePatch {

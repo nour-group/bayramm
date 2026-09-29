@@ -14,5 +14,8 @@ export default createSiteWorker({
   // SDK Mini App: telegram-web-app.js в script-src. Грузит его код приложения и только
   // внутри Telegram (loadTelegramWebApp в @bayramm/tg/webapp); в index.html его нет
   telegramWebApp: true,
+  // Хаб входа (/auth): виджет входа Telegram — только на его страницах. У бота в @BotFather
+  // /setdomain — домен сайта окружения; остальные страницы сайта виджета не пускают
+  telegramLoginPaths: ["/auth"],
   before: taklifnomaRedirect,
 }) satisfies ExportedHandler<Env>;

@@ -63,6 +63,6 @@ describe("POST /auth/vendor/telegram: отказ до базы", () => {
     expect(await res.json()).toEqual({
       error: { code: "unauthorized", message: "Invalid Telegram init data" },
     });
-    expect(warn).toHaveBeenCalledWith("auth.vendor: initData rejected", "bad_hash");
+    expect(warn).toHaveBeenCalledWith("auth: initData rejected", "bad_hash");
   });
 });

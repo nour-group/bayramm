@@ -18,6 +18,7 @@
     "@bayramm/edge": "workspace:*",
     "@bayramm/media": "workspace:*",
     "@bayramm/shared": "workspace:*",
+    "@bayramm/tg": "workspace:*",
     "@bayramm/ui": "workspace:*",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

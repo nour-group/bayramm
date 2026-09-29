@@ -19,15 +19,15 @@ import {
 
 let admin: Client;
 let db: Db;
-let a: { id: string; token: string; telegramId: number };
-let b: { id: string; token: string; telegramId: number };
+let a: { id: string; accountId: string; token: string; telegramId: number };
+let b: { id: string; accountId: string; token: string; telegramId: number };
 
 async function signUp() {
   const user = newTelegramUser();
   const token = await loginToken(user);
   const res = await call("/me", bearer(token));
-  const { id } = (await res.json()) as { id: string };
-  return { id, token, telegramId: user.id };
+  const { id, account } = (await res.json()) as { id: string; account: { id: string } };
+  return { id, accountId: account.id, token, telegramId: user.id };
 }
 
 beforeAll(async () => {
@@ -96,12 +96,25 @@ describe("RLS: клиент не видит и не меняет чужое", ()
     expect(seen.foreignById).toEqual([]);
   });
 
-  it("app.sessions — только свои", async () => {
-    const owners = await withActor(db, { kind: "client", id: a.id }, (trx) =>
-      trx.selectFrom("app.sessions").select("client_id").execute(),
+  it("app.sessions — только свои (аккаунт видит свои, клиент — ни одной сессии аккаунта)", async () => {
+    const owners = await withActor(db, { kind: "account", id: a.accountId }, (trx) =>
+      trx.selectFrom("app.sessions").select("account_id").execute(),
     );
     expect(owners.length).toBeGreaterThan(0);
-    expect(new Set(owners.map((s) => s.client_id))).toEqual(new Set([a.id]));
+    expect(new Set(owners.map((s) => s.account_id))).toEqual(new Set([a.accountId]));
+    const asClient = await withActor(db, { kind: "client", id: a.id }, (trx) =>
+      trx.selectFrom("app.sessions").select("id").execute(),
+    );
+    expect(asClient).toEqual([]);
+  });
+
+  it("аккаунт не видит чужой аккаунт, способы входа и профиль", async () => {
+    const seen = await withActor(db, { kind: "account", id: a.accountId }, async (trx) => ({
+      accounts: await trx.selectFrom("app.accounts").select("id").execute(),
+      identities: await trx.selectFrom("app.account_identities").select("account_id").execute(),
+    }));
+    expect(seen.accounts).toEqual([{ id: a.accountId }]);
+    expect(new Set(seen.identities.map((i) => i.account_id))).toEqual(new Set([a.accountId]));
   });
 
   it("чужие строки не обновляются", async () => {
@@ -114,9 +127,17 @@ describe("RLS: клиент не видит и не меняет чужое", ()
       sessions: await trx
         .updateTable("app.sessions")
         .set({ revoked_at: sql<Date>`now()` })
-        .where("client_id", "=", b.id)
+        .where("account_id", "=", b.accountId)
         .executeTakeFirst(),
     }));
+    const asAccount = await withActor(db, { kind: "account", id: a.accountId }, (trx) =>
+      trx
+        .updateTable("app.sessions")
+        .set({ revoked_at: sql<Date>`now()` })
+        .where("account_id", "=", b.accountId)
+        .executeTakeFirst(),
+    );
+    expect(asAccount.numUpdatedRows).toBe(0n);
     expect(result.client.numUpdatedRows).toBe(0n);
     expect(result.sessions.numUpdatedRows).toBe(0n);
     // сессия B жива
@@ -146,8 +167,10 @@ describe("ошибки базы → HTTP", () => {
           .insertInto("app.sessions")
           .values({
             token_hash: new Uint8Array(32),
-            client_id: b.id,
-            via: "tg_client",
+            account_id: b.accountId,
+            via: "tg_webapp",
+            app: "web",
+            proof_at: sql<Date>`now()`,
             expires_at: sql<Date>`now() + interval '1 day'`,
           })
           .execute(),
@@ -162,7 +185,7 @@ describe("ошибки базы → HTTP", () => {
       withActor(db, SYSTEM, (trx) =>
         trx
           .insertInto("app.clients")
-          .values({ tg_id_hash: tgIdHash(a.telegramId) })
+          .values({ account_id: b.accountId, tg_id_hash: tgIdHash(a.telegramId) })
           .execute(),
       ),
     );
@@ -189,7 +212,7 @@ describe("ошибки базы → HTTP", () => {
       withActor(db, SYSTEM, (trx) =>
         trx
           .insertInto("app.clients")
-          .values({ tg_id_hash: new Uint8Array(3) })
+          .values({ account_id: a.accountId, tg_id_hash: new Uint8Array(3) })
           .execute(),
       ),
     );

@@ -120,7 +120,7 @@ export const STAFF_TEXTS: Readonly<Record<Lang, StaffTexts>> = {
       "Сюда приходят оповещения: сорванный срок ответа 12 часов и недоставленные уведомления.\n\n" +
       "/stats — сводка\n/admin — панель оператора",
     adminButton: "Панель оператора",
-    adminHint: "Панель оператора открывается в браузере, вход — через Telegram:",
+    adminHint: "Панель оператора открывается прямо в Telegram:",
     stats: (s) =>
       "Bayramm — сводка\n\n" +
       `Активных залов: ${s.activeListings}\nНа проверке: ${s.reviewListings}\nПартнёров: ${s.vendors}\n\n` +
@@ -136,7 +136,7 @@ export const STAFF_TEXTS: Readonly<Record<Lang, StaffTexts>> = {
       "Ogohlantirishlar shu yerga keladi: 12 soatlik javob muddati buzilishi va yetkazilmagan xabarlar.\n\n" +
       "/stats — qisqa hisobot\n/admin — boshqaruv paneli",
     adminButton: "Boshqaruv paneli",
-    adminHint: "Boshqaruv paneli brauzerda ochiladi, kirish — Telegram orqali:",
+    adminHint: "Boshqaruv paneli toʻgʻridan-toʻgʻri Telegramda ochiladi:",
     stats: (s) =>
       "Bayramm — qisqa hisobot\n\n" +
       `Faol zallar: ${s.activeListings}\nTekshiruvda: ${s.reviewListings}\nHamkorlar: ${s.vendors}\n\n` +

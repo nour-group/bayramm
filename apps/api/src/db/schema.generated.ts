@@ -5,13 +5,15 @@
 
 import type { ColumnType } from "kysely";
 
-export type AppActorKind = "client" | "staff" | "system" | "vendor_user";
+export type AppActorKind = "account" | "client" | "staff" | "system" | "vendor_user";
 
 export type AppConsentAction = "grant" | "withdraw";
 
 export type AppConsentPurpose = "bot_notifications" | "client_service" | "request_transfer" | "vendor_contact" | "vendor_offer" | "vendor_phone_public";
 
 export type AppDeclineReason = "busy" | "format" | "other" | "price";
+
+export type AppIdentityKind = "phone" | "telegram";
 
 export type AppLegalForm = "ooo" | "self_employed" | "yatt";
 
@@ -57,6 +59,34 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
+export interface AppAccountIdentities {
+  account_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  kind: AppIdentityKind;
+  last_used_at: Timestamp | null;
+  value_hash: Uint8Array;
+  verified_at: Generated<Timestamp>;
+}
+
+export interface AppAccounts {
+  created_at: Generated<Timestamp>;
+  /**
+   * Удалён самим человеком: профиль стёрт, членства отвязаны; вход тем же способом восстанавливает аккаунт
+   */
+  deleted_at: Timestamp | null;
+  /**
+   * Отключён сотрудником: все роли и сессии сразу
+   */
+  disabled_at: Timestamp | null;
+  disabled_by: string | null;
+  disabled_reason: string | null;
+  id: Generated<string>;
+  last_seen_at: Timestamp | null;
+  locale: Generated<AppLocale>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface AppAuditLog {
   action: string;
   actor_id: Generated<string | null>;
@@ -92,6 +122,7 @@ export interface AppCategories {
 }
 
 export interface AppClients {
+  account_id: string;
   blocked_at: Timestamp | null;
   blocked_by: string | null;
   blocked_reason: string | null;
@@ -101,7 +132,10 @@ export interface AppClients {
   id: Generated<string>;
   last_seen_at: Timestamp | null;
   locale: Generated<AppLocale>;
-  tg_id_hash: Uint8Array;
+  /**
+   * HMAC(ID_HASH_KEY, Telegram ID) аккаунта; null — у аккаунта нет Telegram (вход по телефону)
+   */
+  tg_id_hash: Uint8Array | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -151,6 +185,20 @@ export interface AppDistricts {
   name_ru: string;
   name_uz: string;
   sort: Generated<number>;
+}
+
+export interface AppHubCodes {
+  account_id: string;
+  app: string;
+  challenge: string;
+  code_hash: Uint8Array;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: Generated<string>;
+  origin: string;
+  proof_at: Timestamp;
+  state_hash: Uint8Array;
+  used_at: Timestamp | null;
 }
 
 export interface AppLegalEntities {
@@ -233,6 +281,9 @@ export interface AppOccasions {
 
 export interface AppOtpCodes {
   attempts: Generated<number>;
+  /**
+   * HMAC(ID_HASH_KEY, "otp:<номер>:<код>")
+   */
   code_hash: Uint8Array;
   consumed_at: Timestamp | null;
   created_at: Generated<Timestamp>;
@@ -360,12 +411,15 @@ export interface AppRequestTransitions {
 }
 
 export interface AppSessions {
+  account_id: string;
+  app: string;
   client_id: string | null;
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
   id: Generated<string>;
   ip_hash: Uint8Array | null;
   last_seen_at: Timestamp | null;
+  proof_at: Timestamp;
   revoked_at: Timestamp | null;
   staff_id: string | null;
   token_hash: Uint8Array;
@@ -381,12 +435,20 @@ export interface AppSettings {
 }
 
 export interface AppStaff {
+  /**
+   * Аккаунт сотрудника; null — приглашение ещё не принято
+   */
+  account_id: string | null;
   active: Generated<boolean>;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
+  /**
+   * Приглашение по телефону: HMAC(ID_HASH_KEY, +998XXXXXXXXX); принимается кодом из сообщения
+   */
+  phone_hash: Uint8Array | null;
   role: AppStaffRole;
   /**
-   * HMAC-SHA256(ID_HASH_KEY, Telegram ID); null — приглашение ещё не принято
+   * HMAC-SHA256(ID_HASH_KEY, Telegram ID) аккаунта сотрудника — оповещения команды; null — Telegram не привязан
    */
   tg_id_hash: Uint8Array | null;
   tg_linked_at: Timestamp | null;
@@ -422,6 +484,10 @@ export interface AppVendorAccounts {
 }
 
 export interface AppVendorUsers {
+  /**
+   * Аккаунт партнёра; null — пользователь заведён сотрудником и ещё не подтвердил номер
+   */
+  account_id: string | null;
   created_at: Generated<Timestamp>;
   disabled_at: Timestamp | null;
   id: Generated<string>;
@@ -430,9 +496,23 @@ export interface AppVendorUsers {
   phone_hash: Uint8Array;
   role: Generated<string>;
   tg_linked_at: Timestamp | null;
+  /**
+   * HMAC Telegram ID аккаунта — уведомления о заявках в Telegram; null — не привязан
+   */
   tg_user_hash: Uint8Array | null;
   updated_at: Generated<Timestamp>;
   vendor_id: string;
+}
+
+export interface PiiAccountProfiles {
+  account_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  phone_verified_at: Timestamp | null;
+  telegram_id: Int8 | null;
+  telegram_username: string | null;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface PiiClientProfiles {
@@ -494,6 +574,8 @@ export interface PiiVendorUserProfiles {
 }
 
 export interface DB {
+  "app.account_identities": AppAccountIdentities;
+  "app.accounts": AppAccounts;
   "app.audit_log": AppAuditLog;
   "app.availability": AppAvailability;
   "app.categories": AppCategories;
@@ -502,6 +584,7 @@ export interface DB {
   "app.consents": AppConsents;
   "app.consents_current": AppConsentsCurrent;
   "app.districts": AppDistricts;
+  "app.hub_codes": AppHubCodes;
   "app.legal_entities": AppLegalEntities;
   "app.listing_packages": AppListingPackages;
   "app.listing_revisions": AppListingRevisions;
@@ -522,6 +605,7 @@ export interface DB {
   "app.telegram_updates": AppTelegramUpdates;
   "app.vendor_accounts": AppVendorAccounts;
   "app.vendor_users": AppVendorUsers;
+  "pii.account_profiles": PiiAccountProfiles;
   "pii.client_profiles": PiiClientProfiles;
   "pii.listing_contacts": PiiListingContacts;
   "pii.request_contacts": PiiRequestContacts;

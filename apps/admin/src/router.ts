@@ -3,8 +3,8 @@ import type { StaffPermission } from "@bayramm/shared/api/staff";
 import { useCallback, useEffect, useState } from "react";
 
 /* Все маршруты панели — в одной карте. Пути, вписанные по месту, разъезжаются
-   (ловушка №9 в CLAUDE.md). login — страница входа, loginTelegram — куда виджет Telegram
-   возвращает браузер с подписанными данными (data-auth-url). */
+   (ловушка №9 в CLAUDE.md). login — страница входа, authCallback — куда хаб входа на
+   сайте возвращает браузер с одноразовым кодом (session.ts). */
 export const ROUTES = {
   vendors: "/vendors",
   moderation: "/moderation",
@@ -15,7 +15,7 @@ export const ROUTES = {
   team: "/team",
   settings: "/settings",
   login: "/login",
-  loginTelegram: "/login/telegram",
+  authCallback: "/auth/callback",
 } as const;
 
 export type Route = keyof typeof ROUTES;
@@ -145,7 +145,7 @@ export function sectionOf(view: View): Section {
 
 const isLoginPath = (pathname: string) => {
   const route = matchRoute(pathname);
-  return route === "login" || route === "loginTelegram";
+  return route === "login" || route === "authCallback";
 };
 
 export type Navigate = (view: View) => void;

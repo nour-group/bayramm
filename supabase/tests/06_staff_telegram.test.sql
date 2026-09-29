@@ -2,7 +2,7 @@
 -- app.staff_sign_in, сессии сотрудников
 begin;
 \ir _fixtures.psql
-select plan(40);
+select plan(41);
 
 -- ── структура и права ───────────────────────────────────────────────────────
 select col_is_null('pii', 'staff_profiles', 'email', 'e-mail сотрудника необязателен');
@@ -169,6 +169,15 @@ select is(
 reset role;
 
 -- ── сессии сотрудников ──────────────────────────────────────────────────────
+-- Сессия сотрудника — роль его аккаунта: b002 принимает приглашение своим Telegram
+set local role bayramm_api;
+select pg_temp.as_actor('system');
+select results_eq(
+  $$select staff_id, claimed from app.staff_sign_in(sha256('tg-7010'), 7010, 'test_manager')$$,
+  $$values ('00000000-0000-0000-0000-00000000b002'::uuid, true)$$,
+  'приглашение принято другим Telegram — у сотрудника есть аккаунт');
+reset role;
+
 select lives_ok(
   $$insert into app.sessions (token_hash, staff_id, via, expires_at)
     values (sha256('staff-session-1'), '00000000-0000-0000-0000-00000000b002', 'tg_staff', now() + interval '12 hours')$$,

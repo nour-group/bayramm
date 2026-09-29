@@ -25,7 +25,7 @@ import type {
 import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
-import { type Tx, withActor } from "../db/actor";
+import { roleActorKind, type Tx, withActor } from "../db/actor";
 import { hasListingPhone, readListingPhone, saveListingPhone, staffName } from "../db/pii";
 import type { AppEnv } from "../env";
 import { ApiError, notFound, versionConflict } from "../errors";
@@ -167,7 +167,7 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       from: h.from_status,
       to: h.to_status,
       reason: h.reason,
-      actorKind: h.actor_kind,
+      actorKind: roleActorKind(h.actor_kind),
       actorName: h.actor_name,
       at: iso(h.at),
     })),

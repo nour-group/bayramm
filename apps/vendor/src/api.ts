@@ -1,9 +1,11 @@
 /* Вызовы API кабинета. Всё идёт через свой origin: /api/* воркер кабинета отдаёт API.
 
-   Токен сессии — в sessionStorage: переживает перезагрузку Mini App, но не закрытие.
-   Закрыли и открыли из бота — новая initData, новый вход. sessionStorage недоступен
-   (старый вебвью, запрет) — токен только в памяти, до перезагрузки. */
+   Сессия — сессия аккаунта партнёра (7 дней): в Telegram — по initData из кнопки бота,
+   вне Telegram — через хаб входа на сайте (hub.ts). Токен — в sessionStorage: переживает
+   перезагрузку, но не закрытие вкладки. sessionStorage недоступен (старый вебвью,
+   запрет) — токен только в памяти, до перезагрузки. */
 
+import type { Me } from "@bayramm/shared/api/me";
 import type {
   BusyDay,
   VendorCalendar,
@@ -14,6 +16,7 @@ import type {
   VendorRequestPage,
   VendorRequestPatch,
 } from "@bayramm/shared/api/vendor";
+import { vendorHeaders } from "./hub";
 
 const API = "/api";
 const TOKEN_KEY = "bayramm.vendor.session";
@@ -63,6 +66,8 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const token = tokenStore.get();
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  // Партнёр нескольких вендоров: какой из них — заголовок (hub.ts)
+  for (const [name, value] of Object.entries(vendorHeaders())) headers.set(name, value);
   if (init.body !== undefined) headers.set("content-type", "application/json");
   try {
     return await fetch(`${API}${path}`, { ...init, headers, credentials: "omit", cache: "no-store" });
@@ -103,6 +108,18 @@ async function empty(path: string, init?: RequestInit): Promise<void> {
 }
 
 // ── вход ───────────────────────────────────────────────────────────────────
+
+/** Свой аккаунт и роли (GET /me): вендоры для выбора, роль сотрудника для кнопки панели */
+export const accountMe = () => json<Me>("/me");
+
+/** Выйти: отозвать сессию; токен забывается в любом случае */
+export async function signOut(): Promise<void> {
+  try {
+    await send("/auth/logout", { method: "POST" });
+  } finally {
+    tokenStore.clear();
+  }
+}
 
 /** Вход по initData Mini App. Токен сохраняется; отказ — ApiFailure (403 vendor_not_linked…) */
 export async function signIn(initData: string): Promise<void> {

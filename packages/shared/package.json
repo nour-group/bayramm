@@ -7,9 +7,11 @@
     ".": "./src/index.ts",
     "./i18n": "./src/i18n/index.ts",
     "./api": "./src/api/client.ts",
+    "./api/account": "./src/api/account.ts",
     "./api/me": "./src/api/me.ts",
     "./api/staff": "./src/api/staff.ts",
-    "./api/vendor": "./src/api/vendor.ts"
+    "./api/vendor": "./src/api/vendor.ts",
+    "./pkce": "./src/pkce.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

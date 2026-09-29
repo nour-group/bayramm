@@ -20,7 +20,7 @@ describe("маршруты панели оператора", () => {
     ["/requests", "requests"],
     ["/clients", "clients"],
     ["/login", "login"],
-    ["/login/telegram", "loginTelegram"],
+    ["/auth/callback", "authCallback"],
   ])("%s → %s", (path, route) => {
     expect(matchRoute(path)).toBe(route);
   });
@@ -33,7 +33,7 @@ describe("маршруты панели оператора", () => {
     expect(matchSection("/moderation")).toBe("moderation");
     expect(matchSection("/")).toBe(HOME);
     expect(matchSection("/login")).toBeNull();
-    expect(matchSection("/login/telegram")).toBeNull();
+    expect(matchSection("/auth/callback")).toBeNull();
     expect(matchSection("/nope")).toBeNull();
   });
 

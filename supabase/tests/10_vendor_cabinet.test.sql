@@ -1,9 +1,20 @@
 -- Кабинет вендора: сессии кабинета, календарь занятости, отказ «занято»
 begin;
 \ir _fixtures.psql
-select plan(29);
+select plan(30);
 
 -- ── сессии кабинета ─────────────────────────────────────────────────────────
+-- Сессия — аккаунта: пользователь вендора сначала привязан к аккаунту (контакт в боте)
+set local role bayramm_api;
+select pg_temp.as_actor('system');
+select results_eq(
+  $$select result from app.vendor_user_claim_telegram(sha256('vendor-a'), '+998000000111', sha256('tg-6001'),
+      6001, 6001)$$,
+  $$values ('claimed'::text)$$,
+  'пользователь вендора привязан к аккаунту');
+select pg_temp.as_actor(null);
+reset role;
+
 select lives_ok(
   $$insert into app.sessions (token_hash, vendor_user_id, via, expires_at)
     values (sha256('vendor-session-1'), 'aaaaaaaa-0000-0000-0000-000000000011', 'tg_partner', now() + interval '12 hours')$$,

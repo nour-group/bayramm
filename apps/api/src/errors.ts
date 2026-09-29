@@ -62,7 +62,10 @@ const UNIQUE_CONSTRAINTS: Readonly<Record<string, { code: string; message: strin
   photos_dedupe: { code: "duplicate_photo", message: "This photo is already uploaded" },
   listings_slug_key: { code: "slug_taken", message: "This address is already taken" },
   vendor_contacts_stir_key: { code: "stir_taken", message: "This STIR belongs to another vendor" },
-  vendor_users_phone_hash_key: { code: "phone_taken", message: "This phone is already used for sign-in" },
+  vendor_users_vendor_phone_key: {
+    code: "phone_taken",
+    message: "This phone is already used by this vendor",
+  },
   listing_packages_day_kind: { code: "duplicate_package", message: "Package of this kind already exists" },
   // app.assert_staff_username_free: имя пользователя Telegram у действующего сотрудника
   staff_profiles_telegram_username_active: {

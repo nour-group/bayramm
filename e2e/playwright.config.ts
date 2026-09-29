@@ -1,14 +1,13 @@
 import { defineConfig } from "@playwright/test";
+import { APPS, PORTS } from "./support/account";
 
 /* Сквозные проверки в браузере. Всё локально и без сети: три сервера разработки Vite,
    у клиента — демо-API в памяти (VITE_API=mock), у кабинета и панели /api перехватывает
    сам тест (support/). Запросы наружу (telegram.org, media) подменяет фикстура offline.
-   Порты — не 5173…: не подхватить чужой сервер разработки с настоящим API. */
+   Порты — не 5173…: не подхватить чужой сервер разработки с настоящим API. Хаб входа
+   (hub/) проходит все три приложения в одной вкладке: сайт → кабинет → панель. */
 
 const CI = Boolean(process.env.CI);
-
-export const PORTS = { web: 4310, vendor: 4311, admin: 4312 } as const;
-const origin = (port: number) => `http://localhost:${port}`;
 
 const PHONE = { width: 390, height: 844 } as const;
 const DESKTOP = { width: 1280, height: 800 } as const;
@@ -20,7 +19,7 @@ function devServer(app: keyof typeof PORTS, env: Record<string, string> = {}) {
   return {
     command: `pnpm --filter @bayramm/${app} exec vite --port ${PORTS[app]} --strictPort`,
     cwd: "..",
-    url: origin(PORTS[app]),
+    url: APPS[app],
     env,
     // Локально можно держать серверы запущенными между прогонами; в CI — всегда свои
     reuseExistingServer: !CI,
@@ -50,14 +49,16 @@ export default defineConfig({
     colorScheme: "light",
   },
   projects: [
-    { name: "web-phone", testDir: "web", use: { ...phone, baseURL: origin(PORTS.web) } },
-    { name: "web-desktop", testDir: "web", use: { ...desktop, baseURL: origin(PORTS.web) } },
-    { name: "vendor-phone", testDir: "vendor", use: { ...phone, baseURL: origin(PORTS.vendor) } },
-    { name: "admin-desktop", testDir: "admin", use: { ...desktop, baseURL: origin(PORTS.admin) } },
+    { name: "web-phone", testDir: "web", use: { ...phone, baseURL: APPS.web } },
+    { name: "web-desktop", testDir: "web", use: { ...desktop, baseURL: APPS.web } },
+    { name: "vendor-phone", testDir: "vendor", use: { ...phone, baseURL: APPS.vendor } },
+    { name: "admin-desktop", testDir: "admin", use: { ...desktop, baseURL: APPS.admin } },
+    { name: "hub-desktop", testDir: "hub", use: { ...desktop, baseURL: APPS.web } },
   ],
   webServer: [
     // Демо-API явно: .env.local с VITE_API=live не должен увести тесты на настоящий сервер
-    devServer("web", { VITE_API: "mock" }),
+    // Хаб демо-API уводит в кабинет и панель на их портах
+    devServer("web", { VITE_API: "mock", VITE_VENDOR_APP_URL: APPS.vendor, VITE_ADMIN_APP_URL: APPS.admin }),
     devServer("vendor"),
     devServer("admin"),
   ],

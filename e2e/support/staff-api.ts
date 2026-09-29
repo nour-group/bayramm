@@ -20,15 +20,19 @@ import type {
   VendorList,
 } from "@bayramm/shared/api/staff";
 import type { Page, Route } from "@playwright/test";
+import { accountMe, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
 import { isApi } from "./vendor-api";
 
 /* API панели оператора в памяти теста: page.route перехватывает /api/* до сети.
    Контракт — @bayramm/shared/api/staff. Сессия сотрудника — токен в sessionStorage
-   (как после входа виджетом) либо вход через /login/telegram. Всё незнакомое — 404 и
-   запись в unexpected. */
+   (как после входа) либо вход: как Mini App (initData → POST /auth/staff/webapp) или через
+   хаб входа на сайте (код → сессия аккаунта → POST /auth/staff/elevate). Всё незнакомое —
+   404 и запись в unexpected. */
 
 export const NOW = new Date("2026-10-01T07:00:00Z");
 export const TOKEN = "e2e-staff-token";
+/** Сессия аккаунта из обмена кода хаба: панель меняет её на сессию сотрудника и отзывает */
+const ACCOUNT_TOKEN = "e2e-account-token";
 const TOKEN_KEY = "bayramm.admin.session";
 
 export const VENDOR_ID = "00000000-0000-4000-8400-000000000001";
@@ -380,6 +384,11 @@ export interface StaffApi {
   readonly unexpected: string[];
   readonly created: ListingInput[];
   readonly actions: string[];
+  /** Входы: как Mini App (initData) и повышения сессии аккаунта до сотрудника */
+  readonly webapp: string[];
+  readonly elevated: number;
+  /** Отозванные сессии: account — сессия аккаунта после повышения */
+  readonly loggedOut: ("account" | "staff")[];
 }
 
 const json = (route: Route, status: number, body: unknown) =>
@@ -390,12 +399,29 @@ const fail = (route: Route, status: number, code: string, details: readonly stri
 export interface StaffApiOptions {
   /** Сразу вошедший сотрудник: токен в sessionStorage до загрузки */
   readonly signedIn?: boolean;
-  /** GET /telegram/bot не отвечает */
-  readonly botDown?: boolean;
+  /** GET /auth/methods не отвечает: адреса хаба не узнать */
+  readonly methodsDown?: boolean;
+  /** Обмен кода хаба сверяется с навигациями страницы */
+  readonly hub?: HubWatch;
+  /** Какие запросы перехватывать: по умолчанию /api любого localhost */
+  readonly match?: (url: URL) => boolean;
 }
 
-export async function mockStaffApi(page: Page, { signedIn = true, botDown = false }: StaffApiOptions = {}) {
-  const state: StaffApi = { unexpected: [], created: [], actions: [] };
+export async function mockStaffApi(
+  page: Page,
+  { signedIn = true, methodsDown = false, hub, match = isApi }: StaffApiOptions = {},
+) {
+  let elevated = 0;
+  const state: StaffApi = {
+    unexpected: [],
+    created: [],
+    actions: [],
+    webapp: [],
+    get elevated() {
+      return elevated;
+    },
+    loggedOut: [],
+  };
   const listings: ListingDetail[] = [];
   if (signedIn)
     await page.addInitScript(
@@ -405,27 +431,57 @@ export async function mockStaffApi(page: Page, { signedIn = true, botDown = fals
       { key: TOKEN_KEY, token: TOKEN },
     );
 
-  await page.route(isApi, async (route) => {
+  await page.route(match, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/api/, "");
     const method = request.method();
     const key = `${method} ${path}`;
 
-    if (key === "GET /telegram/bot")
-      return botDown
-        ? fail(route, 503, "service_unavailable")
-        : json(route, 200, { username: "bayramm_demo_bot", miniAppUrl: "http://localhost:4310" });
-    if (key === "POST /auth/staff/telegram") {
-      const fields = request.postDataJSON() as Record<string, string>;
-      return fields.hash === "e2e-good"
-        ? json(route, 200, { token: TOKEN, expiresAt: new Date(NOW.getTime() + 8 * 3_600_000).toISOString() })
-        : fail(route, 401, "invalid_login");
+    const staffSession = () =>
+      json(route, 200, { token: TOKEN, expiresAt: new Date(NOW.getTime() + 12 * 3_600_000).toISOString() });
+    const authorization = request.headers().authorization;
+    if (key === "GET /auth/methods")
+      return methodsDown ? fail(route, 503, "service_unavailable") : json(route, 200, METHODS);
+    if (key === "POST /auth/staff/webapp") {
+      const { initData } = request.postDataJSON() as { initData?: unknown };
+      if (typeof initData !== "string" || !initData.includes("hash="))
+        return fail(route, 401, "invalid_init_data");
+      state.webapp.push(initData);
+      return staffSession();
     }
-    if (request.headers().authorization !== `Bearer ${TOKEN}`) return fail(route, 401, "unauthorized");
-    if (key === "POST /auth/staff/logout" || key === "POST /auth/logout")
+    if (key === "POST /auth/hub/exchange") {
+      const ok = hub?.exchange(url.origin, "admin", request.postDataJSON()) ?? false;
+      return ok
+        ? json(route, 200, {
+            token: ACCOUNT_TOKEN,
+            expiresAt: new Date(NOW.getTime() + 7 * 86_400_000).toISOString(),
+          })
+        : fail(route, 400, "invalid_code");
+    }
+    if (authorization === `Bearer ${ACCOUNT_TOKEN}`) {
+      if (key === "POST /auth/staff/elevate") {
+        elevated++;
+        return staffSession();
+      }
+      if (key === "POST /auth/logout") {
+        state.loggedOut.push("account");
+        return route.fulfill({ status: 204 });
+      }
+    }
+    if (authorization !== `Bearer ${TOKEN}`) return fail(route, 401, "unauthorized");
+    if (key === "POST /auth/logout") {
+      state.loggedOut.push("staff");
       return route.fulfill({ status: 204 });
+    }
 
+    // Роли того же аккаунта: панель ведёт в кабинет партнёра
+    if (key === "GET /me")
+      return json(
+        route,
+        200,
+        accountMe({ vendors: [VENDOR_MEMBERSHIP], staff: true }, { kind: "staff", app: "admin" }),
+      );
     if (key === "GET /staff/me") return json(route, 200, STAFF);
     if (key === "GET /staff/dictionaries") return json(route, 200, DICTIONARIES);
     if (key === "GET /staff/vendors") {

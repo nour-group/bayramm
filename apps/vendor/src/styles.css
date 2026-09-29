@@ -929,6 +929,25 @@ body {
 }
 
 /* Нижняя панель разделов: над безопасной зоной снизу */
+/* Аккаунт партнёра: выбор вендора и ссылки на другие роли того же аккаунта */
+.vendor-choice {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+.account-links {
+  display: grid;
+  gap: var(--gap-9);
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-9);
+}
+
 .tabbar {
   position: fixed;
   right: 0;

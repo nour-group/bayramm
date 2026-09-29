@@ -1336,6 +1336,64 @@ textarea.field-input {
   outline: none;
 }
 
+/* ---------- вход: хаб /auth и аккаунт в профиле ---------- */
+
+.auth-lead {
+  margin-top: 8px;
+  color: var(--muted);
+}
+.auth-block {
+  display: grid;
+  justify-items: stretch;
+  gap: var(--gap-12);
+}
+.tg-login {
+  min-height: 44px;
+}
+.phone-code {
+  display: grid;
+  gap: var(--gap-9);
+}
+.phone-code-more {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--gap-12);
+}
+.code-input {
+  letter-spacing: 0.3em;
+  font-variant-numeric: tabular-nums;
+}
+.roles,
+.methods {
+  display: grid;
+  gap: var(--gap-9);
+  margin-top: 12px;
+}
+.roles .row-link {
+  margin-top: 0;
+}
+.method-list {
+  display: grid;
+  gap: var(--gap-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.method {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-9);
+  min-height: 44px;
+}
+.method-ico {
+  flex: none;
+  color: var(--coral);
+}
+.method-name {
+  flex: 1;
+}
+
 /* ---------- шире телефона ---------- */
 
 @media (min-width: 560px) {

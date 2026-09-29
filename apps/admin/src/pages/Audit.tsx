@@ -25,7 +25,7 @@ const FILTER_KEYS = ["actor", "actorKind", "type", "object", "action", "from", "
 type FilterKey = (typeof FILTER_KEYS)[number];
 type Filters = Partial<Record<FilterKey, string>>;
 
-const ACTOR_KINDS = ["staff", "vendor_user", "client", "system"] as const;
+const ACTOR_KINDS = ["staff", "vendor_user", "client", "account", "system"] as const;
 
 const dayName = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 
