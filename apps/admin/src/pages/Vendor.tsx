@@ -250,10 +250,8 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
     }
   };
 
-  const setDisabled = async (user: VendorUser, disabled: boolean) => {
-    const result = await api.post<VendorUser>(
-      `/staff/vendors/${vendor.id}/users/${user.id}/${disabled ? "disable" : "enable"}`,
-    );
+  const userAction = async (user: VendorUser, action: "disable" | "enable" | "unlink") => {
+    const result = await api.post<VendorUser>(`/staff/vendors/${vendor.id}/users/${user.id}/${action}`);
     setFailure(result.ok ? null : result);
     if (result.ok) replace(result.data, true);
   };
@@ -289,14 +287,23 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
                 }}
               />
               {can("vendor_users.write") && (
-                <div>
+                <div className="acts">
                   <button
                     type="button"
                     className="btn btn-sm"
-                    onClick={() => void setDisabled(user, !user.disabledAt)}
+                    onClick={() => void userAction(user, user.disabledAt ? "enable" : "disable")}
                   >
                     {user.disabledAt ? t.enable : t.disable}
                   </button>
+                  {user.telegramLinked && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => void userAction(user, "unlink")}
+                    >
+                      {t.unlinkTelegram}
+                    </button>
+                  )}
                 </div>
               )}
             </li>

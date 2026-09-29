@@ -460,8 +460,26 @@ describe("вендор → карточка → проверка → публи�
     ).toBe(403);
   });
 
-  it("отключение пользователя кабинета", async () => {
+  it("отключение пользователя кабинета и снятие привязки Telegram", async () => {
     const [user] = vendor.users;
+    // Как после привязки ботом: хэш Telegram ID и время — вместе
+    await admin.query("update app.vendor_users set tg_user_hash = $1, tg_linked_at = now() where id = $2", [
+      randomBytes(32),
+      user?.id,
+    ]);
+    const linked = await ok<VendorDetail>(api("moderator", "GET", `/staff/vendors/${vendor.id}`));
+    expect(linked.users[0]).toMatchObject({ telegramLinked: true });
+    expect(JSON.stringify(linked)).not.toMatch(/tg_user_hash|telegram_user_id/);
+    expect(
+      await error(
+        api("manager", "PATCH", `/staff/vendors/${vendor.id}/users/${user?.id}`, { phone: phone() }),
+      ),
+    ).toMatchObject({ status: 409, code: "user_linked" });
+    const unlinked = await ok<VendorUser>(
+      api("manager", "POST", `/staff/vendors/${vendor.id}/users/${user?.id}/unlink`),
+    );
+    expect(unlinked.telegramLinked).toBe(false);
+
     const disabled = await ok<VendorUser>(
       api("manager", "POST", `/staff/vendors/${vendor.id}/users/${user?.id}/disable`),
     );

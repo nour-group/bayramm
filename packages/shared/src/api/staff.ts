@@ -196,7 +196,11 @@ export interface ChecklistInput {
   readonly done: boolean;
 }
 
-/** POST /staff/vendors/:id/users → 201 VendorUser; 409 phone_taken */
+/**
+ * POST /staff/vendors/:id/users → 201 VendorUser; 409 phone_taken.
+ * PATCH …/users/:userId (409 user_linked — номер привязанного не сменить),
+ * POST …/users/:userId/disable | enable | unlink (снять привязку Telegram) → VendorUser
+ */
 export interface VendorUserInput {
   readonly phone: string;
   readonly fullName?: string | null;

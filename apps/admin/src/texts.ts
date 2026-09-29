@@ -200,6 +200,7 @@ export const t = {
   telegramNotLinked: "Ждём привязки Telegram",
   userDisabled: "Отключён",
   disable: "Отключить",
+  unlinkTelegram: "Отвязать Telegram",
   enable: "Включить",
   owner: "Владелец",
   member: "Сотрудник",

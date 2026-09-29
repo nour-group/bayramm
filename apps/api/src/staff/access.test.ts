@@ -45,6 +45,7 @@ const ROUTES: readonly [method: string, path: string, permission: Permission][] 
   ["PATCH", `/vendors/${ID}/users/${ID}`, "vendor_users.write"],
   ["POST", `/vendors/${ID}/users/${ID}/disable`, "vendor_users.write"],
   ["POST", `/vendors/${ID}/users/${ID}/enable`, "vendor_users.write"],
+  ["POST", `/vendors/${ID}/users/${ID}/unlink`, "vendor_users.write"],
   ["POST", `/vendors/${ID}/users/${ID}/phone`, "vendor_phones.read"],
   ["GET", "/listings", "catalog.read"],
   ["POST", "/listings", "listings.write"],

@@ -10,7 +10,7 @@
 //   POST  /staff/vendors/:id/phones     { reason? }          телефоны контакта (в журнал)
 //   POST  /staff/vendors/:id/users      { phone, … }         пользователь кабинета
 //   PATCH /staff/vendors/:id/users/:userId                   правка (телефон — пока не привязан)
-//   POST  /staff/vendors/:id/users/:userId/disable | enable
+//   POST  /staff/vendors/:id/users/:userId/disable | enable | unlink (снять привязку Telegram)
 //   POST  /staff/vendors/:id/users/:userId/phone { reason? } телефон входа (в журнал)
 //
 // Телефоны только пишутся: прочитать их можно лишь через pii.read_* — каждое
@@ -614,6 +614,34 @@ vendors.post("/:id/users/:userId/enable", requirePermission("vendor_users.write"
   return c.json(
     await withActor(c.var.db, staffOf(c), (trx) => setDisabled(trx, ids.vendor, ids.user, false)),
   );
+});
+
+// Отвязать Telegram: вендор сменил аккаунт или номер. Хэш и время привязки снимаются
+// вместе (ограничение базы), Telegram ID и чат — из профиля; сессии кабинета отзываются.
+// Привязать заново вендор может сам — снова поделившись контактом в боте
+vendors.post("/:id/users/:userId/unlink", requirePermission("vendor_users.write"), async (c) => {
+  const ids = userIds(c);
+  const user = await withActor(c.var.db, staffOf(c), async (trx) => {
+    await loadUser(trx, ids.vendor, ids.user);
+    await trx
+      .updateTable("app.vendor_users")
+      .set({ tg_user_hash: null, tg_linked_at: null })
+      .where("id", "=", ids.user)
+      .execute();
+    await trx
+      .updateTable("pii.vendor_user_profiles")
+      .set({ telegram_user_id: null, telegram_chat_id: null })
+      .where("vendor_user_id", "=", ids.user)
+      .execute();
+    await trx
+      .updateTable("app.sessions")
+      .set({ revoked_at: sql<Date>`now()` })
+      .where("vendor_user_id", "=", ids.user)
+      .where("revoked_at", "is", null)
+      .execute();
+    return loadUser(trx, ids.vendor, ids.user);
+  });
+  return c.json(user);
 });
 
 vendors.post("/:id/users/:userId/phone", requirePermission("vendor_phones.read"), limitJson, async (c) => {
