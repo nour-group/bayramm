@@ -35,7 +35,16 @@ const ALL_PERMISSIONS: StaffMe["permissions"] = [
   "photos.moderate",
   "vendor_phones.read",
   "requests.read",
+  "requests.write",
   "client_phones.read",
+  "clients.read",
+  "clients.block",
+  "outbox.read",
+  "outbox.retry",
+  "audit.read",
+  "settings.write",
+  "team.manage",
+  "revisions.moderate",
 ];
 
 const staff = (role: StaffMe["role"], permissions: StaffMe["permissions"]): StaffMe => ({
@@ -374,6 +383,15 @@ describe("заявки", () => {
     comment: null,
     contactPurged: false,
     history: [],
+    reminders: 0,
+    timeline: [
+      { kind: "created", at: "2026-09-28T18:00:00.000Z" },
+      { kind: "due", at: "2026-09-29T06:00:00.000Z", passed: true },
+    ],
+    notes: [],
+    awaiting: true,
+    vendorReachable: 1,
+    nextReminderAt: null,
   };
 
   it("телефон клиента: администратор — только с причиной", async () => {

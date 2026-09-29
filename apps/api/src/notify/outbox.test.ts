@@ -157,6 +157,28 @@ describe("dispatchOutbox: сообщения", () => {
     expect(tg.calls[0]?.text).toContain("осталось 8 часов");
   });
 
+  it("напоминание от команды: без счёта часов (срок мог пройти), кнопка — заявка в кабинете", async () => {
+    const { tg, report } = await run({
+      rows: [
+        outboxRow({
+          kind: "vendor.ops_reminder",
+          payload: { request_id: REQUEST_ID, staff_id: "00000000-0000-0000-0000-00000000a001" },
+        }),
+      ],
+    });
+    expect(report.sent).toBe(1);
+    const text = tg.calls[0]?.text ?? "";
+    expect(text).toContain("Команда Bayramm напоминает");
+    expect(text).toContain("№1001");
+    expect(text).not.toContain("осталось");
+    expect(text).not.toMatch(/\+?998\d{9}/);
+    expect(tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [
+        [{ text: "Открыть в кабинете", web_app: { url: `https://vendor.example/requests/${REQUEST_ID}` } }],
+      ],
+    });
+  });
+
   it("клиенту — на его языке; отказ — кнопка «похожие» в Mini App", async () => {
     const { tg } = await run({
       rows: [

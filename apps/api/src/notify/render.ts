@@ -18,10 +18,14 @@ import {
   type RequestFacts,
 } from "./texts";
 
-/** Вид уведомления (app.outbox.kind) — список в миграции 20260930110500_bot_outbox_sla.sql */
+/**
+ * Вид уведомления (app.outbox.kind) — список в миграции 20260930110500_bot_outbox_sla.sql;
+ * vendor.ops_reminder — напоминание от сотрудника (20260930180000_admin_v02.sql)
+ */
 export const NOTICE_KINDS = [
   "vendor.request_new",
   "vendor.sla_reminder",
+  "vendor.ops_reminder",
   "client.request_status",
   "client.sla_breach",
   "ops.sla_breach",
@@ -251,6 +255,8 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
         button(t.buttons.openRequest, vendorRequestUrl(urls, requestId)),
       );
     }
+    case "vendor.ops_reminder":
+      return message(t.opsReminder(facts), button(t.buttons.openRequest, vendorRequestUrl(urls, requestId)));
     case "client.request_status":
       switch (field(row.payload, "status")) {
         case "contacted":

@@ -5,6 +5,7 @@ import { formatUzPhone } from "@bayramm/shared";
 import type { ListingStatus, PublishBlocker } from "@bayramm/shared/api/staff";
 import {
   createContext,
+  type FormEvent,
   type MouseEvent,
   type ReactNode,
   useCallback,
@@ -182,6 +183,92 @@ export function Blockers({ title, codes }: { title: string; codes: readonly (Pub
   );
 }
 
+// ── подтверждение действия ─────────────────────────────────────────────────
+
+interface ConfirmFormProps {
+  /** Что произойдёт — над полем */
+  hint: string;
+  submitLabel: string;
+  /** Подпись поля причины или комментария; нет — подтверждение без текста */
+  label?: string;
+  /** Без текста не отправить (причина обязательна) */
+  required?: boolean;
+  maxLength?: number;
+  danger?: boolean;
+  /** Ответ сервера: null — готово (форма закрывается), иначе ошибка под формой */
+  onSubmit: (text: string) => Promise<Failure | null>;
+  onCancel: () => void;
+}
+
+/**
+ * Подтверждение в самой панели (не window.confirm): пояснение, необязательное поле причины,
+ * «выполнить» и «отмена». Причина обязательна — кнопка неактивна, пока поле пустое
+ */
+export function ConfirmForm({
+  hint,
+  submitLabel,
+  label,
+  required = false,
+  maxLength = 1000,
+  danger = false,
+  onSubmit,
+  onCancel,
+}: ConfirmFormProps) {
+  const id = useId();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    const result = await onSubmit(text.trim());
+    setBusy(false);
+    setFailure(result);
+    if (result === null) setText("");
+  };
+
+  return (
+    <form className="confirm" onSubmit={submit} noValidate>
+      <p className="muted small">{hint}</p>
+      {label !== undefined && (
+        <>
+          <label htmlFor={id}>{required ? label : `${label} (${t.optional})`}</label>
+          <textarea
+            id={id}
+            className="input"
+            rows={2}
+            maxLength={maxLength}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            required={required}
+          />
+        </>
+      )}
+      <div className="acts">
+        <button
+          type="submit"
+          className={`btn ${danger ? "btn-danger" : "btn-primary"}`}
+          disabled={busy || (required && text.trim() === "")}
+        >
+          {submitLabel}
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>
+          {t.cancel}
+        </button>
+      </div>
+      {failure &&
+        (failure.code === "invalid_input" ? (
+          <p className="field-error" role="alert">
+            {apiErrorText("reason_required")}
+          </p>
+        ) : (
+          <ErrorText failure={failure} />
+        ))}
+    </form>
+  );
+}
+
 // ── показать телефон ───────────────────────────────────────────────────────
 
 type Reveal =
@@ -197,6 +284,72 @@ interface PhoneRevealProps {
   label: string;
   /** Запрос к API: каждое чтение сервер пишет в журнал доступа к ПДн */
   load: () => Promise<Result<string | null>>;
+}
+
+interface ReasonPhoneProps {
+  label: string;
+  hint: string;
+  reasonLabel: string;
+  /** Запрос с причиной: база отдаёт номер только администратору и пишет чтение в журнал */
+  load: (reason: string) => Promise<Result<string | null>>;
+}
+
+/** Телефон клиента: скрыт; показать — только с причиной, её видно в журнале доступа к ПДн */
+export function ReasonPhoneReveal({ label, hint, reasonLabel, load }: ReasonPhoneProps) {
+  const reasonId = useId();
+  const [reason, setReason] = useState("");
+  const [phone, setPhone] = useState<string | null | undefined>(undefined);
+  const [failure, setFailure] = useState<Pick<Failure, "code"> | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reveal = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    const result = await load(reason);
+    setBusy(false);
+    setFailure(result.ok ? null : result);
+    if (result.ok) setPhone(result.data);
+  };
+
+  if (phone !== undefined)
+    return (
+      <p className="phone-row">
+        <span className="phone-label">{label}</span>
+        {phone ? (
+          <a className="phone-value" href={`tel:${phone}`}>
+            {formatUzPhone(phone)}
+          </a>
+        ) : (
+          <span className="muted">{t.notSet}</span>
+        )}
+      </p>
+    );
+
+  return (
+    <form className="confirm" onSubmit={reveal} noValidate>
+      <p className="muted small">{hint}</p>
+      <label htmlFor={reasonId}>{reasonLabel}</label>
+      <input
+        id={reasonId}
+        className="input"
+        value={reason}
+        maxLength={500}
+        onChange={(event) => setReason(event.target.value)}
+        required
+      />
+      <div>
+        <button type="submit" className="btn" disabled={busy || reason.trim() === ""}>
+          {t.show}
+        </button>
+      </div>
+      {failure &&
+        (failure.code === "invalid_input" ? (
+          <p className="field-error">{apiErrorText("reason_required")}</p>
+        ) : (
+          <ErrorText failure={failure} />
+        ))}
+    </form>
+  );
 }
 
 /** Номер скрыт, пока не нажата «Показать»; показанный — ссылка tel: */

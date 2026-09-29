@@ -38,8 +38,26 @@ export const PERMISSIONS = {
   "vendor_phones.read": ALL,
   /** Заявки клиентов и SLA */
   "requests.read": ["admin", "manager"],
-  /** Телефон клиента из заявки — с причиной и записью в журнал */
+  /** Работа с заявкой: напомнить вендору, отметить «связались», заметка */
+  "requests.write": ["admin", "manager"],
+  /** Телефон клиента (из заявки и профиля) — с причиной и записью в журнал */
   "client_phones.read": ["admin"],
+  /** Клиенты: псевдоним, заявки, журнал согласий — тем, кто работает с заявками */
+  "clients.read": ["admin", "manager"],
+  /** Заблокировать и разблокировать клиента — с причиной */
+  "clients.block": ["admin", "manager"],
+  /** Очередь уведомлений: сколько ждёт, сколько не доставлено */
+  "outbox.read": ["admin", "manager"],
+  /** Повторить недоставленное уведомление */
+  "outbox.retry": ["admin"],
+  /** Журнал действий и журнал доступа к ПДн */
+  "audit.read": ["admin"],
+  /** Настройки платформы */
+  "settings.write": ["admin"],
+  /** Команда: пригласить, сменить роль, отключить */
+  "team.manage": ["admin"],
+  /** Решение по правкам опубликованных карточек (ревизиям) */
+  "revisions.moderate": ["admin", "moderator"],
 } as const satisfies Record<StaffPermission, readonly StaffRole[]>;
 
 export type Permission = StaffPermission;

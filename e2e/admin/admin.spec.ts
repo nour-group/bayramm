@@ -2,7 +2,16 @@ import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
 import { expect, test } from "../support/offline";
-import { LISTING_ID, mockStaffApi, NOW, REQUEST_ID, STAFF, VENDOR_ID } from "../support/staff-api";
+import {
+  CLIENT_ID,
+  LISTING_ID,
+  mockStaffApi,
+  NOW,
+  REQUEST_ID,
+  REVISION_ID,
+  STAFF,
+  VENDOR_ID,
+} from "../support/staff-api";
 
 /* Панель оператора: страница входа с виджетом Telegram, вход по данным виджета,
    работа сотрудника на перехваченном /api — карточка создаётся, и чего не хватает для
@@ -114,13 +123,20 @@ test.describe("работа сотрудника", () => {
     { name: "заявки", path: "/requests" },
     { name: "заявка", path: `/requests/${REQUEST_ID}` },
     { name: "клиенты", path: "/clients" },
+    { name: "клиент", path: `/clients/${CLIENT_ID}` },
+    { name: "правка карточки", path: `/revisions/${REVISION_ID}` },
+    { name: "уведомления", path: "/notifications" },
+    { name: "журнал", path: "/audit" },
+    { name: "команда", path: "/team" },
+    { name: "настройки", path: "/settings" },
   ] as const;
 
   for (const screen of SCREENS) {
     test(`${screen.name}: axe и зона нажатия`, async ({ page }) => {
       const api = await start(page);
       await page.goto(screen.path);
-      await expect(page.getByText(STAFF.displayName)).toBeVisible();
+      // Имя — в шапке: на экране оно бывает и в списках (менеджер, автор заметки)
+      await expect(page.locator(".who").getByText(STAFF.displayName)).toBeVisible();
       await expect(page.getByRole("status")).toHaveCount(0);
       await expectNoAxeViolations(page, screen.name);
       await expectHitAreas(page, screen.name, CONTROLS);

@@ -6,7 +6,13 @@
 //   /staff/dictionaries   справочники для форм
 //   /staff/vendors        вендоры, чек-лист проверки, пользователи кабинета
 //   /staff/listings       карточки, статусы, фото, занятость
-//   /staff/requests       заявки и срок ответа вендора
+//   /staff/revisions      правки опубликованных карточек: очередь и решение
+//   /staff/requests       заявки, срок ответа вендора, напоминания, заметки
+//   /staff/clients        клиенты (псевдонимы), блокировка
+//   /staff/outbox         очередь уведомлений: что не доставлено, повтор
+//   /staff/audit          журнал действий и журнал доступа к ПДн
+//   /staff/settings       настройки платформы
+//   /staff/team           сотрудники: приглашение, роль, отключение
 //
 // Читается под актором сотрудника; роль и активность проверены в authenticate
 // на этот же запрос.
@@ -20,11 +26,17 @@ import { staffProfilesAs } from "../db/pii";
 import type { AppEnv } from "../env";
 import { notFound } from "../errors";
 import { permissionsOf } from "../staff/access";
+import { audit } from "../staff/audit";
 import { availability } from "../staff/availability";
+import { clients } from "../staff/clients";
 import { dictionaries } from "../staff/dictionaries";
 import { listings } from "../staff/listings";
+import { outbox } from "../staff/outbox";
 import { photos } from "../staff/photos";
 import { requests } from "../staff/requests";
+import { revisions } from "../staff/revisions";
+import { settings } from "../staff/settings";
+import { team } from "../staff/team";
 import { vendors } from "../staff/vendors";
 
 /** Разделы панели без базы и входа — их ставит staff ниже (так их проверяют юнит-тесты) */
@@ -35,7 +47,13 @@ sections.route("/vendors", vendors);
 sections.route("/listings", listings);
 sections.route("/listings", photos);
 sections.route("/listings", availability);
+sections.route("/revisions", revisions);
 sections.route("/requests", requests);
+sections.route("/clients", clients);
+sections.route("/outbox", outbox);
+sections.route("/audit", audit);
+sections.route("/settings", settings);
+sections.route("/team", team);
 
 export const staff = new Hono<AppEnv>();
 
