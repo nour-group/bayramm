@@ -1,5 +1,6 @@
-// Профиль бота как код: команды, описания и кнопка меню. Применяет POST /telegram/sync
-// (routes/telegram.ts) после каждого деплоя — одинаково для бота любого окружения.
+// Профиль бота как код: команды, описания, кнопка меню и вебхук. Применяет POST
+// /telegram/sync (routes/telegram.ts) после каждого деплоя — одинаково для бота
+// любого окружения.
 //
 // Здесь только то, что меняется через Bot API. Домен виджета входа (/setdomain) и
 // основное Mini App бота задаются в @BotFather вручную.
@@ -55,7 +56,15 @@ export type BotProfileStep = BotApiCall & { language: ProfileLanguage };
 export interface BotProfileOptions {
   /** Адрес Mini App (WEB_APP_URL): его открывает кнопка меню */
   readonly webAppUrl: string;
+  /**
+   * Вебхук: https-адрес POST /telegram/webhook и секрет заголовка. Не задан —
+   * setWebhook не вызывается (локально API не на https, Telegram его не примет)
+   */
+  readonly webhook?: { readonly url: string; readonly secretToken: string } | undefined;
 }
+
+/** Параллельных запросов на вебхук от Telegram: каждый держит соединение с базой */
+export const WEBHOOK_MAX_CONNECTIONS = 10;
 
 const SCOPES: readonly { language: ProfileLanguage; texts: BotTexts; lang: { language_code?: Lang } }[] = [
   { language: "default", texts: BOT_TEXTS[DEFAULT_LANG], lang: {} },
@@ -67,11 +76,26 @@ const SCOPES: readonly { language: ProfileLanguage; texts: BotTexts; lang: { lan
  * Весь профиль бота — список вызовов Bot API в порядке применения. Каждый
  * вызов идемпотентен: повтор с теми же параметрами ничего не меняет.
  *
- * Новая настройка — новая запись в списке. Вебхук (setWebhook) добавится так
- * же, когда появится его обработчик: метод — в BotApiMethods (client.ts), вызов —
- * сюда.
+ * Новая настройка — новая запись в списке: метод — в BotApiMethods (client.ts),
+ * вызов — сюда. Вебхук — последним: когда он включится, бот уже описан.
+ * Накопившиеся обновления при смене адреса не сбрасываются (drop_pending_updates
+ * не задан): их отсеет по update_id сам обработчик.
  */
-export function botProfile({ webAppUrl }: BotProfileOptions): readonly BotProfileStep[] {
+export function botProfile({ webAppUrl, webhook }: BotProfileOptions): readonly BotProfileStep[] {
+  const webhookSteps: BotProfileStep[] = webhook
+    ? [
+        {
+          language: "default",
+          method: "setWebhook",
+          params: {
+            url: webhook.url,
+            secret_token: webhook.secretToken,
+            allowed_updates: ["message"],
+            max_connections: WEBHOOK_MAX_CONNECTIONS,
+          },
+        },
+      ]
+    : [];
   return [
     ...SCOPES.map(
       ({ language, texts, lang }): BotProfileStep => ({
@@ -99,5 +123,6 @@ export function botProfile({ webAppUrl }: BotProfileOptions): readonly BotProfil
       method: "setChatMenuButton",
       params: { menu_button: { type: "web_app", text: MENU_BUTTON_TEXT, web_app: { url: webAppUrl } } },
     },
+    ...webhookSteps,
   ];
 }

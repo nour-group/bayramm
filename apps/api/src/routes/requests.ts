@@ -16,6 +16,7 @@ import { authenticate, requireClient } from "../auth/session";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
+import { outboxKick } from "../notify/kick";
 import { parseCreateRequest } from "../requests/input";
 import { createRequest, listClientRequests, withdrawRequest } from "../requests/service";
 import { tashkentToday } from "../time";
@@ -51,7 +52,8 @@ requests.use(async (c, next) => {
 });
 requests.use(database, authenticate);
 
-requests.post("/", limitBody, async (c) => {
+// Уведомление вендору ставит триггер базы; outboxKick отправляет его сразу после ответа
+requests.post("/", limitBody, outboxKick, async (c) => {
   const { actor } = requireClient(c);
   const input = parseCreateRequest(await readJson(c.req.raw), tashkentToday());
   const created = await createRequest(

@@ -18,7 +18,9 @@ TELEGRAM_SYNC_KEY=
 
 # Ключ HMAC для псевдонимов: app.clients.tg_id_hash = HMAC-SHA256(ID_HASH_KEY, Telegram ID).
 # Не короче 32 символов, например: openssl rand -base64 32
-# После запуска не менять: со сменой ключа клиенты не найдутся по старым хэшам
+# После запуска не менять: со сменой ключа клиенты не найдутся по старым хэшам.
+# Им же считаются псевдонимы телефонов вендоров (app.vendor_users.phone_hash) и секрет
+# вебхука бота (src/telegram/webhook-secret.ts) — отдельного секрета для вебхука нет
 ID_HASH_KEY=
 
 # Ключ service_role проекта Supabase — для Storage (фото листингов). Обходит RLS

@@ -7,13 +7,21 @@
   "observability": { "enabled": true },
   // SUPABASE_URL — адрес проекта Supabase (Storage для фото); ключ service_role — секрет.
   // WEB_APP_URL — клиентское приложение (Mini App): его открывает кнопка меню бота,
-  // его же отдаёт GET /telegram/bot. Токен бота и ключ /telegram/sync — секреты
+  // его же отдаёт GET /telegram/bot. VENDOR_APP_URL — кабинет вендора: кнопки бота
+  // «Открыть кабинет» и ссылки из уведомлений. API_URL — свой публичный адрес:
+  // на него /telegram/sync ставит вебхук бота (только https). Токен бота и ключ
+  // /telegram/sync — секреты
   "vars": {
     "APP_ENV": "local",
     "GIT_SHA": "dev",
     "SUPABASE_URL": "http://127.0.0.1:54321",
-    "WEB_APP_URL": "http://localhost:5173"
+    "WEB_APP_URL": "http://localhost:5173",
+    "VENDOR_APP_URL": "http://localhost:5174",
+    "API_URL": "http://localhost:8787"
   },
+  // Раз в минуту: SLA заявок и отправка уведомлений из outbox (src/cron.ts).
+  // Локально: wrangler dev --test-scheduled, затем /__scheduled
+  "triggers": { "crons": ["* * * * *"] },
   // Локально — Postgres из `supabase start`; id нужен wrangler, но не используется
   "hyperdrive": [
     {
@@ -29,8 +37,11 @@
         "APP_ENV": "staging",
         "GIT_SHA": "dev",
         "SUPABASE_URL": "https://ovuzkqcxiwgdpqovsudr.supabase.co",
-        "WEB_APP_URL": "https://staging.bayramm.uz"
+        "WEB_APP_URL": "https://staging.bayramm.uz",
+        "VENDOR_APP_URL": "https://vendor-staging.bayramm.uz",
+        "API_URL": "https://api-staging.bayramm.uz"
       },
+      "triggers": { "crons": ["* * * * *"] },
       // Worker рядом с базой (Supabase, eu-central-1)
       "placement": { "region": "aws:eu-central-1" },
       "routes": [{ "pattern": "api-staging.bayramm.uz", "custom_domain": true }],
@@ -42,8 +53,11 @@
         "APP_ENV": "production",
         "GIT_SHA": "dev",
         "SUPABASE_URL": "https://muxftjxhsfizpxqxqkbo.supabase.co",
-        "WEB_APP_URL": "https://bayramm.uz"
+        "WEB_APP_URL": "https://bayramm.uz",
+        "VENDOR_APP_URL": "https://vendor.bayramm.uz",
+        "API_URL": "https://api.bayramm.uz"
       },
+      "triggers": { "crons": ["* * * * *"] },
       "placement": { "region": "aws:eu-central-1" },
       "routes": [{ "pattern": "api.bayramm.uz", "custom_domain": true }],
       "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "975a9fcde5e74e938de35af3a965e37c" }]

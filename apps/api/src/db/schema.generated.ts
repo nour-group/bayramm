@@ -235,6 +235,9 @@ export interface AppOutbox {
   channel: Generated<AppNotifyChannel>;
   created_at: Generated<Timestamp>;
   dedupe_key: string | null;
+  /**
+   * Когда строку взял отправитель (status = sending)
+   */
   enqueued_at: Timestamp | null;
   id: Generated<string>;
   kind: string;
@@ -368,6 +371,11 @@ export interface AppStaff {
   updated_at: Generated<Timestamp>;
 }
 
+export interface AppTelegramUpdates {
+  received_at: Generated<Timestamp>;
+  update_id: Int8;
+}
+
 export interface AppVendorAccounts {
   contacts_confirmed_at: Timestamp | null;
   contacts_confirmed_by: string | null;
@@ -483,6 +491,7 @@ export interface DB {
   "app.sessions": AppSessions;
   "app.settings": AppSettings;
   "app.staff": AppStaff;
+  "app.telegram_updates": AppTelegramUpdates;
   "app.vendor_accounts": AppVendorAccounts;
   "app.vendor_users": AppVendorUsers;
   "pii.client_profiles": PiiClientProfiles;

@@ -5,8 +5,7 @@
 // только TelegramError: метод, причина, код ответа и описание от Telegram,
 // из которого токен на всякий случай вырезан.
 //
-// Методы и их параметры — в BotApiMethods. Новый метод (например, setWebhook,
-// когда появится обработчик вебхука) — одна запись там.
+// Методы и их параметры — в BotApiMethods. Новый метод — одна запись там.
 
 const API_ORIGIN = "https://api.telegram.org";
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -35,6 +34,54 @@ export type MenuButton =
   | { type: "commands" }
   | { type: "default" };
 
+/** Кнопка под сообщением: открывает Mini App (initData — только у таких кнопок и меню) */
+export interface InlineKeyboardButton {
+  text: string;
+  web_app: { url: string };
+}
+
+/** Кнопка вместо клавиатуры: request_contact — поделиться своим номером */
+export interface KeyboardButton {
+  text: string;
+  request_contact?: boolean;
+}
+
+export type ReplyMarkup =
+  | { inline_keyboard: InlineKeyboardButton[][] }
+  | {
+      keyboard: KeyboardButton[][];
+      resize_keyboard?: boolean;
+      one_time_keyboard?: boolean;
+      input_field_placeholder?: string;
+    }
+  | { remove_keyboard: true };
+
+export interface SendMessageParams {
+  /** Личный чат — это id пользователя. Строка — для id больше 2^53 (у личных чатов их нет) */
+  chat_id: number | string;
+  /** Без parse_mode: названия и имена приходят от людей, разметка в них не нужна */
+  text: string;
+  reply_markup?: ReplyMarkup;
+  link_preview_options?: { is_disabled: boolean };
+}
+
+/** Из ответа sendMessage нужен только id сообщения */
+export interface SentMessage {
+  message_id: number;
+}
+
+/** Обновления, которые бот принимает: только сообщения (личные чаты отбирает обработчик) */
+export type AllowedUpdate = "message";
+
+export interface SetWebhookParams {
+  url: string;
+  /** 1–256 символов из [A-Za-z0-9_-]; Telegram вернёт его в X-Telegram-Bot-Api-Secret-Token */
+  secret_token: string;
+  allowed_updates: AllowedUpdate[];
+  max_connections?: number;
+  drop_pending_updates?: boolean;
+}
+
 /** Метод → параметры и результат. language_code не задан — значение по умолчанию для всех языков */
 export interface BotApiMethods {
   getMe: { params: Record<string, never>; result: BotUser };
@@ -43,6 +90,8 @@ export interface BotApiMethods {
   setMyShortDescription: { params: { short_description: string; language_code?: string }; result: true };
   /** Без chat_id — кнопка по умолчанию для всех личных чатов */
   setChatMenuButton: { params: { chat_id?: number; menu_button?: MenuButton }; result: true };
+  setWebhook: { params: SetWebhookParams; result: true };
+  sendMessage: { params: SendMessageParams; result: SentMessage };
 }
 
 export type BotApiMethod = keyof BotApiMethods;
@@ -71,14 +120,23 @@ export class TelegramError extends Error {
   readonly status: number;
   /** Описание ошибки от Telegram (без токена) — для лога, не для ответа клиенту */
   readonly description: string | undefined;
+  /** 429: через сколько секунд можно повторить (parameters.retry_after) */
+  readonly retryAfter: number | undefined;
 
-  constructor(method: string, reason: TelegramFailure, status: number, description?: string) {
+  constructor(
+    method: string,
+    reason: TelegramFailure,
+    status: number,
+    description?: string,
+    retryAfter?: number,
+  ) {
     super(`telegram ${method}: ${reason}${status ? ` ${status}` : ""}`);
     this.name = "TelegramError";
     this.method = method;
     this.reason = reason;
     this.status = status;
     this.description = description;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -109,6 +167,13 @@ export function botIdOf(token: string): string {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+// parameters.retry_after — целые секунды; всё остальное не верим
+function retryAfterOf(parameters: unknown): number | undefined {
+  if (!isObject(parameters)) return undefined;
+  const value = parameters.retry_after;
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 export function telegramClient(options: TelegramClientOptions): TelegramClient {
@@ -152,7 +217,7 @@ export function telegramClient(options: TelegramClientOptions): TelegramClient {
       }
       if (isObject(body) && body.ok === false) {
         const code = typeof body.error_code === "number" ? body.error_code : res.status;
-        throw new TelegramError(method, "api", code, clean(body.description));
+        throw new TelegramError(method, "api", code, clean(body.description), retryAfterOf(body.parameters));
       }
       throw new TelegramError(method, "bad_response", res.status);
     },
