@@ -217,6 +217,7 @@ const selectUsers = (trx: Tx) =>
       "u.role",
       "u.locale",
       "u.tg_linked_at",
+      sql<boolean>`u.account_id is not null`.as("account_linked"),
       "u.last_login_at",
       "u.disabled_at",
       "u.created_at",
@@ -234,6 +235,7 @@ function userView(row: UserRow): VendorUser {
     locale: row.locale,
     telegramLinked: row.tg_linked_at !== null,
     telegramLinkedAt: iso(row.tg_linked_at),
+    accountLinked: row.account_linked,
     lastLoginAt: iso(row.last_login_at),
     disabledAt: iso(row.disabled_at),
     createdAt: iso(row.created_at),
@@ -549,9 +551,9 @@ vendors.patch("/:id/users/:userId", requirePermission("vendor_users.write"), lim
   const hash = typeof phone === "string" ? await phoneHash(c.env.ID_HASH_KEY, phone) : undefined;
   const user = await withActor(c.var.db, staffOf(c), async (trx) => {
     const current = await loadUser(trx, ids.vendor, ids.user);
-    // Привязанный к Telegram пользователь входит по своему номеру: сменить его —
-    // значит отвязать. Для этого — отключить и завести нового
-    if (hash && current.telegramLinked) {
+    // Привязанный пользователь входит по своему номеру: сменить его — значит отвязать.
+    // Для этого — отвязать или отключить и завести нового
+    if (hash && (current.telegramLinked || current.accountLinked)) {
       throw new ApiError(409, "user_linked", "Phone of a Telegram-linked user cannot be changed");
     }
     const account = definedOnly({ phone_hash: hash, role: role ?? undefined, locale: locale ?? undefined });
@@ -598,16 +600,18 @@ vendors.post("/:id/users/:userId/enable", requirePermission("vendor_users.write"
   );
 });
 
-// Отвязать Telegram: вендор сменил аккаунт или номер. Хэш и время привязки снимаются
-// вместе (ограничение базы), Telegram ID и чат — из профиля; сессии кабинета отзываются.
-// Привязать заново вендор может сам — снова поделившись контактом в боте
+// Отвязать: вендор сменил аккаунт, Telegram или номер. Пользователь вендора отвязывается
+// от аккаунта партнёра (доступ в кабинет пропадает со следующим запросом), хэш и время
+// привязки Telegram снимаются вместе (ограничение базы), Telegram ID и чат — из профиля;
+// старые сессии кабинета отзываются. Привязать заново вендор может сам — снова доказав
+// номер: контактом в боте или кодом из сообщения
 vendors.post("/:id/users/:userId/unlink", requirePermission("vendor_users.write"), async (c) => {
   const ids = userIds(c);
   const user = await withActor(c.var.db, staffOf(c), async (trx) => {
     await loadUser(trx, ids.vendor, ids.user);
     await trx
       .updateTable("app.vendor_users")
-      .set({ tg_user_hash: null, tg_linked_at: null })
+      .set({ account_id: null, tg_user_hash: null, tg_linked_at: null })
       .where("id", "=", ids.user)
       .execute();
     await clearVendorUserTelegram(trx, ids.user);

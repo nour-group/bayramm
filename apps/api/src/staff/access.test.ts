@@ -104,14 +104,22 @@ const ROUTES: readonly [method: string, path: string, permission: Permission][] 
 ];
 
 function appAs(role: StaffRole) {
+  const accountId = "acacacac-0000-0000-0000-000000000001";
   const session = {
     sessionId: "11111111-0000-0000-0000-000000000001",
+    accountId,
+    app: "admin",
+    via: "staff_elevation",
+    proofAt: new Date(),
+    accountDisabledAt: null,
+    accountDeletedAt: null,
     clientId: null,
-    blocked_at: null,
-    deleted_at: null,
+    clientBlocked: null,
+    clientDeleted: null,
     staffId: "00000000-0000-0000-0000-00000000a001",
     staffRole: role,
     staffActive: true,
+    staffAccountId: accountId,
   };
   const fake = fakeDb((q: RecordedQuery) => (q.sql.includes('from "app"."sessions"') ? [session] : []));
   const app = new Hono<AppEnv>();

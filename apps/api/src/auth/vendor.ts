@@ -1,103 +1,86 @@
-// Вход в кабинет вендора (Mini App, открытый из бота).
+// Кабинет вендора: какой пользователь вендора действует в запросе.
 //
-// Пользователя вендора заводит сотрудник — с телефоном. Привязка к Telegram —
-// в боте: вендор делится своим контактом, вебхук находит пользователя по
-// телефону и записывает app.vendor_users.tg_user_hash = HMAC(ID_HASH_KEY,
-// Telegram ID) — тот же псевдоним, что у клиентов. Здесь — только вход:
-// initData проверяется по подписи токеном бота, пользователь ищется по этому
-// псевдониму под актором system, сессия выдаётся в той же транзакции.
+// Партнёр — роль на аккаунте: app.vendor_users.account_id. Сотрудник заводит
+// пользователя вендора с телефоном; к аккаунту он привязывается, когда аккаунт
+// доказал этот номер — кодом из сообщения или контактом в боте. Человек может быть
+// партнёром нескольких вендоров: тогда кабинет называет вендора заголовком
+// X-Bayramm-Vendor, одно членство выбирается само. Отключённый пользователь вендора
+// теряет доступ на следующем же запросе.
 
-import { verifyInitData } from "@bayramm/tg";
-import { sql } from "kysely";
-import { SYSTEM, withActor } from "../db/actor";
+import { SYSTEM, type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
-import { ApiError } from "../errors";
-import { generateToken, hashToken, telegramIdHash } from "./crypto";
-
-// Как у клиента: Mini App получает свежую initData при каждом открытии
-export const VENDOR_INIT_DATA_MAX_AGE_SECONDS = 60 * 60;
-// Сессия кабинета — рабочая смена; дальше — снова вход из бота
-export const VENDOR_SESSION_TTL_SECONDS = 12 * 60 * 60;
-
-export interface VendorSession {
-  token: string;
-  expiresAt: Date;
-  vendorUser: { id: string; vendorId: string };
-}
-
-interface Secrets {
-  TELEGRAM_BOT_TOKEN: string;
-  ID_HASH_KEY: string;
-}
+import { ApiError, forbidden } from "../errors";
 
 // Коды 403 — стабильные: по ним кабинет объясняет, что делать дальше
 export const vendorNotLinked = () =>
-  new ApiError(403, "vendor_not_linked", "Telegram account is not linked to a vendor");
+  new ApiError(403, "vendor_not_linked", "Account is not a partner of any vendor");
 export const vendorDisabled = () => new ApiError(403, "vendor_disabled", "Vendor access is disabled");
+export const vendorChoiceRequired = () =>
+  new ApiError(409, "vendor_choice_required", "Several vendors: choose one with X-Bayramm-Vendor");
 
-// Язык Telegram → язык кабинета; остальные языки — не трогаем
-function localeOf(languageCode: string | undefined): "ru" | "uz" | null {
-  const lang = languageCode?.toLowerCase().split("-")[0];
-  return lang === "ru" || lang === "uz" ? lang : null;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface Membership {
+  readonly vendorUserId: string;
+  readonly vendorId: string;
+  readonly disabled: boolean;
+}
+
+/** Членства аккаунта в вендорах, старые первыми; trx — под актором system */
+export async function membershipsIn(trx: Tx, accountId: string): Promise<Membership[]> {
+  const rows = await trx
+    .selectFrom("app.vendor_users")
+    .select(["id", "vendor_id", "disabled_at"])
+    .where("account_id", "=", accountId)
+    .orderBy("created_at")
+    .orderBy("id")
+    .execute();
+  return rows.map((row) => ({
+    vendorUserId: row.id,
+    vendorId: row.vendor_id,
+    disabled: row.disabled_at !== null,
+  }));
+}
+
+/** Партнёр ли аккаунт: членств нет — 403 vendor_not_linked, все отключены — 403 vendor_disabled */
+export function assertPartner(memberships: readonly Membership[]): Membership[] {
+  if (memberships.length === 0) throw vendorNotLinked();
+  const active = memberships.filter((m) => !m.disabled);
+  if (active.length === 0) throw vendorDisabled();
+  return active;
 }
 
 /**
- * Проверяет initData и выдаёт сессию кабинета.
- * Подпись не сошлась или устарела — 401; Telegram не привязан ни к одному
- * пользователю вендора — 403 vendor_not_linked; пользователь отключён — 403
- * vendor_disabled. При первом входе язык кабинета берётся из Telegram.
+ * Пользователь вендора для запроса. Членств нет — 403 vendor_not_linked; все
+ * отключены — 403 vendor_disabled; заголовок называет вендора не из действующих
+ * членств — 403; несколько членств без заголовка — 409 vendor_choice_required.
  */
-export async function signInVendor(db: Db, env: Secrets, initData: string): Promise<VendorSession> {
-  const verified = await verifyInitData(initData, env.TELEGRAM_BOT_TOKEN, {
-    maxAgeSeconds: VENDOR_INIT_DATA_MAX_AGE_SECONDS,
-  });
-  if (!verified.ok) {
-    // Причина — только в лог: клиенту хватит 401
-    console.warn("auth.vendor: initData rejected", verified.reason);
-    throw new ApiError(401, "unauthorized", "Invalid Telegram init data");
+export function chooseMembership(
+  memberships: readonly Membership[],
+  header: string | undefined,
+): VendorActor {
+  const active = assertPartner(memberships);
+
+  const wanted = header?.trim();
+  let chosen: Membership | undefined;
+  if (wanted) {
+    if (!UUID_RE.test(wanted)) throw forbidden();
+    chosen = active.find((m) => m.vendorId === wanted.toLowerCase());
+    if (chosen === undefined) throw forbidden();
+  } else if (active.length === 1) {
+    chosen = active[0];
+  } else {
+    throw vendorChoiceRequired();
   }
-  const { user } = verified.data;
+  if (chosen === undefined) throw vendorNotLinked();
+  return { kind: "vendor_user", id: chosen.vendorUserId, vendorId: chosen.vendorId };
+}
 
-  const tgUserHash = await telegramIdHash(env.ID_HASH_KEY, user.id);
-  const token = generateToken();
-  const tokenHash = await hashToken(token);
-  const locale = localeOf(user.languageCode);
-
-  return withActor(db, SYSTEM, async (trx) => {
-    const found = await trx
-      .selectFrom("app.vendor_users")
-      .select(["id", "vendor_id", "disabled_at"])
-      .where("tg_user_hash", "=", tgUserHash)
-      .where("tg_linked_at", "is not", null)
-      .executeTakeFirst();
-    if (found === undefined) throw vendorNotLinked();
-    if (found.disabled_at !== null) throw vendorDisabled();
-
-    // Язык — только при первом входе: дальше его выбирает сам вендор
-    await trx
-      .updateTable("app.vendor_users")
-      .set({
-        last_login_at: sql<Date>`now()`,
-        locale: sql`case when last_login_at is null then coalesce(${locale}::app.locale, locale) else locale end`,
-      })
-      .where("id", "=", found.id)
-      .execute();
-
-    const session = await trx
-      .insertInto("app.sessions")
-      .values({
-        token_hash: tokenHash,
-        vendor_user_id: found.id,
-        via: "tg_partner",
-        expires_at: sql<Date>`now() + make_interval(secs => ${VENDOR_SESSION_TTL_SECONDS})`,
-      })
-      .returning("expires_at")
-      .executeTakeFirstOrThrow();
-
-    return {
-      token,
-      expiresAt: session.expires_at,
-      vendorUser: { id: found.id, vendorId: found.vendor_id },
-    };
-  });
+export async function vendorActorFor(
+  db: Db,
+  accountId: string,
+  header: string | undefined,
+): Promise<VendorActor> {
+  const memberships = await withActor(db, SYSTEM, (trx) => membershipsIn(trx, accountId));
+  return chooseMembership(memberships, header);
 }

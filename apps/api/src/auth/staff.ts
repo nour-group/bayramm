@@ -1,21 +1,22 @@
-// Вход сотрудника через виджет Telegram (панель оператора).
+// Сессия сотрудника (панель оператора).
 //
-// Данные виджета проверяются по подписи токеном бота; дальше — только Telegram
-// ID (в базе — HMAC от него) и имя пользователя для приглашения. Найти
-// сотрудника или принять приглашение может только app.staff_sign_in под
-// актором system; сессия выдаётся в той же транзакции.
+// Сотрудник — роль на аккаунте (app.staff.account_id), принимается только по
+// приглашению. Сессия сотрудника — отдельная от сессии аккаунта: не дольше 12 часов
+// от доказательства входа и выдаётся только по свежему доказательству —
+// app.staff_elevate проверяет роль, активность аккаунта и возраст доказательства и
+// пишет повышение в журнал. Три пути:
+//   · сессия аккаунта с proof_at моложе 12 часов (панель после хаба входа);
+//   · initData Mini App — панель открыта кнопкой бота;
+//   · данные виджета входа Telegram (прежний вход панели).
 
-import { type LoginWidgetParams, verifyLoginWidget } from "@bayramm/tg";
+import type { LoginWidgetParams } from "@bayramm/tg";
 import { sql } from "kysely";
-import { type StaffRole, SYSTEM, withActor } from "../db/actor";
+import { type StaffRole, SYSTEM, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
-import { ApiError, forbidden } from "../errors";
-import { generateToken, hashToken, telegramIdHash } from "./crypto";
+import { forbidden } from "../errors";
+import { reauthRequired, type SignInSource, signInTelegram, verifyWebApp, verifyWidget } from "./account";
+import { generateToken, hashToken } from "./crypto";
 
-// Виджет подписывает данные в момент нажатия «Войти», и браузер сразу несёт их
-// сюда. Сутки по умолчанию — много для входа в панель: данные виджета проходят
-// через адресную строку, и короткое окно ограничивает повтор
-export const STAFF_AUTH_MAX_AGE_SECONDS = 10 * 60;
 export const STAFF_SESSION_TTL_SECONDS = 12 * 60 * 60;
 
 export interface StaffSession {
@@ -29,53 +30,65 @@ interface Secrets {
   ID_HASH_KEY: string;
 }
 
-interface SignInRow {
-  staff_id: string;
-  role: StaffRole;
-  claimed: boolean;
+interface ElevateRow {
+  result: "ok" | "stale" | "forbidden";
+  staff_id: string | null;
+  role: StaffRole | null;
+  expires_at: Date | null;
 }
 
 /**
- * Проверяет данные виджета и выдаёт сессию сотрудника.
- * Подпись не сошлась или устарела — 401; сотрудника нет, он отключён или
- * приглашение уже принято другим аккаунтом — одинаковый 403.
+ * Сессия сотрудника по доказательству аккаунта (под актором system). Нет
+ * действующей роли — 403; доказательство старше 12 часов — 401 reauth_required.
  */
-export async function signInStaff(db: Db, env: Secrets, params: LoginWidgetParams): Promise<StaffSession> {
-  const verified = await verifyLoginWidget(params, env.TELEGRAM_BOT_TOKEN, {
-    maxAgeSeconds: STAFF_AUTH_MAX_AGE_SECONDS,
-  });
-  if (!verified.ok) {
-    // Причина — только в лог: клиенту хватит 401
-    console.warn("auth.staff: login widget rejected", verified.reason);
-    throw new ApiError(401, "unauthorized", "Invalid Telegram login data");
-  }
-  const { user } = verified.data;
-
-  const tgIdHash = await telegramIdHash(env.ID_HASH_KEY, user.id);
+export async function elevate(
+  trx: Tx,
+  params: { accountId: string; proofAt: Date; via: string },
+): Promise<StaffSession> {
   const token = generateToken();
   const tokenHash = await hashToken(token);
+  const { rows } = await sql<ElevateRow>`
+    select result, staff_id, role, expires_at
+    from app.staff_elevate(${params.accountId}::uuid, ${params.proofAt}::timestamptz, ${tokenHash}::bytea,
+                           ${params.via}::text)`.execute(trx);
+  const row = rows[0];
+  if (row === undefined) throw new Error("staff_elevate: нет результата");
+  if (row.result === "stale") throw reauthRequired();
+  if (row.result !== "ok" || row.staff_id === null || row.role === null || row.expires_at === null) {
+    throw forbidden();
+  }
+  console.info("auth.staff: elevated", { staffId: row.staff_id, via: params.via });
+  return { token, expiresAt: row.expires_at, staff: { id: row.staff_id, role: row.role } };
+}
 
+/** Сессия сотрудника из сессии аккаунта (POST /auth/staff/elevate) */
+export function elevateSession(
+  db: Db,
+  session: { accountId: string; proofAt: Date; via: string },
+): Promise<StaffSession> {
+  return withActor(db, SYSTEM, (trx) => elevate(trx, session));
+}
+
+// Вход по данным Telegram и сразу — сессия сотрудника. Не сотрудник — 403, и
+// транзакция откатывается: аккаунт по такому входу не создаётся
+async function signInAndElevate(
+  db: Db,
+  env: Secrets,
+  proof: Awaited<ReturnType<typeof verifyWebApp>>,
+  source: SignInSource,
+): Promise<StaffSession> {
   return withActor(db, SYSTEM, async (trx) => {
-    const { rows } = await sql<SignInRow>`
-      select staff_id, role, claimed
-      from app.staff_sign_in(${tgIdHash}::bytea, ${user.id}::bigint, ${user.username ?? null}::text)`.execute(
-      trx,
-    );
-    const staff = rows[0];
-    if (staff === undefined) throw forbidden();
-    if (staff.claimed) console.info("auth.staff: invite claimed", { staffId: staff.staff_id });
-
-    const session = await trx
-      .insertInto("app.sessions")
-      .values({
-        token_hash: tokenHash,
-        staff_id: staff.staff_id,
-        via: "tg_staff",
-        expires_at: sql<Date>`now() + make_interval(secs => ${STAFF_SESSION_TTL_SECONDS})`,
-      })
-      .returning("expires_at")
-      .executeTakeFirstOrThrow();
-
-    return { token, expiresAt: session.expires_at, staff: { id: staff.staff_id, role: staff.role } };
+    const { accountId } = await signInTelegram(trx, env, proof, source);
+    return elevate(trx, { accountId, proofAt: proof.at, via: proof.via });
   });
+}
+
+/** Панель как Mini App: initData из кнопки бота (POST /auth/staff/webapp) */
+export async function signInStaffWebApp(db: Db, env: Secrets, initData: string): Promise<StaffSession> {
+  return signInAndElevate(db, env, await verifyWebApp(env, initData), "admin");
+}
+
+/** Виджет входа Telegram на домене панели (POST /auth/staff/telegram) */
+export async function signInStaff(db: Db, env: Secrets, params: LoginWidgetParams): Promise<StaffSession> {
+  return signInAndElevate(db, env, await verifyWidget(env, params), "admin");
 }

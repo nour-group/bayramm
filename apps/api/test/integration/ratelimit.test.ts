@@ -45,12 +45,13 @@ async function postRequest(env: Env, headers: Record<string, string>): Promise<R
 }
 
 describe("POST /requests: лимит по клиенту", () => {
-  it("исчерпан — 429 rate_limited без кэша, ключ — id клиента", async () => {
+  it("исчерпан — 429 rate_limited без кэша, ключ — аккаунт клиента", async () => {
     const user = newTelegramUser();
     const token = await loginToken(user);
-    const { rows } = await admin.query<{ id: string }>("select id from app.clients where tg_id_hash = $1", [
-      tgIdHash(user.id),
-    ]);
+    const { rows } = await admin.query<{ id: string }>(
+      "select account_id as id from app.clients where tg_id_hash = $1",
+      [tgIdHash(user.id)],
+    );
     const deny = limiter(false);
 
     const res = await postRequest(
@@ -61,7 +62,7 @@ describe("POST /requests: лимит по клиенту", () => {
     expect(res.headers.get("retry-after")).toBe("60");
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("rate_limited");
-    expect(deny.calls).toEqual([`client:${rows[0]?.id}`]);
+    expect(deny.calls).toEqual([`account:${rows[0]?.id}`]);
   });
 
   it("не исчерпан — запрос идёт дальше, к проверке тела", async () => {

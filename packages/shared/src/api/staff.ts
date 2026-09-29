@@ -131,9 +131,11 @@ export interface VendorUser {
   readonly fullName: string | null;
   readonly role: "owner" | "member";
   readonly locale: "ru" | "uz";
-  /** Вендор поделился контактом в боте — вход через Telegram работает */
+  /** Уведомления о заявках привязаны к Telegram партнёра */
   readonly telegramLinked: boolean;
   readonly telegramLinkedAt: string | null;
+  /** Партнёр доказал этот номер (контакт в боте или код из сообщения) — кабинет открыт его аккаунту */
+  readonly accountLinked: boolean;
   readonly lastLoginAt: string | null;
   readonly disabledAt: string | null;
   readonly createdAt: string;

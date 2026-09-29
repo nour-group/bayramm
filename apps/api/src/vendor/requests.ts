@@ -27,7 +27,7 @@ import {
   type VendorTargetStatus,
 } from "@bayramm/shared/api/vendor";
 import { sql } from "kysely";
-import { type Tx, type VendorActor, withActor } from "../db/actor";
+import { roleActorKind, type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { readRequestPhone, requestContactsAs } from "../db/pii";
 import { ApiError, notFound } from "../errors";
@@ -303,7 +303,7 @@ export async function getRequest(db: Db, actor: VendorActor, id: string): Promis
       history: history.map((entry) => ({
         status: entry.to_status,
         at: entry.at.toISOString(),
-        by: entry.actor_kind,
+        by: roleActorKind(entry.actor_kind),
       })),
     };
   });

@@ -97,13 +97,13 @@ describe("POST /auth/staff/telegram: приглашение по имени", ()
     );
     expect(staffRows[0]?.row).not.toContain(String(user.id));
 
-    // Сессия: via tg_staff, в базе только sha256 токена
-    const { rows: sessions } = await admin.query<{ token_hash: Buffer; via: string }>(
-      "select token_hash, via from app.sessions where staff_id = $1",
+    // Сессия сотрудника по свежему доказательству, в базе только sha256 токена
+    const { rows: sessions } = await admin.query<{ token_hash: Buffer; via: string; app: string }>(
+      "select token_hash, via, app from app.sessions where staff_id = $1",
       [staffId],
     );
     expect(sessions).toEqual([
-      { token_hash: createHash("sha256").update(body.token).digest(), via: "tg_staff" },
+      { token_hash: createHash("sha256").update(body.token).digest(), via: "staff_elevation", app: "admin" },
     ]);
 
     // Привязка — в журнале, без имени и Telegram ID
@@ -247,9 +247,16 @@ describe("сессии сотрудников и границы маршруто
     const username = newStaffUsername();
     await inviteStaff(admin, { username });
     const token = await staffToken(widgetUser(username));
-    const res = await call("/me", bearer(token));
+    const res = await call("/requests", bearer(token));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual(DENIED);
+    // свой аккаунт и роли — видит: так панель узнаёт, есть ли у него кабинет партнёра
+    const me = await call("/me", bearer(token));
+    expect(me.status).toBe(200);
+    expect(await me.json()).toMatchObject({
+      roles: { staff: { role: "moderator" } },
+      session: { kind: "staff" },
+    });
   });
 
   it("без токена /staff/me — 401", async () => {

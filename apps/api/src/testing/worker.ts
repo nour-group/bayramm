@@ -31,6 +31,10 @@ export function makeEnv(overrides: Partial<Env> = {}): Env {
     VENDOR_APP_URL: "http://localhost:5174",
     ADMIN_APP_URL: "http://localhost:5175",
     API_URL: "http://localhost:8787",
+    // Виджет входа не настроен; коды из сообщения — в лог (console, только local)
+    TELEGRAM_LOGIN_DOMAIN: "",
+    OTP_PROVIDER: "console",
+    TELEGRAM_GATEWAY_TOKEN: "",
     // Порт 1: соединение, если бы до него дошло, сразу упало бы
     HYPERDRIVE: { connectionString: "postgresql://nobody:nothing@127.0.0.1:1/none" } as Hyperdrive,
     RATE_LIMIT_AUTH_IP: allowAllLimiter(),

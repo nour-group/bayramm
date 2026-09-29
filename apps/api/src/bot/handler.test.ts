@@ -151,7 +151,7 @@ describe("handleUpdate: /start", () => {
     ]);
   });
 
-  it("сотруднику — карточка команды с кнопкой панели вместо приветствия клиента и просьбы о номере", async () => {
+  it("сотруднику — карточка команды с кнопками ролей (панель — Mini App) вместо приветствия и просьбы о номере", async () => {
     const replies = await handleUpdate(
       db({ staffRole: "admin", started: { staff: true, vendor: false } }).db,
       CONFIG,
@@ -163,7 +163,7 @@ describe("handleUpdate: /start", () => {
         text: STAFF_TEXTS.uz.staffCard("admin"),
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Boshqaruv paneli", url: "https://admin.example" }],
+            [{ text: "Boshqaruv paneli", web_app: { url: "https://admin.example" } }],
             [{ text: BOT_TEXTS.uz.openApp, web_app: { url: "https://app.example" } }],
           ],
         },
@@ -185,12 +185,21 @@ describe("handleUpdate: /start", () => {
     );
   });
 
-  it("сотрудник-партнёр: карточка команды и кнопка кабинета; /start partner — просьба о номере", async () => {
+  it("сотрудник-партнёр: одна карточка с кнопкой каждой роли; /start partner — просьба о номере", async () => {
     const both = db({ staffRole: "manager", started: { staff: true, vendor: true } }).db;
     const replies = await handleUpdate(both, CONFIG, start(null, "ru"));
-    expect(replies.map((reply) => reply.text)).toEqual([
-      STAFF_TEXTS.ru.staffCard("manager"),
-      BOT_TEXTS.ru.vendorLinked,
+    expect(replies).toEqual([
+      {
+        chat_id: USER_ID,
+        text: STAFF_TEXTS.ru.staffCard("manager"),
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Панель оператора", web_app: { url: "https://admin.example" } }],
+            [{ text: "Открыть кабинет", web_app: { url: "https://vendor.example" } }],
+            [{ text: BOT_TEXTS.ru.openApp, web_app: { url: "https://app.example" } }],
+          ],
+        },
+      },
     ]);
     const partner = await handleUpdate(
       db({ staffRole: "admin", started: { staff: true, vendor: false } }).db,
@@ -198,6 +207,26 @@ describe("handleUpdate: /start", () => {
       start("partner"),
     );
     expect(partner.map((reply) => reply.text)).toEqual([BOT_TEXTS.uz.partnerPrompt]);
+  });
+
+  it("партнёру — приветствие с кнопками приложения и кабинета, без просьбы о номере", async () => {
+    const replies = await handleUpdate(
+      db({ started: { staff: false, vendor: true } }).db,
+      CONFIG,
+      start(null, "ru"),
+    );
+    expect(replies).toEqual([
+      {
+        chat_id: USER_ID,
+        text: `${BOT_TEXTS.ru.welcome}\n\n${BOT_TEXTS.ru.vendorLinked}`,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Открыть кабинет", web_app: { url: "https://vendor.example" } }],
+            [{ text: BOT_TEXTS.ru.openApp, web_app: { url: "https://app.example" } }],
+          ],
+        },
+      },
+    ]);
   });
 
   it("любое другое сообщение — как /start", async () => {
@@ -233,7 +262,10 @@ describe("handleUpdate: команды команды Bayramm", () => {
     expect(replies[0]?.text).toBe(STAFF_TEXTS.ru.stats(STATS));
     expect(replies[0]?.text).toContain("Ждут ответа: 5");
     expect(replies[0]?.reply_markup).toMatchObject({
-      inline_keyboard: [[{ text: "Панель оператора", url: "https://admin.example" }], expect.anything()],
+      inline_keyboard: [
+        [{ text: "Панель оператора", web_app: { url: "https://admin.example" } }],
+        expect.anything(),
+      ],
     });
   });
 

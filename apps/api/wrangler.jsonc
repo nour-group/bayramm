@@ -9,9 +9,16 @@
   // WEB_APP_URL — клиентское приложение (Mini App): его открывает кнопка меню бота,
   // его же отдаёт GET /telegram/bot. VENDOR_APP_URL — кабинет вендора: кнопки бота
   // «Открыть кабинет» и ссылки из уведомлений. ADMIN_APP_URL — панель оператора: кнопка
-  // сотрудникам в боте. API_URL — свой публичный адрес:
+  // сотрудникам в боте. Эти же три адреса — приложения, которым хаб входа
+  // (WEB_APP_URL/auth) выдаёт одноразовые коды: код меняется на сессию только с их
+  // origin. API_URL — свой публичный адрес:
   // на него /telegram/sync ставит вебхук бота (только https). Токен бота и ключ
-  // /telegram/sync — секреты
+  // /telegram/sync — секреты.
+  // TELEGRAM_LOGIN_DOMAIN — домен, заданный боту в @BotFather /setdomain: только там
+  // хаб показывает виджет входа Telegram (пусто — виджета нет). OTP_PROVIDER — кто
+  // доставляет коды входа по телефону: off — вход по телефону выключен; console —
+  // код в лог, только APP_ENV=local; tg_gateway — Telegram Gateway (секрет
+  // TELEGRAM_GATEWAY_TOKEN, без него — выключен)
   "vars": {
     "APP_ENV": "local",
     "GIT_SHA": "dev",
@@ -19,7 +26,9 @@
     "WEB_APP_URL": "http://localhost:5173",
     "VENDOR_APP_URL": "http://localhost:5174",
     "ADMIN_APP_URL": "http://localhost:5175",
-    "API_URL": "http://localhost:8787"
+    "API_URL": "http://localhost:8787",
+    "TELEGRAM_LOGIN_DOMAIN": "",
+    "OTP_PROVIDER": "console"
   },
   // Раз в минуту: SLA заявок и отправка уведомлений из outbox (src/cron.ts).
   // Локально: wrangler dev --test-scheduled, затем /__scheduled
@@ -50,7 +59,9 @@
         "WEB_APP_URL": "https://staging.bayramm.uz",
         "VENDOR_APP_URL": "https://vendor-staging.bayramm.uz",
         "ADMIN_APP_URL": "https://admin-staging.bayramm.uz",
-        "API_URL": "https://api-staging.bayramm.uz"
+        "API_URL": "https://api-staging.bayramm.uz",
+        "TELEGRAM_LOGIN_DOMAIN": "staging.bayramm.uz",
+        "OTP_PROVIDER": "off"
       },
       "triggers": { "crons": ["* * * * *"] },
       // Worker рядом с базой (Supabase, eu-central-1)
@@ -80,7 +91,9 @@
         "WEB_APP_URL": "https://bayramm.uz",
         "VENDOR_APP_URL": "https://vendor.bayramm.uz",
         "ADMIN_APP_URL": "https://admin.bayramm.uz",
-        "API_URL": "https://api.bayramm.uz"
+        "API_URL": "https://api.bayramm.uz",
+        "TELEGRAM_LOGIN_DOMAIN": "bayramm.uz",
+        "OTP_PROVIDER": "off"
       },
       "triggers": { "crons": ["* * * * *"] },
       "placement": { "region": "aws:eu-central-1" },

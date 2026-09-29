@@ -254,7 +254,23 @@ afterAll(async () => {
     await admin.query("delete from app.sessions where vendor_user_id = any($1::uuid[])", [
       vendors.map((v) => v.userId),
     ]);
+    const partnerAccounts = await admin.query<{ id: string }>(
+      "select distinct account_id as id from app.vendor_users where vendor_id = any($1::uuid[]) and account_id is not null",
+      [accounts],
+    );
     await admin.query("delete from app.vendor_users where vendor_id = any($1::uuid[])", [accounts]);
+    await admin.query("delete from app.sessions where account_id = any($1::uuid[])", [
+      partnerAccounts.rows.map((r) => r.id),
+    ]);
+    await admin.query("delete from app.account_identities where account_id = any($1::uuid[])", [
+      partnerAccounts.rows.map((r) => r.id),
+    ]);
+    await admin.query("delete from pii.account_profiles where account_id = any($1::uuid[])", [
+      partnerAccounts.rows.map((r) => r.id),
+    ]);
+    await admin.query("delete from app.accounts where id = any($1::uuid[])", [
+      partnerAccounts.rows.map((r) => r.id),
+    ]);
     await admin.query("delete from pii.vendor_contacts where vendor_id = any($1::uuid[])", [accounts]);
     await admin.query("delete from app.vendor_accounts where id = any($1::uuid[])", [accounts]);
     await admin.query("delete from app.consent_texts where id = any($1::uuid[])", [
@@ -271,20 +287,27 @@ afterAll(async () => {
 // ── вход ────────────────────────────────────────────────────────────────────
 
 describe("POST /auth/vendor/telegram", () => {
-  it("привязанный Telegram — сессия кабинета на 12 часов, via tg_partner, отметка входа", async () => {
+  it("привязанный Telegram — сессия аккаунта партнёра на 7 дней, via tg_webapp, отметка входа", async () => {
     const res = await vendorLogin(A.telegram);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { token: string; expiresAt: string };
     expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const ttl = Date.parse(body.expiresAt) - Date.now();
-    expect(ttl).toBeGreaterThan(12 * 3600 * 1000 - 60_000);
-    expect(ttl).toBeLessThanOrEqual(12 * 3600 * 1000);
+    expect(ttl).toBeGreaterThan(7 * 24 * 3600 * 1000 - 60_000);
+    expect(ttl).toBeLessThanOrEqual(7 * 24 * 3600 * 1000);
 
-    const { rows } = await admin.query<{ via: string; vendor_user_id: string }>(
-      "select via, vendor_user_id from app.sessions where token_hash = $1",
-      [createHash("sha256").update(body.token).digest()],
+    // Роль партнёра — не в сессии, а в членстве аккаунта: сессия только аккаунта
+    const { rows } = await admin.query<{
+      via: string;
+      app: string;
+      vendor_user_id: string | null;
+      mine: boolean;
+    }>(
+      `select s.via, s.app, s.vendor_user_id, s.account_id = u.account_id as mine
+       from app.sessions s, app.vendor_users u where s.token_hash = $1 and u.id = $2`,
+      [createHash("sha256").update(body.token).digest(), A.userId],
     );
-    expect(rows).toEqual([{ via: "tg_partner", vendor_user_id: A.userId }]);
+    expect(rows).toEqual([{ via: "tg_webapp", app: "vendor", vendor_user_id: null, mine: true }]);
     const { rows: users } = await admin.query<{ locale: string; logged_in: boolean }>(
       "select locale, last_login_at is not null as logged_in from app.vendor_users where id = $1",
       [A.userId],
@@ -690,25 +713,34 @@ describe("площадка вендора A", () => {
 // ── конец сессии ────────────────────────────────────────────────────────────
 
 describe("сессия кабинета", () => {
-  it("отключённый пользователь: вход — 403 vendor_disabled, живая сессия — 401", async () => {
+  it("отключённый пользователь: вход — 403 vendor_disabled, живая сессия — тоже 403 vendor_disabled", async () => {
     const token = await vendorToken(B.telegram);
     await admin.query("update app.vendor_users set disabled_at = now() where id = $1", [B.userId]);
-    expect((await call("/vendor/me", bearer(token))).status).toBe(401);
+    const live = await call("/vendor/me", bearer(token));
+    expect(live.status).toBe(403);
+    expect(((await live.json()) as { error: { code: string } }).error.code).toBe("vendor_disabled");
     const res = await vendorLogin(B.telegram);
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_disabled");
   });
 
-  it("привязку к Telegram сняли — сессия больше не действует", async () => {
+  it("пользователя вендора отвязали от аккаунта — кабинет закрыт со следующего запроса", async () => {
     const token = await vendorToken(A.telegram);
-    await admin.query("update app.vendor_users set tg_user_hash = null, tg_linked_at = null where id = $1", [
-      A.userId,
-    ]);
-    expect((await call("/vendor/me", bearer(token))).status).toBe(401);
-    await admin.query("update app.vendor_users set tg_user_hash = $2, tg_linked_at = now() where id = $1", [
-      A.userId,
-      tgIdHash(A.telegram.id),
-    ]);
+    const { rows } = await admin.query<{ account_id: string }>(
+      "select account_id from app.vendor_users where id = $1",
+      [A.userId],
+    );
+    await admin.query(
+      "update app.vendor_users set account_id = null, tg_user_hash = null, tg_linked_at = null where id = $1",
+      [A.userId],
+    );
+    const res = await call("/vendor/me", bearer(token));
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_not_linked");
+    await admin.query(
+      "update app.vendor_users set account_id = $2, tg_user_hash = $3, tg_linked_at = now() where id = $1",
+      [A.userId, rows[0]?.account_id, tgIdHash(A.telegram.id)],
+    );
   });
 
   it("выход отзывает сессию", async () => {

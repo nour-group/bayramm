@@ -66,7 +66,7 @@ describe("POST /auth/telegram: отказ до базы", () => {
     expect(await res.json()).toEqual({
       error: { code: "unauthorized", message: "Invalid Telegram init data" },
     });
-    expect(warn).toHaveBeenCalledWith("auth.telegram: initData rejected", "bad_hash");
+    expect(warn).toHaveBeenCalledWith("auth: initData rejected", "bad_hash");
   });
 
   it("поле изменено после подписи — 401", async () => {
@@ -87,7 +87,7 @@ describe("POST /auth/telegram: отказ до базы", () => {
     );
     const { res } = await login({ initData });
     expect(res.status).toBe(401);
-    expect(warn).toHaveBeenCalledWith("auth.telegram: initData rejected", "expired");
+    expect(warn).toHaveBeenCalledWith("auth: initData rejected", "expired");
   });
 
   it("без токена бота — 500, а не вход без проверки", async () => {
@@ -164,7 +164,7 @@ describe("POST /auth/staff/telegram: отказ до базы", () => {
     expect(await res.json()).toEqual({
       error: { code: "unauthorized", message: "Invalid Telegram login data" },
     });
-    expect(warn).toHaveBeenCalledWith("auth.staff: login widget rejected", reason);
+    expect(warn).toHaveBeenCalledWith("auth: login widget rejected", reason);
   });
 
   it("без токена бота — 500, а не вход без проверки", async () => {

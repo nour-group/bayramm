@@ -4,22 +4,34 @@
 
 import { sql, type Transaction } from "kysely";
 import type { Db } from "./client";
-import type { AppStaffRole, DB } from "./schema.generated";
+import type { AppActorKind, AppStaffRole, DB } from "./schema.generated";
 
 export type StaffRole = AppStaffRole;
 
+/**
+ * Вид актора в журналах статусов (заявки, карточки): account там не бывает — статусы
+ * меняют роли (клиент, партнёр, сотрудник) и система, а не аккаунт
+ */
+export type RoleActorKind = Exclude<AppActorKind, "account">;
+export const roleActorKind = (kind: AppActorKind) => kind as RoleActorKind;
+
 // kind совпадает со значениями app.actor_kind; guest — актора нет,
 // RLS показывает только публичное (активные листинги, справочники).
+// account — человек над своим аккаунтом (профиль, способы входа, удаление);
+// роли клиента, партнёра и сотрудника — отдельные акторы, их API выводит из
+// членств аккаунта (auth/session.ts).
 // Роль сотрудника — для проверок в API (requireStaff); в базу уходят только
 // kind и id, роль там читает app.current_staff_role()
 export type Actor =
   | { readonly kind: "guest" }
   | { readonly kind: "system" }
+  | { readonly kind: "account"; readonly id: string }
   | { readonly kind: "client"; readonly id: string }
   | { readonly kind: "vendor_user"; readonly id: string; readonly vendorId: string }
   | { readonly kind: "staff"; readonly id: string; readonly role: StaffRole };
 
 export type ActorKind = Actor["kind"];
+export type AccountActor = Extract<Actor, { kind: "account" }>;
 export type ClientActor = Extract<Actor, { kind: "client" }>;
 export type StaffActor = Extract<Actor, { kind: "staff" }>;
 export type VendorActor = Extract<Actor, { kind: "vendor_user" }>;
@@ -51,6 +63,7 @@ export function actorSettings(actor: Actor): ActorSettings {
       return { kind: "", id: "", vendorId: "" };
     case "system":
       return { kind: "system", id: "", vendorId: "" };
+    case "account":
     case "client":
     case "staff":
       return { kind: actor.kind, id: uuid(actor.id), vendorId: "" };
@@ -78,6 +91,15 @@ async function setActor(trx: Tx, s: ActorSettings): Promise<void> {
   await sql`select set_config('app.actor_kind', ${s.kind}, true),
                    set_config('app.actor_id', ${s.id}, true),
                    set_config('app.vendor_id', ${s.vendorId}, true)`.execute(trx);
+}
+
+/**
+ * Переключает уже открытую транзакцию на другого актора до её конца. Только
+ * для шагов одного и того же человека: например, вход (system) → действие
+ * от имени его же аккаунта.
+ */
+export async function continueAs(trx: Tx, actor: Actor): Promise<void> {
+  await setActor(trx, actorSettings(actor));
 }
 
 /**
