@@ -1,5 +1,6 @@
-/* Кабинет вендора: оболочка. Цвета, кегли, скругления и зазоры — только переменные
-   из @bayramm/ui/tokens.css; значения здесь не повторяются. */
+/* Кабинет вендора. Цвета, кегли, скругления и зазоры — только переменные из
+   @bayramm/ui/tokens.css; значения здесь не повторяются. Пары «текст на фоне» — только
+   из packages/ui/src/pairs.ts. Раскладка — под телефон (Mini App), шире — по центру. */
 
 *,
 *::before,
@@ -30,12 +31,16 @@ body {
   min-height: 100dvh;
 }
 
+.icon {
+  flex: none;
+}
+
 /* Ссылка «К содержимому»: видна только в фокусе с клавиатуры */
 .skip {
   position: absolute;
   top: calc(var(--pad-t) + 8px);
   left: calc(var(--sa-l) + 16px);
-  z-index: 2;
+  z-index: 3;
   display: inline-flex;
   align-items: center;
   min-height: var(--hit-min);
@@ -52,15 +57,14 @@ body {
   transform: none;
 }
 
-/* Шапка */
+/* Шапка: верхний отступ складывает обе зоны — вырез устройства и кнопки Telegram */
 .top {
   position: sticky;
   top: 0;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-areas: "brand nav tools";
+  z-index: 2;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--gap-12);
   padding: calc(var(--pad-t) + 8px) calc(var(--sa-r) + 16px) 8px calc(var(--sa-l) + 16px);
   border-bottom: 1px solid var(--rule);
@@ -68,17 +72,16 @@ body {
 }
 
 .brand {
-  grid-area: brand;
   display: inline-flex;
   flex-direction: column;
   justify-content: center;
   min-height: var(--hit-min);
+  margin: 0;
   color: var(--plum);
   font-family: var(--font-display);
   font-size: var(--fs-19);
   font-weight: 700;
   line-height: 1.1;
-  text-decoration: none;
 }
 
 .brand-area {
@@ -86,48 +89,6 @@ body {
   font-family: var(--font-body);
   font-size: var(--fs-12-5);
   font-weight: 600;
-}
-
-/* Разделы: на узком экране отдельной строкой с прокруткой вбок.
-   Обе оси заданы явно (ловушка №2) */
-.nav {
-  grid-area: nav;
-  display: flex;
-  gap: var(--gap-5);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-}
-
-.nav a,
-.login,
-.action {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  min-height: var(--hit-min);
-  padding: 0 16px;
-  border-radius: var(--r-999);
-  color: var(--ink);
-  font-size: var(--fs-14);
-  font-weight: 600;
-  text-decoration: none;
-  white-space: nowrap;
-  transition: background-color var(--t1) var(--ease-soft);
-}
-
-.tools {
-  grid-area: tools;
-  display: flex;
-  align-items: center;
-  gap: var(--gap-9);
-}
-
-.login,
-.action {
-  border: 1px solid var(--rule);
-  background: var(--raise);
-  color: var(--plum);
 }
 
 /* Переключатель языка: кнопки 44×44, выбранная — на белом */
@@ -153,70 +114,915 @@ body {
   cursor: pointer;
 }
 
-/* Наведение — только там, где есть курсор (ловушка №6) */
-@media (hover: hover) {
-  .nav a:hover {
-    background: var(--lilac);
-  }
-
-  .lang button:hover {
-    color: var(--ink);
-  }
-}
-
-/* Выбранное — после наведения, чтобы наведение его не перекрывало (ловушка №7) */
-.nav a[aria-current="page"] {
-  background: var(--plum);
-  color: var(--sel-ink);
-}
-
-.lang button[aria-pressed="true"] {
-  background: var(--white);
-  color: var(--plum);
-}
-
-.login[aria-current="page"] {
-  border-color: var(--plum);
-}
-
-/* Содержимое */
+/* Содержимое. С нижней панелью — запас снизу на её высоту и безопасную зону */
 .main {
   flex: 1;
   width: 100%;
-  max-width: 960px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: 24px calc(var(--sa-r) + 16px) calc(var(--pad-b) + 24px) calc(var(--sa-l) + 16px);
+  padding: 20px calc(var(--sa-r) + 16px) calc(var(--pad-b) + 24px) calc(var(--sa-l) + 16px);
 }
 
-.page {
-  max-width: 640px;
+.app-tabs .main {
+  padding-bottom: calc(var(--pad-b) + 96px);
+}
+
+.page,
+.gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.gate {
+  align-items: center;
+  max-width: 480px;
+  margin: 32px auto 0;
+  text-align: center;
+}
+
+.gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--gap-9);
 }
 
 .page-title {
-  margin: 0 0 8px;
+  margin: 0;
   color: var(--plum);
   font-family: var(--font-display);
   font-size: var(--fs-22);
   line-height: 1.2;
 }
 
+.section-title,
+.venue-name {
+  margin: 0;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-16);
+  line-height: 1.3;
+}
+
 .lead {
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--muted);
 }
 
-.soon {
-  display: inline-flex;
+.note {
   margin: 0;
-  padding: 6px 12px;
+  color: var(--muted-lt);
+  font-size: var(--fs-13-5);
+}
+
+.status-line {
+  margin: 0;
+  color: var(--muted);
+}
+
+.notice {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--r-14);
+  background: var(--lilac);
+  color: var(--ink);
+  font-size: var(--fs-14);
+}
+
+.notice p {
+  margin: 0 0 8px;
+}
+
+.notice-error,
+.form-error {
+  color: var(--berry);
+}
+
+.notice-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+  background: var(--white);
+  border: 1px solid var(--rule);
+}
+
+.form-error {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+/* Обещание 12 часов: всегда на виду, при просрочке — акцентом */
+.promise {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-9);
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--r-14);
+  background: var(--lilac);
+  color: var(--ink);
+  font-size: var(--fs-13-5);
+}
+
+.promise .icon {
+  margin-top: 2px;
+}
+
+.promise-late {
+  background: var(--coral-soft);
+  color: var(--coral-deep);
+  font-weight: 600;
+}
+
+/* Кнопки */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: var(--r-14);
+  font: inherit;
+  font-size: var(--fs-15);
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--t1) var(--ease-soft);
+}
+
+.btn-primary {
+  background: var(--coral-deep);
+  color: var(--btn-ink);
+}
+
+.btn-dark {
+  background: var(--plum);
+  color: var(--sel-ink);
+}
+
+.btn-ghost {
+  border-color: var(--rule);
+  background: var(--white);
+  color: var(--plum);
+}
+
+.btn-danger {
+  border-color: var(--berry);
+  background: var(--white);
+  color: var(--berry);
+}
+
+.btn-wide {
+  width: 100%;
+}
+
+/* Номер клиента — одной строкой и крупно: это главное действие карточки */
+.btn-phone {
+  font-size: var(--fs-19);
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+  border: 1px solid var(--rule);
   border-radius: var(--r-999);
+  background: var(--raise);
+  color: var(--plum);
+  cursor: pointer;
+}
+
+.icon-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.back-link {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: var(--gap-5);
+  min-height: var(--hit-min);
+  color: var(--plum);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* Пилюли вкладок: прокрутка вбок, обе оси заданы явно (ловушка №2) */
+.pills {
+  display: flex;
+  gap: var(--gap-7);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  padding: 0 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Вкладки входящих — на всю ширину, чтобы три помещались на телефоне */
+.pills-fill .pill {
+  flex: 1 1 0;
+  justify-content: center;
+  padding: 0 8px;
+}
+
+.pill-count {
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: var(--r-999);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Чипы статусов: только пары из pairs.ts */
+.chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--r-999);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chip-wait {
   background: var(--lilac);
   color: var(--muted);
+}
+
+.chip-work {
+  background: var(--lilac);
+  color: var(--plum);
+}
+
+.chip-done {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.chip-off {
+  border: 1px solid var(--rule);
+  background: var(--raise);
+  color: var(--muted);
+}
+
+.chip-late {
+  background: var(--coral-soft);
+  color: var(--coral-deep);
+}
+
+/* Пустое состояние */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-7);
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.empty-art {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-999);
+  background: var(--white);
+  color: var(--coral);
+}
+
+.empty-title {
+  margin: 0;
+  color: var(--plum);
+  font-size: var(--fs-16);
+}
+
+.empty-text {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
+/* Список заявок */
+.rq-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rq {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.rq-late {
+  border-color: var(--coral);
+}
+
+.rq-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.rq-name {
+  color: var(--ink);
+  font-size: var(--fs-16);
+  font-weight: 700;
+}
+
+.rq-meta {
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
+.rq-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5) var(--gap-12);
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.rq-facts > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+}
+
+/* Счётчик 12 часов */
+.sla {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+.sla-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5) var(--gap-7);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.sla-text strong {
+  color: var(--ink);
+}
+
+.sla-warn .sla-text strong {
+  color: var(--coral-deep);
+}
+
+.sla-late .sla-text,
+.sla-late .sla-text strong {
+  color: var(--berry);
+}
+
+.sla-bar {
+  width: 100%;
+  height: 6px;
+  border: 0;
+  border-radius: var(--r-999);
+  background: var(--lilac);
+  appearance: none;
+  overflow: hidden;
+}
+
+.sla-bar::-webkit-progress-bar {
+  background: var(--lilac);
+}
+
+.sla-bar::-webkit-progress-value {
+  border-radius: var(--r-999);
+  background: var(--teal);
+}
+
+.sla-bar::-moz-progress-bar {
+  border-radius: var(--r-999);
+  background: var(--teal);
+}
+
+.sla-warn .sla-bar::-webkit-progress-value {
+  background: var(--coral);
+}
+
+.sla-warn .sla-bar::-moz-progress-bar {
+  background: var(--coral);
+}
+
+.sla-note {
+  margin: 0;
+  color: var(--muted-lt);
+  font-size: var(--fs-13-5);
+}
+
+/* Карточка заявки */
+.detail-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-9);
+  margin: 0;
+}
+
+.facts > div {
+  padding: 10px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+}
+
+.facts-wide {
+  grid-column: 1 / -1;
+}
+
+.facts dt {
+  color: var(--muted-lt);
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+}
+
+.panel-title {
+  margin: 0;
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.client-name {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-19);
+  font-weight: 700;
+}
+
+.comment p {
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-9);
+}
+
+.actions .btn {
+  flex: 1 1 160px;
+}
+
+/* Отказ с причиной */
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-9);
+  min-height: var(--hit-min);
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-11);
+  background: var(--white);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.choice input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--coral-deep);
+}
+
+.field-label {
+  margin: 0;
+  color: var(--muted-lt);
   font-size: var(--fs-13-5);
   font-weight: 600;
 }
 
-/* Фокус с клавиатуры: кольцо --coral, 3:1 на всех фонах шапки и страницы */
+.field {
+  width: 100%;
+  min-height: var(--hit-min);
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-11);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+
+/* История статусов */
+.history ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--gap-5) var(--gap-12);
+  font-size: var(--fs-14);
+}
+
+.history-status {
+  font-weight: 600;
+}
+
+.history-meta {
+  color: var(--muted-lt);
+}
+
+/* Календарь */
+.cal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  padding: 14px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+}
+
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.cal-month {
+  margin: 0;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-16);
+}
+
+.cal-month span {
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-weight: 600;
+}
+
+.cal-nav {
+  display: flex;
+  gap: var(--gap-7);
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--gap-3);
+}
+
+.cal-wd {
+  padding: 2px 0;
+  color: var(--muted-lt);
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+  text-align: center;
+}
+
+.cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--hit-min);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-11);
+  background: var(--cell);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-15);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cal-day.cal-we {
+  background: var(--cell-wk);
+}
+
+.cal-day:disabled {
+  color: var(--muted-lt);
+  cursor: default;
+}
+
+/* Занятый день: подложка «занято» и полоса под числом. Цвет числа — ink (пара ink/busy) */
+.cal-day.cal-busy {
+  background: var(--busy);
+  color: var(--ink);
+}
+
+.cal-day.cal-busy::after {
+  content: "";
+  position: absolute;
+  bottom: 6px;
+  width: 16px;
+  height: 3px;
+  border-radius: var(--r-999);
+  background: var(--berry);
+}
+
+.cal-day.cal-request_decline {
+  border: 1px dashed var(--berry);
+}
+
+.cal-day.cal-staff {
+  background: var(--lilac);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* У закрытого менеджером дня вместо полосы — замок */
+.cal-day.cal-staff::after {
+  content: none;
+}
+
+.cal-day.cal-today {
+  border: 2px solid var(--coral);
+}
+
+/* Есть заявка на этот день — точка в правом верхнем углу */
+.cal-day.cal-req::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-999);
+  background: var(--coral);
+}
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7) var(--gap-12);
+  margin: 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+  list-style: none;
+}
+
+.cal-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+}
+
+.dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--r-3);
+}
+
+.dot-busy {
+  border-bottom: 3px solid var(--berry);
+  background: var(--busy);
+}
+
+.dot-decline {
+  border: 1px dashed var(--berry);
+  background: var(--busy);
+}
+
+.dot-staff {
+  background: var(--lilac);
+}
+
+.dot-req {
+  border-radius: var(--r-999);
+  background: var(--coral);
+}
+
+/* Площадка */
+.venue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.photos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photos li {
+  position: relative;
+}
+
+.photos img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-14);
+  background: var(--lilac);
+  object-fit: cover;
+}
+
+.photo-chip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
+
+.blockers {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.packages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.packages li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--gap-5) var(--gap-12);
+}
+
+.package-price {
+  color: var(--plum);
+}
+
+.description {
+  margin: 0;
+  white-space: pre-line;
+}
+
+/* Нижняя панель разделов: над безопасной зоной снизу */
+.tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 6px calc(var(--sa-r) + 8px) calc(var(--pad-b) + 6px) calc(var(--sa-l) + 8px);
+  border-top: 1px solid var(--rule);
+  background: var(--rail-bg);
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: var(--hit-min);
+  padding: 4px 0;
+  border-radius: var(--r-14);
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* Наведение — только там, где есть курсор (ловушка №6) */
+@media (hover: hover) {
+  .lang button:hover,
+  .tab:hover {
+    color: var(--ink);
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn-dark:hover {
+    background: var(--plum-mid);
+  }
+
+  .btn-ghost:hover,
+  .pill:hover {
+    background: var(--lilac);
+  }
+
+  .rq:hover {
+    border-color: var(--plum-mid);
+  }
+}
+
+.btn-primary:active {
+  background: var(--accent-press);
+}
+
+/* Выбранное — после наведения, чтобы наведение его не перекрывало (ловушка №7) */
+.lang button[aria-pressed="true"] {
+  background: var(--white);
+  color: var(--plum);
+}
+
+.pill[aria-pressed="true"] {
+  border-color: var(--plum);
+  background: var(--plum);
+  color: var(--sel-ink);
+}
+
+.tab[aria-current="page"] {
+  color: var(--plum);
+}
+
+/* Фокус с клавиатуры: кольцо --coral, 3:1 на всех фонах */
 :focus-visible {
   outline: 3px solid var(--coral);
   outline-offset: 2px;
@@ -227,12 +1033,15 @@ body {
   outline: none;
 }
 
-@media (max-width: 719px) {
-  .top {
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "brand tools"
-      "nav nav";
-    row-gap: var(--gap-7);
+@media (min-width: 720px) {
+  .photos {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tabbar {
+    right: 50%;
+    left: auto;
+    width: 720px;
+    transform: translateX(50%);
   }
 }

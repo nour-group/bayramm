@@ -1,102 +1,492 @@
 // @vitest-environment jsdom
+import type {
+  VendorCalendar,
+  VendorMe,
+  VendorRequestDetail,
+  VendorRequestItem,
+  VendorRequestPage,
+} from "@bayramm/shared/api/vendor";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { tashkentToday } from "./format";
 
 // React ждёт этот флаг, чтобы act() дожидался эффектов
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+const REQUEST_ID = "eeeeeeee-0000-0000-0000-0000000000a1";
+const LISTING_ID = "aaaaaaaa-0000-0000-0000-000000000101";
+const HOUR = 3600 * 1000;
+
+const me = (locale: "ru" | "uz" = "ru"): VendorMe => ({
+  user: { id: "aaaaaaaa-0000-0000-0000-000000000011", locale, fullName: "Manager" },
+  vendor: { id: "aaaaaaaa-0000-0000-0000-000000000001", code: "V101", name: "Test LLC" },
+  listings: [{ id: LISTING_ID, name: "Test Hall", status: "active" }],
+});
+
+function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
+  const created = Date.now() - HOUR;
+  return {
+    id: REQUEST_ID,
+    publicNo: 1001,
+    status: "new",
+    declineReason: null,
+    listing: { id: LISTING_ID, name: "Test Hall" },
+    occasionCode: "toy",
+    eventDate: "2026-11-14",
+    guests: 200,
+    budgetMinUzs: 40_000_000,
+    budgetMaxUzs: 60_000_000,
+    createdAt: new Date(created).toISOString(),
+    sla: { dueAt: new Date(created + 12 * HOUR).toISOString(), firstResponseAt: null, breached: false },
+    contactName: "Dilnoza",
+    ...patch,
+  };
+}
+
+const page = (items: VendorRequestItem[]): VendorRequestPage => ({
+  items,
+  nextCursor: null,
+  counts: { new: items.length, active: 3, closed: 5 },
+});
+
+const detail = (patch: Partial<VendorRequestDetail> = {}): VendorRequestDetail => ({
+  ...item({ status: "viewed" }),
+  declineNote: null,
+  contact: { name: "Dilnoza", phone: "+998901234567", comment: "Вечер, живая музыка" },
+  history: [
+    { status: "new", at: new Date(Date.now() - HOUR).toISOString(), by: "system" },
+    { status: "viewed", at: new Date().toISOString(), by: "vendor_user" },
+  ],
+  ...patch,
+});
+
+type Handler = (init: RequestInit, url: URL) => { status?: number; body?: unknown } | undefined;
+let routes: Record<string, Handler>;
+let calls: { method: string; path: string; body: unknown; auth: string | null }[];
+
+function respond(status: number, body: unknown) {
+  return new Response(body === undefined ? null : JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const url = new URL(String(input), "https://vendor.bayramm.uz");
+  const method = init.method ?? "GET";
+  const auth = new Headers(init.headers).get("Authorization");
+  calls.push({
+    method,
+    path: url.pathname + url.search,
+    body: init.body ? JSON.parse(String(init.body)) : undefined,
+    auth,
+  });
+  const handler = routes[`${method} ${url.pathname}`];
+  const result = handler?.(init, url);
+  if (!result) return respond(404, { error: { code: "not_found", message: "Not found" } });
+  return respond(result.status ?? 200, result.body);
+}
+
+function defaultRoutes(locale: "ru" | "uz" = "ru"): Record<string, Handler> {
+  return {
+    "GET /api/telegram/bot": () => ({ body: { username: "bayramm_test_bot", miniAppUrl: "https://x" } }),
+    "POST /api/auth/vendor/telegram": () => ({
+      body: { token: "t".repeat(43), expiresAt: "2026-10-01T20:00:00Z" },
+    }),
+    "GET /api/vendor/me": () => ({ body: me(locale) }),
+    "PATCH /api/vendor/me": (init) => ({ body: me(JSON.parse(String(init.body)).locale) }),
+    "GET /api/vendor/requests": () => ({ body: page([item()]) }),
+    [`GET /api/vendor/requests/${REQUEST_ID}`]: () => ({ body: detail() }),
+    [`POST /api/vendor/requests/${REQUEST_ID}/call`]: () => ({ status: 204 }),
+    [`PATCH /api/vendor/requests/${REQUEST_ID}`]: (init) => ({
+      body: item({
+        status: JSON.parse(String(init.body)).status,
+        sla: { ...item().sla, firstResponseAt: new Date().toISOString() },
+      }),
+    }),
+  };
+}
+
+interface FakeWebApp {
+  initData: string;
+  initDataUnsafe: object;
+  ready: ReturnType<typeof vi.fn>;
+  expand: ReturnType<typeof vi.fn>;
+  openTelegramLink: ReturnType<typeof vi.fn>;
+  BackButton: {
+    show: ReturnType<typeof vi.fn>;
+    hide: ReturnType<typeof vi.fn>;
+    onClick: ReturnType<typeof vi.fn>;
+    offClick: ReturnType<typeof vi.fn>;
+  };
+}
+
+function insideTelegram(): FakeWebApp {
+  const webApp: FakeWebApp = {
+    initData: "query_id=1&user=%7B%7D&auth_date=1&hash=abc",
+    initDataUnsafe: {},
+    ready: vi.fn(),
+    expand: vi.fn(),
+    openTelegramLink: vi.fn(),
+    BackButton: { show: vi.fn(), hide: vi.fn(), onClick: vi.fn(), offClick: vi.fn() },
+  };
+  Object.assign(window, { Telegram: { WebApp: webApp } });
+  return webApp;
+}
+
 let container: HTMLDivElement;
 let root: Root;
 
-function mount(path: string) {
+async function mount(path: string) {
   window.history.replaceState(null, "", path);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  act(() => root.render(<App />));
+  await act(async () => root.render(<App />));
+  // Вход, профиль и данные экрана — несколько обещаний подряд
+  for (let i = 0; i < 5; i++) await act(async () => {});
+}
+
+async function flush() {
+  for (let i = 0; i < 5; i++) await act(async () => {});
 }
 
 const heading = () => container.querySelector("h1")?.textContent;
-const link = (name: string) =>
-  [...container.querySelectorAll("a")].find((a) => a.textContent?.trim() === name) as HTMLAnchorElement;
-const langButton = (code: string) => container.querySelector(`button[lang="${code}"]`) as HTMLButtonElement;
+const byText = <T extends Element>(selector: string, text: string) =>
+  [...container.querySelectorAll<T>(selector)].find((el) => el.textContent?.includes(text));
+const click = async (el: Element | undefined) => {
+  if (!el) throw new Error("элемент не найден");
+  await act(async () => (el as HTMLElement).click());
+  await flush();
+};
 
 beforeEach(() => {
   window.localStorage.clear();
+  window.sessionStorage.clear();
   // В jsdom scrollTo не реализован и пишет об этом в консоль
   window.scrollTo = () => {};
+  routes = defaultRoutes();
+  calls = [];
+  vi.stubGlobal("fetch", vi.fn(fakeFetch));
 });
 
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  delete (window as { Telegram?: unknown }).Telegram;
+  vi.unstubAllGlobals();
 });
 
-describe("оболочка кабинета вендора", () => {
-  it("корень открывает заявки и переписывает адрес", () => {
-    mount("/");
+describe("вход в кабинет", () => {
+  it("вне Telegram — «откройте из бота» со ссылкой на бота окружения, без попытки входа", async () => {
+    await mount("/requests");
+    expect(heading()).toBe("Откройте кабинет из бота");
+    const link = byText<HTMLAnchorElement>("a", "Открыть бота");
+    expect(link?.getAttribute("href")).toBe("https://t.me/bayramm_test_bot?start=partner");
+    expect(calls.some((c) => c.path.startsWith("/api/auth"))).toBe(false);
+    expect(container.querySelector("nav.tabbar")).toBeNull();
+  });
+
+  it("в Telegram — вход по initData, SDK готов, заявки с токеном сессии", async () => {
+    const webApp = insideTelegram();
+    await mount("/");
+    expect(webApp.ready).toHaveBeenCalled();
+    expect(webApp.expand).toHaveBeenCalled();
+    const login = calls.find((c) => c.path === "/api/auth/vendor/telegram");
+    expect(login?.body).toEqual({ initData: webApp.initData });
+    expect(calls.find((c) => c.path === "/api/vendor/me")?.auth).toBe(`Bearer ${"t".repeat(43)}`);
     expect(window.location.pathname).toBe("/requests");
     expect(heading()).toBe("Заявки");
-    expect(link("Заявки").getAttribute("aria-current")).toBe("page");
+    expect(container.querySelector("nav.tabbar")).not.toBeNull();
   });
 
-  it("переход по разделу без перезагрузки: адрес, aria-current, фокус на заголовке", () => {
-    mount("/requests");
-    act(() => link("Календарь").click());
-    expect(window.location.pathname).toBe("/calendar");
-    expect(heading()).toBe("Календарь");
-    expect(link("Календарь").getAttribute("aria-current")).toBe("page");
-    expect(link("Заявки").hasAttribute("aria-current")).toBe(false);
-    expect(document.activeElement).toBe(container.querySelector("h1"));
-  });
-
-  it("назад в браузере возвращает раздел", () => {
-    mount("/card");
-    act(() => link("Заявки").click());
-    act(() => {
-      window.history.replaceState(null, "", "/card");
-      window.dispatchEvent(new PopStateEvent("popstate"));
+  it("Telegram не привязан — «сначала привяжите», ссылка в бота открывается внутри Telegram", async () => {
+    const webApp = insideTelegram();
+    routes["POST /api/auth/vendor/telegram"] = () => ({
+      status: 403,
+      body: { error: { code: "vendor_not_linked", message: "x" } },
     });
-    expect(heading()).toBe("Карточка");
+    await mount("/requests");
+    expect(heading()).toBe("Сначала привяжите Telegram");
+    await click(byText("a", "Открыть бота"));
+    expect(webApp.openTelegramLink).toHaveBeenCalledWith("https://t.me/bayramm_test_bot?start=partner");
+    expect(calls.some((c) => c.path.startsWith("/api/vendor/"))).toBe(false);
   });
 
-  it("вход — отдельная страница", () => {
-    mount("/login");
-    expect(heading()).toBe("Вход");
-    expect(link("Вход").getAttribute("aria-current")).toBe("page");
+  it("доступ отключён — отдельный текст", async () => {
+    insideTelegram();
+    routes["POST /api/auth/vendor/telegram"] = () => ({
+      status: 403,
+      body: { error: { code: "vendor_disabled", message: "x" } },
+    });
+    await mount("/requests");
+    expect(heading()).toBe("Доступ отключён");
   });
 
-  it("неизвестный путь — «не найдена» со ссылкой на заявки", () => {
-    mount("/nope");
-    expect(heading()).toBe("Страница не найдена");
-    expect(link("К заявкам").getAttribute("href")).toBe("/requests");
+  it("API не ответило — ошибка и «Повторить»", async () => {
+    insideTelegram();
+    let fail = true;
+    routes["POST /api/auth/vendor/telegram"] = () =>
+      fail
+        ? { status: 503, body: { error: { code: "service_unavailable", message: "x" } } }
+        : defaultRoutes()["POST /api/auth/vendor/telegram"]?.({}, new URL("https://x"));
+    await mount("/requests");
+    expect(heading()).toBe("Не удалось войти");
+    fail = false;
+    await click(byText("button", "Повторить"));
+    expect(heading()).toBe("Заявки");
   });
 
-  it("переключатель языка меняет тексты, lang у документа и запоминает выбор", () => {
-    mount("/calendar");
-    expect(document.documentElement.lang).toBe("ru");
-    expect(langButton("ru").getAttribute("aria-pressed")).toBe("true");
-
-    act(() => langButton("uz").click());
+  it("язык после входа — из профиля вендора; переключение сохраняется в профиле", async () => {
+    insideTelegram();
+    routes = defaultRoutes("uz");
+    await mount("/requests");
+    expect(heading()).toBe("Soʻrovlar");
     expect(document.documentElement.lang).toBe("uz");
-    expect(heading()).toBe("Taqvim");
-    expect(langButton("uz").getAttribute("aria-pressed")).toBe("true");
-    expect(langButton("ru").getAttribute("aria-pressed")).toBe("false");
-    expect(container.querySelector("nav")?.getAttribute("aria-label")).toBe("Kabinet boʻlimlari");
-    expect(document.title).toBe("Taqvim · Bayramm");
+    await click(container.querySelector('button[lang="ru"]') ?? undefined);
+    expect(heading()).toBe("Заявки");
+    expect(calls.find((c) => c.method === "PATCH" && c.path === "/api/vendor/me")?.body).toEqual({
+      locale: "ru",
+    });
+  });
+});
 
-    act(() => root.unmount());
-    container.remove();
-    mount("/calendar");
-    expect(heading()).toBe("Taqvim");
+describe("заявки", () => {
+  beforeEach(() => {
+    insideTelegram();
   });
 
-  it("есть ссылка «К содержимому» на main", () => {
-    mount("/requests");
-    const skip = container.querySelector("a.skip");
-    expect(skip?.getAttribute("href")).toBe("#main");
-    expect(container.querySelector("main#main")).not.toBeNull();
+  it("список: вкладки со счётчиками, имя, гости, бюджет, счётчик 12 часов; без телефона", async () => {
+    await mount("/requests");
+    const tabs = [...container.querySelectorAll(".pills .pill")].map((b) => b.textContent);
+    expect(tabs).toEqual(["Новые1", "В работе3", "Закрытые5"]);
+    const card = container.querySelector(".rq");
+    expect(card?.getAttribute("href")).toBe(`/requests/${REQUEST_ID}`);
+    expect(card?.textContent).toContain("Dilnoza");
+    expect(card?.textContent).toContain("Свадьба · 14 ноября, сб");
+    expect(card?.textContent).toContain("200 гостей");
+    expect(card?.textContent).toContain("40–60 млн сум");
+    expect(card?.textContent).toMatch(/Осталось 1[01] ч/);
+    expect(container.textContent).not.toContain("+998");
+    expect(container.textContent).toContain("Мы обещаем клиенту ответ за 12 часов");
+  });
+
+  it("просроченная — пометка «Просрочено» и сколько сверх срока", async () => {
+    const created = Date.now() - 14 * HOUR;
+    routes["GET /api/vendor/requests"] = () => ({
+      body: page([
+        item({
+          createdAt: new Date(created).toISOString(),
+          sla: { dueAt: new Date(created + 12 * HOUR).toISOString(), firstResponseAt: null, breached: true },
+        }),
+      ]),
+    });
+    await mount("/requests");
+    expect(container.querySelector(".rq-late .chip-late")?.textContent).toBe("Просрочено");
+    expect(container.textContent).toMatch(/Просрочено на 2 ч/);
+  });
+
+  it("вкладка — запрос с tab; пусто — пустое состояние", async () => {
+    routes["GET /api/vendor/requests"] = (_, url) => ({
+      body:
+        url.searchParams.get("tab") === "closed"
+          ? { ...page([]), counts: { new: 0, active: 0, closed: 0 } }
+          : page([item()]),
+    });
+    await mount("/requests");
+    await click(byText("button", "Закрытые"));
+    expect(calls.at(-1)?.path).toBe("/api/vendor/requests?tab=closed");
+    expect(container.textContent).toContain("Закрытых заявок пока нет");
+  });
+
+  it("карточка: кнопка «Назад» Telegram, телефон сразу, звонок — в журнал", async () => {
+    const webApp = { WebApp: insideTelegram() };
+    await mount("/requests");
+    await click(container.querySelector(".rq") ?? undefined);
+    expect(window.location.pathname).toBe(`/requests/${REQUEST_ID}`);
+    expect(heading()).toBe("Заявка № 1001");
+    expect(webApp.WebApp.BackButton.show).toHaveBeenCalled();
+
+    const phone = container.querySelector<HTMLAnchorElement>('a[href="tel:+998901234567"]') ?? undefined;
+    expect(phone?.textContent).toBe("+998 90 123 45 67");
+    expect(phone?.getAttribute("aria-label")).toBe("Позвонить +998 90 123 45 67");
+    // Кнопка «Назад» — у Telegram, своя ссылка не дублирует её
+    expect(byText("a", "Назад")).toBeUndefined();
+    expect(container.textContent).toContain("Вечер, живая музыка");
+    await click(phone);
+    expect(
+      calls.some((c) => c.method === "POST" && c.path === `/api/vendor/requests/${REQUEST_ID}/call`),
+    ).toBe(true);
+
+    // «Назад» Telegram возвращает к списку
+    const onBack = webApp.WebApp.BackButton.onClick.mock.calls.at(-1)?.[0] as () => void;
+    await act(async () => onBack());
+    await flush();
+    expect(window.location.pathname).toBe("/requests");
+    expect(webApp.WebApp.BackButton.hide).toHaveBeenCalled();
+  });
+
+  it("«Я связался» → статус «Вы связались», дальше «Договорились» / «Не подошло»", async () => {
+    await mount(`/requests/${REQUEST_ID}`);
+    const reads = () =>
+      calls.filter((c) => c.method === "GET" && c.path === `/api/vendor/requests/${REQUEST_ID}`);
+    expect(reads()).toHaveLength(1);
+    await click(byText("button", "Я связался с клиентом"));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ status: "contacted" });
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Вы связались");
+    expect(byText("button", "Договорились")).toBeDefined();
+    expect(byText("button", "Не подошло")).toBeDefined();
+    // Без повторного чтения карточки: телефон клиента не читается лишний раз
+    expect(reads()).toHaveLength(1);
+  });
+
+  it("отказ: причина обязательна, «занято» предупреждает о календаре", async () => {
+    await mount(`/requests/${REQUEST_ID}`);
+    await click(byText("button", "Отказать"));
+    const submit = container.querySelector<HTMLButtonElement>('form.decline button[type="submit"]');
+    expect(submit?.disabled).toBe(true);
+    await click(byText("label", "Занято на эту дату")?.querySelector("input") ?? undefined);
+    expect(container.textContent).toContain("Дата станет занятой в календаре.");
+    expect(submit?.disabled).toBe(false);
+    await click(submit ?? undefined);
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+      status: "declined",
+      declineReason: "busy",
+    });
+  });
+
+  it("переход устарел (409) — сообщение и свежая карточка", async () => {
+    routes[`PATCH /api/vendor/requests/${REQUEST_ID}`] = () => ({
+      status: 409,
+      body: { error: { code: "illegal_transition", message: "x" } },
+    });
+    await mount(`/requests/${REQUEST_ID}`);
+    routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({
+      body: detail({ status: "withdrawn", contact: null, contactName: null }),
+    });
+    await click(byText("button", "Я связался с клиентом"));
+    expect(container.textContent).toContain("Клиент отозвал согласие — контакты скрыты");
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Клиент отозвал");
+  });
+
+  it("чужая или несуществующая заявка — «не найдена»", async () => {
+    routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({
+      status: 404,
+      body: { error: { code: "not_found", message: "Not found" } },
+    });
+    await mount(`/requests/${REQUEST_ID}`);
+    expect(heading()).toBe("Заявка не найдена");
+  });
+
+  it("сессия кончилась посреди работы — «откройте заново»", async () => {
+    await mount("/requests");
+    routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({
+      status: 401,
+      body: { error: { code: "unauthorized", message: "x" } },
+    });
+    await click(container.querySelector(".rq") ?? undefined);
+    expect(heading()).toBe("Сессия закончилась");
+  });
+});
+
+describe("календарь", () => {
+  const today = tashkentToday();
+  const month = today.slice(0, 7);
+  const calendar = (): VendorCalendar => ({
+    listingId: LISTING_ID,
+    month,
+    today,
+    maxDay: "2099-12-31",
+    busy: [],
+    requestDays: [],
+  });
+
+  beforeEach(() => {
+    insideTelegram();
+    routes[`GET /api/vendor/listings/${LISTING_ID}/calendar`] = () => ({ body: calendar() });
+    routes[`PUT /api/vendor/listings/${LISTING_ID}/calendar/${today}`] = () => ({
+      body: { day: today, source: "vendor", requestId: null },
+    });
+  });
+
+  it("месяц по Ташкенту; нажатие на сегодня — день занят (PUT), прошлое неактивно", async () => {
+    await mount("/calendar");
+    expect(heading()).toBe("Календарь");
+    expect(calls.find((c) => c.path.includes("/calendar"))?.path).toBe(
+      `/api/vendor/listings/${LISTING_ID}/calendar?month=${month}`,
+    );
+    const day = container.querySelector<HTMLButtonElement>(".cal-today");
+    expect(day?.getAttribute("aria-pressed")).toBe("false");
+    await click(day ?? undefined);
+    expect(calls.some((c) => c.method === "PUT" && c.path.endsWith(`/calendar/${today}`))).toBe(true);
+    expect(container.querySelector(".cal-today")?.getAttribute("aria-pressed")).toBe("true");
+    if (Number(today.slice(8)) > 1) {
+      expect(container.querySelector<HTMLButtonElement>(".cal-day")?.disabled).toBe(true);
+    }
+  });
+
+  it("день, закрытый менеджером, не освобождается — подсказка", async () => {
+    routes[`GET /api/vendor/listings/${LISTING_ID}/calendar`] = () => ({
+      body: { ...calendar(), busy: [{ day: today, source: "staff", requestId: null }] },
+    });
+    await mount("/calendar");
+    await click(container.querySelector(".cal-today") ?? undefined);
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    expect(container.textContent).toContain("Этот день закрыл менеджер");
+  });
+
+  it("не сохранилось — день возвращается как был", async () => {
+    routes[`PUT /api/vendor/listings/${LISTING_ID}/calendar/${today}`] = () => ({
+      status: 503,
+      body: { error: { code: "service_unavailable", message: "x" } },
+    });
+    await mount("/calendar");
+    await click(container.querySelector(".cal-today") ?? undefined);
+    expect(container.querySelector(".cal-today")?.getAttribute("aria-pressed")).toBe("false");
+    expect(container.textContent).toContain("Не удалось сохранить день");
+  });
+});
+
+describe("площадка", () => {
+  it("карточка только для чтения, подсказка про менеджера и код вендора", async () => {
+    insideTelegram();
+    routes[`GET /api/vendor/listings/${LISTING_ID}`] = () => ({
+      body: {
+        id: LISTING_ID,
+        slug: "test-hall",
+        name: "Test Hall",
+        status: "active",
+        statusReason: null,
+        categoryCode: "hall",
+        districtCode: "chilonzor",
+        address: { ru: "ул. Тестовая, 1", uz: "Test koʻchasi, 1" },
+        description: { ru: "Большой зал", uz: "Katta zal" },
+        priceFromUzs: 150_000,
+        priceUnit: "per_guest",
+        capMin: 50,
+        capMax: 300,
+        packages: [
+          {
+            kind: "weekday",
+            name: { ru: "Будни", uz: "Ish kuni" },
+            priceUzs: 150_000,
+            priceUnit: "per_guest",
+          },
+        ],
+        photos: [],
+        phone: "+998000000999",
+        blockers: [],
+      },
+    });
+    await mount("/card");
+    expect(heading()).toBe("Площадка");
+    expect(container.textContent).toContain("Карточку меняет ваш менеджер");
+    expect(container.textContent).toContain("V101");
+    expect(container.textContent).toContain("от 150 000 сум за гостя");
+    expect(container.textContent).toContain("50–300 гостей");
+    expect(container.textContent).toContain("Чиланзар");
+    expect(container.querySelector("input, textarea, select")).toBeNull();
   });
 });

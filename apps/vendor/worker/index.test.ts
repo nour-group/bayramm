@@ -8,6 +8,12 @@ vi.stubEnv("DEV", false);
 const { default: worker } = await import("./index");
 
 const ORIGIN = "https://vendor.bayramm.uz";
+// Кабинет — Mini App: SDK Telegram и фрейм только в Telegram Web
+const CSP_OPTIONS = {
+  telegramWebApp: true,
+  frameAncestors: ["https://web.telegram.org"],
+  imageOrigins: mediaImageOrigins(),
+};
 
 function setup() {
   const env = { ASSETS: spaAssets(SPA_FILES), API: echoApi() };
@@ -29,7 +35,7 @@ describe("воркер кабинета вендора", () => {
     expect(env.ASSETS.requests).toEqual([]);
   });
 
-  it.each(["/", "/requests", "/calendar", "/card", "/login", "/calendar/2026-10"])(
+  it.each(["/", "/requests", "/requests/eeeeeeee-0000-0000-0000-0000000000a1", "/calendar", "/card"])(
     "%s — index.html из ASSETS (фолбэк SPA)",
     async (path) => {
       const { env, get } = setup();
@@ -44,22 +50,23 @@ describe("воркер кабинета вендора", () => {
   it("HTML с заголовками безопасности", async () => {
     const { get } = setup();
     const { headers } = await get("/calendar");
-    expect(headers.get("content-security-policy")).toBe(
-      contentSecurityPolicy({ imageOrigins: mediaImageOrigins() }),
-    );
+    expect(headers.get("content-security-policy")).toBe(contentSecurityPolicy(CSP_OPTIONS));
     expect(headers.get("x-content-type-options")).toBe("nosniff");
     expect(headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
     expect(headers.get("permissions-policy")).toContain("camera=()");
-    expect(headers.get("x-frame-options")).toBe("DENY");
+    // Встраивание разрешено Telegram Web — X-Frame-Options этого не выразит, его нет
+    expect(headers.get("x-frame-options")).toBeNull();
   });
 
-  it("в сборке CSP строгий: без встроенного кода, фрейм запрещён", async () => {
+  it("в сборке CSP строгий: без встроенного кода; скрипты — свои и SDK Telegram; фрейм — только Telegram Web", async () => {
     const { get } = setup();
     const csp = (await get("/")).headers.get("content-security-policy") ?? "";
     expect(csp).not.toContain("'unsafe-inline'");
     expect(csp).not.toContain("ws:");
-    expect(csp).toContain("frame-ancestors 'none'");
-    expect(csp).toContain("script-src 'self';");
+    expect(csp).toContain("frame-ancestors https://web.telegram.org");
+    expect(csp).toContain("script-src 'self' https://telegram.org/js/telegram-web-app.js;");
+    expect(csp).not.toContain("telegram-widget.js");
+    expect(csp).not.toContain("oauth.telegram.org");
     expect(csp).toContain(
       "img-src 'self' data: blob: https://media-staging.bayramm.uz https://media.bayramm.uz;",
     );
