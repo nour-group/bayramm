@@ -1,5 +1,5 @@
 import { isListingPhotoKey } from "@bayramm/media";
-import type { ListingCard } from "@bayramm/shared/api";
+import { comparablePriceUzs, type ListingCard } from "@bayramm/shared/api";
 import { describe, expect, it } from "vitest";
 import { busyLast, SORTS } from "../screens/catalog-feed";
 import { createMockApi, demoListings } from "./mock";
@@ -56,11 +56,20 @@ describe("демо-API по контракту", () => {
     expect(items.every((i) => i.busyOnDate === null)).toBe(true);
   });
 
-  it("порядок по цене и вместимости", async () => {
-    const cheap = await everything(api, { sort: "price_asc" });
-    expect(cheap.map((i) => i.priceFromUzs)).toEqual(
-      [...cheap.map((i) => i.priceFromUzs)].sort((a, b) => a - b),
-    );
+  it("порядок по цене (как на сервере: одна шкала для цены за гостя и за мероприятие) и вместимости", async () => {
+    const units = new Set(listings.map((l) => l.priceUnit));
+    expect(units).toEqual(new Set(["per_guest", "per_event"]));
+    for (const guests of [null, 150, 400]) {
+      const query = guests === null ? {} : { guests };
+      const cheap = (await everything(api, { ...query, sort: "price_asc" })).map((i) =>
+        comparablePriceUzs(i, guests),
+      );
+      expect(cheap, `гостей: ${guests}`).toEqual([...cheap].sort((a, b) => a - b));
+      const rich = (await everything(api, { ...query, sort: "price_desc" })).map((i) =>
+        comparablePriceUzs(i, guests),
+      );
+      expect(rich, `гостей: ${guests}`).toEqual([...rich].sort((a, b) => b - a));
+    }
     const big = await everything(api, { sort: "capacity_desc" });
     expect(big.map((i) => i.capMax)).toEqual([...big.map((i) => i.capMax)].sort((a, b) => b - a));
   });

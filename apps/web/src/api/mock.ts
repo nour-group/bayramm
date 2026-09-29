@@ -1,16 +1,18 @@
-import type {
-  CatalogPage,
-  CatalogQuery,
-  ClientConsentPurpose,
-  ClientRequest,
-  ConsentText,
-  CreateRequest,
-  Dictionaries,
-  ListingCard,
-  ListingDetail,
-  Locale,
-  RequestStatus,
+import {
+  type CatalogPage,
+  type CatalogQuery,
+  type ClientConsentPurpose,
+  type ClientRequest,
+  type ConsentText,
+  type CreateRequest,
+  comparablePriceUzs,
+  type Dictionaries,
+  type ListingCard,
+  type ListingDetail,
+  type Locale,
+  type RequestStatus,
 } from "@bayramm/shared/api";
+import type { ClientDataExport, ClientMe } from "@bayramm/shared/api/me";
 import { addDays, tashkentToday } from "../format";
 import { ApiError } from "./errors";
 import type { ClientApi } from "./types";
@@ -248,13 +250,29 @@ export interface MockOptions {
   readonly botUsername?: string;
   /** Ответ на любой вызов — эта ошибка (проверка экранов ошибок) */
   readonly failWith?: (method: keyof ClientApi) => ApiError | null;
+  /** Профиль демо-клиента: язык и уведомления */
+  readonly me?: Partial<ClientMe>;
 }
 
 export interface MockApi extends ClientApi {
   /** Тела всех принятых POST /requests — для проверок в тестах */
   readonly created: CreateRequest[];
   readonly requests: ClientRequest[];
+  /** Профиль демо-клиента сейчас (после PATCH /me, отзыва, удаления) */
+  readonly profile: () => ClientMe;
+  /** Аккаунт удалён (DELETE /me) */
+  readonly deleted: () => boolean;
 }
+
+const DEMO_ME: ClientMe = {
+  id: "00000000-0000-4000-8500-000000000001",
+  locale: "uz",
+  firstName: "Demo",
+  lastName: null,
+  username: null,
+  canMessage: true,
+  notifications: true,
+};
 
 export function createMockApi(options: MockOptions = {}): MockApi {
   const now = options.now ?? Date.now;
@@ -262,6 +280,12 @@ export function createMockApi(options: MockOptions = {}): MockApi {
   const requests: ClientRequest[] = [...(options.requests ?? [])];
   const created: CreateRequest[] = [];
   const latency = options.latencyMs ?? 0;
+  let me: ClientMe = { ...DEMO_ME, ...options.me };
+  let deleted = false;
+  // После удаления аккаунта запросы с сессией — как у настоящего API после auth.end()
+  const signedIn = () => {
+    if (deleted) throw new ApiError(401, "account_deleted");
+  };
 
   async function respond<T>(
     method: keyof ClientApi,
@@ -286,6 +310,8 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     mode: "mock",
     created,
     requests,
+    profile: () => me,
+    deleted: () => deleted,
     dictionaries: (signal) => respond("dictionaries", signal, () => DEMO_DICTIONARIES),
 
     catalog: (query: CatalogQuery, signal) =>
@@ -297,11 +323,13 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           .filter((l) => !query.district || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax >= query.guests)
           .map((l) => toCard(l, query.date));
-        // Без sort — по возрастанию цены, как у сервера
+        // Без sort — по возрастанию цены, как у сервера; цены сравниваются по той же
+        // формуле (за мероприятие и за гостя — на одной шкале, с гостями — сумма на них)
+        const price = (card: ListingCard) => comparablePriceUzs(card, query.guests ?? null);
         const order = (a: ListingCard, b: ListingCard) => {
-          if (query.sort === "price_desc") return b.priceFromUzs - a.priceFromUzs;
-          if (query.sort === "capacity_desc") return b.capMax - a.capMax;
-          return a.priceFromUzs - b.priceFromUzs;
+          if (query.sort === "price_desc") return price(b) - price(a) || a.id.localeCompare(b.id);
+          if (query.sort === "capacity_desc") return b.capMax - a.capMax || a.id.localeCompare(b.id);
+          return price(a) - price(b) || a.id.localeCompare(b.id);
         };
         // Занятые на дату — в конце при любом порядке; оплаты в демо нет вовсе
         rows.sort((a, b) => Number(a.busyOnDate === true) - Number(b.busyOnDate === true) || order(a, b));
@@ -361,7 +389,11 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         };
       }),
 
-    myRequests: (signal) => respond("myRequests", signal, () => ({ items: [...requests] })),
+    myRequests: (signal) =>
+      respond("myRequests", signal, () => {
+        signedIn();
+        return { items: [...requests] };
+      }),
 
     withdrawRequest: (id) =>
       respond("withdrawRequest", undefined, () => {
@@ -371,6 +403,54 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const next: ClientRequest = { ...current, status: "withdrawn" };
         requests[index] = next;
         return next;
+      }),
+
+    me: (signal) =>
+      respond("me", signal, () => {
+        signedIn();
+        return me;
+      }),
+
+    updateMe: (patch) =>
+      respond("updateMe", undefined, () => {
+        signedIn();
+        me = { ...me, locale: patch.locale };
+        return me;
+      }),
+
+    exportMyData: () =>
+      respond("exportMyData", undefined, (): ClientDataExport => {
+        signedIn();
+        return {
+          version: 1,
+          generatedAt: new Date(now()).toISOString(),
+          account: {
+            id: me.id,
+            locale: me.locale,
+            canMessage: me.canMessage,
+            createdAt: new Date(now() - 30 * 24 * HOUR).toISOString(),
+            lastSeenAt: new Date(now()).toISOString(),
+          },
+          profile: null,
+          consents: [],
+          requests: [],
+        };
+      }),
+
+    withdrawConsent: (body) =>
+      respond("withdrawConsent", undefined, () => {
+        signedIn();
+        if (body.purpose !== "bot_notifications") return { withdrawn: false };
+        const withdrawn = me.notifications;
+        me = { ...me, notifications: false };
+        return { withdrawn };
+      }),
+
+    deleteAccount: () =>
+      respond("deleteAccount", undefined, () => {
+        signedIn();
+        deleted = true;
+        requests.length = 0;
       }),
   };
 }

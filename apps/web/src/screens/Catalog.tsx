@@ -113,6 +113,16 @@ export function Catalog() {
 
   const districts = dicts.status === "ready" ? dicts.data.districts : [];
   const items = busyLast(feed.items);
+  // Цены за гостя и за мероприятие вперемешку — объясняем, как их сравнили
+  const priceSort = filters.sort !== "capacity_desc";
+  const mixedUnits =
+    items.some((i) => i.priceUnit === "per_guest") && items.some((i) => i.priceUnit === "per_event");
+  const sortHint =
+    priceSort && mixedUnits
+      ? filters.guests === null
+        ? t.sortHintPerGuest
+        : t.sortHintTotal(filters.guests)
+      : null;
 
   return (
     <div className="screen catalog">
@@ -217,6 +227,7 @@ export function Catalog() {
             <Icon name="caretDown" size={14} className="select-caret" />
           </span>
         </div>
+        {sortHint ? <p className="muted small sort-hint">{sortHint}</p> : null}
       </div>
 
       {feed.status === "loading" ? <Loading /> : null}

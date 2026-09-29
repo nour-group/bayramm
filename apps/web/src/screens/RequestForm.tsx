@@ -319,7 +319,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
     } catch (error) {
       haptic(webApp, "error");
       if (isApiError(error) && error.status === 409 && error.existingId) {
-        navigate(hrefFor({ name: "requests" }, { open: error.existingId }));
+        navigate(hrefFor({ name: "requests" }, { open: error.existingId, dup: 1 }));
         return;
       }
       setSendError(sendErrorText(error, t, listing.capMax));

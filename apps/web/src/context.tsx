@@ -1,6 +1,7 @@
 import type { MediaEnv } from "@bayramm/media";
 import { type Dict, dictionaries, LANGS, type Lang } from "@bayramm/shared";
 import type { Dictionaries, Localized } from "@bayramm/shared/api";
+import type { ClientMe } from "@bayramm/shared/api/me";
 import type { TelegramWebApp } from "@bayramm/tg/webapp";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ClientApi } from "./api/types";
@@ -38,7 +39,8 @@ export const LANG_KEY = "bayramm.web.lang";
 const isLang = (value: unknown): value is Lang => LANGS.includes(value as Lang);
 
 /* Язык: выбор в этой вкладке → язык Telegram → язык браузера → узбекский (умолчание базы).
-   Выбор живёт в sessionStorage; в профиль на сервере уйдёт, когда в API появится запись языка */
+   С входом через Telegram язык живёт ещё и в профиле (PATCH /me): по нему пишет бот, и при
+   следующем открытии приложение возьмёт его оттуда — если в этой вкладке язык не выбирали */
 export function initialLang(webApp: TelegramWebApp | null): Lang {
   const saved = sessionGet(LANG_KEY);
   if (isLang(saved)) return saved;
@@ -88,15 +90,51 @@ export function useDictionaries(): DictionaryHelpers {
   return value;
 }
 
+/* ---------- свой аккаунт ---------- */
+
+export interface AccountValue {
+  /** Свой профиль (GET /me); у гостя без входа — null */
+  readonly me: AsyncResult<ClientMe | null>;
+  /** Аккаунт удалён в этой вкладке: дальше приложение работает без входа */
+  readonly deleted: boolean;
+  readonly markDeleted: () => void;
+}
+
+const AccountContext = createContext<AccountValue | null>(null);
+
+export function useAccount(): AccountValue {
+  const value = useContext(AccountContext);
+  if (!value) throw new Error("AccountContext не задан");
+  return value;
+}
+
 /* ---------- всё вместе ---------- */
 
 export function AppProviders({ services, children }: { services: Services; children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => initialLang(services.webApp));
+  const [deleted, setDeleted] = useState(false);
+  const signedIn = canSignIn(services.identity) && !deleted;
+  const me = useAsync(signedIn ? "me" : "me:none", (signal) =>
+    signedIn ? services.api.me(signal) : Promise.resolve(null),
+  );
+  const { replace: replaceMe } = me;
+  const profile = me.status === "ready" ? me.data : null;
 
-  const setLang = useCallback((next: Lang) => {
-    setLangState(next);
-    sessionSet(LANG_KEY, next);
-  }, []);
+  // Язык из профиля — если в этой вкладке его не выбирали (выбор здесь главнее)
+  useEffect(() => {
+    if (profile && sessionGet(LANG_KEY) === null) setLangState(profile.locale);
+  }, [profile]);
+
+  const setLang = useCallback(
+    (next: Lang) => {
+      setLangState(next);
+      sessionSet(LANG_KEY, next);
+      if (!signedIn) return;
+      // Не сохранилось — язык в этой вкладке всё равно сменился; бот пишет на прежнем
+      services.api.updateMe({ locale: next }).then(replaceMe, () => {});
+    },
+    [services.api, signedIn, replaceMe],
+  );
 
   useEffect(() => {
     document.documentElement.lang = lang;
@@ -121,10 +159,18 @@ export function AppProviders({ services, children }: { services: Services; child
     [state, data, lang],
   );
 
+  const markDeleted = useCallback(() => setDeleted(true), []);
+  const accountValue = useMemo<AccountValue>(
+    () => ({ me, deleted, markDeleted }),
+    [me, deleted, markDeleted],
+  );
+
   return (
     <ServicesContext.Provider value={services}>
       <LangContext.Provider value={langValue}>
-        <DictionariesContext.Provider value={dictValue}>{children}</DictionariesContext.Provider>
+        <DictionariesContext.Provider value={dictValue}>
+          <AccountContext.Provider value={accountValue}>{children}</AccountContext.Provider>
+        </DictionariesContext.Provider>
       </LangContext.Provider>
     </ServicesContext.Provider>
   );

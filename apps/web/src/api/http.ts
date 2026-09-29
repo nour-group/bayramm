@@ -12,6 +12,13 @@ import {
   type Locale,
   type RequestCreated,
 } from "@bayramm/shared/api";
+import type {
+  ClientDataExport,
+  ClientMe,
+  ClientMePatch,
+  ConsentWithdrawn,
+  WithdrawConsent,
+} from "@bayramm/shared/api/me";
 import { ApiError, errorFromResponse, isAbort } from "./errors";
 import type { Auth } from "./session";
 import type { BotInfo, ClientApi, SessionToken } from "./types";
@@ -24,7 +31,7 @@ export const API_BASE = "/api";
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 interface CallOptions {
-  readonly method?: "GET" | "POST";
+  readonly method?: "GET" | "POST" | "PATCH" | "DELETE";
   readonly query?: Readonly<Record<string, string | number | undefined>>;
   readonly body?: unknown;
   /** Нужна сессия клиента: Authorization: Bearer, при 401 — один повторный вход */
@@ -75,6 +82,8 @@ async function call<T>(fetchFn: Fetch, base: string, path: string, options: Call
       continue;
     }
     if (!res.ok) throw await errorFromResponse(res);
+    // 204 — тела нет (DELETE /me)
+    if (res.status === 204) return undefined as T;
     try {
       return (await res.json()) as T;
     } catch {
@@ -103,6 +112,14 @@ export function createHttpApi({
   fetch: fetchFn = (input, init) => globalThis.fetch(input, init),
   base = API_BASE,
 }: HttpApiOptions): ClientApi {
+  // Аккаунт удалён — в этой вкладке больше не входим: новый вход создал бы его заново
+  // (так решено для возврата клиента). Заново — только при следующем открытии приложения
+  let ended = false;
+  const session: Auth = {
+    token: () => (ended ? Promise.reject(new ApiError(401, "account_deleted")) : auth.token()),
+    invalidate: () => auth.invalidate(),
+  };
+
   const get = <T>(path: string, signal?: AbortSignal, query?: CallOptions["query"]) =>
     call<T>(fetchFn, base, path, { query, signal });
 
@@ -123,13 +140,30 @@ export function createHttpApi({
     consentTexts: (locale: Locale, signal) => get<ConsentTexts>("/consent-texts", signal, { locale }),
     bot: (signal) => get<BotInfo>("/telegram/bot", signal),
     createRequest: (body: CreateRequest) =>
-      call<RequestCreated>(fetchFn, base, "/requests", { method: "POST", body, auth, source }),
-    myRequests: (signal) => call<ClientRequests>(fetchFn, base, "/requests", { auth, signal, source }),
+      call<RequestCreated>(fetchFn, base, "/requests", { method: "POST", body, auth: session, source }),
+    myRequests: (signal) =>
+      call<ClientRequests>(fetchFn, base, "/requests", { auth: session, signal, source }),
     withdrawRequest: (id) =>
       call<ClientRequest>(fetchFn, base, `/requests/${encodeURIComponent(id)}/withdraw`, {
         method: "POST",
-        auth,
+        auth: session,
         source,
       }),
+    me: (signal) => call<ClientMe>(fetchFn, base, "/me", { auth: session, signal, source }),
+    updateMe: (patch: ClientMePatch) =>
+      call<ClientMe>(fetchFn, base, "/me", { method: "PATCH", body: patch, auth: session, source }),
+    exportMyData: () => call<ClientDataExport>(fetchFn, base, "/me/export", { auth: session, source }),
+    withdrawConsent: (body: WithdrawConsent) =>
+      call<ConsentWithdrawn>(fetchFn, base, "/me/consents/withdraw", {
+        method: "POST",
+        body,
+        auth: session,
+        source,
+      }),
+    deleteAccount: async () => {
+      await call<void>(fetchFn, base, "/me", { method: "DELETE", auth: session, source });
+      ended = true;
+      auth.invalidate();
+    },
   };
 }
