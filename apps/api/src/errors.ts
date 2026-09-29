@@ -10,25 +10,35 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 export interface ErrorBody {
   error: { code: string; message: string; details?: string[] };
+  /** Рядом с error — только идентификаторы (duplicate_request → existingId) */
+  readonly [extra: string]: unknown;
 }
 
 export class ApiError extends Error {
   readonly status: ContentfulStatusCode;
   readonly code: string;
   readonly details: string[] | undefined;
+  readonly extra: Readonly<Record<string, string>> | undefined;
 
-  constructor(status: ContentfulStatusCode, code: string, message: string, details?: string[]) {
+  constructor(
+    status: ContentfulStatusCode,
+    code: string,
+    message: string,
+    details?: string[],
+    extra?: Readonly<Record<string, string>>,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.extra = extra;
   }
 
   toBody(): ErrorBody {
     const error: ErrorBody["error"] = { code: this.code, message: this.message };
     if (this.details !== undefined) error.details = this.details;
-    return { error };
+    return { ...this.extra, error };
   }
 }
 
@@ -67,9 +77,9 @@ interface Rule {
   message: string;
 }
 
-// Бизнес-правила из триггеров (SQLSTATE класса BR, список — в заголовке миграции
-// 20260928120100_core.sql). Нарушение состояния — 409, неверные данные — 422,
-// действие не по роли и блокировка клиента — 403
+// Бизнес-правила из триггеров (SQLSTATE класса BR, список — в заголовках миграций
+// 20260928120100_core.sql и следующих). Нарушение состояния — 409, неверные
+// данные — 422, действие не по роли и блокировка клиента — 403, лимит — 429
 export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
   BR001: { status: 409, code: "append_only", message: "Record is append-only" },
   BR002: { status: 409, code: "illegal_transition", message: "Status transition is not allowed" },
@@ -88,6 +98,9 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
   BR011: { status: 409, code: "too_many_photos", message: "Photo limit reached" },
   BR012: { status: 409, code: "checklist_locked", message: "Checklist is locked while listings are active" },
   BR013: { status: 409, code: "consent_text_not_current", message: "Consent text is not current" },
+  // 20260930110000_client_api.sql
+  BR014: { status: 429, code: "daily_request_limit", message: "Daily request limit reached" },
+  BR015: { status: 422, code: "guests_over_capacity", message: "Guests exceed listing capacity" },
 };
 
 // У publish_blocked в DETAIL — коды недостающих пунктов через запятую

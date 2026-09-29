@@ -3,7 +3,10 @@ import { Client } from "pg";
 import type { AppEnv } from "./env";
 import { handleError, notFound } from "./errors";
 import { auth } from "./routes/auth";
+import { catalog } from "./routes/catalog";
 import { me } from "./routes/me";
+import { reference } from "./routes/reference";
+import { requests } from "./routes/requests";
 import { staff } from "./routes/staff";
 import { telegram } from "./routes/telegram";
 
@@ -49,6 +52,10 @@ app.get("/health", async (c) => {
 
 app.route("/auth", auth);
 app.route("/me", me);
+// Клиент: справочники и тексты согласий (/dictionaries, /consent-texts), каталог, заявки
+app.route("/", reference);
+app.route("/catalog", catalog);
+app.route("/requests", requests);
 app.route("/staff", staff);
 app.route("/telegram", telegram);
 

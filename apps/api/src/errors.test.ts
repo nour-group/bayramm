@@ -66,6 +66,8 @@ describe("toApiError: коды Postgres", () => {
     expect(mapped(pgError("BR008"))).toMatchObject({ status: 403, code: "client_blocked" });
     expect(mapped(pgError("BR009"))).toMatchObject({ status: 422, code: "consent_required" });
     expect(mapped(pgError("BR013"))).toMatchObject({ status: 409, code: "consent_text_not_current" });
+    expect(mapped(pgError("BR014"))).toMatchObject({ status: 429, code: "daily_request_limit" });
+    expect(mapped(pgError("BR015"))).toMatchObject({ status: 422, code: "guests_over_capacity" });
   });
 
   it("каждое правило — 4xx", () => {
@@ -113,6 +115,17 @@ describe("toApiError: прочее", () => {
   it("ApiError проходит как есть", () => {
     const err = new ApiError(418, "teapot", "short and stout");
     expect(toApiError(err)).toBe(err);
+  });
+
+  it("дополнительные поля — рядом с error и не подменяют его", () => {
+    const err = new ApiError(409, "duplicate_request", "exists", undefined, { existingId: "r1", error: "x" });
+    expect(err.toBody()).toEqual({
+      existingId: "r1",
+      error: { code: "duplicate_request", message: "exists" },
+    });
+    expect(new ApiError(400, "bad", "bad", ["guests"]).toBody()).toEqual({
+      error: { code: "bad", message: "bad", details: ["guests"] },
+    });
   });
 
   it("HTTPException из middleware Hono → код по статусу", () => {
@@ -197,9 +210,10 @@ describe("BR-коды совпадают с миграциями", () => {
     for (const code of raised) expect(BUSINESS_RULES, String(code)).toHaveProperty(String(code));
   });
 
-  it("имена в заголовке миграции совпадают с кодами API", () => {
-    const header = sources.join("\n").match(/Коды ошибок[\s\S]*?Дубликат заявки/)?.[0] ?? "";
-    const pairs = [...header.matchAll(/(BR\d{3}) ([a-z_]+)/g)].map((m) => [m[1], m[2]]);
+  it("имена в заголовках миграций совпадают с кодами API", () => {
+    // Блок «Коды ошибок …» в заголовке — до первой пустой строки комментария
+    const headers = sources.flatMap((s) => [...s.matchAll(/Коды ошибок[\s\S]*?\n--\n/g)].map((m) => m[0]));
+    const pairs = headers.flatMap((h) => [...h.matchAll(/(BR\d{3}) ([a-z_]+)/g)].map((m) => [m[1], m[2]]));
     expect(pairs.length).toBe(Object.keys(BUSINESS_RULES).length);
     for (const [sqlstate, name] of pairs) expect(BUSINESS_RULES[String(sqlstate)]?.code).toBe(name);
   });
