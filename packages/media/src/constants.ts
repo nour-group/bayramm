@@ -62,3 +62,12 @@ export const MEDIA_ORIGINS = {
   production: "https://media.bayramm.uz",
 } as const;
 export type MediaEnv = keyof typeof MEDIA_ORIGINS;
+
+/**
+ * Источники фото для img-src сайтов: воркеры media обоих боевых окружений — один список
+ * на все сборки, оба origin наши. Локальный — только в dev
+ */
+export function mediaImageOrigins(dev = false): string[] {
+  const deployed = [MEDIA_ORIGINS.staging, MEDIA_ORIGINS.production];
+  return dev ? [...deployed, MEDIA_ORIGINS.local] : deployed;
+}

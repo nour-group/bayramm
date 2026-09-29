@@ -2,7 +2,8 @@
 
    CSP рассчитан на сборку Vite + React без встроенных скриптов и стилей: код, стили и шрифты —
    только со своего origin, запросы — только на свой origin (API проксируется через /api).
-   Картинки ещё из data: (узор гириха в data-URI) и blob: (превью фото до загрузки).
+   Картинки ещё из data: (узор гириха в data-URI), blob: (превью фото до загрузки) и с воркера
+   media (imageOrigins — фото площадок).
    Понадобится внешний источник — добавлять сюда явным параметром, а не ослаблять политику. */
 
 /* Виджет входа Telegram: скрипт telegram-widget.js (путь точный — остальной telegram.org не
@@ -19,6 +20,11 @@ export interface SecurityOptions {
    * и кабинета вендора этих источников нет
    */
   readonly telegramLogin?: boolean;
+  /**
+   * Откуда ещё можно грузить картинки (img-src): origin вида https://host[:port], без пути.
+   * Для фото площадок — воркер media. http: допустим только вместе с dev
+   */
+  readonly imageOrigins?: readonly string[];
   /**
    * Сервер разработки Vite. Он вставляет в HTML встроенную преамбулу React Refresh, добавляет
    * стили из JS и держит WebSocket для HMR — без послаблений страница не запустится.
@@ -45,12 +51,31 @@ export const PERMISSIONS_POLICY = DENIED_FEATURES.map((feature) => `${feature}=(
 
 export const REFERRER_POLICY = "strict-origin-when-cross-origin";
 
+/* Источник в CSP — только чистый origin: путь, звёздочка или лишний пробел в строке
+   расширили бы политику незаметно. Ошибка настройки — исключение при создании воркера */
+function assertOrigin(value: string, dev: boolean): string {
+  let url: URL | undefined;
+  try {
+    url = new URL(value);
+  } catch {
+    url = undefined;
+  }
+  const allowed = url?.protocol === "https:" || (dev && url?.protocol === "http:");
+  // URL пропускает «*» в имени хоста, а для CSP это шаблон на все поддомены
+  if (!url || !allowed || url.origin !== value || !/^[a-z0-9.-]+$/.test(url.hostname)) {
+    throw new TypeError(`imageOrigins: ожидался origin https://host, получено ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 /** Значение Content-Security-Policy */
 export function contentSecurityPolicy({
   frameAncestors = [],
   telegramLogin = false,
+  imageOrigins = [],
   dev = false,
 }: SecurityOptions = {}): string {
+  const images = imageOrigins.map((origin) => assertOrigin(origin, dev));
   const inline = dev ? ["'unsafe-inline'"] : [];
   const directives: [string, readonly string[]][] = [
     ["default-src", ["'self'"]],
@@ -58,7 +83,7 @@ export function contentSecurityPolicy({
     // Без виджета frame-src не задаём: фреймы подчиняются default-src 'self'
     ...(telegramLogin ? [["frame-src", [TELEGRAM_OAUTH_ORIGIN]] as [string, string[]]] : []),
     ["style-src", ["'self'", ...inline]],
-    ["img-src", ["'self'", "data:", "blob:"]],
+    ["img-src", ["'self'", "data:", "blob:", ...images]],
     ["font-src", ["'self'"]],
     ["connect-src", ["'self'", ...(dev ? ["ws:", "wss:"] : [])]],
     ["object-src", ["'none'"]],

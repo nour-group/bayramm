@@ -1,5 +1,6 @@
 import { contentSecurityPolicy } from "@bayramm/edge";
 import { echoApi, SPA_FILES, spaAssets } from "@bayramm/edge/testing";
+import { mediaImageOrigins } from "@bayramm/media";
 import { describe, expect, it, vi } from "vitest";
 
 // Под Vitest import.meta.env.DEV = true; проверяем воркер таким, каким он будет в сборке
@@ -55,7 +56,11 @@ describe("воркер панели оператора", () => {
     const { get } = setup();
     const { headers } = await get("/login");
     const csp = headers.get("content-security-policy") ?? "";
-    expect(csp).toBe(contentSecurityPolicy({ telegramLogin: true }));
+    expect(csp).toBe(contentSecurityPolicy({ telegramLogin: true, imageOrigins: mediaImageOrigins() }));
+    expect(csp).toContain(
+      "img-src 'self' data: blob: https://media-staging.bayramm.uz https://media.bayramm.uz;",
+    );
+    expect(csp).not.toContain("localhost");
     expect(csp).toContain("script-src 'self' https://telegram.org/js/telegram-widget.js;");
     expect(csp).toContain("frame-src https://oauth.telegram.org;");
     expect(csp).not.toContain("'unsafe-inline'");

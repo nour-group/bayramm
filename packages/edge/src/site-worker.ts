@@ -1,5 +1,5 @@
 import { apiPath, type FetcherLike, proxyToApi } from "./api-proxy";
-import { type SecurityOptions, withSecurityHeaders } from "./security-headers";
+import { contentSecurityPolicy, type SecurityOptions, withSecurityHeaders } from "./security-headers";
 
 /** Привязки воркера статического приложения */
 export interface SiteEnv {
@@ -22,6 +22,8 @@ export interface SiteWorkerOptions extends SecurityOptions {
  * Порядок: before → /api/* в API без префикса → статика с заголовками безопасности.
  */
 export function createSiteWorker(options: SiteWorkerOptions = {}) {
+  // Неверный источник в параметрах — ошибка при загрузке модуля, а не на первом запросе
+  contentSecurityPolicy(options);
   return {
     async fetch(request: Request, env: SiteEnv): Promise<Response> {
       const url = new URL(request.url);
