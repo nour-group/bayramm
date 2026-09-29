@@ -1,6 +1,6 @@
 const T = {
-  uz: { tagline: "Toshkentdagi bayramlar uchun pudratchilar", soon: "Tez orada" },
-  ru: { tagline: "Подрядчики на праздники в Ташкенте", soon: "Скоро запуск" },
+  uz: { tagline: "Toshkentda toʻy va bayramlar uchun zal toping", soon: "Tez orada" },
+  ru: { tagline: "Залы для свадеб и торжеств в Ташкенте", soon: "Скоро запуск" },
 } as const;
 
 export function App() {
