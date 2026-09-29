@@ -36,6 +36,25 @@ export function parseAuthorization(header: string | undefined): Bearer {
   return { kind: "token", token };
 }
 
+// ── сравнение секретов ──────────────────────────────────────────────────────
+
+/**
+ * Совпадают ли строки — за время, не зависящее от содержимого. Сравниваются
+ * SHA-256 обеих: дайджесты одной длины, так что время не выдаёт ни совпавший
+ * префикс, ни длину секрета.
+ */
+export async function secretsEqual(received: string, expected: string): Promise<boolean> {
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(received)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+  ]);
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return diff === 0;
+}
+
 // ── псевдоним Telegram ID ───────────────────────────────────────────────────
 // app.clients.tg_id_hash = HMAC-SHA256(ключ = UTF-8(ID_HASH_KEY), сообщение =
 // десятичная запись Telegram ID). Ключ только на сервере: без него по хэшу

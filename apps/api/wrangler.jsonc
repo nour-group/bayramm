@@ -5,8 +5,15 @@
   "compatibility_date": "2026-09-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  // SUPABASE_URL — адрес проекта Supabase (Storage для фото); ключ service_role — секрет
-  "vars": { "APP_ENV": "local", "GIT_SHA": "dev", "SUPABASE_URL": "http://127.0.0.1:54321" },
+  // SUPABASE_URL — адрес проекта Supabase (Storage для фото); ключ service_role — секрет.
+  // WEB_APP_URL — клиентское приложение (Mini App): его открывает кнопка меню бота,
+  // его же отдаёт GET /telegram/bot. Токен бота и ключ /telegram/sync — секреты
+  "vars": {
+    "APP_ENV": "local",
+    "GIT_SHA": "dev",
+    "SUPABASE_URL": "http://127.0.0.1:54321",
+    "WEB_APP_URL": "http://localhost:5173"
+  },
   // Локально — Postgres из `supabase start`; id нужен wrangler, но не используется
   "hyperdrive": [
     {
@@ -21,7 +28,8 @@
       "vars": {
         "APP_ENV": "staging",
         "GIT_SHA": "dev",
-        "SUPABASE_URL": "https://ovuzkqcxiwgdpqovsudr.supabase.co"
+        "SUPABASE_URL": "https://ovuzkqcxiwgdpqovsudr.supabase.co",
+        "WEB_APP_URL": "https://staging.bayramm.uz"
       },
       // Worker рядом с базой (Supabase, eu-central-1)
       "placement": { "region": "aws:eu-central-1" },
@@ -33,7 +41,8 @@
       "vars": {
         "APP_ENV": "production",
         "GIT_SHA": "dev",
-        "SUPABASE_URL": "https://muxftjxhsfizpxqxqkbo.supabase.co"
+        "SUPABASE_URL": "https://muxftjxhsfizpxqxqkbo.supabase.co",
+        "WEB_APP_URL": "https://bayramm.uz"
       },
       "placement": { "region": "aws:eu-central-1" },
       "routes": [{ "pattern": "api.bayramm.uz", "custom_domain": true }],

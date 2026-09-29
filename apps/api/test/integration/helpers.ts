@@ -19,7 +19,9 @@ export function makeEnv(): Env {
     APP_ENV: "local",
     GIT_SHA: "dev",
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
+    TELEGRAM_SYNC_KEY: "",
     ID_HASH_KEY,
+    WEB_APP_URL: "http://localhost:5173",
     HYPERDRIVE: { connectionString: apiDatabaseUrl } as Hyperdrive,
     // Storage нужен только тестам фото — у них свои адрес и ключ (photos.test.ts)
     SUPABASE_URL: "http://127.0.0.1:54321",
