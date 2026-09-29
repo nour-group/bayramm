@@ -8,6 +8,11 @@ updates:
     cooldown:
       default-days: 7
     open-pull-requests-limit: 5
+    # TypeScript 7 (новый компилятор) — отдельной оценкой, не в общей группе: иначе
+    # мажорная версия тянет за собой патчи wrangler и vite-plugin и валит всю группу
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       dev-dependencies:
         dependency-type: development
