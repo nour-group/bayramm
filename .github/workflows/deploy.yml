@@ -137,17 +137,33 @@ jobs:
             echo "::error::https://$vendor/ отдаёт HTML без Content-Security-Policy"; exit 1
           fi
 
-          # Панель оператора: 200 на странице входа и CSP с виджетом Telegram, без встраивания во фрейм
+          # Панель оператора: 200 на странице входа. Она же Mini App (фрейм — только
+          # web.telegram.org, SDK Telegram); вход в браузере — через хаб, виджета здесь нет
           admin=$([ "$TARGET" = production ] && echo admin.bayramm.uz || echo admin-staging.bayramm.uz)
           code=$(curl -sSf --retry 10 --retry-delay 6 --retry-all-errors -D admin-headers.txt -o /dev/null -w '%{http_code}' "https://$admin/login")
           if [ "$code" != 200 ]; then echo "::error::https://$admin/login ответил HTTP $code"; exit 1; fi
           csp=$(grep -i '^content-security-policy:' admin-headers.txt || true)
           if [ -z "$csp" ]; then echo "::error::https://$admin/ отдаёт HTML без Content-Security-Policy"; exit 1; fi
-          for expected in "frame-ancestors 'none'" "frame-src https://oauth.telegram.org" "https://telegram.org/js/telegram-widget.js"; do
+          for expected in "frame-ancestors https://web.telegram.org" "https://telegram.org/js/telegram-web-app.js"; do
             if ! grep -qiF "$expected" <<<"$csp"; then
               echo "::error::CSP панели оператора без «$expected»"; exit 1
             fi
           done
+          for unexpected in "telegram-widget.js" "oauth.telegram.org"; do
+            if grep -qiF "$unexpected" <<<"$csp"; then
+              echo "::error::CSP панели оператора пускает «$unexpected» — виджет входа только на хабе"; exit 1
+            fi
+          done
+
+          # Хаб входа: виджет Telegram разрешён только на /auth, на остальных страницах сайта — нет
+          hub=$(curl -sSf --retry 5 --retry-delay 3 --retry-all-errors -D - -o /dev/null "https://$host/auth" | grep -i '^content-security-policy:' || true)
+          home=$(curl -sSf --retry 5 --retry-delay 3 --retry-all-errors -D - -o /dev/null "https://$host/" | grep -i '^content-security-policy:' || true)
+          for expected in "https://telegram.org/js/telegram-widget.js" "frame-src https://oauth.telegram.org"; do
+            if ! grep -qiF "$expected" <<<"$hub"; then echo "::error::CSP хаба /auth без «$expected»"; exit 1; fi
+          done
+          if grep -qiF "telegram-widget.js" <<<"$home"; then
+            echo "::error::CSP главной пускает виджет Telegram — он нужен только на /auth"; exit 1
+          fi
 
           # media: несуществующее фото — 404, а не 500. Путь правильной формы, поэтому воркер
           # доходит до Storage: проверяются и воркер, и SUPABASE_URL, и разбор ошибок хранилища
