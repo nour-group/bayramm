@@ -46,8 +46,26 @@ describe("профиль бота: вызовы", () => {
     expect(MENU_BUTTON_TEXT).toBe("Открыть");
   });
 
-  it("вебхук пока не ставится: его обработчика ещё нет", () => {
+  it("без адреса вебхука setWebhook не вызывается (локально API не на https)", () => {
     expect(steps.map((step) => step.method)).not.toContain("setWebhook");
+  });
+
+  it("с адресом — вебхук последним: секрет, только сообщения, ограничение соединений", () => {
+    const withWebhook = botProfile({
+      webAppUrl: WEB_APP_URL,
+      webhook: { url: "https://api.example/telegram/webhook", secretToken: "s3cr3t_-" },
+    });
+    expect(withWebhook.slice(0, -1)).toEqual(steps);
+    expect(withWebhook.at(-1)).toEqual({
+      language: "default",
+      method: "setWebhook",
+      params: {
+        url: "https://api.example/telegram/webhook",
+        secret_token: "s3cr3t_-",
+        allowed_updates: ["message"],
+        max_connections: 10,
+      },
+    });
   });
 });
 

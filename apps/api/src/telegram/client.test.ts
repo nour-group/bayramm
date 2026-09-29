@@ -75,6 +75,27 @@ describe("telegramClient.call", () => {
     expect(err.message).toBe("telegram setMyDescription: api 400");
   });
 
+  it("429 — retry_after из parameters; кривое значение не принимается", async () => {
+    const tooMany = (parameters: unknown) =>
+      client(() =>
+        Response.json(
+          { ok: false, error_code: 429, description: "Too Many Requests: retry after 17", parameters },
+          { status: 429 },
+        ),
+      ).tg;
+    const params = { chat_id: 1, text: "x" };
+    expect(await caught(() => tooMany({ retry_after: 17 }).call("sendMessage", params))).toMatchObject({
+      reason: "api",
+      status: 429,
+      retryAfter: 17,
+    });
+    for (const parameters of [undefined, { retry_after: "17" }, { retry_after: -1 }, { retry_after: 1.5 }]) {
+      expect(
+        (await caught(() => tooMany(parameters).call("sendMessage", params))).retryAfter,
+      ).toBeUndefined();
+    }
+  });
+
   it("токен из описания ошибки вырезается; описание не длиннее 200 символов", async () => {
     const { tg } = client(() =>
       Response.json({ ok: false, error_code: 401, description: `Unauthorized ${TOKEN} ${"x".repeat(500)}` }),

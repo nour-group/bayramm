@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { Client } from "pg";
+import { scheduled } from "./cron";
 import type { AppEnv } from "./env";
 import { handleError, notFound } from "./errors";
 import { auth } from "./routes/auth";
@@ -62,4 +63,6 @@ app.route("/telegram", telegram);
 app.notFound((c) => c.json(notFound().toBody(), 404));
 app.onError(handleError);
 
-export default app;
+// Воркер: fetch — приложение Hono, scheduled — cron раз в минуту (SLA и outbox).
+// Экспорт — само приложение с обработчиком cron: тесты зовут app.request как раньше
+export default Object.assign(app, { scheduled });

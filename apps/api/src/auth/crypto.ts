@@ -1,5 +1,5 @@
 // Криптография входа на Web Crypto (есть и в Workers, и в Node 22+):
-// токены сессий и псевдонимы Telegram ID.
+// токены сессий и псевдонимы Telegram ID и телефонов.
 
 const encoder = new TextEncoder();
 
@@ -55,20 +55,22 @@ export async function secretsEqual(received: string, expected: string): Promise<
   return diff === 0;
 }
 
-// ── псевдоним Telegram ID ───────────────────────────────────────────────────
+// ── псевдонимы: Telegram ID и телефон ───────────────────────────────────────
 // app.clients.tg_id_hash = HMAC-SHA256(ключ = UTF-8(ID_HASH_KEY), сообщение =
-// десятичная запись Telegram ID). Ключ только на сервере: без него по хэшу
-// нельзя перебором восстановить Telegram ID
+// десятичная запись Telegram ID). Та же схема — у сотрудников (app.staff.tg_id_hash)
+// и пользователей вендоров (app.vendor_users.tg_user_hash). Ключ только на
+// сервере: без него по хэшу нельзя перебором восстановить Telegram ID
 
 export const MIN_ID_HASH_KEY_LENGTH = 32;
 
-export async function telegramIdHash(key: string, telegramId: number): Promise<Uint8Array> {
+// Номер в нормальной форме (auth/phone.ts): +998 и 9 цифр
+const PHONE_RE = /^\+998[0-9]{9}$/;
+
+/** HMAC-SHA256(UTF-8(ID_HASH_KEY), UTF-8(сообщения)). Короткий ключ — ошибка настройки */
+export async function idHmac(key: string, message: string): Promise<Uint8Array> {
   if (typeof key !== "string" || key.length < MIN_ID_HASH_KEY_LENGTH) {
     // Ошибка конфигурации, а не запроса: с пустым или коротким ключом псевдоним ничего не прячет
     throw new Error(`ID_HASH_KEY не задан или короче ${MIN_ID_HASH_KEY_LENGTH} символов`);
-  }
-  if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
-    throw new RangeError("telegramIdHash: Telegram ID должен быть положительным целым");
   }
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
@@ -77,7 +79,24 @@ export async function telegramIdHash(key: string, telegramId: number): Promise<U
     false,
     ["sign"],
   );
-  return new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(String(telegramId))));
+  return new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, encoder.encode(message)));
+}
+
+export async function telegramIdHash(key: string, telegramId: number): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(telegramId) || telegramId <= 0) {
+    throw new RangeError("telegramIdHash: Telegram ID должен быть положительным целым");
+  }
+  return idHmac(key, String(telegramId));
+}
+
+/**
+ * app.vendor_users.phone_hash = HMAC-SHA256(ID_HASH_KEY, "+998XXXXXXXXX"). Номер —
+ * только в нормальной форме (normalizeUzPhone): иначе один номер дал бы разные
+ * хэши. «+» в начале отличает сообщение от Telegram ID
+ */
+export async function phoneHash(key: string, phone: string): Promise<Uint8Array> {
+  if (!PHONE_RE.test(phone)) throw new RangeError("phoneHash: номер должен быть в виде +998XXXXXXXXX");
+  return idHmac(key, phone);
 }
 
 // ── base64url ───────────────────────────────────────────────────────────────

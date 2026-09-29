@@ -1,7 +1,8 @@
 // GET /telegram/bot и POST /telegram/sync: Telegram подменён fetch'ем, Cache API — картой
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
-import { BOT_TEXTS } from "../telegram/bot-profile";
+import { BOT_TEXTS, WEBHOOK_MAX_CONNECTIONS } from "../telegram/bot-profile";
+import { webhookSecret } from "../telegram/webhook-secret";
 import { BOT_TOKEN, call, makeEnv } from "../testing/worker";
 
 const BOT_USERNAME = "example_test_bot";
@@ -332,5 +333,124 @@ describe("POST /telegram/sync: настройка бота", () => {
     expect(res.status).toBe(200);
     expect(body.ok).toBe(false);
     expect(body.results.map((result) => result.status)).toEqual(Array(10).fill(401));
+  });
+});
+
+describe("POST /telegram/sync: вебхук", () => {
+  it("API_URL — https: последним ставится вебхук с производным секретом, только сообщения", async () => {
+    mockTelegram();
+    const env = makeEnv({
+      TELEGRAM_SYNC_KEY: SYNC_KEY,
+      API_URL: "https://api-staging.bayramm.uz" as Env["API_URL"],
+    });
+    const { res } = await sync(`Bearer ${SYNC_KEY}`, env);
+    expect(res.status).toBe(200);
+    const secret = await webhookSecret(env.ID_HASH_KEY);
+    expect(tgCalls.at(-1)).toEqual({
+      method: "setWebhook",
+      params: {
+        url: "https://api-staging.bayramm.uz/telegram/webhook",
+        secret_token: secret,
+        allowed_updates: ["message"],
+        max_connections: WEBHOOK_MAX_CONNECTIONS,
+      },
+    });
+    const text = await res.text();
+    expect(JSON.parse(text).results.at(-1)).toEqual({ method: "setWebhook", language: "default", ok: true });
+    // Секрет вебхука — только в запросе к Telegram: ни в ответе, ни в логе
+    expect(text).not.toContain(secret);
+    expect(logged()).not.toContain(secret);
+  });
+
+  it("setWebhook не прошёл — отчёт с ошибкой, секрета нет ни в ответе, ни в логе", async () => {
+    mockTelegram({ setWebhook: tgError(400, "Bad Request: bad webhook: Failed to resolve host") });
+    const env = makeEnv({ TELEGRAM_SYNC_KEY: SYNC_KEY, API_URL: "https://api.bayramm.uz" as Env["API_URL"] });
+    const { res } = await sync(`Bearer ${SYNC_KEY}`, env);
+    const text = await res.text();
+    const body = JSON.parse(text) as { ok: boolean; results: Record<string, unknown>[] };
+    expect(body.ok).toBe(false);
+    expect(body.results.at(-1)).toEqual({
+      method: "setWebhook",
+      language: "default",
+      ok: false,
+      error: "api",
+      status: 400,
+    });
+    const secret = await webhookSecret(env.ID_HASH_KEY);
+    expect(text).not.toContain(secret);
+    expect(logged()).not.toContain(secret);
+  });
+
+  it("API_URL не https (локально) — вебхук не ставится", async () => {
+    mockTelegram();
+    await sync(`Bearer ${SYNC_KEY}`);
+    expect(tgCalls.map((c) => c.method)).not.toContain("setWebhook");
+  });
+});
+
+describe("POST /telegram/webhook", () => {
+  const privateStart = {
+    update_id: 1,
+    message: {
+      message_id: 1,
+      date: 1,
+      chat: { id: 5001, type: "private" },
+      from: { id: 5001, is_bot: false, first_name: "Test" },
+      text: "/start",
+    },
+  };
+
+  async function webhook(body: unknown, secret?: string | null, env = makeEnv()) {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    const token = secret === undefined ? await webhookSecret(env.ID_HASH_KEY) : secret;
+    if (token !== null) headers["X-Telegram-Bot-Api-Secret-Token"] = token;
+    return call(
+      "/telegram/webhook",
+      { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) },
+      env,
+    );
+  }
+
+  it.each([
+    ["без заголовка", null],
+    ["чужой секрет", "x".repeat(43)],
+    ["секрет синхронизации вместо секрета вебхука", SYNC_KEY],
+  ])("%s — 401, до базы и Telegram", async (_name, secret) => {
+    const fetchMock = mockTelegram();
+    const { res } = await webhook(privateStart, secret);
+    expect(res.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["группа", { ...privateStart, message: { ...privateStart.message, chat: { id: -100, type: "group" } } }],
+    ["не сообщение", { update_id: 2, my_chat_member: {} }],
+    ["не JSON", "{not json"],
+    ["без update_id", { message: privateStart.message }],
+  ])("%s — 200 без действий (база не нужна)", async (_name, body) => {
+    const fetchMock = mockTelegram();
+    const { res } = await webhook(body);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("слишком большое тело — 200 и отброшено (иначе Telegram повторял бы)", async () => {
+    mockTelegram();
+    const { res } = await webhook({ ...privateStart, padding: "x".repeat(300 * 1024) });
+    expect(res.status).toBe(200);
+    expect(logged()).toContain("body too large");
+  });
+
+  it("база недоступна — 500: Telegram повторит доставку", async () => {
+    const fetchMock = mockTelegram();
+    const { res } = await webhook(privateStart);
+    expect(res.status).toBe(500);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("GET — 404", async () => {
+    const { res } = await call("/telegram/webhook");
+    expect(res.status).toBe(404);
   });
 });

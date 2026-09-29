@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   generateToken,
   hashToken,
+  idHmac,
   isWellFormedToken,
   MIN_ID_HASH_KEY_LENGTH,
   parseAuthorization,
+  phoneHash,
   secretsEqual,
   TOKEN_BYTES,
   telegramIdHash,
@@ -117,5 +119,33 @@ describe("telegramIdHash", () => {
     for (const id of [0, -1, 1.5, Number.NaN, 2 ** 53]) {
       await expect(telegramIdHash(KEY, id), String(id)).rejects.toThrow(RangeError);
     }
+  });
+});
+
+describe("phoneHash", () => {
+  it("HMAC-SHA256(ID_HASH_KEY, «+998XXXXXXXXX»)", async () => {
+    const expected = createHmac("sha256", KEY).update("+998901234567").digest();
+    expect(Buffer.from(await phoneHash(KEY, "+998901234567"))).toEqual(expected);
+  });
+
+  it("не совпадает с псевдонимом Telegram ID из тех же цифр", async () => {
+    expect(await phoneHash(KEY, "+998901234567")).not.toEqual(await telegramIdHash(KEY, 998901234567));
+  });
+
+  it("номер только в нормальной форме — иначе один номер дал бы разные хэши", async () => {
+    for (const phone of ["998901234567", "+998 90 123 45 67", "+99890123456", "+79001234567", ""]) {
+      await expect(phoneHash(KEY, phone), phone).rejects.toThrow(RangeError);
+    }
+  });
+
+  it("пустой или короткий ключ — ошибка конфигурации", async () => {
+    await expect(phoneHash("", "+998901234567")).rejects.toThrow(/ID_HASH_KEY/);
+  });
+});
+
+describe("idHmac", () => {
+  it("HMAC-SHA256 от UTF-8 сообщения", async () => {
+    const expected = createHmac("sha256", KEY).update("telegram-webhook:v1").digest();
+    expect(Buffer.from(await idHmac(KEY, "telegram-webhook:v1"))).toEqual(expected);
   });
 });
