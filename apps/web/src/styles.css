@@ -826,6 +826,12 @@ button.cal-day {
   text-decoration: line-through;
 }
 
+/* Календарь только для показа (карточка площадки): число — текст, а не неактивная
+   кнопка, ему нужен контраст 4,5:1. Приглушённый цвет и зачёркивание — не красный */
+.cal-view .cal-day.busy {
+  color: var(--muted);
+}
+
 .cal-legend {
   display: flex;
   flex-wrap: wrap;

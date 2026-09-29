@@ -135,6 +135,11 @@ describe("styles.css клиента", () => {
     const busy = declarationsOf(".cal-day.busy");
     expect(busy).toMatch(/color:\s*var\(--busy-ink\)/);
     expect(busy).not.toMatch(/coral|berry/);
+    // Календарь только для показа: число занятого дня читается (пара muted/busy в pairs.ts)
+    const view = declarationsOf(".cal-view .cal-day.busy");
+    expect(view).toMatch(/color:\s*var\(--muted\)/);
+    expect(view).not.toMatch(/coral|berry/);
+    expect(css.indexOf(".cal-view .cal-day.busy")).toBeGreaterThan(css.indexOf(".cal-day.busy {"));
   });
 
   it("анимация отключается при prefers-reduced-motion", () => {

@@ -1,7 +1,7 @@
 import { loadTelegramWebApp } from "@bayramm/tg/webapp";
 import { createHttpApi, telegramSignIn } from "./api/http";
 import { createTelegramAuth, guestAuth } from "./api/session";
-import type { Services } from "./context";
+import { initialLang, type Services } from "./context";
 import { mediaEnvFor } from "./media";
 import { initTelegram } from "./telegram";
 
@@ -22,7 +22,13 @@ export async function bootstrap(): Promise<Services> {
     const { createMockApi, demoListings, demoRequests } = await import("./api/mock");
     const { tashkentToday } = await import("./format");
     const listings = demoListings(tashkentToday());
-    const api = createMockApi({ latencyMs: 350, listings, requests: demoRequests(listings, Date.now()) });
+    // Язык демо-профиля — как у сервера при первом входе: язык Telegram или браузера
+    const api = createMockApi({
+      latencyMs: 350,
+      listings,
+      requests: demoRequests(listings, Date.now()),
+      me: { locale: initialLang(webApp) },
+    });
     // ?guest в адресе — посмотреть приложение глазами гостя из обычного браузера
     const guest = new URLSearchParams(window.location.search).has("guest");
     return { api, identity: webApp ? "telegram" : guest ? "guest" : "demo", webApp, mediaEnv, now };

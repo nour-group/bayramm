@@ -28,6 +28,8 @@ const NO_BUSY: ReadonlySet<string> = new Set();
 
 /**
  * Месяц с понедельника. Прошедшие дни и дни вне [min, max] неактивны, занятые — тоже.
+ * Без onSelect (карточка площадки) дни — текст, а не кнопки: .cal-view, и число
+ * занятого дня обязано читаться (пара muted/busy), а не только выцветать.
  * Навигация по месяцам не уходит за min и max. Классы, а не data-атрибуты: у дней
  * свои обработчики, пересечений нет (ловушка №1)
  */
@@ -46,7 +48,7 @@ export function Calendar({ min, max, busy = NO_BUSY, selected, onSelect, label }
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: группа кнопок-дней с подписью, fieldset здесь не форма
-    <div className="cal" role="group" aria-label={label}>
+    <div className={onSelect ? "cal" : "cal cal-view"} role="group" aria-label={label}>
       <div className="cal-head">
         <button
           type="button"
