@@ -21,13 +21,13 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "^1.56.0",
+    "@cloudflare/vite-plugin": "^1.57.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^6.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.1",
-    "wrangler": "^4.135.0"
+    "wrangler": "^4.136.1"
   }
 }
