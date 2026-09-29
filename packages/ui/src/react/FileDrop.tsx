@@ -113,7 +113,7 @@ export function FileDrop({
         aria-describedby={describedBy}
         onChange={onChange}
       />
-      <label className="ui-drop-face" htmlFor={inputId} aria-disabled={disabled || undefined}>
+      <label className="ui-drop-face" htmlFor={inputId}>
         <span className="ui-drop-icon" aria-hidden="true">
           <UiIcon name="upload" size={20} />
         </span>
