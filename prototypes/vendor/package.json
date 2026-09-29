@@ -9,6 +9,6 @@
     "audit": "node vendor-audit.js"
   },
   "devDependencies": {
-    "jsdom": "^24.1.3"
+    "jsdom": "^30.1.1"
   }
 }
