@@ -84,7 +84,7 @@ describe("index.html клиента", () => {
     expect(html).toContain(
       '<link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />',
     );
-    expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    for (const host of ["fonts.googleapis.com", "fonts.gstatic.com"]) expect(html).not.toContain(host);
   });
 
   it("встроенных скриптов и стилей нет (CSP их не пропустит)", () => {
