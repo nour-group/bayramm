@@ -72,6 +72,16 @@ const UNIQUE_CONSTRAINTS: Readonly<Record<string, { code: string; message: strin
     code: "username_taken",
     message: "This Telegram username belongs to an active staff member",
   },
+  // app.staff_invite_phone: номер у действующего сотрудника или у аккаунта с ролью сотрудника
+  staff_phone_active: {
+    code: "staff_phone_taken",
+    message: "This phone belongs to a staff member",
+  },
+  // Одна открытая правка карточки: следующую — после решения или отзыва
+  listing_revisions_one_pending: {
+    code: "revision_pending",
+    message: "A proposal for this listing is already waiting for review",
+  },
 };
 
 // ── ошибки Postgres ────────────────────────────────────────────────────────

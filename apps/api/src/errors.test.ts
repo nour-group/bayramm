@@ -54,6 +54,8 @@ describe("toApiError: коды Postgres", () => {
     ["vendor_contacts_stir_key", "stir_taken"],
     ["vendor_users_vendor_phone_key", "phone_taken"],
     ["listing_packages_day_kind", "duplicate_package"],
+    ["staff_phone_active", "staff_phone_taken"],
+    ["listing_revisions_one_pending", "revision_pending"],
   ])("23505 %s → 409 %s: панель объясняет, что именно занято", (constraint, code) => {
     expect(mapped(pgError("23505", { constraint }))).toMatchObject({ status: 409, code });
   });

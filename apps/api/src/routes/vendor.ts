@@ -1,5 +1,5 @@
-// Кабинет вендора: всё под /vendor — только с сессией кабинета
-// (POST /auth/vendor/telegram). Контракт — @bayramm/shared/api/vendor.
+// Кабинет вендора: всё под /vendor — только с сессией аккаунта партнёра
+// (POST /auth/telegram { app: "vendor" } или хаб входа). Контракт — @bayramm/shared/api/vendor.
 //
 //   GET    /vendor/me                              → 200 VendorMe
 //   PATCH  /vendor/me                  { locale }  → 200 VendorMe
@@ -11,6 +11,9 @@
 //   GET    /vendor/listings/:id/calendar?month=    → 200 VendorCalendar
 //   PUT    /vendor/listings/:id/calendar/:day      → 200 BusyDay
 //   DELETE /vendor/listings/:id/calendar/:day      → 204
+//   GET    /vendor/listings/:id/revisions          → 200 VendorRevisionList
+//   POST   /vendor/listings/:id/revisions          ListingRevisionPayload → 201 VendorRevision
+//   POST   /vendor/listings/:id/revisions/:rid/withdraw → 200 VendorRevision
 //
 // Чужая заявка или листинг — 404, как несуществующие. Клиент или сотрудник с
 // сессией — 403, без сессии — 401.
@@ -33,10 +36,16 @@ import {
   parsePatch,
   updateRequestStatus,
 } from "../vendor/requests";
+import { listRevisions, submitRevision, withdrawRevision } from "../vendor/revisions";
 
 // Тела здесь крошечные: статус с причиной, язык
 const limitBody = bodyLimit({
   maxSize: 4 * 1024,
+  onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),
+});
+// Кроме правки карточки: два описания по 4000 символов и пакеты — как в панели
+const limitRevision = bodyLimit({
+  maxSize: 64 * 1024,
   onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),
 });
 
@@ -109,4 +118,21 @@ vendor.delete("/listings/:id/calendar/:day", async (c) => {
   const day = parseDay(c.req.param("day"));
   await markFree(c.var.db, vendorOf(c), id, day);
   return c.body(null, 204);
+});
+
+vendor.get("/listings/:id/revisions", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await listRevisions(c.var.db, vendorOf(c), id));
+});
+
+// Оповещение команде ставит триггер базы; outboxKick отправляет его сразу после ответа
+vendor.post("/listings/:id/revisions", limitRevision, outboxKick, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await submitRevision(c.var.db, vendorOf(c), id, await readJson(c.req.raw)), 201);
+});
+
+vendor.post("/listings/:id/revisions/:revisionId/withdraw", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const revisionId = idOrNotFound(c.req.param("revisionId"));
+  return c.json(await withdrawRevision(c.var.db, vendorOf(c), id, revisionId));
 });

@@ -2,7 +2,7 @@
 //
 //   GET  /auth/methods                                 → 200 AuthMethods
 //   POST /auth/telegram         { initData, app? }     → 200 SessionToken  Mini App: клиент (web), кабинет (vendor)
-//   POST /auth/vendor/telegram  { initData }           → 200 SessionToken  то же, что app: vendor
+//   POST /auth/vendor/telegram  { initData }           → 200 SessionToken  устарел: то же, что app: vendor
 //   POST /auth/widget           { widget, locale? }    → 200 SessionToken  хаб входа на сайте
 //   POST /auth/phone/send       { phone }              → 200 OtpSent
 //   POST /auth/phone/verify     { phone, code }        → 200 SessionToken  хаб входа на сайте
@@ -10,7 +10,7 @@
 //   POST /auth/hub/exchange     HubExchange            → 200 SessionToken  кабинет, панель (их Origin)
 //   POST /auth/staff/elevate    (Bearer)               → 200 SessionToken  сессия сотрудника
 //   POST /auth/staff/webapp     { initData }           → 200 SessionToken  панель как Mini App
-//   POST /auth/staff/telegram   { поля виджета }       → 200 SessionToken  панель на своём домене
+//   POST /auth/staff/telegram   { поля виджета }       → 200 SessionToken  устарел: виджет на домене панели
 //   POST /auth/logout           (Bearer)               → 204               любая сессия
 //
 // Подписанные данные Telegram проверяются токеном бота, код из сообщения — базой;
@@ -21,6 +21,10 @@
 //
 // Ограничение частоты по IP — middleware перед маршрутами (src/ratelimit.ts); коды из
 // сообщения считает ещё и база: раз в минуту, три за 10 минут на номер и на IP.
+//
+// Устаревшие адреса (/auth/vendor/telegram, /auth/staff/telegram) приложения больше не
+// вызывают: они остаются для старых сборок, открытых во вкладках и вебвью, и пишут в лог
+// каждое обращение (legacyEndpoint). Когда обращений не станет — удалить.
 
 import type { OtpSent } from "@bayramm/shared/api/account";
 import { Hono } from "hono";
@@ -76,6 +80,14 @@ export const invalidPhone = () =>
   new ApiError(400, "invalid_phone", "Phone must be an Uzbek number +998XXXXXXXXX");
 
 export const auth = new Hono<AppEnv>();
+
+/**
+ * Обращение к устаревшему адресу входа — в лог: по нему видно, когда адрес можно
+ * удалить. Без данных запроса — только путь
+ */
+function legacyEndpoint(path: "/auth/vendor/telegram" | "/auth/staff/telegram"): void {
+  console.warn("auth.legacy: deprecated endpoint used", { path });
+}
 
 // Ответы входа — с токенами и личными данными: не кэшировать нигде
 auth.use(async (c, next) => {
@@ -156,8 +168,13 @@ auth.post("/telegram", limitBody, async (c) => {
   return c.json(sessionBody(await webAppSignIn(c.var.db, c.env, initData, app)));
 });
 
-// Кабинет партнёра — прежний адрес входа из Mini App
+/**
+ * @deprecated Прежний адрес входа кабинета из Mini App. Кабинет входит через
+ * POST /auth/telegram { initData, app: "vendor" }; адрес — для старых сборок, не удалять,
+ * пока в логе есть обращения (auth.legacy)
+ */
 auth.post("/vendor/telegram", limitBody, async (c) => {
+  legacyEndpoint("/auth/vendor/telegram");
   const initData = initDataOf(await readJsonObject(c.req.raw));
   return c.json(sessionBody(await webAppSignIn(c.var.db, c.env, initData, "vendor")));
 });
@@ -274,8 +291,14 @@ auth.post("/staff/webapp", limitBody, async (c) => {
   return c.json(sessionBody(await signInStaffWebApp(c.var.db, c.env, initData)));
 });
 
-// Панель шлёт поля виджета как есть: id, first_name, username, auth_date, hash, …
+/**
+ * @deprecated Прежний вход панели виджетом Telegram на её домене (поля виджета как есть:
+ * id, first_name, username, auth_date, hash, …). Панель входит через хаб
+ * (/auth/hub/exchange → /auth/staff/elevate) или как Mini App (/auth/staff/webapp); адрес —
+ * для старых сборок, не удалять, пока в логе есть обращения (auth.legacy)
+ */
 auth.post("/staff/telegram", limitBody, async (c) => {
+  legacyEndpoint("/auth/staff/telegram");
   const fields = await readJsonObject(c.req.raw);
   return c.json(sessionBody(await signInStaff(c.var.db, c.env, fields)));
 });

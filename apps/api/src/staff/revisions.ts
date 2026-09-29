@@ -1,18 +1,19 @@
-// Правки опубликованных карточек (app.listing_revisions): после отправки на
-// проверку вендор меняет название, цену и описания только так — клиент видит
-// одобренную версию, пока правка ждёт решения. Здесь — сторона сотрудника:
-// очередь, сравнение «сейчас / предлагает вендор», решение.
+// Правки карточек (app.listing_revisions): партнёр меняет название, цену, описания и
+// пакеты только так — клиент видит одобренную версию, пока правка ждёт решения.
+// Подаёт правку кабинет (vendor/revisions.ts), здесь — сторона сотрудника: очередь,
+// сравнение «сейчас / предлагает вендор», решение.
 //
 //   GET  /staff/revisions?status=pending|approved|declined|withdrawn&limit=&offset=
 //   GET  /staff/revisions/:id
 //   POST /staff/revisions/:id/approve              применить к карточке и одобрить
 //   POST /staff/revisions/:id/decline { reason }   отклонить; причину увидит вендор
 //
-// Форма payload — ListingRevisionPayload (@bayramm/shared/api/staff): ключи как
+// Форма payload — ListingRevisionPayload (@bayramm/shared/api/vendor): ключи как
 // столбцы базы, их список проверяет app.revision_payload_ok. Значения база не
 // проверяет — их проверяем здесь теми же правилами, что правку карточки
-// сотрудником; не прошли — правку можно только отклонить. Кто и когда решил,
-// ставит триггер listing_revisions_guard, журнал пишет триггер audit_staff.
+// сотрудником (и те же правила — при подаче из кабинета, revisionFromBody); не
+// прошли — правку можно только отклонить. Кто и когда решил, ставит триггер
+// listing_revisions_guard, журнал пишет триггер audit_staff.
 
 import type {
   PriceUnit,
@@ -56,7 +57,10 @@ const FIELDS = [
   ["packages", "packages"],
 ] as const satisfies readonly (readonly [string, RevisionField])[];
 
-interface ParsedRevision {
+/** Ключи payload — как столбцы базы (app.revision_payload_ok) */
+const KEYS: readonly string[] = FIELDS.map(([key]) => key);
+
+export interface RevisionValues {
   /** Столбцы карточки, которые правка меняет */
   fields: {
     name?: string;
@@ -66,6 +70,9 @@ interface ParsedRevision {
     description_uz?: string;
   };
   packages: StaffListingPackage[] | undefined;
+}
+
+interface ParsedRevision extends RevisionValues {
   valid: boolean;
 }
 
@@ -79,13 +86,8 @@ function parsePackage(item: Input): StaffListingPackage | undefined {
   return { kind, nameRu, nameUz, priceUzs, priceUnit };
 }
 
-/** payload → значения карточки. Нет ключа — поле не меняется; null не бывает */
-export function parseRevision(payload: Json): ParsedRevision {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    return { fields: {}, packages: undefined, valid: false };
-  }
-  const body = payload as Body;
-  const input = new Input(body);
+/** Значения правки; ошибки полей копятся в input (ключи — как в payload) */
+function readRevision(input: Input, body: Body): RevisionValues {
   const required = (key: string) => Object.hasOwn(body, key);
   const name = input.text("name", { min: 2, max: 80, required: required("name") });
   const price = input.int("price_from_uzs", { min: 1, max: MAX_PRICE, required: required("price_from_uzs") });
@@ -105,19 +107,41 @@ export function parseRevision(payload: Json): ParsedRevision {
   const dayKinds = (packages ?? []).map((p) => p.kind).filter((kind) => kind !== "custom");
   if (new Set(dayKinds).size !== dayKinds.length) input.fail("packages");
 
+  const fields: RevisionValues["fields"] = {};
+  if (typeof name === "string") fields.name = name;
+  if (typeof price === "number") fields.price_from_uzs = price;
+  if (unit) fields.price_unit = unit;
+  if (typeof descriptionRu === "string") fields.description_ru = descriptionRu;
+  if (typeof descriptionUz === "string") fields.description_uz = descriptionUz;
+  return { fields, packages };
+}
+
+/** payload → значения карточки. Нет ключа — поле не меняется; null не бывает */
+export function parseRevision(payload: Json): ParsedRevision {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return { fields: {}, packages: undefined, valid: false };
+  }
+  const input = new Input(payload as Body);
+  const values = readRevision(input, payload as Body);
   let valid = true;
   try {
     input.done();
   } catch {
     valid = false;
   }
-  const fields: ParsedRevision["fields"] = {};
-  if (typeof name === "string") fields.name = name;
-  if (typeof price === "number") fields.price_from_uzs = price;
-  if (unit) fields.price_unit = unit;
-  if (typeof descriptionRu === "string") fields.description_ru = descriptionRu;
-  if (typeof descriptionUz === "string") fields.description_uz = descriptionUz;
-  return { fields, packages, valid };
+  return { ...values, valid };
+}
+
+/**
+ * Тело правки из кабинета → значения. Неизвестный ключ или неверное поле — 422
+ * invalid_input: в details — ключи (у пакетов — packages.<номер>.<поле>)
+ */
+export function revisionFromBody(body: Body): RevisionValues {
+  const input = new Input(body);
+  for (const key of Object.keys(body)) if (!KEYS.includes(key)) input.fail(key);
+  const values = readRevision(input, body);
+  input.done();
+  return values;
 }
 
 /** Значение как есть — для показа правки, которая не прошла проверку */

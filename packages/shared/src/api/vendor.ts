@@ -1,8 +1,9 @@
 /* Контракт API кабинета вендора: общий для apps/api и apps/vendor.
 
    Адреса — от корня API; кабинет ходит через свой /api (прокси отрезает префикс).
-   Всё под /vendor/* — только с сессией кабинета: Authorization: Bearer <token> из
-   POST /auth/vendor/telegram. Чужая заявка или листинг — 404, а не 403: по ответу не
+   Всё под /vendor/* — только с сессией аккаунта партнёра: Authorization: Bearer <token>
+   из POST /auth/telegram { initData, app: "vendor" } (Mini App) или из хаба входа
+   (@bayramm/shared/api/account). Чужая заявка или листинг — 404, а не 403: по ответу не
    узнать, существует ли чужое.
    Суммы — целые сумы. Даты — "YYYY-MM-DD" по Ташкенту. Моменты — ISO 8601 в UTC.
    Ошибки — { error: { code, message } } (apps/api/src/errors.ts); code стабилен.
@@ -17,9 +18,14 @@ export type { DeclineReason, Locale, Localized, PriceUnit, RequestStatus };
 
 // ── вход ───────────────────────────────────────────────────────────────────
 
-/** POST /auth/vendor/telegram — initData Mini App, открытого из бота */
+/**
+ * POST /auth/telegram { initData, app: "vendor" } — initData Mini App, открытого из бота.
+ * Прежний адрес POST /auth/vendor/telegram { initData } устарел: он остаётся только для
+ * старых сборок кабинета
+ */
 export interface VendorSignIn {
   readonly initData: string;
+  readonly app: "vendor";
 }
 
 /** → 200. Сессия — 12 часов; после — снова вход по свежей initData */
@@ -223,8 +229,9 @@ export interface VendorPackage {
 }
 
 /**
- * GET /vendor/listings/:id → 200: карточка площадки как есть в базе, только чтение.
- * Изменения вносит менеджер (модерация) — в кабинете v0.1 правки нет.
+ * GET /vendor/listings/:id → 200: карточка площадки как есть в базе — то, что видит клиент.
+ * Название, цену, описания и пакеты партнёр меняет предложением правки (ниже): её
+ * проверяет команда. Фото, адрес, вместимость и телефон меняет менеджер.
  * blockers — чего не хватает для публикации (коды из базы: price, photos, …).
  */
 export interface VendorListing {
@@ -247,3 +254,71 @@ export interface VendorListing {
   readonly phone: string | null;
   readonly blockers: readonly string[];
 }
+
+// ── правки карточки ────────────────────────────────────────────────────────
+
+export type RevisionStatus = "pending" | "approved" | "declined" | "withdrawn";
+
+/** Пакет в правке: ключи — как столбцы app.listing_packages */
+export interface RevisionPackage {
+  readonly kind: "weekday" | "weekend" | "custom";
+  readonly name_ru: string;
+  readonly name_uz: string;
+  readonly price_uzs: number;
+  readonly price_unit?: PriceUnit;
+}
+
+/**
+ * Правка карточки от партнёра (app.listing_revisions.payload): только эти ключи, как
+ * столбцы базы; нет ключа — поле не меняется. packages заменяет набор целиком
+ */
+export interface ListingRevisionPayload {
+  readonly name?: string;
+  readonly price_from_uzs?: number;
+  readonly price_unit?: PriceUnit;
+  readonly description_ru?: string;
+  readonly description_uz?: string;
+  readonly packages?: readonly RevisionPackage[];
+}
+
+/** Ключи правки в порядке показа */
+export const REVISION_KEYS = [
+  "name",
+  "price_from_uzs",
+  "price_unit",
+  "description_ru",
+  "description_uz",
+  "packages",
+] as const satisfies readonly (keyof ListingRevisionPayload)[];
+
+/** Предложение правки глазами партнёра */
+export interface VendorRevision {
+  readonly id: string;
+  /** pending — ждёт решения команды; approved — применено к карточке; withdrawn — отозвано */
+  readonly status: RevisionStatus;
+  readonly submittedAt: string;
+  readonly decidedAt: string | null;
+  /** Почему отклонили — пишет сотрудник для партнёра; только у declined */
+  readonly decisionReason: string | null;
+  /** Что предложено: только изменённые поля */
+  readonly payload: ListingRevisionPayload;
+}
+
+/**
+ * GET /vendor/listings/:id/revisions → 200: последние предложения, новые первыми.
+ * POST /vendor/listings/:id/revisions ListingRevisionPayload → 201 VendorRevision.
+ *   В правку попадают только поля, которые отличаются от карточки; ничего не
+ *   изменилось — 422 no_changes; неверные поля — 422 invalid_input (details — ключи,
+ *   у пакетов — packages.<номер>.<поле>). Открытое предложение уже есть — 409
+ *   revision_pending: одно на площадку, его можно отозвать.
+ * POST /vendor/listings/:id/revisions/:revisionId/withdraw → 200 VendorRevision;
+ *   по предложению уже решили — 409 illegal_transition.
+ */
+export interface VendorRevisionList {
+  readonly items: readonly VendorRevision[];
+}
+
+/** Не больше пакетов в правке — как в панели */
+export const MAX_REVISION_PACKAGES = 10;
+/** Длина описания на одном языке */
+export const DESCRIPTION_MAX = 4000;
