@@ -74,6 +74,16 @@ media — параметр `imageOrigins: mediaImageOrigins(dev)` (только 
 API и в GitHub Environment). В @BotFather вручную — только `/setdomain` и
 основное Mini App.
 
+Бот принимает сообщения вебхуком `POST /telegram/webhook` (его ставит тот же
+`/telegram/sync` на `API_URL`; секрет выводится из `ID_HASH_KEY`). Вендор
+привязывает Telegram, поделившись своим контактом: номер сверяется с
+`app.vendor_users.phone_hash` = HMAC(`ID_HASH_KEY`, «+998XXXXXXXXX») —
+`phoneHash` в `apps/api/src/auth/crypto.ts`, привязка — `app.vendor_user_claim_telegram`.
+Кабинет вендора — `VENDOR_APP_URL`. Уведомления ставят в `app.outbox` триггеры
+базы (в payload только id), отправляет cron API раз в минуту; маршрут, после
+которого ждать минуту не хочется, вешает `outboxKick`
+(`apps/api/src/notify/kick.ts`). SLA 12 часов — там же, по cron.
+
 ---
 
 ## Что делать в первую очередь
