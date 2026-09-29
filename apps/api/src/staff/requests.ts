@@ -280,7 +280,13 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
     { kind: "due", at: iso(row.sla_due_at), passed: row.sla_due_at.getTime() <= now },
     ...(row.sla_breached_at ? [{ kind: "breached" as const, at: iso(row.sla_breached_at) }] : []),
     ...(row.first_response_at && row.first_response_by
-      ? [{ kind: "response" as const, at: iso(row.first_response_at), by: roleActorKind(row.first_response_by) }]
+      ? [
+          {
+            kind: "response" as const,
+            at: iso(row.first_response_at),
+            by: roleActorKind(row.first_response_by),
+          },
+        ]
       : []),
   ];
   // По времени; при равенстве — в порядке, в котором события перечислены выше

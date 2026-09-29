@@ -448,7 +448,7 @@ export interface AppStaff {
   phone_hash: Uint8Array | null;
   role: AppStaffRole;
   /**
-   * HMAC-SHA256(ID_HASH_KEY, Telegram ID); null — приглашение ещё не принято
+   * HMAC-SHA256(ID_HASH_KEY, Telegram ID) аккаунта сотрудника — оповещения команды; null — Telegram не привязан
    */
   tg_id_hash: Uint8Array | null;
   tg_linked_at: Timestamp | null;

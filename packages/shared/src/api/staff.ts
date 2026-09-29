@@ -662,7 +662,8 @@ export interface OutboxHealth {
 
 // ── журнал действий ────────────────────────────────────────────────────────
 
-export type ActorKind = "client" | "vendor_user" | "staff" | "system";
+/** Кто действовал: account — человек над своим аккаунтом (способы входа, удаление) */
+export type ActorKind = "account" | "client" | "vendor_user" | "staff" | "system";
 
 export interface AuditEntry {
   readonly id: string;

@@ -283,10 +283,13 @@ export const t = {
   phoneChange: "Сменить номер",
   history: "История статусов",
   historyEmpty: "Пока без изменений.",
-  historyBy: { staff: "сотрудник", vendor_user: "вендор", system: "система", client: "клиент" } as Record<
-    string,
-    string
-  >,
+  historyBy: {
+    staff: "сотрудник",
+    vendor_user: "вендор",
+    system: "система",
+    client: "клиент",
+    account: "аккаунт",
+  } as Record<string, string>,
   openVendor: "К вендору",
   statusReason: "Причина",
 

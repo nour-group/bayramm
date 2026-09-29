@@ -29,11 +29,23 @@ import type { ClientDataExport, ConsentWithdrawn, Me, MeClient } from "@bayramm/
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { sql } from "kysely";
-import { isRecentProof, reauthRequired, type TelegramProof, verifyWebApp, verifyWidget } from "../auth/account";
+import {
+  isRecentProof,
+  reauthRequired,
+  type TelegramProof,
+  verifyWebApp,
+  verifyWidget,
+} from "../auth/account";
 import { phoneHash, telegramIdHash } from "../auth/crypto";
 import { requestIpHash } from "../auth/ip";
 import { otpSenderFor } from "../auth/otp";
-import { accountOf, authenticate, requireAccountSession, requireClient, requireSession } from "../auth/session";
+import {
+  accountOf,
+  authenticate,
+  requireAccountSession,
+  requireClient,
+  requireSession,
+} from "../auth/session";
 import { type AccountActor, type ClientActor, continueAs, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { database } from "../db/middleware";

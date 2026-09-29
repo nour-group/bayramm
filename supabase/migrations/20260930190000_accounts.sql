@@ -253,9 +253,11 @@ begin
     and not exists (select 1 from app.clients x where x.tg_id_hash = p_hash);
 end $$;
 
--- Аккаунт этого Telegram. Нет — создать, если p_create или под этим Telegram уже
--- есть роли без аккаунта; иначе null. Параллельные первые входы одного человека
--- идут по очереди (advisory-блокировка на хэш)
+-- Аккаунт этого Telegram. Нет способа входа с этим хэшем, но роль с ним есть
+-- (привязана до аккаунтов или прямым SQL): у её аккаунта без Telegram способ
+-- появляется, роль без аккаунта получает новый. Иначе — создать, если p_create;
+-- нет — null. Параллельные первые входы одного человека идут по очереди
+-- (advisory-блокировка на хэш)
 create function app.telegram_account(p_hash bytea, p_create boolean, p_locale app.locale,
                                      p_via text, p_source app.source)
 returns uuid
@@ -267,15 +269,33 @@ begin
   select i.account_id into v_id from app.account_identities i where i.kind = 'telegram' and i.value_hash = p_hash;
   if v_id is null then
     if not p_create
-       and not exists (select 1 from app.clients c where c.tg_id_hash = p_hash and c.account_id is null)
-       and not exists (select 1 from app.staff s where s.tg_id_hash = p_hash and s.account_id is null)
-       and not exists (select 1 from app.vendor_users u where u.tg_user_hash = p_hash and u.account_id is null) then
+       and not exists (select 1 from app.clients c where c.tg_id_hash = p_hash)
+       and not exists (select 1 from app.staff s where s.tg_id_hash = p_hash)
+       and not exists (select 1 from app.vendor_users u where u.tg_user_hash = p_hash) then
       return null;
     end if;
     perform pg_advisory_xact_lock(hashtextextended('bayramm.identity:telegram:' || encode(p_hash, 'hex'), 0));
     select i.account_id into v_id from app.account_identities i where i.kind = 'telegram' and i.value_hash = p_hash;
     if v_id is null then
-      v_id := app.account_new(p_locale, p_via, p_source);
+      select r.account_id into v_id
+      from (select c.account_id, 1 as o from app.clients c where c.tg_id_hash = p_hash
+            union all select s.account_id, 2 from app.staff s where s.tg_id_hash = p_hash
+            union all select u.account_id, 3 from app.vendor_users u where u.tg_user_hash = p_hash) r
+      where r.account_id is not null
+        and not exists (select 1 from app.account_identities i
+                        where i.account_id = r.account_id and i.kind = 'telegram')
+      order by r.o
+      limit 1;
+      if v_id is null then
+        if not p_create
+           and not exists (select 1 from app.clients c where c.tg_id_hash = p_hash and c.account_id is null)
+           and not exists (select 1 from app.staff s where s.tg_id_hash = p_hash and s.account_id is null)
+           and not exists (select 1 from app.vendor_users u
+                           where u.tg_user_hash = p_hash and u.account_id is null) then
+          return null;
+        end if;
+        v_id := app.account_new(p_locale, p_via, p_source);
+      end if;
       insert into app.account_identities (account_id, kind, value_hash) values (v_id, 'telegram', p_hash);
     end if;
   end if;

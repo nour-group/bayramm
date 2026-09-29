@@ -4,7 +4,7 @@
 --
 -- Данные вымышленные и существуют только в откатываемой транзакции.
 --
---   staff:     …a001 admin · …a002 manager
+--   staff:     …a001 admin · …a002 manager (аккаунты acacacac-…-a001 и …-a002)
 --   vendor A:  аккаунт aaaaaaaa-…-0001, пользователь …0011, листинг A1 …0101 (active), A2 …0102 (draft)
 --   vendor B:  аккаунт bbbbbbbb-…-0001, пользователь …0011, листинг B1 …0101 (active)
 --   clients:   C1 cccccccc-…-0001 · C2 …0002
@@ -63,6 +63,12 @@ begin
   insert into pii.staff_profiles (staff_id, email, display_name) values
     ('00000000-0000-0000-0000-00000000a001', 'admin@example.test', 'Admin'),
     ('00000000-0000-0000-0000-00000000a002', 'manager@example.test', 'Manager');
+  -- сотрудник — роль на аккаунте: сессия сотрудника бывает только у роли своего аккаунта
+  insert into app.accounts (id) values
+    ('acacacac-0000-0000-0000-00000000a001'),
+    ('acacacac-0000-0000-0000-00000000a002');
+  update app.staff set account_id = ('acacacac-0000-0000-0000-' || right(id::text, 12))::uuid
+  where id in ('00000000-0000-0000-0000-00000000a001', '00000000-0000-0000-0000-00000000a002');
 
   -- вендоры: проверка пройдена
   insert into app.vendor_accounts (id, legal_form, contract_no, contract_signed_at, stir_verified_at,

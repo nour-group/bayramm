@@ -23,7 +23,7 @@ const FILTER_KEYS = ["actor", "actorKind", "type", "object", "action", "from", "
 type FilterKey = (typeof FILTER_KEYS)[number];
 type Filters = Partial<Record<FilterKey, string>>;
 
-const ACTOR_KINDS = ["staff", "vendor_user", "client", "system"] as const;
+const ACTOR_KINDS = ["staff", "vendor_user", "client", "account", "system"] as const;
 
 /** Фильтры из адреса страницы: так их можно переслать ссылкой */
 function initialState(search: string): { tab: Tab; filters: Filters } {
