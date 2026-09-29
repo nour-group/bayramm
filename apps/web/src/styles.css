@@ -1345,6 +1345,11 @@ button.cal-day {
   font-size: var(--fs-13-5);
 }
 
+/* Под плавающей подписью, а не рядом с ней: иначе кнопки уезжают за край экрана */
+.confirm legend ~ * {
+  clear: both;
+}
+
 /* ---------- профиль и вход через Telegram ---------- */
 
 .profile-name {
@@ -1514,6 +1519,11 @@ button.cal-day {
 :focus-visible {
   outline: 3px solid var(--coral);
   outline-offset: 2px;
+}
+
+/* Лента фото во всю ширину экрана: кольцо — внутри, снаружи его обрезал бы край */
+.gallery-track:focus-visible {
+  outline-offset: -3px;
 }
 
 /* Программный фокус на заголовке и main — для диктора, рамка не нужна */

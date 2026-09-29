@@ -8,9 +8,10 @@
   "scripts": {
     "lint": "biome check .",
     "format": "biome check --write .",
-    "typecheck": "pnpm -r --filter './apps/*' --filter './packages/*' typecheck",
+    "typecheck": "pnpm -r --filter './apps/*' --filter './packages/*' --filter ./e2e typecheck",
     "build": "pnpm -r --filter './apps/*' build",
     "test": "pnpm -r test",
+    "e2e": "pnpm --filter @bayramm/e2e e2e",
     "dev:web": "pnpm --filter @bayramm/web dev",
     "dev:vendor": "pnpm --filter @bayramm/vendor dev",
     "dev:admin": "pnpm --filter @bayramm/admin dev",

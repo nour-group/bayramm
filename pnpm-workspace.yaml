@@ -2,6 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
   - "prototypes/*"
+  - "e2e"
 
 # Supply chain: не ставить версии младше 7 дней, запрещать git/tarball-зависимости
 # в транзитивных пакетах и откат уровня доверия (provenance) между версиями

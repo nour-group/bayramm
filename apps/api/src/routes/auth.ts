@@ -7,7 +7,7 @@
 //
 // Подписанные данные Telegram проверяются токеном бота; всё, что в них есть,
 // читается только после проверки. Клиент — псевдоним в app.clients (HMAC от
-// Telegram ID), Telegram ID и имя — в pii.client_profiles. Сотрудник — см.
+// Telegram ID), Telegram ID и имя — в профиле клиента (db/pii). Сотрудник — см.
 // auth/staff.ts, вендор — auth/vendor.ts. Сессия — случайный токен, в базе
 // только его sha256.
 //
@@ -24,6 +24,7 @@ import { signInStaff } from "../auth/staff";
 import { signInVendor } from "../auth/vendor";
 import { SYSTEM, type Tx, withActor } from "../db/actor";
 import { database } from "../db/middleware";
+import { upsertClientProfile } from "../db/pii";
 import type { AppEnv } from "../env";
 import { ApiError, clientBlocked } from "../errors";
 
@@ -177,21 +178,11 @@ function upsertClient(trx: Tx, tgIdHash: Uint8Array, user: TelegramUser) {
 
 // Профиль с ПДн: Telegram ID и имя обновляются при каждом входе — в Telegram их меняют
 async function upsertProfile(trx: Tx, clientId: string, user: TelegramUser): Promise<void> {
-  await trx
-    .insertInto("pii.client_profiles")
-    .values({
-      client_id: clientId,
-      telegram_id: user.id,
-      first_name: clip(user.firstName, NAME_MAX),
-      last_name: user.lastName === undefined ? null : clip(user.lastName, NAME_MAX),
-      username: user.username !== undefined && USERNAME_RE.test(user.username) ? user.username : null,
-    })
-    .onConflict((oc) =>
-      oc.column("client_id").doUpdateSet((eb) => ({
-        first_name: eb.ref("excluded.first_name"),
-        last_name: eb.ref("excluded.last_name"),
-        username: eb.ref("excluded.username"),
-      })),
-    )
-    .execute();
+  await upsertClientProfile(trx, {
+    client_id: clientId,
+    telegram_id: user.id,
+    first_name: clip(user.firstName, NAME_MAX),
+    last_name: user.lastName === undefined ? null : clip(user.lastName, NAME_MAX),
+    username: user.username !== undefined && USERNAME_RE.test(user.username) ? user.username : null,
+  });
 }

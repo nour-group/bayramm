@@ -6,7 +6,7 @@
 //   POST   /me/consents/withdraw (Bearer) { purpose, listingId? } → 200 { withdrawn }
 //   DELETE /me                   (Bearer) → 204
 //
-// Телефон в GET /me не входит: его читают только через pii.read_client_phone с
+// Телефон в GET /me не входит: его читают только через функцию базы read_client_phone с
 // журналом (так делает и выгрузка). Контракт — @bayramm/shared/api/me.
 // Выгрузка, отзыв и удаление — функции app.client_* (миграция
 // 20260930140000_platform_hardening.sql): там же журнал согласий и статусов.
@@ -21,6 +21,7 @@ import { requestIpHash } from "../auth/ip";
 import { authenticate, requireClient } from "../auth/session";
 import { withActor } from "../db/actor";
 import { database } from "../db/middleware";
+import { clientProfilesAs } from "../db/pii";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
 import { clientSource } from "./requests";
@@ -46,7 +47,7 @@ me.get("/", async (c) => {
   const row = await withActor(c.var.db, actor, (trx) =>
     trx
       .selectFrom("app.clients as cl")
-      .leftJoin("pii.client_profiles as p", "p.client_id", "cl.id")
+      .leftJoin(clientProfilesAs("p"), "p.client_id", "cl.id")
       .select(["cl.id", "cl.locale", "cl.can_message", "p.first_name", "p.last_name", "p.username"])
       .where("cl.id", "=", actor.id)
       .executeTakeFirst(),

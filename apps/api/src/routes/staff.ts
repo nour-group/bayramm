@@ -16,6 +16,7 @@ import { Hono } from "hono";
 import { authenticate, requireStaff, staffOf } from "../auth/session";
 import { withActor } from "../db/actor";
 import { database } from "../db/middleware";
+import { staffProfilesAs } from "../db/pii";
 import type { AppEnv } from "../env";
 import { notFound } from "../errors";
 import { permissionsOf } from "../staff/access";
@@ -45,7 +46,7 @@ staff.get("/me", async (c) => {
   const row = await withActor(c.var.db, actor, (trx) =>
     trx
       .selectFrom("app.staff as s")
-      .innerJoin("pii.staff_profiles as p", "p.staff_id", "s.id")
+      .innerJoin(staffProfilesAs("p"), "p.staff_id", "s.id")
       .select(["s.id", "s.role", "p.display_name", "p.telegram_username"])
       .where("s.id", "=", actor.id)
       .executeTakeFirst(),

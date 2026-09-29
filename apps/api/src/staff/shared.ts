@@ -7,6 +7,9 @@ import type { Tx } from "../db/actor";
 import { notFound } from "../errors";
 import { isUuid } from "./input";
 
+// Имя сотрудника по столбцу с его id — из db/pii, здесь для разделов панели
+export { staffName } from "../db/pii";
+
 export const LISTING_STATUSES = [
   "lead",
   "draft",
@@ -34,13 +37,6 @@ export function num(value: string | number | null): number | null {
 export function pathId(raw: string | undefined): string {
   if (raw === undefined || !isUuid(raw)) throw notFound();
   return raw.toLowerCase();
-}
-
-/** Имя сотрудника по столбцу с его id (null — не сотрудник или нет профиля) */
-export function staffName(column: string): RawBuilder<string | null> {
-  return sql<
-    string | null
-  >`(select p.display_name from pii.staff_profiles p where p.staff_id = ${sql.ref(column)})`;
 }
 
 /** Чего не хватает карточке для статуса target — коды app.listing_publish_blockers */

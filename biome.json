@@ -5,6 +5,7 @@
     "includes": [
       "apps/**",
       "packages/**",
+      "e2e/**",
       "*.json",
       "!**/worker-configuration.d.ts",
       "!**/*.generated.ts",

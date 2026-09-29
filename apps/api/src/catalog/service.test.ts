@@ -196,7 +196,7 @@ describe("getListingDetail", () => {
     });
     const detail = await getListingDetail(fake.db, "hall-1", null, "2026-09-29");
 
-    expect(fake.queries.find(isCatalog)?.sql).toContain("pii.read_listing_phone(l.id)");
+    expect(fake.queries.find(isCatalog)?.sql).toContain('pii.read_listing_phone("l"."id")');
     expect(fake.queries.find((q) => q.sql.includes('from "app"."availability"'))?.parameters).toEqual([
       ID(1),
       "2026-09-29",

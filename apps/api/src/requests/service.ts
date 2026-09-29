@@ -8,7 +8,7 @@
 //      клиент отдельно отметил уведомления;
 //   3. согласие request_transfer на этот листинг (и bot_notifications) — в
 //      журнал app.consents: что, когда, версия текста, откуда;
-//   4. заявка и контакты (pii.request_contacts). Листинг, блокировку, согласие,
+//   4. заявка и контакты (request_contacts, db/pii). Листинг, блокировку, согласие,
 //      вместимость и лимит заявок проверяют триггеры базы.
 // Уведомление вендору ставит в очередь база (триггер на вставку заявки), не API.
 
@@ -16,6 +16,7 @@ import type { ClientRequest, ClientSource, RequestCreated } from "@bayramm/share
 import { sql } from "kysely";
 import { type ClientActor, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
+import { insertRequestContact } from "../db/pii";
 import { ApiError, isPgError, notFound } from "../errors";
 import { type CreateRequestInput, consentRequired } from "./input";
 
@@ -152,15 +153,12 @@ async function insertRequest(
     .returning(["id", "public_no", "status", "sla_due_at"])
     .executeTakeFirstOrThrow();
 
-  await trx
-    .insertInto("pii.request_contacts")
-    .values({
-      request_id: request.id,
-      contact_name: input.contactName,
-      contact_phone: input.contactPhone,
-      comment: input.comment,
-    })
-    .execute();
+  await insertRequestContact(trx, {
+    request_id: request.id,
+    contact_name: input.contactName,
+    contact_phone: input.contactPhone,
+    comment: input.comment,
+  });
 
   return {
     id: request.id,

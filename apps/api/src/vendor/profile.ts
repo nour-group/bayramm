@@ -8,6 +8,7 @@ import type { Locale, VendorListing, VendorMe, VendorPhoto } from "@bayramm/shar
 import { sql } from "kysely";
 import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
+import { listingPhone, vendorContactsAs, vendorUserProfilesAs } from "../db/pii";
 import { ApiError, notFound } from "../errors";
 
 const LOCALES: readonly Locale[] = ["ru", "uz"];
@@ -25,8 +26,8 @@ async function readMe(trx: Tx, actor: VendorActor): Promise<VendorMe> {
   const user = await trx
     .selectFrom("app.vendor_users as vu")
     .innerJoin("app.vendor_accounts as va", "va.id", "vu.vendor_id")
-    .leftJoin("pii.vendor_user_profiles as p", "p.vendor_user_id", "vu.id")
-    .leftJoin("pii.vendor_contacts as vc", "vc.vendor_id", "va.id")
+    .leftJoin(vendorUserProfilesAs("p"), "p.vendor_user_id", "vu.id")
+    .leftJoin(vendorContactsAs("vc"), "vc.vendor_id", "va.id")
     .select(["vu.id", "vu.locale", "p.full_name", "va.id as vendor_id", "va.public_code", "vc.legal_name"])
     .where("vu.id", "=", actor.id)
     .executeTakeFirst();
@@ -76,7 +77,7 @@ export async function getListing(
       .selectAll()
       .select([
         sql<string[] | null>`app.listing_publish_blockers(id, 'active')`.as("blockers"),
-        sql<string | null>`pii.read_listing_phone(id)`.as("phone"),
+        listingPhone("id").as("phone"),
       ])
       .where("id", "=", listingId)
       .where("vendor_id", "=", actor.vendorId)
