@@ -166,6 +166,7 @@ telegram.post("/webhook", requireWebhookSecret, limitWebhookBody, database, asyn
       idHashKey: c.env.ID_HASH_KEY,
       webAppUrl: webAppUrl(c.env),
       vendorAppUrl: httpUrl("VENDOR_APP_URL", c.env.VENDOR_APP_URL),
+      adminAppUrl: httpUrl("ADMIN_APP_URL", c.env.ADMIN_APP_URL),
     },
     update,
   );

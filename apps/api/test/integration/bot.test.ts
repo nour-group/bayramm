@@ -4,7 +4,7 @@
 import { createHmac, randomInt, randomUUID } from "node:crypto";
 import type { Client } from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { BOT_TEXTS, STAFF_STARTED } from "../../src/bot/texts";
+import { BOT_TEXTS, STAFF_TEXTS } from "../../src/bot/texts";
 import { createDb } from "../../src/db/client";
 import { dispatchOutbox } from "../../src/notify/outbox";
 import { telegramClient } from "../../src/telegram/client";
@@ -117,16 +117,49 @@ describe("вебхук: /start", () => {
   it("сотрудник пишет боту — чат для оповещений команды записан", async () => {
     const res = await webhook({ update_id: nextUpdateId(), message: message(staffTgId, { text: "/start" }) });
     expect(res.status).toBe(200);
-    expect(sent.map((m) => m.text)).toEqual([
-      BOT_TEXTS.ru.welcome,
-      BOT_TEXTS.ru.partnerPrompt,
-      STAFF_STARTED,
-    ]);
+    expect(sent.map((m) => m.text)).toEqual([STAFF_TEXTS.ru.staffCard("admin")]);
     const { rows } = await admin.query(
       "select telegram_chat_id from pii.staff_profiles where staff_id = $1",
       [staffId],
     );
     expect(rows[0]?.telegram_chat_id).toBe(String(staffTgId));
+  });
+
+  it("приглашение по имени пользователя принимается первым сообщением боту; /stats — сводка", async () => {
+    const username = newStaffUsername();
+    const invitedId = await inviteStaff(admin, { username, role: "manager" });
+    const tgId = 6_000_000_000 + randomInt(0, 999_999_999);
+    const from = { id: tgId, is_bot: false, first_name: "Test", language_code: "uz", username };
+    const res = await webhook({
+      update_id: nextUpdateId(),
+      message: { ...message(tgId, { text: "/start" }), from },
+    });
+    expect(res.status).toBe(200);
+    expect(sent.map((m) => m.text)).toEqual([STAFF_TEXTS.uz.staffCard("manager")]);
+    const { rows } = await admin.query(
+      "select s.tg_linked_at is not null as linked, p.telegram_chat_id from app.staff s join pii.staff_profiles p on p.staff_id = s.id where s.id = $1",
+      [invitedId],
+    );
+    expect(rows[0]?.linked).toBe(true);
+    expect(rows[0]?.telegram_chat_id).toBe(String(tgId));
+
+    sent = [];
+    await webhook({ update_id: nextUpdateId(), message: { ...message(tgId, { text: "/stats" }), from } });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.text).toContain("Bayramm — qisqa hisobot");
+  });
+
+  it("чужое имя пользователя не даёт прав: не сотрудник — обычное приветствие, /stats без сводки", async () => {
+    const tgId = 6_000_000_000 + randomInt(0, 999_999_999);
+    const from = {
+      id: tgId,
+      is_bot: false,
+      first_name: "Test",
+      language_code: "ru",
+      username: newStaffUsername(),
+    };
+    await webhook({ update_id: nextUpdateId(), message: { ...message(tgId, { text: "/stats" }), from } });
+    expect(sent.map((m) => m.text)).toEqual([BOT_TEXTS.ru.welcome, BOT_TEXTS.ru.partnerPrompt]);
   });
 });
 

@@ -5,6 +5,11 @@
 // второй раз, а упавшая обработка откатывает и отметку — Telegram повторит.
 // Ответы в чат уходят после коммита (routes/telegram.ts), их отправка — best effort.
 //
+// Сотрудник: приглашение в app.staff заведено на имя пользователя Telegram. Первое
+// сообщение боту принимает его так же, как вход в панель через виджет
+// (app.staff_sign_in: имя — из подписанного Telegram обновления). Сотруднику — своя
+// карточка с кнопкой панели и команды /stats (сводка без ПДн) и /admin.
+//
 // Вход вендора: сотрудник заводит пользователя вендора с телефоном, вендор жмёт
 // «Я партнёр» и делится контактом. Telegram даёт так отправить только свой
 // номер — поэтому принимаем контакт, только если contact.user_id = from.id.
@@ -20,8 +25,8 @@ import { normalizeUzPhone } from "../auth/phone";
 import { SYSTEM, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import type { ReplyMarkup, SendMessageParams } from "../telegram/client";
-import { BOT_TEXTS, type BotTexts, botLang, STAFF_STARTED } from "./texts";
-import type { BotMessage, BotUpdate } from "./update";
+import { BOT_TEXTS, type BotStats, type BotTexts, botLang, STAFF_TEXTS, type StaffRoleCode } from "./texts";
+import type { BotMessage, BotUpdate, StaffCommand } from "./update";
 
 /** Параметр ссылки t.me/<бот>?start=partner — сразу просьба поделиться номером */
 export const PARTNER_START_PAYLOAD = "partner";
@@ -33,6 +38,8 @@ export interface BotConfig {
   readonly webAppUrl: string;
   /** Кабинет вендора (VENDOR_APP_URL) */
   readonly vendorAppUrl: string;
+  /** Панель оператора (ADMIN_APP_URL): кнопка сотрудникам */
+  readonly adminAppUrl: string;
 }
 
 export type Reply = SendMessageParams;
@@ -45,6 +52,13 @@ type ContactMessage = Extract<BotMessage, { kind: "contact" }>;
 
 const webAppButton = (text: string, url: string): ReplyMarkup => ({
   inline_keyboard: [[{ text, web_app: { url } }]],
+});
+
+const staffKeyboard = (config: BotConfig, lang: "ru" | "uz"): ReplyMarkup => ({
+  inline_keyboard: [
+    [{ text: STAFF_TEXTS[lang].adminButton, url: config.adminAppUrl }],
+    [{ text: BOT_TEXTS[lang].openApp, web_app: { url: config.webAppUrl } }],
+  ],
 });
 
 const partnerKeyboard = (t: BotTexts): ReplyMarkup => ({
@@ -62,6 +76,8 @@ export interface StartedAs {
   readonly staff: boolean;
   /** Привязанный пользователь вендора */
   readonly vendor: boolean;
+  /** Роль действующего сотрудника; null — не сотрудник */
+  readonly staffRole?: StaffRoleCode | null;
 }
 
 /**
@@ -76,8 +92,27 @@ export function startReplies(
   payload: string | null,
   who: StartedAs,
 ): Reply[] {
-  const t = BOT_TEXTS[botLang(languageCode)];
+  const lang = botLang(languageCode);
+  const t = BOT_TEXTS[lang];
   const replies: Reply[] = [];
+  const role = who.staff ? (who.staffRole ?? null) : null;
+  // Сотруднику — его карточка вместо приветствия клиента; просьба о номере — только по
+  // /start partner (проверить кабинет партнёра), иначе она лишняя
+  if (role !== null && payload !== PARTNER_START_PAYLOAD) {
+    replies.push({
+      chat_id: chatId,
+      text: STAFF_TEXTS[lang].staffCard(role),
+      reply_markup: staffKeyboard(config, lang),
+    });
+    if (who.vendor) {
+      replies.push({
+        chat_id: chatId,
+        text: t.vendorLinked,
+        reply_markup: webAppButton(t.openCabinet, config.vendorAppUrl),
+      });
+    }
+    return replies;
+  }
   if (payload !== PARTNER_START_PAYLOAD) {
     replies.push({
       chat_id: chatId,
@@ -94,8 +129,24 @@ export function startReplies(
   } else {
     replies.push({ chat_id: chatId, text: t.partnerPrompt, reply_markup: partnerKeyboard(t) });
   }
-  if (who.staff) replies.push({ chat_id: chatId, text: STAFF_STARTED });
   return replies;
+}
+
+/** Ответ сотруднику на /stats и /admin */
+export function commandReplies(
+  config: BotConfig,
+  chatId: number,
+  languageCode: string | undefined,
+  command: StaffCommand,
+  stats: BotStats | null,
+): Reply[] {
+  const lang = botLang(languageCode);
+  if (command === "stats" && stats !== null) {
+    return [
+      { chat_id: chatId, text: STAFF_TEXTS[lang].stats(stats), reply_markup: staffKeyboard(config, lang) },
+    ];
+  }
+  return [{ chat_id: chatId, text: STAFF_TEXTS[lang].adminHint, reply_markup: staffKeyboard(config, lang) }];
 }
 
 /** Ответ на контакт: привязали — клавиатуру убрать и дать кнопку кабинета */
@@ -104,8 +155,10 @@ export function claimReplies(
   chatId: number,
   languageCode: string | undefined,
   result: ClaimResult | "not_own",
+  staff = false,
 ): Reply[] {
-  const t = BOT_TEXTS[botLang(languageCode)];
+  const lang = botLang(languageCode);
+  const t = BOT_TEXTS[lang];
   switch (result) {
     case "claimed":
     case "linked":
@@ -120,7 +173,14 @@ export function claimReplies(
     case "not_own":
       return [{ chat_id: chatId, text: t.notOwnContact, reply_markup: partnerKeyboard(t) }];
     case "not_found":
-      return [{ chat_id: chatId, text: t.notFound, reply_markup: REMOVE_KEYBOARD }];
+      // Сотрудник проверяет кабинет партнёра — подсказать, как завести тестового партнёра
+      return [
+        {
+          chat_id: chatId,
+          text: staff ? STAFF_TEXTS[lang].partnerStaffHint : t.notFound,
+          reply_markup: REMOVE_KEYBOARD,
+        },
+      ];
     case "linked_elsewhere":
       return [{ chat_id: chatId, text: t.linkedElsewhere, reply_markup: REMOVE_KEYBOARD }];
     case "telegram_taken":
@@ -171,10 +231,46 @@ async function claim(
   return row.result;
 }
 
+/**
+ * Сотрудник ли пишет: найти по Telegram ID или принять приглашение по имени пользователя —
+ * та же app.staff_sign_in, что у входа в панель. null — не сотрудник или отключён
+ */
+async function staffSignIn(trx: Tx, update: BotUpdate, tgHash: Uint8Array): Promise<StaffRoleCode | null> {
+  const { rows } = await sql<{ role: StaffRoleCode; claimed: boolean }>`
+    select role, claimed
+    from app.staff_sign_in(${tgHash}::bytea, ${update.from.id}::bigint, ${update.from.username ?? null}::text)`.execute(
+    trx,
+  );
+  const row = rows[0];
+  if (row?.claimed) console.info("bot: staff invite accepted", { role: row.role });
+  return row?.role ?? null;
+}
+
 async function started(trx: Tx, update: BotUpdate, tgHash: Uint8Array): Promise<StartedAs> {
   const { rows } = await sql<StartedAs>`
     select staff, vendor from app.telegram_started(${tgHash}::bytea, ${update.chatId}::bigint)`.execute(trx);
   return rows[0] ?? { staff: false, vendor: false };
+}
+
+/** Сводка для /stats: только счётчики; сутки — по Ташкенту */
+async function loadStats(trx: Tx): Promise<BotStats> {
+  const { rows } = await sql<BotStats>`
+    select
+      (select count(*) from app.listings where status = 'active')::int as "activeListings",
+      (select count(*) from app.listings where status = 'review')::int as "reviewListings",
+      (select count(*) from app.vendor_accounts)::int as "vendors",
+      (select count(*) from app.requests
+        where created_at >= (date_trunc('day', now() at time zone 'Asia/Tashkent') at time zone 'Asia/Tashkent'))::int
+        as "requestsToday",
+      (select count(*) from app.requests
+        where status in ('new', 'viewed') and first_response_at is null)::int as "awaiting",
+      (select count(*) from app.requests
+        where status in ('new', 'viewed') and first_response_at is null and sla_breached_at is not null)::int
+        as "breached",
+      (select count(*) from app.outbox where status = 'dead')::int as "deadNotifications"`.execute(trx);
+  const row = rows[0];
+  if (row === undefined) throw new Error("bot stats: нет строки");
+  return row;
 }
 
 /** Обрабатывает сообщение и возвращает ответы, которые надо отправить после коммита */
@@ -189,6 +285,9 @@ export async function handleUpdate(db: Db, config: BotConfig, update: BotUpdate)
       return [];
     }
 
+    // Раньше привязки вендора: telegram_started должен уже видеть принятое приглашение
+    const staffRole = await staffSignIn(trx, update, tgHash);
+
     if (contact !== null) {
       if (contact.kind === "not_own") {
         console.info("bot: contact", { result: "not_own" });
@@ -196,14 +295,18 @@ export async function handleUpdate(db: Db, config: BotConfig, update: BotUpdate)
       }
       if (contact.kind === "not_uz") {
         console.info("bot: contact", { result: "not_uz" });
-        return claimReplies(config, chatId, from.languageCode, "not_found");
+        return claimReplies(config, chatId, from.languageCode, "not_found", staffRole !== null);
       }
       const result = await claim(trx, update, tgHash, contact);
-      return claimReplies(config, chatId, from.languageCode, result);
+      return claimReplies(config, chatId, from.languageCode, result, staffRole !== null);
     }
 
     const who = await started(trx, update, tgHash);
+    if (message.kind === "command" && staffRole !== null) {
+      const stats = message.name === "stats" ? await loadStats(trx) : null;
+      return commandReplies(config, chatId, from.languageCode, message.name, stats);
+    }
     const payload = message.kind === "start" ? message.payload : null;
-    return startReplies(config, chatId, from.languageCode, payload, who);
+    return startReplies(config, chatId, from.languageCode, payload, { ...who, staffRole });
   });
 }

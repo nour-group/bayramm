@@ -14,9 +14,35 @@ describe("parseUpdate", () => {
     expect(parseUpdate(update({ text: "/start" }))).toEqual({
       updateId: 100,
       chatId: 5001,
-      from: { id: 5001, languageCode: "ru" },
+      from: { id: 5001, languageCode: "ru", username: undefined },
       message: { kind: "start", payload: null },
     });
+  });
+
+  it("имя пользователя — только по правилам Telegram, без @", () => {
+    const withName = (username: unknown) =>
+      parseUpdate({
+        update_id: 1,
+        message: { message_id: 1, date: 1, chat: CHAT, from: { ...USER, username }, text: "/start" },
+      })?.from.username;
+    expect(withName("owner_name")).toBe("owner_name");
+    expect(withName("@owner_name")).toBeUndefined();
+    expect(withName("abc")).toBeUndefined();
+    expect(withName("x".repeat(33))).toBeUndefined();
+    expect(withName(42)).toBeUndefined();
+  });
+
+  it.each([
+    ["/stats", "stats"],
+    ["/admin", "admin"],
+    ["/stats@example_test_bot", "stats"],
+    ["  /admin  ", "admin"],
+  ])("%s — команда команды Bayramm", (text, name) => {
+    expect(parseUpdate(update({ text }))?.message).toEqual({ kind: "command", name });
+  });
+
+  it.each(["/stats now", "/statistics", "/adminx", "stats"])("%s — не команда", (text) => {
+    expect(parseUpdate(update({ text }))?.message).toEqual({ kind: "other" });
   });
 
   it.each([

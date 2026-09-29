@@ -1,11 +1,11 @@
 // Обработка сообщений бота без базы: fakeDb отвечает на отметку update_id и на
-// функции app.telegram_started / app.vendor_user_claim_telegram
+// функции app.staff_sign_in / app.telegram_started / app.vendor_user_claim_telegram
 import { createHmac, randomBytes } from "node:crypto";
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
 import { type BotConfig, type ClaimResult, handleUpdate } from "./handler";
-import { BOT_TEXTS, STAFF_STARTED } from "./texts";
+import { BOT_TEXTS, type BotStats, STAFF_TEXTS } from "./texts";
 import type { BotUpdate } from "./update";
 
 // Свой ключ псевдонимов на каждый прогон
@@ -14,6 +14,7 @@ const CONFIG: BotConfig = {
   idHashKey: KEY,
   webAppUrl: "https://app.example",
   vendorAppUrl: "https://vendor.example",
+  adminAppUrl: "https://admin.example",
 };
 const USER_ID = 5001;
 const PHONE = "+998901234567";
@@ -25,12 +26,18 @@ interface DbState {
   seen?: boolean;
   started?: { staff: boolean; vendor: boolean };
   claim?: ClaimResult;
+  /** app.staff_sign_in: роль действующего сотрудника */
+  staffRole?: "admin" | "manager" | "moderator";
+  stats?: BotStats;
 }
 
 function db(state: DbState = {}) {
   return fakeDb((q: RecordedQuery) => {
     if (q.sql.includes('insert into "app"."telegram_updates"')) return state.seen ? [] : [{ update_id: 1 }];
+    if (q.sql.includes("app.staff_sign_in"))
+      return state.staffRole ? [{ role: state.staffRole, claimed: false }] : [];
     if (q.sql.includes("app.telegram_started")) return [state.started ?? { staff: false, vendor: false }];
+    if (q.sql.includes('"activeListings"')) return state.stats ? [state.stats] : [];
     if (q.sql.includes("app.vendor_user_claim_telegram")) {
       return [
         { result: state.claim ?? "not_found", vendor_user_id: state.claim === "claimed" ? "vu-1" : null },
@@ -43,7 +50,7 @@ function db(state: DbState = {}) {
 const start = (payload: string | null = null, languageCode = "uz"): BotUpdate => ({
   updateId: 100,
   chatId: USER_ID,
-  from: { id: USER_ID, languageCode },
+  from: { id: USER_ID, languageCode, username: undefined },
   message: { kind: "start", payload },
 });
 
@@ -54,7 +61,7 @@ const contact = (
 ): BotUpdate => ({
   updateId: 101,
   chatId: USER_ID,
-  from: { id: USER_ID, languageCode },
+  from: { id: USER_ID, languageCode, username: undefined },
   message: { kind: "contact", userId, phone },
 });
 
@@ -144,15 +151,104 @@ describe("handleUpdate: /start", () => {
     ]);
   });
 
-  it("сотруднику — ещё и строка про оповещения команды", async () => {
-    const replies = await handleUpdate(db({ started: { staff: true, vendor: false } }).db, CONFIG, start());
-    expect(replies.at(-1)).toEqual({ chat_id: USER_ID, text: STAFF_STARTED });
+  it("сотруднику — карточка команды с кнопкой панели вместо приветствия клиента и просьбы о номере", async () => {
+    const replies = await handleUpdate(
+      db({ staffRole: "admin", started: { staff: true, vendor: false } }).db,
+      CONFIG,
+      start(null, "uz"),
+    );
+    expect(replies).toEqual([
+      {
+        chat_id: USER_ID,
+        text: STAFF_TEXTS.uz.staffCard("admin"),
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Boshqaruv paneli", url: "https://admin.example" }],
+            [{ text: BOT_TEXTS.uz.openApp, web_app: { url: "https://app.example" } }],
+          ],
+        },
+      },
+    ]);
+    expect(replies[0]?.text).toContain("administrator");
+  });
+
+  it("приглашение сотрудника принимается по имени пользователя — той же app.staff_sign_in", async () => {
+    const fake = db();
+    const update: BotUpdate = { ...start(), from: { ...start().from, username: "owner_name" } };
+    await handleUpdate(fake.db, CONFIG, update);
+    const signIn = fake.queries.find((q) => q.sql.includes("app.staff_sign_in"));
+    expect(signIn?.parameters).toEqual([new Uint8Array(hmac(String(USER_ID))), USER_ID, "owner_name"]);
+    // приглашение смотрим раньше, чем telegram_started пишет чат для оповещений
+    const order = fake.queries.map((q) => q.sql);
+    expect(order.findIndex((s) => s.includes("app.staff_sign_in"))).toBeLessThan(
+      order.findIndex((s) => s.includes("app.telegram_started")),
+    );
+  });
+
+  it("сотрудник-партнёр: карточка команды и кнопка кабинета; /start partner — просьба о номере", async () => {
+    const both = db({ staffRole: "manager", started: { staff: true, vendor: true } }).db;
+    const replies = await handleUpdate(both, CONFIG, start(null, "ru"));
+    expect(replies.map((reply) => reply.text)).toEqual([
+      STAFF_TEXTS.ru.staffCard("manager"),
+      BOT_TEXTS.ru.vendorLinked,
+    ]);
+    const partner = await handleUpdate(
+      db({ staffRole: "admin", started: { staff: true, vendor: false } }).db,
+      CONFIG,
+      start("partner"),
+    );
+    expect(partner.map((reply) => reply.text)).toEqual([BOT_TEXTS.uz.partnerPrompt]);
   });
 
   it("любое другое сообщение — как /start", async () => {
     const other: BotUpdate = { ...start(), message: { kind: "other" } };
     const replies = await handleUpdate(db().db, CONFIG, other);
     expect(replies.map((reply) => reply.text)).toEqual([BOT_TEXTS.uz.welcome, BOT_TEXTS.uz.partnerPrompt]);
+  });
+});
+
+const STATS: BotStats = {
+  activeListings: 3,
+  reviewListings: 1,
+  vendors: 4,
+  requestsToday: 2,
+  awaiting: 5,
+  breached: 1,
+  deadNotifications: 0,
+};
+
+describe("handleUpdate: команды команды Bayramm", () => {
+  const command = (name: "stats" | "admin", languageCode = "ru"): BotUpdate => ({
+    ...start(null, languageCode),
+    message: { kind: "command", name },
+  });
+
+  it("/stats сотруднику — сводка из счётчиков и кнопка панели", async () => {
+    const replies = await handleUpdate(
+      db({ staffRole: "moderator", stats: STATS }).db,
+      CONFIG,
+      command("stats"),
+    );
+    expect(replies).toHaveLength(1);
+    expect(replies[0]?.text).toBe(STAFF_TEXTS.ru.stats(STATS));
+    expect(replies[0]?.text).toContain("Ждут ответа: 5");
+    expect(replies[0]?.reply_markup).toMatchObject({
+      inline_keyboard: [[{ text: "Панель оператора", url: "https://admin.example" }], expect.anything()],
+    });
+  });
+
+  it("/admin сотруднику — кнопка панели, без сводки", async () => {
+    const fake = db({ staffRole: "admin", stats: STATS });
+    const replies = await handleUpdate(fake.db, CONFIG, command("admin", "uz"));
+    expect(replies.map((reply) => reply.text)).toEqual([STAFF_TEXTS.uz.adminHint]);
+    expect(fake.queries.some((q) => q.sql.includes('"activeListings"'))).toBe(false);
+  });
+
+  it("не сотруднику команды не отвечают сводкой — как на /start", async () => {
+    const fake = db({ stats: STATS });
+    const replies = await handleUpdate(fake.db, CONFIG, command("stats", "uz"));
+    expect(replies.map((reply) => reply.text)).toEqual([BOT_TEXTS.uz.welcome, BOT_TEXTS.uz.partnerPrompt]);
+    expect(fake.queries.some((q) => q.sql.includes('"activeListings"'))).toBe(false);
   });
 });
 
@@ -219,6 +315,13 @@ describe("handleUpdate: контакт вендора", () => {
     const replies = await handleUpdate(fake.db, CONFIG, contact("79001234567"));
     expect(replies.map((reply) => reply.text)).toEqual([BOT_TEXTS.ru.notFound]);
     expect(fake.queries.some((q) => q.sql.includes("vendor_user_claim_telegram"))).toBe(false);
+  });
+
+  it("сотруднику, чьего номера нет среди партнёров, — подсказка, как завести тестового партнёра", async () => {
+    const replies = await handleUpdate(db({ staffRole: "admin", claim: "not_found" }).db, CONFIG, contact());
+    expect(replies.map((reply) => reply.text)).toEqual([STAFF_TEXTS.ru.partnerStaffHint]);
+    const client = await handleUpdate(db({ claim: "not_found" }).db, CONFIG, contact());
+    expect(client.map((reply) => reply.text)).toEqual([BOT_TEXTS.ru.notFound]);
   });
 
   it("в логе нет ни номера, ни Telegram ID", async () => {

@@ -25,6 +25,7 @@ export function makeEnv(): Env {
     ID_HASH_KEY,
     WEB_APP_URL: "http://localhost:5173",
     VENDOR_APP_URL: "http://localhost:5174",
+    ADMIN_APP_URL: "http://localhost:5175",
     API_URL: "http://localhost:8787",
     HYPERDRIVE: { connectionString: apiDatabaseUrl } as Hyperdrive,
     // Storage нужен только тестам фото — у них свои адрес и ключ (photos.test.ts)

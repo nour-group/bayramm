@@ -80,8 +80,73 @@ export const BOT_TEXTS: Readonly<Record<Lang, BotTexts>> = {
   },
 };
 
-/** Команде — только по-русски: панель оператора русская */
-export const STAFF_STARTED = "Оповещения для команды Bayramm будут приходить сюда.";
+// ── команда Bayramm ────────────────────────────────────────────────────────
+
+export type StaffRoleCode = "admin" | "manager" | "moderator";
+
+/** Сводка для /stats: только счётчики, без персональных данных */
+export interface BotStats {
+  readonly activeListings: number;
+  readonly reviewListings: number;
+  readonly vendors: number;
+  readonly requestsToday: number;
+  readonly awaiting: number;
+  readonly breached: number;
+  readonly deadNotifications: number;
+}
+
+export interface StaffTexts {
+  /** Ответ сотруднику на /start: кто он и что приходит в этот чат */
+  staffCard: (role: StaffRoleCode) => string;
+  /** Кнопка панели оператора */
+  adminButton: string;
+  /** Текст над кнопкой панели на /admin */
+  adminHint: string;
+  /** Сводка на /stats */
+  stats: (s: BotStats) => string;
+  /** Сотрудник нажал «Я партнёр», а пользователя вендора с его номером нет */
+  partnerStaffHint: string;
+}
+
+const ROLE: Readonly<Record<Lang, Record<StaffRoleCode, string>>> = {
+  ru: { admin: "администратор", manager: "менеджер", moderator: "модератор" },
+  uz: { admin: "administrator", manager: "menejer", moderator: "moderator" },
+};
+
+export const STAFF_TEXTS: Readonly<Record<Lang, StaffTexts>> = {
+  ru: {
+    staffCard: (role) =>
+      `Вы в команде Bayramm — ${ROLE.ru[role]}.\n\n` +
+      "Сюда приходят оповещения: сорванный срок ответа 12 часов и недоставленные уведомления.\n\n" +
+      "/stats — сводка\n/admin — панель оператора",
+    adminButton: "Панель оператора",
+    adminHint: "Панель оператора открывается в браузере, вход — через Telegram:",
+    stats: (s) =>
+      "Bayramm — сводка\n\n" +
+      `Активных залов: ${s.activeListings}\nНа проверке: ${s.reviewListings}\nПартнёров: ${s.vendors}\n\n` +
+      `Заявок сегодня: ${s.requestsToday}\nЖдут ответа: ${s.awaiting}\nСрок 12 часов вышел: ${s.breached}\n\n` +
+      `Недоставленных уведомлений: ${s.deadNotifications}`,
+    partnerStaffHint:
+      "Вы в команде Bayramm. Чтобы проверить кабинет партнёра, добавьте в панели оператора пользователя " +
+      "партнёра с этим номером и снова нажмите «Я партнёр».",
+  },
+  uz: {
+    staffCard: (role) =>
+      `Siz Bayramm jamoasidasiz — ${ROLE.uz[role]}.\n\n` +
+      "Ogohlantirishlar shu yerga keladi: 12 soatlik javob muddati buzilishi va yetkazilmagan xabarlar.\n\n" +
+      "/stats — qisqa hisobot\n/admin — boshqaruv paneli",
+    adminButton: "Boshqaruv paneli",
+    adminHint: "Boshqaruv paneli brauzerda ochiladi, kirish — Telegram orqali:",
+    stats: (s) =>
+      "Bayramm — qisqa hisobot\n\n" +
+      `Faol zallar: ${s.activeListings}\nTekshiruvda: ${s.reviewListings}\nHamkorlar: ${s.vendors}\n\n` +
+      `Bugungi arizalar: ${s.requestsToday}\nJavob kutayotgan: ${s.awaiting}\n12 soat muddati oʻtgan: ${s.breached}\n\n` +
+      `Yetkazilmagan xabarlar: ${s.deadNotifications}`,
+    partnerStaffHint:
+      "Siz Bayramm jamoasidasiz. Hamkor kabinetini sinash uchun boshqaruv panelida shu raqam bilan hamkor " +
+      "foydalanuvchisini qoʻshing va «Men hamkorman» tugmasini yana bosing.",
+  },
+};
 
 /** Язык ответа по language_code из Telegram: ru — русский, остальные — узбекский */
 export function botLang(languageCode: string | undefined): Lang {
