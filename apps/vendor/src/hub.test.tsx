@@ -2,7 +2,7 @@
 import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { VendorMe } from "@bayramm/shared/api/vendor";
 import { codeChallengeOf } from "@bayramm/shared/pkce";
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -66,12 +66,22 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}) {
 let container: HTMLDivElement;
 let root: Root;
 
-async function mount(path: string) {
+async function mount(path: string, { strict = false } = {}) {
   window.history.replaceState(null, "", path);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root.render(<App />));
+  await act(async () =>
+    root.render(
+      strict ? (
+        <StrictMode>
+          <App />
+        </StrictMode>
+      ) : (
+        <App />
+      ),
+    ),
+  );
   for (let i = 0; i < 8; i++) await act(async () => {});
 }
 
@@ -149,6 +159,18 @@ describe("хаб входа из кабинета", () => {
     expect(window.location.pathname).toBe("/calendar");
     expect(window.location.search).toBe("");
     expect(window.sessionStorage.getItem("bayramm.vendor.hub")).toBeNull();
+  });
+
+  it("вход запускается дважды (StrictMode): один обмен, кабинет открыт, а не «войдите»", async () => {
+    window.sessionStorage.setItem(
+      "bayramm.vendor.hub",
+      JSON.stringify({ verifier: "v".repeat(43), state: "state_0123456789abcd", back: "/calendar" }),
+    );
+    // Свой код: обмен запоминается по адресу возврата
+    await mount(`/auth/callback?code=${"d".repeat(43)}&state=state_0123456789abcd`, { strict: true });
+    expect(calls.filter((c) => c.path === "/api/auth/hub/exchange")).toHaveLength(1);
+    expect(heading()).toBe("Календарь");
+    expect(window.sessionStorage.getItem("bayramm.vendor.session")).toBe(TOKEN);
   });
 
   it("чужой state — код не меняется, «вход не завершился»", async () => {

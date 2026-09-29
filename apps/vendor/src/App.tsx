@@ -70,9 +70,16 @@ async function openCabinet(back?: string): Promise<Auth> {
  * приложения Bayramm) сразу уводит в хаб, иначе — экран «войдите». Открыт из Telegram,
  * а SDK не загрузился — ошибка с повтором.
  */
+// Возврат из хаба обрабатывается один раз: обмен сразу убирает код из адреса, а вход
+// запускается повторно (StrictMode в разработке) — повтор ждёт тот же обмен
+let hubReturn: ReturnType<typeof finishHub> | null = null;
+
 async function startSession(): Promise<Auth> {
-  if (window.location.pathname === CALLBACK_PATH) {
-    const result = await finishHub(window.location.search);
+  if (window.location.pathname === CALLBACK_PATH) hubReturn = finishHub(window.location.search);
+  if (hubReturn) {
+    const running = hubReturn;
+    const result = await running;
+    if (hubReturn === running) hubReturn = null;
     if (result.kind === "bad") return { kind: "hub_failed", back: "/" };
     tokenStore.set(result.token);
     return openCabinet(result.back);
