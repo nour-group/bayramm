@@ -1,0 +1,23 @@
+- generic [ref=f3e3]:
+  - link "К содержимому" [ref=f3e4] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=f3e5]:
+    - link "Bayramm" [ref=f3e6] [cursor=pointer]:
+      - /url: /
+    - group "Язык" [ref=f3e7]:
+      - button "RU" [pressed] [ref=f3e8] [cursor=pointer]
+      - button "UZ" [ref=f3e9] [cursor=pointer]
+  - note [ref=f3e10]: "Демо-данные: сервер не подключён"
+  - main [ref=f3e11]:
+    - generic [ref=f3e12]:
+      - heading "Мои заявки" [level=1] [ref=f3e13]
+      - paragraph [ref=f3e14]: Статус ставит вендор. Если не ответит за 12 часов — покажем похожих.
+      - status [ref=f3e15]:
+        - generic [ref=f3e18]: Загружаем…
+  - navigation "Разделы" [ref=f3e19]:
+    - link "Главная" [ref=f3e20] [cursor=pointer]:
+      - /url: /
+    - link "Заявки" [ref=f3e24] [cursor=pointer]:
+      - /url: /requests
+    - link "Профиль" [ref=f3e28] [cursor=pointer]:
+      - /url: /profile

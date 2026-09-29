@@ -1,0 +1,14 @@
+- generic [ref=f2e3]:
+  - link "К содержимому" [ref=f2e4] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=f2e5]:
+    - button "Назад" [ref=f2e6] [cursor=pointer]
+    - link "Bayramm" [ref=f2e9] [cursor=pointer]:
+      - /url: /
+    - group "Язык" [ref=f2e10]:
+      - button "RU" [pressed] [ref=f2e11] [cursor=pointer]
+      - button "UZ" [ref=f2e12] [cursor=pointer]
+  - note [ref=f2e13]: "Демо-данные: сервер не подключён"
+  - main [ref=f2e14]:
+    - status [ref=f2e15]:
+      - generic [ref=f2e18]: Загружаем…
