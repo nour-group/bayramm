@@ -36,13 +36,81 @@ export function matchSection(pathname: string): Section | null {
   return (NAV as readonly (Route | null)[]).includes(route) ? (route as Section) : null;
 }
 
+// ── экраны внутри разделов ─────────────────────────────────────────────────
+// Экран — раздел или страница объекта. Шаблоны путей — здесь и только здесь
+
+export type View =
+  | { readonly name: Section }
+  | { readonly name: "vendorNew" }
+  | { readonly name: "vendor"; readonly id: string }
+  | { readonly name: "listingNew"; readonly vendorId: string }
+  | { readonly name: "listing"; readonly id: string }
+  | { readonly name: "request"; readonly id: string };
+
+const ID = "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
+
+const PATTERNS: readonly [RegExp, (id: string) => View][] = [
+  [/^\/vendors\/new$/, () => ({ name: "vendorNew" })],
+  [new RegExp(`^/vendors/${ID}/listings/new$`), (id) => ({ name: "listingNew", vendorId: id })],
+  [new RegExp(`^/vendors/${ID}$`), (id) => ({ name: "vendor", id })],
+  [new RegExp(`^/listings/${ID}$`), (id) => ({ name: "listing", id })],
+  [new RegExp(`^/requests/${ID}$`), (id) => ({ name: "request", id })],
+];
+
+/** Экран по пути; неизвестный путь — null */
+export function parseView(pathname: string): View | null {
+  const section = matchSection(pathname);
+  if (section) return { name: section };
+  const path = trimTrailingSlashes(pathname).toLowerCase();
+  for (const [re, make] of PATTERNS) {
+    const match = re.exec(path);
+    if (match) return make(match[1] ?? "");
+  }
+  return null;
+}
+
+/** Путь экрана — обратное к parseView */
+export function pathOf(view: View): string {
+  switch (view.name) {
+    case "vendorNew":
+      return "/vendors/new";
+    case "vendor":
+      return `/vendors/${view.id}`;
+    case "listingNew":
+      return `/vendors/${view.vendorId}/listings/new`;
+    case "listing":
+      return `/listings/${view.id}`;
+    case "request":
+      return `/requests/${view.id}`;
+    default:
+      return ROUTES[view.name];
+  }
+}
+
+/** Раздел навигации, к которому относится экран */
+export function sectionOf(view: View): Section {
+  switch (view.name) {
+    case "vendorNew":
+    case "vendor":
+    case "listingNew":
+    case "listing":
+      return "vendors";
+    case "request":
+      return "requests";
+    default:
+      return view.name;
+  }
+}
+
 const isLoginPath = (pathname: string) => {
   const route = matchRoute(pathname);
   return route === "login" || route === "loginTelegram";
 };
 
-/** Текущий раздел по адресной строке и переход без перезагрузки (после входа) */
-export function useRoute(): readonly [Section | null, (section: Section) => void] {
+export type Navigate = (view: View) => void;
+
+/** Текущий экран по адресной строке и переход без перезагрузки */
+export function useRoute(): readonly [View | null, Navigate] {
   const [path, setPath] = useState(() => window.location.pathname);
 
   useEffect(() => {
@@ -57,11 +125,11 @@ export function useRoute(): readonly [Section | null, (section: Section) => void
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const navigate = useCallback((section: Section) => {
-    const next = ROUTES[section];
+  const navigate = useCallback((view: View) => {
+    const next = pathOf(view);
     if (window.location.pathname !== next) window.history.pushState(null, "", next);
     setPath(next);
   }, []);
 
-  return [isLoginPath(path) ? HOME : matchSection(path), navigate] as const;
+  return [isLoginPath(path) ? { name: HOME } : parseView(path), navigate] as const;
 }

@@ -83,6 +83,8 @@ describe("POST /auth/staff/telegram: приглашение по имени", ()
       role: "moderator",
       displayName: "Test Moderator",
       username,
+      // Права роли — для панели; проверяет их сервер на каждом запросе
+      permissions: expect.arrayContaining(["catalog.read", "listings.publish"]),
     });
 
     // Привязка: в app — только HMAC, Telegram ID — в pii

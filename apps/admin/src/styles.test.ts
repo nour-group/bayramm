@@ -44,8 +44,19 @@ describe("styles.css панели оператора", () => {
     expect(app).toMatch(/min-height:\s*100vh;[\s\S]*min-height:\s*100dvh/);
   });
 
-  it.each([".skip", ".brand", ".nav a", ".action"])("%s: зона нажатия не меньше 44px", (selector) => {
-    expect(declarationsOf(selector)).toMatch(/min-height:\s*var\(--hit-min\)/);
+  it.each([".skip", ".brand", ".nav a", ".action", ".btn", ".chip", ".input", ".cal-day", ".phone-row"])(
+    "%s: зона нажатия не меньше 44px",
+    (selector) => {
+      expect(declarationsOf(selector)).toMatch(/min-height:\s*var\(--hit-min\)/);
+    },
+  );
+
+  it("таблицы и прокручиваемые слои задают обе оси (ловушка №2)", () => {
+    for (const selector of [".nav", ".table-wrap"]) {
+      const body = declarationsOf(selector);
+      expect(body, selector).toMatch(/overflow-x:/);
+      expect(body, selector).toMatch(/overflow-y:/);
+    }
   });
 
   it("фокус с клавиатуры виден", () => {
