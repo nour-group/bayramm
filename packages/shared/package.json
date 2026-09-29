@@ -5,7 +5,8 @@
   "description": "Общий код клиента, кабинета и API: словари RU/UZ и помощники. Экспортирует исходники TS, сборки нет.",
   "exports": {
     ".": "./src/index.ts",
-    "./i18n": "./src/i18n/index.ts"
+    "./i18n": "./src/i18n/index.ts",
+    "./api": "./src/api/client.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

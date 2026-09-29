@@ -4,7 +4,8 @@
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./webapp": "./src/webapp.ts"
   },
   "scripts": {
     "test": "vitest run",

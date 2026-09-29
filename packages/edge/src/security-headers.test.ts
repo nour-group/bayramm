@@ -29,6 +29,14 @@ describe("Content-Security-Policy", () => {
     expect(csp["img-src"]).toEqual(["'self'", "data:", "blob:"]);
   });
 
+  it("telegramWebApp добавляет только скрипт SDK Mini App", () => {
+    const withSdk = parseCsp(contentSecurityPolicy({ telegramWebApp: true }));
+    expect(withSdk["script-src"]).toEqual(["'self'", "https://telegram.org/js/telegram-web-app.js"]);
+    for (const [name, sources] of Object.entries(withSdk)) {
+      if (name !== "script-src") expect(sources).toEqual(csp[name]);
+    }
+  });
+
   it("imageOrigins добавляет источники только в img-src", () => {
     const origins = ["https://media.example", "https://media-staging.example"];
     const withImages = parseCsp(contentSecurityPolicy({ imageOrigins: origins }));
