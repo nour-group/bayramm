@@ -1,12 +1,21 @@
 import type {
+  AuditList,
+  ClientDetail,
+  ClientList,
+  ClientListItem,
   ListingDetail,
   ListingInput,
   ListingList,
+  OutboxHealth,
   PublishBlocker,
+  RevisionDetail,
+  RevisionList,
   StaffDictionaries,
   StaffMe,
   StaffRequestDetail,
   StaffRequestList,
+  StaffSettings,
+  TeamList,
   VendorDetail,
   VendorList,
 } from "@bayramm/shared/api/staff";
@@ -44,7 +53,16 @@ export const STAFF: StaffMe = {
     "photos.moderate",
     "vendor_phones.read",
     "requests.read",
+    "requests.write",
     "client_phones.read",
+    "clients.read",
+    "clients.block",
+    "outbox.read",
+    "outbox.retry",
+    "audit.read",
+    "settings.write",
+    "team.manage",
+    "revisions.moderate",
   ],
 };
 
@@ -195,6 +213,167 @@ const REQUEST: StaffRequestDetail = {
       at: new Date(NOW.getTime() - 14 * 3_600_000).toISOString(),
     },
   ],
+  reminders: 1,
+  timeline: [
+    { kind: "created", at: new Date(NOW.getTime() - 15 * 3_600_000).toISOString() },
+    { kind: "viewed", at: new Date(NOW.getTime() - 14 * 3_600_000).toISOString() },
+    {
+      kind: "reminder",
+      at: new Date(NOW.getTime() - 11 * 3_600_000).toISOString(),
+      source: "auto",
+      stage: 1,
+      by: null,
+      recipients: 1,
+      delivered: 1,
+      failed: 0,
+    },
+    { kind: "due", at: new Date(NOW.getTime() - 3 * 3_600_000).toISOString(), passed: true },
+  ],
+  notes: [
+    {
+      id: "00000000-0000-4000-8700-000000000001",
+      text: "Вендор обещал перезвонить",
+      authorName: STAFF.displayName,
+      at: new Date(NOW.getTime() - 2 * 3_600_000).toISOString(),
+    },
+  ],
+  awaiting: true,
+  vendorReachable: 1,
+  nextReminderAt: null,
+};
+
+export const CLIENT_ID = "00000000-0000-4000-8800-000000000001";
+export const REVISION_ID = "00000000-0000-4000-8900-000000000001";
+
+const CLIENT_ITEM: ClientListItem = {
+  id: CLIENT_ID,
+  ref: "C-00000000",
+  createdAt: iso,
+  lastSeenAt: iso,
+  locale: "uz",
+  blocked: false,
+  deleted: false,
+  requests: 1,
+  lastRequestAt: REQUEST.createdAt,
+};
+
+const CLIENT: ClientDetail = {
+  ...CLIENT_ITEM,
+  canMessage: true,
+  deletedAt: null,
+  blockedInfo: null,
+  profile: { firstName: "Азиза", lastName: null, username: null },
+  requestList: [
+    {
+      id: REQUEST_ID,
+      publicNo: REQUEST.publicNo,
+      status: REQUEST.status,
+      sla: REQUEST.sla,
+      eventDate: REQUEST.eventDate,
+      createdAt: REQUEST.createdAt,
+      listing: REQUEST.listing,
+    },
+  ],
+  consents: [
+    {
+      purpose: "request_transfer",
+      action: "grant",
+      textVersion: 1,
+      source: "tma",
+      at: REQUEST.createdAt,
+      listing: REQUEST.listing,
+    },
+  ],
+};
+
+const OUTBOX: OutboxHealth = {
+  counts: { pending: 1, sending: 0, sent: 12, failed: 0, dead: 1 },
+  oldestPendingAt: iso,
+  deadTotal: 1,
+  dead: [
+    {
+      id: "00000000-0000-4000-8a00-000000000001",
+      kind: "vendor.request_new",
+      recipientKind: "vendor_user",
+      recipientRef: "00000000",
+      attempts: 8,
+      error: "api 403: Forbidden: bot was blocked by the user",
+      createdAt: iso,
+      lastAttemptAt: iso,
+      request: { id: REQUEST_ID, publicNo: REQUEST.publicNo },
+    },
+  ],
+};
+
+const AUDIT: AuditList = {
+  total: 1,
+  items: [
+    {
+      id: "1",
+      at: iso,
+      actorKind: "staff",
+      actor: { id: STAFF.id, name: STAFF.displayName },
+      action: "request.remind",
+      objectType: "request",
+      objectId: REQUEST_ID,
+      detail: { recipients: 1 },
+      source: "admin",
+    },
+  ],
+};
+
+const TEAM: TeamList = {
+  items: [
+    {
+      id: STAFF.id,
+      displayName: STAFF.displayName,
+      username: STAFF.username,
+      role: "admin",
+      active: true,
+      linked: true,
+      linkedAt: iso,
+      createdAt: iso,
+      self: true,
+    },
+    {
+      id: "00000000-0000-4000-8600-000000000002",
+      displayName: "Бахтиёр Менеджеров",
+      username: "bakhtiyor_ops",
+      role: "manager",
+      active: true,
+      linked: false,
+      linkedAt: null,
+      createdAt: iso,
+      self: false,
+    },
+  ],
+};
+
+const SETTINGS: StaffSettings = {
+  items: [
+    { key: "sla_hours", value: 12, updatedAt: iso, updatedBy: null },
+    { key: "sla_reminder_hours", value: [4, 8], updatedAt: iso, updatedBy: null },
+    { key: "quiet_hours", value: { from: "22:00", to: "08:00" }, updatedAt: iso, updatedBy: null },
+    { key: "min_photos", value: 3, updatedAt: iso, updatedBy: STAFF.displayName },
+  ],
+};
+
+const REVISION: RevisionDetail = {
+  id: REVISION_ID,
+  status: "pending",
+  submittedAt: iso,
+  decidedAt: null,
+  listing: { id: LISTING_ID, name: "Lola zali", status: "active" },
+  vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
+  fields: ["name", "priceFromUzs"],
+  stale: false,
+  changes: [
+    { field: "name", before: "Lola zali", after: "Lola Grand" },
+    { field: "priceFromUzs", before: 150_000, after: 180_000 },
+  ],
+  valid: true,
+  decisionReason: null,
+  decidedBy: null,
 };
 
 export interface StaffApi {
@@ -312,11 +491,34 @@ export async function mockStaffApi(page: Page, { signedIn = true, botDown = fals
       const list: StaffRequestList = {
         total: 1,
         items: [REQUEST],
-        counts: { waiting: 0, overdue: 1, breached: 0, answered: 0, answered_late: 0, closed: 0 },
+        counts: {
+          waiting: 0,
+          overdue: 1,
+          breached: 0,
+          answered: 0,
+          answered_late: 0,
+          ops_contacted: 0,
+          closed: 0,
+        },
       };
       return json(route, 200, list);
     }
     if (key === `GET /staff/requests/${REQUEST_ID}`) return json(route, 200, REQUEST);
+    if (key === "GET /staff/revisions") {
+      const list: RevisionList = { total: 1, items: [REVISION] };
+      return json(route, 200, list);
+    }
+    if (key === `GET /staff/revisions/${REVISION_ID}`) return json(route, 200, REVISION);
+    if (key === "GET /staff/clients") {
+      const list: ClientList = { total: 1, items: [CLIENT_ITEM] };
+      return json(route, 200, list);
+    }
+    if (key === `GET /staff/clients/${CLIENT_ID}`) return json(route, 200, CLIENT);
+    if (key === "GET /staff/outbox") return json(route, 200, OUTBOX);
+    if (key === "GET /staff/audit") return json(route, 200, AUDIT);
+    if (key === "GET /staff/audit/pii") return json(route, 200, { total: 0, items: [] });
+    if (key === "GET /staff/team") return json(route, 200, TEAM);
+    if (key === "GET /staff/settings") return json(route, 200, SETTINGS);
 
     state.unexpected.push(key);
     return fail(route, 404, "not_found");

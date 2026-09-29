@@ -255,12 +255,7 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
 
   const notes = await trx
     .selectFrom("app.request_notes as n")
-    .select([
-      "n.id",
-      "n.body",
-      "n.created_at",
-      staffName("n.author_id").as("author"),
-    ])
+    .select(["n.id", "n.body", "n.created_at", staffName("n.author_id").as("author")])
     .where("n.request_id", "=", id)
     .orderBy("n.created_at")
     .orderBy("n.id")
