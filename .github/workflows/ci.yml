@@ -26,6 +26,24 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # supabase db push не применяет миграцию старше последней уже применённой: новая
+      # миграция PR обязана идти после всех миграций базовой ветки (иначе deploy падает)
+      - name: Migration order
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          base=$(git ls-tree --name-only FETCH_HEAD supabase/migrations/ | xargs -n1 basename | grep '\.sql$' | sort)
+          latest=$(printf '%s\n' "$base" | tail -n1)
+          status=0
+          for f in $(ls supabase/migrations | grep '\.sql$' | sort); do
+            if ! printf '%s\n' "$base" | grep -qxF "$f" && [[ ! "$f" > "$latest" ]]; then
+              echo "::error file=supabase/migrations/$f::Миграция $f старше последней в $BASE_REF ($latest) — переименуйте с более поздней меткой времени"
+              status=1
+            fi
+          done
+          exit $status
       - name: Lint
         run: pnpm exec biome ci .
       - name: Typecheck

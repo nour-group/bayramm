@@ -17,7 +17,7 @@ import {
   type RequestFacts,
 } from "./texts";
 
-/** Вид уведомления (app.outbox.kind) — список в миграции 20260930100000_bot_outbox_sla.sql */
+/** Вид уведомления (app.outbox.kind) — список в миграции 20260930110500_bot_outbox_sla.sql */
 export const NOTICE_KINDS = [
   "vendor.request_new",
   "vendor.sla_reminder",
