@@ -3,6 +3,7 @@ import { type UIEvent, useMemo, useState } from "react";
 import { isNotFound } from "../api/errors";
 import { Calendar } from "../components/Calendar";
 import { Link } from "../components/Link";
+import { NewBadge } from "../components/NewBadge";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
 import { EmptyState, ErrorState, Loading } from "../components/States";
@@ -94,9 +95,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
           <h1 className="screen-title" tabIndex={-1}>
             {listing.name}
           </h1>
-          <span className="badge-new" title={t.newBadgeHint}>
-            {t.newBadge}
-          </span>
+          <NewBadge />
         </div>
         <p className="venue-meta">
           <Icon name="pin" size={14} />

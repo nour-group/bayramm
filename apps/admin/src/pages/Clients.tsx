@@ -3,6 +3,7 @@
    согласий, блокировка с причиной; телефон — только администратору и с причиной. */
 
 import type { ClientDetail, ClientList, RevealedPhone } from "@bayramm/shared/api/staff";
+import { SearchField } from "@bayramm/ui/react";
 import { useCallback, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { formatDay, formatMoment } from "../format";
@@ -34,11 +35,10 @@ export function ClientsPage() {
           setQuery(q.trim());
         }}
       >
-        <input
-          className="input search"
-          type="search"
+        <SearchField
+          className="search"
           value={q}
-          onChange={(event) => setQ(event.target.value)}
+          onChange={setQ}
           placeholder={t.clientsSearch}
           aria-label={t.search}
           aria-describedby="clients-search-hint"

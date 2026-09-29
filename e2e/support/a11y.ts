@@ -15,9 +15,9 @@ const BLOCKING = new Set(["serious", "critical"]);
 const EXEMPT: readonly { readonly rule: string; readonly within: string; readonly why: string }[] = [
   {
     // Только в выборе даты: там занятый день — неактивная кнопка. В календаре карточки
-    // площадки (.cal-view) число — текст с парой muted/busy, исключения нет
+    // площадки (.ui-cal.is-view) число — текст с парой muted/busy, исключения нет
     rule: "color-contrast",
-    within: "button.cal-day.busy",
+    within: "button.ui-cal-day.is-busy",
     why: "busyInk на busy: занятый день выбрать нельзя, он намеренно выцветает",
   },
 ];

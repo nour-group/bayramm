@@ -1,4 +1,5 @@
 import type { StaffDictionaries } from "@bayramm/shared/api/staff";
+import { UiTextsProvider } from "@bayramm/ui/react";
 import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Session, SessionContext, useLoad } from "./api";
 import { Login } from "./Login";
@@ -286,11 +287,18 @@ export function App() {
     [token, staff, onExpired],
   );
 
-  if (session && staff)
-    return (
-      <SessionContext.Provider value={session}>
-        <Shell staff={staff} onSignOut={onSignOut} />
-      </SessionContext.Provider>
-    );
-  return <Login checking={auth.kind === "checking"} error={auth.kind === "signedOut" ? auth.error : null} />;
+  return (
+    <UiTextsProvider texts={UI_TEXTS}>
+      {session && staff ? (
+        <SessionContext.Provider value={session}>
+          <Shell staff={staff} onSignOut={onSignOut} />
+        </SessionContext.Provider>
+      ) : (
+        <Login checking={auth.kind === "checking"} error={auth.kind === "signedOut" ? auth.error : null} />
+      )}
+    </UiTextsProvider>
+  );
 }
+
+/** Подписи кнопок своих контролов: крестик шторки, очистка поиска */
+const UI_TEXTS = { close: t.close, clear: t.clear };

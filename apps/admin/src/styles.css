@@ -374,8 +374,7 @@ body {
 }
 
 /* Неактивная кнопка: не прозрачностью (контраст), а приглушённым видом */
-.btn:disabled,
-.btn-disabled {
+.btn:disabled {
   border-color: var(--rule);
   background: var(--paper);
   color: var(--muted);
@@ -402,6 +401,12 @@ textarea.input {
   background: var(--paper);
 }
 
+/* Число из набора (NumberStepper) — скругление как у полей панели */
+.field .ui-number-input {
+  border-radius: var(--r-8);
+}
+
+/* Поле поиска — SearchField из @bayramm/ui/react; здесь только место в строке */
 .search {
   flex: 1 1 240px;
   width: auto;
@@ -732,22 +737,9 @@ textarea.input {
   border-bottom: 0;
 }
 
-.check label,
-.check-line {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-9);
-  min-height: var(--hit-min);
+/* Галочки — Checkbox из @bayramm/ui/react */
+.check .ui-check {
   font-weight: 600;
-  cursor: pointer;
-}
-
-.check input,
-.check-line input {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  accent-color: var(--plum);
 }
 
 /* Телефоны: скрыты до «Показать» */
@@ -881,10 +873,10 @@ textarea.input {
   gap: var(--gap-5);
 }
 
+/* Загрузка: галочка «нет лиц» и FileDrop во всю ширину панели */
 .upload {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: var(--gap-9);
   margin-top: 12px;
 }

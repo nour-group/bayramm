@@ -1,5 +1,6 @@
 import { parseStartParam } from "@bayramm/tg";
-import { useEffect, useRef } from "react";
+import { UiTextsProvider } from "@bayramm/ui/react";
+import { useEffect, useMemo, useRef } from "react";
 import { LangSwitch } from "./components/LangSwitch";
 import { Link } from "./components/Link";
 import { EmptyState } from "./components/States";
@@ -85,6 +86,8 @@ function Shell() {
   const main = useRef<HTMLElement>(null);
   const shown = useRef<string | null>(null);
   const started = useRef(false);
+  // Подписи кнопок своих контролов (@bayramm/ui/react) — на языке клиента
+  const uiTexts = useMemo(() => ({ close: t.infoClose, clear: t.clearField }), [t]);
 
   useBackButton(webApp, inner, back);
 
@@ -129,31 +132,33 @@ function Shell() {
   }, [screenKey]);
 
   return (
-    <div className={inner ? "app inner" : "app"}>
-      <a className="skip" href="#main">
-        {t.skipToMain}
-      </a>
-      <header className="top">
-        {inner && !hasNativeBack(webApp) ? (
-          <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
-            <Icon name="back" size={17} />
-          </button>
+    <UiTextsProvider texts={uiTexts}>
+      <div className={inner ? "app inner" : "app"}>
+        <a className="skip" href="#main">
+          {t.skipToMain}
+        </a>
+        <header className="top">
+          {inner && !hasNativeBack(webApp) ? (
+            <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
+              <Icon name="back" size={17} />
+            </button>
+          ) : null}
+          <Link className="brand" href={hrefFor({ name: "catalog" })}>
+            Bayramm
+          </Link>
+          <LangSwitch />
+        </header>
+        {api.mode === "mock" ? (
+          <p className="demo-ribbon" role="note">
+            {t.demoData}
+          </p>
         ) : null}
-        <Link className="brand" href={hrefFor({ name: "catalog" })}>
-          Bayramm
-        </Link>
-        <LangSwitch />
-      </header>
-      {api.mode === "mock" ? (
-        <p className="demo-ribbon" role="note">
-          {t.demoData}
-        </p>
-      ) : null}
-      <main id="main" className="main" tabIndex={-1} ref={main}>
-        <Screen match={match} />
-      </main>
-      {inner ? null : <Tabs current={tabOf(match)} />}
-    </div>
+        <main id="main" className="main" tabIndex={-1} ref={main}>
+          <Screen match={match} />
+        </main>
+        {inner ? null : <Tabs current={tabOf(match)} />}
+      </div>
+    </UiTextsProvider>
   );
 }
 

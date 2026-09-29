@@ -3,6 +3,7 @@
    ни отключить, ни понизить. */
 
 import type { StaffRole, TeamList, TeamMember } from "@bayramm/shared/api/staff";
+import { Select } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
 import { type Failure, useLoad, useSession } from "../api";
 import { formatMoment } from "../format";
@@ -10,6 +11,7 @@ import { t } from "../texts";
 import { ConfirmForm, ErrorText, Field, fieldErrors, LoadedView, Pill } from "../ui";
 
 const ROLES: readonly StaffRole[] = ["admin", "manager", "moderator"];
+const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: t.roles[role] }));
 
 export function TeamPage() {
   const { loaded, reload, set } = useLoad<TeamList>("/staff/team");
@@ -86,18 +88,14 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
         </Field>
         <Field label={t.inviteRole} error={errors.role} hint={t.roleHints[role]}>
           {(props) => (
-            <select
+            <Select
               {...props}
               className="input"
+              label={t.inviteRole}
               value={role}
-              onChange={(event) => setRole(event.target.value as StaffRole)}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {t.roles[r]}
-                </option>
-              ))}
-            </select>
+              onChange={setRole}
+              options={ROLE_OPTIONS}
+            />
           )}
         </Field>
       </div>
@@ -182,21 +180,14 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
           t.roles[member.role]
         ) : (
           <div className="role-edit">
-            <label htmlFor={roleId} className="visually-hidden">
-              {t.changeRole}: {member.displayName}
-            </label>
-            <select
+            <Select
               id={roleId}
               className="input"
+              label={`${t.changeRole}: ${member.displayName}`}
               value={role}
-              onChange={(event) => setRole(event.target.value as StaffRole)}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {t.roles[r]}
-                </option>
-              ))}
-            </select>
+              onChange={setRole}
+              options={ROLE_OPTIONS}
+            />
             {role !== member.role && (
               <button type="button" className="btn btn-sm" onClick={changeRole} disabled={busy}>
                 {t.changeRole}

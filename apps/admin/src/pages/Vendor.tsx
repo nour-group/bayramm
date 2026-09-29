@@ -11,6 +11,7 @@ import type {
   VendorUser,
   VendorUserInput,
 } from "@bayramm/shared/api/staff";
+import { Checkbox } from "@bayramm/ui/react";
 import { type FormEvent, useCallback, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { formatMoment, formatPrice } from "../format";
@@ -135,15 +136,13 @@ function Checklist({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: V
           const mark = vendor.checklist[item];
           return (
             <li key={item}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={mark.done}
-                  disabled={!can("vendors.write") || busy !== null}
-                  onChange={(event) => void toggle(item, event.target.checked)}
-                />
-                <span>{t.checklistItems[item]}</span>
-              </label>
+              <Checkbox
+                checked={mark.done}
+                disabled={!can("vendors.write") || busy !== null}
+                onChange={(done) => void toggle(item, done)}
+              >
+                {t.checklistItems[item]}
+              </Checkbox>
               {mark.done && mark.at && (
                 <span className="sub">{t.checkedBy(mark.by, formatMoment(mark.at))}</span>
               )}

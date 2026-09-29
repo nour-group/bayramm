@@ -142,6 +142,26 @@ export const byText = <T extends Element = HTMLElement>(
     typeof content === "string" ? el.textContent?.trim() === content : content.test(el.textContent ?? ""),
   ) ?? null) as T | null;
 
+/** Выпадающий список набора: открыть и выбрать вариант по тексту */
+export async function choose(trigger: Element | null | undefined, option: string): Promise<void> {
+  await click(trigger);
+  const item = [...document.querySelectorAll('[role="option"]')].find(
+    (o) => o.textContent?.trim() === option,
+  );
+  if (!item) throw new Error(`нет варианта «${option}»`);
+  await click(item);
+}
+
+/** Поле даты набора: открыть календарь и нажать день по началу его имени («15 окт») */
+export async function pickDate(trigger: Element | null | undefined, day: string): Promise<void> {
+  await click(trigger);
+  await click(calendarDay(day));
+}
+
+/** День календаря по началу имени для диктора: «8 окт» → «8 окт, занято» */
+export const calendarDay = (day: string) =>
+  document.querySelector<HTMLButtonElement>(`button.ui-cal-day[aria-label^="${day}"]`);
+
 /** Метка поля формы по началу текста подписи → связанный элемент */
 export function field(labelStart: string): HTMLInputElement | null {
   const label = [...document.querySelectorAll("label")].find((l) =>

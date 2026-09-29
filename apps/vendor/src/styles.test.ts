@@ -52,7 +52,6 @@ describe("styles.css кабинета вендора", () => {
     ".back-link",
     ".pill",
     ".rq",
-    ".choice",
     ".field",
     ".cal-day",
     ".tab",
