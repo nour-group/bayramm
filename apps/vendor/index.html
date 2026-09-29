@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Bayramm — кабинет вендора</title>
-    <!-- SDK Mini App (CSP: telegramWebApp). defer — выполнится до модуля приложения, не задерживая разбор -->
+    <!-- SDK Mini App (CSP: telegramWebApp). defer — выполнится до модуля приложения, не задерживая разбор.
+         Без integrity: Telegram обновляет файл по тому же адресу, хэш сломал бы вход; CSP пускает только этот путь -->
+    <!-- nosemgrep: html.security.audit.missing-integrity.missing-integrity -->
     <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
   </head>
   <body>
