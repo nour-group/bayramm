@@ -2,19 +2,30 @@
   "name": "@bayramm/ui",
   "private": true,
   "type": "module",
-  "description": "Дизайн-токены Bayramm: палитра двух тем, шкалы, движение, безопасные зоны; свои шрифты (woff2). Экспортирует исходники TS и CSS, сборки нет.",
+  "description": "Дизайн-система Bayramm: токены двух тем, шкалы, движение, безопасные зоны, свои шрифты (woff2) и свои контролы на React вместо системных. Экспортирует исходники TS и CSS, сборки нет.",
   "exports": {
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
-    "./fonts.css": "./src/fonts.css"
+    "./fonts.css": "./src/fonts.css",
+    "./react": "./src/react/index.ts",
+    "./kit.css": "./src/react/kit.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "css": "vitest run -u src/tokens.test.ts"
   },
+  "peerDependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^30.1.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "typescript": "^6.0.2",
     "vitest": "^5.0.1"
   }
