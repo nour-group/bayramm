@@ -64,6 +64,11 @@ const UNIQUE_CONSTRAINTS: Readonly<Record<string, { code: string; message: strin
   vendor_contacts_stir_key: { code: "stir_taken", message: "This STIR belongs to another vendor" },
   vendor_users_phone_hash_key: { code: "phone_taken", message: "This phone is already used for sign-in" },
   listing_packages_day_kind: { code: "duplicate_package", message: "Package of this kind already exists" },
+  // app.assert_staff_username_free: имя пользователя Telegram у действующего сотрудника
+  staff_profiles_telegram_username_active: {
+    code: "username_taken",
+    message: "This Telegram username belongs to an active staff member",
+  },
 };
 
 // ── ошибки Postgres ────────────────────────────────────────────────────────
@@ -117,6 +122,12 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
   // 20260930110000_client_api.sql
   BR014: { status: 429, code: "daily_request_limit", message: "Daily request limit reached" },
   BR015: { status: 422, code: "guests_over_capacity", message: "Guests exceed listing capacity" },
+  // 20260930180000_admin_v02.sql
+  BR016: { status: 429, code: "reminder_too_soon", message: "Vendor was reminded recently" },
+  BR017: { status: 409, code: "staff_last_admin", message: "At least one active admin must remain" },
+  BR018: { status: 409, code: "staff_self", message: "Staff cannot change their own access" },
+  BR019: { status: 409, code: "request_not_awaiting", message: "Request is not awaiting a vendor response" },
+  BR020: { status: 409, code: "vendor_unreachable", message: "Vendor has no Telegram-linked users" },
 };
 
 // У publish_blocked в DETAIL — коды недостающих пунктов через запятую

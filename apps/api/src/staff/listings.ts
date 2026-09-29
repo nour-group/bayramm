@@ -26,6 +26,7 @@ import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
 import { type Tx, withActor } from "../db/actor";
+import { hasListingPhone, readListingPhone, saveListingPhone, staffName } from "../db/pii";
 import type { AppEnv } from "../env";
 import { ApiError, notFound, versionConflict } from "../errors";
 import { requirePermission } from "./access";
@@ -36,10 +37,10 @@ import { definedOnly, readReason } from "./vendors";
 
 export const listings = new Hono<AppEnv>();
 
-const PRICE_UNITS = ["per_guest", "per_event"] as const satisfies readonly PriceUnit[];
-const PACKAGE_KINDS = ["weekday", "weekend", "custom"] as const;
-const MAX_PRICE = 99_999_999_999;
-const MAX_PACKAGES = 10;
+export const PRICE_UNITS = ["per_guest", "per_event"] as const satisfies readonly PriceUnit[];
+export const PACKAGE_KINDS = ["weekday", "weekend", "custom"] as const;
+export const MAX_PRICE = 99_999_999_999;
+export const MAX_PACKAGES = 10;
 
 // ── чтение ──────────────────────────────────────────────────────────────────
 
@@ -95,7 +96,7 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       "v.id as vendor_id",
       "v.public_code",
       "v.name as vendor_name",
-      sql<boolean>`exists (select 1 from pii.listing_contacts c where c.listing_id = l.id)`.as("has_phone"),
+      hasListingPhone("l.id").as("has_phone"),
       blockers("l.id", "review").as("blockers_review"),
       blockers("l.id", "active").as("blockers_active"),
     ])
@@ -119,8 +120,7 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       "h.reason",
       "h.actor_kind",
       "h.at",
-      sql<string | null>`case when h.actor_kind = 'staff'
-        then (select p.display_name from pii.staff_profiles p where p.staff_id = h.actor_id) end`.as(
+      sql<string | null>`case when h.actor_kind = 'staff' then ${staffName("h.actor_id")} end`.as(
         "actor_name",
       ),
     ])
@@ -345,7 +345,11 @@ async function assertDistrict(trx: Tx, code: string | null | undefined): Promise
 // Набор пакетов заменяется целиком. Будни и выходные обновляются на месте (у
 // опубликованного зала их нельзя удалить даже на миг — триггер), произвольные
 // пересоздаются; убранные удаляются последними
-async function replacePackages(trx: Tx, listingId: string, packages: StaffListingPackage[]): Promise<void> {
+export async function replacePackages(
+  trx: Tx,
+  listingId: string,
+  packages: readonly StaffListingPackage[],
+): Promise<void> {
   const existing = await trx
     .selectFrom("app.listing_packages")
     .select(["id", "kind"])
@@ -381,30 +385,9 @@ async function replacePackages(trx: Tx, listingId: string, packages: StaffListin
   }
 }
 
-// Телефон для заявок: столбец API не читает — UPDATE, а если строки нет, INSERT.
-// null — убрать (у карточки на проверке или в каталоге триггер не даст)
-async function savePhone(trx: Tx, listingId: string, phone: string | null): Promise<void> {
-  if (phone === null) {
-    await trx.deleteFrom("pii.listing_contacts").where("listing_id", "=", listingId).execute();
-    return;
-  }
-  const updated = await trx
-    .updateTable("pii.listing_contacts")
-    .set({ public_phone: phone })
-    .where("listing_id", "=", listingId)
-    .returning("listing_id")
-    .executeTakeFirst();
-  if (!updated) {
-    await trx
-      .insertInto("pii.listing_contacts")
-      .values({ listing_id: listingId, public_phone: phone })
-      .execute();
-  }
-}
-
 async function saveExtras(trx: Tx, listingId: string, parsed: ParsedListing): Promise<void> {
   if (parsed.packages !== undefined) await replacePackages(trx, listingId, parsed.packages);
-  if (parsed.phone !== undefined) await savePhone(trx, listingId, parsed.phone);
+  if (parsed.phone !== undefined) await saveListingPhone(trx, listingId, parsed.phone);
 }
 
 // ── создать ─────────────────────────────────────────────────────────────────
@@ -603,9 +586,7 @@ listings.post("/:id/phone", requirePermission("vendor_phones.read"), limitJson, 
   const phone = await withActor(c.var.db, staffOf(c), async (trx) => {
     const exists = await trx.selectFrom("app.listings").select("id").where("id", "=", id).executeTakeFirst();
     if (!exists) throw notFound();
-    const { rows } = await sql<{ phone: string | null }>`
-      select pii.read_listing_phone(${id}::uuid, ${reason}::text) as phone`.execute(trx);
-    return rows[0]?.phone ?? null;
+    return readListingPhone(trx, id, reason);
   });
   return c.json({ phone });
 });

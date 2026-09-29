@@ -7,7 +7,7 @@
 //
 // Данные клиента — ровно по согласию: имя и комментарий видны, пока согласие
 // действует и заявка не отозвана (политика request_contacts_read), телефон —
-// только через pii.read_request_phone, каждое чтение — в pii_access_log.
+// только через readRequestPhone (db/pii), каждое чтение — в pii_access_log.
 // Какие переходы статусов разрешены, решает база (app.request_transitions);
 // отказ «занято» сам занимает дату в календаре (триггер).
 
@@ -29,6 +29,7 @@ import {
 import { sql } from "kysely";
 import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
+import { readRequestPhone, requestContactsAs } from "../db/pii";
 import { ApiError, notFound } from "../errors";
 
 export const PAGE_LIMIT_DEFAULT = 30;
@@ -142,7 +143,7 @@ function requestsOf(trx: Tx, actor: VendorActor) {
   return trx
     .selectFrom("app.requests as r")
     .innerJoin("app.listings as l", "l.id", "r.listing_id")
-    .leftJoin("pii.request_contacts as rc", (join) =>
+    .leftJoin(requestContactsAs("rc"), (join) =>
       join.onRef("rc.request_id", "=", "r.id").on("rc.purged_at", "is", null),
     )
     .select([
@@ -285,9 +286,7 @@ export async function getRequest(db: Db, actor: VendorActor, id: string): Promis
 
     let phone: string | null = null;
     if (row.contact_name !== null) {
-      const { rows } = await sql<{ phone: string | null }>`
-        select pii.read_request_phone(${id}::uuid) as phone`.execute(trx);
-      phone = rows[0]?.phone ?? null;
+      phone = await readRequestPhone(trx, id);
     }
 
     const history = await trx

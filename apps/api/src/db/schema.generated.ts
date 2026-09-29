@@ -307,6 +307,14 @@ export interface AppPiiAccessLog {
   subject_kind: string;
 }
 
+export interface AppRequestNotes {
+  author_id: Generated<string>;
+  body: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  request_id: string;
+}
+
 export interface AppRequests {
   budget_max_uzs: Int8 | null;
   budget_min_uzs: Int8 | null;
@@ -504,6 +512,7 @@ export interface DB {
   "app.outbox": AppOutbox;
   "app.photos": AppPhotos;
   "app.pii_access_log": AppPiiAccessLog;
+  "app.request_notes": AppRequestNotes;
   "app.request_status_log": AppRequestStatusLog;
   "app.request_transitions": AppRequestTransitions;
   "app.requests": AppRequests;

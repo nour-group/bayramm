@@ -7,6 +7,7 @@ import { type Lang, trimTrailingSlashes } from "@bayramm/shared";
 import { type CatalogLinkFilters, clientCatalogPath, clientRequestPath } from "@bayramm/shared/api";
 import { sql } from "kysely";
 import type { Tx } from "../db/actor";
+import { clientProfilesAs, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
 import type { AppActorKind, Json } from "../db/schema.generated";
 import type { ReplyMarkup, SendMessageParams } from "../telegram/client";
 import {
@@ -18,10 +19,14 @@ import {
   type RequestFacts,
 } from "./texts";
 
-/** Вид уведомления (app.outbox.kind) — список в миграции 20260930110500_bot_outbox_sla.sql */
+/**
+ * Вид уведомления (app.outbox.kind) — список в миграции 20260930110500_bot_outbox_sla.sql;
+ * vendor.ops_reminder — напоминание от сотрудника (20260930180000_admin_v02.sql)
+ */
 export const NOTICE_KINDS = [
   "vendor.request_new",
   "vendor.sla_reminder",
+  "vendor.ops_reminder",
   "client.request_status",
   "client.sla_breach",
   "ops.sla_breach",
@@ -100,7 +105,7 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
     case "vendor_user": {
       const user = await trx
         .selectFrom("app.vendor_users as u")
-        .leftJoin("pii.vendor_user_profiles as p", "p.vendor_user_id", "u.id")
+        .leftJoin(vendorUserProfilesAs("p"), "p.vendor_user_id", "u.id")
         .select(["u.vendor_id", "u.locale", "u.disabled_at", "u.tg_linked_at", "p.telegram_chat_id"])
         .where("u.id", "=", id)
         .executeTakeFirst();
@@ -113,7 +118,7 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
     case "client": {
       const client = await trx
         .selectFrom("app.clients as c")
-        .leftJoin("pii.client_profiles as p", "p.client_id", "c.id")
+        .leftJoin(clientProfilesAs("p"), "p.client_id", "c.id")
         .select(["c.locale", "p.telegram_id", sql<boolean>`app.client_notifiable(c.id)`.as("notifiable")])
         .where("c.id", "=", id)
         .executeTakeFirst();
@@ -126,7 +131,7 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
     case "staff": {
       const staff = await trx
         .selectFrom("app.staff as s")
-        .innerJoin("pii.staff_profiles as p", "p.staff_id", "s.id")
+        .innerJoin(staffProfilesAs("p"), "p.staff_id", "s.id")
         .select(["s.active", "s.role", "p.telegram_chat_id"])
         .where("s.id", "=", id)
         .executeTakeFirst();
@@ -265,6 +270,8 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
         button(t.buttons.openRequest, vendorRequestUrl(urls, requestId)),
       );
     }
+    case "vendor.ops_reminder":
+      return message(t.opsReminder(facts), button(t.buttons.openRequest, vendorRequestUrl(urls, requestId)));
     case "client.request_status":
       switch (field(row.payload, "status")) {
         case "contacted":

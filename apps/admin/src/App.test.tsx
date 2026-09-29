@@ -15,9 +15,18 @@ const TOKEN = "T".repeat(43);
 const BOT = "example_login_bot";
 const STAFF = {
   id: "00000000-0000-0000-0000-00000000b001",
-  role: "moderator",
-  displayName: "Test Moderator",
-  username: "test_moderator",
+  role: "manager",
+  displayName: "Test Manager",
+  username: "test_manager",
+  permissions: [
+    "catalog.read",
+    "vendors.write",
+    "listings.write",
+    "requests.read",
+    "requests.write",
+    "clients.read",
+    "outbox.read",
+  ],
 };
 const WIDGET_FIELDS = {
   id: "100000001",
@@ -164,8 +173,8 @@ describe("вход в панель оператора", () => {
     expect(window.location.search).toBe("");
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBe(TOKEN);
     expect(window.localStorage.length).toBe(0);
-    expect(container.querySelector(".who")?.textContent).toContain("Test Moderator");
-    expect(container.querySelector(".who")?.textContent).toContain("Модератор");
+    expect(container.querySelector(".who")?.textContent).toContain("Test Manager");
+    expect(container.querySelector(".who")?.textContent).toContain("Менеджер");
   });
 
   it.each([
@@ -319,10 +328,17 @@ describe("оболочка панели оператора", () => {
     expect(heading()).toBe("Вендоры");
   });
 
+  it("в навигации — только разделы роли: менеджеру журнал, команда и настройки не показываются", async () => {
+    await mount("/vendors");
+    const nav = [...container.querySelectorAll(".nav a")].map((a) => a.textContent);
+    expect(nav).toEqual(["Вендоры", "Модерация", "Заявки", "Клиенты", "Уведомления"]);
+  });
+
   it.each([
     ["Модерация", "/moderation"],
     ["Заявки", "/requests"],
     ["Клиенты", "/clients"],
+    ["Уведомления", "/notifications"],
   ])("переход в «%s» без перезагрузки", async (name, path) => {
     await mount("/vendors");
     act(() => link(name).click());

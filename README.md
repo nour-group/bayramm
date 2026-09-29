@@ -11,6 +11,7 @@ Toshkentdagi bayramlar uchun pudratchilar platformasi — Telegram Mini App va s
 | Baza | `supabase/` | Postgres (Supabase), migratsiyalar |
 | Umumiy kod | `packages/` | TypeScript |
 | Interfeys prototiplari | `prototypes/` | HTML + jsdom testlari |
+| Brauzer testlari | `e2e/` | Playwright · axe-core |
 
 ## Ishga tushirish
 
@@ -29,6 +30,7 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm e2e    # brauzerda (Chromium): pnpm --filter @bayramm/e2e e2e:install
 ```
 
 Kod qoidalari va konvensiyalar — [`CLAUDE.md`](CLAUDE.md). Zaiflik topsangiz — [`SECURITY.md`](SECURITY.md).

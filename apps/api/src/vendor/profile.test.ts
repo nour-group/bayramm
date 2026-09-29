@@ -127,7 +127,7 @@ describe("getListing", () => {
       },
     ]);
     const main = fake.queries.find((q) => q.sql.includes('from "app"."listings"'));
-    expect(main?.sql).toContain("pii.read_listing_phone(id)");
+    expect(main?.sql).toContain('pii.read_listing_phone("id")');
     expect(main?.parameters).toEqual([LISTING_ID, ACTOR.vendorId]);
     const photos = fake.queries.find((q) => q.sql.includes('"app"."photos"'));
     expect(photos?.sql).toContain('"deleted_at" is null');

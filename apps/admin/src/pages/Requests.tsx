@@ -1,10 +1,12 @@
-/* Заявки: без ответа — сверху, ближайший срок первым. Фильтр по состоянию срока ответа.
-   Заявка: данные, история, телефоны — скрыты до «Показать» (просмотр — в журнал). */
+/* Заявки: без ответа — сверху, ближайший срок первым; «Требуют действия» — очередь
+   просроченных. Заявка: данные, срок ответа по шагам, работа с заявкой (напомнить вендору,
+   «связались»), заметки команды, история; телефоны — скрыты до «Показать» (в журнал). */
 
-import { formatUzPhone } from "@bayramm/shared";
 import type {
   RequestVendorPhones,
   RevealedPhone,
+  SlaEvent,
+  SlaFilter,
   SlaState,
   StaffDictionaries,
   StaffRequestDetail,
@@ -13,16 +15,28 @@ import type {
 import { type FormEvent, useCallback, useId, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { formatDay, formatMoment, formatSum, vendorLabel } from "../format";
-import { apiErrorText, t } from "../texts";
-import { ErrorText, Link, LoadedView, PhoneReveal, Pill, type Tone, useEntityTitle } from "../ui";
+import { t } from "../texts";
+import {
+  ConfirmForm,
+  ErrorText,
+  Link,
+  LoadedView,
+  PhoneReveal,
+  Pill,
+  ReasonPhoneReveal,
+  type Tone,
+  useEntityTitle,
+} from "../ui";
 
-const SLA_FILTERS: readonly (SlaState | null)[] = [
+const SLA_FILTERS: readonly (SlaFilter | null)[] = [
   null,
+  "late",
   "waiting",
   "overdue",
   "breached",
   "answered_late",
   "answered",
+  "ops_contacted",
   "closed",
 ];
 
@@ -32,6 +46,7 @@ const SLA_TONE: Record<SlaState, Tone> = {
   breached: "warn",
   answered: "good",
   answered_late: "muted",
+  ops_contacted: "muted",
   closed: "muted",
 };
 
@@ -43,8 +58,17 @@ function occasionName(dictionaries: StaffDictionaries | null, code: string): str
   return dictionaries?.occasions.find((o) => o.code === code)?.nameRu ?? code;
 }
 
+function filterLabel(filter: SlaFilter | null): string {
+  if (filter === null) return t.all;
+  return filter === "late" ? t.slaLate : (t.sla[filter] ?? filter);
+}
+
+function filterCount(list: StaffRequestList, filter: SlaFilter): number {
+  return filter === "late" ? list.counts.overdue + list.counts.breached : list.counts[filter];
+}
+
 export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries | null }) {
-  const [sla, setSla] = useState<SlaState | null>(null);
+  const [sla, setSla] = useState<SlaFilter | null>(null);
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const params = new URLSearchParams({ limit: "100" });
@@ -87,8 +111,8 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                   aria-pressed={sla === filter}
                   onClick={() => setSla(filter)}
                 >
-                  {filter ? t.sla[filter] : t.all}
-                  {filter && <span className="chip-count">{list.counts[filter]}</span>}
+                  {filterLabel(filter)}
+                  {filter && <span className="chip-count">{filterCount(list, filter)}</span>}
                 </button>
               ))}
             </fieldset>
@@ -130,6 +154,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                           <SlaPill sla={request.sla} />
                           <span className="sub">
                             {t.dueIn} {formatMoment(request.slaDueAt)}
+                            {request.reminders > 0 ? ` · ${t.reminders(request.reminders)}` : ""}
                           </span>
                         </td>
                       </tr>
@@ -147,10 +172,10 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
 }
 
 export function RequestPage({ id, dictionaries }: { id: string; dictionaries: StaffDictionaries | null }) {
-  const { loaded, reload } = useLoad<StaffRequestDetail>(`/staff/requests/${id}`);
+  const { loaded, reload, set } = useLoad<StaffRequestDetail>(`/staff/requests/${id}`);
   return (
     <LoadedView loaded={loaded} onRetry={reload}>
-      {(request) => <RequestView request={request} dictionaries={dictionaries} />}
+      {(request) => <RequestView request={request} dictionaries={dictionaries} onChange={set} />}
     </LoadedView>
   );
 }
@@ -158,12 +183,15 @@ export function RequestPage({ id, dictionaries }: { id: string; dictionaries: St
 function RequestView({
   request,
   dictionaries,
+  onChange,
 }: {
   request: StaffRequestDetail;
   dictionaries: StaffDictionaries | null;
+  onChange: (request: StaffRequestDetail) => void;
 }) {
   useEntityTitle(`${t.views.request} ${t.requestNo(request.publicNo)}`);
   const { api } = useSession();
+  const can = useCan();
   const [vendorPhones, setVendorPhones] = useState<Promise<Result<RequestVendorPhones>> | null>(null);
   const loadVendor = useCallback(() => {
     const pending =
@@ -175,6 +203,13 @@ function RequestView({
     const result = await loadVendor();
     return result.ok ? { ok: true, data: result.data[key] } : result;
   };
+  const loadClientPhone = useCallback(
+    async (reason: string): Promise<Result<string | null>> => {
+      const result = await api.post<RevealedPhone>(`/staff/requests/${request.id}/client-phone`, { reason });
+      return result.ok ? { ok: true, data: result.data.phone } : result;
+    },
+    [api, request.id],
+  );
   const budget =
     request.budgetMinUzs !== null || request.budgetMaxUzs !== null
       ? `${formatSum(request.budgetMinUzs)} — ${formatSum(request.budgetMaxUzs)}`
@@ -185,6 +220,7 @@ function RequestView({
       <p>
         <SlaPill sla={request.sla} /> <Pill tone="outline">{t.requestStatus[request.status]}</Pill>
       </p>
+      {can("requests.write") && <RequestActions request={request} onChange={onChange} />}
       <div className="columns">
         <div className="stack">
           <section className="panel">
@@ -223,6 +259,8 @@ function RequestView({
               <dd>{request.source}</dd>
             </dl>
           </section>
+          <Timeline events={request.timeline} />
+          <Notes request={request} onChange={onChange} />
           <section className="panel" aria-labelledby="history-title">
             <h2 id="history-title">{t.history}</h2>
             <ol className="history">
@@ -254,7 +292,14 @@ function RequestView({
                     {request.comment}
                   </p>
                 )}
-                <ClientPhone requestId={request.id} />
+                {can("client_phones.read") && (
+                  <ReasonPhoneReveal
+                    label={t.clientPhone}
+                    hint={t.clientPhoneHint}
+                    reasonLabel={t.clientPhoneReason}
+                    load={loadClientPhone}
+                  />
+                )}
               </>
             )}
           </section>
@@ -270,63 +315,204 @@ function RequestView({
   );
 }
 
-/** Телефон клиента: только администратор и только с причиной — её видно в журнале */
-function ClientPhone({ requestId }: { requestId: string }) {
+// ── работа с заявкой ───────────────────────────────────────────────────────
+
+function RequestActions({
+  request,
+  onChange,
+}: {
+  request: StaffRequestDetail;
+  onChange: (request: StaffRequestDetail) => void;
+}) {
   const { api } = useSession();
-  const can = useCan();
-  const reasonId = useId();
-  const [reason, setReason] = useState("");
-  const [phone, setPhone] = useState<string | null | undefined>(undefined);
+  const [contacting, setContacting] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!can("client_phones.read")) return null;
+  const [sent, setSent] = useState(false);
 
-  const reveal = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    const result = await api.post<RevealedPhone>(`/staff/requests/${requestId}/client-phone`, { reason });
-    setBusy(false);
-    setFailure(result.ok ? null : result);
-    if (result.ok) setPhone(result.data.phone);
-  };
-
-  if (phone !== undefined)
+  if (!request.awaiting)
     return (
-      <p className="phone-row">
-        <span className="phone-label">{t.clientPhone}</span>
-        {phone ? (
-          <a className="phone-value" href={`tel:${phone}`}>
-            {formatUzPhone(phone)}
-          </a>
-        ) : (
-          <span className="muted">{t.notSet}</span>
-        )}
-      </p>
+      <section className="panel" aria-labelledby="actions-title">
+        <h2 id="actions-title">{t.requestActions}</h2>
+        <p className="muted">{t.notAwaiting}</p>
+      </section>
     );
 
+  const remind = async () => {
+    setBusy(true);
+    setSent(false);
+    const result = await api.post<StaffRequestDetail>(`/staff/requests/${request.id}/remind`);
+    setBusy(false);
+    setFailure(result.ok ? null : result);
+    if (result.ok) {
+      setSent(true);
+      onChange(result.data);
+    }
+  };
+
+  const contacted = async (comment: string): Promise<Failure | null> => {
+    const result = await api.post<StaffRequestDetail>(
+      `/staff/requests/${request.id}/contacted`,
+      comment ? { comment } : {},
+    );
+    if (!result.ok) return result;
+    setContacting(false);
+    onChange(result.data);
+    return null;
+  };
+
+  const unreachable = request.vendorReachable === 0;
+  const paused = request.nextReminderAt !== null;
   return (
-    <form className="confirm" onSubmit={reveal} noValidate>
-      <p className="muted small">{t.clientPhoneHint}</p>
-      <label htmlFor={reasonId}>{t.clientPhoneReason}</label>
-      <input
-        id={reasonId}
-        className="input"
-        value={reason}
-        maxLength={500}
-        onChange={(event) => setReason(event.target.value)}
-        required
-      />
-      <div>
-        <button type="submit" className="btn" disabled={busy || reason.trim() === ""}>
-          {t.show}
+    <section className="panel" aria-labelledby="actions-title">
+      <h2 id="actions-title">{t.requestActions}</h2>
+      <div className="acts">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={remind}
+          disabled={busy || unreachable || paused}
+        >
+          {t.remindVendor}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          aria-expanded={contacting}
+          onClick={() => setContacting(!contacting)}
+        >
+          {t.markContacted}
         </button>
       </div>
-      {failure &&
-        (failure.code === "invalid_input" ? (
-          <p className="field-error">{apiErrorText("reason_required")}</p>
-        ) : (
-          <ErrorText failure={failure} />
+      <p className="muted small">
+        {unreachable
+          ? t.remindUnreachable
+          : paused
+            ? t.remindAgainAt(formatMoment(request.nextReminderAt))
+            : t.remindHint}
+      </p>
+      {sent && (
+        <p className="saved" role="status">
+          {t.remindSent}
+        </p>
+      )}
+      {failure && <ErrorText failure={failure} />}
+      {contacting && (
+        <ConfirmForm
+          hint={t.markContactedHint}
+          label={t.comment}
+          submitLabel={t.markContacted}
+          onSubmit={contacted}
+          onCancel={() => setContacting(false)}
+        />
+      )}
+    </section>
+  );
+}
+
+// ── срок ответа по шагам ───────────────────────────────────────────────────
+
+function eventText(event: SlaEvent): string {
+  switch (event.kind) {
+    case "created":
+    case "viewed":
+    case "breached":
+      return t.timelineEvents[event.kind];
+    case "due":
+      return event.passed ? t.timelineEvents.due : t.timelineEvents.dueFuture;
+    case "response":
+      return `${t.timelineEvents.response} · ${t.historyBy[event.by]}`;
+    case "reminder":
+      return event.source === "ops" ? t.reminderOps(event.by) : t.reminderAuto(event.stage);
+  }
+}
+
+function Timeline({ events }: { events: readonly SlaEvent[] }) {
+  return (
+    <section className="panel" aria-labelledby="timeline-title">
+      <h2 id="timeline-title">{t.timeline}</h2>
+      <ol className="history timeline">
+        {events.map((event) => (
+          <li key={`${event.kind}-${event.at}`} className={`timeline-${event.kind}`}>
+            <span className="sub">{formatMoment(event.at)}</span> <strong>{eventText(event)}</strong>
+            {event.kind === "reminder" && (
+              <span className="sub">
+                {t.reminderDelivery(event.recipients, event.delivered, event.failed)}
+              </span>
+            )}
+          </li>
         ))}
-    </form>
+      </ol>
+    </section>
+  );
+}
+
+// ── заметки ────────────────────────────────────────────────────────────────
+
+function Notes({
+  request,
+  onChange,
+}: {
+  request: StaffRequestDetail;
+  onChange: (request: StaffRequestDetail) => void;
+}) {
+  const { api } = useSession();
+  const can = useCan();
+  const id = useId();
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+
+  const add = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    const result = await api.post<StaffRequestDetail>(`/staff/requests/${request.id}/notes`, { text });
+    setBusy(false);
+    setFailure(result.ok ? null : result);
+    if (result.ok) {
+      setText("");
+      onChange(result.data);
+    }
+  };
+
+  return (
+    <section className="panel" aria-labelledby="notes-title">
+      <h2 id="notes-title">{t.notes}</h2>
+      {request.notes.length === 0 ? (
+        <p className="muted">{t.notesEmpty}</p>
+      ) : (
+        <ol className="history notes">
+          {request.notes.map((note) => (
+            <li key={note.id}>
+              <span className="sub">
+                {formatMoment(note.at)}
+                {note.authorName ? ` · ${note.authorName}` : ""}
+              </span>
+              <p className="reason">{note.text}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+      {can("requests.write") && (
+        <form className="note-form" onSubmit={add} noValidate>
+          <label htmlFor={id}>{t.noteText}</label>
+          <textarea
+            id={id}
+            className="input"
+            rows={2}
+            maxLength={1000}
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+          />
+          <p className="field-hint">{t.notesHint}</p>
+          <div>
+            <button type="submit" className="btn" disabled={busy || text.trim() === ""}>
+              {t.addNote}
+            </button>
+          </div>
+          {failure && <ErrorText failure={failure} />}
+        </form>
+      )}
+    </section>
   );
 }

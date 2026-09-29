@@ -14,7 +14,7 @@
 //     за мероприятие (comparablePriceUzs в @bayramm/shared/api): с числом гостей —
 //     примерная сумма на это число, без него — цена за гостя (цена за мероприятие,
 //     делённая на cap_max с округлением вверх);
-//   · телефон площадки отдаётся в карточке до заявки — pii.read_listing_phone:
+//   · телефон площадки отдаётся в карточке до заявки — listingPhone (db/pii):
 //     у активного листинга он публичен.
 
 import type {
@@ -33,6 +33,7 @@ import type {
 import { type NotNull, type RawBuilder, sql } from "kysely";
 import { GUEST, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
+import { listingPhone } from "../db/pii";
 import { addDays } from "../time";
 import { type CatalogCursor, type CatalogParams, encodeCursor } from "./query";
 
@@ -296,7 +297,7 @@ export async function getListingDetail(
         "l.address_ru",
         "l.address_uz",
         // Телефон активного листинга публичен (правило «телефон виден сразу»)
-        sql<string | null>`pii.read_listing_phone(l.id)`.as("phone"),
+        listingPhone("l.id").as("phone"),
       ])
       .where("l.slug", "=", slug)
       .executeTakeFirst();

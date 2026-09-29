@@ -18,6 +18,7 @@ function rendered(lang: "ru" | "uz", facts = FACTS): string[] {
     t.requestNew(facts),
     t.slaReminder(facts, 4),
     t.slaReminder(facts, 0),
+    t.opsReminder(facts),
     t.contacted(facts),
     t.deal(facts),
     t.declined(facts),

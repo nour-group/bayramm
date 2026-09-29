@@ -2,12 +2,28 @@ import type { StaffDictionaries } from "@bayramm/shared/api/staff";
 import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Session, SessionContext, useLoad } from "./api";
 import { Login } from "./Login";
+import { AuditPage } from "./pages/Audit";
+import { ClientPage, ClientsPage } from "./pages/Clients";
 import { ListingNewPage, ListingPage } from "./pages/Listing";
 import { ModerationPage } from "./pages/Moderation";
+import { NotificationsPage } from "./pages/Notifications";
 import { RequestPage, RequestsPage } from "./pages/Requests";
+import { RevisionPage } from "./pages/Revision";
+import { SettingsPage } from "./pages/Settings";
+import { TeamPage } from "./pages/Team";
 import { VendorNewPage, VendorPage } from "./pages/Vendor";
 import { VendorsPage } from "./pages/Vendors";
-import { HOME, matchRoute, NAV, pathOf, ROUTES, sectionOf, useRoute, type View } from "./router";
+import {
+  HOME,
+  matchRoute,
+  NAV,
+  pathOf,
+  ROUTES,
+  SECTION_PERMISSION,
+  sectionOf,
+  useRoute,
+  type View,
+} from "./router";
 import {
   fetchStaff,
   readWidgetCallback,
@@ -29,6 +45,8 @@ export function titleOf(view: View | null): string {
     case "listingNew":
     case "listing":
     case "request":
+    case "client":
+    case "revision":
       return t.views[view.name];
     default:
       return t[view.name];
@@ -86,7 +104,25 @@ function Page({ view, title, headingRef, dictionaries }: PageProps) {
       content = <RequestPage key={view.id} id={view.id} dictionaries={dictionaries} />;
       break;
     case "clients":
-      content = <p className="soon">{t.soon}</p>;
+      content = <ClientsPage />;
+      break;
+    case "client":
+      content = <ClientPage key={view.id} id={view.id} />;
+      break;
+    case "revision":
+      content = <RevisionPage key={view.id} id={view.id} />;
+      break;
+    case "notifications":
+      content = <NotificationsPage />;
+      break;
+    case "audit":
+      content = <AuditPage dictionaries={dictionaries} />;
+      break;
+    case "team":
+      content = <TeamPage />;
+      break;
+    case "settings":
+      content = <SettingsPage />;
       break;
   }
 
@@ -151,7 +187,7 @@ function Shell({ staff, onSignOut }: ShellProps) {
             Bayramm <span className="brand-area">{t.area}</span>
           </Link>
           <nav className="nav" aria-label={t.sections}>
-            {NAV.map((item) => (
+            {NAV.filter((item) => staff.permissions.includes(SECTION_PERMISSION[item])).map((item) => (
               <Link key={item} to={{ name: item }} current={current === item}>
                 {t[item]}
               </Link>
