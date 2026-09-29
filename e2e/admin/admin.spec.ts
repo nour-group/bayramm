@@ -17,9 +17,15 @@ import {
    работа сотрудника на перехваченном /api — карточка создаётся, и чего не хватает для
    публикации, панель говорит словами, а не кодами. */
 
-const CONTROLS = [".btn", ".action", ".nav a", ".chips button", "input:not([type=hidden])", "select"].join(
-  ", ",
-);
+const CONTROLS = [
+  ".btn",
+  ".action",
+  ".nav a",
+  ".chips button",
+  "input:not([type=hidden])",
+  ".ui-select",
+  ".ui-icon-btn",
+].join(", ");
 // Коды блокеров из базы — на экране их быть не должно, только слова
 const BLOCKER_CODES =
   /\b(price|capacity|district|descriptions|packages|photos|contract|stir|contacts|pd_consent)\b/;

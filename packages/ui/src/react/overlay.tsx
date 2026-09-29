@@ -13,6 +13,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -81,11 +82,13 @@ function restoreAttribute(element: Element, name: string, value: string | null):
 }
 
 /**
- * Модальный слой: остальное содержимое body — inert и скрыто от диктора, страница не
- * прокручивается. Где inert не поддержан, остаётся aria-hidden и ловушка Tab.
- * Живые области уведомлений (.ui-live) не трогаем — их должно быть слышно.
+ * Модальный слой: остальное содержимое body — inert и скрыто от диктора; lock — страница
+ * ещё и не прокручивается (шторка, диалог). Где inert не поддержан, остаётся aria-hidden
+ * и ловушка Tab. Живые области уведомлений (.ui-live) не трогаем — их должно быть слышно.
+ * Возвращает release: снять всё сразу, не дожидаясь закрытия (Tab из списка)
  */
-export function useModal(layer: RefObject<HTMLElement | null>, active: boolean): void {
+export function useModal(layer: RefObject<HTMLElement | null>, active: boolean, lock = true): () => void {
+  const release = useRef<(() => void) | null>(null);
   useEffect(() => {
     const node = layer.current;
     if (!active || !node) return;
@@ -103,13 +106,33 @@ export function useModal(layer: RefObject<HTMLElement | null>, active: boolean):
       });
     }
     const root = document.documentElement;
-    const locked = root.classList.contains("ui-lock");
-    root.classList.add("ui-lock");
-    return () => {
+    const locked = !lock || root.classList.contains("ui-lock");
+    if (lock) root.classList.add("ui-lock");
+    let done = false;
+    const restore = () => {
+      if (done) return;
+      done = true;
       for (const step of undo.reverse()) step();
       if (!locked) root.classList.remove("ui-lock");
     };
-  }, [active, layer]);
+    release.current = restore;
+    return restore;
+  }, [active, layer, lock]);
+  return useCallback(() => release.current?.(), []);
+}
+
+/** Точка нажатия внутри элемента: у inert-страницы событие приходит не ему, а body */
+function pressedOn(element: HTMLElement | null, event: Event): boolean {
+  if (!element) return false;
+  const point = "touches" in event ? (event as TouchEvent).touches[0] : (event as MouseEvent);
+  const rect = element.getBoundingClientRect();
+  if (!point || rect.width === 0 || rect.height === 0) return false;
+  return (
+    point.clientX >= rect.left &&
+    point.clientX <= rect.right &&
+    point.clientY >= rect.top &&
+    point.clientY <= rect.bottom
+  );
 }
 
 /**
@@ -177,7 +200,9 @@ export function Overlay({
   after.current = onAfterClose;
   const first = useRef(initialFocus);
 
-  useModal(layer, mode === "sheet");
+  // Открытый список или календарь — как системный: страница под ним inert (нажатие мимо
+  // только закрывает, диктор не уходит на страницу); шторка ещё и не даёт её прокручивать
+  const release = useModal(layer, true, mode === "sheet");
   // После снятия inert (эффект выше снимается раньше): теперь фокус можно вернуть
   useEffect(() => () => after.current(), []);
 
@@ -216,7 +241,8 @@ export function Overlay({
     const onPress = (event: Event) => {
       const target = event.target as Node | null;
       if (!target || layer.current?.contains(target) || anchor.current?.contains(target)) return;
-      close.current("outside");
+      // Нажали на само поле (оно inert, событие у body) — закрыть и вернуть фокус полю
+      close.current(pressedOn(anchor.current, event) ? "close" : "outside");
     };
     document.addEventListener("mousedown", onPress, true);
     document.addEventListener("touchstart", onPress, { capture: true, passive: true });
@@ -235,8 +261,10 @@ export function Overlay({
     }
     if (event.key !== "Tab") return;
     if (mode === "popover" && tabCloses) {
-      // Фокус — на поле сразу, до действия Tab по умолчанию: оно уведёт на следующее поле
+      // Фокус — на поле сразу, до действия Tab по умолчанию: оно уведёт на следующее поле.
+      // Для этого страница перестаёт быть inert тоже сразу
       event.stopPropagation();
+      release();
       focusQuietly(anchor.current);
       close.current("tab");
       return;

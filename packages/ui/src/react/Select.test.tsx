@@ -119,6 +119,9 @@ describe("Select: открытие и выбор", () => {
     expect(options()[2]?.getAttribute("aria-disabled")).toBe("true");
     // Список — в портале body, не внутри формы: его не обрежет overflow предков
     expect(list?.closest("form")).toBeNull();
+    // Как у системного: страница под списком inert, но прокручивается
+    expect(document.getElementById("root")?.hasAttribute("inert")).toBe(true);
+    expect(document.documentElement.classList.contains("ui-lock")).toBe(false);
   });
 
   it("стрелки пропускают недоступный вариант; Home/End; Enter выбирает и возвращает фокус", () => {
@@ -222,12 +225,18 @@ describe("Select: закрытие", () => {
   });
 
   it("Tab закрывает и оставляет фокус на поле — браузер уведёт его на следующее", () => {
-    render(<Field />);
+    const root = render(<Field />);
+    let inertOnFocus: boolean | null = null;
+    trigger().addEventListener("focus", () => {
+      inertOnFocus = root.hasAttribute("inert");
+    });
     click(trigger());
     press(listbox(), "Tab");
     expect(listbox()).toBeNull();
     expect(changes).toEqual([]);
     expect(document.activeElement).toBe(trigger());
+    // Фокус пришёл на поле, когда страница уже не inert
+    expect(inertOnFocus).toBe(false);
   });
 
   it("нажатие мимо закрывает и не тянет фокус на поле", () => {

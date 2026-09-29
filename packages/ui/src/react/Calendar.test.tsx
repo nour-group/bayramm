@@ -124,6 +124,7 @@ describe("Calendar", () => {
       />,
     );
     expect(document.querySelectorAll("button.ui-cal-day")).toHaveLength(0);
+    expect(document.querySelector(".ui-cal")?.classList.contains("is-view")).toBe(true);
     expect(document.querySelector("span.ui-cal-day.is-busy .ui-sr-only")?.textContent).toBe("8 окт, занято");
   });
 });

@@ -5,15 +5,17 @@ import { createMockApi, demoRequests } from "./api/mock";
 import { LANG_KEY } from "./context";
 import {
   byText,
+  calendarDay,
+  choose,
   cleanup,
   click,
   fakeWebApp,
+  field,
   LISTINGS,
   mount,
   NOW,
   settle,
   text,
-  type,
   waitFor,
 } from "./test/harness";
 
@@ -34,13 +36,14 @@ describe("каталог", () => {
   it("фильтры живут в адресе и уходят в запрос", async () => {
     await mount({ path: "/?guests=200&district=chilonzor" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
-    const guests = document.querySelector<HTMLInputElement>('input[type="number"]');
+    const guests = field("Гости");
     expect(guests?.value).toBe("200");
-    const district = document.querySelector<HTMLSelectElement>("select");
-    expect(district?.value).toBe("chilonzor");
+    expect(guests?.inputMode).toBe("numeric");
+    const district = field("Район");
+    expect(district?.textContent).toBe("Чиланзар");
     for (const card of document.querySelectorAll(".card")) expect(card.textContent).toContain("Чиланзар");
 
-    await type(district, "");
+    await choose(district, "все районы");
     await waitFor(() => !window.location.search.includes("district"), "район снят");
     expect(window.location.search).toBe("?guests=200");
   });
@@ -82,15 +85,31 @@ describe("каталог", () => {
     expect(document.body.textContent).not.toContain("Сбросить фильтры");
   });
 
-  it("у выпадающих списков своя стрелка", async () => {
+  it("выпадающие списки — свои: кнопка со списком и стрелкой, системных select нет", async () => {
     await mount();
     await waitFor(() => document.querySelectorAll(".card").length > 0, "каталог");
-    const selects = [...document.querySelectorAll("select")];
-    expect(selects.length).toBeGreaterThanOrEqual(2);
-    for (const select of selects) {
-      expect(select.parentElement?.classList.contains("select")).toBe(true);
-      expect(select.parentElement?.querySelector(".select-caret")).not.toBeNull();
-    }
+    expect(document.querySelector("select")).toBeNull();
+    const lists = [...document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="listbox"]')];
+    expect(lists.length).toBeGreaterThanOrEqual(2);
+    for (const list of lists) expect(list.querySelector(".ui-select-caret")).not.toBeNull();
+    // Порядок: выбор в списке уходит в адрес
+    await choose(document.querySelector(".sort button"), "Сначала вместительнее");
+    await waitFor(() => window.location.search === "?sort=capacity_desc", "порядок в адресе");
+  });
+
+  it("дата — из своего календаря: день уходит в адрес, «Без даты» сбрасывает", async () => {
+    await mount();
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "каталог");
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+    const date = field("Дата");
+    expect(date?.getAttribute("aria-haspopup")).toBe("dialog");
+    await click(date);
+    await click(calendarDay("20 окт"));
+    await waitFor(() => window.location.search === "?date=2026-10-20", "дата в адресе");
+    expect(date?.textContent).toContain("20 окт");
+    await click(date);
+    await click(byText(".ui-date-actions button", "Без даты"));
+    await waitFor(() => window.location.search === "", "дата сброшена");
   });
 
   it("цены за гостя и за мероприятие: с гостями — примерная сумма на них и подсказка", async () => {

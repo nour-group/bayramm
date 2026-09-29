@@ -5,7 +5,9 @@
    неделям, Home/End — к началу и концу недели, PageUp/PageDown — по месяцам. Недоступные
    (вне min…max, занятые) остаются в фокусе и читаются диктором, но aria-disabled и не
    выбираются. Занятый день выцветает, а не краснеет: красный значит «нажми».
-   Классы с префиксом ui-, обработчики — у каждой кнопки: пересечений нет (ловушка №1). */
+   Классы с префиксом ui-, обработчики — у каждой кнопки: пересечений нет (ловушка №1).
+   Без onSelect (только показ, .is-view) дни — текст, а не кнопки: число занятого дня обязано
+   читаться (пара muted/busy), а не только выцветать. */
 
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { UiIcon } from "./icons";
@@ -166,7 +168,7 @@ export function Calendar({
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: группа кнопок-дней с подписью, fieldset здесь не форма
-    <div className="ui-cal" role="group" aria-label={label}>
+    <div className={onSelect ? "ui-cal" : "ui-cal is-view"} role="group" aria-label={label}>
       <div className="ui-cal-head">
         <button
           ref={prevButton}

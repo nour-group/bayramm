@@ -9,16 +9,21 @@ import { BUSY_DAY, horizontalOverflow, open, PATHS, prepare, T, VENUE } from "..
 
 const ru = T.ru;
 
-// Главные элементы управления: кнопки, вкладки, поля, дни календаря, выбор повода и бюджета
+// Главные элементы управления: кнопки, вкладки, поля, списки и календарь набора
+// @bayramm/ui/react, выбор повода и бюджета, галочки согласий
 const CONTROLS = [
   ".btn",
   ".icon-btn",
+  ".ui-icon-btn",
+  ".ui-btn",
   ".tabs a",
   ".lang button",
   ".field-input",
-  ".sort select",
-  "button.cal-day",
-  "label.choice",
+  ".ui-select",
+  ".ui-number-input",
+  ".ui-option",
+  "button.ui-cal-day",
+  "label.ui-radio",
   "label.consent-check",
   ".link-btn",
   ".contact-phone",
@@ -41,8 +46,17 @@ const SCREENS: readonly Screen[] = [
     path: `${PATHS.catalog}?date=${BUSY_DAY}`,
     ready: ".card .chip",
     setup: async (page) => {
-      await page.locator(".filters .field-button").click();
-      await page.locator(".date-panel .cal").waitFor();
+      await page.locator(".filters button[aria-haspopup=dialog]").click();
+      await page.locator(".ui-layer .ui-cal").waitFor();
+    },
+  },
+  {
+    name: "каталог: список районов",
+    path: PATHS.catalog,
+    ready: ".card",
+    setup: async (page) => {
+      await page.locator(".filters button[aria-haspopup=listbox]").click();
+      await page.getByRole("listbox").waitFor();
     },
   },
   { name: "площадка", path: PATHS.venue(VENUE.slug), ready: ".venue-head h1" },
@@ -62,9 +76,10 @@ const SCREENS: readonly Screen[] = [
     ready: "form.request .consents",
     setup: async (page, t) => {
       const form = page.locator("form.request");
-      await form.locator("label.choice").first().click();
-      await form.locator("button.cal-day:not([disabled])").first().click();
-      await form.locator('input[type="number"]').fill("100");
+      await form.locator("label.ui-radio").first().click();
+      await form.locator("button[aria-haspopup=dialog]").click();
+      await page.locator(".ui-layer button.ui-cal-day:not([aria-disabled])").first().click();
+      await form.getByRole("spinbutton").fill("100");
       await form.locator('input[autocomplete="name"]').fill("Азиза");
       await form.locator('input[type="tel"]').fill("90 123 45 67");
       await page.locator(".consents input[type=checkbox]").first().check();
@@ -132,6 +147,56 @@ test.describe("доступность", () => {
       await expectVisibleFocus(page, screen.name, 15);
     });
   }
+
+  test("список и календарь — одной клавиатурой: открыть, найти, выбрать; фокус вернулся, страница на месте", async ({
+    page,
+  }) => {
+    // Узбекский: названия районов латиницей — буквы печатаются настоящими keydown
+    await prepare(page, { lang: "uz" });
+    await open(page, PATHS.catalog, ".card");
+    const scrollY = () => page.evaluate(() => window.scrollY);
+    const activeOption = () =>
+      page.evaluate(() => {
+        const list = document.querySelector('[role="listbox"]');
+        return document.getElementById(list?.getAttribute("aria-activedescendant") ?? "")?.textContent ?? "";
+      });
+
+    // Список районов: стрелка открывает, буквы ищут, Enter выбирает
+    const district = page.locator(".filters button[aria-haspopup=listbox]");
+    await district.focus();
+    const before = await scrollY();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("listbox")).toBeFocused();
+    expect(await scrollY(), "фокус в списке не прокручивает страницу").toBe(before);
+    await page.keyboard.type("chi");
+    expect(await activeOption()).toBe("Chilonzor");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/[?&]district=chilonzor/);
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+    await expect(district).toBeFocused();
+    await expect(district).toHaveText("Chilonzor");
+
+    // Esc закрывает без выбора
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("listbox")).toBeFocused();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+    await expect(district).toBeFocused();
+    await expect(page).toHaveURL(/[?&]district=chilonzor/);
+
+    // Дата: Enter открывает календарь с фокусом на дне, стрелка — следующий день, Enter — выбор
+    const date = page.locator(".filters button[aria-haspopup=dialog]");
+    await date.focus();
+    await page.keyboard.press("Enter");
+    const focusedDay = page.locator(".ui-layer button.ui-cal-day:focus");
+    await expect(focusedDay).toHaveText("1");
+    await page.keyboard.press("ArrowRight");
+    await expect(focusedDay).toHaveText("2");
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/[?&]date=2026-10-02/);
+    await expect(date).toBeFocused();
+  });
 
   test("первый Tab — ссылка «к содержимому», она видна и ведёт в main", async ({ page }) => {
     await prepare(page);

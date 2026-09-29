@@ -147,17 +147,25 @@ describe("kit.css", () => {
       ".ui-native:focus-visible + .ui-switch-track",
       ".ui-native:focus-visible + .ui-drop-face",
       ".ui-radio:focus-within",
+      ".ui-radio:has(.ui-native:focus-visible)",
     ])
       expect(declarationsOf(selector), selector).toMatch(/outline:\s*3px solid var\(--coral\)/);
   });
 
-  it("занятый день выцветает, а не краснеет", () => {
+  it("занятый день выцветает, а не краснеет; в календаре для показа — читается", () => {
     const busy = declarationsOf(".ui-cal-day.is-busy");
     expect(busy).toMatch(/color:\s*var\(--busy-ink\)/);
     expect(busy).not.toMatch(/coral|berry/);
+    // Только показ: число занятого дня — текст с парой muted/busy (pairs.ts), не красный
+    const view = declarationsOf(".ui-cal.is-view .ui-cal-day.is-busy");
+    expect(view).toMatch(/color:\s*var\(--muted\)/);
+    expect(view).not.toMatch(/coral|berry/);
+    expect(css.indexOf(".ui-cal.is-view .ui-cal-day.is-busy")).toBeGreaterThan(
+      css.indexOf(".ui-cal-day.is-busy {"),
+    );
   });
 
-  it("день календаря с фокусом виден и под [tabindex=\"-1\"]:focus приложений", () => {
+  it('день календаря с фокусом виден и под [tabindex="-1"]:focus приложений', () => {
     // Вес (0,3,0) выше (0,2,0) у правила приложений «программный фокус без рамки»
     expect(declarationsOf(".ui-cal .ui-cal-day:focus-visible")).toMatch(/outline:\s*3px solid/);
   });
