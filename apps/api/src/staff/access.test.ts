@@ -1,4 +1,4 @@
-// Права ролей панели оператора: таблица из ТЗ и то, что каждый маршрут /staff/*
+// Права ролей панели оператора: таблица прав и то, что каждый маршрут /staff/*
 // закрыт нужным правом. Отказ — 403 до любого запроса к базе, кроме поиска сессии.
 
 import { Hono } from "hono";
@@ -15,7 +15,7 @@ import { can, PERMISSIONS, type Permission, permissionsOf } from "./access";
 const ID = "aaaaaaaa-0000-0000-0000-000000000001";
 const ROLES: readonly StaffRole[] = ["admin", "manager", "moderator"];
 
-// Таблица прав из ТЗ панели (§6): кто заполняет карточку — не публикует её;
+// Ожидаемые права ролей: кто заполняет карточку — не публикует её;
 // телефоны клиентов — только администратор
 const SPEC: Record<Permission, readonly StaffRole[]> = {
   "catalog.read": ["admin", "manager", "moderator"],
@@ -109,7 +109,7 @@ async function request(role: StaffRole, method: string, path: string) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("права ролей", () => {
-  it("совпадают с таблицей из ТЗ", () => {
+  it("совпадают с ожидаемой таблицей прав", () => {
     expect(PERMISSIONS).toEqual(SPEC);
   });
 
