@@ -6,7 +6,7 @@ import { authErrorText, PhoneCode } from "../components/PhoneCode";
 import { Loading } from "../components/States";
 import { telegramLink } from "../components/TelegramCta";
 import { TelegramLogin } from "../components/TelegramLogin";
-import { useLang, useServices } from "../context";
+import { useAccount, useLang, useServices } from "../context";
 import { useAsync, useDocumentTitle } from "../hooks";
 import {
   AUTH_PATH,
@@ -39,16 +39,21 @@ type Phase =
   | { readonly kind: "continuing" }
   | { readonly kind: "badLink" };
 
-/** Дальше после входа: код хаба и уход в приложение или назад на сайт */
+/**
+ * Дальше после входа: код хаба и уход в приложение (адрес строит API) или назад на сайт —
+ * переходом внутри приложения: сессия у этой загрузки страницы уже есть, а путь возврата
+ * пришёл из адреса и уводит только на свой экран
+ */
 function useContinue(setPhase: (phase: Phase) => void) {
   const { api, identity } = useServices();
   const { t } = useLang();
+  const { navigate } = useNav();
   const retried = useRef(false);
 
   return useCallback(async () => {
     const request = loadHubRequest();
     if (request === null) {
-      browser.replace(takeReturn());
+      navigate(takeReturn(), { replace: true });
       return;
     }
     setPhase({ kind: "continuing" });
@@ -76,7 +81,7 @@ function useContinue(setPhase: (phase: Phase) => void) {
       }
       setPhase({ kind: "form", notice: authErrorText(t, error) });
     }
-  }, [api, identity, t, setPhase]);
+  }, [api, identity, t, setPhase, navigate]);
 }
 
 function TelegramBlock({ methods, link }: { methods: AuthMethods; link: boolean }) {
@@ -214,6 +219,9 @@ export function SignIn() {
 export function TelegramCallback() {
   const { api } = useServices();
   const { t, lang } = useLang();
+  const { me } = useAccount();
+  const { navigate } = useNav();
+  const replaceMe = me.replace;
   useDocumentTitle(t.authTitle);
   const [error, setError] = useState<string | null>(null);
   const done = useRef(false);
@@ -231,13 +239,16 @@ export function TelegramCallback() {
     const linking = isTelegramLink();
     clearTelegramLink();
     const run = linking
-      ? api.linkTelegram({ widget: fields }).then(() => browser.replace(takeReturn()))
+      ? api.linkTelegram({ widget: fields }).then((next) => {
+          replaceMe(next);
+          navigate(takeReturn(), { replace: true });
+        })
       : api.signInWidget(fields, lang).then((session) => {
           saveSiteSession(session);
           browser.replace(AUTH_PATH);
         });
     run.catch((err: unknown) => setError(authErrorText(t, err)));
-  }, [api, lang, t]);
+  }, [api, lang, t, replaceMe, navigate]);
 
   return (
     <div className="screen auth">

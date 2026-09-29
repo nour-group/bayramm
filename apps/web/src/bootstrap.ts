@@ -1,6 +1,6 @@
 import { loadTelegramWebApp } from "@bayramm/tg/webapp";
 import { createHttpApi, telegramSignIn } from "./api/http";
-import { createSiteAuth, createTelegramAuth, guestAuth, hasSiteSession } from "./api/session";
+import { createSiteAuth, createTelegramAuth, hasSiteSession } from "./api/session";
 import { initialLang, type Services } from "./context";
 import { mediaEnvFor } from "./media";
 import { initTelegram } from "./telegram";
@@ -44,15 +44,15 @@ export async function bootstrap(): Promise<Services> {
     return { api, identity, webApp, mediaEnv, now };
   }
 
+  // Вне Telegram — токен сайта из хранилища вкладки; нет его — запросы идут как у гостя.
+  // Решает всё равно API: токен без действующей сессии — 401
   const auth = webApp
     ? createTelegramAuth({
         initData: webApp.initData,
         userId: webApp.initDataUnsafe.user?.id ?? null,
         signIn: telegramSignIn((input, init) => fetch(input, init)),
       })
-    : hasSiteSession()
-      ? createSiteAuth()
-      : guestAuth;
+    : createSiteAuth();
   // Входим сразу, не дожидаясь первой заявки: «Мои заявки» откроются без задержки.
   // Ошибку покажет экран, которому нужна сессия
   if (webApp) auth.token().catch(() => {});

@@ -86,6 +86,9 @@ async function mount(path: string, { strict = false } = {}) {
 }
 
 const heading = () => container.querySelector("h1")?.textContent;
+// Уход в хаб — после запроса адресов и PKCE (crypto.subtle): на медленной машине это
+// дольше пары тиков, а опоздавший уход попал бы в следующий тест
+const redirected = () => act(() => vi.waitFor(() => expect(assigned).toHaveLength(1)));
 const byText = <T extends Element>(selector: string, text: string) =>
   [...container.querySelectorAll<T>(selector)].find((el) => el.textContent?.includes(text));
 
@@ -121,8 +124,7 @@ describe("хаб входа из кабинета", () => {
     await mount("/calendar");
     const button = byText<HTMLButtonElement>("button", "Войти");
     await act(async () => button?.click());
-    for (let i = 0; i < 5; i++) await act(async () => {});
-    expect(assigned).toHaveLength(1);
+    await redirected();
     const hub = new URL(assigned[0] ?? "");
     expect(hub.origin + hub.pathname).toBe("https://bayramm.example/auth");
     expect(hub.searchParams.get("app")).toBe("vendor");
@@ -136,7 +138,7 @@ describe("хаб входа из кабинета", () => {
 
   it("?signin=1 (пришли из приложения Bayramm) — в хаб сразу", async () => {
     await mount("/requests?signin=1");
-    expect(assigned).toHaveLength(1);
+    await redirected();
     expect(JSON.parse(window.sessionStorage.getItem("bayramm.vendor.hub") ?? "{}").back).toBe("/requests");
   });
 

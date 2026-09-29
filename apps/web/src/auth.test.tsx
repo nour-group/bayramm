@@ -3,7 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi, DEMO_OTP_CODE, type MockApi } from "./api/mock";
 import { SESSION_KEY } from "./api/session";
 import { LANG_KEY } from "./context";
-import { authHref, browser, loadHubRequest, parseHubRequest, readWidgetFields, safeReturn } from "./hub";
+import {
+  authHref,
+  browser,
+  loadHubRequest,
+  parseHubRequest,
+  readWidgetFields,
+  safeReturn,
+  saveReturn,
+  startTelegramLink,
+} from "./hub";
 import { byText, cleanup, click, field, LISTINGS, mount, NOW, text, type, waitFor } from "./test/harness";
 
 const STATE = "sTaTe_0123456789abcdef";
@@ -122,8 +131,9 @@ describe("хаб входа /auth", () => {
 
   it("вход без запроса хаба — назад, откуда пришли", async () => {
     await mount({ path: "/auth?return=%2Frequests", identity: "site", api: api() });
-    await waitFor(() => replaced.length > 0, "возврат");
-    expect(replaced).toEqual(["/requests"]);
+    await waitFor(() => window.location.pathname === "/requests", "возврат");
+    // Переход внутри приложения, без перезагрузки: сессия у страницы уже есть
+    expect(replaced).toEqual([]);
   });
 
   it("кривая ссылка хаба — объяснение, а не вход", async () => {
@@ -144,6 +154,25 @@ describe("хаб входа /auth", () => {
     expect(signIn).toHaveBeenCalledWith({ id: "42", first_name: "Aziza", auth_date: "1", hash: "ab" }, "ru");
     expect(window.location.search).toBe("");
     expect(replaced).toEqual(["/auth"]);
+  });
+});
+
+describe("подключить Telegram", () => {
+  it("виджет вернул данные — способ добавлен, назад в профиль без перезагрузки", async () => {
+    const mock = api();
+    const link = vi.spyOn(mock, "linkTelegram").mockImplementation(() => mock.me());
+    startTelegramLink();
+    saveReturn("/profile");
+    await mount({
+      path: "/auth/telegram?id=42&first_name=Aziza&auth_date=1&hash=ab",
+      identity: "site",
+      api: mock,
+    });
+    await waitFor(() => window.location.pathname === "/profile", "назад в профиль");
+    expect(link).toHaveBeenCalledWith({
+      widget: { id: "42", first_name: "Aziza", auth_date: "1", hash: "ab" },
+    });
+    expect(replaced).toEqual([]);
   });
 });
 

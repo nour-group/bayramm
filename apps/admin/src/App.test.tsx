@@ -108,6 +108,10 @@ function signedIn() {
 const heading = () => container.querySelector("h1")?.textContent;
 const alertText = () => container.querySelector("[role=alert]")?.textContent;
 let assigned: string[];
+
+// Уход в хаб — после запроса адресов и PKCE (crypto.subtle): на медленной машине это
+// дольше пары тиков, а опоздавший уход попал бы в следующий тест
+const redirected = () => act(() => vi.waitFor(() => expect(assigned).toHaveLength(1)));
 const summary = () => calls.map((c) => `${c.method} ${c.url}`);
 const link = (name: string) =>
   [...container.querySelectorAll("a")].find((a) => a.textContent?.trim() === name) as HTMLAnchorElement;
@@ -150,8 +154,7 @@ describe("вход в панель оператора", () => {
     mockApi(BOT_INFO);
     await mount("/requests");
     await act(async () => button(t.loginHub).click());
-    await settle();
-    expect(assigned).toHaveLength(1);
+    await redirected();
     const hub = new URL(assigned[0] ?? "");
     expect(hub.origin + hub.pathname).toBe("https://bayramm.example/auth");
     expect(hub.searchParams.get("app")).toBe("admin");
@@ -250,7 +253,7 @@ describe("вход в панель оператора", () => {
   it("?signin=1 (пришли из приложения Bayramm) — в хаб сразу", async () => {
     mockApi(BOT_INFO);
     await mount("/requests?signin=1");
-    expect(assigned).toHaveLength(1);
+    await redirected();
     expect(JSON.parse(window.sessionStorage.getItem(PENDING_KEY) ?? "{}").back).toBe("/requests");
   });
 
