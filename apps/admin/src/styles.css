@@ -401,6 +401,11 @@ textarea.input {
   background: var(--paper);
 }
 
+/* Число из набора (NumberStepper) — скругление как у полей панели */
+.field .ui-number-input {
+  border-radius: var(--r-8);
+}
+
 /* Поле поиска — SearchField из @bayramm/ui/react; здесь только место в строке */
 .search {
   flex: 1 1 240px;

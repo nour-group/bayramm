@@ -670,6 +670,12 @@ describe("настройки", () => {
     await click(forms[1]?.querySelector("button[type=submit]") ?? undefined);
     expect(lastCall("/sla_reminder_hours")?.body).toEqual({ value: [2] });
     expect(forms[1]?.textContent).toContain(t.saved);
+
+    // Числа — текст с цифровой клавиатурой, тихие часы — свой список времени, не системные
+    expect(container.querySelector('input[type="number"], input[type="time"]')).toBeNull();
+    expect(forms[0]?.querySelector("input")?.inputMode).toBe("numeric");
+    const times = [...(forms[2]?.querySelectorAll("button[aria-haspopup=listbox]") ?? [])];
+    expect(times.map((b) => b.textContent)).toEqual(["22:00", "08:00"]);
   });
 });
 

@@ -133,6 +133,12 @@ describe("styles.css клиента", () => {
     expect(declarationsOf(":focus-visible")).toMatch(/outline:\s*3px solid var\(--coral\)/);
   });
 
+  it("раскрывашки <details> — без системного треугольника, со своим уголком", () => {
+    expect(declarationsOf(".doc summary")).toMatch(/list-style:\s*none/);
+    expect(declarationsOf(".doc summary::-webkit-details-marker")).toMatch(/display:\s*none/);
+    expect(declarationsOf(".doc[open] summary::after")).toMatch(/transform:/);
+  });
+
   it("контролы — из набора @bayramm/ui/kit.css: своих правил для системных нет", () => {
     // Выпадающий список, выбор, календарь, число — в kit.css (свои тесты в packages/ui)
     for (const selector of ["select", ".select", ".choice", ".cal-day", ".stepper", ".field-button"])

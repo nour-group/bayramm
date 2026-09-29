@@ -1161,11 +1161,35 @@ textarea.field-input {
   background: var(--white);
 }
 
+/* Раскрывашка: <details> остаётся (Enter и пробел, «развёрнуто» для диктора), системный
+   треугольник — нет: у каждого браузера свой. Свой уголок справа от текста */
 .doc summary {
   min-height: 48px;
   padding: 12px 0;
   font-weight: 700;
+  list-style: none;
   cursor: pointer;
+}
+
+.doc summary::-webkit-details-marker {
+  display: none;
+}
+
+.doc summary::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 10px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  vertical-align: 3px;
+}
+
+.doc[open] summary::after {
+  transform: rotate(-135deg);
+  vertical-align: -1px;
 }
 
 .doc summary svg {

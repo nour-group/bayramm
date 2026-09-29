@@ -13,7 +13,9 @@ import { describe, expect, it } from "vitest";
    <select>, <datalist>                   Select
    <input type="checkbox|radio">          Checkbox, Switch, RadioGroup
    <input type="number|range">            NumberStepper
-   <input type="date|time|…">             DateField
+   <input type="date|month|week|…">       DateField
+   <input type="time">                    TimeField
+   <input type={выражение}>               литерал: иначе страж не видит тип
    <input type="file">                    FileDrop
    <input type="search">                  SearchField
    <dialog>, window.confirm/alert/prompt  ConfirmSheet, Dialog, useToast
@@ -34,7 +36,7 @@ const FORBIDDEN_INPUTS: Record<string, string> = {
   number: "NumberStepper",
   range: "NumberStepper",
   date: "DateField",
-  time: "DateField",
+  time: "TimeField",
   "datetime-local": "DateField",
   month: "DateField",
   week: "DateField",
@@ -87,9 +89,13 @@ function findNativeControls(path: string, code: string): string[] {
       if (/^[a-z]/.test(tag)) {
         const instead = FORBIDDEN_TAGS[tag];
         if (instead) at(node, `<${tag}>`, instead);
-        const type = tag === "input" ? literal(attribute(node, "type")) : null;
+        const typeAttr = tag === "input" ? attribute(node, "type") : undefined;
+        const type = literal(typeAttr);
         const input = type ? FORBIDDEN_INPUTS[type] : undefined;
         if (input) at(node, `<input type="${type}">`, input);
+        // Тип выражением (type={field.type}) страж проверить не может: только литерал
+        if (typeAttr?.initializer && type === null)
+          at(node, "<input type={…}>", "литерал или контрол набора");
         if (attribute(node, "title")) at(node, `title= на <${tag}>`, "Tooltip");
       }
     }
@@ -120,6 +126,7 @@ describe("системные контролы в приложениях", () => 
         type="checkbox" />;
       const c = <input type={"file"} />;
       const d = <input type="text" inputMode="numeric" />;
+      const h = <input type={extra.type} />;
       const e = <Select title="Район" />;
       const g = <span title="подсказка">!</span>;
       if (window.confirm("?")) alert("!");
@@ -133,6 +140,7 @@ describe("системные контролы в приложениях", () => 
       "<select>",
       '<input type="checkbox">',
       '<input type="file">',
+      "<input type={…}>",
       "title= на <span>",
       "confirm()",
       "alert()",

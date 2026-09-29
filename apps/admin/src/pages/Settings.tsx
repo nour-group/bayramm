@@ -3,6 +3,7 @@
    не больше максимума). Ошибка — у той настройки, которую меняли. */
 
 import type { SettingKey, SettingValue, StaffSetting, StaffSettings } from "@bayramm/shared/api/staff";
+import { NumberStepper, TimeField } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
 import { type Failure, useLoad, useSession } from "../api";
 import { formatMoment } from "../format";
@@ -79,21 +80,26 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
     }
   };
 
-  const input = (index: number, extra: { label: string; type: "number" | "time" }) => (
-    <div className="field" key={index}>
-      <label htmlFor={`${id}-${index}`}>{extra.label}</label>
-      <input
-        id={`${id}-${index}`}
-        className="input"
-        type={extra.type}
-        inputMode={extra.type === "number" ? "numeric" : undefined}
-        value={draft[index] ?? ""}
-        aria-invalid={invalid}
-        aria-describedby={hintId}
-        onChange={(event) => change(index)(event.target.value)}
-      />
-    </div>
-  );
+  // Число — NumberStepper (цифровая клавиатура, стрелки), время — TimeField (список «ЧЧ:ММ»)
+  const input = (index: number, extra: { label: string; type: "number" | "time" }) => {
+    const common = { id: `${id}-${index}`, "aria-invalid": invalid, "aria-describedby": hintId };
+    return (
+      <div className="field" key={index}>
+        <label htmlFor={common.id}>{extra.label}</label>
+        {extra.type === "time" ? (
+          <TimeField
+            {...common}
+            className="input"
+            label={extra.label}
+            value={draft[index] || null}
+            onChange={change(index)}
+          />
+        ) : (
+          <NumberStepper {...common} value={draft[index] ?? ""} onChange={change(index)} />
+        )}
+      </div>
+    );
+  };
 
   return (
     <form className={`setting${invalid ? " field-bad" : ""}`} onSubmit={submit} noValidate>

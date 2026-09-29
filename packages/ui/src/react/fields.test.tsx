@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { accepts, FileDrop } from "./FileDrop";
 import { NumberStepper } from "./NumberStepper";
 import { SearchField } from "./SearchField";
+import { TimeField, timeOptions } from "./TimeField";
 import { ToastProvider, useToast } from "./Toast";
 import { Tooltip } from "./Tooltip";
 import { cleanup, click, press, render, type } from "./test/harness";
@@ -147,6 +148,44 @@ describe("FileDrop вместо голого input type=file", () => {
     expect(accepts(file("a.png", "image/png"), "image/*")).toBe(true);
     expect(accepts(file("a.png", "image/png"), "image/jpeg")).toBe(false);
     expect(accepts(file("a.png", "image/png"), undefined)).toBe(true);
+  });
+});
+
+describe("TimeField вместо input type=time", () => {
+  it("сетка с шагом, 24 часа; время вне сетки — на своём месте", () => {
+    expect(timeOptions(60, null)).toHaveLength(24);
+    expect(timeOptions(30, null).slice(0, 3)).toEqual(["00:00", "00:30", "01:00"]);
+    expect(timeOptions(60, "22:15")).toContain("22:15");
+    expect(timeOptions(60, "22:15").indexOf("22:15")).toBe(timeOptions(60, "22:15").indexOf("22:00") + 1);
+    expect(timeOptions(60, "25:99")).toHaveLength(24);
+  });
+
+  it("выпадающий список набора: выбор уходит строкой «ЧЧ:ММ»", () => {
+    const seen: string[] = [];
+    function Quiet() {
+      const [value, setValue] = useState<string | null>("22:00");
+      return (
+        <TimeField
+          id="from"
+          label="С"
+          value={value}
+          step={60}
+          onChange={(next) => {
+            seen.push(next);
+            setValue(next);
+          }}
+        />
+      );
+    }
+    render(<Quiet />);
+    const button = document.getElementById("from") as HTMLButtonElement;
+    expect(button.getAttribute("aria-haspopup")).toBe("listbox");
+    expect(button.textContent).toBe("22:00");
+    expect(document.querySelector('input[type="time"]')).toBeNull();
+    click(button);
+    click([...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === "07:00"));
+    expect(seen).toEqual(["07:00"]);
+    expect(button.textContent).toBe("07:00");
   });
 });
 

@@ -1,5 +1,5 @@
 /* Свои контролы Bayramm вместо системных: выпадающий список, галочка, переключатель,
-   группа вариантов, число, дата, файлы, поиск, диалог, уведомления, подсказка.
+   группа вариантов, число, дата, время, файлы, поиск, диалог, уведомления, подсказка.
    Стили — @bayramm/ui/kit.css (только токены), тексты — из словаря приложения. */
 
 export { Calendar, type CalendarProps, type CalendarTexts } from "./Calendar";
@@ -12,6 +12,7 @@ export { NumberStepper, type NumberStepperProps } from "./NumberStepper";
 export { SHEET_BELOW } from "./overlay";
 export { SearchField, type SearchFieldProps } from "./SearchField";
 export { Select, type SelectOption, type SelectProps } from "./Select";
+export { TimeField, type TimeFieldProps, timeOptions } from "./TimeField";
 export { ToastProvider, type ToastProviderProps, type ToastTone, useToast } from "./Toast";
 export { Tooltip, type TooltipProps, type TooltipTriggerProps } from "./Tooltip";
 export { type UiTexts, UiTextsProvider, useUiTexts } from "./texts";
