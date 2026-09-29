@@ -191,11 +191,5 @@ export function App() {
   }, [auth]);
 
   if (auth.kind === "signedIn") return <Shell staff={auth.staff} onSignOut={onSignOut} />;
-  return (
-    <Login
-      bot={import.meta.env.VITE_TG_BOT_USERNAME}
-      checking={auth.kind === "checking"}
-      error={auth.kind === "signedOut" ? auth.error : null}
-    />
-  );
+  return <Login checking={auth.kind === "checking"} error={auth.kind === "signedOut" ? auth.error : null} />;
 }

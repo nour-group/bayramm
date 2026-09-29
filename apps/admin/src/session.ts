@@ -68,6 +68,22 @@ async function request(path: string, init: RequestInit): Promise<Response | null
 
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+// Имя бота: 5–32 символа латиницы, цифр и _, в конце — bot (правила @BotFather)
+const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
+
+/**
+ * Бот виджета входа. Имени нет ни в коде, ни в сборке: у каждого окружения свой бот,
+ * API узнаёт его по своему токену (GET /telegram/bot). null — API не ответило или
+ * ответ не похож на имя бота.
+ */
+export async function fetchBotUsername(): Promise<string | null> {
+  const res = await request("/telegram/bot", {});
+  if (res === null || !res.ok) return null;
+  const body = (await res.json().catch(() => null)) as { username?: unknown } | null;
+  const username = body?.username;
+  return typeof username === "string" && BOT_USERNAME_RE.test(username) ? username : null;
+}
+
 export async function signIn(
   fields: Record<string, string>,
 ): Promise<{ ok: true; token: string } | { ok: false; error: SignInError }> {

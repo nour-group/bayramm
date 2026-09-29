@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ROUTES } from "./router";
-import type { SignInError } from "./session";
+import { fetchBotUsername, type SignInError } from "./session";
 import { t } from "./texts";
 
 /* Официальный виджет входа Telegram. Колбэк data-onauth виджет собирает через eval, а CSP
@@ -37,19 +37,66 @@ function TelegramLoginWidget({ bot, onLoadError }: WidgetProps) {
   return <div className="tg-login" ref={slot} />;
 }
 
+type BotState = { kind: "loading" } | { kind: "ready"; username: string } | { kind: "failed" };
+
+interface SignInButtonProps {
+  /** Попробовать ещё раз: Login монтирует кнопку заново (новый key) — с новым запросом */
+  onRetry: () => void;
+}
+
+/* Кнопка входа. Имя бота берём у API при показе страницы (у каждого окружения свой бот,
+   в сборке его нет), потом ставим виджет. Пока ждём — статус; API не ответило или виджет
+   не загрузился — ошибка и «Повторить». */
+function SignInButton({ onRetry }: SignInButtonProps) {
+  const [bot, setBot] = useState<BotState>({ kind: "loading" });
+  const [widgetFailed, setWidgetFailed] = useState(false);
+  // Стабильная ссылка: иначе каждый рендер пересоздавал бы скрипт виджета
+  const onWidgetError = useCallback(() => setWidgetFailed(true), []);
+
+  useEffect(() => {
+    let active = true;
+    void fetchBotUsername().then((username) => {
+      if (active) setBot(username ? { kind: "ready", username } : { kind: "failed" });
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (bot.kind === "loading")
+    return (
+      <p className="login-status" role="status">
+        {t.loginBotLoading}
+      </p>
+    );
+  if (bot.kind === "failed" || widgetFailed)
+    return (
+      <>
+        <p className="login-error" role="alert">
+          {bot.kind === "failed" ? t.loginBotFailed : t.loginWidgetFailed}
+        </p>
+        <button type="button" className="action" onClick={onRetry}>
+          {t.retry}
+        </button>
+      </>
+    );
+  return <TelegramLoginWidget bot={bot.username} onLoadError={onWidgetError} />;
+}
+
 interface LoginProps {
-  /** Имя бота из сборки; пусто — вход не настроен */
-  bot: string | undefined;
   /** Идёт проверка: данные виджета у API или сохранённый токен */
   checking: boolean;
   error: SignInError | null;
 }
 
-export function Login({ bot, checking, error }: LoginProps) {
-  const [widgetFailed, setWidgetFailed] = useState(false);
-  // Стабильная ссылка: иначе каждый рендер пересоздавал бы скрипт виджета
-  const onWidgetError = useCallback(() => setWidgetFailed(true), []);
+export function Login({ checking, error }: LoginProps) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const [attempt, setAttempt] = useState(0);
+  // Кнопка «Повторить» исчезает вместе со старой попыткой — фокус на заголовок, а не в никуда
+  const retry = useCallback(() => {
+    setAttempt((n) => n + 1);
+    heading.current?.focus({ preventScroll: true });
+  }, []);
 
   useEffect(() => {
     document.title = `${t.login} · Bayramm`;
@@ -80,14 +127,9 @@ export function Login({ bot, checking, error }: LoginProps) {
             <p className="login-status" role="status">
               {t.loginChecking}
             </p>
-          ) : !bot ? (
-            <p className="login-error">{t.loginNotConfigured}</p>
-          ) : widgetFailed ? (
-            <p className="login-error" role="alert">
-              {t.loginWidgetFailed}
-            </p>
           ) : (
-            <TelegramLoginWidget bot={bot} onLoadError={onWidgetError} />
+            // Пока проверяем вход, имя бота не спрашиваем: вошедшему кнопка не нужна
+            <SignInButton key={attempt} onRetry={retry} />
           )}
         </section>
       </main>
