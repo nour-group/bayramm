@@ -1,4 +1,4 @@
-import { getWebApp } from "@bayramm/tg/webapp";
+import { loadTelegramWebApp } from "@bayramm/tg/webapp";
 import { createHttpApi, telegramSignIn } from "./api/http";
 import { createTelegramAuth, guestAuth } from "./api/session";
 import type { Services } from "./context";
@@ -7,10 +7,13 @@ import { initTelegram } from "./telegram";
 
 /* Сборка сервисов при старте: Telegram или обычный браузер, настоящий API или демо.
 
+   SDK Mini App грузится, только если страницу открыл Telegram (loadTelegramWebApp):
+   обычный браузер не тянет чужой скрипт. Не загрузился — приложение работает как сайт.
+
    Демо-API — только в `pnpm dev:web` (import.meta.env.DEV) и только если не просили
    настоящий (VITE_API=live). В сборке ветка вырезается целиком вместе с модулем mock. */
 export async function bootstrap(): Promise<Services> {
-  const webApp = getWebApp();
+  const webApp = await loadTelegramWebApp();
   if (webApp) initTelegram(webApp);
   const mediaEnv = mediaEnvFor(window.location.hostname);
   const now = () => Date.now();

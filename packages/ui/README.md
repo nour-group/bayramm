@@ -1,7 +1,7 @@
 # @bayramm/ui
 
 Дизайн-токены Bayramm: палитра двух тем, кегли, скругления, зазоры, иконки, движение,
-безопасные зоны Telegram. Пакет отдаёт исходники TS и готовый CSS, сборки нет.
+безопасные зоны Telegram; свои шрифты. Пакет отдаёт исходники TS и готовый CSS, сборки нет.
 
 | Файл | Что внутри |
 |---|---|
@@ -9,6 +9,7 @@
 | `src/tokens.css` | CSS-переменные, **генерируется** из `tokens.ts` |
 | `src/pairs.ts` | разрешённые пары «текст на фоне» |
 | `src/contrast.ts` | формула контраста WCAG 2.2 |
+| `src/fonts.css`, `fonts/` | @font-face и файлы шрифтов (woff2), лицензии OFL |
 
 ## Подключение
 
@@ -26,6 +27,27 @@ import { base, lux, TEXT_PAIRS } from "@bayramm/ui";
 Премиум переопределяет **те же базовые токены** (`--paper`, `--ink`, `--coral`…), а не
 отдельные классы. Обе темы задают одинаковый набор цветов — это проверяет тип `Palette`
 и тест. Компоненты пишутся один раз и берут только переменные.
+
+## Шрифты
+
+Свои файлы, без Google Fonts (CSP: `font-src 'self'`): Manrope — текст, Unbounded —
+заголовки. Лицензия — SIL OFL 1.1, тексты лицензий в `fonts/`.
+
+```ts
+import "@bayramm/ui/fonts.css"; // до tokens.css
+```
+
+Только подмножества latin и cyrillic, по одному вариативному woff2 на подмножество
+(Manrope 400–800, Unbounded 500–700), `font-display: swap`. В Manrope нет узбекских
+ʻ (U+02BB) и ʼ (U+02BC) — в latin-файле они отданы глифам ‘ и ’ того же шрифта.
+Основной файл предзагружает `index.html` каждого приложения:
+
+```html
+<link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />
+```
+
+Тест `src/fonts.test.ts` разбирает сами файлы (WOFF2 → cmap) и проверяет, что обещанные
+буквы в них есть.
 
 ## Шкалы
 

@@ -4,7 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "lib": ["ES2022"],
-    "types": [],
+    // node — только тестам (чтение файлов шрифтов, распаковка WOFF2); токены обходятся без него
+    "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,

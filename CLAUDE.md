@@ -29,7 +29,7 @@ packages/edge     воркер статических приложений: /api
 packages/media    фото: сжатие в браузере, проверка байтов на сервере, ключи и адреса вариантов
 packages/tg       Telegram: проверка initData и виджета входа, deep links startapp, секрет вебхука
 packages/shared   словари RU/UZ (типизированные), normalizeUz
-packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста
+packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста, свои шрифты (fonts.css)
 prototypes/       client · vendor · admin — спецификация, не основа кода
 internal/         приватные документы (клон bayramm-internal, в .gitignore)
 ```
