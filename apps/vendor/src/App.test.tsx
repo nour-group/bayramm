@@ -176,6 +176,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   delete (window as { Telegram?: unknown }).Telegram;
+  for (const script of document.head.querySelectorAll("script")) script.remove();
   vi.unstubAllGlobals();
 });
 
@@ -187,6 +188,18 @@ describe("вход в кабинет", () => {
     expect(link?.getAttribute("href")).toBe("https://t.me/bayramm_test_bot?start=partner");
     expect(calls.some((c) => c.path.startsWith("/api/auth"))).toBe(false);
     expect(container.querySelector("nav.tabbar")).toBeNull();
+    // Вне Telegram SDK с telegram.org не грузится
+    expect(document.head.querySelector("script")).toBeNull();
+  });
+
+  it("открыт из Telegram, а SDK не загрузился — ошибка и «Повторить», а не «откройте из бота»", async () => {
+    await mount("/requests#tgWebAppData=x&tgWebAppVersion=8.0");
+    const script = document.head.querySelector<HTMLScriptElement>("script");
+    expect(script?.src).toBe("https://telegram.org/js/telegram-web-app.js");
+    await act(async () => script?.dispatchEvent(new Event("error")));
+    await flush();
+    expect(heading()).toBe("Не удалось войти");
+    expect(byText("button", "Повторить")).toBeDefined();
   });
 
   it("в Telegram — вход по initData, SDK готов, заявки с токеном сессии", async () => {

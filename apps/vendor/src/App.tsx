@@ -19,7 +19,7 @@ import {
   type Section,
   useRoute,
 } from "./router";
-import { announceReady, getWebApp } from "./telegram";
+import { announceReady, launchedFromTelegram, loadTelegramSdk } from "./telegram";
 import { Heading } from "./ui";
 import { Venue } from "./Venue";
 
@@ -34,11 +34,12 @@ const NAV_ICON: Readonly<Record<Section, IconName>> = {
 /**
  * Вход: внутри Telegram — по свежей initData. initData живёт час; если Mini App
  * перезагрузили позже, а сессия (12 часов) ещё жива — работаем по ней. Вне Telegram
- * кабинета нет: экран «откройте из бота».
+ * кабинета нет: экран «откройте из бота». Открыт из Telegram, а SDK не загрузился —
+ * ошибка с повтором.
  */
 async function startSession(): Promise<Auth> {
-  const webApp = getWebApp();
-  if (!webApp) return { kind: "outside" };
+  const webApp = await loadTelegramSdk();
+  if (!webApp) return { kind: launchedFromTelegram() ? "error" : "outside" };
   announceReady(webApp);
   try {
     await signIn(webApp.initData);
