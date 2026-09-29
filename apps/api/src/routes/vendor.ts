@@ -21,6 +21,7 @@ import { authenticate, requireVendor, vendorOf } from "../auth/session";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { ApiError } from "../errors";
+import { outboxKick } from "../notify/kick";
 import { getCalendar, markBusy, markFree, parseDay } from "../vendor/calendar";
 import { getListing, getMe, parseLocale, setLocale } from "../vendor/profile";
 import {
@@ -74,7 +75,8 @@ vendor.get("/requests/:id", async (c) => {
   return c.json(await getRequest(c.var.db, vendorOf(c), id));
 });
 
-vendor.patch("/requests/:id", limitBody, async (c) => {
+// Сообщение клиенту о статусе ставит триггер базы; outboxKick отправляет его сразу после ответа
+vendor.patch("/requests/:id", limitBody, outboxKick, async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const patch = parsePatch(await readJson(c.req.raw));
   return c.json(await updateRequestStatus(c.var.db, vendorOf(c), id, patch));

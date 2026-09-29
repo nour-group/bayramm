@@ -68,6 +68,7 @@ export async function signInVendor(db: Db, env: Secrets, initData: string): Prom
       .selectFrom("app.vendor_users")
       .select(["id", "vendor_id", "disabled_at"])
       .where("tg_user_hash", "=", tgUserHash)
+      .where("tg_linked_at", "is not", null)
       .executeTakeFirst();
     if (found === undefined) throw vendorNotLinked();
     if (found.disabled_at !== null) throw vendorDisabled();

@@ -14,7 +14,7 @@ import type {
   VendorRequestPage,
 } from "@bayramm/shared/api/vendor";
 import type { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { initDataFor, type TestTelegramUser } from "../../src/testing/init-data";
 import {
   adminClient,
@@ -194,6 +194,17 @@ let ra1: TestRequest;
 let ra2: TestRequest;
 let rb: TestRequest;
 
+// Переход статуса запускает немедленную отправку уведомлений (outboxKick): в тестах
+// она не должна ходить в настоящий Telegram — сеть к нему «недоступна», строки
+// остаются для повтора
+const realFetch = globalThis.fetch;
+vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input instanceof Request ? input.url : input).startsWith("https://api.telegram.org/")) {
+    throw new TypeError("Telegram is offline in tests");
+  }
+  return realFetch(input, init);
+});
+
 beforeAll(async () => {
   admin = await adminClient();
   const version = randomInt(1_000, 1_000_000_000);
@@ -215,6 +226,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  vi.unstubAllGlobals();
   if (!admin) return;
   await cleanup(admin);
   // Журналы (статусы, согласия, чтения ПДн) — только на добавление; тестовые строки
@@ -229,6 +241,7 @@ afterAll(async () => {
       [...ids, ...listings],
     ]);
     await admin.query("delete from app.audit_log where object_id = any($1::text[])", [ids]);
+    await admin.query("delete from app.outbox where request_id = any($1::uuid[])", [ids]);
     await admin.query("delete from app.availability where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from pii.request_contacts where request_id = any($1::uuid[])", [ids]);
     await admin.query("delete from app.requests where id = any($1::uuid[])", [ids]);
