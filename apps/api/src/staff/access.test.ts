@@ -29,7 +29,16 @@ const SPEC: Record<Permission, readonly StaffRole[]> = {
   "photos.moderate": ["admin", "moderator"],
   "vendor_phones.read": ["admin", "manager", "moderator"],
   "requests.read": ["admin", "manager"],
+  "requests.write": ["admin", "manager"],
   "client_phones.read": ["admin"],
+  "clients.read": ["admin", "manager"],
+  "clients.block": ["admin", "manager"],
+  "outbox.read": ["admin", "manager"],
+  "outbox.retry": ["admin"],
+  "audit.read": ["admin"],
+  "settings.write": ["admin"],
+  "team.manage": ["admin"],
+  "revisions.moderate": ["admin", "moderator"],
 };
 
 // Маршрут → право, которым он закрыт
@@ -69,6 +78,29 @@ const ROUTES: readonly [method: string, path: string, permission: Permission][] 
   ["GET", `/requests/${ID}`, "requests.read"],
   ["POST", `/requests/${ID}/client-phone`, "client_phones.read"],
   ["POST", `/requests/${ID}/vendor-phone`, "requests.read"],
+  ["POST", `/requests/${ID}/remind`, "requests.write"],
+  ["POST", `/requests/${ID}/contacted`, "requests.write"],
+  ["POST", `/requests/${ID}/notes`, "requests.write"],
+  ["GET", "/revisions", "catalog.read"],
+  ["GET", `/revisions/${ID}`, "catalog.read"],
+  ["POST", `/revisions/${ID}/approve`, "revisions.moderate"],
+  ["POST", `/revisions/${ID}/decline`, "revisions.moderate"],
+  ["GET", "/clients", "clients.read"],
+  ["GET", `/clients/${ID}`, "clients.read"],
+  ["POST", `/clients/${ID}/phone`, "client_phones.read"],
+  ["POST", `/clients/${ID}/block`, "clients.block"],
+  ["POST", `/clients/${ID}/unblock`, "clients.block"],
+  ["GET", "/outbox", "outbox.read"],
+  ["POST", `/outbox/${ID}/retry`, "outbox.retry"],
+  ["GET", "/audit", "audit.read"],
+  ["GET", "/audit/pii", "audit.read"],
+  ["GET", "/settings", "settings.write"],
+  ["PUT", "/settings/sla_hours", "settings.write"],
+  ["GET", "/team", "team.manage"],
+  ["POST", "/team", "team.manage"],
+  ["POST", `/team/${ID}/role`, "team.manage"],
+  ["POST", `/team/${ID}/deactivate`, "team.manage"],
+  ["POST", `/team/${ID}/activate`, "team.manage"],
 ];
 
 function appAs(role: StaffRole) {
@@ -122,6 +154,23 @@ describe("права ролей", () => {
 
   it("телефон клиента — только администратору", () => {
     expect(ROLES.filter((role) => can(role, "client_phones.read"))).toEqual(["admin"]);
+  });
+
+  it("команда, настройки, журнал и повтор уведомлений — только администратору", () => {
+    for (const permission of ["team.manage", "settings.write", "audit.read", "outbox.retry"] as const) {
+      expect(
+        ROLES.filter((role) => can(role, permission)),
+        permission,
+      ).toEqual(["admin"]);
+    }
+  });
+
+  it("с заявками и клиентами работают администратор и менеджер, правки карточек решает модератор", () => {
+    expect(can("manager", "requests.write")).toBe(true);
+    expect(can("moderator", "requests.write")).toBe(false);
+    expect(can("moderator", "clients.read")).toBe(false);
+    expect(can("moderator", "revisions.moderate")).toBe(true);
+    expect(can("manager", "revisions.moderate")).toBe(false);
   });
 
   it("администратор может всё", () => {

@@ -37,10 +37,10 @@ import { definedOnly, readReason } from "./vendors";
 
 export const listings = new Hono<AppEnv>();
 
-const PRICE_UNITS = ["per_guest", "per_event"] as const satisfies readonly PriceUnit[];
-const PACKAGE_KINDS = ["weekday", "weekend", "custom"] as const;
-const MAX_PRICE = 99_999_999_999;
-const MAX_PACKAGES = 10;
+export const PRICE_UNITS = ["per_guest", "per_event"] as const satisfies readonly PriceUnit[];
+export const PACKAGE_KINDS = ["weekday", "weekend", "custom"] as const;
+export const MAX_PRICE = 99_999_999_999;
+export const MAX_PACKAGES = 10;
 
 // ── чтение ──────────────────────────────────────────────────────────────────
 
@@ -345,7 +345,11 @@ async function assertDistrict(trx: Tx, code: string | null | undefined): Promise
 // Набор пакетов заменяется целиком. Будни и выходные обновляются на месте (у
 // опубликованного зала их нельзя удалить даже на миг — триггер), произвольные
 // пересоздаются; убранные удаляются последними
-async function replacePackages(trx: Tx, listingId: string, packages: StaffListingPackage[]): Promise<void> {
+export async function replacePackages(
+  trx: Tx,
+  listingId: string,
+  packages: readonly StaffListingPackage[],
+): Promise<void> {
   const existing = await trx
     .selectFrom("app.listing_packages")
     .select(["id", "kind"])

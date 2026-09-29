@@ -1,0 +1,123 @@
+// Команда — только администратор. Сотрудника приглашают по имени пользователя
+// Telegram; при первом входе через виджет приглашение привязывается к Telegram ID
+// (app.staff_sign_in). Менять команду может только база (app.staff_invite,
+// app.staff_set_role, app.staff_set_active): себя не отключить и роль не сменить,
+// последнего действующего администратора — никак.
+//
+//   GET  /staff/team                     все сотрудники: действующие сверху
+//   POST /staff/team                     { username, displayName, role } → 201
+//   POST /staff/team/:id/role            { role }
+//   POST /staff/team/:id/deactivate | activate
+
+import type { StaffRole, TeamList, TeamMember } from "@bayramm/shared/api/staff";
+import { Hono } from "hono";
+import { sql } from "kysely";
+import { staffOf } from "../auth/session";
+import { type Tx, withActor } from "../db/actor";
+import { staffProfilesAs } from "../db/pii";
+import type { AppEnv } from "../env";
+import { notFound } from "../errors";
+import { requirePermission } from "./access";
+import { Input, invalidInput, limitJson, readBody } from "./input";
+import { iso, pathId } from "./shared";
+
+export const team = new Hono<AppEnv>();
+
+const ROLES = ["admin", "manager", "moderator"] as const satisfies readonly StaffRole[];
+// Как проверяет профиль сотрудника в базе: 5–32 символа, латиница, цифры, «_»; «@» можно
+const USERNAME_RE = /^@?[A-Za-z0-9_]{5,32}$/;
+
+async function loadTeam(trx: Tx, self: string): Promise<TeamList> {
+  const rows = await trx
+    .selectFrom("app.staff as s")
+    .innerJoin(staffProfilesAs("p"), "p.staff_id", "s.id")
+    .select([
+      "s.id",
+      "s.role",
+      "s.active",
+      "s.tg_linked_at",
+      "s.created_at",
+      "p.display_name",
+      "p.telegram_username",
+    ])
+    .orderBy("s.active", "desc")
+    .orderBy("p.display_name")
+    .orderBy("s.id")
+    .execute();
+  return {
+    items: rows.map(
+      (row): TeamMember => ({
+        id: row.id,
+        displayName: row.display_name,
+        username: row.telegram_username,
+        role: row.role,
+        active: row.active,
+        linked: row.tg_linked_at !== null,
+        linkedAt: iso(row.tg_linked_at),
+        createdAt: iso(row.created_at),
+        self: row.id === self,
+      }),
+    ),
+  };
+}
+
+team.get("/", requirePermission("team.manage"), async (c) => {
+  const actor = staffOf(c);
+  return c.json(await withActor(c.var.db, actor, (trx) => loadTeam(trx, actor.id)));
+});
+
+team.post("/", requirePermission("team.manage"), limitJson, async (c) => {
+  const actor = staffOf(c);
+  const input = new Input(await readBody(c.req.raw));
+  const username = input.pattern("username", USERNAME_RE, true);
+  const displayName = input.text("displayName", { max: 80, required: true });
+  const role = input.oneOf("role", ROLES, true);
+  input.done();
+  if (typeof username !== "string" || typeof displayName !== "string" || !role) {
+    throw invalidInput(["username", "displayName", "role"]);
+  }
+  const body = await withActor(c.var.db, actor, async (trx) => {
+    // Имя приводит к виду виджета (без «@», нижний регистр) триггер базы
+    await sql`select app.staff_invite(${username}::text, ${displayName}::text, ${role}::app.staff_role)`.execute(
+      trx,
+    );
+    return loadTeam(trx, actor.id);
+  });
+  return c.json(body, 201);
+});
+
+async function assertStaff(trx: Tx, id: string): Promise<void> {
+  const found = await trx.selectFrom("app.staff").select("id").where("id", "=", id).executeTakeFirst();
+  if (!found) throw notFound();
+}
+
+team.post("/:id/role", requirePermission("team.manage"), limitJson, async (c) => {
+  const actor = staffOf(c);
+  const id = pathId(c.req.param("id"));
+  const input = new Input(await readBody(c.req.raw));
+  const role = input.oneOf("role", ROLES, true);
+  input.done();
+  if (!role) throw invalidInput(["role"]);
+  const body = await withActor(c.var.db, actor, async (trx) => {
+    await assertStaff(trx, id);
+    await sql`select app.staff_set_role(${id}::uuid, ${role}::app.staff_role)`.execute(trx);
+    return loadTeam(trx, actor.id);
+  });
+  return c.json(body);
+});
+
+for (const [action, active] of [
+  ["deactivate", false],
+  ["activate", true],
+] as const) {
+  team.post(`/:id/${action}`, requirePermission("team.manage"), async (c) => {
+    const actor = staffOf(c);
+    const id = pathId(c.req.param("id"));
+    const body = await withActor(c.var.db, actor, async (trx) => {
+      await assertStaff(trx, id);
+      await sql`select app.staff_set_active(${id}::uuid, ${active}::boolean)`.execute(trx);
+      return loadTeam(trx, actor.id);
+    });
+    return c.json(body);
+  });
+}

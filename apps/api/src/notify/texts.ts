@@ -41,6 +41,8 @@ export interface NoticeTexts {
   requestNew(f: RequestFacts): string;
   /** vendor.sla_reminder; left — сколько целых часов осталось (0 — меньше часа) */
   slaReminder(f: RequestFacts, left: number): string;
+  /** vendor.ops_reminder: напоминает сотрудник — срок мог уже пройти, часы не считаем */
+  opsReminder(f: RequestFacts): string;
   /** client.request_status */
   contacted(f: RequestFacts): string;
   deal(f: RequestFacts): string;
@@ -59,6 +61,9 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
     slaReminder: (f, left) =>
       `Напоминание: заявка №${f.no} ждёт ответа.\n${summaryRu(f)}\n\n` +
       `Срок ответа — ${hoursRu(f.slaHours)}, осталось ${left > 0 ? hoursRu(left) : "меньше часа"}.`,
+    opsReminder: (f) =>
+      `Команда Bayramm напоминает: заявка №${f.no} ждёт вашего ответа.\n${summaryRu(f)}\n\n` +
+      "Клиент ждёт — ответьте в кабинете или позвоните ему.",
     contacted: (f) =>
       `«${f.listing}» ответил на заявку №${f.no} (${f.date}). Подробности — в «Моих заявках».`,
     deal: (f) => `Вы договорились с «${f.listing}» по заявке №${f.no} (${f.date}). Хорошего праздника!`,
@@ -82,6 +87,9 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
     slaReminder: (f, left) =>
       `Eslatma: №${f.no} soʻrov javob kutmoqda.\n${summaryUz(f)}\n\n` +
       `Javob muddati — ${f.slaHours} soat, ${left > 0 ? `${left} soat` : "bir soatdan kam vaqt"} qoldi.`,
+    opsReminder: (f) =>
+      `Bayramm jamoasi eslatadi: №${f.no} soʻrov javobingizni kutmoqda.\n${summaryUz(f)}\n\n` +
+      "Mijoz kutmoqda — kabinetda javob bering yoki unga qoʻngʻiroq qiling.",
     contacted: (f) =>
       `«${f.listing}» №${f.no} soʻrovga javob berdi (${f.date}). Batafsil — «Mening soʻrovlarim»da.`,
     deal: (f) =>

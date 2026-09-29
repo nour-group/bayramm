@@ -49,6 +49,22 @@ export function staffName(column: string): RawBuilder<string | null> {
   >`(select p.display_name from pii.staff_profiles p where p.staff_id = ${sql.ref(column)})`;
 }
 
+/** Имя сотрудника по id текстом — например, из payload уведомления (null — нет такого). Панель оператора */
+export function staffNameByText(id: RawBuilder<string | null>): RawBuilder<string | null> {
+  return sql<string | null>`(select p.display_name from pii.staff_profiles p where p.staff_id::text = ${id})`;
+}
+
+/**
+ * Сколько пользователей вендора получат уведомление: не отключены, привязали Telegram,
+ * бот знает их чат — те же условия, что у app.enqueue_vendor_notice. Панель оператора
+ */
+export function notifiableVendorUsers(vendorColumn: string): RawBuilder<number> {
+  return sql<number>`(select count(*)::int from app.vendor_users u
+    join pii.vendor_user_profiles p on p.vendor_user_id = u.id
+    where u.vendor_id = ${sql.ref(vendorColumn)} and u.disabled_at is null
+      and u.tg_linked_at is not null and p.telegram_chat_id is not null)`;
+}
+
 /** Есть ли у листинга телефон для заявок — сам номер не читается. Панель оператора */
 export function hasListingPhone(column: string): RawBuilder<boolean> {
   return sql<boolean>`exists (select 1 from pii.listing_contacts c where c.listing_id = ${sql.ref(column)})`;
@@ -81,6 +97,14 @@ export function readRequestPhone(trx: Tx, requestId: string, reason?: string | n
     reason === undefined
       ? sql<PhoneRow>`select pii.read_request_phone(${requestId}::uuid) as phone`
       : sql<PhoneRow>`select pii.read_request_phone(${requestId}::uuid, ${reason}::text) as phone`,
+  );
+}
+
+/** Телефон из профиля клиента: только admin и с причиной (иначе ошибка базы), в журнал. Панель оператора */
+export function readClientPhone(trx: Tx, clientId: string, reason: string | null): Promise<string | null> {
+  return firstPhone(
+    trx,
+    sql<PhoneRow>`select pii.read_client_phone(${clientId}::uuid, ${reason}::text) as phone`,
   );
 }
 

@@ -1,4 +1,5 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
+import type { StaffPermission } from "@bayramm/shared/api/staff";
 import { useCallback, useEffect, useState } from "react";
 
 /* Все маршруты панели — в одной карте. Пути, вписанные по месту, разъезжаются
@@ -9,6 +10,10 @@ export const ROUTES = {
   moderation: "/moderation",
   requests: "/requests",
   clients: "/clients",
+  notifications: "/notifications",
+  audit: "/audit",
+  team: "/team",
+  settings: "/settings",
   login: "/login",
   loginTelegram: "/login/telegram",
 } as const;
@@ -16,9 +21,33 @@ export const ROUTES = {
 export type Route = keyof typeof ROUTES;
 
 /** Разделы в навигации, по порядку */
-export const NAV = ["vendors", "moderation", "requests", "clients"] as const satisfies readonly Route[];
+export const NAV = [
+  "vendors",
+  "moderation",
+  "requests",
+  "clients",
+  "notifications",
+  "audit",
+  "team",
+  "settings",
+] as const satisfies readonly Route[];
 
 export type Section = (typeof NAV)[number];
+
+/**
+ * Право, без которого раздела нет в навигации. Решает сервер — панель только не
+ * показывает то, что роли всё равно ответит 403
+ */
+export const SECTION_PERMISSION: Readonly<Record<Section, StaffPermission>> = {
+  vendors: "catalog.read",
+  moderation: "catalog.read",
+  requests: "requests.read",
+  clients: "clients.read",
+  notifications: "outbox.read",
+  audit: "audit.read",
+  team: "team.manage",
+  settings: "settings.write",
+};
 
 /** Главный экран: сюда ведёт корень сайта и сюда попадают после входа */
 export const HOME: Section = "vendors";
@@ -45,7 +74,9 @@ export type View =
   | { readonly name: "vendor"; readonly id: string }
   | { readonly name: "listingNew"; readonly vendorId: string }
   | { readonly name: "listing"; readonly id: string }
-  | { readonly name: "request"; readonly id: string };
+  | { readonly name: "request"; readonly id: string }
+  | { readonly name: "client"; readonly id: string }
+  | { readonly name: "revision"; readonly id: string };
 
 const ID = "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
 
@@ -55,6 +86,8 @@ const PATTERNS: readonly [RegExp, (id: string) => View][] = [
   [new RegExp(`^/vendors/${ID}$`), (id) => ({ name: "vendor", id })],
   [new RegExp(`^/listings/${ID}$`), (id) => ({ name: "listing", id })],
   [new RegExp(`^/requests/${ID}$`), (id) => ({ name: "request", id })],
+  [new RegExp(`^/clients/${ID}$`), (id) => ({ name: "client", id })],
+  [new RegExp(`^/revisions/${ID}$`), (id) => ({ name: "revision", id })],
 ];
 
 /** Экран по пути; неизвестный путь — null */
@@ -82,6 +115,10 @@ export function pathOf(view: View): string {
       return `/listings/${view.id}`;
     case "request":
       return `/requests/${view.id}`;
+    case "client":
+      return `/clients/${view.id}`;
+    case "revision":
+      return `/revisions/${view.id}`;
     default:
       return ROUTES[view.name];
   }
@@ -97,6 +134,10 @@ export function sectionOf(view: View): Section {
       return "vendors";
     case "request":
       return "requests";
+    case "client":
+      return "clients";
+    case "revision":
+      return "moderation";
     default:
       return view.name;
   }
