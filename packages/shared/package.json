@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./i18n": "./src/i18n/index.ts",
     "./api": "./src/api/client.ts",
-    "./api/me": "./src/api/me.ts"
+    "./api/me": "./src/api/me.ts",
+    "./api/staff": "./src/api/staff.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
