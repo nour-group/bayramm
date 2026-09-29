@@ -8,13 +8,16 @@ export class ApiError extends Error {
   readonly code: string;
   /** 409 duplicate_request: id уже отправленной заявки на тот же листинг и дату */
   readonly existingId: string | undefined;
+  /** 429: через сколько секунд можно снова (заголовок Retry-After) */
+  readonly retryAfter: number | undefined;
 
-  constructor(status: number, code: string, existingId?: string) {
+  constructor(status: number, code: string, existingId?: string, retryAfter?: number) {
     super(`API ${status} ${code}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.existingId = existingId;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -37,9 +40,11 @@ export async function errorFromResponse(res: Response): Promise<ApiError> {
   const code = field(error, "code");
   // existingId по контракту — рядом с error; на всякий случай смотрим и внутрь
   const existingId = field(body, "existingId") ?? field(error, "existingId");
+  const retry = Number(res.headers.get("retry-after"));
   return new ApiError(
     res.status,
     typeof code === "string" && code.length > 0 ? code : `http_${res.status}`,
     typeof existingId === "string" ? existingId : undefined,
+    Number.isFinite(retry) && retry > 0 ? retry : undefined,
   );
 }

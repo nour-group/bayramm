@@ -43,7 +43,7 @@ describe("воркер панели оператора", () => {
     "/clients",
     "/vendors/3",
     "/login",
-    "/login/telegram?id=1&auth_date=2&hash=3",
+    "/auth/callback?code=abc&state=def",
   ])("%s — index.html из ASSETS (фолбэк SPA)", async (path) => {
     const { env, get } = setup();
     const res = await get(path);
@@ -52,22 +52,29 @@ describe("воркер панели оператора", () => {
     expect(env.API.requests).toEqual([]);
   });
 
-  it("HTML со строгими заголовками; из внешнего — только виджет входа Telegram", async () => {
+  it("HTML со строгими заголовками; из внешнего — только SDK Mini App, фрейм — только Telegram Web", async () => {
     const { get } = setup();
     const { headers } = await get("/login");
     const csp = headers.get("content-security-policy") ?? "";
-    expect(csp).toBe(contentSecurityPolicy({ telegramLogin: true, imageOrigins: mediaImageOrigins() }));
+    expect(csp).toBe(
+      contentSecurityPolicy({
+        telegramWebApp: true,
+        frameAncestors: ["https://web.telegram.org"],
+        imageOrigins: mediaImageOrigins(),
+      }),
+    );
     expect(csp).toContain(
       "img-src 'self' data: blob: https://media-staging.bayramm.uz https://media.bayramm.uz;",
     );
     expect(csp).not.toContain("localhost");
-    expect(csp).toContain("script-src 'self' https://telegram.org/js/telegram-widget.js;");
-    expect(csp).toContain("frame-src https://oauth.telegram.org;");
+    expect(csp).toContain("script-src 'self' https://telegram.org/js/telegram-web-app.js;");
+    expect(csp).not.toContain("telegram-widget.js");
+    expect(csp).not.toContain("oauth.telegram.org");
     expect(csp).not.toContain("'unsafe-inline'");
     expect(csp).not.toContain("'unsafe-eval'");
     expect(csp).toContain("connect-src 'self';");
-    expect(csp).toContain("frame-ancestors 'none'");
-    expect(headers.get("x-frame-options")).toBe("DENY");
+    expect(csp).toContain("frame-ancestors https://web.telegram.org");
+    expect(headers.get("x-frame-options")).toBeNull();
     expect(headers.get("x-content-type-options")).toBe("nosniff");
     expect(headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
     expect(headers.get("permissions-policy")).toContain("camera=()");

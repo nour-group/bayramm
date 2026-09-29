@@ -285,6 +285,24 @@ async function loadStats(trx: Tx): Promise<BotStats> {
   return row;
 }
 
+/**
+ * Язык, который человек сохранил в Bayramm: клиента (переключатель в профиле; при первом
+ * входе — язык Telegram или сайта), иначе — партнёра, если он уже входил в кабинет (там
+ * язык выбирает сам). null — такого языка нет: тогда язык Telegram
+ */
+export async function savedLocale(trx: Tx, tgHash: Uint8Array): Promise<"ru" | "uz" | null> {
+  const { rows } = await sql<{ locale: "ru" | "uz" | null }>`
+    select coalesce(
+             (select c.locale from app.clients c where c.account_id = a.id and c.deleted_at is null),
+             (select u.locale from app.vendor_users u
+              where u.account_id = a.id and u.disabled_at is null and u.last_login_at is not null
+              order by u.created_at limit 1)) as locale
+    from app.account_identities i
+    join app.accounts a on a.id = i.account_id
+    where i.kind = 'telegram' and i.value_hash = ${tgHash}::bytea and a.deleted_at is null`.execute(trx);
+  return rows[0]?.locale ?? null;
+}
+
 /** Обрабатывает сообщение и возвращает ответы, которые надо отправить после коммита */
 export async function handleUpdate(db: Db, config: BotConfig, update: BotUpdate): Promise<Reply[]> {
   const { message, chatId, from } = update;
@@ -310,15 +328,19 @@ export async function handleUpdate(db: Db, config: BotConfig, update: BotUpdate)
         return claimReplies(config, chatId, from.languageCode, "not_found", staffRole !== null);
       }
       const result = await claim(trx, update, tgHash, contact);
-      return claimReplies(config, chatId, from.languageCode, result, staffRole !== null);
+      // Привязали — дальше отвечаем на языке, который партнёр сохранил в кабинете
+      const lang = (await savedLocale(trx, tgHash)) ?? from.languageCode;
+      return claimReplies(config, chatId, lang, result, staffRole !== null);
     }
 
     const who = await started(trx, update, tgHash);
+    // Язык ответа: сохранённый в Bayramm (профиль, кабинет), иначе — язык Telegram
+    const lang = (await savedLocale(trx, tgHash)) ?? from.languageCode;
     if (message.kind === "command" && staffRole !== null) {
       const stats = message.name === "stats" ? await loadStats(trx) : null;
-      return commandReplies(config, chatId, from.languageCode, message.name, stats, who.vendor);
+      return commandReplies(config, chatId, lang, message.name, stats, who.vendor);
     }
     const payload = message.kind === "start" ? message.payload : null;
-    return startReplies(config, chatId, from.languageCode, payload, { ...who, staffRole });
+    return startReplies(config, chatId, lang, payload, { ...who, staffRole });
   });
 }

@@ -91,4 +91,27 @@ describe("createSiteWorker", () => {
     expect(csp).toContain("frame-src https://oauth.telegram.org");
     expect(res.headers.get("x-frame-options")).toBe("DENY");
   });
+
+  it("telegramLoginPaths: виджет — только на этих страницах, остальным приложение без него", async () => {
+    const options = {
+      telegramWebApp: true,
+      frameAncestors: ["https://web.telegram.org"],
+      telegramLoginPaths: ["/auth"],
+    };
+    const { get } = setup(options);
+    const withWidget = contentSecurityPolicy({ ...options, telegramLogin: true });
+    const without = contentSecurityPolicy(options);
+    expect((await get("/auth")).headers.get("content-security-policy")).toBe(withWidget);
+    expect((await get("/auth/telegram?id=1")).headers.get("content-security-policy")).toBe(withWidget);
+    for (const path of ["/", "/profile", "/authx", "/venue/auth"]) {
+      expect((await get(path)).headers.get("content-security-policy"), path).toBe(without);
+    }
+    expect(without).not.toContain("oauth.telegram.org");
+  });
+
+  it("telegramLoginPaths: кривой путь — ошибка при создании воркера", () => {
+    for (const path of ["auth", "/", "/auth/", "/a b", "*"]) {
+      expect(() => createSiteWorker({ telegramLoginPaths: [path] }), path).toThrow(TypeError);
+    }
+  });
 });

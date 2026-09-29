@@ -29,6 +29,8 @@ interface DbState {
   /** app.staff_sign_in: роль действующего сотрудника */
   staffRole?: "admin" | "manager" | "moderator";
   stats?: BotStats;
+  /** Язык, сохранённый в Bayramm (профиль клиента, кабинет, аккаунт) */
+  locale?: "ru" | "uz";
 }
 
 function db(state: DbState = {}) {
@@ -38,6 +40,7 @@ function db(state: DbState = {}) {
       return state.staffRole ? [{ role: state.staffRole, claimed: false }] : [];
     if (q.sql.includes("app.telegram_started")) return [state.started ?? { staff: false, vendor: false }];
     if (q.sql.includes('"activeListings"')) return state.stats ? [state.stats] : [];
+    if (q.sql.includes("app.account_identities")) return state.locale ? [{ locale: state.locale }] : [];
     if (q.sql.includes("app.vendor_user_claim_telegram")) {
       return [
         { result: state.claim ?? "not_found", vendor_user_id: state.claim === "claimed" ? "vu-1" : null },
@@ -227,6 +230,20 @@ describe("handleUpdate: /start", () => {
         },
       },
     ]);
+  });
+
+  it("язык, сохранённый в Bayramm, главнее языка Telegram; без аккаунта — язык Telegram", async () => {
+    const saved = await handleUpdate(db({ locale: "ru" }).db, CONFIG, start(null, "uz"));
+    expect(saved.map((reply) => reply.text)).toEqual([BOT_TEXTS.ru.welcome, BOT_TEXTS.ru.partnerPrompt]);
+    const uz = await handleUpdate(db({ locale: "uz" }).db, CONFIG, start(null, "ru"));
+    expect(uz[0]?.text).toBe(BOT_TEXTS.uz.welcome);
+    const none = await handleUpdate(db().db, CONFIG, start(null, "ru"));
+    expect(none[0]?.text).toBe(BOT_TEXTS.ru.welcome);
+    // язык ищется по псевдониму Telegram ID, а не по самому ID
+    const fake = db({ locale: "ru" });
+    await handleUpdate(fake.db, CONFIG, start());
+    const lookup = fake.queries.find((q) => q.sql.includes("app.account_identities"));
+    expect(lookup?.parameters).toEqual([new Uint8Array(hmac(String(USER_ID)))]);
   });
 
   it("любое другое сообщение — как /start", async () => {

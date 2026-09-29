@@ -3,7 +3,7 @@
 //   GET  /auth/methods                                 → 200 AuthMethods
 //   POST /auth/telegram         { initData, app? }     → 200 SessionToken  Mini App: клиент (web), кабинет (vendor)
 //   POST /auth/vendor/telegram  { initData }           → 200 SessionToken  то же, что app: vendor
-//   POST /auth/widget           { поля виджета }       → 200 SessionToken  хаб входа на сайте
+//   POST /auth/widget           { widget, locale? }    → 200 SessionToken  хаб входа на сайте
 //   POST /auth/phone/send       { phone }              → 200 OtpSent
 //   POST /auth/phone/verify     { phone, code }        → 200 SessionToken  хаб входа на сайте
 //   POST /auth/hub/code         (Bearer) HubCodeRequest → 200 HubCode
@@ -162,12 +162,19 @@ auth.post("/vendor/telegram", limitBody, async (c) => {
   return c.json(sessionBody(await webAppSignIn(c.var.db, c.env, initData, "vendor")));
 });
 
-// Хаб входа: поля виджета как есть (id, first_name, username, auth_date, hash, …)
+// Хаб входа: { widget: поля виджета как есть (id, first_name, username, auth_date, hash, …),
+// locale: язык сайта } — язык нужен клиенту при первом входе: у виджета его нет
 auth.post("/widget", limitBody, async (c) => {
-  const proof = await verifyWidget(c.env, await readJsonObject(c.req.raw));
+  const body = await readJsonObject(c.req.raw);
+  const widget = body.widget;
+  if (typeof widget !== "object" || widget === null || Array.isArray(widget)) {
+    throw new ApiError(400, "invalid_request", "widget is required", ["widget"]);
+  }
+  const locale = body.locale === "ru" || body.locale === "uz" ? body.locale : null;
+  const proof = await verifyWidget(c.env, widget as Record<string, unknown>);
   const session = await withActor(c.var.db, SYSTEM, async (trx) => {
     const { accountId } = await signInTelegram(trx, c.env, proof, "web");
-    await ensureClient(trx, accountId, null, false);
+    await ensureClient(trx, accountId, locale, false);
     return issueAccountSession(trx, { accountId, app: "web", via: "tg_widget", proofAt: proof.at });
   });
   return c.json(sessionBody(session));

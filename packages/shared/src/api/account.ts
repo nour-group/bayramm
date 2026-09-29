@@ -4,7 +4,7 @@
    роли на нём. Войти можно откуда угодно, и всё заканчивается одной сессией аккаунта:
 
      POST /auth/telegram        { initData, app? }       Mini App: клиент (app web), кабинет (app vendor)
-     POST /auth/widget          { поля виджета }         сайт, хаб входа: виджет Telegram
+     POST /auth/widget          WidgetSignIn             сайт, хаб входа: виджет Telegram
      POST /auth/phone/send      { phone }                код в сообщении на телефон
      POST /auth/phone/verify    { phone, code }          вход по коду (сайт, хаб)
      → 200 SessionToken — сессия аккаунта, 7 дней
@@ -54,6 +54,12 @@ export interface TelegramSignIn {
   readonly app?: "web" | "vendor";
 }
 
+/** POST /auth/widget: поля из адреса возврата виджета как есть и язык сайта (для роли клиента) */
+export interface WidgetSignIn {
+  readonly widget: Readonly<Record<string, string>>;
+  readonly locale?: Locale;
+}
+
 /** POST /auth/phone/send → 200 OtpSent; 429 otp_too_soon | otp_limit (Retry-After); 503 phone_unavailable */
 export interface OtpSend {
   /** +998XXXXXXXXX (пробелы, скобки и дефисы допустимы) */
@@ -75,6 +81,8 @@ export interface OtpVerify {
   readonly phone: string;
   /** 6 цифр */
   readonly code: string;
+  /** Язык сайта — для роли клиента при первом входе */
+  readonly locale?: Locale;
 }
 
 /** POST /auth/hub/code: state и PKCE — от приложения, которое будет менять код */

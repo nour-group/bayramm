@@ -85,7 +85,7 @@ async function widgetSignIn(user: TestTelegramUser): Promise<string> {
     { id: user.id, first_name: user.first_name, ...(user.username ? { username: user.username } : {}) },
     BOT_TOKEN,
   );
-  return (await ok<SessionToken>(call("/auth/widget", json(fields)))).token;
+  return (await ok<SessionToken>(call("/auth/widget", json({ widget: fields, locale: "ru" })))).token;
 }
 
 /** Mini App клиента */

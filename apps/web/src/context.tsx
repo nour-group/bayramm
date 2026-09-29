@@ -1,7 +1,7 @@
 import type { MediaEnv } from "@bayramm/media";
 import { type Dict, dictionaries, LANGS, type Lang } from "@bayramm/shared";
 import type { Dictionaries, Localized } from "@bayramm/shared/api";
-import type { ClientMe } from "@bayramm/shared/api/me";
+import type { Me } from "@bayramm/shared/api/me";
 import type { TelegramWebApp } from "@bayramm/tg/webapp";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ClientApi } from "./api/types";
@@ -9,10 +9,11 @@ import { type AsyncResult, useAsync } from "./hooks";
 import { sessionGet, sessionSet } from "./storage";
 
 /**
- * Кто открыл приложение: telegram — Mini App с входом по initData; guest — обычный браузер,
- * каталог без заявок; demo — демо-API в разработке, заявки можно отправлять
+ * Кто открыл приложение: telegram — Mini App с входом по initData; site — обычный браузер
+ * со входом в хабе (/auth); guest — обычный браузер без входа: каталог есть, заявок нет,
+ * войти можно в хабе; demo — демо-API в разработке, заявки можно отправлять
  */
-export type Identity = "telegram" | "guest" | "demo";
+export type Identity = "telegram" | "site" | "guest" | "demo";
 
 export interface Services {
   readonly api: ClientApi;
@@ -30,7 +31,7 @@ export function useServices(): Services {
   return services;
 }
 
-/** Можно ли отправлять заявки и смотреть свои: нужен вход через Telegram */
+/** Можно ли отправлять заявки и смотреть свои: нужен вход (Telegram или хаб на сайте) */
 export const canSignIn = (identity: Identity) => identity !== "guest";
 
 /* ---------- язык ---------- */
@@ -94,7 +95,7 @@ export function useDictionaries(): DictionaryHelpers {
 
 export interface AccountValue {
   /** Свой профиль (GET /me); у гостя без входа — null */
-  readonly me: AsyncResult<ClientMe | null>;
+  readonly me: AsyncResult<Me | null>;
   /** Аккаунт удалён в этой вкладке: дальше приложение работает без входа */
   readonly deleted: boolean;
   readonly markDeleted: () => void;
