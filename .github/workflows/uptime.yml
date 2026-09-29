@@ -1,0 +1,122 @@
+name: Uptime
+
+# Каждые 15 минут: staging и production отвечают так, как должны. Упавший запуск —
+# и есть оповещение: о провале запланированного workflow GitHub пишет тому, кто
+# последним менял расписание (cron) в этом файле.
+#
+# Без секретов, без checkout и без сторонних action: только curl и jq (есть на
+# раннере) к публичным адресам. Каждая проверка — с повторами: одна случайная
+# сетевая ошибка тревогу не поднимает.
+#
+#   api     GET /health          → 200, ok: true, db: "ok", env — своё окружение
+#   web     GET /api/health      → то же через сайт (сервисная привязка к API)
+#   web, vendor, admin  GET /    → 200, text/html, заголовок CSP (воркер, а не заглушка)
+#   media   GET /                → 404 от воркера media (его CSP), без похода в хранилище
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: production
+            api: api.bayramm.uz
+            web: bayramm.uz
+            vendor: vendor.bayramm.uz
+            admin: admin.bayramm.uz
+            media: media.bayramm.uz
+          - target: staging
+            api: api-staging.bayramm.uz
+            web: staging.bayramm.uz
+            vendor: vendor-staging.bayramm.uz
+            admin: admin-staging.bayramm.uz
+            media: media-staging.bayramm.uz
+    env:
+      TARGET: ${{ matrix.target }}
+      API_HOST: ${{ matrix.api }}
+      WEB_HOST: ${{ matrix.web }}
+      VENDOR_HOST: ${{ matrix.vendor }}
+      ADMIN_HOST: ${{ matrix.admin }}
+      MEDIA_HOST: ${{ matrix.media }}
+    steps:
+      - name: Check ${{ matrix.target }}
+        run: |
+          set -uo pipefail
+          work=$(mktemp -d)
+          failed=0
+          printf '### Uptime: %s\n| Проверка | Итог |\n|---|---|\n' "$TARGET" >> "$GITHUB_STEP_SUMMARY"
+
+          # GET с повторами; тело — в $work/$2, заголовки — в $work/$2.h; печатает HTTP-код
+          fetch() {
+            local code
+            code=$(curl -sS --max-time 20 --retry 3 --retry-delay 10 --retry-connrefused \
+              -o "$work/$2" -D "$work/$2.h" -w '%{http_code}' "$1" 2>"$work/$2.err")
+            touch "$work/$2" "$work/$2.h"
+            echo "${code:-000}"
+          }
+          report() {
+            if [ "$2" = ok ]; then
+              echo "ok      $1"
+              echo "| $1 | ok |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error title=Uptime $TARGET::$1 — $2"
+              echo "| $1 | **$2** |" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+            fi
+          }
+          header() { grep -i "^$2:" "$work/$1.h" | tail -n 1 | cut -d: -f2- | tr -d '\r' | sed 's/^ *//'; }
+
+          health() {
+            local name=$1 url=$2 code
+            code=$(fetch "$url" "$name")
+            if [ "$code" != 200 ]; then
+              report "$url" "HTTP $code $(head -c 200 "$work/$name.err" 2>/dev/null)"
+            elif ! jq -e --arg env "$TARGET" '.ok == true and .db == "ok" and .env == $env' "$work/$name" >/dev/null 2>&1; then
+              report "$url" "ответ не тот: $(jq -c '{ok, db, env}' "$work/$name" 2>/dev/null || echo 'не JSON')"
+            else
+              report "$url" ok
+            fi
+          }
+
+          page() {
+            local name=$1 url=$2 code type
+            code=$(fetch "$url" "$name")
+            type=$(header "$name" content-type)
+            if [ "$code" != 200 ]; then
+              report "$url" "HTTP $code"
+            elif [[ "$type" != text/html* ]]; then
+              report "$url" "content-type: $type"
+            elif [ -z "$(header "$name" content-security-policy)" ]; then
+              report "$url" "нет Content-Security-Policy"
+            else
+              report "$url" ok
+            fi
+          }
+
+          health api "https://$API_HOST/health"
+          health web-api "https://$WEB_HOST/api/health"
+          page web "https://$WEB_HOST/"
+          page vendor "https://$VENDOR_HOST/"
+          page admin "https://$ADMIN_HOST/"
+
+          code=$(fetch "https://$MEDIA_HOST/" media)
+          if [ "$code" = 404 ] && [ "$(header media content-security-policy)" = "default-src 'none'; sandbox" ]; then
+            report "https://$MEDIA_HOST/" ok
+          else
+            report "https://$MEDIA_HOST/" "HTTP $code, ожидался 404 от воркера media"
+          fi
+
+          exit "$failed"
