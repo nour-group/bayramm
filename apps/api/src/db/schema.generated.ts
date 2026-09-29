@@ -210,6 +210,17 @@ export interface AppListings {
   version: Generated<number>;
 }
 
+export interface AppListingStatusLog {
+  actor_id: string | null;
+  actor_kind: AppActorKind;
+  at: Generated<Timestamp>;
+  from_status: AppListingStatus | null;
+  id: Generated<Int8>;
+  listing_id: string;
+  reason: string | null;
+  to_status: AppListingStatus;
+}
+
 export interface AppOccasions {
   code: string;
   name_ru: string;
@@ -386,6 +397,10 @@ export interface AppVendorAccounts {
   id: Generated<string>;
   legal_form: AppLegalForm | null;
   manager_id: string | null;
+  /**
+   * Название для панели и поиска (бренд). Юрназвание и СТИР — в pii.vendor_contacts
+   */
+  name: string | null;
   pd_consent_checked_by: string | null;
   pd_consent_signed_at: Timestamp | null;
   pd_consent_text_id: string | null;
@@ -479,6 +494,7 @@ export interface DB {
   "app.legal_entities": AppLegalEntities;
   "app.listing_packages": AppListingPackages;
   "app.listing_revisions": AppListingRevisions;
+  "app.listing_status_log": AppListingStatusLog;
   "app.listings": AppListings;
   "app.occasions": AppOccasions;
   "app.otp_codes": AppOtpCodes;
