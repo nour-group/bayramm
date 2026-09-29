@@ -181,9 +181,10 @@ afterEach(() => {
 });
 
 describe("вход в кабинет", () => {
-  it("вне Telegram — «откройте из бота» со ссылкой на бота окружения, без попытки входа", async () => {
+  it("вне Telegram — «войдите» (хаб) и ссылка на бота окружения, без попытки входа", async () => {
     await mount("/requests");
-    expect(heading()).toBe("Откройте кабинет из бота");
+    expect(heading()).toBe("Войдите в кабинет");
+    expect(byText("button", "Войти")).toBeDefined();
     const link = byText<HTMLAnchorElement>("a", "Открыть бота");
     expect(link?.getAttribute("href")).toBe("https://t.me/bayramm_test_bot?start=partner");
     expect(calls.some((c) => c.path.startsWith("/api/auth"))).toBe(false);
@@ -222,7 +223,9 @@ describe("вход в кабинет", () => {
       body: { error: { code: "vendor_not_linked", message: "x" } },
     });
     await mount("/requests");
-    expect(heading()).toBe("Сначала привяжите Telegram");
+    expect(heading()).toBe("Сначала привяжите номер");
+    // Внутри Telegram хаб не предлагаем: вход — по кнопке бота
+    expect(byText("button", "Войти другим аккаунтом")).toBeUndefined();
     await click(byText("a", "Открыть бота"));
     expect(webApp.openTelegramLink).toHaveBeenCalledWith("https://t.me/bayramm_test_bot?start=partner");
     expect(calls.some((c) => c.path.startsWith("/api/vendor/"))).toBe(false);

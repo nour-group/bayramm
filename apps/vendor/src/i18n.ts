@@ -26,12 +26,12 @@ const ru = {
 
   // вход
   gateLoading: "Входим в кабинет…",
-  gateOutsideTitle: "Откройте кабинет из бота",
+  gateOutsideTitle: "Войдите в кабинет",
   gateOutsideText:
-    "Кабинет вендора работает внутри Telegram. Откройте нашего бота — кабинет откроется по кнопке в нём.",
-  gateNotLinkedTitle: "Сначала привяжите Telegram",
+    "Войдите через сайт Bayramm — через Telegram или по номеру, который вы дали менеджеру. Или откройте кабинет из нашего бота.",
+  gateNotLinkedTitle: "Сначала привяжите номер",
   gateNotLinkedText:
-    "Этот аккаунт Telegram ещё не связан с площадкой. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm.",
+    "Этот аккаунт ещё не связан с площадкой. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm, или войдите по этому номеру на сайте.",
   gateDisabledTitle: "Доступ отключён",
   gateDisabledText: "Свяжитесь с вашим менеджером Bayramm.",
   gateExpiredTitle: "Сессия закончилась",
@@ -39,6 +39,17 @@ const ru = {
   gateErrorTitle: "Не удалось войти",
   gateErrorText: "Проверьте интернет и попробуйте ещё раз.",
   openBot: "Открыть бота",
+  signIn: "Войти",
+  signInOther: "Войти другим аккаунтом",
+  gateHubTitle: "Вход не завершился",
+  gateHubText: "Ссылка входа устарела или открыта в другой вкладке. Попробуйте ещё раз.",
+  chooseTitle: "Какой кабинет открыть?",
+  chooseText: "Вы партнёр нескольких площадок. Кабинет можно сменить в любой момент.",
+  account: "Аккаунт",
+  switchVendor: "Другой кабинет",
+  toClientApp: "Bayramm для клиентов",
+  toAdmin: "Панель оператора",
+  signOut: "Выйти",
 
   // входящие
   tabNew: "Новые",
@@ -251,12 +262,12 @@ const uz: VendorDict = {
   clear: "Tozalash",
 
   gateLoading: "Kabinetga kirilmoqda…",
-  gateOutsideTitle: "Kabinetni botdan oching",
+  gateOutsideTitle: "Kabinetga kiring",
   gateOutsideText:
-    "Hamkor kabineti Telegram ichida ishlaydi. Botimizni oching — kabinet undagi tugma orqali ochiladi.",
-  gateNotLinkedTitle: "Avval Telegramni ulang",
+    "Bayramm sayti orqali kiring — Telegram yoki menejerga bergan raqamingiz bilan. Yoki kabinetni botimizdan oching.",
+  gateNotLinkedTitle: "Avval raqamni ulang",
   gateNotLinkedText:
-    "Bu Telegram akkaunti hali maydonga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing.",
+    "Bu hisob hali maydonga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing yoki saytda shu raqam bilan kiring.",
   gateDisabledTitle: "Kirish oʻchirilgan",
   gateDisabledText: "Bayramm menejeringiz bilan bogʻlaning.",
   gateExpiredTitle: "Sessiya tugadi",
@@ -264,6 +275,17 @@ const uz: VendorDict = {
   gateErrorTitle: "Kirib boʻlmadi",
   gateErrorText: "Internetni tekshiring va qayta urinib koʻring.",
   openBot: "Botni ochish",
+  signIn: "Kirish",
+  signInOther: "Boshqa hisob bilan kirish",
+  gateHubTitle: "Kirish yakunlanmadi",
+  gateHubText: "Kirish havolasi eskirgan yoki boshqa oynada ochilgan. Qayta urinib koʻring.",
+  chooseTitle: "Qaysi kabinetni ochamiz?",
+  chooseText: "Siz bir nechta maydonning hamkorisiz. Kabinetni istalgan payt almashtirish mumkin.",
+  account: "Hisob",
+  switchVendor: "Boshqa kabinet",
+  toClientApp: "Mijozlar uchun Bayramm",
+  toAdmin: "Boshqaruv paneli",
+  signOut: "Chiqish",
 
   tabNew: "Yangi",
   tabActive: "Jarayonda",

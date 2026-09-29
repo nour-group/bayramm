@@ -12,6 +12,11 @@ import { useEffect } from "react";
 export type { TelegramWebApp };
 export { getWebApp, launchedFromTelegram, loadTelegramWebApp };
 
+/** Кабинет открыт в Telegram: есть SDK с initData или адрес от Telegram */
+export function inTelegram(): boolean {
+  return Boolean(getWebApp()?.initData) || launchedFromTelegram();
+}
+
 /** Mini App готов: убрать заставку Telegram и развернуть на весь экран */
 export function announceReady(webApp: TelegramWebApp): void {
   webApp.ready?.();
