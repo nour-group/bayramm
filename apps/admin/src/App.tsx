@@ -1,4 +1,5 @@
 import type { StaffDictionaries } from "@bayramm/shared/api/staff";
+import { getWebApp, loadTelegramWebApp } from "@bayramm/tg/webapp";
 import { UiTextsProvider } from "@bayramm/ui/react";
 import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Session, SessionContext, useLoad } from "./api";
@@ -26,12 +27,17 @@ import {
   type View,
 } from "./router";
 import {
+  CALLBACK_PATH,
+  fetchAccount,
+  fetchMethods,
   fetchStaff,
-  readWidgetCallback,
+  finishHub,
+  SIGNIN_PARAM,
   type SignInError,
   type Staff,
-  signIn,
+  signInWebApp,
   signOut,
+  startHub,
   tokenStore,
 } from "./session";
 import { t } from "./texts";
@@ -140,12 +146,58 @@ function Page({ view, title, headingRef, dictionaries }: PageProps) {
 
 interface ShellProps {
   staff: Staff;
+  token: string;
   onSignOut: () => void;
 }
 
+// Имя бота: 5–32 символа латиницы, цифр и _, в конце — bot (правила @BotFather)
+const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
+
+interface OtherApps {
+  readonly web: string;
+  readonly cabinet: string | null;
+  readonly bot: string | null;
+}
+
+/**
+ * Другие роли того же аккаунта: клиентское приложение и кабинет партнёра (если он
+ * партнёр). Вне Telegram — ссылки (без сессии приложение само уйдёт в хаб и вернётся),
+ * в Telegram — через бота: Mini App с initData
+ */
+function useOtherApps(token: string): OtherApps | null {
+  const [apps, setApps] = useState<OtherApps | null>(null);
+  useEffect(() => {
+    let active = true;
+    void Promise.all([fetchMethods(), fetchAccount(token)]).then(([methods, me]) => {
+      if (!active || methods === null) return;
+      const bot = methods.telegram.bot;
+      setApps({
+        web: methods.apps.web,
+        cabinet: me && me.roles.vendors.length > 0 ? `${methods.apps.vendor}/?${SIGNIN_PARAM}=1` : null,
+        bot: bot && BOT_USERNAME_RE.test(bot) ? bot : null,
+      });
+    });
+    return () => {
+      active = false;
+    };
+  }, [token]);
+  return apps;
+}
+
+function viaBot(url: string | null) {
+  return (event: { preventDefault(): void }) => {
+    const webApp = getWebApp();
+    if (url && webApp?.initData && webApp.openTelegramLink) {
+      event.preventDefault();
+      webApp.openTelegramLink(url);
+    }
+  };
+}
+
 /** Панель вошедшего сотрудника: шапка с разделами и именем, содержимое экрана */
-function Shell({ staff, onSignOut }: ShellProps) {
+function Shell({ staff, token, onSignOut }: ShellProps) {
   const [view, navigate] = useRoute();
+  const apps = useOtherApps(token);
   const heading = useRef<HTMLHeadingElement>(null);
   const shownPath = useRef(view ? pathOf(view) : null);
   const path = view ? pathOf(view) : null;
@@ -200,6 +252,24 @@ function Shell({ staff, onSignOut }: ShellProps) {
               {staff.displayName}
               <span className="who-role">{t.roles[staff.role]}</span>
             </p>
+            {apps ? (
+              <a
+                className="action"
+                href={apps.web}
+                onClick={viaBot(apps.bot ? `https://t.me/${apps.bot}?startapp` : null)}
+              >
+                {t.toClientApp}
+              </a>
+            ) : null}
+            {apps?.cabinet ? (
+              <a
+                className="action"
+                href={apps.cabinet}
+                onClick={viaBot(apps.bot ? `https://t.me/${apps.bot}?start=cabinet` : null)}
+              >
+                {t.toCabinet}
+              </a>
+            ) : null}
             <button type="button" className="action" onClick={onSignOut}>
               {t.signOut}
             </button>
@@ -220,16 +290,36 @@ type Auth =
   | { kind: "signedOut"; error: SignInError | null }
   | { kind: "signedIn"; staff: Staff; token: string };
 
-// Сессия при открытии панели: данные виджета из адреса возврата или сохранённый токен
+/**
+ * Сессия при открытии панели:
+ *   · /auth/callback — возврат из хаба входа: код → сессия сотрудника;
+ *   · панель открыта в Telegram (кнопка бота) — вход по initData;
+ *   · сохранённый токен;
+ *   · ?signin=1 (пришли из другого приложения Bayramm) — сразу в хаб.
+ */
 async function restore(): Promise<Auth> {
-  if (matchRoute(window.location.pathname) === "loginTelegram") {
-    const fields = readWidgetCallback(window.location.search);
-    // Подписанные данные — пропуск на вход: убираем их из адреса и истории до запроса
+  if (window.location.pathname === CALLBACK_PATH) {
+    const search = window.location.search;
+    // Одноразовый код и state — не в истории: убираем до запросов
     window.history.replaceState(null, "", ROUTES.login);
-    if (!fields) return { kind: "signedOut", error: "invalid" };
-    const result = await signIn(fields);
+    const result = await finishHub(search);
     if (!result.ok) return { kind: "signedOut", error: result.error };
     tokenStore.set(result.token);
+    if (result.back && matchRoute(new URL(result.back, window.location.origin).pathname)) {
+      window.history.replaceState(null, "", result.back);
+    }
+  } else if (tokenStore.get() === null) {
+    // SDK — только если панель открыл Telegram (кнопка бота): обычный браузер его не грузит
+    const webApp = await loadTelegramWebApp();
+    if (webApp?.initData) {
+      webApp.ready?.();
+      webApp.expand?.();
+      const result = await signInWebApp(webApp.initData);
+      if (!result.ok) return { kind: "signedOut", error: result.error };
+      tokenStore.set(result.token);
+    } else if (new URLSearchParams(window.location.search).has(SIGNIN_PARAM)) {
+      if (await startHub(backPath())) return { kind: "checking" };
+    }
   }
 
   const token = tokenStore.get();
@@ -265,6 +355,8 @@ export function App() {
     };
   }, []);
 
+  const onSignIn = useCallback(() => startHub(backPath()), []);
+
   const onSignOut = useCallback(() => {
     if (auth.kind !== "signedIn") return;
     tokenStore.clear();
@@ -291,13 +383,25 @@ export function App() {
     <UiTextsProvider texts={UI_TEXTS}>
       {session && staff ? (
         <SessionContext.Provider value={session}>
-          <Shell staff={staff} onSignOut={onSignOut} />
+          <Shell staff={staff} token={token ?? ""} onSignOut={onSignOut} />
         </SessionContext.Provider>
       ) : (
-        <Login checking={auth.kind === "checking"} error={auth.kind === "signedOut" ? auth.error : null} />
+        <Login
+          checking={auth.kind === "checking"}
+          error={auth.kind === "signedOut" ? auth.error : null}
+          onSignIn={onSignIn}
+        />
       )}
     </UiTextsProvider>
   );
+}
+
+/** Куда вернуться после входа: экран, с которого ушли (не страница входа) */
+function backPath(): string {
+  const url = new URL(window.location.href);
+  url.searchParams.delete(SIGNIN_PARAM);
+  const route = matchRoute(url.pathname);
+  return route && route !== "login" && route !== "authCallback" ? `${url.pathname}${url.search}` : "/";
 }
 
 /** Подписи кнопок своих контролов: крестик шторки, очистка поиска */

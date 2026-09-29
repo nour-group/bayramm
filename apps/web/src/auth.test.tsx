@@ -159,8 +159,8 @@ describe("профиль: аккаунт", () => {
       }),
     });
     await waitFor(() => byText("a", /Кабинет партнёра/), "кнопка кабинета");
-    expect(byText("a", /Кабинет партнёра/)?.getAttribute("href")).toBe(APPS.vendor);
-    expect(byText("a", /Панель оператора/)?.getAttribute("href")).toBe(APPS.admin);
+    expect(byText("a", /Кабинет партнёра/)?.getAttribute("href")).toBe(`${APPS.vendor}/?signin=1`);
+    expect(byText("a", /Панель оператора/)?.getAttribute("href")).toBe(`${APPS.admin}/?signin=1`);
   });
 
   it("без ролей партнёра и сотрудника — кнопок нет", async () => {

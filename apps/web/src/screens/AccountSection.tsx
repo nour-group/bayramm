@@ -1,5 +1,6 @@
+import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { Me } from "@bayramm/shared/api/me";
-import { useState } from "react";
+import { type MouseEvent, useState } from "react";
 import { PhoneCode } from "../components/PhoneCode";
 import { canSignIn, useAccount, useLang, useServices } from "../context";
 import { useAsync } from "../hooks";
@@ -16,15 +17,35 @@ import { haptic } from "../telegram";
        аккаунта не добавить (409), слияния нет;
      · на сайте — «Войти» (хаб) и «Выйти». Ссылки в хаб — полной загрузкой: у /auth свой CSP */
 
-function Roles({ me, apps }: { me: Me; apps: Readonly<Record<string, string>> | null }) {
+// Имя бота по правилам @BotFather: латиница, цифры, _, в конце bot
+const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
+
+/**
+ * Ссылка на другое приложение того же аккаунта. Вне Telegram — адрес с ?signin=1: без
+ * сессии приложение сразу уйдёт в хаб и вернётся со входом. В Telegram — через бота:
+ * карточка ролей с кнопками Mini App, где вход — по initData
+ */
+function useAppLink(bot: string | null) {
+  const { webApp } = useServices();
+  return (start: "cabinet" | "admin") => (event: MouseEvent<HTMLAnchorElement>) => {
+    if (bot && BOT_USERNAME_RE.test(bot) && webApp?.openTelegramLink) {
+      event.preventDefault();
+      webApp.openTelegramLink(`https://t.me/${bot}?start=${start}`);
+    }
+  };
+}
+
+function Roles({ me, methods }: { me: Me; methods: AuthMethods | null }) {
   const { t } = useLang();
+  const via = useAppLink(methods?.telegram.bot ?? null);
   const vendors = me.roles.vendors;
-  if (apps === null || (vendors.length === 0 && me.roles.staff === null)) return null;
+  if (methods === null || (vendors.length === 0 && me.roles.staff === null)) return null;
+  const { apps } = methods;
   return (
     <div className="roles">
       <h3 className="sub-title">{t.accRoles}</h3>
       {vendors.length > 0 ? (
-        <a className="row-link" href={apps.vendor}>
+        <a className="row-link" href={`${apps.vendor}/?signin=1`} onClick={via("cabinet")}>
           <Icon name="hall" size={20} />
           <span>
             <b>{t.accVendor}</b>
@@ -34,7 +55,7 @@ function Roles({ me, apps }: { me: Me; apps: Readonly<Record<string, string>> | 
         </a>
       ) : null}
       {me.roles.staff ? (
-        <a className="row-link" href={apps.admin}>
+        <a className="row-link" href={`${apps.admin}/?signin=1`} onClick={via("admin")}>
           <Icon name="sliders" size={20} />
           <span>
             <b>{t.accAdmin}</b>
@@ -149,7 +170,7 @@ export function AccountSection() {
       <h2 className="section-title" id="profile-account">
         {t.accTitle}
       </h2>
-      <Roles me={profile} apps={ready?.apps ?? null} />
+      <Roles me={profile} methods={ready} />
       <Methods me={profile} phoneOn={ready?.phone === true} widgetOn={widgetOn} />
       {identity === "site" ? (
         <button type="button" className="btn btn-secondary wide" disabled={leaving} onClick={signOut}>

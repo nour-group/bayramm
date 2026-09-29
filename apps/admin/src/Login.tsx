@@ -1,102 +1,50 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ROUTES } from "./router";
-import { fetchBotUsername, type SignInError } from "./session";
+import { fetchMethods, type SignInError } from "./session";
 import { t } from "./texts";
 
-/* Официальный виджет входа Telegram. Колбэк data-onauth виджет собирает через eval, а CSP
-   панели eval не пропускает (packages/edge), поэтому data-auth-url: после «Войти» виджет
-   уводит браузер на /login/telegram?id=…&hash=…, и App отдаёт эти поля API. */
-export const TELEGRAM_WIDGET_SRC = "https://telegram.org/js/telegram-widget.js?22";
+/* Страница входа в панель. Вход — аккаунтом Bayramm через хаб входа на сайте (Telegram
+   или телефон): панель уводит туда браузер с PKCE и получает назад одноразовый код. В
+   Telegram панель открывается кнопкой «Панель оператора» в боте — там вход сам, по
+   initData. Здесь — кнопка хаба и ссылка на бота окружения (его имя — у API). */
 
-interface WidgetProps {
-  bot: string;
-  onLoadError: () => void;
-}
+// Имя бота: 5–32 символа латиницы, цифр и _, в конце — bot (правила @BotFather)
+const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
 
-function TelegramLoginWidget({ bot, onLoadError }: WidgetProps) {
-  const slot = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const host = slot.current;
-    if (!host) return;
-    // Скрипт ставит iframe кнопки рядом с собой; данные виджета — атрибуты data-*
-    const script = document.createElement("script");
-    script.async = true;
-    script.src = TELEGRAM_WIDGET_SRC;
-    script.dataset.telegramLogin = bot;
-    script.dataset.size = "large";
-    script.dataset.authUrl = new URL(ROUTES.loginTelegram, window.location.origin).href;
-    script.addEventListener("error", onLoadError);
-    host.append(script);
-    return () => {
-      script.removeEventListener("error", onLoadError);
-      host.replaceChildren();
-    };
-  }, [bot, onLoadError]);
-
-  return <div className="tg-login" ref={slot} />;
-}
-
-type BotState = { kind: "loading" } | { kind: "ready"; username: string } | { kind: "failed" };
-
-interface SignInButtonProps {
-  /** Попробовать ещё раз: Login монтирует кнопку заново (новый key) — с новым запросом */
-  onRetry: () => void;
-}
-
-/* Кнопка входа. Имя бота берём у API при показе страницы (у каждого окружения свой бот,
-   в сборке его нет), потом ставим виджет. Пока ждём — статус; API не ответило или виджет
-   не загрузился — ошибка и «Повторить». */
-function SignInButton({ onRetry }: SignInButtonProps) {
-  const [bot, setBot] = useState<BotState>({ kind: "loading" });
-  const [widgetFailed, setWidgetFailed] = useState(false);
-  // Стабильная ссылка: иначе каждый рендер пересоздавал бы скрипт виджета
-  const onWidgetError = useCallback(() => setWidgetFailed(true), []);
-
+function BotLink() {
+  const [bot, setBot] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    void fetchBotUsername().then((username) => {
-      if (active) setBot(username ? { kind: "ready", username } : { kind: "failed" });
+    void fetchMethods().then((methods) => {
+      const name = methods?.telegram.bot;
+      if (active && name && BOT_USERNAME_RE.test(name)) setBot(name);
     });
     return () => {
       active = false;
     };
   }, []);
-
-  if (bot.kind === "loading")
-    return (
-      <p className="login-status" role="status">
-        {t.loginBotLoading}
-      </p>
-    );
-  if (bot.kind === "failed" || widgetFailed)
-    return (
-      <>
-        <p className="login-error" role="alert">
-          {bot.kind === "failed" ? t.loginBotFailed : t.loginWidgetFailed}
-        </p>
-        <button type="button" className="action" onClick={onRetry}>
-          {t.retry}
-        </button>
-      </>
-    );
-  return <TelegramLoginWidget bot={bot.username} onLoadError={onWidgetError} />;
+  if (bot === null) return null;
+  return (
+    <p className="login-bot">
+      {t.loginMiniApp}{" "}
+      <a href={`https://t.me/${bot}?start=admin`} target="_blank" rel="noopener noreferrer">
+        {t.loginOpenBot}
+      </a>
+    </p>
+  );
 }
 
 interface LoginProps {
-  /** Идёт проверка: данные виджета у API или сохранённый токен */
+  /** Идёт проверка: сохранённый токен, возврат из хаба или вход Mini App */
   checking: boolean;
   error: SignInError | null;
+  /** В хаб входа; false — адрес сайта не узнать (API не ответило) */
+  onSignIn: () => Promise<boolean>;
 }
 
-export function Login({ checking, error }: LoginProps) {
+export function Login({ checking, error, onSignIn }: LoginProps) {
   const heading = useRef<HTMLHeadingElement>(null);
-  const [attempt, setAttempt] = useState(0);
-  // Кнопка «Повторить» исчезает вместе со старой попыткой — фокус на заголовок, а не в никуда
-  const retry = useCallback(() => {
-    setAttempt((n) => n + 1);
-    heading.current?.focus({ preventScroll: true });
-  }, []);
+  const [starting, setStarting] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     document.title = `${t.login} · Bayramm`;
@@ -107,6 +55,17 @@ export function Login({ checking, error }: LoginProps) {
     if (error) heading.current?.focus({ preventScroll: true });
   }, [error]);
 
+  const signIn = useCallback(async () => {
+    setStarting(true);
+    setFailed(false);
+    const started = await onSignIn();
+    if (!started) {
+      setStarting(false);
+      setFailed(true);
+    }
+  }, [onSignIn]);
+
+  const shown = failed ? "unavailable" : error;
   return (
     <div className="app">
       <main id="main" className="login" tabIndex={-1}>
@@ -118,9 +77,9 @@ export function Login({ checking, error }: LoginProps) {
             {t.login}
           </h1>
           <p className="lead">{t.loginLead}</p>
-          {error && (
+          {shown && (
             <p className="login-error" role="alert">
-              {t.errors[error]}
+              {t.errors[shown]}
             </p>
           )}
           {checking ? (
@@ -128,8 +87,17 @@ export function Login({ checking, error }: LoginProps) {
               {t.loginChecking}
             </p>
           ) : (
-            // Пока проверяем вход, имя бота не спрашиваем: вошедшему кнопка не нужна
-            <SignInButton key={attempt} onRetry={retry} />
+            <>
+              <button
+                type="button"
+                className="btn btn-primary login-hub"
+                disabled={starting}
+                onClick={signIn}
+              >
+                {starting ? t.loginStarting : t.loginHub}
+              </button>
+              <BotLink />
+            </>
           )}
         </section>
       </main>

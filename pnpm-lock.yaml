@@ -23,6 +23,9 @@ importers:
       '@bayramm/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@bayramm/tg':
+        specifier: workspace:*
+        version: link:../../packages/tg
       '@bayramm/ui':
         specifier: workspace:*
         version: link:../../packages/ui
