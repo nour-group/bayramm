@@ -91,11 +91,13 @@ HMAC от IP, `POST /requests` по IP и по клиенту; превышен�
 окружения свои `namespace_id` (проверяет `config.test.ts`).
 
 Сроки хранения и истечение заявок — `app.run_daily_maintenance()` (раз в день
-по Ташкенту, повтор в тот же день ничего не делает); из воркера —
-`runDailyMaintenance` в `apps/api/src/maintenance`. Права клиента на свои
-данные — `GET /me/export`, `POST /me/consents/withdraw`, `DELETE /me`
-(функции `app.client_*`, только над собой). Доступность staging и production
-каждые 15 минут проверяет workflow `Uptime`.
+по Ташкенту, повтор в тот же день ничего не делает); запускает его шаг
+`daily_maintenance` того же cron в окне 21:00–21:59 UTC
+(`apps/api/src/maintenance`). Отдельный Cron Trigger не заводить — их мало на
+бесплатном тарифе. Права клиента на свои данные — `GET /me/export`,
+`POST /me/consents/withdraw`, `DELETE /me` (функции `app.client_*`, только над
+собой). Доступность staging и production каждые 15 минут проверяет workflow
+`Uptime`.
 
 ---
 
