@@ -16,7 +16,14 @@ interface Face {
 }
 
 const faces: Face[] = [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)].map(([, body = ""]) => {
-  const value = (name: string) => new RegExp(`${name}:\\s*([^;]+);`).exec(body)?.[1]?.trim() ?? "";
+  // Объявления блока: «свойство: значение;» → словарь
+  const declarations = new Map(
+    body
+      .split(";")
+      .map((part) => part.split(/:(.*)/s).map((s) => s.trim()))
+      .filter((pair): pair is [string, string] => pair.length >= 2 && pair[0] !== ""),
+  );
+  const value = (name: string) => declarations.get(name) ?? "";
   return {
     family: value("font-family").replaceAll('"', ""),
     weight: value("font-weight"),
