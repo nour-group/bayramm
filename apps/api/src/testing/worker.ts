@@ -29,6 +29,7 @@ export function makeEnv(overrides: Partial<Env> = {}): Env {
     SUPABASE_SERVICE_ROLE_KEY: "unit-test-service-role-key",
     WEB_APP_URL: "http://localhost:5173",
     VENDOR_APP_URL: "http://localhost:5174",
+    ADMIN_APP_URL: "http://localhost:5175",
     API_URL: "http://localhost:8787",
     // Порт 1: соединение, если бы до него дошло, сразу упало бы
     HYPERDRIVE: { connectionString: "postgresql://nobody:nothing@127.0.0.1:1/none" } as Hyperdrive,

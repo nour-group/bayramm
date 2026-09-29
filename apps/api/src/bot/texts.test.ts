@@ -1,8 +1,31 @@
 import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
-import { BOT_TEXTS, botLang, STAFF_STARTED } from "./texts";
+import { BOT_TEXTS, type BotStats, botLang, STAFF_TEXTS } from "./texts";
 
-const all = (lang: "ru" | "uz") => Object.values(BOT_TEXTS[lang]);
+const STATS: BotStats = {
+  activeListings: 1,
+  reviewListings: 2,
+  vendors: 3,
+  requestsToday: 4,
+  awaiting: 5,
+  breached: 6,
+  deadNotifications: 7,
+};
+
+// Тексты клиента, вендора и команды — всё, что бот может написать
+const all = (lang: "ru" | "uz") => {
+  const s = STAFF_TEXTS[lang];
+  return [
+    ...Object.values(BOT_TEXTS[lang]),
+    s.staffCard("admin"),
+    s.staffCard("manager"),
+    s.staffCard("moderator"),
+    s.adminButton,
+    s.adminHint,
+    s.stats(STATS),
+    s.partnerStaffHint,
+  ];
+};
 
 describe("тексты бота", () => {
   it("одинаковый набор ключей на двух языках, ни одного пустого", () => {
@@ -12,7 +35,7 @@ describe("тексты бота", () => {
   });
 
   it("правила продукта: заявка, не бронь", () => {
-    for (const text of [...all("ru"), ...all("uz"), STAFF_STARTED]) {
+    for (const text of [...all("ru"), ...all("uz")]) {
       expect(text).not.toMatch(/брон|bron/i);
     }
   });
@@ -32,6 +55,16 @@ describe("тексты бота", () => {
       // Кнопка клавиатуры упомянута в тексте просьбы так же, как подписана
       expect(t.partnerPrompt).toContain(`«${t.partnerButton}»`);
       expect(t.notOwnContact).toContain(`«${t.partnerButton}»`);
+      expect(STAFF_TEXTS[lang].adminButton.length).toBeLessThanOrEqual(64);
+      expect(STAFF_TEXTS[lang].partnerStaffHint).toContain(`«${t.partnerButton}»`);
+    }
+  });
+
+  it("сводка — все счётчики, роль — словом", () => {
+    for (const lang of LANGS) {
+      const text = STAFF_TEXTS[lang].stats(STATS);
+      for (const n of [1, 2, 3, 4, 5, 6, 7]) expect(text).toMatch(new RegExp(`: ${n}(\\n|$)`));
+      expect(STAFF_TEXTS[lang].staffCard("admin")).not.toContain("admin\n");
     }
   });
 

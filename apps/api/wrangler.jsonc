@@ -8,7 +8,8 @@
   // SUPABASE_URL — адрес проекта Supabase (Storage для фото); ключ service_role — секрет.
   // WEB_APP_URL — клиентское приложение (Mini App): его открывает кнопка меню бота,
   // его же отдаёт GET /telegram/bot. VENDOR_APP_URL — кабинет вендора: кнопки бота
-  // «Открыть кабинет» и ссылки из уведомлений. API_URL — свой публичный адрес:
+  // «Открыть кабинет» и ссылки из уведомлений. ADMIN_APP_URL — панель оператора: кнопка
+  // сотрудникам в боте. API_URL — свой публичный адрес:
   // на него /telegram/sync ставит вебхук бота (только https). Токен бота и ключ
   // /telegram/sync — секреты
   "vars": {
@@ -17,6 +18,7 @@
     "SUPABASE_URL": "http://127.0.0.1:54321",
     "WEB_APP_URL": "http://localhost:5173",
     "VENDOR_APP_URL": "http://localhost:5174",
+    "ADMIN_APP_URL": "http://localhost:5175",
     "API_URL": "http://localhost:8787"
   },
   // Раз в минуту: SLA заявок и отправка уведомлений из outbox (src/cron.ts).
@@ -47,6 +49,7 @@
         "SUPABASE_URL": "https://ovuzkqcxiwgdpqovsudr.supabase.co",
         "WEB_APP_URL": "https://staging.bayramm.uz",
         "VENDOR_APP_URL": "https://vendor-staging.bayramm.uz",
+        "ADMIN_APP_URL": "https://admin-staging.bayramm.uz",
         "API_URL": "https://api-staging.bayramm.uz"
       },
       "triggers": { "crons": ["* * * * *"] },
@@ -76,6 +79,7 @@
         "SUPABASE_URL": "https://muxftjxhsfizpxqxqkbo.supabase.co",
         "WEB_APP_URL": "https://bayramm.uz",
         "VENDOR_APP_URL": "https://vendor.bayramm.uz",
+        "ADMIN_APP_URL": "https://admin.bayramm.uz",
         "API_URL": "https://api.bayramm.uz"
       },
       "triggers": { "crons": ["* * * * *"] },

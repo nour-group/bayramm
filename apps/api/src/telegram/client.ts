@@ -34,11 +34,11 @@ export type MenuButton =
   | { type: "commands" }
   | { type: "default" };
 
-/** Кнопка под сообщением: открывает Mini App (initData — только у таких кнопок и меню) */
-export interface InlineKeyboardButton {
-  text: string;
-  web_app: { url: string };
-}
+/**
+ * Кнопка под сообщением: web_app открывает Mini App (initData — только у таких кнопок и
+ * меню), url — обычную ссылку в браузере (панель оператора: вход там через виджет)
+ */
+export type InlineKeyboardButton = { text: string; web_app: { url: string } } | { text: string; url: string };
 
 /** Кнопка вместо клавиатуры: request_contact — поделиться своим номером */
 export interface KeyboardButton {
