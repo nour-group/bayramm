@@ -8,6 +8,7 @@ import {
   type StaffActor,
   type StaffRole,
   SYSTEM,
+  type VendorActor,
   withActor,
 } from "../db/actor";
 import type { AppEnv } from "../env";
@@ -25,10 +26,10 @@ import { hashToken, parseAuthorization } from "./crypto";
  *     заблокирован — 403;
  *   · сессия сотрудника (via = tg_staff) — актор staff с ролью; роль и
  *     активность читаются на каждый запрос, поэтому отключение сотрудника
- *     действует сразу: его сессии получают 401.
- *
- * Сессии кабинета вендора появятся вместе со входом вендора — до тех пор их
- * токены получают 401.
+ *     действует сразу: его сессии получают 401;
+ *   · сессия кабинета (via = tg_partner) — актор vendor_user с вендором;
+ *     отключение пользователя или снятая привязка к Telegram действуют так же
+ *     сразу — 401.
  */
 export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
   const bearer = parseAuthorization(c.req.header("Authorization"));
@@ -46,14 +47,20 @@ export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
       .selectFrom("app.sessions as s")
       .leftJoin("app.clients as cl", "cl.id", "s.client_id")
       .leftJoin("app.staff as st", "st.id", "s.staff_id")
+      .leftJoin("app.vendor_users as vu", "vu.id", "s.vendor_user_id")
       .select([
         "s.id as sessionId",
+        "s.via",
         "cl.id as clientId",
         "cl.blocked_at",
         "cl.deleted_at",
         "st.id as staffId",
         "st.role as staffRole",
         "st.active as staffActive",
+        "vu.id as vendorUserId",
+        "vu.vendor_id as vendorId",
+        "vu.disabled_at as vendorDisabledAt",
+        sql<boolean>`vu.tg_user_hash is not null`.as("vendorLinked"),
       ])
       .where("s.token_hash", "=", tokenHash)
       .where("s.revoked_at", "is", null)
@@ -70,6 +77,11 @@ export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
   } else if (session.staffId !== null && session.staffRole !== null) {
     if (session.staffActive !== true) throw unauthorized();
     actor = { kind: "staff", id: session.staffId, role: session.staffRole };
+  } else if (session.vendorUserId !== null && session.vendorId !== null) {
+    if (session.vendorDisabledAt !== null) throw unauthorized();
+    // Вход был по Telegram: привязку сняли — сессия больше не его
+    if (session.via === "tg_partner" && session.vendorLinked !== true) throw unauthorized();
+    actor = { kind: "vendor_user", id: session.vendorUserId, vendorId: session.vendorId };
   } else {
     throw unauthorized();
   }
@@ -79,11 +91,16 @@ export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
   await next();
 });
 
-/** Любая сессия (клиента или сотрудника) или 401. Для выхода. */
-export function requireSession(c: Context<AppEnv>): { actor: ClientActor | StaffActor; sessionId: string } {
+/** Любая сессия (клиента, сотрудника или кабинета) или 401. Для выхода. */
+export function requireSession(c: Context<AppEnv>): {
+  actor: ClientActor | StaffActor | VendorActor;
+  sessionId: string;
+} {
   const actor = c.get("actor");
   const sessionId = c.get("sessionId");
-  if ((actor?.kind !== "client" && actor?.kind !== "staff") || !sessionId) throw unauthorized();
+  if (actor === undefined || actor.kind === "guest" || actor.kind === "system" || !sessionId) {
+    throw unauthorized();
+  }
   return { actor, sessionId };
 }
 
@@ -108,6 +125,24 @@ export function requireStaff(...roles: StaffRole[]) {
     if (roles.length > 0 && !roles.includes(actor.role)) throw forbidden();
     await next();
   });
+}
+
+/**
+ * Защита маршрутов кабинета вендора (после authenticate): гостю — 401, клиенту и
+ * сотруднику — 403. Какие заявки и листинги видны — решает RLS по вендору сессии.
+ */
+export const requireVendor = createMiddleware<AppEnv>(async (c, next) => {
+  const actor = c.get("actor");
+  if (actor === undefined || actor.kind === "guest") throw unauthorized();
+  if (actor.kind !== "vendor_user") throw forbidden();
+  await next();
+});
+
+/** Пользователь вендора — в обработчиках за requireVendor. Без сессии кабинета — 401. */
+export function vendorOf(c: Context<AppEnv>): VendorActor {
+  const actor = c.get("actor");
+  if (actor?.kind !== "vendor_user") throw unauthorized();
+  return actor;
 }
 
 /** Сотрудник запроса — в обработчиках за requireStaff. Без сессии сотрудника — 401. */

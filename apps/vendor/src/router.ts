@@ -1,32 +1,63 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
 import { useCallback, useEffect, useState } from "react";
 
-/* Все маршруты кабинета — в одной карте. Пути, вписанные по месту, разъезжаются
-   (ловушка №9 в CLAUDE.md). */
+/* Все экраны кабинета — в одной карте. Пути, вписанные по месту, разъезжаются
+   (ловушка №9 в CLAUDE.md). :id — единственный параметр, UUID заявки. */
 export const ROUTES = {
   requests: "/requests",
+  request: "/requests/:id",
   calendar: "/calendar",
   card: "/card",
-  login: "/login",
 } as const;
 
 export type Route = keyof typeof ROUTES;
 
-/** Разделы в навигации, по порядку */
-export const NAV: readonly Route[] = ["requests", "calendar", "card"];
+/** Разделы в нижней панели, по порядку */
+export const NAV = ["requests", "calendar", "card"] as const satisfies readonly Route[];
+export type Section = (typeof NAV)[number];
 
 /** Главный экран: сюда ведёт корень сайта */
-export const HOME: Route = "requests";
+export const HOME: Section = "requests";
 
-/** Маршрут по пути. Корень — главный экран, неизвестный путь — null */
-export function matchRoute(pathname: string): Route | null {
-  const path = trimTrailingSlashes(pathname) || "/";
-  if (path === "/") return HOME;
-  return (Object.keys(ROUTES) as Route[]).find((route) => ROUTES[route] === path) ?? null;
+/** Раздел, к которому относится экран: карточка заявки — к заявкам */
+export const SECTION_OF: Readonly<Record<Route, Section>> = {
+  requests: "requests",
+  request: "requests",
+  calendar: "calendar",
+  card: "card",
+};
+
+export interface Location {
+  readonly route: Route;
+  /** id заявки для route = request */
+  readonly id?: string;
 }
 
-/** Текущий маршрут по адресной строке и переход без перезагрузки */
-export function useRoute(): readonly [Route | null, (route: Route) => void] {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Путь экрана */
+export function pathOf(location: Location): string {
+  return location.route === "request"
+    ? ROUTES.request.replace(":id", location.id ?? "")
+    : ROUTES[location.route];
+}
+
+/** Экран по пути. Корень — главный экран, неизвестный путь — null */
+export function matchRoute(pathname: string): Location | null {
+  const path = trimTrailingSlashes(pathname) || "/";
+  if (path === "/") return { route: HOME };
+  const request = /^\/requests\/([^/]+)$/.exec(path);
+  if (request?.[1] !== undefined) {
+    return UUID_RE.test(request[1]) ? { route: "request", id: request[1].toLowerCase() } : null;
+  }
+  const route = (Object.keys(ROUTES) as Route[]).find((key) => key !== "request" && ROUTES[key] === path);
+  return route ? { route } : null;
+}
+
+export type Navigate = (location: Location, options?: { replace?: boolean }) => void;
+
+/** Текущий экран по адресной строке и переход без перезагрузки */
+export function useRoute(): readonly [Location | null, Navigate] {
   const [path, setPath] = useState(() => window.location.pathname);
 
   useEffect(() => {
@@ -41,9 +72,13 @@ export function useRoute(): readonly [Route | null, (route: Route) => void] {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const navigate = useCallback((route: Route) => {
-    const next = ROUTES[route];
-    if (window.location.pathname !== next) window.history.pushState(null, "", next);
+  const navigate = useCallback<Navigate>((location, options) => {
+    const next = pathOf(location);
+    if (window.location.pathname !== next) {
+      // hash (#tgWebAppData=…) не переносим: он нужен SDK только при первом открытии
+      if (options?.replace) window.history.replaceState(null, "", next);
+      else window.history.pushState(null, "", next);
+    }
     setPath(next);
   }, []);
 

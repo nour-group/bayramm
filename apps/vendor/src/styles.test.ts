@@ -44,12 +44,39 @@ describe("styles.css кабинета вендора", () => {
     expect(app).toMatch(/min-height:\s*100vh;[\s\S]*min-height:\s*100dvh/);
   });
 
-  it.each([".skip", ".brand", ".nav a", ".login", ".action", ".lang button"])(
-    "%s: зона нажатия не меньше 44px",
-    (selector) => {
-      expect(declarationsOf(selector)).toMatch(/min-height:\s*var\(--hit-min\)/);
-    },
-  );
+  it.each([
+    ".skip",
+    ".lang button",
+    ".btn",
+    ".icon-btn",
+    ".back-link",
+    ".pill",
+    ".rq",
+    ".choice",
+    ".field",
+    ".cal-day",
+    ".tab",
+  ])("%s: зона нажатия не меньше 44px", (selector) => {
+    expect(declarationsOf(selector)).toMatch(/min-height:\s*var\(--hit-min\)/);
+  });
+
+  it("безопасные зоны: сверху — обе зоны (--pad-t), снизу панель над --pad-b", () => {
+    expect(declarationsOf(".top")).toMatch(/padding:\s*calc\(var\(--pad-t\)/);
+    expect(declarationsOf(".tabbar")).toContain("var(--pad-b)");
+    expect(declarationsOf(".app-tabs .main")).toContain("var(--pad-b)");
+  });
+
+  it("прокрутка вбок задаёт обе оси (ловушка №2)", () => {
+    for (const rule of rules.filter((r) => /overflow-[xy]:\s*auto/.test(r.body))) {
+      expect(rule.body, rule.selectors.join(",")).toMatch(/overflow-x:/);
+      expect(rule.body, rule.selectors.join(",")).toMatch(/overflow-y:/);
+    }
+  });
+
+  it("наведение — только в @media (hover: hover) (ловушка №6)", () => {
+    const outside = css.replace(/@media \(hover: hover\)\s*\{[\s\S]*?\n\}/g, "");
+    expect(outside).not.toMatch(/:hover/);
+  });
 
   it("фокус с клавиатуры виден", () => {
     expect(declarationsOf(":focus-visible")).toMatch(/outline:\s*\d+px solid var\(--coral\)/);

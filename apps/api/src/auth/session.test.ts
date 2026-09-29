@@ -4,41 +4,73 @@ import type { AppEnv } from "../env";
 import { handleError } from "../errors";
 import { type FakeDb, fakeDb, type RecordedQuery } from "../testing/fake-db";
 import { generateToken, hashToken } from "./crypto";
-import { authenticate, requireClient, requireSession, requireStaff, staffOf } from "./session";
+import {
+  authenticate,
+  requireClient,
+  requireSession,
+  requireStaff,
+  requireVendor,
+  staffOf,
+  vendorOf,
+} from "./session";
 
 const SESSION_ID = "11111111-0000-0000-0000-000000000001";
 const CLIENT_ID = "cccccccc-0000-0000-0000-000000000001";
 const STAFF_ID = "00000000-0000-0000-0000-00000000a001";
+const VENDOR_USER_ID = "aaaaaaaa-0000-0000-0000-000000000011";
+const VENDOR_ID = "aaaaaaaa-0000-0000-0000-000000000001";
 
 interface SessionRow {
   sessionId: string;
+  via: string;
   clientId: string | null;
   blocked_at: Date | null;
   deleted_at: Date | null;
   staffId: string | null;
   staffRole: "admin" | "manager" | "moderator" | null;
   staffActive: boolean | null;
+  vendorUserId: string | null;
+  vendorId: string | null;
+  vendorDisabledAt: Date | null;
+  vendorLinked: boolean | null;
 }
 
-const clientSession = (patch: Partial<SessionRow> = {}): SessionRow => ({
+const noSubject: SessionRow = {
   sessionId: SESSION_ID,
-  clientId: CLIENT_ID,
+  via: "tg_client",
+  clientId: null,
   blocked_at: null,
   deleted_at: null,
   staffId: null,
   staffRole: null,
   staffActive: null,
+  vendorUserId: null,
+  vendorId: null,
+  vendorDisabledAt: null,
+  vendorLinked: null,
+};
+
+const clientSession = (patch: Partial<SessionRow> = {}): SessionRow => ({
+  ...noSubject,
+  clientId: CLIENT_ID,
   ...patch,
 });
 
 const staffSession = (patch: Partial<SessionRow> = {}): SessionRow => ({
-  sessionId: SESSION_ID,
-  clientId: null,
-  blocked_at: null,
-  deleted_at: null,
+  ...noSubject,
+  via: "tg_staff",
   staffId: STAFF_ID,
   staffRole: "moderator",
   staffActive: true,
+  ...patch,
+});
+
+const vendorSession = (patch: Partial<SessionRow> = {}): SessionRow => ({
+  ...noSubject,
+  via: "tg_partner",
+  vendorUserId: VENDOR_USER_ID,
+  vendorId: VENDOR_ID,
+  vendorLinked: true,
   ...patch,
 });
 
@@ -61,6 +93,8 @@ function appWith(fake: FakeDb) {
   app.get("/staff/admin", requireStaff("admin"), (c) => c.json(staffOf(c)));
   app.get("/staff/content", requireStaff("admin", "moderator"), (c) => c.json(staffOf(c)));
   app.get("/unguarded", (c) => c.json(staffOf(c)));
+  app.get("/vendor", requireVendor, (c) => c.json(vendorOf(c)));
+  app.get("/vendor/unguarded", (c) => c.json(vendorOf(c)));
   app.onError(handleError);
   return app;
 }
@@ -137,10 +171,25 @@ describe("authenticate", () => {
     expect((await get(staffSession({ staffActive: false }), "/whoami")).status).toBe(401);
   });
 
-  it("сессия без клиента и сотрудника (кабинет вендора) — пока 401", async () => {
-    expect(
-      (await get(staffSession({ staffId: null, staffRole: null, staffActive: null }), "/whoami")).status,
-    ).toBe(401);
+  it("живая сессия кабинета — актор vendor_user с вендором", async () => {
+    const res = await get(vendorSession(), "/whoami");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      actor: { kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID },
+      sessionId: SESSION_ID,
+    });
+  });
+
+  it("пользователь вендора отключён — его сессия 401", async () => {
+    expect((await get(vendorSession({ vendorDisabledAt: new Date() }), "/whoami")).status).toBe(401);
+  });
+
+  it("вход был по Telegram, а привязку сняли — 401", async () => {
+    expect((await get(vendorSession({ vendorLinked: false }), "/whoami")).status).toBe(401);
+  });
+
+  it("сессия без субъекта — 401", async () => {
+    expect((await get(noSubject, "/whoami")).status).toBe(401);
   });
 });
 
@@ -163,9 +212,9 @@ describe("requireClient", () => {
 });
 
 describe("requireSession", () => {
-  it("гостю — 401; клиенту и сотруднику — их сессия", async () => {
+  it("гостю — 401; клиенту, сотруднику и вендору — их сессия", async () => {
     expect((await appWith(dbWithSession(null)).request("/logout", { method: "POST" })).status).toBe(401);
-    for (const row of [clientSession(), staffSession()]) {
+    for (const row of [clientSession(), staffSession(), vendorSession()]) {
       const res = await appWith(dbWithSession(row)).request("/logout", {
         method: "POST",
         ...bearer(generateToken()),
@@ -203,5 +252,26 @@ describe("requireStaff", () => {
 
   it("staffOf без сессии сотрудника — 401, а не чужой актор", async () => {
     expect((await get(clientSession(), "/unguarded")).status).toBe(401);
+  });
+});
+
+describe("requireVendor", () => {
+  it("гостю — 401, клиенту и сотруднику — 403", async () => {
+    expect((await appWith(dbWithSession(null)).request("/vendor")).status).toBe(401);
+    for (const row of [clientSession(), staffSession()]) {
+      const res = await get(row, "/vendor");
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ error: { code: "forbidden", message: "Access denied" } });
+    }
+  });
+
+  it("пользователю вендора — его актор", async () => {
+    const res = await get(vendorSession(), "/vendor");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID });
+  });
+
+  it("vendorOf без сессии кабинета — 401, а не чужой актор", async () => {
+    expect((await get(staffSession(), "/vendor/unguarded")).status).toBe(401);
   });
 });
