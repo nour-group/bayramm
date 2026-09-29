@@ -83,13 +83,45 @@ jobs:
           CLOUDFLARE_ENV="$TARGET" pnpm build
           pnpm exec wrangler deploy
 
-      # Панель оператора: свой домен, без *.workers.dev. Бот виджета входа выбирается при
-      # сборке по CLOUDFLARE_ENV (apps/admin/telegram.config.ts)
+      # Панель оператора: свой домен, без *.workers.dev. Бота виджета входа в сборке нет:
+      # страница входа спрашивает его у API (GET /api/telegram/bot)
       - name: Deploy admin
         working-directory: apps/admin
         run: |
           CLOUDFLARE_ENV="$TARGET" pnpm build
           pnpm exec wrangler deploy
+
+      # Бот окружения — из кода (apps/api/src/telegram/bot-profile.ts): команды, описания,
+      # кнопка меню. Вызов идемпотентный. После всех воркеров, чтобы сбой Telegram не мешал
+      # выкладке сайтов. Ключ — секрет TELEGRAM_SYNC_KEY и здесь, и в воркере API
+      - name: Telegram bot sync
+        env:
+          TELEGRAM_SYNC_KEY: ${{ secrets.TELEGRAM_SYNC_KEY }}
+        run: |
+          if [ -z "$TELEGRAM_SYNC_KEY" ]; then
+            echo "::notice::TELEGRAM_SYNC_KEY не задан в environment '$TARGET' — настройка бота пропущена"
+            exit 0
+          fi
+          api=$([ "$TARGET" = production ] && echo api.bayramm.uz || echo api-staging.bayramm.uz)
+          # Заголовок с ключом — через stdin (-H @-), не в аргументах команды
+          code=$(printf 'Authorization: Bearer %s\n' "$TELEGRAM_SYNC_KEY" |
+            curl -sS --retry 5 --retry-delay 3 --retry-all-errors -X POST -H @- \
+              -o bot-sync.json -w '%{http_code}' "https://$api/telegram/sync" || true)
+          if [ "$code" != 200 ]; then
+            case "$code" in
+              404) hint="в воркере API не задан секрет TELEGRAM_SYNC_KEY" ;;
+              401) hint="TELEGRAM_SYNC_KEY в GitHub Environment и в воркере API различаются" ;;
+              *) hint="см. логи воркера API" ;;
+            esac
+            echo "::error::POST https://$api/telegram/sync ответил HTTP $code: $hint"
+            exit 1
+          fi
+          # Отчёт по каждому вызову: метод, язык, при ошибке — причина и код Telegram
+          jq -r '.results[] | "\(if .ok then "ok    " else "FAILED" end) \(.method) \(.language)\(if .ok then "" else " — \(.error) \(.status)" end)"' bot-sync.json
+          if ! jq -e '.ok == true and (.results | length > 0) and all(.results[]; .ok == true)' bot-sync.json >/dev/null; then
+            echo "::error::Настройка бота прошла не полностью — подробности в логах воркера API"
+            exit 1
+          fi
 
       - name: Smoke test
         run: |
@@ -123,6 +155,13 @@ jobs:
           missing="listings/00000000-0000-4000-8000-000000000000/00000000-0000-4000-8000-000000000000.webp"
           code=$(curl -sS --retry 10 --retry-delay 6 --retry-all-errors -o /dev/null -w '%{http_code}' "https://$media/640/$missing")
           if [ "$code" != 404 ]; then echo "::error::https://$media/640/<нет такого> ответил HTTP $code, ожидался 404"; exit 1; fi
+
+          # Бот окружения: API узнаёт его имя по токену (getMe) и отдаёт адрес Mini App — этот сайт.
+          # Имя в лог не пишем: проверяем только, что оно есть
+          bot=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors "https://$host/api/telegram/bot")
+          if ! jq -e --arg url "https://$host" '(.username | type == "string" and length > 0) and .miniAppUrl == $url' <<<"$bot" >/dev/null; then
+            echo "::error::https://$host/api/telegram/bot не отдал имя бота и адрес Mini App"; exit 1
+          fi
 
           if true; then
             body=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors "https://$host/api/health")
