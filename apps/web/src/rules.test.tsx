@@ -216,6 +216,19 @@ describe("заявка от начала до конца", () => {
     expect((api as ReturnType<typeof createMockApi>).created).toHaveLength(0);
   });
 
+  it("заявка — с завтрашнего дня: сегодня выбрать нельзя", async () => {
+    await mount({ path: `${FORM_PATH}?date=2026-10-01` });
+    await waitFor(() => transferCheckbox(), "форма заявки");
+    // Сегодняшняя дата из фильтра в форму не переносится
+    expect(document.querySelector(".field-button")?.textContent).toContain("Выберите дату");
+    expect(document.querySelector<HTMLButtonElement>('button.cal-day[aria-label="1 окт"]')?.disabled).toBe(
+      true,
+    );
+    expect(
+      document.querySelector<HTMLButtonElement>('button.cal-day[aria-label="2 окт, свободно"]')?.disabled,
+    ).toBe(false);
+  });
+
   it("занятую дату выбрать нельзя", async () => {
     await mount({ path: FORM_PATH });
     await waitFor(() => transferCheckbox(), "форма заявки");

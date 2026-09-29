@@ -24,13 +24,14 @@ import {
 import { useAsync, useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
-import { haptic } from "../telegram";
-import { DATE_HORIZON_DAYS, MAX_GUESTS, parseGuests } from "./catalog-feed";
+import { haptic, requestWriteAccess } from "../telegram";
+import { MAX_GUESTS, parseGuests } from "./catalog-feed";
 import {
   COMMENT_MAX,
   clearDraft,
   type Draft,
   EMPTY_DRAFT,
+  EVENT_MAX_DAYS_AHEAD,
   FIELDS,
   type Field,
   loadDraft,
@@ -244,7 +245,7 @@ function initialDraft(
   const guests = parseGuests(query.get("guests"));
   return {
     ...EMPTY_DRAFT,
-    date: isIsoDate(date) && date >= today && !listing.busyDates.includes(date) ? date : null,
+    date: isIsoDate(date) && date > today && !listing.busyDates.includes(date) ? date : null,
     guests: guests === null ? "" : String(Math.min(guests, listing.capMax)),
     name: telegramName,
   };
@@ -385,8 +386,8 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
           <div id={`${id}-calendar`}>
             <Calendar
               label={t.rqDate}
-              min={today}
-              max={addDays(today, DATE_HORIZON_DAYS)}
+              min={addDays(today, 1)}
+              max={addDays(today, EVENT_MAX_DAYS_AHEAD)}
               busy={busy}
               selected={draft.date}
               onSelect={(date) => {
@@ -529,7 +530,15 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
             text={notifyText}
             label={t.consentNotify}
             checked={notify}
-            onChange={setNotify}
+            onChange={(checked) => {
+              setNotify(checked);
+              // Без разрешения писать первым бот ответ вендора не пришлёт: спрашиваем сразу.
+              // Отказал — уведомлений не будет, галочку снимаем
+              if (checked)
+                requestWriteAccess(webApp, (granted) => {
+                  if (!granted) setNotify(false);
+                });
+            }}
           />
         ) : null}
       </fieldset>

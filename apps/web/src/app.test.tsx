@@ -133,6 +133,31 @@ describe("Telegram", () => {
     );
   });
 
+  it("галочка уведомлений спрашивает у Telegram разрешение писать; отказ её снимает", async () => {
+    const asked: string[] = [];
+    let answer = true;
+    const { webApp } = fakeWebApp({
+      requestWriteAccess: (callback) => {
+        asked.push("requestWriteAccess");
+        callback?.(answer);
+      },
+    });
+    await mount({ path: `/venue/${VENUE.slug}/request`, identity: "telegram", webApp });
+    const notify = await waitFor(
+      () => byText<HTMLLabelElement>("label.consent-check", /Присылать ответ/)?.querySelector("input"),
+      "галочка уведомлений",
+    );
+    await click(notify);
+    expect(asked).toEqual(["requestWriteAccess"]);
+    expect(notify.checked).toBe(true);
+
+    await click(notify);
+    answer = false;
+    await click(notify);
+    expect(asked).toHaveLength(2);
+    expect(notify.checked).toBe(false);
+  });
+
   it("старый клиент без методов не ломает приложение", async () => {
     const webApp = { initData: "x=1", initDataUnsafe: {} };
     await mount({ path: `/venue/${VENUE.slug}`, identity: "telegram", webApp });

@@ -1,5 +1,5 @@
 import type { ConsentText, CreateRequest, ListingDetail } from "@bayramm/shared/api";
-import { isIsoDate, isPhoneDigits, PHONE_PREFIX, phoneDigits } from "../format";
+import { addDays, isIsoDate, isPhoneDigits, PHONE_PREFIX, phoneDigits } from "../format";
 import { sessionGetJson, sessionRemove, sessionSetJson } from "../storage";
 import { parseGuests } from "./catalog-feed";
 
@@ -39,6 +39,9 @@ export const BUDGETS: readonly ({ readonly min?: number; readonly max?: number }
 
 /** Как у API (CONTACT_NAME_MAX) */
 export const NAME_MAX = 80;
+
+/** Дата события — с завтрашнего дня и не дальше двух лет (как проверяет API) */
+export const EVENT_MAX_DAYS_AHEAD = 730;
 export const COMMENT_MAX = 1000;
 
 const draftKey = (slug: string) => `bayramm.web.draft.${slug}`;
@@ -89,7 +92,12 @@ export function validate(
 ): Partial<Record<Field, string>> {
   const errors: Partial<Record<Field, string>> = {};
   if (!draft.occasion) errors.occasion = t.errOcc;
-  if (!isIsoDate(draft.date) || draft.date < context.today || context.busy.has(draft.date))
+  if (
+    !isIsoDate(draft.date) ||
+    draft.date <= context.today ||
+    draft.date > addDays(context.today, EVENT_MAX_DAYS_AHEAD) ||
+    context.busy.has(draft.date)
+  )
     errors.date = t.errDate;
   const guests = parseGuests(draft.guests);
   if (guests === null) errors.guests = t.errGuests;

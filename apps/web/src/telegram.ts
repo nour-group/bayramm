@@ -34,6 +34,22 @@ export function haptic(webApp: TelegramWebApp | null, type: "success" | "error" 
   webApp?.HapticFeedback?.notificationOccurred?.(type);
 }
 
+/**
+ * Разрешение боту писать первым: без него бот не пришлёт ответ вендора. Нет метода
+ * или клиент старше 6.9 — молча ничего (согласие на уведомления всё равно записано)
+ */
+export function requestWriteAccess(
+  webApp: TelegramWebApp | null,
+  onResult: (granted: boolean) => void,
+): void {
+  if (!supports(webApp, "6.9") || typeof webApp?.requestWriteAccess !== "function") return;
+  try {
+    webApp.requestWriteAccess?.((granted) => onResult(granted === true));
+  } catch {
+    // старый или урезанный клиент: разрешение спросим в другой раз
+  }
+}
+
 /** Кнопка «назад» Telegram есть (6.1+) — тогда своя в шапке не нужна */
 export function hasNativeBack(webApp: TelegramWebApp | null): boolean {
   return supports(webApp, "6.1") && typeof webApp?.BackButton?.show === "function";

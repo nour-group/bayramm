@@ -87,6 +87,8 @@ export interface TelegramWebApp {
   disableVerticalSwipes?(): void;
   /** Ссылка t.me внутри Telegram, без выхода в браузер */
   openTelegramLink?(url: string): void;
+  /** Спросить разрешение боту писать пользователю первым (с версии 6.9) */
+  requestWriteAccess?(callback?: (granted: boolean) => void): void;
   onEvent?(event: string, handler: () => void): void;
   offEvent?(event: string, handler: () => void): void;
 }
