@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./i18n": "./src/i18n/index.ts",
-    "./api": "./src/api/client.ts"
+    "./api": "./src/api/client.ts",
+    "./api/me": "./src/api/me.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

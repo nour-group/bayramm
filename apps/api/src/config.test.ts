@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { unstable_readConfig } from "wrangler";
+import { RATE_LIMIT_PERIOD_SECONDS, type RateLimitBinding } from "./ratelimit";
 
 const API_CONFIG = join(import.meta.dirname, "../wrangler.jsonc");
 const WEB_CONFIG = join(import.meta.dirname, "../../web/wrangler.jsonc");
@@ -52,5 +53,36 @@ describe("cron в wrangler.jsonc API", () => {
   // SLA и outbox — раз в минуту в каждом окружении
   it.each([undefined, "staging", "production"])("%s — раз в минуту", (env) => {
     expect(read(API_CONFIG, env).triggers.crons).toEqual(["* * * * *"]);
+  });
+});
+
+describe("ratelimits в wrangler.jsonc API", () => {
+  const ENVS = [undefined, "staging", "production"] as const;
+  const BINDINGS: readonly RateLimitBinding[] = [
+    "RATE_LIMIT_AUTH_IP",
+    "RATE_LIMIT_REQUESTS_IP",
+    "RATE_LIMIT_REQUESTS_ACTOR",
+  ];
+
+  interface Limit {
+    name: string;
+    namespace_id: string;
+    simple: { limit: number; period: number };
+  }
+  const limitsOf = (env: string | undefined): Limit[] => read(API_CONFIG, env).ratelimits ?? [];
+
+  // Привязки не наследуются: без них в окружении лимиты молча не работали бы
+  it.each(ENVS)("окружение %s: все привязки, окно — как Retry-After", (env) => {
+    const limits = limitsOf(env);
+    expect(limits.map((l) => l.name).sort()).toEqual([...BINDINGS].sort());
+    for (const l of limits) expect(l.simple.period, l.name).toBe(RATE_LIMIT_PERIOD_SECONDS);
+  });
+
+  // Один namespace_id — общие счётчики даже между разными воркерами аккаунта
+  it("namespace_id не повторяются между привязками и окружениями", () => {
+    const ids = ENVS.flatMap((env) => limitsOf(env).map((l) => l.namespace_id));
+    expect(ids).toHaveLength(BINDINGS.length * ENVS.length);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[1-9][0-9]*$/);
   });
 });

@@ -3,6 +3,7 @@ import { Client } from "pg";
 import { scheduled } from "./cron";
 import type { AppEnv } from "./env";
 import { handleError, notFound } from "./errors";
+import { mountRateLimits } from "./ratelimit";
 import { auth } from "./routes/auth";
 import { catalog } from "./routes/catalog";
 import { me } from "./routes/me";
@@ -50,6 +51,9 @@ app.get("/health", async (c) => {
     ok ? 200 : 503,
   );
 });
+
+// Лимиты частоты — до маршрутов: POST /auth/*, POST /requests (src/ratelimit.ts)
+mountRateLimits(app);
 
 app.route("/auth", auth);
 app.route("/me", me);

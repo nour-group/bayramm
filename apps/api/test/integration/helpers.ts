@@ -14,6 +14,8 @@ export const ID_HASH_KEY = randomBytes(32).toString("base64url");
 export const apiDatabaseUrl = inject("apiDatabaseUrl");
 export const adminDatabaseUrl = inject("adminDatabaseUrl");
 
+const allowAll: RateLimit = { limit: async () => ({ success: true }) };
+
 export function makeEnv(): Env {
   return {
     APP_ENV: "local",
@@ -28,6 +30,10 @@ export function makeEnv(): Env {
     // Storage нужен только тестам фото — у них свои адрес и ключ (photos.test.ts)
     SUPABASE_URL: "http://127.0.0.1:54321",
     SUPABASE_SERVICE_ROLE_KEY: "",
+    // Лимиты частоты проверяют юнит-тесты (src/ratelimit.test.ts); здесь — пропускают всё
+    RATE_LIMIT_AUTH_IP: allowAll,
+    RATE_LIMIT_REQUESTS_IP: allowAll,
+    RATE_LIMIT_REQUESTS_ACTOR: allowAll,
   };
 }
 

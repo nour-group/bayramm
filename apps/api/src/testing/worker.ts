@@ -5,6 +5,18 @@ import app from "../index";
 
 export const BOT_TOKEN = "123456:unit-test-bot-token";
 
+/** Привязка ограничения частоты, которая пропускает всё; вызовы — в calls */
+export function allowAllLimiter(): RateLimit & { calls: string[] } {
+  const calls: string[] = [];
+  return {
+    calls,
+    async limit({ key }) {
+      calls.push(key);
+      return { success: true };
+    },
+  };
+}
+
 export function makeEnv(overrides: Partial<Env> = {}): Env {
   return {
     APP_ENV: "local",
@@ -20,6 +32,9 @@ export function makeEnv(overrides: Partial<Env> = {}): Env {
     API_URL: "http://localhost:8787",
     // Порт 1: соединение, если бы до него дошло, сразу упало бы
     HYPERDRIVE: { connectionString: "postgresql://nobody:nothing@127.0.0.1:1/none" } as Hyperdrive,
+    RATE_LIMIT_AUTH_IP: allowAllLimiter(),
+    RATE_LIMIT_REQUESTS_IP: allowAllLimiter(),
+    RATE_LIMIT_REQUESTS_ACTOR: allowAllLimiter(),
     ...overrides,
   };
 }

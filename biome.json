@@ -12,6 +12,24 @@
     ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },
-  "linter": { "enabled": true, "rules": { "preset": "recommended" } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "security": { "noDangerouslySetInnerHtml": "error", "noGlobalEval": "error" }
+    }
+  },
+  "plugins": [
+    {
+      "path": "./biome/no-unsafe-sinks.grit",
+      "includes": [
+        "**/apps/*/src/**",
+        "**/apps/*/worker/**",
+        "**/packages/*/src/**",
+        "!**/*.test.ts",
+        "!**/*.test.tsx"
+      ]
+    }
+  ],
   "javascript": { "formatter": { "quoteStyle": "double" } }
 }

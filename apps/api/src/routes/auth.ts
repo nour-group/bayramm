@@ -10,7 +10,7 @@
 // auth/staff.ts. Сессия — случайный токен, в базе только его sha256.
 //
 // Ограничение частоты попыток входа сюда не входит: оно встаёт middleware перед
-// обработчиком маршрута (как bodyLimit), сами обработчики от него не зависят.
+// маршрутами (src/ratelimit.ts), сами обработчики от него не зависят.
 
 import { type TelegramUser, verifyInitData } from "@bayramm/tg";
 import { Hono } from "hono";

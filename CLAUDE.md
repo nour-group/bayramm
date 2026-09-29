@@ -84,6 +84,21 @@ API и в GitHub Environment). В @BotFather вручную — только `/s
 которого ждать минуту не хочется, вешает `outboxKick`
 (`apps/api/src/notify/kick.ts`). SLA 12 часов — там же, по cron.
 
+Лимиты частоты — привязки Workers Rate Limiting (`ratelimits` в
+`apps/api/wrangler.jsonc`, `apps/api/src/ratelimit.ts`): `POST /auth/*` по
+HMAC от IP, `POST /requests` по IP и по клиенту; превышение — 429
+`rate_limited` с `Retry-After`. Привязки не наследуются окружениями, у каждого
+окружения свои `namespace_id` (проверяет `config.test.ts`).
+
+Сроки хранения и истечение заявок — `app.run_daily_maintenance()` (раз в день
+по Ташкенту, повтор в тот же день ничего не делает); запускает его шаг
+`daily_maintenance` того же cron в окне 21:00–21:59 UTC
+(`apps/api/src/maintenance`). Отдельный Cron Trigger не заводить — их мало на
+бесплатном тарифе. Права клиента на свои данные — `GET /me/export`,
+`POST /me/consents/withdraw`, `DELETE /me` (функции `app.client_*`, только над
+собой). Доступность staging и production каждые 15 минут проверяет workflow
+`Uptime`.
+
 ---
 
 ## Что делать в первую очередь
@@ -242,6 +257,13 @@ cd prototypes/admin  && pnpm test   # дымовые тесты панели о�
   service_role; ключ объекта `listings/<листинг>/<uuid>.<расширение>`;
 - **выдача** — `mediaUrl` / `mediaSrcSet`, ширины 320·640·960·1280·1920 и
   никаких других: каждая новая — уникальные преобразования в квоте Cloudflare.
+
+### Разметка и код из строк
+
+Запрещены: `dangerouslySetInnerHTML`, `eval` (правила Biome), присваивание
+`innerHTML`/`outerHTML`, `insertAdjacentHTML`, `document.write`, `new Function`
+(плагин `biome/no-unsafe-sinks.grit`, исходники `apps/*` и `packages/*` без
+тестов). Текст — `textContent` и JSX, богатый текст — структурные блоки.
 
 ### Telegram
 

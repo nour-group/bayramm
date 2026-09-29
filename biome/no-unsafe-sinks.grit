@@ -1,0 +1,21 @@
+// Разметка и код из строк: innerHTML/outerHTML, insertAdjacentHTML, document.write,
+// new Function. Любая строка с данными пользователя здесь — XSS, а CSP приложений
+// запрещает eval и встроенные скрипты (packages/edge/src/security-headers.ts).
+// Текст — textContent и JSX, богатый текст словарей — структурные блоки.
+// dangerouslySetInnerHTML и eval ловят правила Biome (security в biome.json).
+or {
+  `$target.innerHTML = $value`,
+  `$target.innerHTML += $value`,
+  `$target.outerHTML = $value`,
+  `$target.outerHTML += $value`,
+  `$target.insertAdjacentHTML($args)`,
+  `document.write($args)`,
+  `document.writeln($args)`,
+  `new Function($args)`,
+  `Function($args)`
+} as $sink where {
+  register_diagnostic(
+    span = $sink,
+    message = "Разметка или код из строки запрещены: используйте textContent, JSX или структурные блоки."
+  )
+}
