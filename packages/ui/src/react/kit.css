@@ -137,6 +137,8 @@ html.ui-lock {
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-15);
+  /* Значение — обычным начертанием, как текст в соседних полях, даже в жирной подписи */
+  font-weight: 400;
   text-align: left;
   cursor: pointer;
   transition: border-color var(--t1) var(--ease-soft);
