@@ -9,8 +9,9 @@ export default createSiteWorker({
   dev,
   // Фото площадок — с воркера media
   imageOrigins: mediaImageOrigins(dev),
-  // Mini App в Telegram Web открывается во фрейме web.telegram.org — встраивать разрешено только ему.
-  // Подключая telegram-web-app.js, добавить https://telegram.org в script-src (@bayramm/edge)
+  // Mini App в Telegram Web открывается во фрейме web.telegram.org — встраивать разрешено только ему
   frameAncestors: ["https://web.telegram.org"],
+  // SDK Mini App: telegram-web-app.js в script-src (index.html грузит его до бандла)
+  telegramWebApp: true,
   before: taklifnomaRedirect,
 }) satisfies ExportedHandler<Env>;

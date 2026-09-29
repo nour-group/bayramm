@@ -1,0 +1,151 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { FONT_SIZES, GAPS, RADII } from "@bayramm/ui";
+import { describe, expect, it } from "vitest";
+
+const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+const tokens = readFileSync(createRequire(import.meta.url).resolve("@bayramm/ui/tokens.css"), "utf8");
+
+/** Правила без вложенности: селектор → объявления (правила внутри @media тоже попадают) */
+const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector = "", body = ""]) => ({
+  selectors: selector.split(",").map((s) => s.trim()),
+  body,
+}));
+
+const declarationsOf = (selector: string) =>
+  rules
+    .filter((rule) => rule.selectors.includes(selector))
+    .map((rule) => rule.body)
+    .join(";");
+
+/** Тело @media / @supports с заданным условием */
+function atRuleBody(prelude: RegExp): string {
+  const start = css.search(prelude);
+  if (start < 0) return "";
+  let depth = 0;
+  for (let i = css.indexOf("{", start); i < css.length; i++) {
+    if (css[i] === "{") depth++;
+    if (css[i] === "}" && --depth === 0) return css.slice(css.indexOf("{", start) + 1, i);
+  }
+  return "";
+}
+
+describe("styles.css клиента", () => {
+  it("скобки сбалансированы (ловушка №10)", () => {
+    let depth = 0;
+    for (const char of css) {
+      if (char === "{") depth++;
+      if (char === "}") depth--;
+      expect(depth).toBeGreaterThanOrEqual(0);
+    }
+    expect(depth).toBe(0);
+  });
+
+  it("все переменные — из токенов @bayramm/ui; --tg-* ставит SDK Telegram", () => {
+    const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map(([, name]) => name));
+    const missing = [...used].filter((name) => !name?.startsWith("--tg-") && !tokens.includes(`${name}:`));
+    expect(missing).toEqual([]);
+    expect(used.size).toBeGreaterThan(30);
+  });
+
+  it("цвета не вписаны числом", () => {
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+  });
+
+  it("кегли, скругления и зазоры — только из шкал", () => {
+    expect(css).not.toMatch(/font-size:\s*\d/);
+    expect(css).not.toMatch(/border-radius:\s*\d/);
+    expect(css).not.toMatch(/\bgap:\s*\d/);
+    const sizes = new Set([...css.matchAll(/--fs-([\d-]+)/g)].map(([, s]) => Number(s?.replace("-", "."))));
+    expect([...sizes].filter((s) => !(FONT_SIZES as readonly number[]).includes(s))).toEqual([]);
+    const radii = new Set([...css.matchAll(/--r-(\d+)/g)].map(([, r]) => Number(r)));
+    expect([...radii].filter((r) => !(RADII as readonly number[]).includes(r))).toEqual([]);
+    const gaps = new Set([...css.matchAll(/--gap-(\d+)/g)].map(([, g]) => Number(g)));
+    expect([...gaps].filter((g) => !(GAPS as readonly number[]).includes(g))).toEqual([]);
+  });
+
+  it("внутренние отступы — только чётные", () => {
+    const paddings = [...css.matchAll(/padding(?:-[a-z]+)?:\s*([^;]+);/g)].flatMap(([, value]) =>
+      [...(value ?? "").matchAll(/(?<![\w-])(\d+)px/g)].map(([, n]) => Number(n)),
+    );
+    expect(paddings.filter((n) => n % 2 !== 0)).toEqual([]);
+  });
+
+  it("высота: 100vh, а dvh и высота Telegram — только под @supports (ловушка №4)", () => {
+    expect(declarationsOf(".app")).toMatch(/min-height:\s*100vh/);
+    const supported = atRuleBody(/@supports \(min-height: 100dvh\)/);
+    expect(supported).toMatch(/min-height:\s*var\(--tg-viewport-stable-height, 100dvh\)/);
+    expect(css.indexOf("min-height: 100vh")).toBeLessThan(css.indexOf("@supports (min-height: 100dvh)"));
+  });
+
+  it("верх и низ складывают обе безопасные зоны: --pad-t и --pad-b", () => {
+    expect(declarationsOf(".top")).toMatch(/padding:\s*calc\(var\(--pad-t\)/);
+    expect(declarationsOf(".tabs")).toMatch(/var\(--pad-b\)/);
+    expect(declarationsOf(".action-bar")).toMatch(/var\(--pad-b\)/);
+    expect(css).not.toMatch(/--sa-t\)|--sa-b\)/);
+  });
+
+  it("overflow-y только вместе с overflow-x (ловушка №2)", () => {
+    for (const rule of rules) {
+      if (/overflow-y:/.test(rule.body)) expect(rule.body, rule.selectors.join()).toMatch(/overflow-x:/);
+      if (/overflow-x:/.test(rule.body)) expect(rule.body, rule.selectors.join()).toMatch(/overflow-y:/);
+    }
+  });
+
+  it(":hover — только внутри @media (hover: hover) (ловушка №6)", () => {
+    const hover = atRuleBody(/@media \(hover: hover\)/);
+    const outside = css.replace(hover, "");
+    expect(outside).not.toMatch(/:hover/);
+    expect(hover).toMatch(/:hover/);
+  });
+
+  it("выбранное объявлено после наведения (ловушка №7)", () => {
+    const hover = css.search(/@media \(hover: hover\)/);
+    for (const selector of [
+      '.lang button[aria-pressed="true"]',
+      '.tabs a[aria-current="page"]',
+      ".choice.on",
+    ])
+      expect(css.indexOf(selector), selector).toBeGreaterThan(hover);
+  });
+
+  it.each([
+    ".btn",
+    ".icon-btn",
+    ".link-btn",
+    ".lang button",
+    ".field-input",
+    ".choice",
+    ".cal-day",
+    ".contact-phone",
+    ".brand",
+    ".skip",
+  ])("%s: зона нажатия не меньше 44px", (selector) => {
+    expect(declarationsOf(selector)).toMatch(
+      /min-height:\s*(var\(--hit-min\)|4[4-9]px|5\dpx)|height:\s*var\(--hit-min\)/,
+    );
+  });
+
+  it("отказ и отправка в форме — одной ширины", () => {
+    expect(declarationsOf(".form-bar")).toMatch(/grid-template-columns:\s*1fr 1fr/);
+    expect(declarationsOf(".two-buttons")).toMatch(/grid-template-columns:\s*1fr 1fr/);
+  });
+
+  it("занятый день выцветает, а не краснеет", () => {
+    const busy = declarationsOf(".cal-day.busy");
+    expect(busy).toMatch(/color:\s*var\(--busy-ink\)/);
+    expect(busy).not.toMatch(/coral|berry/);
+  });
+
+  it("анимация отключается при prefers-reduced-motion", () => {
+    expect(atRuleBody(/@media \(prefers-reduced-motion: reduce\)/)).toMatch(/animation:\s*none/);
+  });
+
+  it("фокус с клавиатуры виден", () => {
+    expect(declarationsOf(":focus-visible")).toMatch(/outline:\s*3px solid var\(--coral\)/);
+  });
+
+  it("узор в data-URI без «#»", () => {
+    for (const [uri] of css.matchAll(/url\("data:[^"]+"\)/g)) expect(uri).not.toContain("#");
+  });
+});

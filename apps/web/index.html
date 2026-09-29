@@ -4,8 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#FAF7F4" />
+    <meta name="color-scheme" content="light" />
     <meta name="robots" content="noindex" />
     <title>Bayramm</title>
+    <!-- SDK Mini App: до бандла приложения, чтобы window.Telegram был готов к старту.
+         Вне Telegram он ничего не делает; не загрузился — приложение работает как сайт.
+         Без integrity: Telegram обновляет файл по тому же адресу, хеш сломал бы Mini App.
+         Источник ограничивает CSP — только этот путь (telegramWebApp в @bayramm/edge) -->
+    <!-- nosemgrep: html.security.audit.missing-integrity.missing-integrity -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { contentSecurityPolicy } from "@bayramm/edge";
 import { echoApi, SPA_FILES, spaAssets } from "@bayramm/edge/testing";
 import { mediaImageOrigins } from "@bayramm/media";
@@ -48,6 +49,7 @@ describe("воркер клиента", () => {
       contentSecurityPolicy({
         frameAncestors: ["https://web.telegram.org"],
         imageOrigins: mediaImageOrigins(),
+        telegramWebApp: true,
       }),
     );
     expect(csp).toContain(
@@ -56,5 +58,30 @@ describe("воркер клиента", () => {
     expect(csp).not.toContain("localhost");
     expect(csp).not.toContain("'unsafe-inline'");
     expect(csp).toContain("frame-ancestors https://web.telegram.org");
+  });
+
+  it("SDK Mini App: в script-src только telegram-web-app.js, виджета входа нет", async () => {
+    const { get } = setup();
+    const csp = (await get("/")).headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("script-src 'self' https://telegram.org/js/telegram-web-app.js;");
+    expect(csp).not.toContain("telegram-widget.js");
+    expect(csp).not.toContain("oauth.telegram.org");
+    expect(csp).toContain("connect-src 'self';");
+  });
+});
+
+describe("index.html клиента", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+
+  it("SDK Mini App подключён до бандла приложения, обычным скриптом", () => {
+    const sdk = html.indexOf('<script src="https://telegram.org/js/telegram-web-app.js"></script>');
+    const app = html.indexOf('<script type="module" src="/src/main.tsx"></script>');
+    expect(sdk).toBeGreaterThan(-1);
+    expect(app).toBeGreaterThan(sdk);
+  });
+
+  it("встроенных скриптов и стилей нет (CSP их не пропустит)", () => {
+    expect(html).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>/);
+    expect(html).not.toMatch(/<style|style=/);
   });
 });

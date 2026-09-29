@@ -21,6 +21,8 @@ import { createRequire } from "node:module";
 import { normalizeUz } from "../src/i18n/uz-apostrophe.ts";
 
 const PROTOTYPE = new URL("../../../prototypes/client/index.html", import.meta.url);
+/** Начало секции текстов приложения в ru.ts и uz.ts (см. appSection) */
+const APP_MARKER = "  // ── тексты приложения";
 const OUT_DIR = new URL("../src/i18n/", import.meta.url);
 const requireFromPrototype = createRequire(
   new URL("../../../prototypes/client/package.json", import.meta.url),
@@ -412,11 +414,28 @@ function header(lang) {
   const what = lang === "ru" ? "Русский" : "Узбекский (латиница)";
   return `/* ${what} словарь клиентского приложения.
 
-   СГЕНЕРИРОВАНО scripts/extract-client-dict.mjs из prototypes/client/index.html (объект T).
-   Пока прототип остаётся источником текстов, правьте не этот файл, а таблицу REWRITES
+   Ключи до строки «${APP_MARKER.trim()}» СГЕНЕРИРОВАНЫ scripts/extract-client-dict.mjs
+   из prototypes/client/index.html (объект T): их правьте не здесь, а таблицей REWRITES
    в скрипте и перезапускайте: pnpm --filter @bayramm/shared extract:dict.
-   Когда тексты начнут жить здесь, скрипт можно удалить и править файл руками. */
+   Ключи после неё — тексты приложения, которых в прототипе нет: правятся здесь руками,
+   перенос сохраняет их как есть. Новый ключ — в оба языка, в том же порядке. */
 `;
+}
+
+/* Хвост словаря после APP_MARKER — тексты приложения. Переносим как есть: скрипт их
+   не порождает и не проверяет (это делают тип Dict и i18n.test.ts) */
+function appSection(lang) {
+  let source;
+  try {
+    source = readFileSync(new URL(`${lang}.ts`, OUT_DIR), "utf8");
+  } catch {
+    return "";
+  }
+  const start = source.indexOf(APP_MARKER);
+  if (start < 0) return "";
+  const end = source.lastIndexOf("\n};");
+  if (end < start) throw new Error(`${lang}.ts: после секции приложения нет закрывающей «};»`);
+  return `${source.slice(start, end)}\n`;
 }
 
 function renderFile(lang, dict, keys) {
@@ -430,7 +449,7 @@ function renderFile(lang, dict, keys) {
     imports.push(`import { ${[...richTypes, ...rich].join(", ")} } from "./rich";`);
   if (lang === "uz") imports.unshift(`import type { Dict } from "./dict";`);
   const decl = lang === "ru" ? "export const ru = {" : "export const uz: Dict = {";
-  return `${header(lang)}\n${imports.join("\n")}\n\n${decl}\n${lines.join("\n")}\n};\n`;
+  return `${header(lang)}\n${imports.join("\n")}\n\n${decl}\n${lines.join("\n")}\n${appSection(lang)}};\n`;
 }
 
 /* ---------- запуск ---------- */
