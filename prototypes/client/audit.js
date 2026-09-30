@@ -23,11 +23,13 @@ const luxTok = (() => {
   return '';
 })();
 let THEME = 'all';
+/* имя токена — в регулярку буквально */
+const escRe=k=>k.replace(/[\\^$.*+?()[\]{}|-]/g,'\\$&');
 const V = k => {
-  const re = new RegExp(k.replace(/-/g, '\\-') + ':\\s*([^;]+)');
+  const re = new RegExp(escRe(k) + ':\\s*([^;]+)');
   if (THEME === 'lux') { const m = luxTok.match(re); if (m) return m[1].trim(); }
   const m2 = rootTok.match(re); if (m2) return m2[1].trim();
-  const m3 = CSS.match(new RegExp(k.replace(/-/g, '\\-') + ':\\s*([^;]+);'));
+  const m3 = CSS.match(new RegExp(escRe(k) + ':\\s*([^;]+);'));
   return m3 ? m3[1].trim() : null;
 };
 function toRGB(c,depth){

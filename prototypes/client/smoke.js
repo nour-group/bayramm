@@ -594,7 +594,8 @@ suite('дисциплина оформления', step => {
 /* ---------- 15. Telegram Mini App ---------- */
 suite('Telegram', step => {
   step('SDK подключён', () => {
-    if (!/telegram\.org\/js\/telegram-web-app\.js/.test(doc.head.innerHTML))
+    const src = 'https://telegram.org/js/telegram-web-app.js';
+    if (![...doc.head.querySelectorAll('script[src]')].some(el => el.getAttribute('src') === src))
       throw new Error('скрипт клиента не подключён');
   });
   step('без Telegram приложение работает', () => {
