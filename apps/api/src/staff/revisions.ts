@@ -1,7 +1,8 @@
 // Правки карточек (app.listing_revisions): партнёр меняет название, цену, описания и
 // пакеты только так — клиент видит одобренную версию, пока правка ждёт решения.
-// Подаёт правку кабинет (vendor/revisions.ts), здесь — сторона сотрудника: очередь,
-// сравнение «сейчас / предлагает вендор», решение.
+// Подаёт правку кабинет (vendor/revisions.ts) или менеджер, правя опубликованную
+// карточку (staff/listings.ts); здесь — сторона того, кто решает: очередь, сравнение
+// «сейчас / предлагают», решение.
 //
 //   GET  /staff/revisions?status=pending|approved|declined|withdrawn&limit=&offset=
 //   GET  /staff/revisions/:id
@@ -176,6 +177,8 @@ const selectRevisions = (trx: Tx) =>
       "v.id as vendor_id",
       "v.public_code",
       "v.name as vendor_name",
+      sql<boolean>`exists (select 1 from app.staff s where s.id = rv.submitted_by)`.as("by_staff"),
+      staffName("rv.submitted_by").as("submitted_by_name"),
     ]);
 
 type RevisionRow = Awaited<ReturnType<ReturnType<typeof selectRevisions>["executeTakeFirstOrThrow"]>>;
@@ -195,6 +198,9 @@ function itemView(row: RevisionRow): RevisionListItem {
     decidedAt: iso(row.decided_at),
     listing: { id: row.listing_id, name: row.listing_name, status: row.listing_status },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
+    proposedBy: row.by_staff
+      ? { kind: "staff", name: row.submitted_by_name }
+      : { kind: "partner", name: null },
     fields: FIELDS.filter(([key]) => keys.includes(key)).map(([, field]) => field),
     // Карточку меняли после версии, от которой вендор считал правку
     stale: row.base_version !== row.listing_version,

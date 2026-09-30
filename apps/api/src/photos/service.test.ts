@@ -16,6 +16,7 @@ const VENDOR: Actor = {
   kind: "vendor_user",
   id: "aaaaaaaa-0000-4000-8000-000000000011",
   vendorId: "aaaaaaaa-0000-4000-8000-000000000001",
+  role: "owner",
 };
 const WEBP = webpFixture({ width: 1600, height: 1200 });
 const KEY_RE = new RegExp(`^listings/${LISTING}/([0-9a-f-]{36})\\.webp$`);

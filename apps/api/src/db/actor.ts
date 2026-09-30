@@ -7,6 +7,8 @@ import type { Db } from "./client";
 import type { AppActorKind, AppStaffRole, DB } from "./schema.generated";
 
 export type StaffRole = AppStaffRole;
+/** Роль в кабинете вендора (app.vendor_users.role): что кому можно — vendor/access.ts */
+export type VendorRole = "owner" | "member";
 
 /**
  * Вид актора в журналах статусов (заявки, карточки): account там не бывает — статусы
@@ -21,13 +23,19 @@ export const roleActorKind = (kind: AppActorKind) => kind as RoleActorKind;
 // роли клиента, партнёра и сотрудника — отдельные акторы, их API выводит из
 // членств аккаунта (auth/session.ts).
 // Роль сотрудника — для проверок в API (requireStaff); в базу уходят только
-// kind и id, роль там читает app.current_staff_role()
+// kind и id, роль там читает app.current_staff_role(). Так же роль партнёра: API
+// проверяет её сам (vendor/access.ts), база — по app.vendor_users (app.edits_listing)
 export type Actor =
   | { readonly kind: "guest" }
   | { readonly kind: "system" }
   | { readonly kind: "account"; readonly id: string }
   | { readonly kind: "client"; readonly id: string }
-  | { readonly kind: "vendor_user"; readonly id: string; readonly vendorId: string }
+  | {
+      readonly kind: "vendor_user";
+      readonly id: string;
+      readonly vendorId: string;
+      readonly role: VendorRole;
+    }
   | { readonly kind: "staff"; readonly id: string; readonly role: StaffRole };
 
 export type ActorKind = Actor["kind"];

@@ -9,6 +9,7 @@ const ACTOR: VendorActor = {
   kind: "vendor_user",
   id: "aaaaaaaa-0000-0000-0000-000000000011",
   vendorId: "aaaaaaaa-0000-0000-0000-000000000001",
+  role: "owner",
 };
 const LISTING_ID = "aaaaaaaa-0000-0000-0000-000000000101";
 // 00:30 1 октября в Ташкенте — а в UTC ещё 30 сентября
@@ -35,6 +36,8 @@ async function rejection(run: () => Promise<unknown>): Promise<ApiError> {
 }
 
 const isListingCheck = (q: RecordedQuery) => q.sql.startsWith('select "id" from "app"."listings"');
+const isVersion = (q: RecordedQuery) => q.sql.includes('"app"."availability_versions"');
+const isLock = (q: RecordedQuery) => q.sql.includes("app.availability_lock");
 
 describe("даты по Ташкенту", () => {
   it("сегодня — по UTC+5", () => {
@@ -93,6 +96,7 @@ describe("getCalendar", () => {
   it("месяц по умолчанию — текущий по Ташкенту; занятые дни и дни открытых заявок", async () => {
     const fake = fakeDb((q) => {
       if (isListingCheck(q)) return [{ id: LISTING_ID }];
+      if (isVersion(q)) return [{ version: 7 }];
       if (q.sql.includes('"app"."availability"'))
         return [
           { day: "2026-10-05", source: "vendor", request_id: null },
@@ -116,6 +120,7 @@ describe("getCalendar", () => {
         { day: "2026-10-07", source: "request_decline", requestId: "eeeeeeee-0000-0000-0000-0000000000a1" },
       ],
       requestDays: ["2026-10-12"],
+      version: 7,
     });
     const busy = fake.queries.find((q) => q.sql.includes('"app"."availability"'));
     expect(busy?.parameters).toEqual([LISTING_ID, "2026-10-01", "2026-10-31"]);
@@ -135,27 +140,47 @@ describe("getCalendar", () => {
 });
 
 describe("markBusy / markFree", () => {
-  it("занять: source vendor, повтор не трогает уже занятый день", async () => {
+  it("занять: source vendor, повтор не трогает уже занятый день; сначала — сверка версии", async () => {
     const fake = fakeDb((q) => {
       if (isListingCheck(q)) return [{ id: LISTING_ID }];
+      if (isVersion(q)) return [{ version: 4 }];
       if (q.sql.startsWith('select "day"')) return [{ day: "2026-10-05", source: "staff", request_id: null }];
       return [];
     });
-    const day = await markBusy(fake.db, ACTOR, LISTING_ID, "2026-10-05");
-    expect(day).toEqual({ day: "2026-10-05", source: "staff", requestId: null });
-    const insert = fake.queries.find((q) => q.sql.startsWith("insert"));
-    expect(insert?.sql).toContain('on conflict ("listing_id", "day") do nothing');
-    expect(insert?.parameters).toEqual([LISTING_ID, "2026-10-05", "vendor"]);
+    const change = await markBusy(fake.db, ACTOR, LISTING_ID, "2026-10-05", 3);
+    expect(change).toEqual({
+      day: "2026-10-05",
+      busy: { day: "2026-10-05", source: "staff", requestId: null },
+      version: 4,
+    });
+    const lock = fake.queries.findIndex(isLock);
+    const insert = fake.queries.findIndex((q) => q.sql.startsWith("insert"));
+    expect(fake.queries[lock]?.parameters).toEqual([LISTING_ID, 3]);
+    expect(lock).toBeGreaterThan(-1);
+    expect(lock).toBeLessThan(insert);
+    expect(fake.queries[insert]?.sql).toContain('on conflict ("listing_id", "day") do nothing');
+    expect(fake.queries[insert]?.parameters).toEqual([LISTING_ID, "2026-10-05", "vendor"]);
   });
 
   it("освободить: удаление по листингу и дню; чужой листинг — 404 без удаления", async () => {
-    const own = fakeDb((q) => (isListingCheck(q) ? [{ id: LISTING_ID }] : []));
-    await markFree(own.db, ACTOR, LISTING_ID, "2026-10-05");
+    const own = fakeDb((q) =>
+      isListingCheck(q) ? [{ id: LISTING_ID }] : isVersion(q) ? [{ version: 9 }] : [],
+    );
+    expect(await markFree(own.db, ACTOR, LISTING_ID, "2026-10-05", 8)).toEqual({
+      day: "2026-10-05",
+      busy: null,
+      version: 9,
+    });
     const del = own.queries.find((q) => q.sql.startsWith("delete"));
     expect(del?.sql).toBe('delete from "app"."availability" where "listing_id" = $1 and "day" = $2');
+    expect(own.queries.findIndex(isLock)).toBeLessThan(
+      own.queries.findIndex((q) => q.sql.startsWith("delete")),
+    );
 
     const foreign = fakeDb(() => []);
-    expect((await rejection(() => markFree(foreign.db, ACTOR, LISTING_ID, "2026-10-05"))).status).toBe(404);
-    expect(foreign.queries.some((q) => q.sql.startsWith("delete"))).toBe(false);
+    expect((await rejection(() => markFree(foreign.db, ACTOR, LISTING_ID, "2026-10-05", 8))).status).toBe(
+      404,
+    );
+    expect(foreign.queries.some((q) => q.sql.startsWith("delete") || isLock(q))).toBe(false);
   });
 });

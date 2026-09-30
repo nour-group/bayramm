@@ -7,7 +7,7 @@
 // X-Bayramm-Vendor, одно членство выбирается само. Отключённый пользователь вендора
 // теряет доступ на следующем же запросе.
 
-import { SYSTEM, type Tx, type VendorActor, withActor } from "../db/actor";
+import { SYSTEM, type Tx, type VendorActor, type VendorRole, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { ApiError, forbidden } from "../errors";
 
@@ -23,6 +23,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export interface Membership {
   readonly vendorUserId: string;
   readonly vendorId: string;
+  readonly role: VendorRole;
   readonly disabled: boolean;
 }
 
@@ -30,7 +31,7 @@ export interface Membership {
 export async function membershipsIn(trx: Tx, accountId: string): Promise<Membership[]> {
   const rows = await trx
     .selectFrom("app.vendor_users")
-    .select(["id", "vendor_id", "disabled_at"])
+    .select(["id", "vendor_id", "role", "disabled_at"])
     .where("account_id", "=", accountId)
     .orderBy("created_at")
     .orderBy("id")
@@ -38,6 +39,8 @@ export async function membershipsIn(trx: Tx, accountId: string): Promise<Members
   return rows.map((row) => ({
     vendorUserId: row.id,
     vendorId: row.vendor_id,
+    // Неизвестная роль — меньшие права
+    role: row.role === "owner" ? "owner" : "member",
     disabled: row.disabled_at !== null,
   }));
 }
@@ -73,7 +76,7 @@ export function chooseMembership(
     throw vendorChoiceRequired();
   }
   if (chosen === undefined) throw vendorNotLinked();
-  return { kind: "vendor_user", id: chosen.vendorUserId, vendorId: chosen.vendorId };
+  return { kind: "vendor_user", id: chosen.vendorUserId, vendorId: chosen.vendorId, role: chosen.role };
 }
 
 export async function vendorActorFor(

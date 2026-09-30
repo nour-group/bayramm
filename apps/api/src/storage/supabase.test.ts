@@ -130,3 +130,67 @@ describe("настройка", () => {
     ).toBeDefined();
   });
 });
+
+describe("supabaseStorage.list", () => {
+  it("list-v2: все объекты под префиксом, страницами по курсору", async () => {
+    const { client, requests } = storage(() =>
+      Response.json({
+        hasNext: true,
+        nextCursor: "c2",
+        folders: [],
+        objects: [
+          { name: KEY, created_at: "2026-09-30T10:00:00.000Z", metadata: { size: 1 } },
+          { name: 42, created_at: "x" },
+          { name: `${KEY}.bak`, created_at: "not a date" },
+        ],
+      }),
+    );
+    const page = await client.list("listings/", null, 500);
+    expect(page).toEqual({
+      objects: [
+        { key: KEY, createdAt: new Date("2026-09-30T10:00:00.000Z") },
+        { key: `${KEY}.bak`, createdAt: null },
+      ],
+      cursor: "c2",
+    });
+    const [request] = requests;
+    expect(request?.method).toBe("POST");
+    expect(request?.url).toBe(`${URL_BASE}/storage/v1/object/list-v2/listing-photos`);
+    expect(request?.headers.get("authorization")).toBe("Bearer service-key");
+    expect(await request?.json()).toEqual({ prefix: "listings/", limit: 500, with_delimiter: false });
+
+    await client.list("listings/", "c2", 500);
+    expect(await requests[1]?.json()).toMatchObject({ cursor: "c2" });
+  });
+
+  it("последняя страница — курсора нет; ошибка и странный ответ — StorageError", async () => {
+    const last = storage(() => Response.json({ hasNext: false, objects: [] }));
+    expect(await last.client.list("listings/", null, 10)).toEqual({ objects: [], cursor: null });
+    const failing = storage(() => storageError("500", 500));
+    expect((await caught(() => failing.client.list("x/", null, 1))).reason).toBe("unavailable");
+    const odd = storage(() => Response.json({ nope: 1 }));
+    expect((await caught(() => odd.client.list("x/", null, 1))).reason).toBe("unavailable");
+  });
+});
+
+describe("supabaseStorage.removeMany", () => {
+  it("одним запросом DELETE на бакет; ответ — сколько удалено", async () => {
+    const { client, requests } = storage(() => Response.json([{ name: KEY }]));
+    expect(await client.removeMany([KEY, `${KEY}.missing`])).toBe(1);
+    const [request] = requests;
+    expect(request?.method).toBe("DELETE");
+    expect(request?.url).toBe(`${URL_BASE}/storage/v1/object/listing-photos`);
+    expect(await request?.json()).toEqual({ prefixes: [KEY, `${KEY}.missing`] });
+  });
+
+  it("пусто — без запроса; больше 1000 — ошибка кода; отказ хранилища — StorageError", async () => {
+    const { client, requests } = storage(() => Response.json([]));
+    expect(await client.removeMany([])).toBe(0);
+    expect(requests).toHaveLength(0);
+    await expect(client.removeMany(Array.from({ length: 1001 }, () => KEY))).rejects.toBeInstanceOf(
+      RangeError,
+    );
+    const failing = storage(() => storageError("403", 400));
+    expect((await caught(() => failing.client.removeMany([KEY]))).reason).toBe("misconfigured");
+  });
+});

@@ -8,6 +8,7 @@ import {
   LISTING_ID,
   mockStaffApi,
   NOW,
+  PHOTO_QUEUE_LISTING_ID,
   REQUEST_ID,
   REVISION_ID,
   STAFF,
@@ -156,6 +157,43 @@ test.describe("работа сотрудника", () => {
       expect(api.unexpected).toEqual([]);
     });
   }
+
+  test("модерация: новые фото опубликованных карточек и кто предложил правку", async ({ page }) => {
+    const api = await start(page);
+    await page.goto("/moderation");
+    const photos = page.getByRole("region", { name: t.photoQueue });
+    await expect(photos.getByRole("link", { name: "Bogʻ zali" })).toHaveAttribute(
+      "href",
+      `/listings/${PHOTO_QUEUE_LISTING_ID}`,
+    );
+    await expect(photos).toContainText(t.pendingPhotos(2));
+    await expect(page.getByRole("region", { name: t.revisions })).toContainText(
+      t.proposedBy("partner", null),
+    );
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("занятые дни: отметка уходит с версией календаря, следующая — с новой", async ({ page }) => {
+    const api = await start(page);
+    await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
+    await page.getByLabel(t.listingFields.name ?? "", { exact: true }).fill("Navruz zali");
+    await page.getByRole("button", { name: t.createListing }).click();
+    await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
+
+    // «Сегодня» по Ташкенту при часах теста
+    const today = page.locator(".cal-today");
+    await expect(today).toHaveAttribute("aria-pressed", "false");
+    await today.click();
+    await expect(today).toHaveAttribute("aria-pressed", "true");
+    await expect(today).toBeEnabled();
+    await today.click();
+    await expect(today).toHaveAttribute("aria-pressed", "false");
+    expect(api.calendar).toEqual([
+      { version: 0, busy: ["2026-10-01"] },
+      { version: 1, free: ["2026-10-01"] },
+    ]);
+    expect(api.unexpected).toEqual([]);
+  });
 
   test("команда: приглашение по телефону — своё поле номера, неверный номер — ошибка у поля", async ({
     page,

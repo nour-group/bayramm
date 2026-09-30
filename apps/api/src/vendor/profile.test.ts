@@ -8,6 +8,7 @@ const ACTOR: VendorActor = {
   kind: "vendor_user",
   id: "aaaaaaaa-0000-0000-0000-000000000011",
   vendorId: "aaaaaaaa-0000-0000-0000-000000000001",
+  role: "owner",
 };
 const LISTING_ID = "aaaaaaaa-0000-0000-0000-000000000101";
 const KEY = `listings/${LISTING_ID}/0b0c0d0e-0000-4000-8000-000000000001.webp`;
@@ -25,6 +26,7 @@ async function rejection(run: () => Promise<unknown>): Promise<ApiError> {
 const meRow = {
   id: ACTOR.id,
   locale: "uz",
+  role: "owner",
   full_name: "Manager",
   vendor_id: ACTOR.vendorId,
   public_code: "V101",
@@ -47,7 +49,7 @@ describe("профиль", () => {
       return [];
     });
     expect(await getMe(fake.db, ACTOR)).toEqual({
-      user: { id: ACTOR.id, locale: "uz", fullName: "Manager" },
+      user: { id: ACTOR.id, locale: "uz", fullName: "Manager", role: "owner" },
       vendor: { id: ACTOR.vendorId, code: "V101", name: "Test LLC" },
       listings: [{ id: LISTING_ID, name: "Hall", status: "active" }],
     });
@@ -83,6 +85,8 @@ describe("getListing", () => {
     cap_max: 300,
     blockers: ["photos", "contract"],
     phone: "+998000000999",
+    min_photos: 3,
+    max_photos: 10,
   };
 
   it("своя площадка: цены числом, фото — адреса воркера media окружения", async () => {
@@ -114,6 +118,7 @@ describe("getListing", () => {
       ],
       phone: "+998000000999",
       blockers: ["photos", "contract"],
+      photoLimits: { min: 3, max: 10 },
     });
     expect(result.photos).toEqual([
       {
@@ -136,6 +141,6 @@ describe("getListing", () => {
   it("чужая — 404, фото и пакеты не читаются", async () => {
     const fake = fakeDb(() => []);
     expect((await rejection(() => getListing(fake.db, ACTOR, LISTING_ID, "production"))).status).toBe(404);
-    expect(fake.queries.some((q) => q.sql.includes("photos"))).toBe(false);
+    expect(fake.queries.some((q) => q.sql.includes('"app"."photos"'))).toBe(false);
   });
 });

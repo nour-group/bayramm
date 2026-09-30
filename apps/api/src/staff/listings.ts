@@ -1,6 +1,7 @@
 // Карточки (листинги) в панели оператора. Контракт — @bayramm/shared/api/staff.
 //
-//   GET   /staff/listings?status=&q=&vendorId=&limit=&offset=   список, очередь проверки
+//   GET   /staff/listings?status=&q=&vendorId=&photos=pending&limit=&offset=
+//                                                               список, очереди проверки и новых фото
 //   POST  /staff/listings                                       создать (vendorId, name)
 //   GET   /staff/listings/:id                                   карточка целиком
 //   PATCH /staff/listings/:id                                   правка (version обязателен)
@@ -11,13 +12,22 @@
 // app.listing_publish_blockers): API только выбирает шаги и переводит ошибки.
 // Оптимистичная блокировка — по version: правка и действие проходят, только если
 // карточку с тех пор не меняли (триггер увеличивает version на каждом UPDATE).
+//
+// Кто заполняет карточку, тот её не публикует: у опубликованной карточки название,
+// цену, описания и пакеты сотрудник без права модерации (менеджер) меняет только
+// правкой на модерацию (app.listing_revisions) — как партнёр. Остальные поля
+// (адрес, район, вместимость, телефон, адрес страницы) сохраняются сразу. Так же
+// решает база (listings_before_update, listing_packages_guard → BR005).
 
 import type {
   ListingAction,
   ListingDetail,
   ListingList,
+  ListingSaveResult,
   ListingStatus,
+  PendingRevision,
   PriceUnit,
+  RevisionField,
   StaffListingPackage,
   StaffPermission,
   StaffPhoto,
@@ -27,10 +37,12 @@ import { sql } from "kysely";
 import { staffOf } from "../auth/session";
 import { roleActorKind, type Tx, withActor } from "../db/actor";
 import { hasListingPhone, readListingPhone, saveListingPhone, staffName } from "../db/pii";
+import type { Json } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound, versionConflict } from "../errors";
-import { requirePermission } from "./access";
+import { can, requirePermission } from "./access";
 import { Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
+import { changedOnly, currentPackages, revisionFields } from "./revision-diff";
 import { blockers, iso, LISTING_STATUSES, num, pathId } from "./shared";
 import { freeSlug, SLUG_RE, slugify } from "./slug";
 import { definedOnly, readReason } from "./vendors";
@@ -130,6 +142,19 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
     .limit(50)
     .execute();
 
+  const pending = await trx
+    .selectFrom("app.listing_revisions as rv")
+    .select([
+      "rv.id",
+      "rv.payload",
+      "rv.submitted_at",
+      sql<boolean>`exists (select 1 from app.staff s where s.id = rv.submitted_by)`.as("by_staff"),
+      staffName("rv.submitted_by").as("staff_name"),
+    ])
+    .where("rv.listing_id", "=", id)
+    .where("rv.status", "=", "pending")
+    .executeTakeFirst();
+
   return {
     id: row.id,
     slug: row.slug,
@@ -171,6 +196,28 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       actorName: h.actor_name,
       at: iso(h.at),
     })),
+    pendingRevision: pending === undefined ? null : pendingView(pending),
+  };
+}
+
+function payloadKeys(payload: Json): string[] {
+  return typeof payload === "object" && payload !== null && !Array.isArray(payload)
+    ? Object.keys(payload)
+    : [];
+}
+
+function pendingView(row: {
+  id: string;
+  payload: Json;
+  submitted_at: Date;
+  by_staff: boolean;
+  staff_name: string | null;
+}): PendingRevision {
+  return {
+    id: row.id,
+    fields: revisionFields(payloadKeys(row.payload)),
+    submittedAt: iso(row.submitted_at),
+    proposedBy: row.by_staff ? { kind: "staff", name: row.staff_name } : { kind: "partner", name: null },
   };
 }
 
@@ -182,6 +229,8 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
   const status = LISTING_STATUSES.find((s) => s === statusParam);
   const vendorParam = c.req.query("vendorId");
   const vendorId = vendorParam ? pathId(vendorParam) : undefined;
+  // Очередь «Новые фото»: опубликованные карточки, у которых есть фото на решении
+  const pendingPhotos = c.req.query("photos") === "pending";
   const { limit, offset } = paging((key) => c.req.query(key));
 
   const result = await withActor(c.var.db, staffOf(c), async (trx) => {
@@ -212,9 +261,22 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
         sql<number>`(select count(*)::int from app.photos p
                      where p.listing_id = l.id and p.deleted_at is null and p.status = 'ready'
                        and p.moderation = 'approved')`.as("photos_approved"),
+        sql<number>`(select count(*)::int from app.photos p
+                     where p.listing_id = l.id and p.deleted_at is null and p.status = 'ready'
+                       and p.moderation = 'pending')`.as("photos_pending"),
+        sql<Date | null>`(select min(p.created_at) from app.photos p
+                          where p.listing_id = l.id and p.deleted_at is null and p.status = 'ready'
+                            and p.moderation = 'pending')`.as("photos_pending_since"),
         sql<number>`(count(*) over ())::int`.as("total"),
       ]);
     if (status) query = query.where("l.status", "=", status);
+    if (pendingPhotos) {
+      query = query.where("l.status", "=", "active").where(
+        sql<boolean>`exists (select 1 from app.photos p
+                     where p.listing_id = l.id and p.deleted_at is null and p.status = 'ready'
+                       and p.moderation = 'pending')`,
+      );
+    }
     if (vendorId) query = query.where("l.vendor_id", "=", vendorId);
     if (q !== "") {
       const pattern = likePattern(q);
@@ -227,9 +289,11 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
         ]),
       );
     }
-    // Очередь проверки — по порядку отправки, остальное — свежие сверху
-    query =
-      status === "review"
+    // Очередь проверки — по порядку отправки, новых фото — по первой загрузке,
+    // остальное — свежие сверху
+    query = pendingPhotos
+      ? query.orderBy(sql`photos_pending_since`, "asc").orderBy("l.id")
+      : status === "review"
         ? query.orderBy("l.submitted_at", "asc").orderBy("l.id")
         : query.orderBy("l.updated_at", "desc").orderBy("l.id");
     const rows = await query.limit(limit).offset(offset).execute();
@@ -263,7 +327,7 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
       updatedAt: iso(row.updated_at),
       blockers: row.blockers,
       vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
-      photos: { ready: row.photos_ready, approved: row.photos_approved },
+      photos: { ready: row.photos_ready, approved: row.photos_approved, pending: row.photos_pending },
     })),
   };
   return c.json(body);
@@ -472,6 +536,89 @@ async function updateListing(
   throw exists ? versionConflict() : notFound();
 }
 
+/** Модерируемые поля карточки: у опубликованной их меняет только решение модератора */
+const MODERATED = ["name", "price_from_uzs", "price_unit", "description_ru", "description_uz"] as const;
+/** Столбец → поле контракта, для ответа 422 */
+const MODERATED_INPUT: Readonly<Record<(typeof MODERATED)[number], string>> = {
+  name: "name",
+  price_from_uzs: "priceFromUzs",
+  price_unit: "priceUnit",
+  description_ru: "descriptionRu",
+  description_uz: "descriptionUz",
+};
+
+/**
+ * Правка опубликованной карточки сотрудником без права модерации: изменённые
+ * модерируемые поля и пакеты — в правку на модерацию (как у партнёра), остальное —
+ * сразу. Не опубликована — всё сразу. Возвращает то, что сохраняется сразу, и поля,
+ * ушедшие правкой. Открытая правка уже есть — 409 revision_pending (индекс базы)
+ */
+async function proposeModerated(
+  trx: Tx,
+  id: string,
+  version: number,
+  parsed: ParsedListing,
+): Promise<{ direct: ParsedListing; sent: RevisionField[] }> {
+  const current = await trx
+    .selectFrom("app.listings")
+    .select([
+      "status",
+      "version",
+      "category_code",
+      "name",
+      "price_from_uzs",
+      "price_unit",
+      "description_ru",
+      "description_uz",
+    ])
+    .where("id", "=", id)
+    .forUpdate()
+    .executeTakeFirst();
+  if (current === undefined) throw notFound();
+  if (current.status !== "active") return { direct: parsed, sent: [] };
+  if (current.version !== version) throw versionConflict();
+
+  const { fields } = parsed;
+  // Очистить модерируемое поле опубликованной карточки нельзя: без него она не готова
+  const cleared = MODERATED.filter((key) => fields[key] === null).map((key) => MODERATED_INPUT[key]);
+  if (cleared.length > 0) throw invalidInput(cleared);
+  const packages = parsed.packages;
+  if (current.category_code === "hall" && packages !== undefined) {
+    const kinds = new Set(packages.map((p) => p.kind));
+    if (!kinds.has("weekday") || !kinds.has("weekend")) throw invalidInput(["packages"]);
+  }
+
+  const proposed = {
+    fields: {
+      ...(typeof fields.name === "string" ? { name: fields.name } : {}),
+      ...(typeof fields.price_from_uzs === "number" ? { price_from_uzs: fields.price_from_uzs } : {}),
+      ...(fields.price_unit !== undefined ? { price_unit: fields.price_unit } : {}),
+      ...(typeof fields.description_ru === "string" ? { description_ru: fields.description_ru } : {}),
+      ...(typeof fields.description_uz === "string" ? { description_uz: fields.description_uz } : {}),
+    },
+    packages,
+  };
+  const payload = changedOnly(proposed, current, await currentPackages(trx, id));
+  const sent = revisionFields(Object.keys(payload));
+  if (sent.length > 0) {
+    await trx
+      .insertInto("app.listing_revisions")
+      .values({ listing_id: id, payload: payload as Json, base_version: current.version })
+      .execute();
+  }
+
+  // Сразу — только немодерируемое: адрес, район, вместимость, телефон, адрес страницы
+  const direct: ListingFields = {
+    slug: fields.slug,
+    district_code: fields.district_code,
+    address_ru: fields.address_ru,
+    address_uz: fields.address_uz,
+    cap_min: fields.cap_min,
+    cap_max: fields.cap_max,
+  };
+  return { direct: { fields: definedOnly(direct), packages: undefined, phone: parsed.phone }, sent };
+}
+
 listings.patch("/:id", requirePermission("listings.write"), limitJson, async (c) => {
   const id = pathId(c.req.param("id"));
   const input = new Input(await readBody(c.req.raw));
@@ -479,12 +626,17 @@ listings.patch("/:id", requirePermission("listings.write"), limitJson, async (c)
   const parsed = parseListing(input, false);
   input.done();
   if (typeof version !== "number") throw invalidInput(["version"]);
+  const actor = staffOf(c);
 
-  const listing = await withActor(c.var.db, staffOf(c), async (trx) => {
+  const listing: ListingSaveResult = await withActor(c.var.db, actor, async (trx) => {
     await assertDistrict(trx, parsed.fields.district_code);
-    await updateListing(trx, id, version, parsed.fields);
-    await saveExtras(trx, id, parsed);
-    return loadListing(trx, id);
+    // Модератор и администратор правят опубликованную карточку сразу: решают они же
+    const { direct, sent } = can(actor.role, "revisions.moderate")
+      ? { direct: parsed, sent: [] }
+      : await proposeModerated(trx, id, version, parsed);
+    await updateListing(trx, id, version, direct.fields);
+    await saveExtras(trx, id, direct);
+    return { ...(await loadListing(trx, id)), sentForModeration: sent };
   });
   return c.json(listing);
 });

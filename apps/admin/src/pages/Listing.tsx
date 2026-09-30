@@ -1,12 +1,15 @@
 /* Карточка: статус и действия, чего не хватает, фото, занятые дни, поля, история.
    Любая правка и действие несут version — если карточку успели изменить, сервер
-   отвечает version_conflict, и форма просит обновить страницу. */
+   отвечает version_conflict, и форма просит обновить страницу. Правка, которая ждёт
+   решения модератора (от вендора или менеджера), — отметкой вверху со ссылкой на неё. */
 
 import type {
   ListingAction,
   ListingDetail,
   ListingInput,
+  ListingSaveResult,
   ListingStatus,
+  PendingRevision,
   RevealedPhone,
   StaffDictionaries,
 } from "@bayramm/shared/api/staff";
@@ -105,16 +108,22 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
   const can = useCan();
   useEntityTitle(listing.name);
   const save = useCallback(
-    async (body: ListingInput): Promise<Failure | null> => {
-      const result = await api.patch<ListingDetail>(`/staff/listings/${listing.id}`, {
+    async (body: ListingInput): Promise<Failure | ListingSaveResult> => {
+      const result = await api.patch<ListingSaveResult>(`/staff/listings/${listing.id}`, {
         ...body,
         version: listing.version,
       });
-      if (!result.ok) return result;
+      if (!result.ok) {
+        // Правку на модерацию успели открыть (вендор или коллега): перечитать карточку —
+        // появится отметка о ней со ссылкой. Введённое в форме остаётся
+        if (result.code === "revision_pending") onReload();
+        return result;
+      }
+      // Карточка — как в базе после правки; что ушло на модерацию, скажет форма
       onChange(result.data);
-      return null;
+      return result.data;
     },
-    [api, listing.id, listing.version, onChange],
+    [api, listing.id, listing.version, onChange, onReload],
   );
   const loadPhone = useCallback(async () => {
     const result = await api.post<RevealedPhone>(`/staff/listings/${listing.id}/phone`, {});
@@ -125,6 +134,8 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
   const minPhotos = dictionaries?.settings.minPhotos ?? 3;
   const approvable = listing.photos.filter((photo) => photo.moderation !== "declined").length;
   const activeBlockers = publishBlockers(listing.blockers.active, approvable, minPhotos);
+  // Сотрудник без права решать по правкам меняет опубликованную карточку через модерацию
+  const moderated = listing.status === "active" && !can("revisions.moderate");
 
   return (
     <div className="stack">
@@ -143,6 +154,8 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
           )}
         </p>
       </div>
+
+      {listing.pendingRevision && <PendingRevisionNotice revision={listing.pendingRevision} />}
 
       <StatusActions listing={listing} onChange={onChange} />
 
@@ -189,8 +202,29 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
           onSubmit={save}
           submitLabel={t.save}
           readOnly={!can("listings.write")}
+          moderated={moderated}
         />
       </div>
+    </div>
+  );
+}
+
+// ── правка на модерации ────────────────────────────────────────────────────
+
+function PendingRevisionNotice({ revision }: { revision: PendingRevision }) {
+  return (
+    <div className="notice notice-warn pending-revision">
+      <p className="notice-title">{t.pendingRevisionTitle}</p>
+      <p>{revision.fields.map((field) => t.revisionFields[field] ?? field).join(", ")}</p>
+      <p className="sub">
+        {t.proposedBy(revision.proposedBy.kind, revision.proposedBy.name)} ·{" "}
+        {formatMoment(revision.submittedAt)}
+      </p>
+      <p>
+        <Link to={{ name: "revision", id: revision.id }} className="btn btn-sm">
+          {t.pendingRevisionOpen}
+        </Link>
+      </p>
     </div>
   );
 }

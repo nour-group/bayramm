@@ -32,9 +32,10 @@ export function makeEnv(): Env {
     OTP_PROVIDER: "console",
     TELEGRAM_GATEWAY_TOKEN: "",
     HYPERDRIVE: { connectionString: apiDatabaseUrl } as Hyperdrive,
-    // Storage нужен только тестам фото — у них свои адрес и ключ (photos.test.ts)
-    SUPABASE_URL: "http://127.0.0.1:54321",
-    SUPABASE_SERVICE_ROLE_KEY: "",
+    // Storage локального стека, если тестам дали ключ (как в CI); без ключа — заглушка:
+    // маршруты, которые до хранилища не доходят (404, 403, 422), работают и так
+    SUPABASE_URL: (process.env.TEST_SUPABASE_URL ?? "http://127.0.0.1:54321") as Env["SUPABASE_URL"],
+    SUPABASE_SERVICE_ROLE_KEY: process.env.TEST_SUPABASE_SERVICE_ROLE_KEY || "unset",
     // Лимиты частоты проверяют юнит-тесты (src/ratelimit.test.ts); здесь — пропускают всё
     RATE_LIMIT_AUTH_IP: allowAll,
     RATE_LIMIT_REQUESTS_IP: allowAll,

@@ -1,11 +1,16 @@
 import type {
   AuditList,
+  Availability,
+  AvailabilityInput,
+  BusyDay,
   ClientDetail,
   ClientList,
   ClientListItem,
   ListingDetail,
   ListingInput,
   ListingList,
+  ListingListItem,
+  ListingSaveResult,
   OutboxHealth,
   PublishBlocker,
   RevisionDetail,
@@ -37,6 +42,8 @@ const TOKEN_KEY = "bayramm.admin.session";
 
 export const VENDOR_ID = "00000000-0000-4000-8400-000000000001";
 export const LISTING_ID = "00000000-0000-4000-8100-000000000009";
+/** Опубликованная карточка с новыми фото вендора — очередь «Новые фото» в модерации */
+export const PHOTO_QUEUE_LISTING_ID = "00000000-0000-4000-8100-000000000010";
 export const REQUEST_ID = "00000000-0000-4000-8300-000000000001";
 const iso = NOW.toISOString();
 
@@ -172,8 +179,44 @@ function newListing(input: ListingInput): ListingDetail {
     history: [
       { from: null, to: "draft", reason: null, actorKind: "staff", actorName: STAFF.displayName, at: iso },
     ],
+    pendingRevision: null,
   };
 }
+
+/** Опубликованная карточка, в которую вендор из кабинета добавил два фото: ждут решения */
+const PHOTO_QUEUE_ITEM: ListingListItem = {
+  id: PHOTO_QUEUE_LISTING_ID,
+  name: "Bogʻ zali",
+  status: "active",
+  slug: "bog-zali",
+  districtCode: "yunusobod",
+  priceFromUzs: 180_000,
+  priceUnit: "per_guest",
+  capMax: 250,
+  updatedAt: iso,
+  blockers: [],
+  statusReason: null,
+  capMin: 40,
+  submittedAt: null,
+  vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
+  photos: { ready: 7, approved: 5, pending: 2 },
+};
+
+/** PATCH карточки: поля, которые заглушка переносит в карточку */
+const EDITABLE = [
+  "name",
+  "slug",
+  "districtCode",
+  "addressRu",
+  "addressUz",
+  "descriptionRu",
+  "descriptionUz",
+  "priceFromUzs",
+  "priceUnit",
+  "capMin",
+  "capMax",
+  "packages",
+] as const;
 
 const REQUEST: StaffRequestDetail = {
   id: REQUEST_ID,
@@ -373,6 +416,7 @@ const REVISION: RevisionDetail = {
   decidedAt: null,
   listing: { id: LISTING_ID, name: "Lola zali", status: "active" },
   vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
+  proposedBy: { kind: "partner", name: null },
   fields: ["name", "priceFromUzs"],
   stale: false,
   changes: [
@@ -388,6 +432,8 @@ export interface StaffApi {
   readonly unexpected: string[];
   readonly created: ListingInput[];
   readonly actions: string[];
+  /** Правки занятых дней: тело PUT …/availability (с версией календаря) */
+  readonly calendar: AvailabilityInput[];
   /** Входы: как Mini App (initData) и повышения сессии аккаунта до сотрудника */
   readonly webapp: string[];
   readonly elevated: number;
@@ -420,6 +466,7 @@ export async function mockStaffApi(
     unexpected: [],
     created: [],
     actions: [],
+    calendar: [],
     webapp: [],
     get elevated() {
       return elevated;
@@ -427,6 +474,9 @@ export async function mockStaffApi(
     loggedOut: [],
   };
   const listings: ListingDetail[] = [];
+  // Занятые дни карточки и версия её календаря (растёт с каждой правкой)
+  const busyDays = new Map<string, BusyDay>();
+  let calendarVersion = 0;
   if (signedIn)
     await page.addInitScript(
       ({ key, token }) => {
@@ -513,10 +563,12 @@ export async function mockStaffApi(
     }
     if (key === `GET /staff/vendors/${VENDOR_ID}`) return json(route, 200, vendorDetail(listings));
     if (key === "GET /staff/listings") {
+      // Очередь «Новые фото» — опубликованные карточки с фото на решении; остальное пусто
+      const photos = url.searchParams.get("photos") === "pending";
       const list: ListingList = {
-        total: 0,
-        items: [],
-        counts: { lead: 0, draft: listings.length, review: 0, active: 0, suspended: 0, rejected: 0 },
+        total: photos ? 1 : 0,
+        items: photos ? [PHOTO_QUEUE_ITEM] : [],
+        counts: { lead: 0, draft: listings.length, review: 0, active: 1, suspended: 0, rejected: 0 },
       };
       return json(route, 200, list);
     }
@@ -534,12 +586,50 @@ export async function mockStaffApi(
       if (!listing) return fail(route, 404, "not_found");
       const action = listingMatch[2];
       if (!action && method === "GET") return json(route, 200, listing);
+      if (!action && method === "PATCH") {
+        // Сотрудник — администратор: решает по правкам сам, на модерацию ничего не уходит
+        const input = request.postDataJSON() as ListingInput;
+        if (input.version !== listing.version) return fail(route, 409, "version_conflict");
+        const patch = Object.fromEntries(EDITABLE.filter((k) => k in input).map((k) => [k, input[k]]));
+        const next: ListingDetail = {
+          ...listing,
+          ...patch,
+          hasPhone: listing.hasPhone || typeof input.phone === "string",
+          version: listing.version + 1,
+        };
+        listings.splice(listings.indexOf(listing), 1, next);
+        const saved: ListingSaveResult = { ...next, sentForModeration: [] };
+        return json(route, 200, saved);
+      }
       if (action === "availability" && method === "GET") {
-        return json(route, 200, {
-          from: url.searchParams.get("from"),
-          to: url.searchParams.get("to"),
-          busy: [],
-        });
+        const from = url.searchParams.get("from") ?? "";
+        const to = url.searchParams.get("to") ?? "";
+        const availability: Availability = {
+          from,
+          to,
+          busy: [...busyDays.values()].filter((b) => b.day >= from && b.day <= to),
+          version: calendarVersion,
+        };
+        return json(route, 200, availability);
+      }
+      if (action === "availability" && method === "PUT") {
+        // Правка — только от последней версии календаря, как на сервере
+        const input = request.postDataJSON() as AvailabilityInput;
+        state.calendar.push(input);
+        if (input.version !== calendarVersion) return fail(route, 409, "calendar_conflict");
+        for (const day of input.busy ?? []) busyDays.set(day, { day, source: "staff" });
+        for (const day of input.free ?? []) busyDays.delete(day);
+        calendarVersion++;
+        const days = [...(input.busy ?? []), ...(input.free ?? [])].sort();
+        const from = days[0] ?? "";
+        const to = days.at(-1) ?? from;
+        const availability: Availability = {
+          from,
+          to,
+          busy: [...busyDays.values()].filter((b) => b.day >= from && b.day <= to),
+          version: calendarVersion,
+        };
+        return json(route, 200, availability);
       }
       if (action && method === "POST" && ["submit", "publish"].includes(action)) {
         state.actions.push(action);

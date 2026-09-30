@@ -92,8 +92,9 @@ values ('aaaaaaaa-0000-0000-0000-000000000103', '+998000000777');
 insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs)
 values ('aaaaaaaa-0000-0000-0000-000000000103', 'weekday', 'Будни', 'Hafta kunlari', 100000);
 delete from app.listing_packages where listing_id = 'aaaaaaaa-0000-0000-0000-000000000103';
+-- день — в будущем: прошедший день календаря не меняется (availability_guard)
 insert into app.availability (listing_id, day, source)
-values ('aaaaaaaa-0000-0000-0000-000000000103', '2026-12-31', 'staff');
+values ('aaaaaaaa-0000-0000-0000-000000000103', current_date + 90, 'staff');
 select results_eq(
   $$select action, detail
       from app.audit_log where object_id = 'aaaaaaaa-0000-0000-0000-000000000103'
@@ -102,7 +103,7 @@ select results_eq(
       ('listing_contact.create', '{}'::jsonb),
       ('listing_package.create', '{"kind": "weekday"}'::jsonb),
       ('listing_package.delete', '{"kind": "weekday"}'::jsonb),
-      ('availability.create', '{"day": "2026-12-31"}'::jsonb)$$,
+      ('availability.create', jsonb_build_object('day', current_date + 90))$$,
   'телефон, пакеты, занятость — в журнале объекта «листинг»');
 select is_empty(
   $$select id from app.audit_log where detail::text like '%777%'$$,

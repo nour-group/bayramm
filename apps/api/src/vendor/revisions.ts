@@ -10,23 +10,27 @@
 //     не прошла бы, сюда не попадает. У зала пакеты будней и выходных обязательны —
 //     без них карточка перестала бы быть готовой к публикации;
 //   · кто подал и когда, ставит триггер listing_revisions_guard, оповещение команде
-//     (ops.revision_submitted, без ПДн) — триггер listing_revisions_notify.
+//     (ops.revision_submitted, без ПДн) — триггер listing_revisions_notify;
+//   · подать и отозвать может только владелец кабинета (vendor/access.ts, в базе —
+//     app.edits_listing). Правку опубликованной карточки предлагает и менеджер Bayramm
+//     (staff/listings.ts): её партнёр видит с отметкой byTeam и не отзывает.
 //
 // Чужая площадка или правка — 404 (RLS и явная проверка вендора).
 
-import type {
-  ListingRevisionPayload,
-  RevisionPackage,
-  VendorRevision,
-  VendorRevisionList,
-} from "@bayramm/shared/api/vendor";
+import type { ListingRevisionPayload, VendorRevision, VendorRevisionList } from "@bayramm/shared/api/vendor";
 import { REVISION_KEYS } from "@bayramm/shared/api/vendor";
+import { sql } from "kysely";
 import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import type { Json } from "../db/schema.generated";
 import { ApiError, notFound } from "../errors";
 import { type Body, invalidInput } from "../staff/input";
-import { type RevisionValues, revisionFromBody } from "../staff/revisions";
+import { changedOnly, currentPackages } from "../staff/revision-diff";
+import { revisionFromBody } from "../staff/revisions";
+import { assertVendorCan } from "./access";
+
+// Сравнение с карточкой — общее с правкой менеджера (staff/revision-diff.ts)
+export { changedOnly };
 
 /** Сколько последних предложений показывать партнёру */
 const HISTORY = 10;
@@ -40,9 +44,14 @@ interface RevisionRow {
   readonly submitted_at: Date;
   readonly decided_at: Date | null;
   readonly decision_reason: string | null;
+  readonly by_team: boolean;
 }
 
-const COLUMNS = ["id", "status", "payload", "submitted_at", "decided_at", "decision_reason"] as const;
+// Предложил не партнёр (менеджер из панели): submitted_by — не пользователь вендора
+const byTeam = sql<boolean>`not exists (select 1 from app.vendor_users u
+  where u.id = app.listing_revisions.submitted_by)`.as("by_team");
+
+const COLUMNS = ["id", "status", "payload", "submitted_at", "decided_at", "decision_reason", byTeam] as const;
 
 /** Сохранённый payload глазами партнёра: только известные ключи */
 function payloadView(payload: Json): ListingRevisionPayload {
@@ -61,6 +70,7 @@ function view(row: RevisionRow): VendorRevision {
     // Причину сотрудник пишет для партнёра; у остальных решений её нет
     decisionReason: row.status === "declined" ? row.decision_reason : null,
     payload: payloadView(row.payload),
+    byTeam: row.by_team,
   };
 }
 
@@ -86,58 +96,6 @@ async function ownListing(trx: Tx, actor: VendorActor, listingId: string) {
     .executeTakeFirst();
   if (listing === undefined) throw notFound();
   return listing;
-}
-
-type Listing = Awaited<ReturnType<typeof ownListing>>;
-
-async function currentPackages(trx: Tx, listingId: string): Promise<RevisionPackage[]> {
-  const rows = await trx
-    .selectFrom("app.listing_packages")
-    .select(["kind", "name_ru", "name_uz", "price_uzs", "price_unit"])
-    .where("listing_id", "=", listingId)
-    .orderBy("sort")
-    .orderBy("created_at")
-    .execute();
-  return rows.map((p) => ({
-    kind: p.kind,
-    name_ru: p.name_ru,
-    name_uz: p.name_uz,
-    price_uzs: Number(p.price_uzs),
-    price_unit: p.price_unit,
-  }));
-}
-
-/** Правка без полей, которые совпадают с карточкой. Пакеты сравниваются набором по порядку */
-export function changedOnly(
-  values: RevisionValues,
-  listing: Pick<Listing, "name" | "price_from_uzs" | "price_unit" | "description_ru" | "description_uz">,
-  packages: readonly RevisionPackage[],
-): ListingRevisionPayload {
-  const { fields } = values;
-  const payload: { -readonly [K in keyof ListingRevisionPayload]: ListingRevisionPayload[K] } = {};
-  if (fields.name !== undefined && fields.name !== listing.name) payload.name = fields.name;
-  const price = listing.price_from_uzs === null ? null : Number(listing.price_from_uzs);
-  if (fields.price_from_uzs !== undefined && fields.price_from_uzs !== price)
-    payload.price_from_uzs = fields.price_from_uzs;
-  if (fields.price_unit !== undefined && fields.price_unit !== listing.price_unit)
-    payload.price_unit = fields.price_unit;
-  if (fields.description_ru !== undefined && fields.description_ru !== (listing.description_ru ?? ""))
-    payload.description_ru = fields.description_ru;
-  if (fields.description_uz !== undefined && fields.description_uz !== (listing.description_uz ?? ""))
-    payload.description_uz = fields.description_uz;
-  if (values.packages !== undefined) {
-    const proposed = values.packages.map(
-      (p): RevisionPackage => ({
-        kind: p.kind,
-        name_ru: p.nameRu,
-        name_uz: p.nameUz,
-        price_uzs: p.priceUzs,
-        price_unit: p.priceUnit,
-      }),
-    );
-    if (JSON.stringify(proposed) !== JSON.stringify(packages)) payload.packages = proposed;
-  }
-  return payload;
 }
 
 /** GET /vendor/listings/:id/revisions: последние предложения по своей площадке, новые первыми */
@@ -166,6 +124,7 @@ export function submitRevision(
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw new ApiError(400, "invalid_request", "Body must be a JSON object");
   }
+  assertVendorCan(actor, "card.propose");
   const values = revisionFromBody(body as Body);
   return withActor(db, actor, async (trx) => {
     const listing = await ownListing(trx, actor, listingId);
@@ -192,24 +151,28 @@ export function withdrawRevision(
   listingId: string,
   revisionId: string,
 ): Promise<VendorRevision> {
+  assertVendorCan(actor, "card.propose");
   return withActor(db, actor, async (trx) => {
     await ownListing(trx, actor, listingId);
+    const current = await trx
+      .selectFrom("app.listing_revisions")
+      .select(["status", byTeam])
+      .where("id", "=", revisionId)
+      .where("listing_id", "=", listingId)
+      .forUpdate()
+      .executeTakeFirst();
+    if (current === undefined) throw notFound();
+    if (current.status !== "pending") {
+      throw new ApiError(409, "illegal_transition", "Proposal is already decided");
+    }
+    // Предложение команды партнёр не отзывает — решает модератор (listing_revisions_guard)
+    if (current.by_team) throw new ApiError(403, "forbidden_for_actor", "Proposal was made by the team");
     const row = await trx
       .updateTable("app.listing_revisions")
       .set({ status: "withdrawn" })
       .where("id", "=", revisionId)
-      .where("listing_id", "=", listingId)
-      .where("status", "=", "pending")
       .returning(COLUMNS)
-      .executeTakeFirst();
-    if (row !== undefined) return view(row);
-    const exists = await trx
-      .selectFrom("app.listing_revisions")
-      .select("id")
-      .where("id", "=", revisionId)
-      .where("listing_id", "=", listingId)
-      .executeTakeFirst();
-    if (exists === undefined) throw notFound();
-    throw new ApiError(409, "illegal_transition", "Proposal is already decided");
+      .executeTakeFirstOrThrow();
+    return view(row);
   });
 }

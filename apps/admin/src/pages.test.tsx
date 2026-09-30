@@ -13,6 +13,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { tashkentToday } from "./pages/Calendar";
 import { tokenStore } from "./session";
 import { t } from "./texts";
 
@@ -128,6 +129,7 @@ const LISTING: ListingDetail = {
   blockers: { review: [], active: [] },
   vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
   history: [],
+  pendingRevision: null,
 };
 
 interface Call {
@@ -291,6 +293,7 @@ describe("карточка", () => {
         from: "2026-09-01",
         to: "2026-09-30",
         busy: [],
+        version: 1,
       }),
       [`POST /api/staff/listings/${LISTING_ID}/suspend`]: json({
         ...LISTING,
@@ -344,6 +347,7 @@ describe("карточка", () => {
         from: "2026-09-01",
         to: "2026-09-30",
         busy: [],
+        version: 1,
       }),
     });
     await mount(`/listings/${LISTING_ID}`);
@@ -354,6 +358,189 @@ describe("карточка", () => {
     // Модератор решает по фото, но не загружает их
     expect(text()).toContain(t.approve);
     expect(text()).not.toContain(t.addPhotos);
+  });
+});
+
+describe("карточка: занятые дни", () => {
+  const MANAGER: StaffMe["permissions"] = ["catalog.read", "listings.write", "listings.submit"];
+  const AVAILABILITY = `/api/staff/listings/${LISTING_ID}/availability`;
+  const todayButton = () => container.querySelector<HTMLButtonElement>(".cal-today");
+  const puts = () => calls.filter((c) => c.method === "PUT" && c.url === AVAILABILITY);
+
+  it("отметка уходит с версией календаря; следующая — с версией из ответа", async () => {
+    mockApi(staff("manager", MANAGER), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
+      [`GET ${AVAILABILITY}`]: json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 4 }),
+      [`PUT ${AVAILABILITY}`]: (body) => {
+        const input = body as { busy?: string[]; free?: string[]; version: number };
+        const day = input.busy?.[0] ?? input.free?.[0];
+        return json({
+          from: day,
+          to: day,
+          busy: input.busy ? [{ day, source: "staff" }] : [],
+          version: input.version + 1,
+        })(body);
+      },
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(todayButton()?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => todayButton()?.click());
+    await settle();
+    expect(puts()[0]?.body).toEqual({ version: 4, busy: [tashkentToday()] });
+    expect(todayButton()?.getAttribute("aria-pressed")).toBe("true");
+
+    // Снять отметку: версия — из ответа на первую правку
+    await act(async () => todayButton()?.click());
+    await settle();
+    expect(puts()[1]?.body).toEqual({ version: 5, free: [tashkentToday()] });
+    expect(todayButton()?.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector("[role=alert]")).toBeNull();
+  });
+
+  it("календарь успели изменить — месяц перечитывается, сотрудник видит почему", async () => {
+    let reads = 0;
+    mockApi(staff("manager", MANAGER), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
+      // Первое чтение — до правки вендора, второе — после: день занят, версия новая
+      [`GET ${AVAILABILITY}`]: () => {
+        reads++;
+        return json({
+          from: "2026-09-01",
+          to: "2026-09-30",
+          busy: reads > 1 ? [{ day: tashkentToday(), source: "vendor" }] : [],
+          version: reads > 1 ? 9 : 4,
+        })(null);
+      },
+      [`PUT ${AVAILABILITY}`]: json(
+        { error: { code: "calendar_conflict", message: "Calendar was changed" } },
+        409,
+      ),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    await act(async () => todayButton()?.click());
+    await settle();
+    expect(puts()[0]?.body).toMatchObject({ version: 4 });
+    expect(reads).toBe(2);
+    expect(container.querySelector("[role=alert]")?.textContent).toBe(t.api.calendar_conflict);
+    // Показан актуальный месяц: день занят вендором. Дни снова активны — снять можно
+    // заново, уже от новой версии
+    expect(todayButton()?.getAttribute("aria-pressed")).toBe("true");
+    expect(todayButton()?.disabled).toBe(false);
+    await act(async () => todayButton()?.click());
+    await settle();
+    expect(puts()[1]?.body).toEqual({ version: 9, free: [tashkentToday()] });
+  });
+});
+
+describe("карточка: правка опубликованной менеджером", () => {
+  const MANAGER: StaffMe["permissions"] = ["catalog.read", "listings.write", "listings.submit"];
+  const REVISION_ID = "dddddddd-0000-0000-0000-000000000001";
+  const AVAILABILITY = json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 });
+  const PENDING = {
+    id: REVISION_ID,
+    fields: ["name"],
+    submittedAt: "2026-09-30T06:00:00.000Z",
+    proposedBy: { kind: "staff", name: "Test manager" },
+  } as const;
+  const PARTNER = { kind: "partner", name: null } as const;
+
+  /** Поле формы по подписи */
+  const field = (label: string) => {
+    const id = [...container.querySelectorAll("label")].find((l) => l.textContent === label)?.htmlFor;
+    return (id ? document.getElementById(id) : null) as HTMLInputElement | null;
+  };
+
+  it("подсказка заранее; название — на модерацию, вместимость — сразу; форма — как в карточке", async () => {
+    mockApi(staff("manager", MANAGER), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: AVAILABILITY,
+      [`PATCH /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        capMax: 400,
+        version: 8,
+        pendingRevision: PENDING,
+        sentForModeration: ["name"],
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(text()).toContain(t.moderatedNotice);
+    expect(field(t.listingFields.name ?? "")?.getAttribute("aria-describedby")).toBeTruthy();
+    expect(text()).toContain(t.moderatedHint);
+
+    await type(field(t.listingFields.name ?? "") as HTMLInputElement, "Oqsaroy Grand");
+    await type(field(t.listingFields.capMax ?? "") as HTMLInputElement, "400");
+    await act(async () => button(t.save)?.click());
+    await settle();
+
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+      name: "Oqsaroy Grand",
+      capMax: 400,
+      version: 7,
+    });
+    expect(container.querySelector(".formbar [role=status]")?.textContent).toBe(
+      t.sentForModeration(t.revisionFields.name ?? "", true),
+    );
+    expect(container.querySelector(".saved")).toBeNull();
+    // Карточка не изменилась: в форме — прежнее название, вместимость — новая
+    expect(field(t.listingFields.name ?? "")?.value).toBe("Oqsaroy Hall");
+    expect(field(t.listingFields.capMax ?? "")?.value).toBe("400");
+    // Отметка о правке — со ссылкой на неё
+    const notice = container.querySelector(".pending-revision");
+    expect(notice?.textContent).toContain(t.pendingRevisionTitle);
+    expect(notice?.textContent).toContain(t.proposedBy("staff", "Test manager"));
+    expect(notice?.querySelector(`a[href="/revisions/${REVISION_ID}"]`)?.textContent).toBe(
+      t.pendingRevisionOpen,
+    );
+  });
+
+  it("открытая правка уже есть — 409 revision_pending: объяснение, карточка перечитана", async () => {
+    // Вендор подал правку, пока менеджер правил: страница о ней ещё не знает
+    let reads = 0;
+    mockApi(staff("manager", MANAGER), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: () =>
+        json({ ...LISTING, pendingRevision: reads++ > 0 ? { ...PENDING, proposedBy: PARTNER } : null })(null),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: AVAILABILITY,
+      [`PATCH /api/staff/listings/${LISTING_ID}`]: json(
+        { error: { code: "revision_pending", message: "Revision pending" } },
+        409,
+      ),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(container.querySelector(".pending-revision")).toBeNull();
+    await type(field(t.listingFields.name ?? "") as HTMLInputElement, "Oqsaroy Grand");
+    await act(async () => button(t.save)?.click());
+    await settle();
+    expect(container.querySelector("form [role=alert]")?.textContent).toBe(t.api.revision_pending);
+    expect(container.querySelector(".formbar [role=status]")).toBeNull();
+    expect(reads).toBe(2);
+    expect(container.querySelector(".pending-revision")?.textContent).toContain(
+      t.proposedBy("partner", null),
+    );
+    // Введённое не пропало: можно дождаться решения и сохранить снова
+    expect(field(t.listingFields.name ?? "")?.value).toBe("Oqsaroy Grand");
+  });
+
+  it("администратор решает по правкам сам: подсказки нет, «Сохранено»", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: AVAILABILITY,
+      [`PATCH /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        name: "Oqsaroy Grand",
+        version: 8,
+        sentForModeration: [],
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(text()).not.toContain(t.moderatedNotice);
+    expect(text()).not.toContain(t.moderatedHint);
+    await type(field(t.listingFields.name ?? "") as HTMLInputElement, "Oqsaroy Grand");
+    await act(async () => button(t.save)?.click());
+    await settle();
+    expect(container.querySelector(".saved")?.textContent).toBe(t.saved);
+    expect(container.querySelector(".sent")).toBeNull();
+    expect(container.querySelector(".pending-revision")).toBeNull();
   });
 });
 

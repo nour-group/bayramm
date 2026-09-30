@@ -47,6 +47,7 @@ interface SessionRow {
 interface MembershipRow {
   id: string;
   vendor_id: string;
+  role: string;
   disabled_at: Date | null;
 }
 
@@ -82,9 +83,10 @@ const staffSession = (patch: Partial<SessionRow> = {}): SessionRow =>
     ...patch,
   });
 
-const membership = (id: string, vendorId: string, disabled = false): MembershipRow => ({
+const membership = (id: string, vendorId: string, disabled = false, role = "owner"): MembershipRow => ({
   id,
   vendor_id: vendorId,
+  role,
   disabled_at: disabled ? new Date() : null,
 });
 
@@ -309,7 +311,12 @@ describe("requireVendor", () => {
     const fake = dbWith(accountSession({ app: "vendor" }), [membership(VENDOR_USER_ID, VENDOR_ID)]);
     const res = await appWith(fake).request("/vendor", bearer(generateToken()));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID });
+    expect(await res.json()).toEqual({
+      kind: "vendor_user",
+      id: VENDOR_USER_ID,
+      vendorId: VENDOR_ID,
+      role: "owner",
+    });
     const lookup = fake.queries.find((q) => q.sql.includes('from "app"."vendor_users"'));
     expect(lookup?.parameters).toContain(ACCOUNT_ID);
   });
@@ -321,7 +328,12 @@ describe("requireVendor", () => {
     expect(((await choose.json()) as { error: { code: string } }).error.code).toBe("vendor_choice_required");
 
     const b = await get(accountSession(), "/vendor", both, { "X-Bayramm-Vendor": VENDOR_B.toUpperCase() });
-    expect(await b.json()).toEqual({ kind: "vendor_user", id: VENDOR_USER_B, vendorId: VENDOR_B });
+    expect(await b.json()).toEqual({
+      kind: "vendor_user",
+      id: VENDOR_USER_B,
+      vendorId: VENDOR_B,
+      role: "owner",
+    });
 
     const foreign = await get(accountSession(), "/vendor", both, {
       "X-Bayramm-Vendor": "dddddddd-0000-0000-0000-000000000001",
@@ -340,13 +352,14 @@ describe("requireVendor", () => {
 describe("chooseMembership", () => {
   it("отключённое членство не выбирается даже заголовком", () => {
     const list = [
-      { vendorUserId: VENDOR_USER_ID, vendorId: VENDOR_ID, disabled: true },
-      { vendorUserId: VENDOR_USER_B, vendorId: VENDOR_B, disabled: false },
+      { vendorUserId: VENDOR_USER_ID, vendorId: VENDOR_ID, role: "owner" as const, disabled: true },
+      { vendorUserId: VENDOR_USER_B, vendorId: VENDOR_B, role: "member" as const, disabled: false },
     ];
     expect(chooseMembership(list, undefined)).toEqual({
       kind: "vendor_user",
       id: VENDOR_USER_B,
       vendorId: VENDOR_B,
+      role: "member",
     });
     expect(() => chooseMembership(list, VENDOR_ID)).toThrow(expect.objectContaining({ status: 403 }));
   });
