@@ -880,6 +880,9 @@ body {
 
 .photos li {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
 }
 
 .photos img {
@@ -896,6 +899,33 @@ body {
   position: absolute;
   top: 8px;
   left: 8px;
+}
+
+/* Удалить фото — под снимком во всю ширину плитки, а не поверх него */
+.photo-delete {
+  width: 100%;
+}
+
+/* Лица на фото: предупреждение на виду всегда, акцент — полосой слева, текст — ink на lilac */
+.notice-warn {
+  border-left: 4px solid var(--coral);
+}
+
+/* Загрузка: галочка «лиц нет» и FileDrop во всю ширину раздела */
+.upload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.photo-problems ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+/* Имя файла с телефона бывает длинным и без пробелов — переносится, а не раздвигает экран */
+.photo-problems li {
+  overflow-wrap: anywhere;
 }
 
 .blockers {

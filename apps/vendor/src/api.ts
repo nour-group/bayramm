@@ -8,11 +8,12 @@
 import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { Me } from "@bayramm/shared/api/me";
 import type {
-  BusyDay,
   ListingRevisionPayload,
   VendorCalendar,
+  VendorCalendarChange,
   VendorListing,
   VendorMe,
+  VendorPhoto,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPage,
@@ -21,6 +22,7 @@ import type {
   VendorRevisionList,
   VendorSignIn,
 } from "@bayramm/shared/api/vendor";
+import { CALENDAR_VERSION_HEADER, NO_FACES_HEADER } from "@bayramm/shared/api/vendor";
 import { vendorHeaders } from "./hub";
 
 const API = "/api";
@@ -56,7 +58,7 @@ export const tokenStore = {
 
 /**
  * Отказ API: статус и стабильный код ошибки. status 0 — сеть или API не ответило.
- * details — у 422 invalid_input имена неверных полей
+ * details — у 422 invalid_input имена неверных полей, у 422 invalid_image — код проверки файла
  */
 export class ApiFailure extends Error {
   readonly status: number;
@@ -78,7 +80,9 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   if (token) headers.set("Authorization", `Bearer ${token}`);
   // Партнёр нескольких вендоров: какой из них — заголовок (hub.ts)
   for (const [name, value] of Object.entries(vendorHeaders())) headers.set(name, value);
-  if (init.body !== undefined) headers.set("content-type", "application/json");
+  // Тело-файл (фото) уходит как есть, со своим типом; остальное — JSON
+  if (init.body instanceof Blob) headers.set("content-type", init.body.type || "application/octet-stream");
+  else if (init.body !== undefined) headers.set("content-type", "application/json");
   try {
     return await fetch(`${API}${path}`, { ...init, headers, credentials: "omit", cache: "no-store" });
   } catch {
@@ -191,12 +195,34 @@ export const api = {
   callAttempt: (id: string) => empty(`/vendor/requests/${encodeURIComponent(id)}/call`, { method: "POST" }),
 
   listing: (id: string) => json<VendorListing>(`/vendor/listings/${encodeURIComponent(id)}`),
+  /**
+   * Фото площадки (только владелец кабинета): photo — результат compressForUpload
+   * (@bayramm/media/browser), без метаданных. X-No-Faces — партнёр подтвердил, что лиц нет
+   */
+  uploadPhoto: (listingId: string, photo: Blob) =>
+    json<VendorPhoto>(`/vendor/listings/${encodeURIComponent(listingId)}/photos`, {
+      method: "POST",
+      headers: { [NO_FACES_HEADER]: "1" },
+      body: photo,
+    }),
+  deletePhoto: (listingId: string, photoId: string) =>
+    empty(`/vendor/listings/${encodeURIComponent(listingId)}/photos/${encodeURIComponent(photoId)}`, {
+      method: "DELETE",
+    }),
+
   calendar: (listingId: string, month: string) =>
     json<VendorCalendar>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar?month=${month}`),
-  markBusy: (listingId: string, day: string) =>
-    json<BusyDay>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar/${day}`, { method: "PUT" }),
-  markFree: (listingId: string, day: string) =>
-    empty(`/vendor/listings/${encodeURIComponent(listingId)}/calendar/${day}`, { method: "DELETE" }),
+  /** Правка дня — от версии календаря, которую видел человек: устарела — 409 calendar_conflict */
+  markBusy: (listingId: string, day: string, version: number) =>
+    json<VendorCalendarChange>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar/${day}`, {
+      method: "PUT",
+      headers: { [CALENDAR_VERSION_HEADER]: String(version) },
+    }),
+  markFree: (listingId: string, day: string, version: number) =>
+    json<VendorCalendarChange>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar/${day}`, {
+      method: "DELETE",
+      headers: { [CALENDAR_VERSION_HEADER]: String(version) },
+    }),
 
   revisions: (listingId: string) =>
     json<VendorRevisionList>(`/vendor/listings/${encodeURIComponent(listingId)}/revisions`),
