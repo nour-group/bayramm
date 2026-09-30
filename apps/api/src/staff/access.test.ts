@@ -39,6 +39,7 @@ const SPEC: Record<Permission, readonly StaffRole[]> = {
   "settings.write": ["admin"],
   "team.manage": ["admin"],
   "revisions.moderate": ["admin", "moderator"],
+  "metrics.read": ["admin", "manager", "moderator"],
 };
 
 // Маршрут → право, которым он закрыт
@@ -101,6 +102,9 @@ const ROUTES: readonly [method: string, path: string, permission: Permission][] 
   ["POST", `/team/${ID}/role`, "team.manage"],
   ["POST", `/team/${ID}/deactivate`, "team.manage"],
   ["POST", `/team/${ID}/activate`, "team.manage"],
+  ["GET", "/metrics", "metrics.read"],
+  ["GET", "/metrics/vendors", "metrics.read"],
+  ["GET", `/metrics/vendors/${ID}`, "metrics.read"],
 ];
 
 function appAs(role: StaffRole) {

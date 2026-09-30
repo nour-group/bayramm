@@ -41,5 +41,9 @@ describe("wrangler.jsonc кабинета вендора", () => {
       const routes = read(env).routes ?? [];
       expect(routes).toEqual(domain ? [{ pattern: domain, custom_domain: true }] : []);
     });
+
+    it(`${label}: логи Workers Logs включены — каждый запрос (партнёров немного)`, () => {
+      expect(read(env).observability).toMatchObject({ enabled: true, head_sampling_rate: 1 });
+    });
   }
 });

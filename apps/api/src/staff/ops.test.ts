@@ -43,6 +43,15 @@ describe("настройки", () => {
     expect(parseSettingValue("quiet_hours", ["22:00", "08:00"])).toBeUndefined();
   });
 
+  it("пауза между напоминаниями сотрудника — 5–1440 минут", () => {
+    expect(parseSettingValue("ops_reminder_pause_minutes", 30)).toBe(30);
+    expect(parseSettingValue("ops_reminder_pause_minutes", 5)).toBe(5);
+    expect(parseSettingValue("ops_reminder_pause_minutes", 1440)).toBe(1440);
+    expect(parseSettingValue("ops_reminder_pause_minutes", 4)).toBeUndefined();
+    expect(parseSettingValue("ops_reminder_pause_minutes", 1441)).toBeUndefined();
+    expect(parseSettingValue("ops_reminder_pause_minutes", "30")).toBeUndefined();
+  });
+
   it("каждый изменяемый ключ разбирается; числовые — все с границами", () => {
     for (const key of Object.keys(INT_SETTINGS)) expect(SETTING_KEYS).toContain(key);
     expect(SETTING_KEYS).toHaveLength(Object.keys(INT_SETTINGS).length + 2);
