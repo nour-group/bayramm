@@ -49,7 +49,9 @@ test.describe("телефон виден сразу", () => {
       const priceBox = await page.locator(".venue-bar .bar-price b").boundingBox();
       const callBox = await barCall.boundingBox();
       expect(priceBox && callBox && priceBox.x + priceBox.width <= callBox.x).toBe(true);
-      expect(await page.locator(".venue-bar .bar-price b").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      expect(
+        await page.locator(".venue-bar .bar-price b").evaluate((el) => el.scrollWidth <= el.clientWidth),
+      ).toBe(true);
       // Ни формы, ни согласий на пути к номеру нет
       await expect(page.locator("form.request")).toHaveCount(0);
     });
