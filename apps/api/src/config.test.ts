@@ -62,6 +62,13 @@ describe("TURNSTILE_SITE_KEY в wrangler.jsonc API", () => {
   });
 });
 
+describe("OTP_PROVIDER в wrangler.jsonc API", () => {
+  // В облаке код входа либо не шлётся, либо уходит через Telegram Gateway — не в лог
+  it.each(["staging", "production"])("%s — off или tg_gateway", (env) => {
+    expect(["off", "tg_gateway"]).toContain(read(API_CONFIG, env).vars.OTP_PROVIDER);
+  });
+});
+
 describe("cron в wrangler.jsonc API", () => {
   // SLA и outbox — раз в минуту в каждом окружении
   it.each([undefined, "staging", "production"])("%s — раз в минуту", (env) => {

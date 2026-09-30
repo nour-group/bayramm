@@ -65,7 +65,7 @@
         "ADMIN_APP_URL": "https://admin-staging.bayramm.uz",
         "API_URL": "https://api-staging.bayramm.uz",
         "TELEGRAM_LOGIN_DOMAIN": "staging.bayramm.uz",
-        "OTP_PROVIDER": "off",
+        "OTP_PROVIDER": "tg_gateway",
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFKW6kfx8xk13qs_"
       },
       "triggers": { "crons": ["* * * * *"] },
