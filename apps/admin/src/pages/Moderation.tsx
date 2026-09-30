@@ -1,5 +1,7 @@
-/* Модерация: карточки на проверке — по порядку отправки (решение — на странице карточки)
-   и правки опубликованных карточек от вендоров (решение — на странице правки). */
+/* Модерация: карточки на проверке — по порядку отправки (решение — на странице карточки),
+   правки опубликованных карточек от вендоров и менеджеров (решение — на странице правки)
+   и новые фото опубликованных карточек — старые загрузки первыми (одобрить или отклонить —
+   на странице карточки, в блоке фото). */
 
 import type { ListingList, RevisionList } from "@bayramm/shared/api/staff";
 import { useLoad } from "../api";
@@ -22,6 +24,13 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
         </h2>
         <p className="muted small">{t.revisionsHint}</p>
         <RevisionQueue />
+      </section>
+      <section className="stack" aria-labelledby="photo-queue-title">
+        <h2 id="photo-queue-title" className="section-title">
+          {t.photoQueue}
+        </h2>
+        <p className="muted small">{t.photoQueueHint}</p>
+        <PhotoQueue />
       </section>
     </div>
   );
@@ -83,10 +92,43 @@ function RevisionQueue() {
                     {vendorLabel(revision.vendor)} · {t.submittedAt} {formatMoment(revision.submittedAt)}
                   </span>
                   <span className="sub">
+                    {t.proposedBy(revision.proposedBy.kind, revision.proposedBy.name)}
+                  </span>
+                  <span className="sub">
                     {revision.fields.map((field) => t.revisionFields[field] ?? field).join(", ")}
                   </span>
                 </div>
                 {revision.stale && <p className="notice notice-warn">{t.revisionStale}</p>}
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </LoadedView>
+  );
+}
+
+function PhotoQueue() {
+  const { loaded, reload } = useLoad<ListingList>("/staff/listings?photos=pending&limit=100");
+  return (
+    <LoadedView loaded={loaded} onRetry={reload}>
+      {(list) =>
+        list.items.length === 0 ? (
+          <p className="empty">{t.photoQueueEmpty}</p>
+        ) : (
+          <ul className="cards">
+            {list.items.map((listing) => (
+              <li key={listing.id} className="panel card-row">
+                <div>
+                  <Link to={{ name: "listing", id: listing.id }} className="row-link">
+                    {listing.name}
+                  </Link>
+                  <span className="sub">{vendorLabel(listing.vendor)}</span>
+                  <span className="sub">
+                    {t.pendingPhotos(listing.photos.pending)} ·{" "}
+                    {t.photosCount(listing.photos.ready, listing.photos.approved)}
+                  </span>
+                </div>
               </li>
             ))}
           </ul>

@@ -17,6 +17,7 @@ import {
   NOTICE_TEXTS,
   type OpsSlaFacts,
   opsOutboxDead,
+  opsPhotosSubmitted,
   opsRevisionSubmitted,
   opsSlaBreach,
   type RequestFacts,
@@ -27,7 +28,8 @@ import {
  * vendor.ops_reminder — напоминание от сотрудника (20260930180000_admin_v02.sql);
  * ops.revision_submitted — правка карточки от партнёра (20260930200000_revisions_phone_invites.sql);
  * ops.daily_digest, ops.weekly_report, ops.api_error — отчёты и ошибки API администраторам
- * (20260930220000_launch_metrics.sql, тексты — reports.ts)
+ * (20260930220000_launch_metrics.sql, тексты — reports.ts);
+ * ops.photos_submitted — новые фото опубликованной карточки (20261001010000_cabinet_integrity.sql)
  */
 export const NOTICE_KINDS = [
   "vendor.request_new",
@@ -41,15 +43,19 @@ export const NOTICE_KINDS = [
   "ops.daily_digest",
   "ops.weekly_report",
   "ops.api_error",
+  "ops.photos_submitted",
 ] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
 /**
  * Может ли сотрудник этой роли получить оповещение: о правке карточки — тот, кто решает
- * по правкам (revisions.moderate), остальные оповещения команды — администратору
+ * по правкам (revisions.moderate), о новых фото — тот, кто решает по фото
+ * (photos.moderate), остальные оповещения команды — администратору
  */
 function staffMayReceive(kind: string, role: AppStaffRole): boolean {
-  return kind === "ops.revision_submitted" ? can(role, "revisions.moderate") : role === "admin";
+  if (kind === "ops.revision_submitted") return can(role, "revisions.moderate");
+  if (kind === "ops.photos_submitted") return can(role, "photos.moderate");
+  return role === "admin";
 }
 
 /** Строка outbox, взятая на отправку */
@@ -320,6 +326,33 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
       typeof payload === "object" && payload !== null && !Array.isArray(payload) ? Object.keys(payload) : [];
     return message(
       opsRevisionSubmitted({ listing: revision.name, vendorCode: revision.public_code, fields }),
+    );
+  }
+
+  if (kind === "ops.photos_submitted") {
+    const listingId = field(row.payload, "listing_id");
+    if (listingId === null) return skip("bad_payload");
+    const listing = await trx
+      .selectFrom("app.listings as l")
+      .innerJoin("app.vendor_accounts as v", "v.id", "l.vendor_id")
+      .select([
+        "l.name",
+        "v.public_code",
+        sql<number>`(select count(*)::int from app.photos p
+                     where p.listing_id = l.id and p.deleted_at is null and p.status = 'ready'
+                       and p.moderation = 'pending')`.as("pending"),
+      ])
+      .where("l.id", "=", listingId)
+      .executeTakeFirst();
+    if (listing === undefined) return skip("not_found");
+    // Фото уже одобрили, отклонили или удалили — оповещать не о чем
+    if (listing.pending === 0) return skip("photos_decided");
+    return message(
+      opsPhotosSubmitted({
+        listing: listing.name,
+        vendorCode: listing.public_code,
+        pending: listing.pending,
+      }),
     );
   }
 

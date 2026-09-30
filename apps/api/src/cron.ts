@@ -8,8 +8,9 @@
 //   4. чистка: update_id вебхука старше трёх дней (Telegram повторяет доставку
 //      не дольше суток);
 //   5. раз в день, в окне 21:00–21:59 UTC (02:00 по Ташкенту): истечение заявок
-//      и сроки хранения (maintenance/index.ts). База сама пропускает повтор в тот
-//      же день, упавший запуск повторит следующая минута окна.
+//      и сроки хранения (maintenance/index.ts), затем сверка фото с хранилищем.
+//      База сама пропускает повтор в тот же день, упавший запуск повторит
+//      следующая минута окна.
 // Шаги независимы: сбой одного — в лог, остальные выполняются.
 
 import { sql } from "kysely";
@@ -21,6 +22,7 @@ import { outboxDeps } from "./notify/kick";
 import { dispatchOutbox } from "./notify/outbox";
 import { enqueueOpsReports, isOpsReportTick } from "./notify/reports";
 import { sweepSla } from "./notify/sla";
+import { listingPhotoStorage } from "./storage/supabase";
 
 export const TELEGRAM_UPDATES_RETENTION_DAYS = 3;
 
@@ -65,7 +67,9 @@ export async function runCron(env: Env, now: Date = new Date()): Promise<boolean
     );
     const purge = await step("telegram_updates", () => purgeTelegramUpdates(db));
     const daily = isDailyMaintenanceTick(now.getTime())
-      ? await step("daily_maintenance", () => dailyMaintenance(db))
+      ? await step("daily_maintenance", () =>
+          dailyMaintenance(db, { photos: () => listingPhotoStorage(env) }),
+        )
       : true;
     return sla && reports && outbox && purge && daily;
   } finally {

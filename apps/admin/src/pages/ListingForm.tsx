@@ -1,10 +1,16 @@
 /* Форма карточки: создание и правка. Цена обязательна (без «по запросу»), пакеты будней
-   и выходных — для залов. Телефон для заявок только пишется: текущий — по «Показать». */
+   и выходных — для залов. Телефон для заявок только пишется: текущий — по «Показать».
+   Опубликованную карточку менеджер (без права решать по правкам) меняет так же, как
+   вендор из кабинета: название, цена, описания и пакеты уходят правкой на модерацию, а
+   карточка остаётся прежней — форма говорит «отправлено на модерацию» и показывает то,
+   что в карточке сейчас. Остальные поля сохраняются сразу. */
 
 import type {
   ListingDetail,
   ListingInput,
+  ListingSaveResult,
   PriceUnit,
+  RevisionField,
   StaffDictionaries,
   StaffListingPackage,
 } from "@bayramm/shared/api/staff";
@@ -48,6 +54,15 @@ const PRICE_UNITS: readonly SelectOption<PriceUnit>[] = [
   { value: "per_event", label: t.priceUnits.per_event },
 ];
 const NUMBER_KEYS = ["priceFromUzs", "capMin", "capMax"] as const;
+/** Поля тела запроса, которые у опубликованной карточки меняет только модерация */
+const MODERATED_KEYS: ReadonlySet<string> = new Set<RevisionField>([
+  "name",
+  "priceFromUzs",
+  "priceUnit",
+  "descriptionRu",
+  "descriptionUz",
+  "packages",
+]);
 
 let rowKey = 0;
 
@@ -160,12 +175,31 @@ export function listingBody(
 interface ListingFormProps {
   listing: ListingDetail | null;
   dictionaries: StaffDictionaries | null;
-  onSubmit: (body: ListingInput) => Promise<Failure | null>;
+  /**
+   * Ответ сервера: ошибка; карточка после правки (и какие поля ушли на модерацию);
+   * null — готово (создание: страница уходит на новую карточку)
+   */
+  onSubmit: (body: ListingInput) => Promise<Failure | ListingSaveResult | null>;
   submitLabel: string;
   readOnly?: boolean;
+  /** Название, цена, описания и пакеты уйдут на модерацию — подсказать у этих полей */
+  moderated?: boolean;
 }
 
-export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, readOnly }: ListingFormProps) {
+/** Что ушло на модерацию и было ли в правке что-то ещё (оно сохранено сразу) */
+interface Sent {
+  readonly fields: readonly RevisionField[];
+  readonly rest: boolean;
+}
+
+export function ListingForm({
+  listing,
+  dictionaries,
+  onSubmit,
+  submitLabel,
+  readOnly,
+  moderated = false,
+}: ListingFormProps) {
   const creating = listing === null;
   const [before, setBefore] = useState(() => initial(listing));
   const [values, setValues] = useState(before);
@@ -174,39 +208,63 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [sent, setSent] = useState<Sent | null>(null);
   const errors = fieldErrors(failure, t.listingFieldErrors);
+  const moderatedHint = moderated && !readOnly ? t.moderatedHint : undefined;
 
-  const put = (key: keyof Values) => (value: string) => {
+  // Любая новая правка — старое «Сохранено» или «Отправлено» уже не про неё
+  const touch = () => {
     setSaved(false);
+    setSent(null);
+  };
+  const put = (key: keyof Values) => (value: string) => {
+    touch();
     setValues((prev) => ({ ...prev, [key]: value }));
   };
   const set = (key: keyof Values) => (event: { target: { value: string } }) => put(key)(event.target.value);
   const setRow = (key: number, patch: Partial<PackageRow>) => {
-    setSaved(false);
+    touch();
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setBusy(true);
-    const result = await onSubmit(listingBody(values, before, rows, beforeRows, creating));
+    const body = listingBody(values, before, rows, beforeRows, creating);
+    const result = await onSubmit(body);
     setBusy(false);
-    setFailure(result);
-    if (result === null) {
-      setSaved(true);
-      const next = { ...values, phone: "" };
-      setValues(next);
-      setBefore(next);
-      setBeforeRows(rows);
+    if (result !== null && "ok" in result) {
+      setFailure(result);
+      return;
     }
+    setFailure(null);
+    const fields = result?.sentForModeration ?? [];
+    if (result && fields.length > 0) {
+      // Карточка не изменилась в том, что ушло на модерацию: форма — как в карточке сейчас
+      const next = initial(result);
+      const nextRows = packageRows(result);
+      setBefore(next);
+      setValues(next);
+      setBeforeRows(nextRows);
+      setRows(nextRows);
+      setSaved(false);
+      setSent({ fields, rest: Object.keys(body).some((key) => !MODERATED_KEYS.has(key)) });
+      return;
+    }
+    setSent(null);
+    setSaved(true);
+    const next = { ...values, phone: "" };
+    setValues(next);
+    setBefore(next);
+    setBeforeRows(rows);
   };
 
   const input = (
     key: keyof Values,
     label: string,
-    extra: { maxLength: number; numeric?: boolean; required?: boolean },
+    extra: { maxLength: number; numeric?: boolean; required?: boolean; hint?: string | undefined },
   ) => (
-    <Field label={label} error={errors[key]}>
+    <Field label={label} error={errors[key]} hint={extra.hint}>
       {(props) => (
         <input
           {...props}
@@ -223,7 +281,7 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
   );
 
   const textarea = (key: "descriptionRu" | "descriptionUz", lang: "ru" | "uz") => (
-    <Field label={t.listingFields[key] ?? key} error={errors[key]} full>
+    <Field label={t.listingFields[key] ?? key} error={errors[key]} hint={moderatedHint} full>
       {(props) => (
         <textarea
           {...props}
@@ -241,13 +299,14 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
 
   return (
     <form className="form" onSubmit={submit} noValidate>
+      {moderatedHint && <p className="notice notice-warn">{t.moderatedNotice}</p>}
       <section className="fs">
         <div className="fs-head">
           <h2>{t.listingSections.main}</h2>
           <p>{t.listingSections.mainHint}</p>
         </div>
         <div className="fields">
-          {input("name", t.listingFields.name ?? "", { maxLength: 80, required: true })}
+          {input("name", t.listingFields.name ?? "", { maxLength: 80, required: true, hint: moderatedHint })}
           <Field
             label={t.listingFields.slug ?? ""}
             error={errors.slug}
@@ -337,8 +396,12 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
           <p>{t.listingSections.pricesHint}</p>
         </div>
         <div className="fields">
-          {input("priceFromUzs", t.listingFields.priceFromUzs ?? "", { maxLength: 16, numeric: true })}
-          <Field label={t.listingFields.priceUnit ?? ""}>
+          {input("priceFromUzs", t.listingFields.priceFromUzs ?? "", {
+            maxLength: 16,
+            numeric: true,
+            hint: moderatedHint,
+          })}
+          <Field label={t.listingFields.priceUnit ?? ""} hint={moderatedHint}>
             {(props) => (
               <Select
                 {...props}
@@ -356,6 +419,7 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
         </div>
         <fieldset className="packages">
           <legend>{t.packages}</legend>
+          {moderatedHint && <p className="field-hint">{moderatedHint}</p>}
           {errors.packages && <p className="field-error">{errors.packages}</p>}
           {rows.map((row) => (
             <div key={row.key} className="package-row">
@@ -415,7 +479,10 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
+                  onClick={() => {
+                    touch();
+                    setRows((prev) => prev.filter((r) => r.key !== row.key));
+                  }}
                 >
                   {t.removePackage}
                 </button>
@@ -426,7 +493,8 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
             <button
               type="button"
               className="btn btn-sm"
-              onClick={() =>
+              onClick={() => {
+                touch();
                 setRows((prev) => [
                   ...prev,
                   {
@@ -437,8 +505,8 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
                     price: "",
                     priceUnit: values.priceUnit,
                   },
-                ])
-              }
+                ]);
+              }}
             >
               {t.addPackage}
             </button>
@@ -481,6 +549,14 @@ export function ListingForm({ listing, dictionaries, onSubmit, submitLabel, read
           {saved && (
             <span className="saved" role="status">
               {t.saved}
+            </span>
+          )}
+          {sent && (
+            <span className="sent" role="status">
+              {t.sentForModeration(
+                sent.fields.map((field) => t.revisionFields[field] ?? field).join(", "),
+                sent.rest,
+              )}
             </span>
           )}
           <button type="submit" className="btn btn-primary" disabled={busy}>

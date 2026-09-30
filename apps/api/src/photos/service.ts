@@ -1,5 +1,6 @@
-// Фото листинга: добавить и удалить. Внутренний сервис — HTTP-маршруты
-// подключаются вместе со входом вендора и сотрудника.
+// Фото листинга: добавить и удалить. Маршруты — панель (staff/photos.ts) и кабинет
+// (routes/vendor.ts → vendor/photos.ts: только владелец кабинета). Сироты в хранилище
+// и строки, удалённые больше 30 дней назад, убирает ежедневная сверка (photos/sweep.ts).
 //
 // Добавление:
 //   1. проверка файла по байтам (@bayramm/media): WebP/JPEG/PNG, ≤ 10 МБ,
@@ -185,8 +186,8 @@ export async function addListingPhoto(
       };
     });
   } catch (err) {
-    // Строки нет — объект никому не нужен. Не удалился — останется сиротой, это
-    // хуже, но не повод прятать исходную ошибку
+    // Строки нет — объект никому не нужен. Не удалился — останется сиротой (через
+    // сутки его удалит ежедневная сверка), но это не повод прятать исходную ошибку
     await deps.storage.remove(key).catch((removeErr: unknown) => {
       console.error("photos: orphan object after failed insert", key, removeErr);
     });
@@ -228,8 +229,8 @@ export async function removeListingPhoto(
     await deps.storage.remove(row.storage_key);
     return { id: row.id, storageKey: row.storage_key, objectRemoved: true };
   } catch (err) {
-    // Фото уже нигде не показывается (строка удалена), но объект остался сиротой:
-    // его видно по строке с deleted_at и этим storage_key — для сверки с хранилищем
+    // Фото уже нигде не показывается (строка удалена), но объект остался: его удалит
+    // ежедневная сверка вместе со строкой, когда той исполнится 30 дней (photos/sweep.ts)
     console.error("photos: object not removed", row.storage_key, err);
     return { id: row.id, storageKey: row.storage_key, objectRemoved: false };
   }

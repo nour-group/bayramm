@@ -10,14 +10,18 @@ export type Load<T> =
 /**
  * Данные экрана по ключу: новый ключ — новая загрузка, ответ на старый ключ
  * отбрасывается. reload — ещё раз с тем же ключом, set — поправить загруженное
- * на месте (после действия, без повторного запроса). Загрузка упала без сети или на 5xx,
- * а связь потом вернулась (событие online) — повтор сам.
+ * на месте (после действия, без повторного запроса), refresh — перечитать тихо: экран
+ * остаётся на месте (без «Загрузка…», фокус не теряется), ответ заменяет данные.
+ * refresh отвечает, удалось ли: не удалось — данные прежние. Загрузка упала без сети
+ * или на 5xx, а связь потом вернулась (событие online) — повтор сам.
  */
 export function useLoad<T>(key: string | null, load: (key: string) => Promise<T>) {
   const [result, setResult] = useState<Load<T>>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
   const loader = useRef(load);
   loader.current = load;
+  const currentKey = useRef(key);
+  currentKey.current = key;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt — повтор загрузки по «Повторить»
   useEffect(() => {
@@ -45,7 +49,20 @@ export function useLoad<T>(key: string | null, load: (key: string) => Promise<T>
       ),
     [],
   );
-  return [result, reload, set] as const;
+  const refresh = useCallback(async (): Promise<boolean> => {
+    const asked = currentKey.current;
+    if (asked === null) return false;
+    try {
+      const data = await loader.current(asked);
+      // Пока читали, экран ушёл на другой ключ — ответ не его
+      if (currentKey.current !== asked) return false;
+      setResult({ state: "ready", data });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+  return [result, reload, set, refresh] as const;
 }
 
 /** Повторить, когда вернётся связь: запрос не дошёл или сервер не ответил (5xx) */

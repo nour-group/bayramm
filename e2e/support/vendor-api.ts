@@ -3,21 +3,28 @@ import type {
   ListingRevisionPayload,
   RequestTab,
   VendorCalendar,
+  VendorCalendarChange,
   VendorListing,
   VendorMe,
+  VendorPhoto,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPatch,
   VendorRevision,
+  VendorRole,
 } from "@bayramm/shared/api/vendor";
 import { TAB_STATUSES } from "@bayramm/shared/api/vendor";
 import type { Page, Route } from "@playwright/test";
 import { APPS, accountMe, BOT, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
 
 /* API кабинета вендора в памяти теста: page.route перехватывает /api/* до сети.
-   Контракт — @bayramm/shared/api/vendor. Заявки и календарь меняются по PATCH/PUT/DELETE,
-   как у настоящего API; всё незнакомое — 404 и запись в unexpected (тест это проверит).
-   Вход — по initData (внутри Telegram) или кодом хаба входа на сайте (hub). */
+   Контракт — @bayramm/shared/api/vendor. Заявки, календарь и фото меняются по
+   PATCH/PUT/POST/DELETE, как у настоящего API; всё незнакомое — 404 и запись в unexpected
+   (тест это проверит). Вход — по initData (внутри Telegram) или кодом хаба входа на сайте (hub).
+
+   Как у API: правка календаря — только с If-Match от текущей версии (нет — 428, устарела —
+   409 calendar_conflict); карточку (фото, правки) меняет только владелец кабинета — сотруднику
+   площадки (role: "member") 403 vendor_owner_required. */
 
 export const NOW = new Date("2026-10-01T07:00:00Z");
 const HOUR = 3_600_000;
@@ -37,10 +44,23 @@ export interface VendorApi {
   readonly patches: { readonly id: string; readonly body: VendorRequestPatch }[];
   readonly calls: string[];
   readonly busy: Map<string, BusyDay>;
+  /**
+   * Версия календаря площадки: растёт на каждой правке. Тест может поднять её сам —
+   * «календарь изменил кто-то другой», следующая правка кабинета получит 409
+   */
+  readonly calendar: { version: number };
+  /** Правки календаря, как пришли: «PUT 2026-10-20 If-Match: 1» */
+  readonly calendarWrites: string[];
+  /** Фото площадки, как в базе (порядок — порядок показа) */
+  readonly photos: VendorPhoto[];
+  /** Что пришло в POST /photos: тип, размер и подтверждение «лиц нет» */
+  readonly uploads: { readonly contentType: string; readonly bytes: number; readonly noFaces: string }[];
   /** Предложения правок карточки, новые первыми */
   readonly revisions: VendorRevision[];
   /** Чем входили: тело POST /auth/telegram */
   readonly signIns: unknown[];
+  /** Запросы, которым API отказало по роли (vendor_owner_required) */
+  readonly ownerOnly: string[];
 }
 
 function item(
@@ -67,9 +87,9 @@ function item(
   };
 }
 
-export function vendorMe(locale: "ru" | "uz" = "ru"): VendorMe {
+export function vendorMe(locale: "ru" | "uz" = "ru", role: VendorRole = "owner"): VendorMe {
   return {
-    user: { id: "00000000-0000-4000-8200-000000000001", locale, fullName: "Шахло Каримова" },
+    user: { id: "00000000-0000-4000-8200-000000000001", locale, fullName: "Шахло Каримова", role },
     vendor: {
       id: VENDOR_MEMBERSHIP.vendorId,
       code: VENDOR_MEMBERSHIP.code,
@@ -78,6 +98,16 @@ export function vendorMe(locale: "ru" | "uz" = "ru"): VendorMe {
     listings: [{ id: LISTING_ID, name: "Lola zali", status: "active" }],
   };
 }
+
+const photoOf = (n: number, moderation: VendorPhoto["moderation"], isCover = false): VendorPhoto => ({
+  id: `00000000-0000-4000-8500-${String(n).padStart(12, "0")}`,
+  width: 1600,
+  height: 1067,
+  moderation,
+  isCover,
+  src: `${PHOTO}/640/listings/${LISTING_ID}/p${n}.webp`,
+  srcSet: `${PHOTO}/320/listings/${LISTING_ID}/p${n}.webp 320w, ${PHOTO}/640/listings/${LISTING_ID}/p${n}.webp 640w`,
+});
 
 const LISTING: VendorListing = {
   id: LISTING_ID,
@@ -107,17 +137,15 @@ const LISTING: VendorListing = {
       priceUnit: "per_event",
     },
   ],
-  photos: [1, 2, 3].map((n) => ({
-    id: `00000000-0000-4000-8500-00000000000${n}`,
-    width: 1600,
-    height: 1067,
-    moderation: n === 3 ? ("pending" as const) : ("approved" as const),
-    isCover: n === 1,
-    src: `${PHOTO}/640/listings/${LISTING_ID}/p${n}.webp`,
-    srcSet: `${PHOTO}/320/listings/${LISTING_ID}/p${n}.webp 320w, ${PHOTO}/640/listings/${LISTING_ID}/p${n}.webp 640w`,
-  })),
+  photos: [
+    photoOf(1, "approved", true),
+    photoOf(2, "approved"),
+    photoOf(3, "approved"),
+    photoOf(4, "pending"),
+  ],
   phone: "+998000000001",
   blockers: [],
+  photoLimits: { min: 3, max: 10 },
 };
 
 export const isApi = (url: URL) => url.hostname === "localhost" && url.pathname.startsWith("/api/");
@@ -137,21 +165,29 @@ export interface VendorApiOptions {
   readonly hub?: HubWatch;
   /** Какие запросы перехватывать: по умолчанию /api любого localhost */
   readonly match?: (url: URL) => boolean;
+  /** Роль в кабинете: owner (по умолчанию) меняет карточку, member — только заявки и календарь */
+  readonly role?: VendorRole;
 }
 
 /** Подменить /api кабинета */
 export async function mockVendorApi(
   page: Page,
-  { signIn = "ok", staff = false, hub, match = isApi }: VendorApiOptions = {},
+  { signIn = "ok", staff = false, hub, match = isApi, role = "owner" }: VendorApiOptions = {},
 ): Promise<VendorApi> {
   const state: VendorApi = {
     unexpected: [],
     patches: [],
     calls: [],
     busy: new Map(),
+    calendar: { version: 1 },
+    calendarWrites: [],
+    photos: [...LISTING.photos],
+    uploads: [],
     revisions: [],
     signIns: [],
+    ownerOnly: [],
   };
+  let photoNo = state.photos.length;
   let locale: "ru" | "uz" = "ru";
   const requests = new Map<string, VendorRequestDetail>([
     [
@@ -222,14 +258,14 @@ export async function mockVendorApi(
       return json(
         route,
         200,
-        accountMe({ vendors: [VENDOR_MEMBERSHIP], staff }, { kind: "account", app: "vendor" }),
+        accountMe({ vendors: [{ ...VENDOR_MEMBERSHIP, role }], staff }, { kind: "account", app: "vendor" }),
       );
     if (key === "POST /auth/logout") return route.fulfill({ status: 204 });
 
-    if (key === "GET /vendor/me") return json(route, 200, vendorMe(locale));
+    if (key === "GET /vendor/me") return json(route, 200, vendorMe(locale, role));
     if (key === "PATCH /vendor/me") {
       locale = (request.postDataJSON() as { locale: "ru" | "uz" }).locale;
-      return json(route, 200, vendorMe(locale));
+      return json(route, 200, vendorMe(locale, role));
     }
     if (key === "GET /vendor/requests") {
       const tab = (url.searchParams.get("tab") ?? "new") as RequestTab;
@@ -275,8 +311,46 @@ export async function mockVendorApi(
         return json(route, 200, listItem(next));
       }
     }
-    if (key === `GET /vendor/listings/${LISTING_ID}`) return json(route, 200, LISTING);
+    if (key === `GET /vendor/listings/${LISTING_ID}`)
+      return json(route, 200, { ...LISTING, photos: state.photos });
+
+    // Карточку меняет только владелец кабинета — как vendor/access.ts
     const revisions = `/vendor/listings/${LISTING_ID}/revisions`;
+    const photosPath = `/vendor/listings/${LISTING_ID}/photos`;
+    const changesCard = method !== "GET" && (path.startsWith(revisions) || path.startsWith(photosPath));
+    if (changesCard && role !== "owner") {
+      state.ownerOnly.push(key);
+      return fail(route, 403, "vendor_owner_required");
+    }
+
+    if (key === `POST ${photosPath}`) {
+      const noFaces = request.headers()["x-no-faces"] ?? "";
+      if (noFaces !== "1") return fail(route, 422, "no_faces_ack_required");
+      if (state.photos.length >= LISTING.photoLimits.max) return fail(route, 409, "too_many_photos");
+      state.uploads.push({
+        contentType: request.headers()["content-type"] ?? "",
+        bytes: request.postDataBuffer()?.length ?? 0,
+        noFaces,
+      });
+      photoNo += 1;
+      const photo = photoOf(photoNo, "pending");
+      state.photos.push(photo);
+      return json(route, 201, photo);
+    }
+    const photoMatch = new RegExp(`^${photosPath}/([0-9a-f-]{36})$`).exec(path);
+    if (photoMatch && method === "DELETE") {
+      const index = state.photos.findIndex((p) => p.id === photoMatch[1]);
+      const photo = state.photos[index];
+      if (!photo) return fail(route, 404, "not_found");
+      // Опубликованная площадка не останется без минимума одобренных фото
+      const approved = state.photos.filter((p) => p.moderation === "approved").length;
+      if (photo.moderation === "approved" && approved <= LISTING.photoLimits.min) {
+        return json(route, 422, { error: { code: "publish_blocked", message: "x", details: ["photos"] } });
+      }
+      state.photos.splice(index, 1);
+      return route.fulfill({ status: 204 });
+    }
+
     if (key === `GET ${revisions}`) return json(route, 200, { items: state.revisions });
     if (key === `POST ${revisions}`) {
       if (state.revisions.some((r) => r.status === "pending")) return fail(route, 409, "revision_pending");
@@ -287,6 +361,7 @@ export async function mockVendorApi(
         decidedAt: null,
         decisionReason: null,
         payload: request.postDataJSON() as ListingRevisionPayload,
+        byTeam: false,
       };
       state.revisions.unshift(revision);
       return json(route, 201, revision);
@@ -297,6 +372,7 @@ export async function mockVendorApi(
       const current = state.revisions[index];
       if (!current) return fail(route, 404, "not_found");
       if (current.status !== "pending") return fail(route, 409, "illegal_transition");
+      if (current.byTeam) return fail(route, 403, "forbidden_for_actor");
       const next: VendorRevision = { ...current, status: "withdrawn" };
       state.revisions[index] = next;
       return json(route, 200, next);
@@ -310,22 +386,31 @@ export async function mockVendorApi(
         maxDay: "2027-09-30",
         busy: [...state.busy.values()].filter((b) => b.day.startsWith(month)),
         requestDays: [...requests.values()].map((r) => r.eventDate).filter((d) => d.startsWith(month)),
+        version: state.calendar.version,
       };
       return json(route, 200, calendar);
     }
     const dayPrefix = `/vendor/listings/${LISTING_ID}/calendar/`;
     const day = path.startsWith(dayPrefix) ? path.slice(dayPrefix.length) : "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(day) && (method === "PUT" || method === "DELETE")) {
+      // Правка — от версии, которую видел человек: как calendar/version.ts в API
+      const ifMatch = request.headers()["if-match"];
+      state.calendarWrites.push(`${method} ${day} If-Match: ${ifMatch ?? "—"}`);
+      if (ifMatch === undefined || ifMatch.trim() === "") return fail(route, 428, "version_required");
+      if (Number(ifMatch.replace(/^(?:W\/)?"?|"$/g, "")) !== state.calendar.version) {
+        return fail(route, 409, "calendar_conflict");
+      }
       if (state.busy.get(day)?.source === "staff") return fail(route, 403, "forbidden_for_actor");
-      if (method === "PUT") {
-        const busy: BusyDay = { day, source: "vendor", requestId: null };
-        state.busy.set(day, busy);
-        return json(route, 200, busy);
-      }
-      if (method === "DELETE") {
-        state.busy.delete(day);
-        return route.fulfill({ status: 204 });
-      }
+      if (method === "PUT" && !state.busy.has(day))
+        state.busy.set(day, { day, source: "vendor", requestId: null });
+      if (method === "DELETE") state.busy.delete(day);
+      state.calendar.version += 1;
+      const change: VendorCalendarChange = {
+        day,
+        busy: state.busy.get(day) ?? null,
+        version: state.calendar.version,
+      };
+      return json(route, 200, change);
     }
 
     state.unexpected.push(key);

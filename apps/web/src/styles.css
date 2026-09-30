@@ -860,7 +860,10 @@ textarea.field-input {
 
 .bar-price b {
   font-size: var(--fs-16);
-  white-space: nowrap;
+  line-height: 1.15;
+  /* «от 180 000 сум» рядом с двумя кнопками на 360px не влезает: переносим по словам,
+     а не уводим под кнопку звонка (число — с неразрывными пробелами, не рвётся) */
+  text-wrap: balance;
 }
 
 .bar-price .unit {
@@ -872,6 +875,32 @@ textarea.field-input {
   flex: none;
   padding: 0 16px;
   white-space: nowrap;
+}
+
+/* Узкий телефон: рядом со звонком и «Оставить заявку» цене остаётся меньше 100px */
+@media (max-width: 389px) {
+  .bar-price b {
+    font-size: var(--fs-14);
+  }
+
+  .venue-bar .btn-primary {
+    padding: 0 12px;
+  }
+}
+
+/* Совсем узкий (320px): цена — отдельной строкой над кнопками */
+@media (max-width: 359px) {
+  .venue-bar {
+    flex-wrap: wrap;
+  }
+
+  .venue-bar .bar-price {
+    flex-basis: 100%;
+  }
+
+  .venue-bar .btn-primary {
+    flex: 1;
+  }
 }
 
 /* ---------- заявка ---------- */

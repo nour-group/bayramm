@@ -8,24 +8,34 @@
 //   PATCH  /vendor/requests/:id        { status, declineReason?, declineNote? } → 200 VendorRequestItem
 //   POST   /vendor/requests/:id/call               → 204 (нажатие на телефон — в журнал)
 //   GET    /vendor/listings/:id                    → 200 VendorListing
-//   GET    /vendor/listings/:id/calendar?month=    → 200 VendorCalendar
-//   PUT    /vendor/listings/:id/calendar/:day      → 200 BusyDay
-//   DELETE /vendor/listings/:id/calendar/:day      → 204
+//   GET    /vendor/listings/:id/calendar?month=    → 200 VendorCalendar (+ ETag версии)
+//   PUT    /vendor/listings/:id/calendar/:day      If-Match: <версия> → 200 VendorCalendarChange
+//   DELETE /vendor/listings/:id/calendar/:day      If-Match: <версия> → 200 VendorCalendarChange
+//   POST   /vendor/listings/:id/photos             файл, X-No-Faces: 1 → 201 VendorPhoto
+//   DELETE /vendor/listings/:id/photos/:photoId    → 204
 //   GET    /vendor/listings/:id/revisions          → 200 VendorRevisionList
 //   POST   /vendor/listings/:id/revisions          ListingRevisionPayload → 201 VendorRevision
 //   POST   /vendor/listings/:id/revisions/:rid/withdraw → 200 VendorRevision
 //
 // Чужая заявка или листинг — 404, как несуществующие. Клиент или сотрудник с
-// сессией — 403, без сессии — 401.
+// сессией — 403, без сессии — 401. Фото и предложения правок — только владелец
+// кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required.
 
-import { Hono } from "hono";
+import { MAX_UPLOAD_BYTES } from "@bayramm/media";
+import { NO_FACES_HEADER } from "@bayramm/shared/api/vendor";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { authenticate, requireVendor, vendorOf } from "../auth/session";
+import { calendarEtag, versionFromIfMatch } from "../calendar/version";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { ApiError } from "../errors";
 import { outboxKick } from "../notify/kick";
+import type { PhotoDeps } from "../photos/service";
+import { listingPhotoStorage } from "../storage/supabase";
+import { assertVendorCan } from "../vendor/access";
 import { getCalendar, markBusy, markFree, parseDay } from "../vendor/calendar";
+import { deletePhoto, uploadPhoto } from "../vendor/photos";
 import { getListing, getMe, parseLocale, setLocale } from "../vendor/profile";
 import {
   getRequest,
@@ -48,6 +58,17 @@ const limitRevision = bodyLimit({
   maxSize: 64 * 1024,
   onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),
 });
+// И фото: сам файл — до 10 МБ, запас на случай чуть большего тела; точный предел
+// проверяет assertUploadable и отвечает понятной ошибкой
+const limitUpload = bodyLimit({
+  maxSize: MAX_UPLOAD_BYTES + 64 * 1024,
+  onError: (c) =>
+    c.json(new ApiError(413, "payload_too_large", "Photo is too large", ["too_large"]).toBody(), 413),
+});
+
+function photoDeps(c: Context<AppEnv>): PhotoDeps {
+  return { db: c.var.db, storage: listingPhotoStorage(c.env) };
+}
 
 async function readJson(request: Request): Promise<unknown> {
   try {
@@ -104,19 +125,48 @@ vendor.get("/listings/:id", async (c) => {
 
 vendor.get("/listings/:id/calendar", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
-  return c.json(await getCalendar(c.var.db, vendorOf(c), id, c.req.query("month")));
+  const calendar = await getCalendar(c.var.db, vendorOf(c), id, c.req.query("month"));
+  c.header("ETag", calendarEtag(calendar.version));
+  return c.json(calendar);
 });
 
+// Правка календаря — от версии, которую видел человек (If-Match); устарела — 409 calendar_conflict
 vendor.put("/listings/:id/calendar/:day", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const day = parseDay(c.req.param("day"));
-  return c.json(await markBusy(c.var.db, vendorOf(c), id, day));
+  const version = versionFromIfMatch(c.req.header("If-Match"));
+  const change = await markBusy(c.var.db, vendorOf(c), id, day, version);
+  c.header("ETag", calendarEtag(change.version));
+  return c.json(change);
 });
 
 vendor.delete("/listings/:id/calendar/:day", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const day = parseDay(c.req.param("day"));
-  await markFree(c.var.db, vendorOf(c), id, day);
+  const version = versionFromIfMatch(c.req.header("If-Match"));
+  const change = await markFree(c.var.db, vendorOf(c), id, day, version);
+  c.header("ETag", calendarEtag(change.version));
+  return c.json(change);
+});
+
+// Фото площадки: только владелец кабинета; лиц на фото нет — подтверждение обязательно.
+// Оповещение команде о новом фото опубликованной карточки ставит триггер базы
+vendor.post("/listings/:id/photos", limitUpload, outboxKick, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const actor = vendorOf(c);
+  // Роль — до чтения файла: сотруднику площадки незачем гнать 10 МБ
+  assertVendorCan(actor, "photos.write");
+  if (c.req.header(NO_FACES_HEADER) !== "1") {
+    throw new ApiError(422, "no_faces_ack_required", "Confirm that the photo shows no faces");
+  }
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  return c.json(await uploadPhoto(photoDeps(c), actor, id, bytes, c.env.APP_ENV), 201);
+});
+
+vendor.delete("/listings/:id/photos/:photoId", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const photoId = idOrNotFound(c.req.param("photoId"));
+  await deletePhoto(photoDeps(c), vendorOf(c), id, photoId);
   return c.body(null, 204);
 });
 

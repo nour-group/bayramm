@@ -37,6 +37,8 @@ interface World {
   /** Кто дал первый ответ по заявке (requests.first_response_by) */
   firstResponseBy?: string | null;
   revision?: Record<string, unknown> | null;
+  /** Площадка оповещения о новых фото: название, код вендора, сколько ждёт решения */
+  photosListing?: Record<string, unknown> | null;
 }
 
 function db(world: World = {}) {
@@ -80,6 +82,8 @@ function db(world: World = {}) {
     }
     if (q.sql.includes('from "app"."listing_revisions" as "rv"'))
       return world.revision ? [world.revision] : [];
+    if (q.sql.includes('from "app"."listings" as "l"'))
+      return world.photosListing ? [world.photosListing] : [];
     if (q.sql.includes('from "app"."outbox" as "o"')) return world.deadRow ? [world.deadRow] : [];
     return [];
   });
@@ -300,6 +304,45 @@ describe("dispatchOutbox: сообщения", () => {
       rows: [revisionRow("moderator")],
     });
     expect(withdrawn.tg.calls).toHaveLength(0);
+  });
+
+  it("новые фото опубликованной карточки — модератору: площадка, вендор, сколько ждёт; менеджеру — нет", async () => {
+    const photosRow = (n: number) =>
+      outboxRow({
+        id: `0b0b0b0b-0000-4000-8000-00000000001${n}`,
+        kind: "ops.photos_submitted",
+        recipient_kind: "staff",
+        recipient_id: STAFF_ID,
+        request_id: null,
+        payload: { listing_id: "aaaaaaaa-0000-4000-8000-000000000101" },
+      });
+    const photosListing = { name: "Test Hall", public_code: "V101", pending: 2 };
+    const moderator = await run({
+      photosListing,
+      staff: { active: true, role: "moderator", telegram_chat_id: "9002" },
+      rows: [photosRow(1)],
+    });
+    expect(moderator.report.sent).toBe(1);
+    for (const part of ["Test Hall", "V101", "Ждут решения: 2", "«Модерация»"])
+      expect(moderator.tg.calls[0]?.text).toContain(part);
+    const listing = moderator.fake.queries.find((q) => q.sql.includes('from "app"."listings" as "l"'));
+    expect(listing?.parameters).toContain("aaaaaaaa-0000-4000-8000-000000000101");
+
+    const manager = await run({
+      photosListing,
+      staff: { active: true, role: "manager", telegram_chat_id: "9003" },
+      rows: [photosRow(2)],
+    });
+    expect(manager.tg.calls).toHaveLength(0);
+    expect(manager.report.dead).toBe(1);
+
+    // Фото уже одобрили или отклонили — не о чем оповещать
+    const decided = await run({ photosListing: { ...photosListing, pending: 0 }, rows: [photosRow(3)] });
+    expect(decided.tg.calls).toHaveLength(0);
+    // Кривой payload — в dead, без запроса к площадкам
+    const bad = await run({ rows: [{ ...photosRow(4), payload: { listing: 1 } }] });
+    expect(bad.tg.calls).toHaveLength(0);
+    expect(bad.report.dead).toBe(1);
   });
 
   it("просрочка: клиенту — предложение посмотреть похожие, администратору — оповещение по-русски", async () => {

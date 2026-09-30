@@ -587,6 +587,18 @@ textarea.input {
   font-weight: 700;
 }
 
+/* Правка карточки ждёт решения: поля, кто и когда, ссылка на неё */
+.pending-revision {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-5);
+}
+
+.pending-revision > p {
+  margin: 0;
+}
+
 .blockers {
   margin: 0;
   padding-left: 20px;
@@ -716,6 +728,14 @@ textarea.input {
   font-weight: 700;
 }
 
+/* Правка ушла на модерацию: вместо «Сохранено», текст длиннее — переносится у кнопки */
+.sent {
+  flex: 1 1 240px;
+  color: var(--ink);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
 /* Чек-лист */
 .check {
   display: flex;
@@ -819,6 +839,11 @@ textarea.input {
   margin-bottom: 8px;
   color: var(--plum);
   font-weight: 700;
+}
+
+/* Подсказка и ошибка под заголовком пакетов: отступы задаёт gap */
+.packages > p {
+  margin: 0;
 }
 
 .package-row {

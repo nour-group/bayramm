@@ -273,6 +273,7 @@ function Cabinet() {
         listingId={listingId}
         onListing={setListingId}
         vendorCode={auth.me.vendor.code}
+        role={auth.me.user.role}
       />
     );
   } else {

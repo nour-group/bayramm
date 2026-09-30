@@ -48,6 +48,13 @@ export type VendorSignInError = (typeof VENDOR_SIGN_IN_ERRORS)[number];
 
 export type ListingStatus = "lead" | "draft" | "review" | "active" | "suspended" | "rejected";
 
+/**
+ * Роль в кабинете вендора: owner — владелец кабинета, member — сотрудник площадки.
+ * Заявки и календарь ведут оба; карточку (фото, предложения правок) меняет только
+ * владелец — у сотрудника площадки эти кнопки скрыты, API ответит 403 vendor_owner_required
+ */
+export type VendorRole = "owner" | "member";
+
 export interface VendorListingRef {
   readonly id: string;
   readonly name: string;
@@ -60,6 +67,7 @@ export interface VendorMe {
     readonly id: string;
     readonly locale: Locale;
     readonly fullName: string | null;
+    readonly role: VendorRole;
   };
   readonly vendor: {
     readonly id: string;
@@ -201,15 +209,38 @@ export interface VendorCalendar {
   readonly maxDay: string;
   readonly busy: readonly BusyDay[];
   readonly requestDays: readonly string[];
+  /**
+   * Версия календаря площадки (всех месяцев): растёт на каждой правке, кто бы её ни
+   * сделал — партнёр, менеджер или отказ «занято». Правка передаёт её в If-Match
+   */
+  readonly version: number;
 }
 
-/* PUT    /vendor/listings/:id/calendar/:day → 200 BusyDay: день занят (уже занятый — как есть).
-   DELETE /vendor/listings/:id/calendar/:day → 204: день свободен. День, закрытый
-          сотрудником, — 403 forbidden_for_actor.
-   Прошедший день или дальше maxDay — 422 date_out_of_range. */
+/** Заголовок правки календаря: версия, от которой правит человек */
+export const CALENDAR_VERSION_HEADER = "If-Match";
+
+/**
+ * PUT    /vendor/listings/:id/calendar/:day → 200: день занят (уже занятый — как есть).
+ * DELETE /vendor/listings/:id/calendar/:day → 200: день свободен (busy — null).
+ * Обе — с заголовком If-Match: <version> из календаря или прошлой правки; без него —
+ * 428 version_required. Календарь с тех пор изменили — 409 calendar_conflict: перечитать
+ * и показать человеку, что изменилось. День, закрытый сотрудником, — 403
+ * forbidden_for_actor. Прошедший день или дальше maxDay — 422 date_out_of_range.
+ */
+export interface VendorCalendarChange {
+  readonly day: string;
+  readonly busy: BusyDay | null;
+  /** Новая версия календаря — для следующей правки */
+  readonly version: number;
+}
 
 // ── площадка ───────────────────────────────────────────────────────────────
 
+/**
+ * Фото площадки. pending — ждёт решения модератора: клиенты его не видят, пока его не
+ * одобрят (или пока не опубликуют карточку целиком); declined — отклонено, клиенты его
+ * не видят, его можно удалить
+ */
 export interface VendorPhoto {
   readonly id: string;
   readonly width: number;
@@ -221,6 +252,22 @@ export interface VendorPhoto {
   readonly srcSet: string;
 }
 
+/**
+ * Фото из кабинета — только владелец кабинета (иначе 403 vendor_owner_required):
+ *
+ * POST   /vendor/listings/:id/photos — тело: файл (image/webp|jpeg|png, ≤ 10 МБ) после
+ *        compressForUpload (@bayramm/media/browser: перекодирование, без EXIF и GPS);
+ *        заголовок X-No-Faces: 1 — партнёр подтвердил, что лиц на фото нет (без него —
+ *        422 no_faces_ack_required). → 201 VendorPhoto (moderation: pending).
+ *        409 too_many_photos, duplicate_photo; 413 payload_too_large; 422 invalid_image
+ *        (details — код проверки файла); 503 storage_unavailable.
+ * DELETE /vendor/listings/:id/photos/:photoId → 204. Опубликованная площадка не останется
+ *        без минимума одобренных фото — 422 publish_blocked (details: photos).
+ *
+ * Порядок и обложку выбирает команда при модерации. Чужая площадка или фото — 404.
+ */
+export const NO_FACES_HEADER = "X-No-Faces";
+
 export interface VendorPackage {
   readonly kind: "weekday" | "weekend" | "custom";
   readonly name: Localized;
@@ -229,9 +276,10 @@ export interface VendorPackage {
 }
 
 /**
- * GET /vendor/listings/:id → 200: карточка площадки как есть в базе — то, что видит клиент.
- * Название, цену, описания и пакеты партнёр меняет предложением правки (ниже): её
- * проверяет команда. Фото, адрес, вместимость и телефон меняет менеджер.
+ * GET /vendor/listings/:id → 200: карточка площадки как есть в базе — то, что видит клиент
+ * (плюс фото, которые ждут решения или отклонены, — с отметкой moderation).
+ * Название, цену, описания и пакеты партнёр меняет предложением правки (ниже), фото —
+ * загрузкой (выше): их проверяет команда. Адрес, вместимость и телефон меняет менеджер.
  * blockers — чего не хватает для публикации (коды из базы: price, photos, …).
  */
 export interface VendorListing {
@@ -253,6 +301,8 @@ export interface VendorListing {
   /** Телефон для заявок, который клиент видит сразу */
   readonly phone: string | null;
   readonly blockers: readonly string[];
+  /** Сколько фото нужно для публикации и сколько можно загрузить всего (настройки платформы) */
+  readonly photoLimits: { readonly min: number; readonly max: number };
 }
 
 // ── правки карточки ────────────────────────────────────────────────────────
@@ -302,6 +352,8 @@ export interface VendorRevision {
   readonly decisionReason: string | null;
   /** Что предложено: только изменённые поля */
   readonly payload: ListingRevisionPayload;
+  /** Предложила команда Bayramm (менеджер), а не партнёр: отозвать его нельзя, решает модератор */
+  readonly byTeam: boolean;
 }
 
 /**
@@ -312,7 +364,9 @@ export interface VendorRevision {
  *   у пакетов — packages.<номер>.<поле>). Открытое предложение уже есть — 409
  *   revision_pending: одно на площадку, его можно отозвать.
  * POST /vendor/listings/:id/revisions/:revisionId/withdraw → 200 VendorRevision;
- *   по предложению уже решили — 409 illegal_transition.
+ *   по предложению уже решили — 409 illegal_transition; его предложила команда — 403
+ *   forbidden_for_actor.
+ * Подать и отозвать предложение может только владелец кабинета (403 vendor_owner_required).
  */
 export interface VendorRevisionList {
   readonly items: readonly VendorRevision[];

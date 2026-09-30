@@ -1,6 +1,7 @@
-/* Правка опубликованной карточки: «сейчас» и «предлагает вендор» по каждому полю.
-   Одобрить — значения сразу попадают в карточку; отклонить — только с причиной (её
-   увидит вендор). Решает модератор или администратор. */
+/* Правка опубликованной карточки: «сейчас» и «предлагает» по каждому полю. Предлагает
+   вендор из кабинета или менеджер из панели — кто именно, видно в шапке. Одобрить —
+   значения сразу попадают в карточку; отклонить — только с причиной (её увидит вендор).
+   Решает модератор или администратор. */
 
 import type {
   PriceUnit,
@@ -87,6 +88,7 @@ function RevisionView({
           <span className="sub">
             {t.submittedAt} {formatMoment(revision.submittedAt)}
           </span>
+          <span className="sub">{t.proposedBy(revision.proposedBy.kind, revision.proposedBy.name)}</span>
         </p>
         {!open && revision.decidedAt && (
           <p className="sub">
@@ -113,7 +115,7 @@ function RevisionView({
             <tr>
               <th scope="col">{t.revisionField}</th>
               <th scope="col">{t.revisionNow}</th>
-              <th scope="col">{t.revisionProposed}</th>
+              <th scope="col">{t.revisionProposed[revision.proposedBy.kind]}</th>
             </tr>
           </thead>
           <tbody>

@@ -1,9 +1,13 @@
 /* Занятые дни карточки: месяц сеткой, неделя с понедельника. Нажатие на день отмечает
-   его занятым или снимает отметку. Прошедшие дни не меняются. «Сегодня» — по Ташкенту. */
+   его занятым или снимает отметку. Прошедшие дни не меняются. «Сегодня» — по Ташкенту.
+   Календарь ведут и вендор, и команда: правка уходит с версией календаря из последнего
+   ответа. Его успели изменить (вендор, другой сотрудник, отказ «занято») — сервер отвечает
+   calendar_conflict: месяц перечитывается, сотрудник отмечает день ещё раз. Правки идут
+   по одной — дни неактивны, пока не пришёл ответ. */
 
-import type { Availability, BusyDay } from "@bayramm/shared/api/staff";
+import type { Availability, AvailabilityInput, BusyDay } from "@bayramm/shared/api/staff";
 import { Tooltip } from "@bayramm/ui/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { t } from "../texts";
 import { ErrorText, LoadedView } from "../ui";
@@ -48,26 +52,44 @@ export function Calendar({ listingId }: { listingId: string }) {
   const { days, offset } = monthGrid(month);
   const from = days[0] ?? today;
   const to = days.at(-1) ?? today;
-  const { loaded, reload, set } = useLoad<Availability>(
-    `/staff/listings/${listingId}/availability?from=${from}&to=${to}`,
-  );
+  const path = `/staff/listings/${listingId}/availability?from=${from}&to=${to}`;
+  const { loaded, reload, set } = useLoad<Availability>(path);
+  // Ответ, пришедший после перехода на другой месяц, в новый месяц не вливаем
+  const shown = useRef(path);
+  shown.current = path;
   const [failure, setFailure] = useState<Failure | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const editable = can("listings.write");
 
+  // Сообщение об ошибке — про месяц, где отмечали: в другом месяце оно только путает
+  const goMonth = (delta: number) => {
+    setFailure(null);
+    setMonth(shiftMonth(month, delta));
+  };
+
   const toggle = async (day: string, busy: BusyDay | undefined, current: Availability) => {
+    const at = path;
     setPending(day);
-    const result = await api.put<Availability>(
-      `/staff/listings/${listingId}/availability`,
-      busy ? { free: [day] } : { busy: [day] },
-    );
-    setPending(null);
-    setFailure(result.ok ? null : result);
-    if (result.ok) {
-      // Ответ — только про изменённый день: вливаем в месяц
+    setFailure(null);
+    const input: AvailabilityInput = busy
+      ? { version: current.version, free: [day] }
+      : { version: current.version, busy: [day] };
+    const result = await api.put<Availability>(`/staff/listings/${listingId}/availability`, input);
+    if (result.ok && shown.current === at) {
+      // Ответ — только про изменённый день и новая версия: вливаем в месяц
       const others = current.busy.filter((b) => b.day !== day);
-      set({ ...current, busy: [...others, ...result.data.busy].sort((a, b) => a.day.localeCompare(b.day)) });
+      const merged = [...others, ...result.data.busy].sort((a, b) => a.day.localeCompare(b.day));
+      set({ ...current, busy: merged, version: result.data.version });
+    } else if (!result.ok && shown.current === at) {
+      setFailure(result);
+      // Календарь изменили: показываем актуальный месяц, дни неактивны, пока он не пришёл
+      if (result.code === "calendar_conflict") {
+        const fresh = await api.get<Availability>(at);
+        if (!fresh.ok) reload();
+        else if (shown.current === at) set(fresh.data);
+      }
     }
+    setPending(null);
   };
 
   return (
@@ -75,23 +97,13 @@ export function Calendar({ listingId }: { listingId: string }) {
       <h2 id="calendar-title">{t.availability}</h2>
       <p className="muted small">{t.availabilityHint}</p>
       <div className="cal-head">
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={() => setMonth(shiftMonth(month, -1))}
-          aria-label={t.prevMonth}
-        >
+        <button type="button" className="btn btn-sm" onClick={() => goMonth(-1)} aria-label={t.prevMonth}>
           ←
         </button>
         <p className="cal-title" aria-live="polite">
           {monthTitle(month)}
         </p>
-        <button
-          type="button"
-          className="btn btn-sm"
-          onClick={() => setMonth(shiftMonth(month, 1))}
-          aria-label={t.nextMonth}
-        >
+        <button type="button" className="btn btn-sm" onClick={() => goMonth(1)} aria-label={t.nextMonth}>
           →
         </button>
       </div>

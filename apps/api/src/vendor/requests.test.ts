@@ -20,6 +20,7 @@ const ACTOR: VendorActor = {
   kind: "vendor_user",
   id: "aaaaaaaa-0000-0000-0000-000000000011",
   vendorId: "aaaaaaaa-0000-0000-0000-000000000001",
+  role: "owner",
 };
 const REQUEST_ID = "eeeeeeee-0000-0000-0000-0000000000a1";
 const LISTING_ID = "aaaaaaaa-0000-0000-0000-000000000101";

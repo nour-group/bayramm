@@ -16,7 +16,7 @@
 --   · удаление аккаунта клиента стирает его избранное (триггер на
 --     app.clients.deleted_at — любой путь удаления).
 --
--- Откат: supabase/rollbacks/20260930230000_favorites.down.sql
+-- Откат: supabase/rollbacks/20261001020000_favorites.down.sql
 -- ════════════════════════════════════════════════════════════════════════════
 
 create table app.favorites (
