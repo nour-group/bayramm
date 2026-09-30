@@ -6,6 +6,8 @@
 //
 //   POST /auth/*    — по IP                 RATE_LIMIT_AUTH_IP         30 в минуту
 //   POST /me/identities/* — по IP           RATE_LIMIT_AUTH_IP         (тот же счётчик)
+//   POST /ops/demo  — по IP                 RATE_LIMIT_AUTH_IP         (тот же; только staging,
+//                                                                       ставит routes/ops.ts)
 //   POST /requests  — по IP                 RATE_LIMIT_REQUESTS_IP     20 в минуту
 //                   — по актору (клиенту)   RATE_LIMIT_REQUESTS_ACTOR   5 в минуту
 //

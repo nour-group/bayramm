@@ -3,6 +3,8 @@
   "name": "bayramm-vendor-dev",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-09-01",
+  // Workers Logs: партнёров немного — пишем каждый запрос
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",

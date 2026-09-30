@@ -11,7 +11,8 @@
 //   POST /staff/requests/:id/vendor-phone  { reason? }    кому звонить: контакт вендора
 //        и телефон карточки
 //   POST /staff/requests/:id/remind                       напомнить вендору сейчас
-//        (app.staff_remind_vendor: не чаще раза в 30 минут, только пока ждёт ответа)
+//        (app.staff_remind_vendor: не чаще паузы ops_reminder_pause_minutes — настройка, по
+//        умолчанию 30 минут; только пока ждёт ответа)
 //   POST /staff/requests/:id/contacted  { comment? }      «связались» — переход заявки
 //        сотрудником: first_response_by = staff, в метрику ответов вендора не идёт
 //   POST /staff/requests/:id/notes      { text }          заметка (только добавить)
@@ -74,8 +75,8 @@ const LATE: readonly SlaState[] = ["overdue", "breached"];
 /** Напоминания вендору: этапы SLA (cron) и от сотрудника */
 const REMINDER_KINDS = ["vendor.sla_reminder", "vendor.ops_reminder"];
 
-/** Пауза между напоминаниями сотрудника — как в app.staff_remind_vendor */
-const OPS_REMINDER_PAUSE = sql`interval '30 minutes'`;
+/** Пауза между напоминаниями сотрудника — та же функция базы, что в app.staff_remind_vendor */
+const OPS_REMINDER_PAUSE = sql<string>`app.ops_reminder_pause()`;
 
 // Состояние срока ответа считает база по своим часам — одинаково для списка,
 // фильтра и счётчиков. Первым «связались» отметил сотрудник — это не ответ

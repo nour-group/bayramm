@@ -24,6 +24,8 @@ export function makeEnv(overrides: Partial<Env> = {}): Env {
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     // Пусто — /telegram/sync не настроен (404); тесты синхронизации задают свой
     TELEGRAM_SYNC_KEY: "",
+    // Пусто — /ops/demo нет (404); тесты демо-данных задают свой
+    DEMO_SEED_KEY: "",
     ID_HASH_KEY: "unit-test-id-hash-key-0123456789abcdef",
     SUPABASE_URL: "http://127.0.0.1:54321",
     SUPABASE_SERVICE_ROLE_KEY: "unit-test-service-role-key",

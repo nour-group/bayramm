@@ -22,6 +22,7 @@ export function makeEnv(): Env {
     GIT_SHA: "dev",
     TELEGRAM_BOT_TOKEN: BOT_TOKEN,
     TELEGRAM_SYNC_KEY: "",
+    DEMO_SEED_KEY: "",
     ID_HASH_KEY,
     WEB_APP_URL: "http://localhost:5173",
     VENDOR_APP_URL: "http://localhost:5174",

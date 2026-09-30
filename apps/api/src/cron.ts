@@ -1,10 +1,13 @@
 // Cron Trigger API (раз в минуту, triggers.crons в wrangler.jsonc):
 //   1. SLA: напоминания вендору и просрочки (notify/sla.ts);
-//   2. outbox: отправка подошедших уведомлений, в том числе только что
-//      поставленных шагом 1 (notify/outbox.ts);
-//   3. чистка: update_id вебхука старше трёх дней (Telegram повторяет доставку
+//   2. раз в день, в окне 04:00–04:59 UTC (09:00 по Ташкенту): отчёты команде —
+//      сводка за вчера, по понедельникам — за прошлую неделю (notify/reports.ts).
+//      База ставит каждый отчёт один раз за день и неделю, повторы ничего не ставят;
+//   3. outbox: отправка подошедших уведомлений, в том числе только что
+//      поставленных шагами 1 и 2 (notify/outbox.ts);
+//   4. чистка: update_id вебхука старше трёх дней (Telegram повторяет доставку
 //      не дольше суток);
-//   4. раз в день, в окне 21:00–21:59 UTC (02:00 по Ташкенту): истечение заявок
+//   5. раз в день, в окне 21:00–21:59 UTC (02:00 по Ташкенту): истечение заявок
 //      и сроки хранения (maintenance/index.ts). База сама пропускает повтор в тот
 //      же день, упавший запуск повторит следующая минута окна.
 // Шаги независимы: сбой одного — в лог, остальные выполняются.
@@ -16,6 +19,7 @@ import { isPgError } from "./errors";
 import { dailyMaintenance, isDailyMaintenanceTick } from "./maintenance";
 import { outboxDeps } from "./notify/kick";
 import { dispatchOutbox } from "./notify/outbox";
+import { enqueueOpsReports, isOpsReportTick } from "./notify/reports";
 import { sweepSla } from "./notify/sla";
 
 export const TELEGRAM_UPDATES_RETENTION_DAYS = 3;
@@ -53,6 +57,9 @@ export async function runCron(env: Env, now: Date = new Date()): Promise<boolean
   const db = createDb(env.HYPERDRIVE.connectionString);
   try {
     const sla = await step("sla", () => sweepSla(db, now));
+    const reports = isOpsReportTick(now.getTime())
+      ? await step("ops_reports", () => enqueueOpsReports(db))
+      : true;
     const outbox = await step("outbox", () =>
       dispatchOutbox({ db, ...outboxDeps(env), now: () => new Date() }),
     );
@@ -60,7 +67,7 @@ export async function runCron(env: Env, now: Date = new Date()): Promise<boolean
     const daily = isDailyMaintenanceTick(now.getTime())
       ? await step("daily_maintenance", () => dailyMaintenance(db))
       : true;
-    return sla && outbox && purge && daily;
+    return sla && reports && outbox && purge && daily;
   } finally {
     await db.destroy().catch(() => {});
   }

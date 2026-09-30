@@ -28,6 +28,7 @@ export const INT_SETTINGS = {
   request_contact_retention_days: [1, 3650],
   otp_retention_hours: [1, 720],
   session_retention_days: [1, 365],
+  ops_reminder_pause_minutes: [5, 1440],
 } as const satisfies Partial<Record<SettingKey, readonly [number, number]>>;
 
 /** Порядок показа в панели */
@@ -35,6 +36,7 @@ export const SETTING_KEYS = [
   "sla_hours",
   "sla_reminder_hours",
   "quiet_hours",
+  "ops_reminder_pause_minutes",
   "min_photos",
   "max_photos",
   "client_requests_per_day",

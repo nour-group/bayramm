@@ -39,6 +39,10 @@ describe("wrangler.jsonc панели оператора", () => {
       expect(config.route).toBeUndefined();
     });
 
+    it(`${label}: логи Workers Logs включены — каждый запрос (сотрудников единицы)`, () => {
+      expect(read(env).observability).toMatchObject({ enabled: true, head_sampling_rate: 1 });
+    });
+
     it(`${label}: воркер первым, фолбэк SPA, /api → ${api}`, () => {
       const config = read(env);
       expect(config.assets?.run_worker_first).toBe(true);

@@ -29,6 +29,7 @@ import {
   useEntityTitle,
   useNavigate,
 } from "../ui";
+import { VendorResponsePanel } from "./Metrics";
 import { VendorForm } from "./VendorForm";
 
 const CHECKLIST: readonly ChecklistItem[] = ["contract", "stir", "contacts", "pdConsent"];
@@ -90,6 +91,7 @@ function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
           <Checklist vendor={vendor} onChange={onChange} />
           <ContactPhones vendorId={vendor.id} />
           <Listings vendor={vendor} />
+          {can("metrics.read") && <VendorResponsePanel vendorId={vendor.id} />}
           <Users vendor={vendor} onChange={onChange} />
         </div>
         <VendorForm

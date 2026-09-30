@@ -41,6 +41,13 @@ describe("cron", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("отчёты команде — только в окне 04:00 UTC (09:00 по Ташкенту)", async () => {
+    await runCron(makeEnv(), new Date("2026-09-30T03:59:00Z"));
+    expect(JSON.stringify(errors.mock.calls)).not.toContain('"step":"ops_reports"');
+    await runCron(makeEnv(), new Date("2026-09-30T04:00:00Z"));
+    expect(JSON.stringify(errors.mock.calls)).toContain('"step":"ops_reports"');
+  });
+
   it("обслуживание — только в окне 21:00 UTC (02:00 по Ташкенту)", async () => {
     await runCron(makeEnv(), new Date("2026-09-29T20:59:00Z"));
     expect(JSON.stringify(errors.mock.calls)).not.toContain('"step":"daily_maintenance"');
