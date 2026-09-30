@@ -831,6 +831,12 @@ button.ui-cal-day {
   opacity: 1;
 }
 
+/* Пустое поле: крестика нет — его 44px отдаём подсказке; не влезла — многоточие, а не обрез */
+.ui-search-input:placeholder-shown {
+  padding-right: 12px;
+  text-overflow: ellipsis;
+}
+
 /* Системный крестик и лупа WebKit спрятаны: свой крестик — 44px */
 .ui-search-input::-webkit-search-cancel-button,
 .ui-search-input::-webkit-search-decoration {
