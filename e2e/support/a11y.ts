@@ -108,7 +108,8 @@ export interface SmallTarget {
 
 /**
  * Элементы selector, в которые нельзя попасть пальцем в квадрате min×min вокруг центра.
- * Невидимый слой (::before/::after) засчитывается: точки проверяются elementFromPoint
+ * Невидимый слой (::before/::after) засчитывается: точки проверяются elementFromPoint.
+ * Элементы inert-страницы под модальным слоем не считаются: они и не должны нажиматься
  */
 export async function smallTargets(page: Page, selector: string, min = 44): Promise<SmallTarget[]> {
   return page.evaluate(
@@ -119,6 +120,8 @@ export async function smallTargets(page: Page, selector: string, min = 44): Prom
         const box = el.getBoundingClientRect();
         if (box.width === 0 || box.height === 0 || getComputedStyle(el).visibility === "hidden") continue;
         if (el.matches(":disabled, [aria-disabled='true']")) continue;
+        // Под открытым списком или календарём страница inert: нажать туда нельзя по замыслу
+        if (el.closest("[inert]")) continue;
         if (box.width >= min && box.height >= min) continue;
         // Подпись поля — тоже цель: <label> переключает флажок и ставит фокус. Флажок
         // в подписи не меньше min×min — зона нажатия у него и есть подпись

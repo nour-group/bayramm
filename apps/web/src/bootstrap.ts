@@ -24,6 +24,9 @@ export async function bootstrap(): Promise<Services> {
     const listings = demoListings(tashkentToday());
     // Язык демо-профиля — как у сервера при первом входе: язык Telegram или браузера
     const env = import.meta.env;
+    // ?guest — посмотреть приложение глазами гостя из обычного браузера; ?turnstile — хаб с
+    // проверкой «не робот» (тестовый ключ Cloudflare; сквозные тесты подменяют api.js)
+    const params = new URLSearchParams(window.location.search);
     const api = createMockApi({
       latencyMs: 350,
       listings,
@@ -36,10 +39,10 @@ export async function bootstrap(): Promise<Services> {
         admin: env.VITE_ADMIN_APP_URL || "http://localhost:5175",
       },
       roles: { vendors: DEMO_VENDORS, staff: { role: "admin" } },
+      turnstileSiteKey: params.has("turnstile") ? DEMO_TURNSTILE_SITE_KEY : null,
     });
-    // ?guest в адресе — посмотреть приложение глазами гостя из обычного браузера;
-    // вход в хабе демо-кодом делает его «сайтом со входом»
-    const guest = new URLSearchParams(window.location.search).has("guest");
+    // Вход в хабе демо-кодом делает гостя «сайтом со входом»
+    const guest = params.has("guest");
     const identity = webApp ? "telegram" : hasSiteSession() ? "site" : guest ? "guest" : "demo";
     return { api, identity, webApp, mediaEnv, now };
   }
@@ -60,6 +63,9 @@ export async function bootstrap(): Promise<Services> {
   const identity = webApp ? "telegram" : hasSiteSession() ? "site" : "guest";
   return { api, identity, webApp, mediaEnv, now };
 }
+
+/** Тестовый ключ виджета Turnstile (всегда проходит): только демо, настоящего секрета нет */
+const DEMO_TURNSTILE_SITE_KEY = "1x00000000000000000000AA";
 
 /** Демо-аккаунт — партнёр одного вендора: в профиле видна кнопка кабинета */
 const DEMO_VENDORS = [
