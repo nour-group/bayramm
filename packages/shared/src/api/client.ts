@@ -32,7 +32,8 @@ export type ClientSource = "tma" | "web";
  *       illegal_transition (отозвать можно только new/viewed/contacted) ·
  *   413 payload_too_large · 422 consent_required (details — поле), guests_over_capacity,
  *       invalid_input · 429 daily_request_limit, rate_limited (Retry-After, секунды) ·
- *   503 service_unavailable · 500 internal_error
+ *   503 service_unavailable · 500 internal_error ·
+ *   избранное: 409 favorites_full (уже FAVORITES_MAX площадок)
  */
 export type ClientErrorCode =
   | "invalid_request"
@@ -52,7 +53,8 @@ export type ClientErrorCode =
   | "daily_request_limit"
   | "rate_limited"
   | "service_unavailable"
-  | "internal_error";
+  | "internal_error"
+  | "favorites_full";
 
 export interface ApiErrorBody {
   readonly error: {
@@ -154,6 +156,18 @@ export function comparablePriceUzs(card: PricedCard, guests: number | null): num
 export interface CatalogPage {
   readonly items: readonly ListingCard[];
   readonly nextCursor: string | null;
+}
+
+/** Сколько площадок помещается в избранное — и у гостя в браузере, и в аккаунте */
+export const FAVORITES_MAX = 100;
+
+/**
+ * GET /catalog/cards?ids=<uuid>,<uuid>… (не больше FAVORITES_MAX) → 200: карточки
+ * опубликованных площадок в порядке ids; неопубликованных и несуществующих в ответе нет.
+ * Для избранного гостя: список id хранит браузер, карточки — отсюда
+ */
+export interface ListingCards {
+  readonly items: readonly ListingCard[];
 }
 
 export interface ListingPackage {

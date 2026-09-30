@@ -8,13 +8,19 @@
      POST   /me/consents/withdraw  WithdrawConsent → 200 ConsentWithdrawn
      DELETE /me                    → 204; сессия и все остальные сессии клиента больше не действуют
 
+   Избранное (сессия клиента):
+     GET    /me/favorites               → 200 Favorites
+     PUT    /me/favorites/:listingId    → 204; не опубликована или нет — 404; уже FAVORITES_MAX — 409 favorites_full
+     DELETE /me/favorites/:listingId    → 204 (и если отметки не было)
+     POST   /me/favorites               FavoritesMerge → 200 Favorites: гостевой список при входе
+
    Удаление аккаунта: действующие согласия отзываются, открытые заявки отзываются,
    контакты из заявок стираются, профиль (Telegram ID, имя, телефон) удаляется.
    Новый вход через Telegram создаёт аккаунт заново — с пустым профилем согласий.
    Источник записи в журналах — заголовок CLIENT_SOURCE_HEADER, как у заявок. */
 
 import type { AccountMe } from "./account";
-import type { ClientConsentPurpose, DeclineReason, Locale, RequestStatus } from "./client";
+import type { ClientConsentPurpose, DeclineReason, ListingCard, Locale, RequestStatus } from "./client";
 
 /** Свой профиль. Телефона здесь нет: его отдаёт только выгрузка (чтение — в журнал) */
 export interface ClientMe {
@@ -44,6 +50,24 @@ export type MeClient =
 
 /** GET /me: аккаунт и роли (кнопки «Кабинет партнёра», «Панель оператора») + поля клиента */
 export type Me = AccountMe & MeClient;
+
+/**
+ * GET /me/favorites: опубликованные площадки из избранного, последние отмеченные — первыми.
+ * Снятая с публикации площадка в списке не показывается (и не мешает), с новой
+ * публикацией возвращается
+ */
+export interface Favorites {
+  readonly items: readonly ListingCard[];
+}
+
+/**
+ * POST /me/favorites: слить гостевое избранное (браузер) с аккаунтом при входе. Не больше
+ * FAVORITES_MAX id; неопубликованные и уже отмеченные пропускаются, сверх лимита — не
+ * добавляются. Неверный id — 400 invalid_request
+ */
+export interface FavoritesMerge {
+  readonly listingIds: readonly string[];
+}
 
 /** PATCH /me: язык сохраняется в профиле — по нему пишет и бот */
 export interface ClientMePatch {
@@ -106,6 +130,12 @@ export interface ExportedRequest {
   readonly history: readonly ExportedStatusChange[];
 }
 
+/** Отметка в избранном: площадка (адрес и название — пока клиенту она видна) и когда */
+export interface ExportedFavorite {
+  readonly listing: { readonly id: string; readonly slug: string | null; readonly name: string | null };
+  readonly savedAt: string;
+}
+
 /** GET /me/export → 200. Данных вендоров (телефонов, реквизитов, id сотрудников) нет */
 export interface ClientDataExport {
   readonly version: 1;
@@ -128,4 +158,5 @@ export interface ClientDataExport {
   } | null;
   readonly consents: readonly ExportedConsent[];
   readonly requests: readonly ExportedRequest[];
+  readonly favorites: readonly ExportedFavorite[];
 }

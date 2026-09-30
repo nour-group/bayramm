@@ -145,6 +145,7 @@ describe("GET /me/export", () => {
       profile: { telegramId: number; firstName: string; username: string; phone: string | null };
       consents: { purpose: string; action: string; source: string }[];
       requests: unknown[];
+      favorites: unknown[];
     };
     expect(doc.version).toBe(1);
     expect(doc.account).toMatchObject({ id: clientId, locale: "ru" });
@@ -158,6 +159,7 @@ describe("GET /me/export", () => {
       expect.objectContaining({ purpose: "bot_notifications", action: "grant" }),
     ]);
     expect(doc.requests).toEqual([]);
+    expect(doc.favorites).toEqual([]);
   });
 });
 

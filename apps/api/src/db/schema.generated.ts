@@ -187,6 +187,12 @@ export interface AppDistricts {
   sort: Generated<number>;
 }
 
+export interface AppFavorites {
+  client_id: string;
+  created_at: Generated<Timestamp>;
+  listing_id: string;
+}
+
 export interface AppHubCodes {
   account_id: string;
   app: string;
@@ -584,6 +590,7 @@ export interface DB {
   "app.consents": AppConsents;
   "app.consents_current": AppConsentsCurrent;
   "app.districts": AppDistricts;
+  "app.favorites": AppFavorites;
   "app.hub_codes": AppHubCodes;
   "app.legal_entities": AppLegalEntities;
   "app.listing_packages": AppListingPackages;
