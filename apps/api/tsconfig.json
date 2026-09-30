@@ -12,5 +12,12 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "test", "worker-configuration.d.ts", "vitest.config.ts", "vitest.integration.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "scripts",
+    "worker-configuration.d.ts",
+    "vitest.config.ts",
+    "vitest.integration.config.ts"
+  ]
 }

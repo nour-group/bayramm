@@ -14,3 +14,9 @@ allowBuilds:
   esbuild: true
   workerd: true
   sharp: true
+
+# miniflare (wrangler, vite-plugin) закрепил undici 7.29.0 — в нём DoS при распаковке
+# WebSocket permessage-deflate (исправлено в 7.29.1). Только локальная разработка;
+# убрать, когда miniflare поднимет версию сам
+overrides:
+  undici@>=7.28.0 <7.29.1: 7.29.1
