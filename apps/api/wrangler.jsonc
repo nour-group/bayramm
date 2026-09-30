@@ -66,7 +66,7 @@
         "API_URL": "https://api-staging.bayramm.uz",
         "TELEGRAM_LOGIN_DOMAIN": "staging.bayramm.uz",
         "OTP_PROVIDER": "off",
-        "TURNSTILE_SITE_KEY": ""
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFKW6kfx8xk13qs_"
       },
       "triggers": { "crons": ["* * * * *"] },
       // Worker рядом с базой (Supabase, eu-central-1)
@@ -99,7 +99,7 @@
         "API_URL": "https://api.bayramm.uz",
         "TELEGRAM_LOGIN_DOMAIN": "bayramm.uz",
         "OTP_PROVIDER": "off",
-        "TURNSTILE_SITE_KEY": ""
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAFKW6kfx8xk13qs_"
       },
       "triggers": { "crons": ["* * * * *"] },
       "placement": { "region": "aws:eu-central-1" },
