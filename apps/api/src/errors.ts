@@ -141,6 +141,13 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
   BR018: { status: 409, code: "staff_self", message: "Staff cannot change their own access" },
   BR019: { status: 409, code: "request_not_awaiting", message: "Request is not awaiting a vendor response" },
   BR020: { status: 409, code: "vendor_unreachable", message: "Vendor has no Telegram-linked users" },
+  // 20261001010000_cabinet_integrity.sql
+  BR024: { status: 422, code: "date_out_of_range", message: "Date is in the past or too far ahead" },
+  BR025: {
+    status: 409,
+    code: "calendar_conflict",
+    message: "Calendar was changed by someone else — reload it",
+  },
 };
 
 // У publish_blocked в DETAIL — коды недостающих пунктов через запятую

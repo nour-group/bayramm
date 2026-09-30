@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { type ObjectSweeper, StorageError } from "../storage/supabase";
 import { fakeDb } from "../testing/fake-db";
 import { DAILY_MAINTENANCE_UTC_HOUR, dailyMaintenance, isDailyMaintenanceTick } from "./index";
 
@@ -50,6 +51,44 @@ describe("dailyMaintenance", () => {
         : [],
     );
     expect((await dailyMaintenance(fake.db)).ran).toBe(false);
+  });
+
+  it("за базой — сверка фото с хранилищем: только в запуск, который провёл обслуживание", async () => {
+    const storage: ObjectSweeper = {
+      list: vi.fn(async () => ({ objects: [], cursor: null })),
+      removeMany: vi.fn(async () => 0),
+    };
+    const photos = vi.fn(() => storage);
+    const ran = fakeDb((q) => (q.sql.includes("run_daily_maintenance") ? [row] : []));
+    const result = await dailyMaintenance(ran.db, { photos, now: new Date("2026-09-30T21:05:00Z") });
+    expect(photos).toHaveBeenCalledTimes(1);
+    expect(result.photos).toEqual({
+      purgedRows: 0,
+      purgedObjects: 0,
+      scannedObjects: 0,
+      orphanObjects: 0,
+      complete: true,
+    });
+
+    const repeat = fakeDb((q) => (q.sql.includes("run_daily_maintenance") ? [{ ...row, ran: false }] : []));
+    const skipped = await dailyMaintenance(repeat.db, { photos });
+    expect(photos).toHaveBeenCalledTimes(1);
+    expect(skipped.photos).toBeUndefined();
+  });
+
+  it("сверка фото не удалась — обслуживание базы сделано, в лог — причина без ключей", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const storage: ObjectSweeper = {
+      list: async () => {
+        throw new StorageError("unavailable", 503, "storage list: 503");
+      },
+      removeMany: async () => 0,
+    };
+    const fake = fakeDb((q) => (q.sql.includes("run_daily_maintenance") ? [row] : []));
+    const result = await dailyMaintenance(fake.db, { photos: () => storage });
+    expect(result).toMatchObject({ ran: true, expiredRequests: 3, photos: null });
+    expect(error).toHaveBeenCalledWith("maintenance: photo storage sweep failed", "storage unavailable 503");
+    error.mockRestore();
   });
 
   it("функция не вернула строку — ошибка, а не пустой результат", async () => {

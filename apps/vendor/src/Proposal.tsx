@@ -3,6 +3,10 @@
    предложение ждёт решения. Одно открытое предложение на площадку: пока оно на проверке —
    его видно здесь, его можно отозвать; решение (одобрено или отказ с причиной) — тоже здесь.
 
+   Предлагать и отзывать может только владелец кабинета: сотрудник площадки видит, что
+   предложено и что решили, но без формы и кнопок. Предложение, которое внёс менеджер Bayramm
+   (byTeam), партнёр не отзывает — по нему решает модератор.
+
    В предложение уходят только изменённые поля; ничего не изменили — запроса нет. Проверка
    полей — на сервере (те же правила, что при решении); неверные поля подсвечиваются. Цена
    обязательна: пустой или «по запросу» не отправляется. Контролы — из @bayramm/ui/react. */
@@ -471,9 +475,11 @@ interface ProposalProps {
   readonly listing: VendorListing;
   readonly t: VendorDict;
   readonly lang: "ru" | "uz";
+  /** Владелец кабинета: только он предлагает и отзывает */
+  readonly owner: boolean;
 }
 
-export function Proposal({ listing, t, lang }: ProposalProps) {
+export function Proposal({ listing, t, lang, owner }: ProposalProps) {
   const [revisions, reload, setRevisions] = useLoad<VendorRevisionList>(listing.id, (key) =>
     api.revisions(key),
   );
@@ -503,8 +509,11 @@ export function Proposal({ listing, t, lang }: ProposalProps) {
         setConfirming(false);
         setSent(false);
       } catch (err) {
-        // По предложению уже решили — показать решение
-        if (err instanceof ApiFailure && err.code === "illegal_transition") {
+        // По предложению уже решили или его внесла команда — показать, как есть
+        if (
+          err instanceof ApiFailure &&
+          (err.code === "illegal_transition" || err.code === "forbidden_for_actor")
+        ) {
           setConfirming(false);
           reload();
         } else setWithdrawFailed(true);
@@ -514,6 +523,9 @@ export function Proposal({ listing, t, lang }: ProposalProps) {
     };
 
     if (pending) {
+      const date = formatMoment(pending.submittedAt, t);
+      // Предложение менеджера Bayramm решает модератор: партнёр его не отзывает
+      const withdrawable = owner && !pending.byTeam;
       return (
         <>
           {sent ? (
@@ -522,33 +534,37 @@ export function Proposal({ listing, t, lang }: ProposalProps) {
             </p>
           ) : null}
           <div className="notice proposal-pending">
-            <p>{fill(t.proposalPending, { date: formatMoment(pending.submittedAt, t) })}</p>
+            <p>{fill(pending.byTeam ? t.proposalByTeam : t.proposalPending, { date })}</p>
             <Proposed payload={pending.payload} listing={listing} t={t} lang={lang} />
           </div>
-          <button
-            ref={withdrawButton}
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => {
-              setWithdrawFailed(false);
-              setConfirming(true);
-            }}
-          >
-            {t.proposalWithdraw}
-          </button>
-          <ConfirmSheet
-            open={confirming}
-            title={t.proposalWithdrawQ}
-            text={t.proposalWithdrawText}
-            confirmLabel={t.proposalWithdraw}
-            cancelLabel={t.cancel}
-            tone="danger"
-            busy={busy}
-            error={withdrawFailed ? t.actionFailed : undefined}
-            onConfirm={() => void withdraw()}
-            onCancel={() => setConfirming(false)}
-            returnFocus={withdrawButton}
-          />
+          {withdrawable ? (
+            <>
+              <button
+                ref={withdrawButton}
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setWithdrawFailed(false);
+                  setConfirming(true);
+                }}
+              >
+                {t.proposalWithdraw}
+              </button>
+              <ConfirmSheet
+                open={confirming}
+                title={t.proposalWithdrawQ}
+                text={t.proposalWithdrawText}
+                confirmLabel={t.proposalWithdraw}
+                cancelLabel={t.cancel}
+                tone="danger"
+                busy={busy}
+                error={withdrawFailed ? t.actionFailed : undefined}
+                onConfirm={() => void withdraw()}
+                onCancel={() => setConfirming(false)}
+                returnFocus={withdrawButton}
+              />
+            </>
+          ) : null}
         </>
       );
     }
@@ -561,7 +577,9 @@ export function Proposal({ listing, t, lang }: ProposalProps) {
         {latest?.status === "approved" && latest.decidedAt ? (
           <p className="note">{fill(t.proposalApproved, { date: formatMoment(latest.decidedAt, t) })}</p>
         ) : null}
-        {editing ? (
+        {!owner ? (
+          <p className="note">{t.proposalOwnerOnly}</p>
+        ) : editing ? (
           <ProposalForm
             listing={listing}
             t={t}

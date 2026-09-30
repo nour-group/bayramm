@@ -126,16 +126,27 @@ beforeAll(async () => {
   for (const l of Object.values(listings)) await createListing(l);
   await admin.query(
     `insert into app.availability (listing_id, day) values
-       ($1, $2), ($3, $4), ($3, $5), ($3, $6)`,
+       ($1, $2), ($3, $4), ($3, $5)`,
     [
       listings.cheap.id,
       BUSY_DAY,
       listings.mid.id,
-      addDays(today, -1), // прошлое — в карточку не попадает
       addDays(today, 10),
-      addDays(today, 200), // дальше 180 дней — тоже
+      addDays(today, 200), // дальше 180 дней — в карточку не попадает
     ],
   );
+  // Прошлое — тоже не попадает. Отметить прошедший день база не даёт никому
+  // (availability_guard): такая отметка остаётся от дня, который тогда был будущим,
+  // — её кладём в режиме реплики, где пользовательские триггеры не срабатывают
+  await admin.query("set session_replication_role = replica");
+  try {
+    await admin.query("insert into app.availability (listing_id, day) values ($1, $2)", [
+      listings.mid.id,
+      addDays(today, -1),
+    ]);
+  } finally {
+    await admin.query("reset session_replication_role");
+  }
 });
 
 afterAll(async () => {

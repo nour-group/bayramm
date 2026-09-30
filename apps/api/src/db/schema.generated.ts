@@ -121,6 +121,12 @@ export interface AppAvailability {
   source: Generated<string>;
 }
 
+export interface AppAvailabilityVersions {
+  listing_id: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+}
+
 export interface AppCategories {
   code: string;
   enabled: Generated<boolean>;
@@ -604,6 +610,7 @@ export interface DB {
   "app.api_error_alerts": AppApiErrorAlerts;
   "app.audit_log": AppAuditLog;
   "app.availability": AppAvailability;
+  "app.availability_versions": AppAvailabilityVersions;
   "app.categories": AppCategories;
   "app.clients": AppClients;
   "app.consent_texts": AppConsentTexts;

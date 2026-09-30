@@ -1,7 +1,8 @@
 // Профиль кабинета и карточка площадки — только чтение (кроме языка).
 //
-// Карточку в v0.1 меняет менеджер: цена, описание и фото опубликованного
-// листинга — модерируемые данные. Кабинет показывает её как есть в базе.
+// Карточку партнёр меняет предложением правки (vendor/revisions.ts) и загрузкой фото
+// (vendor/photos.ts): это модерируемые данные, решает команда. Адрес, вместимость и
+// телефон меняет менеджер. Кабинет показывает карточку как есть в базе.
 
 import { type MediaEnv, mediaSrcSet, mediaUrl } from "@bayramm/media";
 import type { Locale, VendorListing, VendorMe, VendorPhoto } from "@bayramm/shared/api/vendor";
@@ -28,7 +29,15 @@ async function readMe(trx: Tx, actor: VendorActor): Promise<VendorMe> {
     .innerJoin("app.vendor_accounts as va", "va.id", "vu.vendor_id")
     .leftJoin(vendorUserProfilesAs("p"), "p.vendor_user_id", "vu.id")
     .leftJoin(vendorContactsAs("vc"), "vc.vendor_id", "va.id")
-    .select(["vu.id", "vu.locale", "p.full_name", "va.id as vendor_id", "va.public_code", "vc.legal_name"])
+    .select([
+      "vu.id",
+      "vu.locale",
+      "vu.role",
+      "p.full_name",
+      "va.id as vendor_id",
+      "va.public_code",
+      "vc.legal_name",
+    ])
     .where("vu.id", "=", actor.id)
     .executeTakeFirst();
   if (user === undefined) throw notFound();
@@ -42,7 +51,12 @@ async function readMe(trx: Tx, actor: VendorActor): Promise<VendorMe> {
     .execute();
 
   return {
-    user: { id: user.id, locale: user.locale, fullName: user.full_name },
+    user: {
+      id: user.id,
+      locale: user.locale,
+      fullName: user.full_name,
+      role: user.role === "owner" ? "owner" : "member",
+    },
     vendor: { id: user.vendor_id, code: user.public_code, name: user.legal_name },
     listings: listings.map((l) => ({ id: l.id, name: l.name, status: l.status })),
   };
@@ -64,6 +78,29 @@ export function setLocale(db: Db, actor: VendorActor, locale: Locale): Promise<V
 /** Ширина основного варианта фото в карточке */
 const PHOTO_WIDTH = 640;
 
+interface PhotoRow {
+  readonly id: string;
+  readonly storage_key: string;
+  readonly width: number | null;
+  readonly height: number | null;
+  readonly moderation: "pending" | "approved" | "declined" | "withdrawn";
+  readonly is_cover: boolean;
+}
+
+/** Фото глазами партнёра; без размеров (файл не проверен) — не показывается */
+export function vendorPhoto(p: PhotoRow, media: MediaEnv): VendorPhoto | null {
+  if (p.width === null || p.height === null || p.moderation === "withdrawn") return null;
+  return {
+    id: p.id,
+    width: p.width,
+    height: p.height,
+    moderation: p.moderation,
+    isCover: p.is_cover,
+    src: mediaUrl(p.storage_key, PHOTO_WIDTH, media),
+    srcSet: mediaSrcSet(p.storage_key, media, [320, 640, 960]),
+  };
+}
+
 /** GET /vendor/listings/:id: своя площадка как есть в базе; чужая (даже опубликованная) — 404 */
 export async function getListing(
   db: Db,
@@ -78,6 +115,8 @@ export async function getListing(
       .select([
         sql<string[] | null>`app.listing_publish_blockers(id, 'active')`.as("blockers"),
         listingPhone("id").as("phone"),
+        sql<number>`greatest(3, coalesce(app.setting_int('min_photos'), 3))`.as("min_photos"),
+        sql<number>`coalesce(app.setting_int('max_photos'), 10)`.as("max_photos"),
       ])
       .where("id", "=", listingId)
       .where("vendor_id", "=", actor.vendorId)
@@ -123,23 +162,10 @@ export async function getListing(
         priceUzs: Number(p.price_uzs),
         priceUnit: p.price_unit,
       })),
-      photos: photos.flatMap((p): VendorPhoto[] =>
-        p.width === null || p.height === null || p.moderation === "withdrawn"
-          ? []
-          : [
-              {
-                id: p.id,
-                width: p.width,
-                height: p.height,
-                moderation: p.moderation,
-                isCover: p.is_cover,
-                src: mediaUrl(p.storage_key, PHOTO_WIDTH, media),
-                srcSet: mediaSrcSet(p.storage_key, media, [320, 640, 960]),
-              },
-            ],
-      ),
+      photos: photos.flatMap((p) => vendorPhoto(p, media) ?? []),
       phone: listing.phone,
       blockers: listing.blockers ?? [],
+      photoLimits: { min: listing.min_photos, max: listing.max_photos },
     };
   });
 }

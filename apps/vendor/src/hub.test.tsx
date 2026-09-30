@@ -22,7 +22,7 @@ const METHODS: AuthMethods = {
 };
 
 const vendorMe = (vendorId = VENDOR_A): VendorMe => ({
-  user: { id: "aaaaaaaa-0000-0000-0000-000000000011", locale: "ru", fullName: "Manager" },
+  user: { id: "aaaaaaaa-0000-0000-0000-000000000011", locale: "ru", fullName: "Manager", role: "owner" },
   vendor: { id: vendorId, code: "V101", name: "Lola" },
   listings: [],
 });

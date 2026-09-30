@@ -1,3 +1,4 @@
+import type { ImageErrorCode } from "@bayramm/media";
 import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { DECLINE_REASONS } from "@bayramm/shared/api/vendor";
 import { describe, expect, it } from "vitest";
@@ -13,6 +14,20 @@ const texts = (lang: keyof typeof vendorDict): [string, string][] =>
   );
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map(([, name]) => name).sort();
+
+// Все коды проверки файла: новый код в @bayramm/media без текста здесь не скомпилируется
+const IMAGE_ERRORS = Object.keys({
+  empty: 1,
+  too_large: 1,
+  unsupported_format: 1,
+  corrupt: 1,
+  animated: 1,
+  metadata_present: 1,
+  dimensions_too_large: 1,
+  dimensions_too_small: 1,
+  decode_failed: 1,
+  encode_failed: 1,
+} satisfies Record<ImageErrorCode, 1>);
 
 // Коды, из которых экраны собирают ключи (st_ + статус и т. д.): у каждого — текст
 const CODES = {
@@ -33,6 +48,18 @@ const CODES = {
     "stir",
     "contacts",
     "pd_consent",
+  ],
+  // почему фото не загрузилось: проверка файла и ответы POST /vendor/listings/:id/photos
+  img: IMAGE_ERRORS,
+  up: [
+    "too_many_photos",
+    "duplicate_photo",
+    "payload_too_large",
+    "no_faces_ack_required",
+    "storage_unavailable",
+    "vendor_owner_required",
+    "rate_limited",
+    "failed",
   ],
   // справочники из миграции foundation
   occ: ["toy", "beshik", "bd", "corp", "small"],

@@ -1,25 +1,29 @@
 // Кабинет вендора на настоящем Postgres, ролью bayramm_api: вход из Mini App,
-// входящие заявки, переходы статусов, данные клиента по согласию, календарь.
+// входящие заявки, переходы статусов, данные клиента по согласию, календарь (с
+// версией), роли владельца и сотрудника площадки, фото и правки карточки.
 // Два вендора (A и B) с опубликованными залами и заявками клиентов — главное:
 // вендор A не видит и не трогает ничего у B (404, а не 403).
 
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import { webpFixture } from "@bayramm/media/testing";
 import type {
-  BusyDay,
   VendorCalendar,
+  VendorCalendarChange,
   VendorListing,
   VendorMe,
+  VendorPhoto,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPage,
   VendorRevision,
   VendorRevisionList,
 } from "@bayramm/shared/api/vendor";
-import type { Client } from "pg";
+import { type Client, Client as PgClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { initDataFor, type TestTelegramUser } from "../../src/testing/init-data";
 import {
   adminClient,
+  apiDatabaseUrl,
   BOT_TOKEN,
   bearer,
   call,
@@ -30,6 +34,13 @@ import {
 } from "./helpers";
 
 let admin: Client;
+
+// Загрузка фото доходит до Storage: только с ключом локального стека (как в CI)
+const STORAGE =
+  Boolean(process.env.TEST_SUPABASE_SERVICE_ROLE_KEY) &&
+  ["127.0.0.1", "localhost", "[::1]"].includes(
+    new URL(process.env.TEST_SUPABASE_URL ?? "http://127.0.0.1:54321").hostname,
+  );
 
 // ── данные теста: случайные id, чтобы не мешать остальным данным базы ───────
 
@@ -190,6 +201,18 @@ const as = (token: string, method: string): RequestInit => ({
   method,
   headers: { Authorization: `Bearer ${token}` },
 });
+/** Правка календаря от версии, которую видел человек */
+const at = (token: string, method: string, version: number | string): RequestInit => ({
+  method,
+  headers: { Authorization: `Bearer ${token}`, "If-Match": String(version) },
+});
+
+/** Версия календаря площадки — как её видит кабинет */
+async function calendarVersion(token: string, listingId: string): Promise<number> {
+  const res = await call(`/vendor/listings/${listingId}/calendar`, bearer(token));
+  if (res.status !== 200) throw new Error(`календарь: ${res.status}`);
+  return ((await res.json()) as VendorCalendar).version;
+}
 
 let A: TestVendor;
 let B: TestVendor;
@@ -250,6 +273,10 @@ afterAll(async () => {
       `delete from app.outbox where kind = 'ops.revision_submitted' and payload ->> 'revision_id' in (
          select id::text from app.listing_revisions where listing_id = any($1::uuid[]))`,
       [vendors.flatMap((v) => [v.listingId, v.draftId])],
+    );
+    await admin.query(
+      "delete from app.outbox where kind = 'ops.photos_submitted' and payload ->> 'listing_id' = any($1::text[])",
+      [listings],
     );
     await admin.query("delete from app.availability where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from pii.request_contacts where request_id = any($1::uuid[])", [ids]);
@@ -376,7 +403,7 @@ describe("доступ к /vendor", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
     const me = (await res.json()) as VendorMe;
-    expect(me.user).toEqual({ id: A.userId, locale: "ru", fullName: "Manager A" });
+    expect(me.user).toEqual({ id: A.userId, locale: "ru", fullName: "Manager A", role: "owner" });
     expect(me.vendor.id).toBe(A.accountId);
     expect(me.vendor.code).toMatch(/^V\d+$/);
     expect(me.listings.map((l) => [l.id, l.status])).toEqual([
@@ -426,10 +453,10 @@ describe("вендор A не видит ничего у вендора B", () =
     expect((await call(`/vendor/listings/${B.listingId}`, bearer(A.token))).status).toBe(404);
     expect((await call(`/vendor/listings/${B.listingId}/calendar`, bearer(A.token))).status).toBe(404);
     expect(
-      (await call(`/vendor/listings/${B.listingId}/calendar/${days(5)}`, as(A.token, "PUT"))).status,
+      (await call(`/vendor/listings/${B.listingId}/calendar/${days(5)}`, at(A.token, "PUT", 0))).status,
     ).toBe(404);
     expect(
-      (await call(`/vendor/listings/${B.listingId}/calendar/${days(5)}`, as(A.token, "DELETE"))).status,
+      (await call(`/vendor/listings/${B.listingId}/calendar/${days(5)}`, at(A.token, "DELETE", 0))).status,
     ).toBe(404);
     const { rows } = await admin.query("select 1 from app.availability where listing_id = $1", [B.listingId]);
     expect(rows).toEqual([]);
@@ -639,14 +666,20 @@ describe("заявки вендора A", () => {
 // ── календарь и площадка ────────────────────────────────────────────────────
 
 describe("календарь вендора A", () => {
-  it("отметить и освободить день; повтор — не ошибка", async () => {
+  it("отметить и освободить день; повтор — не ошибка; каждая правка — от новой версии", async () => {
     const day = days(10);
-    const busy = await call(`/vendor/listings/${A.listingId}/calendar/${day}`, as(A.token, "PUT"));
+    const url = `/vendor/listings/${A.listingId}/calendar/${day}`;
+    const v0 = await calendarVersion(A.token, A.listingId);
+    const busy = await call(url, at(A.token, "PUT", v0));
     expect(busy.status).toBe(200);
-    expect((await busy.json()) as BusyDay).toEqual({ day, source: "vendor", requestId: null });
-    expect((await call(`/vendor/listings/${A.listingId}/calendar/${day}`, as(A.token, "PUT"))).status).toBe(
-      200,
-    );
+    const marked = (await busy.json()) as VendorCalendarChange;
+    expect(marked).toEqual({ day, busy: { day, source: "vendor", requestId: null }, version: v0 + 1 });
+    expect(busy.headers.get("etag")).toBe(`"${v0 + 1}"`);
+    // Повтор: день уже занят — версия прежняя
+    const again = (await (
+      await call(url, at(A.token, "PUT", `"${marked.version}"`))
+    ).json()) as VendorCalendarChange;
+    expect(again.version).toBe(marked.version);
 
     const { rows } = await admin.query<{ created_by: string }>(
       "select created_by from app.availability where listing_id = $1 and day = $2",
@@ -654,12 +687,48 @@ describe("календарь вендора A", () => {
     );
     expect(rows).toEqual([{ created_by: A.userId }]);
 
-    expect(
-      (await call(`/vendor/listings/${A.listingId}/calendar/${day}`, as(A.token, "DELETE"))).status,
-    ).toBe(204);
-    expect(
-      (await call(`/vendor/listings/${A.listingId}/calendar/${day}`, as(A.token, "DELETE"))).status,
-    ).toBe(204);
+    const free = await call(url, at(A.token, "DELETE", again.version));
+    expect(free.status).toBe(200);
+    const freed = (await free.json()) as VendorCalendarChange;
+    expect(freed).toEqual({ day, busy: null, version: again.version + 1 });
+    expect((await call(url, at(A.token, "DELETE", freed.version))).status).toBe(200);
+  });
+
+  it("правка без версии — 428; от устаревшей — 409 calendar_conflict, ничего не меняется", async () => {
+    const day = days(12);
+    const url = `/vendor/listings/${A.listingId}/calendar/${day}`;
+    const missing = await call(url, as(A.token, "PUT"));
+    expect(missing.status).toBe(428);
+    expect(((await missing.json()) as { error: { code: string } }).error.code).toBe("version_required");
+    expect((await call(url, at(A.token, "PUT", "abc"))).status).toBe(422);
+
+    const seen = await calendarVersion(A.token, A.listingId);
+    // Тем временем менеджер закрыл другой день в панели
+    await admin.query("insert into app.availability (listing_id, day, source) values ($1, $2, 'staff')", [
+      A.listingId,
+      days(13),
+    ]);
+    const stale = await call(url, at(A.token, "PUT", seen));
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as { error: { code: string } }).error.code).toBe("calendar_conflict");
+    const { rows } = await admin.query("select 1 from app.availability where listing_id = $1 and day = $2", [
+      A.listingId,
+      day,
+    ]);
+    expect(rows).toEqual([]);
+    // Перечитали — правка проходит
+    expect((await call(url, at(A.token, "PUT", await calendarVersion(A.token, A.listingId)))).status).toBe(
+      200,
+    );
+  });
+
+  it("одновременные правки от одной версии: проходит одна, вторая — конфликт", async () => {
+    const seen = await calendarVersion(A.token, A.listingId);
+    const [first, second] = await Promise.all([
+      call(`/vendor/listings/${A.listingId}/calendar/${days(14)}`, at(A.token, "PUT", seen)),
+      call(`/vendor/listings/${A.listingId}/calendar/${days(15)}`, at(A.token, "PUT", seen)),
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 409]);
   });
 
   it("день, закрытый сотрудником, вендор не освобождает — 403", async () => {
@@ -668,7 +737,8 @@ describe("календарь вендора A", () => {
       A.listingId,
       day,
     ]);
-    const res = await call(`/vendor/listings/${A.listingId}/calendar/${day}`, as(A.token, "DELETE"));
+    const version = await calendarVersion(A.token, A.listingId);
+    const res = await call(`/vendor/listings/${A.listingId}/calendar/${day}`, at(A.token, "DELETE", version));
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("forbidden_for_actor");
     const calendar = (await (
@@ -678,12 +748,16 @@ describe("календарь вендора A", () => {
   });
 
   it("прошедший день и кривая дата — 422", async () => {
-    const past = await call(`/vendor/listings/${A.listingId}/calendar/${days(-1)}`, as(A.token, "PUT"));
+    const past = await call(`/vendor/listings/${A.listingId}/calendar/${days(-1)}`, at(A.token, "PUT", 0));
     expect(past.status).toBe(422);
     expect(((await past.json()) as { error: { code: string } }).error.code).toBe("date_out_of_range");
     expect(
-      (await call(`/vendor/listings/${A.listingId}/calendar/2026-02-30`, as(A.token, "PUT"))).status,
+      (await call(`/vendor/listings/${A.listingId}/calendar/2026-02-30`, at(A.token, "PUT", 0))).status,
     ).toBe(422);
+    // Прошлое не правится и в обход API: день по Ташкенту, для всех
+    await expect(
+      admin.query("insert into app.availability (listing_id, day) values ($1, $2)", [A.listingId, days(-1)]),
+    ).rejects.toMatchObject({ code: "BR024" });
     expect(
       (await call(`/vendor/listings/${A.listingId}/calendar?month=2026-13`, bearer(A.token))).status,
     ).toBe(422);
@@ -876,6 +950,194 @@ describe("правки карточки из кабинета", () => {
       payload: { name: "Test Hall A Grand" },
     });
     expect(list.items[0]?.decidedAt).not.toBeNull();
+  });
+});
+
+// ── роли кабинета и фото из кабинета ────────────────────────────────────────
+
+describe("роли кабинета: сотрудник площадки ведёт заявки и календарь, карточку — владелец", () => {
+  let member: { userId: string; token: string };
+
+  beforeAll(async () => {
+    const userId = randomUUID();
+    const telegram = vendorTelegramUser();
+    await admin.query(
+      `insert into app.vendor_users (id, vendor_id, phone_hash, tg_user_hash, tg_linked_at, role)
+       values ($1, $2, $3, $4, now(), 'member')`,
+      [userId, A.accountId, randomBytes(32), tgIdHash(telegram.id)],
+    );
+    await admin.query(
+      "insert into pii.vendor_user_profiles (vendor_user_id, phone, full_name) values ($1, '+998000000112', 'Staff A')",
+      [userId],
+    );
+    member = { userId, token: await vendorToken(telegram) };
+  });
+
+  const codeOf = async (res: Response) => ((await res.json()) as { error: { code: string } }).error.code;
+
+  it("GET /vendor/me: роль member", async () => {
+    const me = (await (await call("/vendor/me", bearer(member.token))).json()) as VendorMe;
+    expect(me.user).toMatchObject({ id: member.userId, role: "member" });
+  });
+
+  it("календарь и заявки — можно", async () => {
+    const version = await calendarVersion(member.token, A.listingId);
+    const res = await call(
+      `/vendor/listings/${A.listingId}/calendar/${days(20)}`,
+      at(member.token, "PUT", version),
+    );
+    expect(res.status).toBe(200);
+    expect((await call(`/vendor/requests/${ra2.id}/call`, as(member.token, "POST"))).status).toBe(204);
+    expect((await call(`/vendor/listings/${A.listingId}/revisions`, bearer(member.token))).status).toBe(200);
+  });
+
+  it("предложить правку и загрузить или удалить фото — 403 vendor_owner_required", async () => {
+    const propose = await call(`/vendor/listings/${A.listingId}/revisions`, {
+      method: "POST",
+      headers: { ...json, Authorization: `Bearer ${member.token}` },
+      body: JSON.stringify({ name: "Member Hall" }),
+    });
+    expect([propose.status, await codeOf(propose)]).toEqual([403, "vendor_owner_required"]);
+    const upload = await call(`/vendor/listings/${A.listingId}/photos`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${member.token}`, "X-No-Faces": "1", "content-type": "image/webp" },
+      body: webpFixture({ width: 640, height: 480 }) as Uint8Array<ArrayBuffer>,
+    });
+    expect([upload.status, await codeOf(upload)]).toEqual([403, "vendor_owner_required"]);
+    const { rows } = await admin.query<{ id: string }>(
+      "select id from app.photos where listing_id = $1 and deleted_at is null limit 1",
+      [A.listingId],
+    );
+    const del = await call(
+      `/vendor/listings/${A.listingId}/photos/${rows[0]?.id}`,
+      as(member.token, "DELETE"),
+    );
+    expect([del.status, await codeOf(del)]).toEqual([403, "vendor_owner_required"]);
+    const { rows: alive } = await admin.query(
+      "select 1 from app.photos where id = $1 and deleted_at is null",
+      [rows[0]?.id],
+    );
+    expect(alive).toHaveLength(1);
+  });
+
+  it("база тоже не даёт: правка карточки под сотрудником площадки не проходит", async () => {
+    // Роль в API взяли бы из членства; здесь — прямо в базе ролью API, в обход проверок API
+    const client = new PgClient({ connectionString: apiDatabaseUrl });
+    await client.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        "select set_config('app.actor_kind', 'vendor_user', true), set_config('app.actor_id', $1, true), set_config('app.vendor_id', $2, true)",
+        [member.userId, A.accountId],
+      );
+      await expect(
+        client.query(
+          'insert into app.listing_revisions (listing_id, payload, base_version) values ($1, \'{"name": "X Hall"}\', 1)',
+          [A.listingId],
+        ),
+      ).rejects.toMatchObject({ code: "42501" });
+    } finally {
+      await client.query("rollback").catch(() => {});
+      await client.end();
+    }
+  });
+});
+
+describe("фото из кабинета", () => {
+  const photosUrl = (listingId: string) => `/vendor/listings/${listingId}/photos`;
+  const upload = (
+    token: string,
+    listingId: string,
+    bytes: Uint8Array,
+    headers: Record<string, string> = {},
+  ) =>
+    call(photosUrl(listingId), {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "image/webp", ...headers },
+      body: bytes as Uint8Array<ArrayBuffer>,
+    });
+  const errorOf = async (res: Response) => {
+    const body = (await res.json()) as { error: { code: string; details?: string[] } };
+    return { status: res.status, code: body.error.code, details: body.error.details };
+  };
+
+  it("без подтверждения «лиц нет» — 422; чужая площадка — 404", async () => {
+    const bytes = webpFixture({ width: 640, height: 480 });
+    expect(await errorOf(await upload(A.token, A.listingId, bytes))).toMatchObject({
+      status: 422,
+      code: "no_faces_ack_required",
+    });
+    expect((await upload(A.token, B.listingId, bytes, { "X-No-Faces": "1" })).status).toBe(404);
+    const { rows } = await admin.query<{ id: string }>(
+      "select id from app.photos where listing_id = $1 and deleted_at is null limit 1",
+      [B.listingId],
+    );
+    expect((await call(`${photosUrl(B.listingId)}/${rows[0]?.id}`, as(A.token, "DELETE"))).status).toBe(404);
+  });
+
+  it("опубликованная площадка не остаётся без минимума одобренных фото — 422 publish_blocked", async () => {
+    const { rows } = await admin.query<{ id: string }>(
+      "select id from app.photos where listing_id = $1 and deleted_at is null and moderation = 'approved' limit 1",
+      [A.listingId],
+    );
+    expect(
+      await errorOf(await call(`${photosUrl(A.listingId)}/${rows[0]?.id}`, as(A.token, "DELETE"))),
+    ).toEqual({ status: 422, code: "publish_blocked", details: ["photos"] });
+  });
+
+  it.skipIf(!STORAGE)("загрузка: ждёт модератора, клиенты не видят; своё фото — удалить", async () => {
+    const res = await upload(A.token, A.listingId, webpFixture({ width: 800, height: 600 }), {
+      "X-No-Faces": "1",
+    });
+    expect(res.status).toBe(201);
+    const photo = (await res.json()) as VendorPhoto;
+    expect(photo).toMatchObject({ width: 800, height: 600, moderation: "pending", isCover: false });
+
+    const listing = (await (
+      await call(`/vendor/listings/${A.listingId}`, bearer(A.token))
+    ).json()) as VendorListing;
+    expect(listing.photos.map((p) => [p.id, p.moderation])).toContainEqual([photo.id, "pending"]);
+    expect(listing.photoLimits).toEqual({ min: expect.any(Number), max: expect.any(Number) });
+
+    const { rows } = await admin.query<{ slug: string; uploaded_by: string }>(
+      `select l.slug, p.uploaded_by from app.photos p join app.listings l on l.id = p.listing_id where p.id = $1`,
+      [photo.id],
+    );
+    expect(rows[0]?.uploaded_by).toBe(A.userId);
+    const catalog = (await (await call(`/catalog/listings/${rows[0]?.slug}`)).json()) as {
+      photos: unknown[];
+    };
+    expect(catalog.photos).toHaveLength(3);
+
+    expect((await call(`${photosUrl(A.listingId)}/${photo.id}`, as(A.token, "DELETE"))).status).toBe(204);
+    const { rows: gone } = await admin.query(
+      "select 1 from app.photos where id = $1 and deleted_at is null",
+      [photo.id],
+    );
+    expect(gone).toEqual([]);
+  });
+});
+
+describe("правка, предложенная командой", () => {
+  it("партнёр видит её с отметкой byTeam и не отзывает — 403", async () => {
+    // Как правка менеджера из панели: submitted_by — не пользователь вендора
+    const { rows } = await admin.query<{ id: string }>(
+      `insert into app.listing_revisions (listing_id, payload, base_version)
+       select id, '{"price_from_uzs": 160000}', version from app.listings where id = $1 returning id`,
+      [B.listingId],
+    );
+    const id = rows[0]?.id;
+    const list = (await (
+      await call(`/vendor/listings/${B.listingId}/revisions`, bearer(B.token))
+    ).json()) as VendorRevisionList;
+    expect(list.items[0]).toMatchObject({ id, status: "pending", byTeam: true });
+    const res = await call(`/vendor/listings/${B.listingId}/revisions/${id}/withdraw`, as(B.token, "POST"));
+    expect(res.status).toBe(403);
+    const { rows: still } = await admin.query<{ status: string }>(
+      "select status from app.listing_revisions where id = $1",
+      [id],
+    );
+    expect(still[0]?.status).toBe("pending");
   });
 });
 

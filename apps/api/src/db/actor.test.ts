@@ -25,7 +25,9 @@ describe("actorSettings", () => {
       id: CLIENT_ID,
       vendorId: "",
     });
-    expect(actorSettings({ kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID })).toEqual({
+    expect(
+      actorSettings({ kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID, role: "owner" }),
+    ).toEqual({
       kind: "vendor_user",
       id: VENDOR_USER_ID,
       vendorId: VENDOR_ID,
@@ -35,9 +37,9 @@ describe("actorSettings", () => {
   it("id не UUID — ошибка кода, до базы не доходит", () => {
     expect(() => actorSettings({ kind: "client", id: "1 or 1=1" })).toThrow(TypeError);
     expect(() => actorSettings({ kind: "client", id: "" })).toThrow(TypeError);
-    expect(() => actorSettings({ kind: "vendor_user", id: VENDOR_USER_ID, vendorId: "x" })).toThrow(
-      TypeError,
-    );
+    expect(() =>
+      actorSettings({ kind: "vendor_user", id: VENDOR_USER_ID, vendorId: "x", role: "owner" }),
+    ).toThrow(TypeError);
   });
 });
 
@@ -67,7 +69,7 @@ describe("withActor", () => {
     ["system", SYSTEM, ["system", "", ""]],
     [
       "vendor_user",
-      { kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID },
+      { kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID, role: "owner" },
       ["vendor_user", VENDOR_USER_ID, VENDOR_ID],
     ],
   ])("актор %s", async (_name, actor, params) => {
@@ -100,7 +102,7 @@ describe("withActor", () => {
 describe("continueAsSystem", () => {
   it("в той же транзакции переключает GUC на system — дальше запросы идут как system", async () => {
     const fake = fakeDb();
-    const vendor: Actor = { kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID };
+    const vendor: Actor = { kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID, role: "owner" };
     await withActor(fake.db, vendor, async (trx) => {
       await trx.selectFrom("app.photos").select("id").execute();
       await continueAsSystem(trx);

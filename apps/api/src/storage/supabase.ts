@@ -4,6 +4,9 @@
 //
 //   POST   /storage/v1/object/<бакет>/<ключ>   x-upsert: false — не перезаписывать
 //   DELETE /storage/v1/object/<бакет>/<ключ>
+//   POST   /storage/v1/object/list-v2/<бакет>  { prefix, limit, cursor, with_delimiter: false }
+//          — все объекты под префиксом по ключу, страницами (сверка с базой, photos/sweep.ts)
+//   DELETE /storage/v1/object/<бакет>          { prefixes: [ключи] } — до 1000 одним запросом
 //
 // Storage отвечает на ошибки JSON вида { statusCode: "409", error, message };
 // HTTP-статус при этом у разных версий бывает 400 — смотрим на statusCode.
@@ -17,6 +20,29 @@ export interface ObjectStorage {
   /** Удаляет объект. Отсутствующий — не ошибка. */
   remove(key: string): Promise<void>;
 }
+
+export interface StoredObject {
+  readonly key: string;
+  /** Когда объект положили; null — хранилище не сказало */
+  readonly createdAt: Date | null;
+}
+
+export interface ObjectPage {
+  readonly objects: readonly StoredObject[];
+  /** Со следующей страницы; null — страниц больше нет */
+  readonly cursor: string | null;
+}
+
+/** Сверка хранилища с базой: список и удаление пачкой (ежедневное обслуживание) */
+export interface ObjectSweeper {
+  /** Объекты под префиксом (с вложенными «папками»), по ключу, страница не больше limit */
+  list(prefix: string, cursor: string | null, limit: number): Promise<ObjectPage>;
+  /** Удаляет объекты одним запросом (не больше MAX_REMOVE_BATCH); отсутствующие — не ошибка. Сколько удалено */
+  removeMany(keys: readonly string[]): Promise<number>;
+}
+
+/** Сколько ключей Storage принимает в одном удалении */
+export const MAX_REMOVE_BATCH = 1000;
 
 export type StorageFailure =
   /** Объект с таким ключом уже есть */
@@ -77,7 +103,7 @@ function failure(status: number): StorageFailure {
   return "rejected";
 }
 
-export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage {
+export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage & ObjectSweeper {
   const base = trimTrailingSlashes(options.url);
   const doFetch = options.fetch ?? ((input, init) => fetch(input, init));
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -90,8 +116,14 @@ export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage 
   // принимает тот же ключ в Authorization, как делает supabase-js
   const auth = { apikey: options.serviceKey, authorization: `Bearer ${options.serviceKey}` };
 
+  const bucketPath = encodeURIComponent(options.bucket);
+
   async function request(method: string, key: string, init: RequestInit = {}): Promise<Response> {
-    const url = `${base}/storage/v1/object/${encodeURIComponent(options.bucket)}/${objectPath(key)}`;
+    return call(method, `${bucketPath}/${objectPath(key)}`, init);
+  }
+
+  async function call(method: string, path: string, init: RequestInit = {}): Promise<Response> {
+    const url = `${base}/storage/v1/object/${path}`;
     try {
       return await doFetch(url, {
         ...init,
@@ -129,13 +161,60 @@ export function supabaseStorage(options: SupabaseStorageOptions): ObjectStorage 
       if (status === 404) return;
       throw new StorageError(failure(status), status, `storage remove: ${status}`);
     },
+
+    async list(prefix, cursor, limit) {
+      const res = await call("POST", `list-v2/${bucketPath}`, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          prefix,
+          limit,
+          with_delimiter: false,
+          ...(cursor === null ? {} : { cursor }),
+        }),
+      });
+      if (!res.ok) {
+        const status = await effectiveStatus(res);
+        throw new StorageError(failure(status), status, `storage list: ${status}`);
+      }
+      const body = (await res.json().catch(() => null)) as {
+        hasNext?: unknown;
+        nextCursor?: unknown;
+        objects?: unknown;
+      } | null;
+      if (body === null || !Array.isArray(body.objects)) {
+        throw new StorageError("unavailable", res.status, "storage list: unexpected body");
+      }
+      const objects = body.objects.flatMap((item: unknown): StoredObject[] => {
+        const { name, created_at } = (item ?? {}) as { name?: unknown; created_at?: unknown };
+        if (typeof name !== "string") return [];
+        const created = typeof created_at === "string" ? new Date(created_at) : null;
+        return [{ key: name, createdAt: created && !Number.isNaN(created.getTime()) ? created : null }];
+      });
+      const next = body.hasNext === true && typeof body.nextCursor === "string" ? body.nextCursor : null;
+      return { objects, cursor: next };
+    },
+
+    async removeMany(keys) {
+      if (keys.length === 0) return 0;
+      if (keys.length > MAX_REMOVE_BATCH) throw new RangeError("storage removeMany: не больше 1000 ключей");
+      const res = await call("DELETE", bucketPath, {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prefixes: keys }),
+      });
+      if (!res.ok) {
+        const status = await effectiveStatus(res);
+        throw new StorageError(failure(status), status, `storage remove many: ${status}`);
+      }
+      const removed = (await res.json().catch(() => null)) as unknown;
+      return Array.isArray(removed) ? removed.length : 0;
+    },
   };
 }
 
 /** Хранилище фото листингов из окружения воркера API. */
 export function listingPhotoStorage(
   env: Pick<Env, "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY">,
-): ObjectStorage {
+): ObjectStorage & ObjectSweeper {
   return supabaseStorage({
     url: env.SUPABASE_URL,
     serviceKey: env.SUPABASE_SERVICE_ROLE_KEY,

@@ -13,6 +13,8 @@ import type {
   Availability,
   ListingDetail,
   ListingList,
+  ListingSaveResult,
+  RevisionList,
   StaffDictionaries,
   StaffMe,
   StaffPhoto,
@@ -22,12 +24,13 @@ import type {
   VendorList,
   VendorUser,
 } from "@bayramm/shared/api/staff";
-import type { Client } from "pg";
+import { type Client, Client as PgClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import app from "../../src/index";
 import { signLoginWidget } from "../../src/testing/login-widget";
 import {
   adminClient,
+  apiDatabaseUrl,
   BOT_TOKEN,
   ID_HASH_KEY,
   inviteStaff,
@@ -94,6 +97,11 @@ async function error(res: Response | Promise<Response>) {
   return { status: r.status, code: body.error.code, details: body.error.details };
 }
 
+/** Сегодня по Ташкенту + n дней */
+const day = (n: number) => {
+  const today = new Date(Date.now() + 5 * 3600 * 1000).toISOString().slice(0, 10);
+  return new Date(Date.parse(`${today}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+};
 const digits = (n: number) => Array.from({ length: n }, () => randomInt(0, 10)).join("");
 const phone = () => `+99890${digits(7)}`;
 const tag = randomBytes(3).toString("hex");
@@ -385,6 +393,115 @@ describe("вендор → карточка → проверка → публи�
     expect(listing.blockers.active).toEqual([]);
   });
 
+  it("опубликованную карточку менеджер меняет правкой: цена и описание — на модерацию, адрес — сразу", async () => {
+    const saved = await ok<ListingSaveResult>(
+      api("manager", "PATCH", `/staff/listings/${listing.id}`, {
+        version: listing.version,
+        priceFromUzs: 170_000,
+        descriptionRu: "Зал на 300 гостей, своя кухня",
+        addressRu: "Чиланзар, 7-й квартал",
+      }),
+    );
+    expect(saved.sentForModeration).toEqual(["priceFromUzs", "descriptionRu"]);
+    // Клиенты видят прежнюю цену и описание, пока не решит модератор
+    expect(saved).toMatchObject({
+      priceFromUzs: 150_000,
+      descriptionRu: "Зал на 300 гостей",
+      addressRu: "Чиланзар, 7-й квартал",
+    });
+    expect(saved.pendingRevision).toMatchObject({
+      fields: ["priceFromUzs", "descriptionRu"],
+      proposedBy: { kind: "staff", name: "Test manager" },
+    });
+    listing = saved;
+
+    // Пока правка ждёт — следующая правка модерируемых полей: 409 revision_pending, ничего не сохранено
+    expect(
+      await error(
+        api("manager", "PATCH", `/staff/listings/${listing.id}`, {
+          version: listing.version,
+          name: `Хумо ${tag}`,
+          capMax: 310,
+        }),
+      ),
+    ).toMatchObject({ status: 409, code: "revision_pending" });
+    // Очистить модерируемое поле опубликованной карточки нельзя
+    expect(
+      await error(
+        api("manager", "PATCH", `/staff/listings/${listing.id}`, {
+          version: listing.version,
+          descriptionUz: null,
+        }),
+      ),
+    ).toMatchObject({ status: 422, details: ["descriptionUz"] });
+
+    const queue = await ok<RevisionList>(
+      api("moderator", "GET", "/staff/revisions?status=pending&limit=100"),
+    );
+    const item = queue.items.find((r) => r.id === saved.pendingRevision?.id);
+    expect(item?.proposedBy).toEqual({ kind: "staff", name: "Test manager" });
+
+    // Решает модератор — правка применяется к карточке
+    await ok(api("moderator", "POST", `/staff/revisions/${saved.pendingRevision?.id}/approve`));
+    listing = await ok<ListingDetail>(api("manager", "GET", `/staff/listings/${listing.id}`));
+    expect(listing).toMatchObject({
+      priceFromUzs: 170_000,
+      descriptionRu: "Зал на 300 гостей, своя кухня",
+      pendingRevision: null,
+    });
+
+    // Администратор решает сам — правит сразу
+    const direct = await ok<ListingSaveResult>(
+      api("admin", "PATCH", `/staff/listings/${listing.id}`, {
+        version: listing.version,
+        descriptionUz: "300 mehmonga zal, oshxona bor",
+      }),
+    );
+    expect(direct.sentForModeration).toEqual([]);
+    expect(direct.descriptionUz).toBe("300 mehmonga zal, oshxona bor");
+    listing = direct;
+  });
+
+  it("база не даёт менеджеру обойти модерацию и в обход API", async () => {
+    const managerId = await inviteStaff(admin, { username: newStaffUsername(), role: "manager" });
+    const client = new PgClient({ connectionString: apiDatabaseUrl });
+    await client.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        "select set_config('app.actor_kind', 'staff', true), set_config('app.actor_id', $1, true)",
+        [managerId],
+      );
+      await expect(
+        client.query("update app.listings set price_from_uzs = 1 where id = $1", [listing.id]),
+      ).rejects.toMatchObject({ code: "BR005" });
+    } finally {
+      await client.query("rollback").catch(() => {});
+      await client.end();
+    }
+  });
+
+  it("новые фото опубликованной карточки — в очереди «Новые фото», пока модератор не решит", async () => {
+    const photoId = randomUUID();
+    await admin.query(
+      `insert into app.photos (id, listing_id, status, storage_key, mime, bytes, width, height, sha256, sort, no_faces_ack)
+       values ($1, $2, 'ready', $3, 'image/webp', 1000, 1600, 1200, $4, 9, true)`,
+      [photoId, listing.id, `listings/${listing.id}/${randomUUID()}.webp`, randomBytes(32)],
+    );
+    const queue = await ok<ListingList>(api("moderator", "GET", "/staff/listings?photos=pending&limit=100"));
+    const item = queue.items.find((l) => l.id === listing.id);
+    expect(item?.photos.pending).toBe(1);
+    expect(queue.items.every((l) => l.status === "active" && l.photos.pending > 0)).toBe(true);
+
+    await ok(
+      api("moderator", "POST", `/staff/listings/${listing.id}/photos/${photoId}/moderation`, {
+        decision: "declined",
+      }),
+    );
+    const after = await ok<ListingList>(api("moderator", "GET", "/staff/listings?photos=pending&limit=100"));
+    expect(after.items.map((l) => l.id)).not.toContain(listing.id);
+  });
+
   it("снять отметку чек-листа нельзя, пока карточка опубликована", async () => {
     expect(
       await error(
@@ -435,29 +552,52 @@ describe("вендор → карточка → проверка → публи�
     expect(rows.map((r) => r.row).join()).not.toContain("+99890");
   });
 
-  it("занятость: отметить и снять дни", async () => {
+  it("занятость: отметить и снять дни — от версии календаря", async () => {
+    const url = `/staff/listings/${listing.id}/availability`;
+    const [d1, d2] = [day(200), day(201)];
+    const start = await ok<Availability>(api("moderator", "GET", `${url}?from=${d1}&to=${d2}`));
+    expect(start.busy).toEqual([]);
     const busy = await ok<Availability>(
-      api("manager", "PUT", `/staff/listings/${listing.id}/availability`, {
-        busy: ["2027-01-10", "2027-01-11"],
-      }),
+      api("manager", "PUT", url, { version: start.version, busy: [d1, d2] }),
     );
     expect(busy.busy).toEqual([
-      { day: "2027-01-10", source: "staff" },
-      { day: "2027-01-11", source: "staff" },
+      { day: d1, source: "staff" },
+      { day: d2, source: "staff" },
     ]);
-    await ok(api("manager", "PUT", `/staff/listings/${listing.id}/availability`, { free: ["2027-01-10"] }));
-    const month = await ok<Availability>(
-      api("moderator", "GET", `/staff/listings/${listing.id}/availability?from=2027-01-01&to=2027-01-31`),
-    );
-    expect(month.busy).toEqual([{ day: "2027-01-11", source: "staff" }]);
+    expect(busy.version).toBeGreaterThan(start.version);
+    const freed = await ok<Availability>(api("manager", "PUT", url, { version: busy.version, free: [d1] }));
+    const month = await ok<Availability>(api("moderator", "GET", `${url}?from=${d1}&to=${d2}`));
+    expect(month.busy).toEqual([{ day: d2, source: "staff" }]);
+    expect(month.version).toBe(freed.version);
     expect(
-      await error(
-        api("manager", "PUT", `/staff/listings/${listing.id}/availability`, { busy: ["2027-02-30"] }),
-      ),
+      await error(api("manager", "PUT", url, { version: month.version, busy: ["2027-02-30"] })),
     ).toMatchObject({ status: 422, details: ["busy"] });
+    expect(await error(api("manager", "PUT", url, { busy: [d1] }))).toMatchObject({
+      status: 422,
+      details: ["version"],
+    });
+    expect((await api("moderator", "PUT", url, { version: month.version, busy: [] })).status).toBe(403);
+  });
+
+  it("занятость: устаревшая версия — 409 calendar_conflict; прошедший день — 422", async () => {
+    const url = `/staff/listings/${listing.id}/availability`;
+    const seen = await ok<Availability>(api("manager", "GET", url));
+    // Тем временем календарь поменялся (отметка вендора, другой сотрудник)
+    await admin.query("insert into app.availability (listing_id, day, source) values ($1, $2, 'vendor')", [
+      listing.id,
+      day(210),
+    ]);
     expect(
-      (await api("moderator", "PUT", `/staff/listings/${listing.id}/availability`, { busy: [] })).status,
-    ).toBe(403);
+      await error(api("manager", "PUT", url, { version: seen.version, busy: [day(211)] })),
+    ).toMatchObject({
+      status: 409,
+      code: "calendar_conflict",
+    });
+    const fresh = await ok<Availability>(api("manager", "GET", url));
+    expect(
+      await error(api("manager", "PUT", url, { version: fresh.version, busy: [day(-1)], free: [day(-2)] })),
+    ).toEqual({ status: 422, code: "date_out_of_range", details: ["busy", "free"] });
+    await ok(api("manager", "PUT", url, { version: fresh.version, busy: [day(0)] }));
   });
 
   it("отключение пользователя кабинета и снятие привязки Telegram", async () => {

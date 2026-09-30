@@ -2,13 +2,19 @@
 //
 // Строка app.availability = день занят. Вендор отмечает и снимает свои дни;
 // день, закрытый сотрудником, снять не может (триггер availability_guard → 403).
-// Прошедшие дни не меняются: календарь — обещание клиентам на будущее.
+// Прошедшие дни не меняются: календарь — обещание клиентам на будущее (так же
+// решает база — никому, по дате Ташкента).
+//
+// Календарь ведут владелец кабинета и сотрудник площадки, а в панели — менеджер:
+// правка идёт только от версии, которую человек видел (If-Match, calendar/version.ts),
+// иначе 409 calendar_conflict — кабинет перечитает месяц и скажет, что его изменили.
 //
 // Занятость активных листингов публична (каталог), поэтому RLS отдал бы
 // вендору и чужой активный календарь. Здесь листинг проверяется явно: только
 // свой, чужой — 404.
 
-import type { BusyDay, BusySource, VendorCalendar } from "@bayramm/shared/api/vendor";
+import type { BusyDay, BusySource, VendorCalendar, VendorCalendarChange } from "@bayramm/shared/api/vendor";
+import { calendarVersion, lockCalendar } from "../calendar/version";
 import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { ApiError, notFound } from "../errors";
@@ -78,6 +84,7 @@ export async function getCalendar(
       maxDay: addDays(today, CALENDAR_HORIZON_DAYS),
       busy: busy.map(toBusyDay),
       requestDays: requestDays.map((row) => row.event_date),
+      version: await calendarVersion(trx, listingId),
     };
   });
 }
@@ -91,9 +98,16 @@ export function parseDay(day: string, now: Date = new Date()): string {
 }
 
 /** PUT /vendor/listings/:id/calendar/:day: день занят. Уже занятый — остаётся как был */
-export async function markBusy(db: Db, actor: VendorActor, listingId: string, day: string): Promise<BusyDay> {
+export async function markBusy(
+  db: Db,
+  actor: VendorActor,
+  listingId: string,
+  day: string,
+  version: number,
+): Promise<VendorCalendarChange> {
   return withActor(db, actor, async (trx) => {
     await assertOwnListing(trx, actor, listingId);
+    await lockCalendar(trx, listingId, version);
     await trx
       .insertInto("app.availability")
       .values({ listing_id: listingId, day, source: "vendor" })
@@ -105,18 +119,26 @@ export async function markBusy(db: Db, actor: VendorActor, listingId: string, da
       .where("listing_id", "=", listingId)
       .where("day", "=", day)
       .executeTakeFirstOrThrow();
-    return toBusyDay(row);
+    return { day, busy: toBusyDay(row), version: await calendarVersion(trx, listingId) };
   });
 }
 
 /** DELETE /vendor/listings/:id/calendar/:day: день свободен. Свободный — остаётся свободным */
-export async function markFree(db: Db, actor: VendorActor, listingId: string, day: string): Promise<void> {
-  await withActor(db, actor, async (trx) => {
+export async function markFree(
+  db: Db,
+  actor: VendorActor,
+  listingId: string,
+  day: string,
+  version: number,
+): Promise<VendorCalendarChange> {
+  return withActor(db, actor, async (trx) => {
     await assertOwnListing(trx, actor, listingId);
+    await lockCalendar(trx, listingId, version);
     await trx
       .deleteFrom("app.availability")
       .where("listing_id", "=", listingId)
       .where("day", "=", day)
       .execute();
+    return { day, busy: null, version: await calendarVersion(trx, listingId) };
   });
 }

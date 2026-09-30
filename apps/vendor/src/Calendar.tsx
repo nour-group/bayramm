@@ -1,11 +1,17 @@
 /* Календарь занятости: месяц, одно нажатие — день занят или свободен. Отметка сразу
    видна на экране и уходит в API; не сохранилось — возвращается как было. Дни, занятые
    отказом «занято», вендор может освободить; закрытые менеджером — нет. Прошедшие дни
-   не меняются. «Сегодня» и границы — по Ташкенту, их отдаёт сервер. */
+   не меняются. «Сегодня» и границы — по Ташкенту, их отдаёт сервер.
+
+   Календарь площадки ведут несколько человек: партнёр, его коллеги, менеджер, а отказ
+   «занято» занимает дату сам. Каждая правка несёт версию календаря, которую видел
+   человек (If-Match); правки уходят по очереди, каждая — от версии из прошлого ответа.
+   Кто-то успел изменить календарь раньше (409 calendar_conflict) — месяц перечитывается,
+   человек видит, что его изменили, и отмечает заново: чужая правка молча не затирается. */
 
 import type { BusyDay, VendorCalendar, VendorListingRef } from "@bayramm/shared/api/vendor";
-import { useState } from "react";
-import { api } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiFailure, api } from "./api";
 import { formatDate, tashkentToday, weekdayIndex } from "./format";
 import { fill, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
@@ -84,21 +90,51 @@ function MonthGrid({ calendar, t, pendingDays, onToggle }: MonthProps) {
   );
 }
 
+type Message = "staff" | "failed" | "conflict";
+
+const MESSAGE_TEXT = {
+  staff: "staffLocked",
+  failed: "calendarSaveFailed",
+  conflict: "calendarConflict",
+} as const satisfies Readonly<Record<Message, keyof VendorDict>>;
+
 interface CalendarProps extends Omit<ScreenProps, "lang"> {
   readonly listings: readonly VendorListingRef[];
   readonly listingId: string | null;
   readonly onListing: (id: string) => void;
 }
 
+/** Отметка дня в загруженном месяце: busy — занят (как ответил сервер), null — свободен */
+function withDay(calendar: VendorCalendar, day: string, busy: BusyDay | null): VendorCalendar {
+  const rest = calendar.busy.filter((b) => b.day !== day);
+  return { ...calendar, busy: busy ? [...rest, busy] : rest };
+}
+
 export function Calendar({ t, headingRef, listings, listingId, onListing }: CalendarProps) {
   const [month, setMonth] = useState(() => tashkentToday().slice(0, 7));
   const key = listingId ? `${listingId}/${month}` : null;
-  const [calendar, reload, setCalendar] = useLoad<VendorCalendar>(key, (k) => {
+  const [calendar, reload, setCalendar, refresh] = useLoad<VendorCalendar>(key, (k) => {
     const [id = "", m = ""] = k.split("/");
     return api.calendar(id, m);
   });
   const [pendingDays, setPendingDays] = useState<ReadonlySet<string>>(new Set());
-  const [message, setMessage] = useState<"staff" | "failed" | null>(null);
+  const [message, setMessage] = useState<Message | null>(null);
+  // Правки уходят по одной, каждая — от последней известной версии календаря площадки:
+  // две правки от одной версии вторая не прошла бы (409), хотя чужих изменений не было
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const known = useRef<{ listingId: string; version: number } | null>(null);
+  // Растёт, когда календарь перечитан из-за чужой правки: ждущие очереди правки не уходят
+  const round = useRef(0);
+
+  // Версия только растёт: ответ чтения, начатого до правки, не откатывает её назад
+  const remember = useCallback((listing: string, version: number) => {
+    const current = known.current;
+    if (current?.listingId === listing && current.version >= version) return;
+    known.current = { listingId: listing, version };
+  }, []);
+  useEffect(() => {
+    if (calendar.state === "ready") remember(calendar.data.listingId, calendar.data.version);
+  }, [calendar, remember]);
 
   if (listings.length === 0 || !listingId) {
     return (
@@ -117,7 +153,46 @@ export function Calendar({ t, headingRef, listings, listingId, onListing }: Cale
       return next;
     });
 
-  const toggle = async (day: string, entry: BusyDay | undefined) => {
+  // День — в том месяце той площадки, что на экране; иначе правка его не касается
+  const onScreen = (current: VendorCalendar, listing: string, day: string) =>
+    current.listingId === listing && day.startsWith(current.month);
+
+  const save = async (listing: string, day: string, entry: BusyDay | undefined, asked: number) => {
+    try {
+      // Пока правка ждала очереди, календарь перечитали из-за чужой правки: на экране уже
+      // то, что в базе, — человек проверит и отметит заново
+      if (round.current !== asked) return;
+      const version = known.current?.listingId === listing ? known.current.version : null;
+      if (version === null) throw new Error("calendar version is unknown");
+      const change = entry
+        ? await api.markFree(listing, day, version)
+        : await api.markBusy(listing, day, version);
+      remember(listing, change.version);
+      setCalendar((current) => {
+        if (current.listingId !== listing) return current;
+        const next = onScreen(current, listing, day) ? withDay(current, day, change.busy) : current;
+        return { ...next, version: Math.max(current.version, change.version) };
+      });
+    } catch (err) {
+      const conflict = err instanceof ApiFailure && err.code === "calendar_conflict";
+      // День успел закрыть менеджер — тоже чужая правка: показать календарь как в базе
+      const locked = err instanceof ApiFailure && err.code === "forbidden_for_actor";
+      if (conflict || locked) {
+        round.current += 1;
+        setMessage(conflict ? "conflict" : "staff");
+        if (!(await refresh())) reload();
+      } else {
+        setMessage("failed");
+        setCalendar((current) =>
+          onScreen(current, listing, day) ? withDay(current, day, entry ?? null) : current,
+        );
+      }
+    } finally {
+      setPending(day, false);
+    }
+  };
+
+  const toggle = (day: string, entry: BusyDay | undefined) => {
     if (entry?.source === "staff") {
       setMessage("staff");
       return;
@@ -125,32 +200,12 @@ export function Calendar({ t, headingRef, listings, listingId, onListing }: Cale
     setMessage(null);
     setPending(day, true);
     // Сразу на экране; не сохранилось — вернём как было
-    setCalendar((current) => ({
-      ...current,
-      busy: entry
-        ? current.busy.filter((b) => b.day !== day)
-        : [...current.busy, { day, source: "vendor", requestId: null }],
-    }));
-    try {
-      if (entry) await api.markFree(listingId, day);
-      else {
-        const saved = await api.markBusy(listingId, day);
-        setCalendar((current) => ({
-          ...current,
-          busy: [...current.busy.filter((b) => b.day !== day), saved],
-        }));
-      }
-    } catch {
-      setMessage("failed");
-      setCalendar((current) => ({
-        ...current,
-        busy: entry
-          ? [...current.busy.filter((b) => b.day !== day), entry]
-          : current.busy.filter((b) => b.day !== day),
-      }));
-    } finally {
-      setPending(day, false);
-    }
+    setCalendar((current) =>
+      withDay(current, day, entry ? null : { day, source: "vendor", requestId: null }),
+    );
+    const listing = listingId;
+    const asked = round.current;
+    queue.current = queue.current.then(() => save(listing, day, entry, asked));
   };
 
   const [year, mon] = month.split("-");
@@ -193,14 +248,7 @@ export function Calendar({ t, headingRef, listings, listingId, onListing }: Cale
         </div>
         {calendar.state === "loading" ? <Loading t={t} /> : null}
         {calendar.state === "error" ? <LoadError t={t} onRetry={reload} /> : null}
-        {ready ? (
-          <MonthGrid
-            calendar={ready}
-            t={t}
-            pendingDays={pendingDays}
-            onToggle={(d, e) => void toggle(d, e)}
-          />
-        ) : null}
+        {ready ? <MonthGrid calendar={ready} t={t} pendingDays={pendingDays} onToggle={toggle} /> : null}
         <ul className="cal-legend">
           <li>
             <span className="dot dot-busy" />
@@ -222,7 +270,7 @@ export function Calendar({ t, headingRef, listings, listingId, onListing }: Cale
       </div>
       {message ? (
         <p className={message === "failed" ? "form-error" : "notice"} role="alert">
-          {message === "failed" ? t.calendarSaveFailed : t.staffLocked}
+          {t[MESSAGE_TEXT[message]]}
         </p>
       ) : null}
       <p className="note">

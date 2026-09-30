@@ -6,6 +6,7 @@ import type {
   AuditList,
   ClientDetail,
   ClientList,
+  ListingList,
   OutboxHealth,
   RevisionDetail,
   RevisionList,
@@ -736,6 +737,11 @@ describe("настройки", () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe("правки карточек", () => {
+  const EMPTY_LISTINGS: ListingList = {
+    total: 0,
+    items: [],
+    counts: { lead: 0, draft: 0, review: 0, active: 0, suspended: 0, rejected: 0 },
+  };
   const REVISION: RevisionDetail = {
     id: REVISION_ID,
     status: "pending",
@@ -743,6 +749,7 @@ describe("правки карточек", () => {
     decidedAt: null,
     listing: { id: LISTING_ID, name: "Oqsaroy Hall", status: "active" },
     vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+    proposedBy: { kind: "partner", name: null },
     fields: ["name", "priceFromUzs"],
     stale: true,
     changes: [
@@ -767,6 +774,69 @@ describe("правки карточек", () => {
     await mount("/moderation");
     expect(container.querySelector(`a[href="/revisions/${REVISION_ID}"]`)?.textContent).toBe("Oqsaroy Hall");
     expect(text()).toContain(t.revisionStale);
+    expect(text()).toContain(t.proposedBy("partner", null));
+    // Новых фото нет — пустая очередь словами
+    expect(text()).toContain(t.photoQueueEmpty);
+  });
+
+  it("правку предложил менеджер — в очереди и в сравнении видно кто", async () => {
+    const byStaff: RevisionDetail = { ...REVISION, proposedBy: { kind: "staff", name: "Test manager" } };
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 1, items: [byStaff] } satisfies RevisionList),
+      [`GET /api/staff/revisions/${REVISION_ID}`]: json(byStaff),
+    });
+    await mount("/moderation");
+    expect(text()).toContain(t.proposedBy("staff", "Test manager"));
+    act(() => root.unmount());
+    container.remove();
+
+    await mount(`/revisions/${REVISION_ID}`);
+    expect(text()).toContain(t.proposedBy("staff", "Test manager"));
+    expect(container.querySelector("thead")?.textContent).toContain(t.revisionProposed.staff);
+  });
+
+  it("новые фото: опубликованные карточки с фото на решении — ссылка на карточку и сколько ждут", async () => {
+    const PHOTO_LISTING_ID = "bbbbbbbb-0000-0000-0000-000000000002";
+    const queue: ListingList = {
+      total: 1,
+      items: [
+        {
+          id: PHOTO_LISTING_ID,
+          name: "Lola zali",
+          status: "active",
+          slug: "lola",
+          districtCode: null,
+          priceFromUzs: 150000,
+          priceUnit: "per_guest",
+          capMax: 200,
+          updatedAt: "2026-09-29T06:00:00.000Z",
+          blockers: [],
+          statusReason: null,
+          capMin: 20,
+          submittedAt: null,
+          vendor: { id: VENDOR_ID, code: "V102", name: "Lola" },
+          photos: { ready: 6, approved: 4, pending: 2 },
+        },
+      ],
+      counts: EMPTY_LISTINGS.counts,
+    };
+    mockApi(staff("moderator", MODERATOR), {
+      // Очередь фото — свой запрос; карточки на проверке — остальные запросы списка
+      "GET /api/staff/listings?photos=pending&limit=100": json(queue),
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+    });
+    await mount("/moderation");
+    expect(calls.some((c) => c.url === "/api/staff/listings?photos=pending&limit=100")).toBe(true);
+    const section = container.querySelector("section[aria-labelledby=photo-queue-title]");
+    expect(section?.querySelector("h2")?.textContent).toBe(t.photoQueue);
+    expect(section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}"]`)?.textContent).toBe("Lola zali");
+    expect(section?.textContent).toContain(t.pendingPhotos(2));
+    expect(section?.textContent).toContain("Lola · V102");
+    // Остальные очереди пусты
+    expect(text()).toContain(t.moderationEmpty);
+    expect(text()).toContain(t.revisionsEmpty);
   });
 
   it("сравнение «сейчас / предлагает»; отклонить — только с причиной", async () => {

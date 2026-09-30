@@ -2,19 +2,23 @@
 // подключении. Строка app.availability — день занят; нет строки — свободен.
 //
 //   GET /staff/listings/:id/availability?from=YYYY-MM-DD&to=YYYY-MM-DD
-//   PUT /staff/listings/:id/availability  { busy: [дни], free: [дни] }
+//   PUT /staff/listings/:id/availability  { version, busy: [дни], free: [дни] }
 //
 // Отметка сотрудника — source = staff. Снять можно любую отметку, в том числе
-// вендора: сотрудник правит календарь по его просьбе.
+// вендора: сотрудник правит календарь по его просьбе. Прошедшие дни (по Ташкенту)
+// не меняются — ни здесь, ни в базе (availability_guard): 422 date_out_of_range.
+// Календарь ведут и партнёр, и сотрудник: правка — только от версии, которую видел
+// сотрудник (calendar/version.ts), иначе 409 calendar_conflict — перечитать.
 
 import type { Availability, BusyDay } from "@bayramm/shared/api/staff";
 import { Hono } from "hono";
 import { staffOf } from "../auth/session";
+import { calendarVersion, lockCalendar, MAX_VERSION } from "../calendar/version";
 import { type Tx, withActor } from "../db/actor";
 import type { AppEnv } from "../env";
-import { notFound } from "../errors";
+import { ApiError, notFound } from "../errors";
 import { requirePermission } from "./access";
-import { invalidInput, limitJson, readBody } from "./input";
+import { Input, invalidInput, limitJson, readBody } from "./input";
 import { pathId } from "./shared";
 
 export const availability = new Hono<AppEnv>();
@@ -68,11 +72,10 @@ availability.get("/:id/availability", requirePermission("catalog.read"), async (
   const span = (Date.parse(to) - Date.parse(from)) / DAY_MS;
   if (span < 0 || span > MAX_RANGE_DAYS) throw invalidInput(["to"]);
 
-  const busy = await withActor(c.var.db, staffOf(c), async (trx) => {
+  const body: Availability = await withActor(c.var.db, staffOf(c), async (trx) => {
     await listingExists(trx, id);
-    return busyDays(trx, id, from, to);
+    return { from, to, busy: await busyDays(trx, id, from, to), version: await calendarVersion(trx, id) };
   });
-  const body: Availability = { from, to, busy };
   return c.json(body);
 });
 
@@ -85,13 +88,23 @@ function dayList(value: unknown, key: string): string[] {
 availability.put("/:id/availability", requirePermission("listings.write"), limitJson, async (c) => {
   const id = pathId(c.req.param("id"));
   const body = await readBody(c.req.raw);
+  const version = new Input(body).int("version", { min: 0, max: MAX_VERSION, required: true });
+  if (typeof version !== "number") throw invalidInput(["version"]);
   const busy = dayList(body.busy, "busy");
   const free = dayList(body.free, "free");
   if (busy.some((day) => free.includes(day))) throw invalidInput(["busy", "free"]);
+  // Прошлое не правится: база ответила бы так же, но без указания поля
+  const today = tashkentToday();
+  const past = [
+    ...(busy.some((day) => day < today) ? ["busy"] : []),
+    ...(free.some((day) => day < today) ? ["free"] : []),
+  ];
+  if (past.length > 0) throw new ApiError(422, "date_out_of_range", "Date is in the past", past);
   const all = [...busy, ...free].sort();
 
   const result = await withActor(c.var.db, staffOf(c), async (trx) => {
     await listingExists(trx, id);
+    await lockCalendar(trx, id, version);
     if (busy.length > 0) {
       await trx
         .insertInto("app.availability")
@@ -106,9 +119,9 @@ availability.put("/:id/availability", requirePermission("listings.write"), limit
         .where("day", "in", free)
         .execute();
     }
-    const from = all[0] ?? tashkentToday();
+    const from = all[0] ?? today;
     const to = all.at(-1) ?? from;
-    return { from, to, busy: await busyDays(trx, id, from, to) };
+    return { from, to, busy: await busyDays(trx, id, from, to), version: await calendarVersion(trx, id) };
   });
   const response: Availability = result;
   return c.json(response);

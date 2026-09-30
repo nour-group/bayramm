@@ -164,6 +164,21 @@ export function opsRevisionSubmitted(f: OpsRevisionFacts): string {
   );
 }
 
+/** Новые фото опубликованной карточки — команде: площадка, код вендора, сколько ждёт решения */
+export interface OpsPhotosFacts {
+  readonly listing: string;
+  readonly vendorCode: string;
+  readonly pending: number;
+}
+
+export function opsPhotosSubmitted(f: OpsPhotosFacts): string {
+  return (
+    `Новые фото на проверке: ${f.listing} (вендор ${f.vendorCode}).\n` +
+    `Ждут решения: ${f.pending}. Клиенты их не видят, пока фото не одобрят.\n` +
+    "Решение — в панели, раздел «Модерация»."
+  );
+}
+
 export interface OpsDeadFacts {
   readonly kind: string;
   readonly requestNo: string | null;

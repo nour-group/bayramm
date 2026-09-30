@@ -245,11 +245,15 @@ export interface ListingListItem extends ListingBrief {
   readonly capMin: number | null;
   readonly submittedAt: string | null;
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
-  /** Готовые фото и из них одобренные */
-  readonly photos: { readonly ready: number; readonly approved: number };
+  /** Готовые фото, из них одобренные и ждущие решения модератора */
+  readonly photos: { readonly ready: number; readonly approved: number; readonly pending: number };
 }
 
-/** GET /staff/listings?status=&q=&vendorId=&limit=&offset= */
+/**
+ * GET /staff/listings?status=&q=&vendorId=&photos=pending&limit=&offset=
+ * photos=pending — только опубликованные карточки с фото, которые ждут решения (очередь
+ * «Новые фото» в модерации: их загрузил партнёр или менеджер), старые загрузки первыми
+ */
 export interface ListingList {
   readonly total: number;
   readonly items: readonly ListingListItem[];
@@ -326,6 +330,26 @@ export interface ListingDetail {
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
   /** История статусов, новые сверху */
   readonly history: readonly ListingHistoryEntry[];
+  /** Правка карточки, которая ждёт решения модератора (от партнёра или менеджера) */
+  readonly pendingRevision: PendingRevision | null;
+}
+
+export interface PendingRevision {
+  readonly id: string;
+  readonly fields: readonly RevisionField[];
+  readonly submittedAt: string;
+  readonly proposedBy: RevisionAuthor;
+}
+
+/**
+ * PATCH /staff/listings/:id → 200. У опубликованной карточки название, цену, описания и
+ * пакеты сотрудник без права модерации (менеджер) не меняет сразу: изменённые поля уходят
+ * правкой на модерацию (app.listing_revisions, решает модератор или администратор), а
+ * остальные поля сохраняются. sentForModeration — какие поля ушли правкой (пусто — всё
+ * сохранено). Открытая правка уже есть — 409 revision_pending: сначала решение по ней
+ */
+export interface ListingSaveResult extends ListingDetail {
+  readonly sentForModeration: readonly RevisionField[];
 }
 
 /**
@@ -397,15 +421,21 @@ export interface BusyDay {
 
 /**
  * GET /staff/listings/:id/availability?from=YYYY-MM-DD&to=YYYY-MM-DD (не больше 400 дней)
- * PUT /staff/listings/:id/availability { busy: [дни], free: [дни] } — отметить и снять
+ * PUT /staff/listings/:id/availability { version, busy: [дни], free: [дни] } — отметить и
+ * снять; ответ — изменённые дни и новая версия. version — из последнего ответа: календарь
+ * с тех пор изменили (партнёр, другой сотрудник, отказ «занято») — 409 calendar_conflict,
+ * перечитать. Прошедший день по Ташкенту — 422 date_out_of_range (details — busy/free)
  */
 export interface Availability {
   readonly from: string;
   readonly to: string;
   readonly busy: readonly BusyDay[];
+  /** Версия календаря карточки (всех дней) — для следующей правки */
+  readonly version: number;
 }
 
 export interface AvailabilityInput {
+  readonly version: number;
   readonly busy?: readonly string[];
   readonly free?: readonly string[];
 }
@@ -823,6 +853,13 @@ export interface RevisionChange {
   readonly after: RevisionValue;
 }
 
+/** Кто предложил правку: партнёр из кабинета или сотрудник (менеджер) из панели */
+export interface RevisionAuthor {
+  readonly kind: "partner" | "staff";
+  /** Имя сотрудника; у партнёра — null (контакт — в карточке вендора) */
+  readonly name: string | null;
+}
+
 export interface RevisionListItem {
   readonly id: string;
   readonly status: RevisionStatus;
@@ -830,6 +867,7 @@ export interface RevisionListItem {
   readonly decidedAt: string | null;
   readonly listing: { readonly id: string; readonly name: string; readonly status: ListingStatus };
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
+  readonly proposedBy: RevisionAuthor;
   readonly fields: readonly RevisionField[];
   /** Карточку меняли после того, как вендор начал правку: сравните внимательно */
   readonly stale: boolean;
