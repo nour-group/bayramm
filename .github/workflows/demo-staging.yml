@@ -1,0 +1,122 @@
+name: Demo data (staging)
+
+# Демо-залы на staging для показа: seed — завести три вымышленных зала (вендор, карточка,
+# фото, пакеты, занятые дни; опубликованы теми же шагами, что в панели), reset — убрать
+# всё демо вместе с заявками на демо-залы. Только вручную и только staging: маршрут
+# POST /ops/demo есть лишь там (apps/api/src/routes/ops.ts). Оба режима можно запускать
+# сколько угодно раз: seed заводит только то, чего нет, reset убирает только демо.
+#
+# Фото рисует шаг ниже (apps/api/scripts/demo-photos.ts, sharp) — в репозитории их нет.
+# Ключ — секрет DEMO_SEED_KEY в GitHub Environment staging и тот же — в воркере API staging.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "seed — завести демо-залы, reset — убрать всё демо"
+        type: choice
+        options: [seed, reset]
+        default: seed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: demo-staging
+  cancel-in-progress: false
+
+jobs:
+  demo:
+    name: Demo ${{ inputs.mode }} (staging)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: staging
+      url: https://staging.bayramm.uz
+    env:
+      MODE: ${{ inputs.mode }}
+      API: https://api-staging.bayramm.uz
+    steps:
+      - if: inputs.mode == 'seed'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: inputs.mode == 'seed'
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - if: inputs.mode == 'seed'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # Только API и его пакеты: sharp для фото
+      - name: Install
+        if: inputs.mode == 'seed'
+        run: pnpm install --frozen-lockfile --filter @bayramm/api...
+
+      - name: Draw demo photos
+        if: inputs.mode == 'seed'
+        run: pnpm --filter @bayramm/api demo:photos "$RUNNER_TEMP/demo-photos"
+
+      - name: POST /ops/demo (${{ inputs.mode }})
+        env:
+          DEMO_SEED_KEY: ${{ secrets.DEMO_SEED_KEY }}
+        run: |
+          set -uo pipefail
+          if [ -z "$DEMO_SEED_KEY" ]; then
+            echo "::error::В environment staging не задан секрет DEMO_SEED_KEY"
+            exit 1
+          fi
+
+          # POST /ops/demo с полями формы "$@": ответ — в demo.json, HTTP-код — в $code.
+          # Оба режима идемпотентны: при сбое сети или 5xx — ещё раз
+          post() {
+            code=000
+            for attempt in 1 2 3; do
+              # Заголовок с ключом — через stdin (-H @-), не в аргументах команды
+              code=$(printf 'Authorization: Bearer %s\n' "$DEMO_SEED_KEY" |
+                curl -sS --max-time 120 -X POST -H @- "$@" \
+                  -o demo.json -w '%{http_code}' "$API/ops/demo" || true)
+              case "$code" in
+                000 | 5??) if [ "$attempt" -lt 3 ]; then echo "::warning::попытка $attempt: HTTP $code"; sleep 15; fi ;;
+                *) break ;;
+              esac
+            done
+            [ "$code" = 200 ] && return 0
+            case "$code" in
+              404) hint="маршрута нет: в воркере API staging не задан секрет DEMO_SEED_KEY или код ещё не выкачен" ;;
+              401) hint="DEMO_SEED_KEY в GitHub Environment staging и в воркере API различаются" ;;
+              429) hint="слишком часто — подождите минуту" ;;
+              # Код ошибки API и details (пункты готовности, поля) — без значений
+              *) hint=$(jq -r '(.error.code // "ошибка") + (if ((.error.details // []) | length) > 0
+                               then " " + (.error.details | join(",")) else "" end)' demo.json 2>/dev/null ||
+                        echo "см. логи воркера API") ;;
+            esac
+            echo "::error::POST $API/ops/demo ($MODE) ответил HTTP $code: $hint"
+            exit 1
+          }
+
+          if [ "$MODE" = seed ]; then
+            # По залу за запрос — каждый вызов воркера короткий. Фото — по три на зал, по порядку
+            photos=("$RUNNER_TEMP"/demo-photos/demo-*.webp)
+            totals='{"active":0,"vendors":0,"listings":0,"photos":0,"busyDays":0,"published":0}'
+            venue=1
+            venues=1
+            while [ "$venue" -le "$venues" ]; do
+              form=(-F mode=seed -F "venue=$venue")
+              for f in "${photos[@]:$(((venue - 1) * 3)):3}"; do form+=(-F "photo=@$f;type=image/webp"); done
+              post "${form[@]}"
+              venues=$(jq -r .venues demo.json)
+              totals=$(jq -c --argjson t "$totals" '{active: ($t.active + .active),
+                vendors: ($t.vendors + .created.vendors), listings: ($t.listings + .created.listings),
+                photos: ($t.photos + .created.photos), busyDays: ($t.busyDays + .created.busyDays),
+                published: ($t.published + .published)}' demo.json)
+              venue=$((venue + 1))
+            done
+            # Итог — только счётчики
+            summary=$(jq -r --arg venues "$venues" '"Демо-залов: \($venues), опубликовано: \(.active).\nЗаведено сейчас — вендоров: \(.vendors), карточек: \(.listings), фото: \(.photos), занятых дней: \(.busyDays); опубликовано сейчас: \(.published)."' <<<"$totals")
+          else
+            post -F mode=reset
+            summary=$(jq -r '"Убрано — вендоров: \(.removed.vendors), карточек: \(.removed.listings), фото: \(.removed.photos) (объектов в Storage: \(.storageObjects)), заявок: \(.removed.requests), пользователей кабинета: \(.removed.vendorUsers)."' demo.json)
+          fi
+          echo "$summary"
+          printf '### Demo data (staging): %s\n\n%s\n' "$MODE" "$summary" >> "$GITHUB_STEP_SUMMARY"
