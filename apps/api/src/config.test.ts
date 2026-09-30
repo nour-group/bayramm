@@ -55,6 +55,11 @@ describe("TURNSTILE_SITE_KEY в wrangler.jsonc API", () => {
   it.each([undefined, "staging", "production"])("%s — строка (пусто — проверки нет)", (env) => {
     expect(typeof read(API_CONFIG, env).vars.TURNSTILE_SITE_KEY).toBe("string");
   });
+
+  // Тестовые ключи Cloudflare (1x…, 2x…, 3x…) пропускают кого угодно — не в облаке
+  it.each(["staging", "production"])("%s — настоящий ключ виджета, не тестовый", (env) => {
+    expect(read(API_CONFIG, env).vars.TURNSTILE_SITE_KEY).toMatch(/^0x[\w-]{20,}$/);
+  });
 });
 
 describe("cron в wrangler.jsonc API", () => {
