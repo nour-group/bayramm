@@ -55,6 +55,35 @@ export const SECTION_PERMISSION: Readonly<Record<Section, StaffPermission>> = {
 /** Главный экран: сюда ведёт корень сайта и сюда попадают после входа */
 export const HOME: Section = "vendors";
 
+/**
+ * Нижняя панель телефона: разделы по тому, как часто в них заходят с телефона каждый день.
+ * Помещается пять кнопок; если разделов у роли больше — четыре первых и «Ещё» с остальными
+ */
+export const TAB_PRIORITY: readonly Section[] = [
+  "requests",
+  "moderation",
+  "vendors",
+  "metrics",
+  "clients",
+  "notifications",
+  "audit",
+  "team",
+  "settings",
+];
+
+export const TAB_SLOTS = 5;
+
+/** Разделы роли → кнопки нижней панели и то, что уходит в «Ещё» (в порядке NAV) */
+export function tabsFor(
+  sections: readonly Section[],
+  slots = TAB_SLOTS,
+): { readonly tabs: readonly Section[]; readonly more: readonly Section[] } {
+  const ranked = TAB_PRIORITY.filter((section) => sections.includes(section));
+  if (ranked.length <= slots) return { tabs: ranked, more: [] };
+  const tabs = ranked.slice(0, slots - 1);
+  return { tabs, more: NAV.filter((section) => sections.includes(section) && !tabs.includes(section)) };
+}
+
 /** Маршрут по пути. Корень — главный экран, неизвестный путь — null */
 export function matchRoute(pathname: string): Route | null {
   const path = trimTrailingSlashes(pathname) || "/";
@@ -146,12 +175,37 @@ export function sectionOf(view: View): Section {
   }
 }
 
+/** Экран объекта внутри раздела: у него есть «Назад» */
+export function isNested(view: View | null): boolean {
+  return view !== null && view.name !== sectionOf(view);
+}
+
+/**
+ * Куда «Назад», если панель открыли сразу на этом экране (истории внутри панели нет):
+ * новая карточка — к её вендору, остальное — к списку раздела
+ */
+export function parentOf(view: View): View {
+  if (view.name === "listingNew") return { name: "vendor", id: view.vendorId };
+  return { name: sectionOf(view) };
+}
+
+/* Номер записи истории внутри панели: переходы кладут его в history.state. 0 — первая
+   запись (панель открыли по ссылке или из бота): «Назад» из неё — к разделу, а не прочь */
+interface HistoryState {
+  readonly idx?: unknown;
+}
+
+export function historyIndex(): number {
+  const idx = (window.history.state as HistoryState | null)?.idx;
+  return typeof idx === "number" && idx > 0 ? idx : 0;
+}
+
 const isLoginPath = (pathname: string) => {
   const route = matchRoute(pathname);
   return route === "login" || route === "authCallback";
 };
 
-export type Navigate = (view: View) => void;
+export type Navigate = (view: View, options?: { readonly replace?: boolean }) => void;
 
 /** Текущий экран по адресной строке и переход без перезагрузки */
 export function useRoute(): readonly [View | null, Navigate] {
@@ -169,11 +223,25 @@ export function useRoute(): readonly [View | null, Navigate] {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const navigate = useCallback((view: View) => {
+  const navigate = useCallback<Navigate>((view, options) => {
     const next = pathOf(view);
-    if (window.location.pathname !== next) window.history.pushState(null, "", next);
+    if (options?.replace) window.history.replaceState({ idx: historyIndex() }, "", next);
+    else if (window.location.pathname !== next)
+      window.history.pushState({ idx: historyIndex() + 1 }, "", next);
     setPath(next);
   }, []);
 
   return [isLoginPath(path) ? { name: HOME } : parseView(path), navigate] as const;
+}
+
+/**
+ * «Назад» экрана объекта: по истории, если в панели уже переходили (как кнопка браузера),
+ * иначе — к родительскому экрану вместо записи истории
+ */
+export function goBack(view: View | null, navigate: Navigate): void {
+  if (historyIndex() > 0) {
+    window.history.back();
+    return;
+  }
+  navigate(view ? parentOf(view) : { name: HOME }, { replace: true });
 }

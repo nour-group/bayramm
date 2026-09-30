@@ -52,7 +52,14 @@ export default defineConfig({
     { name: "web-phone", testDir: "web", use: { ...phone, baseURL: APPS.web } },
     { name: "web-desktop", testDir: "web", use: { ...desktop, baseURL: APPS.web } },
     { name: "vendor-phone", testDir: "vendor", use: { ...phone, baseURL: APPS.vendor } },
-    { name: "admin-desktop", testDir: "admin", use: { ...desktop, baseURL: APPS.admin } },
+    // Панель — и Mini App на телефоне: те же проверки плюс телефонные (mobile.spec.ts — только тут)
+    {
+      name: "admin-desktop",
+      testDir: "admin",
+      testIgnore: "mobile.spec.ts",
+      use: { ...desktop, baseURL: APPS.admin },
+    },
+    { name: "admin-phone", testDir: "admin", use: { ...phone, baseURL: APPS.admin } },
     { name: "hub-desktop", testDir: "hub", use: { ...desktop, baseURL: APPS.web } },
   ],
   webServer: [

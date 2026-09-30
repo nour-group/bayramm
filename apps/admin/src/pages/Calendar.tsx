@@ -3,7 +3,10 @@
    Календарь ведут и вендор, и команда: правка уходит с версией календаря из последнего
    ответа. Его успели изменить (вендор, другой сотрудник, отказ «занято») — сервер отвечает
    calendar_conflict: месяц перечитывается, сотрудник отмечает день ещё раз. Правки идут
-   по одной — дни неактивны, пока не пришёл ответ. */
+   по одной — дни неактивны, пока не пришёл ответ.
+   «Несколько дней»: первое нажатие — начало, второе — конец (пальцем, без перетаскивания,
+   можно и через месяц), затем «Занять» или «Освободить» — одной правкой. Прошедшие дни в
+   выбор не входят. Клетка дня — не меньше 44px: месяц на телефоне выходит за поля страницы. */
 
 import type { Availability, AvailabilityInput, BusyDay } from "@bayramm/shared/api/staff";
 import { Tooltip } from "@bayramm/ui/react";
@@ -44,6 +47,35 @@ export function monthTitle(month: string): string {
 }
 const dayTitle = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 
+/** Не больше, чем сервер примет одной правкой */
+const MAX_RANGE = 400;
+
+/**
+ * Дни выбора «несколько дней» по порядку, от раннего к позднему (концы можно выбрать в любом
+ * порядке); прошедшие до today — не входят
+ */
+export function rangeDays(a: string, b: string, today: string): string[] {
+  const [from, to] = a <= b ? [a, b] : [b, a];
+  const days: string[] = [];
+  for (let d = Date.parse(`${from}T00:00:00Z`); days.length < MAX_RANGE; d += DAY_MS) {
+    const day = new Date(d).toISOString().slice(0, 10);
+    if (day > to) break;
+    if (day >= today) days.push(day);
+  }
+  return days;
+}
+
+/** Вливает ответ правки (занятые дни на его отрезке) в показанный месяц */
+export function mergeBusy(current: Availability, result: Availability): Availability {
+  // Вне отрезка ответа — как было; на отрезке — как ответил сервер (дни за краем месяца
+  // сетка просто не показывает)
+  const others = current.busy.filter((b) => b.day < result.from || b.day > result.to);
+  const busy = [...others, ...result.busy].sort((a, b) => a.day.localeCompare(b.day));
+  return { ...current, busy, version: result.version };
+}
+
+type Range = { readonly start: string; readonly end: string | null };
+
 export function Calendar({ listingId }: { listingId: string }) {
   const { api } = useSession();
   const can = useCan();
@@ -59,7 +91,11 @@ export function Calendar({ listingId }: { listingId: string }) {
   shown.current = path;
   const [failure, setFailure] = useState<Failure | null>(null);
   const [pending, setPending] = useState<string | null>(null);
+  // Выбор нескольких дней: null — обычный режим (нажатие отмечает день сразу)
+  const [ranging, setRanging] = useState(false);
+  const [range, setRange] = useState<Range | null>(null);
   const editable = can("listings.write");
+  const selected = range ? rangeDays(range.start, range.end ?? range.start, today) : [];
 
   // Сообщение об ошибке — про месяц, где отмечали: в другом месяце оно только путает
   const goMonth = (delta: number) => {
@@ -67,19 +103,14 @@ export function Calendar({ listingId }: { listingId: string }) {
     setMonth(shiftMonth(month, delta));
   };
 
-  const toggle = async (day: string, busy: BusyDay | undefined, current: Availability) => {
+  const send = async (key: string, input: AvailabilityInput, current: Availability) => {
     const at = path;
-    setPending(day);
+    setPending(key);
     setFailure(null);
-    const input: AvailabilityInput = busy
-      ? { version: current.version, free: [day] }
-      : { version: current.version, busy: [day] };
     const result = await api.put<Availability>(`/staff/listings/${listingId}/availability`, input);
     if (result.ok && shown.current === at) {
-      // Ответ — только про изменённый день и новая версия: вливаем в месяц
-      const others = current.busy.filter((b) => b.day !== day);
-      const merged = [...others, ...result.data.busy].sort((a, b) => a.day.localeCompare(b.day));
-      set({ ...current, busy: merged, version: result.data.version });
+      // Ответ — только про изменённые дни и новая версия: вливаем в месяц
+      set(mergeBusy(current, result.data));
     } else if (!result.ok && shown.current === at) {
       setFailure(result);
       // Календарь изменили: показываем актуальный месяц, дни неактивны, пока он не пришёл
@@ -90,10 +121,39 @@ export function Calendar({ listingId }: { listingId: string }) {
       }
     }
     setPending(null);
+    return result.ok;
+  };
+
+  const toggle = (day: string, busy: BusyDay | undefined, current: Availability) =>
+    void send(
+      day,
+      busy ? { version: current.version, free: [day] } : { version: current.version, busy: [day] },
+      current,
+    );
+
+  const pick = (day: string) => {
+    // Первое нажатие — начало; второе — конец; третье — новый выбор
+    if (!range || range.end !== null) setRange({ start: day, end: null });
+    else setRange({ start: range.start, end: day });
+  };
+
+  const applyRange = async (mark: "busy" | "free", current: Availability) => {
+    if (selected.length === 0) return;
+    const ok = await send("range", { version: current.version, [mark]: selected }, current);
+    if (ok) {
+      setRange(null);
+      setRanging(false);
+    }
+  };
+
+  const toggleRanging = () => {
+    setRanging(!ranging);
+    setRange(null);
+    setFailure(null);
   };
 
   return (
-    <section className="panel" aria-labelledby="calendar-title">
+    <section className="panel cal-panel" aria-labelledby="calendar-title">
       <h2 id="calendar-title">{t.availability}</h2>
       <p className="muted small">{t.availabilityHint}</p>
       <div className="cal-head">
@@ -107,44 +167,107 @@ export function Calendar({ listingId }: { listingId: string }) {
           →
         </button>
       </div>
-      <LoadedView loaded={loaded} onRetry={reload}>
+      {editable && (
+        <div className="cal-tools">
+          <button type="button" className="chip" aria-pressed={ranging} onClick={toggleRanging}>
+            {t.rangeMode}
+          </button>
+          {ranging && (
+            <p className="muted small" aria-live="polite">
+              {range === null
+                ? t.rangePickStart
+                : range.end === null
+                  ? t.rangePickEnd
+                  : t.rangeChosen(selected.length)}
+            </p>
+          )}
+        </div>
+      )}
+      <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
         {(availability) => {
           const busyByDay = new Map(availability.busy.map((b) => [b.day, b]));
+          const inRange = new Set(selected);
           return (
-            <div className="cal">
-              {t.weekdays.map((name) => (
-                <span key={name} className="cal-wd" aria-hidden="true">
-                  {name}
-                </span>
-              ))}
-              {Array.from({ length: offset }, (_, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: пустые клетки перед первым числом
-                <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />
-              ))}
-              {days.map((day) => {
-                const busy = busyByDay.get(day);
-                const past = day < today;
-                const label = `${dayTitle.format(new Date(`${day}T00:00:00Z`))}${busy ? ` — ${t.busy}, ${t.busySources[busy.source] ?? ""}` : ""}`;
-                // Подсказка под мышью повторяет aria-label: диктору её не дублируем
-                return (
-                  <Tooltip key={day} text={label} describe={false}>
-                    {(tip) => (
-                      <button
-                        {...tip}
-                        type="button"
-                        className={`cal-day${busy ? " cal-busy" : ""}${day === today ? " cal-today" : ""}`}
-                        aria-pressed={Boolean(busy)}
-                        aria-label={label}
-                        disabled={!editable || past || pending !== null}
-                        onClick={() => void toggle(day, busy, availability)}
-                      >
-                        {Number(day.slice(8))}
-                      </button>
-                    )}
-                  </Tooltip>
-                );
-              })}
-            </div>
+            <>
+              <div className="cal">
+                {t.weekdays.map((name) => (
+                  <span key={name} className="cal-wd" aria-hidden="true">
+                    {name}
+                  </span>
+                ))}
+                {Array.from({ length: offset }, (_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: пустые клетки перед первым числом
+                  <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />
+                ))}
+                {days.map((day) => {
+                  const busy = busyByDay.get(day);
+                  const past = day < today;
+                  const chosen = inRange.has(day);
+                  const label = `${dayTitle.format(new Date(`${day}T00:00:00Z`))}${busy ? ` — ${t.busy}, ${t.busySources[busy.source] ?? ""}` : ""}${chosen ? `, ${t.rangeInside}` : ""}`;
+                  // Подсказка под мышью повторяет aria-label: диктору её не дублируем
+                  return (
+                    <Tooltip key={day} text={label} describe={false}>
+                      {(tip) => (
+                        <button
+                          {...tip}
+                          type="button"
+                          className={`cal-day${busy ? " cal-busy" : ""}${day === today ? " cal-today" : ""}${chosen ? " cal-chosen" : ""}`}
+                          aria-pressed={Boolean(busy)}
+                          aria-label={label}
+                          disabled={!editable || past || pending !== null}
+                          onClick={() => (ranging ? pick(day) : toggle(day, busy, availability))}
+                        >
+                          {Number(day.slice(8))}
+                        </button>
+                      )}
+                    </Tooltip>
+                  );
+                })}
+              </div>
+              <ul className="cal-legend" aria-label={t.legend}>
+                <li>
+                  <span className="cal-key cal-key-free" aria-hidden="true" />
+                  {t.legendFree}
+                </li>
+                <li>
+                  <span className="cal-key cal-key-busy" aria-hidden="true" />
+                  {t.legendBusy}
+                </li>
+                <li>
+                  <span className="cal-key cal-key-today" aria-hidden="true" />
+                  {t.legendToday}
+                </li>
+                {ranging && (
+                  <li>
+                    <span className="cal-key cal-key-chosen" aria-hidden="true" />
+                    {t.legendChosen}
+                  </li>
+                )}
+              </ul>
+              {ranging && selected.length > 0 && range?.end !== null && (
+                <div className="acts cal-range-acts">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={pending !== null}
+                    onClick={() => void applyRange("busy", availability)}
+                  >
+                    {t.rangeBusy(selected.length)}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={pending !== null}
+                    onClick={() => void applyRange("free", availability)}
+                  >
+                    {t.rangeFree}
+                  </button>
+                  <button type="button" className="btn" onClick={() => setRange(null)}>
+                    {t.cancel}
+                  </button>
+                </div>
+              )}
+            </>
           );
         }}
       </LoadedView>

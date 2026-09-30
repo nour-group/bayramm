@@ -398,6 +398,40 @@ describe("карточка: занятые дни", () => {
     expect(container.querySelector("[role=alert]")).toBeNull();
   });
 
+  it("несколько дней: начало и конец нажатием, «Занять» — одной правкой с версией", async () => {
+    mockApi(staff("manager", MANAGER), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
+      [`GET ${AVAILABILITY}`]: json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 4 }),
+      [`PUT ${AVAILABILITY}`]: (body) => {
+        const input = body as { busy: string[]; version: number };
+        return json({
+          from: input.busy[0],
+          to: input.busy.at(-1),
+          busy: input.busy.map((day) => ({ day, source: "staff" })),
+          version: input.version + 1,
+        })(body);
+      },
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    await act(async () => button(t.rangeMode)?.click());
+    const days = [...container.querySelectorAll<HTMLButtonElement>(".cal-day:not(:disabled)")];
+    const [first, , third] = days;
+    await act(async () => first?.click());
+    expect(text()).toContain(t.rangePickEnd);
+    // Отметка дня в этом режиме сразу не уходит
+    expect(puts()).toHaveLength(0);
+    await act(async () => third?.click());
+    expect(container.querySelectorAll(".cal-chosen")).toHaveLength(3);
+    await act(async () => button(t.rangeBusy(3))?.click());
+    await settle();
+    expect(puts()[0]?.body).toMatchObject({ version: 4 });
+    expect((puts()[0]?.body as { busy?: string[] } | undefined)?.busy).toHaveLength(3);
+    expect(first?.getAttribute("aria-pressed")).toBe("true");
+    expect(third?.getAttribute("aria-pressed")).toBe("true");
+    // Выбор закончен — снова обычный режим
+    expect(container.querySelector(".cal-chosen")).toBeNull();
+  });
+
   it("календарь успели изменить — месяц перечитывается, сотрудник видит почему", async () => {
     let reads = 0;
     mockApi(staff("manager", MANAGER), {

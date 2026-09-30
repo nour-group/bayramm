@@ -7,11 +7,21 @@
 import { normalizeUzPhone } from "@bayramm/shared";
 import type { StaffRole, TeamInviteInput, TeamList, TeamMember } from "@bayramm/shared/api/staff";
 import { RadioGroup, Select } from "@bayramm/ui/react";
-import { type FormEvent, useId, useState } from "react";
+import { type FormEvent, useId, useRef, useState } from "react";
 import { type Failure, useAuthMethods, useLoad, useSession } from "../api";
 import { formatMoment } from "../format";
+import { usePhone } from "../layout";
 import { t } from "../texts";
-import { ConfirmForm, ErrorText, Field, fieldErrors, LoadedView, Pill } from "../ui";
+import {
+  ConfirmForm,
+  ErrorText,
+  Field,
+  fieldErrors,
+  LoadedView,
+  PhoneSheet,
+  Pill,
+  useRevealErrors,
+} from "../ui";
 
 const ROLES: readonly StaffRole[] = ["admin", "manager", "moderator"];
 const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: t.roles[role] }));
@@ -56,6 +66,7 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
     role: t.inviteRole,
   });
   const contact = by === "phone" ? phone : username;
+  const form = useRevealErrors(failure);
 
   const choose = (next: InviteBy) => {
     setBy(next);
@@ -92,7 +103,7 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
 
   const hint = by === "telegram" ? t.inviteHint : methods?.phone ? t.inviteHintPhone : t.inviteHintPhoneOff;
   return (
-    <form className="fs" onSubmit={submit} noValidate>
+    <form ref={form} className="fs" onSubmit={submit} noValidate>
       <div className="fs-head">
         <h2>{t.inviteTitle}</h2>
         <p>{hint}</p>
@@ -116,6 +127,8 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
               className="input"
               value={displayName}
               maxLength={80}
+              autoComplete="off"
+              enterKeyHint="next"
               onChange={(event) => setDisplayName(event.target.value)}
             />
           )}
@@ -132,6 +145,7 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
                 placeholder="+998 90 123 45 67"
                 value={phone}
                 maxLength={24}
+                enterKeyHint="send"
                 onChange={(event) => setPhone(event.target.value)}
               />
             )}
@@ -146,7 +160,9 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
                 maxLength={33}
                 placeholder="@username"
                 autoCapitalize="none"
+                autoComplete="off"
                 spellCheck={false}
+                enterKeyHint="send"
                 onChange={(event) => setUsername(event.target.value)}
               />
             )}
@@ -185,6 +201,15 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
 }
 
 function Members({ list, onChange }: { list: TeamList; onChange: (list: TeamList) => void }) {
+  const phone = usePhone();
+  if (phone)
+    return (
+      <ul className="rcards" aria-label={t.team}>
+        {list.items.map((member) => (
+          <MemberCard key={member.id} member={member} onChange={onChange} />
+        ))}
+      </ul>
+    );
   return (
     <div className="table-wrap">
       <table className="table">
@@ -208,9 +233,9 @@ function Members({ list, onChange }: { list: TeamList; onChange: (list: TeamList
   );
 }
 
-function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
+/** Роль и включение сотрудника: общее для строки таблицы и карточки телефона */
+function useMember(member: TeamMember, onChange: (list: TeamList) => void) {
   const { api } = useSession();
-  const roleId = useId();
   const [role, setRole] = useState<StaffRole>(member.role);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -233,6 +258,96 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
     onChange(result.data);
     return null;
   };
+
+  return { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle };
+}
+
+function linkState(member: TeamMember): string {
+  if (member.linked && member.linkedAt) return t.memberLinked(formatMoment(member.linkedAt));
+  return member.accepted ? t.memberAccepted : t.memberPending;
+}
+
+function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
+  const roleId = useId();
+  const toggleButton = useRef<HTMLButtonElement>(null);
+  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = useMember(
+    member,
+    onChange,
+  );
+  return (
+    <li className="rcard">
+      <div className="rcard-head">
+        <p className="rcard-title">{member.displayName}</p>
+        {member.active ? (
+          <Pill tone="outline">{t.memberActive}</Pill>
+        ) : (
+          <Pill tone="muted">{t.memberInactive}</Pill>
+        )}
+      </div>
+      <p className="rcard-meta">
+        {member.self ? `${t.you} · ` : ""}
+        {member.username ? `@${member.username}` : member.invitedBy === "phone" ? t.invitedByPhone : t.none}
+      </p>
+      <p className="rcard-meta">{linkState(member)}</p>
+      {member.self || !member.active ? (
+        <p className="rcard-meta">
+          {t.colRole}: {t.roles[member.role]}
+        </p>
+      ) : (
+        <div className="rcard-actions role-edit">
+          <Select
+            id={roleId}
+            className="input"
+            label={`${t.changeRole}: ${member.displayName}`}
+            value={role}
+            onChange={setRole}
+            options={ROLE_OPTIONS}
+          />
+          {role !== member.role && (
+            <button type="button" className="btn" onClick={changeRole} disabled={busy}>
+              {t.changeRole}
+            </button>
+          )}
+        </div>
+      )}
+      {!member.self && (
+        <div className="rcard-actions">
+          <button
+            ref={toggleButton}
+            type="button"
+            className={`btn${member.active ? " btn-danger" : ""}`}
+            aria-expanded={confirming}
+            onClick={() => setConfirming(true)}
+          >
+            {member.active ? t.deactivate : t.activate}
+          </button>
+        </div>
+      )}
+      <PhoneSheet
+        open={confirming}
+        title={member.active ? t.deactivate : t.activate}
+        onClose={() => setConfirming(false)}
+        returnFocus={toggleButton}
+      >
+        <ConfirmForm
+          hint={member.active ? t.deactivateHint : t.activate}
+          submitLabel={member.active ? t.deactivate : t.activate}
+          danger={member.active}
+          onSubmit={toggle}
+          onCancel={() => setConfirming(false)}
+        />
+      </PhoneSheet>
+      {failure && <ErrorText failure={failure} />}
+    </li>
+  );
+}
+
+function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
+  const roleId = useId();
+  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = useMember(
+    member,
+    onChange,
+  );
 
   return (
     <tr>
@@ -270,13 +385,7 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
         ) : (
           <Pill tone="muted">{t.memberInactive}</Pill>
         )}
-        <span className="sub">
-          {member.linked && member.linkedAt
-            ? t.memberLinked(formatMoment(member.linkedAt))
-            : member.accepted
-              ? t.memberAccepted
-              : t.memberPending}
-        </span>
+        <span className="sub">{linkState(member)}</span>
       </td>
       <td>
         {!member.self &&

@@ -14,11 +14,13 @@ import type {
   VendorResponseStats,
   WeeklyMetrics,
 } from "@bayramm/shared/api/staff";
+import { Dialog, RadioGroup } from "@bayramm/ui/react";
 import { useState } from "react";
 import { useLoad } from "../api";
 import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel } from "../format";
+import { usePhone } from "../layout";
 import { t } from "../texts";
-import { Link, LoadedView, Pill, StatusPill } from "../ui";
+import { FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
 
 /** Меньше половины заявок отвечено в срок — полоса коралловая */
 const RATE_LOW = 50;
@@ -39,7 +41,7 @@ export function MetricsPage() {
   const vendors = useLoad<VendorMetricsList>("/staff/metrics/vendors");
   return (
     <div className="stack">
-      <LoadedView loaded={overview.loaded} onRetry={overview.reload}>
+      <LoadedView loaded={overview.loaded} onRetry={overview.reload} skeleton="stats">
         {(data) => (
           <>
             <section className="stack" aria-labelledby="queues-title">
@@ -114,6 +116,41 @@ function Rate({ stats }: { stats: Pick<ResponseStats, "answeredRate" | "answered
 // ── по неделям ─────────────────────────────────────────────────────────────
 
 function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
+  const phone = usePhone();
+  if (phone)
+    return (
+      <ul className="rcards">
+        {weeks.map((week) => (
+          <li key={week.weekStart} className="rcard">
+            <div className="rcard-head">
+              <p className="rcard-title">{formatWeek(week.weekStart)}</p>
+              {week.partial && <Pill tone="outline">{t.weekNow}</Pill>}
+            </div>
+            <p className="rcard-meta">{week.weekLabel}</p>
+            <Rate stats={week} />
+            <dl className="rcard-facts">
+              <dt>{t.colRequests}</dt>
+              <dd>
+                {week.requests} · {t.clientsCount(week.clients)}
+              </dd>
+              <dt>{t.colResponseTime}</dt>
+              <dd>
+                {t.medianTime(formatDuration(week.medianResponseMinutes))} ·{" "}
+                {t.p90Time(formatDuration(week.p90ResponseMinutes))}
+              </dd>
+              <dt>{t.colAgreed}</dt>
+              <dd>
+                {week.agreed} · {formatPercent(week.agreedRate)}
+              </dd>
+              <dt>{t.colBreaches}</dt>
+              <dd>{week.slaBreaches}</dd>
+              <dt>{t.colDead}</dt>
+              <dd>{week.deadNotifications}</dd>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    );
   return (
     <div className="table-wrap">
       <table className="table">
@@ -218,9 +255,88 @@ function SortHeader({
   );
 }
 
+/** Сортировки шторки телефона: столбец и направление — одним выбором */
+const SORT_OPTIONS: readonly { readonly value: string; readonly sort: Sort; readonly label: string }[] = [
+  { value: "rate-asc", sort: { key: "rate", dir: "asc" }, label: t.sortRateAsc },
+  { value: "rate-desc", sort: { key: "rate", dir: "desc" }, label: t.sortRateDesc },
+  { value: "requests-desc", sort: { key: "requests", dir: "desc" }, label: t.sortRequestsDesc },
+  { value: "median-desc", sort: { key: "median", dir: "desc" }, label: t.sortMedianDesc },
+];
+
+const sortValue = (sort: Sort) => `${sort.key}-${sort.dir}`;
+
+function VendorCards({
+  rows,
+  sort,
+  onSort,
+}: {
+  rows: VendorMetrics[];
+  sort: Sort;
+  onSort: (s: Sort) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const chosen = SORT_OPTIONS.find((option) => option.value === sortValue(sort));
+  return (
+    <div className="stack">
+      <div className="toolbar">
+        <FilterButton count={0} open={open} onOpen={() => setOpen(true)} label={t.sort} />
+        {chosen ? <span className="muted small">{chosen.label}</span> : null}
+      </div>
+      <Dialog
+        open={open}
+        title={t.sort}
+        onClose={() => setOpen(false)}
+        actions={
+          <button type="button" className="ui-btn ui-btn-primary sheet-done" onClick={() => setOpen(false)}>
+            {t.done}
+          </button>
+        }
+      >
+        <RadioGroup
+          variant="row"
+          label={t.sort}
+          value={chosen?.value ?? null}
+          onChange={(value) => {
+            const next = SORT_OPTIONS.find((option) => option.value === value);
+            if (next) onSort(next.sort);
+          }}
+          options={SORT_OPTIONS.map(({ value, label }) => ({ value, label }))}
+        />
+      </Dialog>
+      <ul className="rcards">
+        {rows.map((row) => (
+          <li key={row.vendor.id} className="rcard rcard-tap">
+            <div className="rcard-head">
+              <Link to={{ name: "vendor", id: row.vendor.id }} className="rcard-link">
+                {vendorLabel(row.vendor)}
+              </Link>
+            </div>
+            <p className="rcard-meta">{t.activeListings(row.activeListings)}</p>
+            <Rate stats={row} />
+            <dl className="rcard-facts">
+              <dt>{t.colRequests}</dt>
+              <dd>{row.requests}</dd>
+              <dt>{t.colMedian}</dt>
+              <dd>{formatDuration(row.medianResponseMinutes)}</dd>
+              <dt>{t.colBreaches}</dt>
+              <dd>{row.slaBreaches}</dd>
+              <dt>{t.colAgreed}</dt>
+              <dd>{row.agreed}</dd>
+              <dt>{t.colLastRequest}</dt>
+              <dd>{formatMoment(row.lastRequestAt)}</dd>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
+  const phone = usePhone();
   const [sort, setSort] = useState<Sort>({ key: "rate", dir: "asc" });
   const rows = sortVendors(items, sort);
+  if (phone) return <VendorCards rows={rows} sort={sort} onSort={setSort} />;
   return (
     <div className="table-wrap">
       <table className="table">
@@ -307,6 +423,29 @@ function ResponseList({ stats }: { stats: ResponseStats }) {
 }
 
 function ListingTable({ listings }: { listings: readonly ListingMetrics[] }) {
+  const phone = usePhone();
+  if (phone)
+    return (
+      <ul className="rcards">
+        {listings.map((row) => (
+          <li key={row.listing.id} className="rcard rcard-tap">
+            <div className="rcard-head">
+              <Link to={{ name: "listing", id: row.listing.id }} className="rcard-link">
+                {row.listing.name}
+              </Link>
+              <StatusPill status={row.listing.status} />
+            </div>
+            <Rate stats={row} />
+            <dl className="rcard-facts">
+              <dt>{t.colRequests}</dt>
+              <dd>{row.requests}</dd>
+              <dt>{t.colMedian}</dt>
+              <dd>{formatDuration(row.medianResponseMinutes)}</dd>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    );
   return (
     <div className="table-wrap">
       <table className="table table-compact">

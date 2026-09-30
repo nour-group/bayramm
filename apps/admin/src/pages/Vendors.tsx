@@ -1,11 +1,12 @@
 /* Вендоры: поиск, фильтр по статусу карточек, таблица. Строка ведёт на страницу вендора. */
 
 import type { ListingStatus, VendorList } from "@bayramm/shared/api/staff";
-import { SearchField } from "@bayramm/ui/react";
+import { Dialog, RadioGroup, SearchField } from "@bayramm/ui/react";
 import { useEffect, useState } from "react";
 import { useCan, useLoad } from "../api";
+import { usePhone } from "../layout";
 import { t } from "../texts";
-import { Link, LoadedView, StatusPill } from "../ui";
+import { ActionBar, ActiveFilter, FilterButton, Link, LoadedView, StatusPill } from "../ui";
 
 const FILTERS: readonly (ListingStatus | null)[] = [
   null,
@@ -29,8 +30,10 @@ function useDebounced<T>(value: T, ms = 300): T {
 
 export function VendorsPage() {
   const can = useCan();
+  const phone = usePhone();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<ListingStatus | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const query = useDebounced(q.trim());
   const params = new URLSearchParams({ limit: "100" });
   if (query) params.set("q", query);
@@ -48,30 +51,117 @@ export function VendorsPage() {
           aria-label={t.search}
           maxLength={100}
         />
-        {can("vendors.write") && (
+        {phone ? (
+          <FilterButton count={status ? 1 : 0} open={filtersOpen} onOpen={() => setFiltersOpen(true)} />
+        ) : null}
+        {can("vendors.write") && !phone && (
           <Link to={{ name: "vendorNew" }} className="btn btn-primary">
             {t.newVendor}
           </Link>
         )}
       </div>
-      <fieldset className="chips">
-        <legend className="visually-hidden">{t.listingFields.status}</legend>
-        {FILTERS.map((filter) => (
-          <button
-            key={filter ?? "all"}
-            type="button"
-            className="chip"
-            aria-pressed={status === filter}
-            onClick={() => setStatus(filter)}
-          >
-            {filter ? t.status[filter] : t.all}
-          </button>
-        ))}
-      </fieldset>
+      {phone && status ? <ActiveFilter label={t.status[status]} onClear={() => setStatus(null)} /> : null}
+      {phone ? (
+        <Dialog
+          open={filtersOpen}
+          title={t.filters}
+          onClose={() => setFiltersOpen(false)}
+          actions={
+            <>
+              <button type="button" className="ui-btn ui-btn-secondary" onClick={() => setStatus(null)}>
+                {t.reset}
+              </button>
+              <button type="button" className="ui-btn ui-btn-primary" onClick={() => setFiltersOpen(false)}>
+                {t.done}
+              </button>
+            </>
+          }
+        >
+          <RadioGroup<ListingStatus | "all">
+            variant="row"
+            label={t.listingFields.status ?? ""}
+            value={status ?? "all"}
+            onChange={(value) => setStatus(value === "all" ? null : value)}
+            options={FILTERS.map((filter) => ({
+              value: filter ?? "all",
+              label: filter ? t.status[filter] : t.all,
+            }))}
+          />
+        </Dialog>
+      ) : (
+        <fieldset className="chips">
+          <legend className="visually-hidden">{t.listingFields.status}</legend>
+          {FILTERS.map((filter) => (
+            <button
+              key={filter ?? "all"}
+              type="button"
+              className="chip"
+              aria-pressed={status === filter}
+              onClick={() => setStatus(filter)}
+            >
+              {filter ? t.status[filter] : t.all}
+            </button>
+          ))}
+        </fieldset>
+      )}
+      {/* Телефон: «Новый вендор» — в панели действий внизу, под большим пальцем */}
+      {can("vendors.write") && phone ? (
+        <ActionBar label={t.vendors}>
+          <Link to={{ name: "vendorNew" }} className="btn btn-primary">
+            {t.newVendor}
+          </Link>
+        </ActionBar>
+      ) : null}
       <LoadedView loaded={loaded} onRetry={reload}>
         {(list) =>
           list.items.length === 0 ? (
             <p className="empty">{query || status ? t.vendorsEmpty : t.vendorsEmptyAll}</p>
+          ) : phone ? (
+            <>
+              <ul className="rcards">
+                {list.items.map((vendor) => {
+                  const done = Object.values(vendor.checklist).filter(Boolean).length;
+                  return (
+                    <li key={vendor.id} className="rcard rcard-tap">
+                      <div className="rcard-head">
+                        <Link to={{ name: "vendor", id: vendor.id }} className="rcard-link">
+                          {vendor.name ?? vendor.legalName ?? vendor.code}
+                        </Link>
+                        <span className={`ring${done === 4 ? " ring-done" : ""}`}>
+                          <span className="visually-hidden">{t.colChecklist}: </span>
+                          {done}/4
+                        </span>
+                      </div>
+                      <p className="rcard-meta">
+                        {vendor.code}
+                        {vendor.managerName ? ` · ${vendor.managerName}` : ""}
+                      </p>
+                      <dl className="rcard-facts">
+                        <dt>{t.colContact}</dt>
+                        <dd>
+                          {vendor.contactPerson ?? t.none}
+                          {vendor.legalName ? ` · ${vendor.legalName}` : ""}
+                        </dd>
+                        <dt>{t.colCabinet}</dt>
+                        <dd>{t.cabinetUsers(vendor.users, vendor.linkedUsers)}</dd>
+                      </dl>
+                      {vendor.listings.length === 0 ? (
+                        <p className="rcard-meta">{t.noListings}</p>
+                      ) : (
+                        <ul className="rcard-tags" aria-label={t.colListings}>
+                          {vendor.listings.map((listing) => (
+                            <li key={listing.id}>
+                              {listing.name} <StatusPill status={listing.status} />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="muted small">{t.total(list.total)}</p>
+            </>
           ) : (
             <>
               <div className="table-wrap">

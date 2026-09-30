@@ -11,11 +11,11 @@ import type {
   VendorUser,
   VendorUserInput,
 } from "@bayramm/shared/api/staff";
-import { Checkbox } from "@bayramm/ui/react";
+import { Checkbox, ConfirmSheet } from "@bayramm/ui/react";
 import { type FormEvent, useCallback, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { formatMoment, formatPrice } from "../format";
-import { t } from "../texts";
+import { apiErrorText, t } from "../texts";
 import {
   Blockers,
   ErrorText,
@@ -28,6 +28,7 @@ import {
   StatusPill,
   useEntityTitle,
   useNavigate,
+  useRevealErrors,
 } from "../ui";
 import { VendorResponsePanel } from "./Metrics";
 import { VendorForm } from "./VendorForm";
@@ -200,17 +201,17 @@ function Listings({ vendor }: { vendor: VendorDetail }) {
       ) : (
         <ul className="cards">
           {vendor.listings.map((listing) => (
-            <li key={listing.id} className="card-row">
-              <div>
-                <Link to={{ name: "listing", id: listing.id }} className="row-link">
+            <li key={listing.id} className="card-row rcard-tap">
+              <div className="rcard-head">
+                <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
                   {listing.name}
-                </Link>{" "}
+                </Link>
                 <StatusPill status={listing.status} />
-                <span className="sub">
-                  {formatPrice(listing.priceFromUzs, listing.priceUnit)}
-                  {listing.capMax ? ` · до ${listing.capMax}` : ""}
-                </span>
               </div>
+              <span className="sub">
+                {formatPrice(listing.priceFromUzs, listing.priceUnit)}
+                {listing.capMax ? ` · до ${listing.capMax}` : ""}
+              </span>
               {listing.status !== "active" && <Blockers title={t.blockersActive} codes={listing.blockers} />}
             </li>
           ))}
@@ -229,7 +230,10 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
   const [fullName, setFullName] = useState("");
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<{ user: VendorUser; action: "disable" | "unlink" } | null>(null);
+  const [confirmFailure, setConfirmFailure] = useState<Failure | null>(null);
   const errors = fieldErrors(failure, { phone: t.fieldErrors.phone ?? "" });
+  const form = useRevealErrors(failure);
 
   const replace = (user: VendorUser, exists: boolean) =>
     onChange({
@@ -255,6 +259,16 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
     const result = await api.post<VendorUser>(`/staff/vendors/${vendor.id}/users/${user.id}/${action}`);
     setFailure(result.ok ? null : result);
     if (result.ok) replace(result.data, true);
+    return result;
+  };
+
+  const confirmAction = async () => {
+    if (!confirm) return;
+    setBusy(true);
+    const result = await userAction(confirm.user, confirm.action);
+    setBusy(false);
+    setConfirmFailure(result.ok ? null : result);
+    if (result.ok) setConfirm(null);
   };
 
   return (
@@ -291,8 +305,12 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
                 <div className="acts">
                   <button
                     type="button"
-                    className="btn btn-sm"
-                    onClick={() => void userAction(user, user.disabledAt ? "enable" : "disable")}
+                    className={`btn btn-sm${user.disabledAt ? "" : " btn-danger"}`}
+                    onClick={() =>
+                      user.disabledAt
+                        ? void userAction(user, "enable")
+                        : setConfirm({ user, action: "disable" })
+                    }
                   >
                     {user.disabledAt ? t.enable : t.disable}
                   </button>
@@ -300,7 +318,7 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
                     <button
                       type="button"
                       className="btn btn-sm"
-                      onClick={() => void userAction(user, "unlink")}
+                      onClick={() => setConfirm({ user, action: "unlink" })}
                     >
                       {t.unlinkTelegram}
                     </button>
@@ -311,8 +329,23 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
           ))}
         </ul>
       )}
+      <ConfirmSheet
+        open={confirm !== null}
+        title={confirm?.action === "unlink" ? t.unlinkTelegram : t.disable}
+        text={confirm?.action === "unlink" ? t.unlinkHint : t.disableUserHint}
+        confirmLabel={confirm?.action === "unlink" ? t.unlinkTelegram : t.disable}
+        cancelLabel={t.cancel}
+        tone="danger"
+        busy={busy}
+        error={confirmFailure ? apiErrorText(confirmFailure.code) : undefined}
+        onConfirm={() => void confirmAction()}
+        onCancel={() => {
+          setConfirm(null);
+          setConfirmFailure(null);
+        }}
+      />
       {can("vendor_users.write") && (
-        <form className="inline-form" onSubmit={add} noValidate>
+        <form ref={form} className="inline-form" onSubmit={add} noValidate>
           <Field label={t.userPhone} error={errors.phone}>
             {(props) => (
               <input
@@ -325,6 +358,7 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
                 maxLength={24}
+                enterKeyHint="next"
                 required
               />
             )}
@@ -337,6 +371,8 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
                 maxLength={120}
+                autoComplete="off"
+                enterKeyHint="done"
               />
             )}
           </Field>

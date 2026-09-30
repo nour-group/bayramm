@@ -1,14 +1,21 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { describe, expect, it, vi } from "vitest";
 import {
+  goBack,
   HOME,
+  historyIndex,
+  isNested,
   matchRoute,
   matchSection,
   NAV,
+  parentOf,
   parseView,
   pathOf,
   ROUTES,
   SECTION_PERMISSION,
   sectionOf,
+  TAB_PRIORITY,
+  tabsFor,
 } from "./router";
 import { t } from "./texts";
 
@@ -78,6 +85,50 @@ describe("маршруты панели оператора", () => {
   it("клиент — в разделе «Клиенты», правка карточки — в «Модерации»", () => {
     expect(sectionOf({ name: "client", id: "x" })).toBe("clients");
     expect(sectionOf({ name: "revision", id: "x" })).toBe("moderation");
+  });
+
+  it("нижняя панель: разделов больше пяти — четыре частых и «Ещё» с остальными в порядке навигации", () => {
+    expect(tabsFor(NAV)).toEqual({
+      tabs: ["requests", "moderation", "vendors", "metrics"],
+      more: ["clients", "notifications", "audit", "team", "settings"],
+    });
+  });
+
+  it("нижняя панель: пять и меньше — все кнопками, по частоте, без «Ещё»", () => {
+    expect(tabsFor(["vendors", "moderation", "requests", "clients", "notifications"])).toEqual({
+      tabs: ["requests", "moderation", "vendors", "clients", "notifications"],
+      more: [],
+    });
+    expect(tabsFor(["vendors", "moderation"])).toEqual({ tabs: ["moderation", "vendors"], more: [] });
+    // Порядок частоты — все разделы, каждый один раз
+    expect([...TAB_PRIORITY].sort()).toEqual([...NAV].sort());
+  });
+
+  it("экран объекта вложен в раздел; «назад» без истории — к разделу, новая карточка — к вендору", () => {
+    const id = "aaaaaaaa-0000-0000-0000-000000000001";
+    expect(isNested({ name: "requests" })).toBe(false);
+    expect(isNested({ name: "request", id })).toBe(true);
+    expect(isNested(null)).toBe(false);
+    expect(parentOf({ name: "request", id })).toEqual({ name: "requests" });
+    expect(parentOf({ name: "revision", id })).toEqual({ name: "moderation" });
+    expect(parentOf({ name: "listingNew", vendorId: id })).toEqual({ name: "vendor", id });
+  });
+
+  it("«назад»: переходили внутри панели — по истории, открыли сразу здесь — к разделу вместо записи", () => {
+    const id = "aaaaaaaa-0000-0000-0000-000000000001";
+    const navigate = vi.fn();
+    const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
+    window.history.replaceState(null, "", `/clients/${id}`);
+    expect(historyIndex()).toBe(0);
+    goBack({ name: "client", id }, navigate);
+    expect(navigate).toHaveBeenCalledWith({ name: "clients" }, { replace: true });
+    expect(back).not.toHaveBeenCalled();
+
+    window.history.replaceState({ idx: 2 }, "", `/clients/${id}`);
+    goBack({ name: "client", id }, navigate);
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledTimes(1);
+    back.mockRestore();
   });
 
   it("у каждого раздела есть название и пояснение", () => {

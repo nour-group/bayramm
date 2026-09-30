@@ -1,5 +1,11 @@
 /* Панель оператора: оболочка. Цвета, кегли, скругления и зазоры — только переменные
-   из @bayramm/ui/tokens.css; значения здесь не повторяются. */
+   из @bayramm/ui/tokens.css; значения здесь не повторяются. Свои переменные — только
+   размеры оболочки (ниже, в :root), --tg-* кладёт SDK Telegram.
+
+   Раскладка — те же границы, что в layout.ts: телефон — до 719px (шапка, нижняя панель,
+   списки карточками), планшет — 720–1023px (колонка разделов слева), компьютер — от 1024px
+   (шапка с разделами в строку). Разметку под раскладку выбирает React (классы .app-phone,
+   .app-tablet, .app-desktop); @media здесь — только то, что зависит от ширины внутри экрана. */
 
 *,
 *::before,
@@ -7,9 +13,32 @@
   box-sizing: border-box;
 }
 
+:root {
+  /* Высота экрана: 100vh, где есть dvh — 100dvh (ловушка №4); в Telegram — стабильная
+     высота окна Mini App (--tg-viewport-stable-height), она не прыгает при свайпе */
+  --app-h: 100vh;
+  /* Шапка телефона и планшета без верхней безопасной зоны: 8 + 44 + 8 + линия */
+  --bar-h: 61px;
+  /* Нижняя панель телефона без нижней безопасной зоны: 6 + 48 + 6 + линия.
+     0 — когда её нет (компьютер, планшет, открыта клавиатура) */
+  --tabbar-h: 0px;
+  /* Колонка разделов планшета */
+  --rail-w: 96px;
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-h: 100dvh;
+  }
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+}
+
+.icon {
+  flex: none;
 }
 
 a {
@@ -25,21 +54,38 @@ body {
   line-height: 1.5;
 }
 
+/* В Telegram страница не пружинит: иначе прилипшие панели уезжают вместе с ней */
+html.in-telegram,
+html.in-telegram body {
+  overscroll-behavior-y: none;
+}
+
 .app {
   display: flex;
   flex-direction: column;
-  /* 100vh — запасной вариант для браузеров без dvh (ловушка №4 в CLAUDE.md) */
+  /* 100vh — запасной вариант для браузеров без переменных (ловушка №4 в CLAUDE.md);
+     дальше — высота Telegram, а без неё --app-h (100dvh, где он есть, иначе 100vh) */
   min-height: 100vh;
-  /* biome-ignore lint/suspicious/noDuplicateProperties: dvh fallback */
-  min-height: 100dvh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: запасное значение выше */
+  min-height: var(--tg-viewport-stable-height, var(--app-h));
+}
+
+/* Нижняя панель телефона есть — от неё отсчитываются прилипшие панели действий */
+.app-phone {
+  --tabbar-h: 61px;
+}
+
+/* Открыта клавиатура (поле ввода в фокусе): нижней панели нет */
+.app-phone.app-typing {
+  --tabbar-h: 0px;
 }
 
 /* Ссылка «К содержимому»: видна только в фокусе с клавиатуры */
 .skip {
   position: absolute;
-  top: 8px;
-  left: 16px;
-  z-index: 2;
+  top: calc(var(--pad-t) + 8px);
+  left: calc(var(--sa-l) + 16px);
+  z-index: 4;
   display: inline-flex;
   align-items: center;
   min-height: var(--hit-min);
@@ -49,7 +95,7 @@ body {
   color: var(--btn-ink);
   font-weight: 700;
   text-decoration: none;
-  transform: translateY(calc(-100% - 16px));
+  transform: translateY(calc(-100% - var(--pad-t) - 16px));
 }
 
 .skip:focus {
@@ -181,7 +227,330 @@ body {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 24px 16px;
+  padding: 24px calc(var(--sa-r) + 16px) calc(var(--pad-b) + 24px) calc(var(--sa-l) + 16px);
+}
+
+/* ── шапка телефона и планшета ───────────────────────────────────────────── */
+
+/* Верхний отступ складывает обе зоны — вырез устройства и кнопки Telegram (--pad-t) */
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--gap-7);
+  padding: calc(var(--pad-t) + 8px) calc(var(--sa-r) + 12px) 8px calc(var(--sa-l) + 12px);
+  border-bottom: 1px solid var(--rule);
+  background: var(--white);
+}
+
+.appbar-brand {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  min-height: var(--hit-min);
+  padding: 0 4px;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-16);
+  font-weight: 700;
+  line-height: 1.1;
+  text-decoration: none;
+}
+
+.appbar-brand .brand-area {
+  font-size: var(--fs-11);
+}
+
+/* Заголовок экрана в шапке — одной строкой, длинный обрезается многоточием */
+.appbar-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-16);
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appbar-spacer {
+  flex: 1;
+}
+
+.appbar-btn,
+.appbar-account {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-999);
+  background: transparent;
+  color: var(--plum);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Кружок аккаунта: инициалы на сливовом */
+.avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-999);
+  background: var(--plum);
+  color: var(--sel-ink);
+  font-size: var(--fs-13-5);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.avatar-lg {
+  width: 48px;
+  height: 48px;
+  font-size: var(--fs-16);
+}
+
+/* Аккаунт в шторке: кружок, имя и роль */
+.who-sheet {
+  gap: var(--gap-12);
+}
+
+.who-sheet .who-name {
+  text-align: left;
+}
+
+/* ── колонка разделов планшета ───────────────────────────────────────────── */
+
+/* Под шапкой, во всю высоту; разделов больше, чем влезает, — прокрутка по вертикали, обе
+   оси явно (ловушка №2) */
+.rail {
+  position: fixed;
+  top: calc(var(--bar-h) + var(--pad-t));
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  width: calc(var(--rail-w) + var(--sa-l));
+  padding: 8px 6px calc(var(--pad-b) + 8px) calc(var(--sa-l) + 6px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  border-right: 1px solid var(--rule);
+  background: var(--rail-bg);
+}
+
+.rail-link {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-3);
+  min-height: var(--hit-min);
+  padding: 8px 2px;
+  border-radius: var(--r-14);
+  color: var(--muted);
+  font-size: var(--fs-11);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.rail-icon,
+.tab-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 30px;
+  border-radius: var(--r-999);
+}
+
+/* Счётчик на иконке раздела — отдельным правилом, не в общем списке (ловушка №8) */
+.rail-icon {
+  position: relative;
+}
+
+.app-tablet .main {
+  width: auto;
+  max-width: none;
+  margin: 0 0 0 calc(var(--rail-w) + var(--sa-l));
+  padding: 24px calc(var(--sa-r) + 24px) calc(var(--pad-b) + 32px) 24px;
+}
+
+/* ── нижняя панель телефона ──────────────────────────────────────────────── */
+
+.tabbar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  padding: 6px calc(var(--sa-r) + 6px) calc(var(--pad-b) + 6px) calc(var(--sa-l) + 6px);
+  border-top: 1px solid var(--rule);
+  background: var(--rail-bg);
+}
+
+.tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: var(--hit-min);
+  padding: 2px;
+  border: 0;
+  border-radius: var(--r-14);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-11);
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tab-icon {
+  position: relative;
+}
+
+.tab-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-phone .main {
+  padding: 16px calc(var(--sa-r) + 16px) calc(61px + var(--pad-b) + 24px) calc(var(--sa-l) + 16px);
+}
+
+/* Клавиатура открыта: нижняя панель не заслоняет поле */
+.app-typing .tabbar {
+  display: none;
+}
+
+/* ── счётчики у разделов ─────────────────────────────────────────────────── */
+
+.badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-999);
+  background: var(--coral-deep);
+  color: var(--btn-ink);
+  font-size: var(--fs-11);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.nav .badge {
+  margin-left: 7px;
+}
+
+.tab-icon .badge,
+.rail-icon .badge {
+  position: absolute;
+  top: -4px;
+  left: calc(50% + 5px);
+}
+
+.badge-dot {
+  min-width: 10px;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+}
+
+.tab-icon .badge-dot {
+  top: 0;
+  left: calc(50% + 7px);
+}
+
+/* ── заготовка, пока грузится ────────────────────────────────────────────── */
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.sk-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  padding: 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+}
+
+.sk-line {
+  display: block;
+  width: 72%;
+  height: 12px;
+  border-radius: var(--r-999);
+  background: var(--lilac);
+  animation: sk-pulse 1.4s var(--ease-io) infinite;
+}
+
+.sk-line-title {
+  width: 44%;
+  height: 16px;
+}
+
+.sk-line-short {
+  width: 30%;
+}
+
+.sk-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--gap-12);
+}
+
+.sk-tile {
+  height: 76px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+}
+
+@keyframes sk-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-line {
+    animation: none;
+  }
 }
 
 /* Разделы со списками и страницы объектов — во всю ширину; вводный текст — узкой колонкой */
@@ -446,7 +815,9 @@ textarea.input {
   font-weight: 600;
 }
 
-/* Таблицы: на узком экране — прокрутка вбок внутри рамки; обе оси явно (ловушка №2) */
+/* Таблицы: на узком экране — прокрутка вбок внутри рамки; обе оси явно (ловушка №2).
+   Край, за которым ещё есть столбцы, — в тени: белые «шторки» едут вместе с таблицей
+   (local) и закрывают тень, пока прокручивать некуда */
 .table-wrap {
   /* Скрытые подписи (visually-hidden, position: absolute) в ячейках — внутри рамки, а не
      за краем страницы */
@@ -455,7 +826,12 @@ textarea.input {
   overflow-y: hidden;
   border: 1px solid var(--rule);
   border-radius: var(--r-14);
-  background: var(--white);
+  background:
+    linear-gradient(to right, var(--white) 30%, transparent) left center / 40px 100% no-repeat local,
+    linear-gradient(to left, var(--white) 30%, transparent) right center / 40px 100% no-repeat local,
+    linear-gradient(to right, var(--rule), transparent) left center / 14px 100% no-repeat scroll,
+    linear-gradient(to left, var(--rule), transparent) right center / 14px 100% no-repeat scroll,
+    var(--white);
 }
 
 .table {
@@ -981,6 +1357,7 @@ textarea.input {
 }
 
 .cal-day {
+  position: relative;
   min-height: var(--hit-min);
   border: 1px solid var(--rule);
   border-radius: var(--r-8);
@@ -990,6 +1367,16 @@ textarea.input {
   font-size: var(--fs-14);
   font-weight: 700;
   cursor: pointer;
+}
+
+/* Зазор между днями — тоже зона нажатия: на узком телефоне клетка чуть уже 44px */
+.cal-day::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  bottom: -2px;
+  left: -2px;
 }
 
 .cal-day:disabled {
@@ -1262,25 +1649,590 @@ textarea.input {
   }
 }
 
-@media (max-width: 719px) {
+/* Компьютер, но не широкий: все разделы не влезают в строку с именем и ссылками — разделы
+   второй строкой шапки, а не обрезаны прокруткой */
+@media (max-width: 1439px) {
   .top {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       "brand who"
       "nav nav";
-    row-gap: var(--gap-7);
+    row-gap: var(--gap-5);
   }
 
+  .who {
+    justify-self: end;
+  }
+}
+
+/* ── карточки вместо таблиц (телефон) и очереди модерации ────────────────── */
+
+.rcards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+  overflow-wrap: anywhere;
+}
+
+/* Карточка целиком — ссылка: невидимый слой главной ссылки накрывает её всю */
+.rcard-tap {
+  position: relative;
+}
+
+/* Строка списка в панели (заявки клиента, карточки вендора) — тоже целиком ссылка: сверху
+   и снизу запас, чтобы строка была не ниже 44px */
+.card-row.rcard-tap {
+  padding: 12px 0;
+}
+
+.rcard-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-5) var(--gap-9);
+}
+
+.rcard-title,
+.rcard-link {
+  min-width: 0;
+  margin: 0;
+  color: var(--plum);
+  font-size: var(--fs-16);
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.rcard-link {
+  text-decoration: none;
+}
+
+.rcard-link::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: var(--r-14);
+}
+
+.rcard-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.rcard-facts {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: var(--gap-3) var(--gap-12);
+  margin: 4px 0 0;
+  font-size: var(--fs-14);
+}
+
+.rcard-facts dt {
+  color: var(--muted);
+}
+
+.rcard-facts dd {
+  min-width: 0;
+  margin: 0;
+  font-weight: 600;
+}
+
+.rcard-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5) var(--gap-9);
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--ink);
+  font-size: var(--fs-14);
+  list-style: none;
+}
+
+.rcard-error {
+  margin: 0;
+  color: var(--berry);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+/* Кнопки карточки — над слоем главной ссылки */
+.rcard-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+  margin-top: 4px;
+}
+
+.rcard-actions > .btn {
+  flex: 1 1 auto;
+}
+
+.rcard-actions.role-edit > .ui-select {
+  flex: 1 1 160px;
+}
+
+/* Правка карточки на телефоне: «сейчас» и «предлагает» — друг под другом */
+.change {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  padding: 8px 12px;
+  border-radius: var(--r-11);
+  background: var(--paper);
+}
+
+.change-new {
+  background: var(--white);
+  box-shadow:
+    inset 4px 0 0 var(--teal),
+    inset 0 0 0 1px var(--rule);
+}
+
+.change-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+}
+
+.change-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Статусы над страницей объекта */
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5);
+  margin: 0;
+}
+
+/* ── фильтры и сортировка в шторке (телефон) ─────────────────────────────── */
+
+.btn-filter,
+.btn-more {
+  gap: var(--gap-7);
+}
+
+.btn-filter.is-active {
+  border-color: var(--plum);
+}
+
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+.chip-clear {
+  border-color: var(--plum);
+  background: var(--plum);
+  color: var(--sel-ink);
+}
+
+/* Кнопка-иконка: подпись — только для диктора */
+.btn-icon {
+  padding: 0;
+}
+
+.btn-icon > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* «Позже» — та же стрелка, развёрнутая вправо */
+.btn-flip .icon {
+  transform: scaleX(-1);
+}
+
+/* Ссылка «← К вендору» над формой: зона нажатия 44px */
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* ── календарь: несколько дней, обозначения ──────────────────────────────── */
+
+.cal-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+  margin: 0 0 8px;
+}
+
+.cal-tools p {
+  margin: 0;
+}
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7) var(--gap-12);
+  margin: 12px 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+  list-style: none;
+}
+
+.cal-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+}
+
+.cal-key {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-3);
+  background: var(--cell);
+}
+
+.cal-key-busy {
+  border-color: var(--plum);
+  background: var(--plum);
+}
+
+.cal-key-today {
+  border: 2px solid var(--coral);
+}
+
+.cal-key-chosen {
+  border-color: var(--coral);
+  background: var(--coral-soft);
+}
+
+/* Выбор нескольких дней — после занятых (ловушка №7): занятый день остаётся сливовым,
+   выбор — коралловым кольцом */
+.cal-chosen:not(.cal-busy) {
+  border-color: var(--coral);
+  background: var(--coral-soft);
+  color: var(--coral-deep);
+}
+
+.cal-busy.cal-chosen {
+  box-shadow: inset 0 0 0 2px var(--coral);
+}
+
+.cal-range-acts {
+  margin-top: 12px;
+}
+
+/* ── шторки: разделы «Ещё», аккаунт, второстепенные действия ─────────────── */
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-12);
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-14);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-15);
+  font-weight: 700;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.menu-item .icon {
+  color: var(--plum);
+}
+
+.menu-item .badge {
+  margin-left: auto;
+}
+
+.menu-danger,
+.menu-danger .icon {
+  color: var(--berry);
+}
+
+.menu-item:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* Форма причины и фильтры в шторке: без рамки панели, кнопки — одной ширины */
+.ui-dialog .confirm {
+  margin-top: 0;
+}
+
+.ui-dialog .confirm .acts,
+.ui-dialog .filters .acts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ui-dialog .filters {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.ui-dialog .fields {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Одна кнопка внизу шторки — во всю ширину */
+.sheet-done {
+  grid-column: 1 / -1;
+}
+
+/* ── панель действий экрана (телефон) ────────────────────────────────────── */
+
+/* Место под панель — последним в странице: прилипает к низу над нижней навигацией и
+   безопасной зоной, пока видна страница; в конце встаёт на своё место и содержимое не
+   закрывает. Пустое — нулевой высоты */
+.app-phone .actionbar-slot {
+  position: sticky;
+  bottom: calc(var(--tabbar-h) + var(--pad-b));
+  z-index: 2;
+}
+
+/* Клавиатура открыта — панель не липнет, а стоит в конце страницы */
+.app-phone.app-typing .actionbar-slot {
+  position: static;
+}
+
+.actionbar {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-9);
+  margin: 16px calc(-16px - var(--sa-r)) 0 calc(-16px - var(--sa-l));
+  padding: 8px calc(var(--sa-r) + 16px) 8px calc(var(--sa-l) + 16px);
+  border-top: 1px solid var(--rule);
+  background: var(--white);
+}
+
+.actionbar > .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 12px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+
+.actionbar > .btn-more {
+  flex: 0 0 auto;
+}
+
+/* Панель действий унесла кнопки вниз — пустая рамка на месте не нужна */
+.panel-actions:empty,
+.actions-panel:empty {
+  display: none;
+}
+
+/* Итог сохранения формы на телефоне — строкой в конце формы */
+.formbar-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-9);
+}
+
+/* ── телефон ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 719px) {
   .fields,
-  .inline-form {
+  .fields-3,
+  .inline-form,
+  .package-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .dl {
     grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--gap-3);
   }
 
+  .dl dd {
+    margin-bottom: 8px;
+  }
+
+  .lead {
+    font-size: var(--fs-14);
+  }
+
+  .panel,
+  .fs {
+    padding: 14px;
+  }
+
+  /* Поиск — во всю строку, рядом только «Фильтры» */
   .search {
+    flex: 1 1 0;
+    min-width: 0;
     max-width: none;
   }
+
+  /* Поля ввода — 16px: мельче iOS увеличивает страницу при фокусе */
+  .input,
+  .ui-search-input,
+  .ui-number-input {
+    font-size: var(--fs-16);
+  }
+
+  /* Счётчики — по два в ряд */
+  .stats,
+  .sk-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Фото — две колонки; кнопки у фото — иконками, чтобы три влезли в ширину */
+  .photos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-9);
+  }
+
+  .photo-actions {
+    gap: var(--gap-3);
+  }
+
+  /* Календарь — без рамки панели: семь клеток по 44px влезают в ширину телефона */
+  .cal-panel {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  /* Телефон: подпись — строкой выше, маска и «Показать» — рядом под ней */
+  .phone-label {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .setting-inputs .field {
+    flex: 1 1 140px;
+    width: auto;
+  }
+
+  .setting-save,
+  .setting-save .btn {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  /* Ссылки в тексте: зона нажатия 44px невидимым слоем, рисунок тот же */
+  .main a:not([class]) {
+    position: relative;
+  }
+
+  .main a:not([class])::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, var(--hit-min));
+    height: max(100%, var(--hit-min));
+    transform: translate(-50%, -50%);
+  }
+
+  .login {
+    padding: calc(var(--pad-t) + 24px) calc(var(--sa-r) + 16px) calc(var(--pad-b) + 24px)
+      calc(var(--sa-l) + 16px);
+  }
+
+  .login-card {
+    padding: 20px;
+  }
+}
+
+/* Совсем узкий телефон (320px): месяц выходит за поля страницы, клетка остаётся 44px */
+@media (max-width: 359px) {
+  .cal {
+    margin: 0 -10px;
+  }
+}
+
+/* ── наведение и выбранное в навигации: наведение — только с курсором (ловушка №6),
+   выбранное — после него (ловушка №7) ─────────────────────────────────────── */
+
+@media (hover: hover) {
+  .tab:hover,
+  .rail-link:hover,
+  .appbar-btn:hover {
+    color: var(--plum);
+  }
+
+  .menu-item:hover {
+    background: var(--lilac);
+  }
+
+  .rcard-tap:hover {
+    border-color: var(--plum-mid);
+  }
+}
+
+.tab[aria-current="page"],
+.tab.is-current,
+.rail-link[aria-current="page"] {
+  color: var(--plum);
+}
+
+.tab[aria-current="page"] .tab-icon,
+.tab.is-current .tab-icon,
+.rail-link[aria-current="page"] .rail-icon {
+  background: var(--lilac);
+}
+
+.menu-item[aria-current="page"],
+.menu-item[aria-current="page"] .icon {
+  background: var(--plum);
+  color: var(--sel-ink);
+}
+
+/* Нажатие пальцем на карточку-ссылку — отклик сразу */
+.rcard-tap:active {
+  background: var(--paper);
 }

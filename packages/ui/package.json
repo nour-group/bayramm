@@ -2,6 +2,9 @@
   "name": "@bayramm/ui",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
   "description": "Дизайн-система Bayramm: токены двух тем, шкалы, движение, безопасные зоны, свои шрифты (woff2) и свои контролы на React вместо системных. Экспортирует исходники TS и CSS, сборки нет.",
   "exports": {
     ".": "./src/index.ts",

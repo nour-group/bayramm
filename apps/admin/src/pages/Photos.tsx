@@ -1,17 +1,25 @@
 /* Фото карточки: загрузка (сжатие в браузере, без метаданных), порядок, обложка,
-   решение модератора, удаление. На фото не должно быть лиц — предупреждение всегда на
-   виду, без подтверждения файлы не выбрать. Выбор файлов — FileDrop: системный выбор
-   или перетаскивание на компьютере. */
+   решение модератора, удаление (через подтверждение). На фото не должно быть лиц —
+   предупреждение всегда на виду, без подтверждения файлы не выбрать. Выбор файлов —
+   FileDrop: на телефоне — камера или галерея, на компьютере — ещё и перетаскивание.
+   Порядок — кнопками «раньше / позже», не перетаскиванием: так и пальцем, и с клавиатуры.
+   На телефоне — две колонки; у фото «раньше», «позже» и «Ещё» (обложка, решение, удаление). */
 
 import { isImageError } from "@bayramm/media";
 import { compressForUpload } from "@bayramm/media/browser";
 import type { StaffPhoto } from "@bayramm/shared/api/staff";
-import { Checkbox, FileDrop } from "@bayramm/ui/react";
+import { Checkbox, ConfirmSheet, FileDrop } from "@bayramm/ui/react";
 import { useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
 import { photoSrc, photoSrcSet } from "../format";
+import { Icon } from "../icons";
+import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
-import { ErrorText, Pill } from "../ui";
+import { ErrorText, type MenuAction, OverflowMenu, Pill } from "../ui";
+
+/** Форматы фото; на телефоне — любое фото: так точно предлагают и камеру, и галерею (HEIC — по расширению) */
+const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
+const ACCEPT_PHONE = "image/*,.heic,.heif";
 
 interface PhotosProps {
   listingId: string;
@@ -30,7 +38,10 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
   const [problems, setProblems] = useState<string[]>([]);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState<StaffPhoto | null>(null);
+  const phone = usePhone();
   const editable = can("listings.write");
+  const moderates = can("photos.moderate");
   const base = `/staff/listings/${listingId}/photos`;
   // Обложка — отмеченное фото, а пока отметки нет — первое
   const hasCover = photos.some((photo) => photo.isCover);
@@ -85,6 +96,42 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
     void act(() => api.put(`${base}/order`, { ids }));
   };
 
+  const cover = (photo: StaffPhoto) => void act(() => api.post(`${base}/${photo.id}/cover`));
+  const decide = (photo: StaffPhoto, decision: "approved" | "declined") =>
+    void act(() => api.post(`${base}/${photo.id}/moderation`, { decision }));
+
+  const remove = async () => {
+    if (!removing) return;
+    const photo = removing;
+    setRemoving(null);
+    await act(() => api.del(`${base}/${photo.id}`));
+  };
+
+  /** Шторка «Ещё» у фото на телефоне: обложка, решение модератора, удаление */
+  const menuOf = (photo: StaffPhoto, index: number): MenuAction[] => [
+    ...(editable && !isCover(photo, index)
+      ? [{ key: "cover", label: t.makeCover, icon: "star" as const, disabled: busy, run: () => cover(photo) }]
+      : []),
+    ...(moderates && photo.moderation !== "approved"
+      ? [{ key: "approve", label: t.approve, disabled: busy, run: () => decide(photo, "approved") }]
+      : []),
+    ...(moderates && photo.moderation !== "declined"
+      ? [{ key: "decline", label: t.decline, disabled: busy, run: () => decide(photo, "declined") }]
+      : []),
+    ...(editable
+      ? [
+          {
+            key: "delete",
+            label: t.deletePhoto,
+            icon: "trash" as const,
+            danger: true,
+            disabled: busy,
+            run: () => setRemoving(photo),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <section className="panel" aria-labelledby="photos-title">
       <h2 id="photos-title">
@@ -123,74 +170,104 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
                   {t.moderationStates[photo.moderation]}
                 </Pill>
               </div>
-              <div className="photo-actions">
-                {editable && (
-                  <>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={busy || index === 0}
-                      onClick={() => move(index, -1)}
-                      aria-label={t.moveLeft}
-                    >
-                      ←
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={busy || index === photos.length - 1}
-                      onClick={() => move(index, 1)}
-                      aria-label={t.moveRight}
-                    >
-                      →
-                    </button>
-                    {!isCover(photo, index) && (
+              {phone ? (
+                <div className="photo-actions">
+                  {editable && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-icon"
+                        disabled={busy || index === 0}
+                        onClick={() => move(index, -1)}
+                        aria-label={t.moveEarlier(index + 1)}
+                      >
+                        <Icon name="back" size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-icon btn-flip"
+                        disabled={busy || index === photos.length - 1}
+                        onClick={() => move(index, 1)}
+                        aria-label={t.moveLater(index + 1)}
+                      >
+                        <Icon name="back" size={20} />
+                      </button>
+                    </>
+                  )}
+                  <OverflowMenu
+                    title={t.photoN(index + 1)}
+                    label={t.more}
+                    context={t.photoN(index + 1)}
+                    className="btn btn-icon"
+                    actions={menuOf(photo, index)}
+                  />
+                </div>
+              ) : (
+                <div className="photo-actions">
+                  {editable && (
+                    <>
                       <button
                         type="button"
                         className="btn btn-sm"
-                        disabled={busy}
-                        onClick={() => void act(() => api.post(`${base}/${photo.id}/cover`))}
+                        disabled={busy || index === 0}
+                        onClick={() => move(index, -1)}
+                        aria-label={t.moveLeft}
                       >
-                        {t.makeCover}
+                        ←
                       </button>
-                    )}
-                  </>
-                )}
-                {can("photos.moderate") && photo.moderation !== "approved" && (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(() => api.post(`${base}/${photo.id}/moderation`, { decision: "approved" }))
-                    }
-                  >
-                    {t.approve}
-                  </button>
-                )}
-                {can("photos.moderate") && photo.moderation !== "declined" && (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(() => api.post(`${base}/${photo.id}/moderation`, { decision: "declined" }))
-                    }
-                  >
-                    {t.decline}
-                  </button>
-                )}
-                {editable && (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-danger"
-                    disabled={busy}
-                    onClick={() => void act(() => api.del(`${base}/${photo.id}`))}
-                  >
-                    {t.deletePhoto}
-                  </button>
-                )}
-              </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={busy || index === photos.length - 1}
+                        onClick={() => move(index, 1)}
+                        aria-label={t.moveRight}
+                      >
+                        →
+                      </button>
+                      {!isCover(photo, index) && (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          disabled={busy}
+                          onClick={() => cover(photo)}
+                        >
+                          {t.makeCover}
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {moderates && photo.moderation !== "approved" && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={busy}
+                      onClick={() => decide(photo, "approved")}
+                    >
+                      {t.approve}
+                    </button>
+                  )}
+                  {moderates && photo.moderation !== "declined" && (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={busy}
+                      onClick={() => decide(photo, "declined")}
+                    >
+                      {t.decline}
+                    </button>
+                  )}
+                  {editable && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger"
+                      disabled={busy}
+                      onClick={() => setRemoving(photo)}
+                    >
+                      {t.deletePhoto}
+                    </button>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ol>
@@ -202,9 +279,9 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
             {t.noFacesAck}
           </Checkbox>
           <FileDrop
-            title={t.addPhotos}
-            hint={t.photosDrop}
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
+            title={phone ? t.addPhotosPhone : t.addPhotos}
+            hint={phone ? t.photosPick : t.photosDrop}
+            accept={phone ? ACCEPT_PHONE : ACCEPT}
             multiple
             disabled={!ack || progress !== null}
             onFiles={(files) => void upload(files)}
@@ -224,6 +301,16 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
         </ul>
       )}
       {failure && <ErrorText failure={failure} />}
+      <ConfirmSheet
+        open={removing !== null}
+        title={t.deletePhotoTitle}
+        text={t.deletePhotoHint}
+        confirmLabel={t.deletePhoto}
+        cancelLabel={t.cancel}
+        tone="danger"
+        onConfirm={() => void remove()}
+        onCancel={() => setRemoving(null)}
+      />
     </section>
   );
 }

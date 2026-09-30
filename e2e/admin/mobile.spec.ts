@@ -1,0 +1,233 @@
+import type { Page } from "@playwright/test";
+import { t } from "../../apps/admin/src/texts";
+import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
+import { expect, test } from "../support/offline";
+import {
+  CLIENT_ID,
+  LISTING_ID,
+  mockStaffApi,
+  NOW,
+  REQUEST_ID,
+  REVISION_ID,
+  STAFF,
+  VENDOR_ID,
+} from "../support/staff-api";
+import { fakeTelegram, telegramState } from "../support/telegram";
+import { horizontalOverflow } from "../support/web";
+
+/* Панель на телефоне (только проект admin-phone): каждый экран на 360 и 390px — без
+   прокрутки вбок, всё нажимаемое не меньше 44px, нижняя панель разделов на месте и
+   работает, прилипшая панель действий в конце страницы не закрывает содержимое, axe чист.
+   Отдельно — «Ещё» и аккаунт в шторках, панель действий заявки, Telegram: «назад» на
+   вложенных экранах и безопасные зоны в шапке и нижней панели. */
+
+/** Всё, во что попадают пальцем (и Tab): ссылки, кнопки, поля */
+const INTERACTIVE = [
+  "a[href]",
+  "button",
+  "input:not([type=hidden])",
+  "textarea",
+  "select",
+  "[role=button]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(", ");
+
+async function start(page: Page) {
+  await page.clock.setFixedTime(NOW);
+  return mockStaffApi(page);
+}
+
+/** Карточка, которой нет в подмене API, пока её не создали: создать через форму */
+async function openNewListing(page: Page) {
+  await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
+  await page.getByLabel(t.listingFields.name ?? "", { exact: true }).fill("Navruz zali");
+  await page.getByRole("button", { name: t.createListing }).click();
+  await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
+}
+
+const SCREENS: readonly { name: string; open: (page: Page) => Promise<unknown> }[] = [
+  { name: "вендоры", open: (page) => page.goto("/vendors") },
+  { name: "вендор", open: (page) => page.goto(`/vendors/${VENDOR_ID}`) },
+  { name: "новый вендор", open: (page) => page.goto("/vendors/new") },
+  { name: "новая карточка", open: (page) => page.goto(`/vendors/${VENDOR_ID}/listings/new`) },
+  { name: "карточка", open: openNewListing },
+  { name: "модерация", open: (page) => page.goto("/moderation") },
+  { name: "заявки", open: (page) => page.goto("/requests") },
+  { name: "заявка", open: (page) => page.goto(`/requests/${REQUEST_ID}`) },
+  { name: "метрики", open: (page) => page.goto("/metrics") },
+  { name: "клиенты", open: (page) => page.goto("/clients") },
+  { name: "клиент", open: (page) => page.goto(`/clients/${CLIENT_ID}`) },
+  { name: "правка карточки", open: (page) => page.goto(`/revisions/${REVISION_ID}`) },
+  { name: "уведомления", open: (page) => page.goto("/notifications") },
+  { name: "журнал", open: (page) => page.goto("/audit") },
+  { name: "команда", open: (page) => page.goto("/team") },
+  { name: "настройки", open: (page) => page.goto("/settings") },
+];
+
+const tabbar = (page: Page) => page.locator("nav.tabbar");
+
+/**
+ * Страница прокручена до конца: последний блок содержимого — над панелью действий, а она и
+ * содержимое — над нижней панелью разделов
+ */
+async function coveredAtEnd(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const problems: string[] = [];
+    const bar = document.querySelector(".actionbar")?.getBoundingClientRect();
+    const tabs = document.querySelector(".tabbar")?.getBoundingClientRect();
+    const page = document.querySelector(".page");
+    const blocks = [...(page?.children ?? [])].filter((el) => !el.classList.contains("actionbar-slot"));
+    const last = blocks.at(-1)?.getBoundingClientRect();
+    if (last && bar && last.bottom > bar.top + 0.5) problems.push(`содержимое под панелью действий`);
+    if (bar && tabs && bar.bottom > tabs.top + 0.5) problems.push("панель действий под нижней панелью");
+    if (last && tabs && last.bottom > tabs.top + 0.5) problems.push("содержимое под нижней панелью");
+    return problems;
+  });
+}
+
+for (const width of [360, 390] as const) {
+  test.describe(`телефон ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    for (const screen of SCREENS) {
+      test(`${screen.name}: без прокрутки вбок, 44px, нижняя панель, axe`, async ({ page }) => {
+        const api = await start(page);
+        await screen.open(page);
+        await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+        await expect(page.getByRole("status")).toHaveCount(0);
+        // Нижняя панель разделов на месте, выбран раздел экрана
+        await expect(tabbar(page)).toBeVisible();
+        await expect(tabbar(page).locator("[aria-current=page], .is-current")).toHaveCount(1);
+        const overflow = await horizontalOverflow(page);
+        expect(overflow.scrollWidth, `${screen.name}: прокрутка вбок`).toBeLessThanOrEqual(width);
+        expect(overflow.bodyWidth, `${screen.name}: прокрутка вбок`).toBeLessThanOrEqual(width);
+        await expectHitAreas(page, `${screen.name} ${width}px`, INTERACTIVE);
+        expect(await coveredAtEnd(page), screen.name).toEqual([]);
+        await expectNoAxeViolations(page, `${screen.name} ${width}px`);
+        expect(api.unexpected).toEqual([]);
+      });
+    }
+  });
+}
+
+test.describe("навигация на телефоне", () => {
+  test("нижняя панель: частые разделы и «Ещё» со всеми остальными; переход закрывает шторку", async ({
+    page,
+  }) => {
+    await start(page);
+    await page.goto("/requests");
+    const tabs = tabbar(page);
+    // Администратор: четыре частых раздела и «Ещё»
+    await expect(tabs.getByRole("link")).toHaveText([/Заявки/, /Модерация/, /Вендоры/, /Метрики/]);
+    await expect(tabs.getByRole("link", { name: t.requests })).toHaveAttribute("aria-current", "page");
+    // Счётчики из очередей: просроченная заявка и решения модерации
+    await expect(tabs.getByRole("link", { name: t.requests })).toContainText("1");
+
+    await tabs.getByRole("link", { name: t.moderation }).click();
+    await expect(page).toHaveURL("/moderation");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(t.moderation);
+
+    const more = tabs.getByRole("button", { name: t.more });
+    await more.click();
+    const sheet = page.getByRole("dialog", { name: t.moreSections });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("link")).toHaveText([
+      new RegExp(t.clients),
+      new RegExp(t.notifications),
+      new RegExp(t.audit),
+      new RegExp(t.team),
+      new RegExp(t.settings),
+    ]);
+    await expectNoAxeViolations(page, "шторка «Ещё»");
+    await sheet.getByRole("link", { name: t.team }).click();
+    await expect(sheet).toBeHidden();
+    await expect(page).toHaveURL("/team");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(t.team);
+    // Раздел из «Ещё» открыт — «Ещё» выделено и говорит, какой
+    await expect(tabs.getByRole("button", { name: t.moreCurrent(t.team) })).toBeVisible();
+  });
+
+  test("аккаунт в шторке: имя, роль, другие приложения и выход", async ({ page }) => {
+    const api = await start(page);
+    await page.goto("/vendors");
+    await page.getByRole("button", { name: t.accountOf(STAFF.displayName, t.roles[STAFF.role]) }).click();
+    const sheet = page.getByRole("dialog", { name: t.account });
+    await expect(sheet.getByText(STAFF.displayName)).toBeVisible();
+    await expect(sheet.getByRole("link", { name: t.toCabinet })).toBeVisible();
+    await expectNoAxeViolations(page, "шторка аккаунта");
+    await sheet.getByRole("button", { name: t.signOut }).click();
+    await expect(page).toHaveURL("/login");
+    expect(api.loggedOut).toEqual(["staff"]);
+  });
+
+  test("вложенный экран: «назад» в шапке — к списку раздела, если пришли по ссылке", async ({ page }) => {
+    await start(page);
+    await page.goto(`/requests/${REQUEST_ID}`);
+    await page.getByRole("banner").getByRole("button", { name: t.back }).click();
+    await expect(page).toHaveURL("/requests");
+    // Пришли из списка — «назад» как у браузера
+    await page.getByRole("link", { name: /№ 1051/ }).click();
+    await expect(page).toHaveURL(`/requests/${REQUEST_ID}`);
+    await page.getByRole("banner").getByRole("button", { name: t.back }).click();
+    await expect(page).toHaveURL("/requests");
+  });
+
+  test("заявка: действия — в панели внизу, «Связались» — в шторке с комментарием", async ({ page }) => {
+    await start(page);
+    await page.goto(`/requests/${REQUEST_ID}`);
+    const bar = page.getByRole("group", { name: t.requestActions });
+    await expect(bar.getByRole("button", { name: t.remindVendor })).toBeVisible();
+    await bar.getByRole("button", { name: t.markContacted }).click();
+    const sheet = page.getByRole("dialog", { name: t.markContacted });
+    await expect(sheet.getByLabel(new RegExp(t.comment))).toBeVisible();
+    // Поле — 16px: iOS не увеличивает страницу при фокусе
+    expect(
+      await sheet.getByLabel(new RegExp(t.comment)).evaluate((el) => getComputedStyle(el).fontSize),
+    ).toBe("16px");
+    await expectNoAxeViolations(page, "заявка: «Связались»");
+    await sheet.getByRole("button", { name: t.cancel }).click();
+    await expect(sheet).toBeHidden();
+    await expect(bar.getByRole("button", { name: t.markContacted })).toBeFocused();
+  });
+
+  test("заявки: фильтры — в шторке, кнопка говорит, сколько выбрано", async ({ page }) => {
+    await start(page);
+    await page.goto("/requests");
+    await page.getByRole("button", { name: t.filters, exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: t.filters });
+    await sheet.getByRole("radio", { name: new RegExp(t.slaLate) }).check();
+    await sheet.getByRole("button", { name: t.done }).click();
+    await expect(page.getByRole("button", { name: `${t.filters} (1)` })).toBeVisible();
+    await expect(page.getByRole("button", { name: `${t.reset}: ${t.slaLate}` })).toBeVisible();
+  });
+});
+
+test.describe("Telegram на телефоне", () => {
+  test("«назад» Telegram на вложенных экранах; безопасные зоны — в шапке и нижней панели", async ({
+    page,
+  }) => {
+    await start(page);
+    await fakeTelegram(page, { safeArea: { top: 24, bottom: 20 }, contentSafeArea: { top: 40 } });
+    await page.goto(`/requests/${REQUEST_ID}`);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("1051");
+    // Своей «назад» в шапке нет — есть кнопка Telegram
+    await expect(page.getByRole("banner").getByRole("button", { name: t.back })).toHaveCount(0);
+    expect((await telegramState(page)).back.visible).toBe(true);
+    const calls = (await telegramState(page)).calls.map((c) => c.name);
+    expect(calls).toEqual(
+      expect.arrayContaining(["ready", "expand", "setHeaderColor", "disableVerticalSwipes"]),
+    );
+
+    // Верх шапки — обе зоны: вырез (24) и кнопки Telegram (40); низ панели — жест-бар (20)
+    const pads = await page.evaluate(() => ({
+      top: getComputedStyle(document.querySelector(".appbar") as Element).paddingTop,
+      bottom: getComputedStyle(document.querySelector(".tabbar") as Element).paddingBottom,
+    }));
+    expect(pads).toEqual({ top: "72px", bottom: "26px" });
+
+    await page.evaluate(() => (window as unknown as { __tg: { clickBack(): void } }).__tg.clickBack());
+    await expect(page).toHaveURL("/requests");
+    expect((await telegramState(page)).back.visible).toBe(false);
+  });
+});

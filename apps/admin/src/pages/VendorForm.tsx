@@ -3,10 +3,10 @@
 
 import type { StaffDictionaries, VendorDetail, VendorInput } from "@bayramm/shared/api/staff";
 import { Select } from "@bayramm/ui/react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useId, useState } from "react";
 import type { Failure } from "../api";
 import { t } from "../texts";
-import { ErrorText, Field, fieldErrors } from "../ui";
+import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
 
 type Values = Record<keyof VendorInput, string>;
 
@@ -70,6 +70,10 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
   const [saved, setSaved] = useState(false);
   const errors = fieldErrors(failure, t.fieldErrors);
   const creating = vendor === null;
+  const form = useRevealErrors(failure);
+  const formId = useId();
+  // Есть несохранённое: на телефоне панель «Сохранить» появляется только тогда
+  const dirty = Object.keys(vendorBody(values, before, false)).length > 0;
 
   const put = (key: keyof Values) => (value: string) => {
     setSaved(false);
@@ -91,7 +95,10 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
     }
   };
 
-  const text = (key: (typeof TEXT_KEYS)[number], extra: { maxLength: number; inputMode?: "numeric" }) => (
+  const text = (
+    key: (typeof TEXT_KEYS)[number],
+    extra: { maxLength: number; inputMode?: "numeric"; latin?: boolean },
+  ) => (
     <Field label={t.fields[key] ?? key} error={errors[key]}>
       {(props) => (
         <input
@@ -101,6 +108,10 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           onChange={set(key)}
           maxLength={extra.maxLength}
           inputMode={extra.inputMode}
+          // Данные вендора, а не сотрудника: подсказки браузера из своего профиля здесь мешают
+          autoComplete="off"
+          enterKeyHint="done"
+          {...(extra.latin ? { autoCapitalize: "none", spellCheck: false } : {})}
           readOnly={readOnly}
           required={key === "name"}
         />
@@ -121,6 +132,7 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           value={values[key]}
           onChange={set(key)}
           maxLength={24}
+          enterKeyHint="done"
           readOnly={readOnly}
         />
       )}
@@ -128,7 +140,7 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
   );
 
   return (
-    <form className="form" onSubmit={submit} noValidate>
+    <form id={formId} ref={form} className="form" onSubmit={submit} noValidate>
       <section className="fs">
         <div className="fs-head">
           <h2>{t.vendorSections.business}</h2>
@@ -190,21 +202,24 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           {text("contactRole", { maxLength: 80 })}
           {phone("phone")}
           {phone("phoneAlt")}
-          {text("telegramUsername", { maxLength: 33 })}
+          {text("telegramUsername", { maxLength: 33, latin: true })}
         </div>
       </section>
       {failure && <ErrorText failure={failure} />}
       {!readOnly && (
-        <div className="formbar">
-          {saved && (
-            <span className="saved" role="status">
-              {t.saved}
-            </span>
-          )}
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? t.saving : submitLabel}
-          </button>
-        </div>
+        <FormBar
+          formId={formId}
+          show={creating || dirty}
+          busy={busy}
+          submitLabel={submitLabel}
+          note={
+            saved ? (
+              <span className="saved" role="status">
+                {t.saved}
+              </span>
+            ) : null
+          }
+        />
       )}
     </form>
   );

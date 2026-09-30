@@ -5,6 +5,7 @@ import type { OutboxDeadItem, OutboxHealth, OutboxStatus } from "@bayramm/shared
 import { useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { formatMoment } from "../format";
+import { usePhone } from "../layout";
 import { t } from "../texts";
 import { ErrorText, Link, LoadedView } from "../ui";
 
@@ -13,7 +14,7 @@ const COUNTS: readonly OutboxStatus[] = ["pending", "sending", "failed", "dead",
 export function NotificationsPage() {
   const { loaded, reload, set } = useLoad<OutboxHealth>("/staff/outbox");
   return (
-    <LoadedView loaded={loaded} onRetry={reload}>
+    <LoadedView loaded={loaded} onRetry={reload} skeleton="stats">
       {(health) => <HealthView health={health} onChange={set} />}
     </LoadedView>
   );
@@ -63,6 +64,7 @@ function DeadTable({
 }) {
   const { api } = useSession();
   const can = useCan();
+  const phone = usePhone();
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
 
@@ -73,6 +75,56 @@ function DeadTable({
     setFailure(result.ok ? null : result);
     if (result.ok) onChange(result.data);
   };
+
+  if (phone)
+    return (
+      <div className="stack">
+        {failure && <ErrorText failure={failure} />}
+        <ul className="rcards">
+          {items.map((item) => (
+            <li key={item.id} className="rcard">
+              <p className="rcard-title">{t.noticeKinds[item.kind] ?? item.kind}</p>
+              {item.request ? (
+                <p className="rcard-meta">
+                  <Link to={{ name: "request", id: item.request.id }}>
+                    {t.requestNo(item.request.publicNo)}
+                  </Link>
+                </p>
+              ) : (
+                <p className="rcard-meta">{item.kind}</p>
+              )}
+              <dl className="rcard-facts">
+                <dt>{t.colRecipient}</dt>
+                <dd>
+                  {t.recipientKinds[item.recipientKind] ?? item.recipientKind}
+                  {item.recipientRef ? ` · ${item.recipientRef}…` : ""}
+                </dd>
+                <dt>{t.colAttempts}</dt>
+                <dd>{item.attempts}</dd>
+                <dt>{t.colWhen}</dt>
+                <dd>
+                  {formatMoment(item.createdAt)}
+                  {item.lastAttemptAt ? ` · ${formatMoment(item.lastAttemptAt)}` : ""}
+                </dd>
+              </dl>
+              <p className="rcard-error">{item.error ?? t.none}</p>
+              {can("outbox.retry") && (
+                <div className="rcard-actions">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => retry(item.id)}
+                    disabled={busy !== null}
+                  >
+                    {t.retry}
+                  </button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
 
   return (
     <div className="stack">
