@@ -13,6 +13,7 @@
 //   /staff/audit          журнал действий и журнал доступа к ПДн
 //   /staff/settings       настройки платформы
 //   /staff/team           сотрудники: приглашение, роль, отключение
+//   /staff/metrics        метрики запуска: по неделям, по вендорам (только чтение)
 //
 // Читается под актором сотрудника; роль и активность проверены в authenticate
 // на этот же запрос.
@@ -31,6 +32,7 @@ import { availability } from "../staff/availability";
 import { clients } from "../staff/clients";
 import { dictionaries } from "../staff/dictionaries";
 import { listings } from "../staff/listings";
+import { metrics } from "../staff/metrics";
 import { outbox } from "../staff/outbox";
 import { photos } from "../staff/photos";
 import { requests } from "../staff/requests";
@@ -54,6 +56,7 @@ sections.route("/outbox", outbox);
 sections.route("/audit", audit);
 sections.route("/settings", settings);
 sections.route("/team", team);
+sections.route("/metrics", metrics);
 
 export const staff = new Hono<AppEnv>();
 

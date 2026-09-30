@@ -50,6 +50,33 @@ export function formatPrice(value: number | null, unit: PriceUnit): string {
 
 export { dateOnly };
 
+// ── метрики ────────────────────────────────────────────────────────────────
+
+const percent = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
+const shortDay = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
+
+/** Доля в процентах: 62.5 → «62,5 %»; null — прочерк */
+export function formatPercent(rate: number | null): string {
+  return rate === null ? t.none : `${percent.format(rate)} %`;
+}
+
+/** Минуты: 85 → «1 ч 25 мин», 120 → «2 ч»; null — прочерк */
+export function formatDuration(minutes: number | null): string {
+  if (minutes === null) return t.none;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${m} мин`;
+  return m === 0 ? `${h} ч` : `${h} ч ${m} мин`;
+}
+
+/** Неделя с понедельника «YYYY-MM-DD» → «21 сент. – 27 сент.» (календарные даты, без пояса) */
+export function formatWeek(weekStart: string): string {
+  const start = new Date(`${weekStart}T12:00:00Z`);
+  if (Number.isNaN(start.getTime())) return weekStart;
+  const end = new Date(start.getTime() + 6 * 86_400_000);
+  return `${shortDay.format(start)} – ${shortDay.format(end)}`;
+}
+
 // ── фото ───────────────────────────────────────────────────────────────────
 
 /** Воркер media того же окружения, что и панель: по адресу панели */

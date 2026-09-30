@@ -3,6 +3,8 @@
   "name": "bayramm-admin-dev",
   "main": "./worker/index.ts",
   "compatibility_date": "2026-09-01",
+  // Workers Logs: сотрудников единицы — пишем каждый запрос
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
   // Только свои домены: ни *.workers.dev, ни preview-адресов версий. Вход — виджет Telegram
   // по приглашению, данные отдаёт только API за сессией сотрудника
   "workers_dev": false,

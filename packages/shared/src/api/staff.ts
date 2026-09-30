@@ -37,7 +37,8 @@ export type StaffPermission =
   | "audit.read"
   | "settings.write"
   | "team.manage"
-  | "revisions.moderate";
+  | "revisions.moderate"
+  | "metrics.read";
 
 /** GET /staff/me */
 export interface StaffMe {
@@ -533,7 +534,8 @@ export interface RequestNote {
 /**
  * Действия с заявкой (право requests.write) → StaffRequestDetail:
  *   POST /staff/requests/:id/remind                   напомнить вендору сейчас: 409 request_not_awaiting,
- *        vendor_unreachable (никто не привязал Telegram — звонить); 429 reminder_too_soon (30 минут)
+ *        vendor_unreachable (никто не привязал Telegram — звонить); 429 reminder_too_soon (пауза —
+ *        настройка ops_reminder_pause_minutes, когда можно снова — nextReminderAt)
  *   POST /staff/requests/:id/contacted { comment? }  «связались» — отметка сотрудника (в метрику
  *        вендора не идёт); 409 illegal_transition — заявка уже не ждёт ответа
  *   POST /staff/requests/:id/notes { text }          заметка (только добавить)
@@ -723,7 +725,8 @@ export type SettingKey =
   | "client_requests_per_day"
   | "request_contact_retention_days"
   | "otp_retention_hours"
-  | "session_retention_days";
+  | "session_retention_days"
+  | "ops_reminder_pause_minutes";
 
 /** Значение: число; sla_reminder_hours — [часы, часы]; quiet_hours — { from: "22:00", to: "08:00" } */
 export type SettingValue = number | readonly number[] | { readonly from: string; readonly to: string };
@@ -864,4 +867,106 @@ export interface RevisionDeclineInput {
  */
 export interface RequestVendorPhones extends VendorPhones {
   readonly listingPhone: string | null;
+}
+
+// ── метрики запуска ────────────────────────────────────────────────────────
+// Только числа, без ПДн (право metrics.read — все роли). Определения — одни для панели и
+// отчётов бота, в базе (миграция 20260930220000_launch_metrics.sql):
+//   · ответ площадки — её первый переход заявки в contacted, deal или declined; просмотр,
+//     нажатие на телефон и «связались» от сотрудника — не ответ площадки;
+//   · в срок — не позже срока ответа заявки (sla_hours при создании, 12 часов);
+//   · measurable — исход известен: ответила в срок или срок прошёл; отозванные клиентом до
+//     срока без ответа — не в расчёте. answeredRate = answeredInTime / measurable;
+//   · время ответа — от создания до ответа площадки (медиана, 90-й перцентиль — по
+//     заявкам с ответом); agreedRate — сейчас в статусе «договорились» / все заявки;
+//   · неделя — ISO, с понедельника по Ташкенту; заявка — в периоде своего создания.
+// Доли — проценты с одним знаком (50.5); null — не из чего считать.
+
+/** Метрики заявок за период */
+export interface PeriodMetrics {
+  readonly requests: number;
+  /** Разных клиентов среди авторов заявок */
+  readonly clients: number;
+  readonly measurable: number;
+  readonly answeredInTime: number;
+  readonly answeredRate: number | null;
+  /** Заявок, на которые площадка ответила (выборка для времени ответа) */
+  readonly responded: number;
+  readonly medianResponseMinutes: number | null;
+  readonly p90ResponseMinutes: number | null;
+  readonly agreed: number;
+  readonly agreedRate: number | null;
+  /** Срок ответа вышел без ответа (нарушение SLA) */
+  readonly slaBreaches: number;
+  /** Уведомления, которые бот не доставил (dead) */
+  readonly deadNotifications: number;
+}
+
+export interface WeeklyMetrics extends PeriodMetrics {
+  /** Понедельник недели, "YYYY-MM-DD" */
+  readonly weekStart: string;
+  /** ISO-неделя: "2026-W40" */
+  readonly weekLabel: string;
+  /** Текущая неделя — ещё идёт */
+  readonly partial: boolean;
+}
+
+/** Что ждёт команду сейчас */
+export interface OpsQueues {
+  /** Заявки ждут первого ответа */
+  readonly awaiting: number;
+  /** Из них срок ответа уже вышел */
+  readonly overdue: number;
+  /** Недоставленные уведомления (повтор — в «Уведомлениях») */
+  readonly deadTotal: number;
+  readonly listingsReview: number;
+  readonly revisionsPending: number;
+  /** Новые фото опубликованных карточек ждут решения */
+  readonly photosPending: number;
+}
+
+/** GET /staff/metrics?weeks=8 (1–52): по неделям, текущая — первой; 422 invalid_input ["weeks"] */
+export interface MetricsOverview {
+  /** Срок ответа для новых заявок (sla_hours), часов */
+  readonly slaHours: number;
+  readonly weeks: readonly WeeklyMetrics[];
+  readonly queues: OpsQueues;
+}
+
+/** Ответы площадки за последние N дней */
+export interface ResponseStats {
+  readonly requests: number;
+  readonly measurable: number;
+  readonly answeredInTime: number;
+  readonly answeredRate: number | null;
+  readonly responded: number;
+  readonly medianResponseMinutes: number | null;
+  readonly slaBreaches: number;
+  readonly agreed: number;
+  readonly lastRequestAt: string | null;
+}
+
+export interface VendorMetrics extends ResponseStats {
+  readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
+  readonly activeListings: number;
+}
+
+/**
+ * GET /staff/metrics/vendors?days=30 (1–366): вендоры с заявками за период или с опубликованной
+ * площадкой; 422 invalid_input ["days"]
+ */
+export interface VendorMetricsList {
+  readonly days: number;
+  readonly items: readonly VendorMetrics[];
+}
+
+export interface ListingMetrics extends ResponseStats {
+  readonly listing: { readonly id: string; readonly name: string; readonly status: ListingStatus };
+}
+
+/** GET /staff/metrics/vendors/:id?days=30 — вендор и его площадки; 404 — нет такого вендора */
+export interface VendorResponseStats {
+  readonly days: number;
+  readonly vendor: VendorMetrics;
+  readonly listings: readonly ListingMetrics[];
 }

@@ -44,6 +44,7 @@ describe("маршруты панели оператора", () => {
       "vendors",
       "moderation",
       "requests",
+      "metrics",
       "clients",
       "notifications",
       "audit",

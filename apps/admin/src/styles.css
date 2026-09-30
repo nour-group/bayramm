@@ -1109,6 +1109,116 @@ textarea.input {
   min-width: 180px;
 }
 
+/* ── метрики запуска ── */
+
+/* Заголовок строки таблицы (неделя, вендор): цветом текста, с переносом — после .table th */
+.table .row-head {
+  color: var(--ink);
+  font-size: var(--fs-14);
+  font-weight: 600;
+  white-space: normal;
+}
+
+.table tr:last-child .row-head {
+  border-bottom: 0;
+}
+
+/* Таблица внутри панели страницы: без ширины на весь экран */
+.table-compact {
+  min-width: 0;
+}
+
+/* Сортировка по столбцу: кнопка во всю высоту зоны нажатия */
+.sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+  min-height: var(--hit-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sort-mark {
+  color: var(--plum);
+}
+
+/* Доля ответов в срок: полоса для глаза, число — для чтения */
+.rate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-3) var(--gap-7);
+  min-width: 150px;
+}
+
+.rate .sub {
+  flex-basis: 100%;
+}
+
+.rate-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  display: block;
+  width: 72px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--r-999);
+  background: var(--line);
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--plum);
+}
+
+/* Ниже 40 % — коралловой заливкой */
+.bar-low {
+  background: var(--coral);
+}
+
+/* Ширина — шагом 10 %: встроенных стилей CSP не пускает */
+.bar-w0 {
+  width: 0;
+}
+.bar-w1 {
+  width: 10%;
+}
+.bar-w2 {
+  width: 20%;
+}
+.bar-w3 {
+  width: 30%;
+}
+.bar-w4 {
+  width: 40%;
+}
+.bar-w5 {
+  width: 50%;
+}
+.bar-w6 {
+  width: 60%;
+}
+.bar-w7 {
+  width: 70%;
+}
+.bar-w8 {
+  width: 80%;
+}
+.bar-w9 {
+  width: 90%;
+}
+.bar-w10 {
+  width: 100%;
+}
+
 @media (max-width: 959px) {
   .columns {
     grid-template-columns: minmax(0, 1fr);

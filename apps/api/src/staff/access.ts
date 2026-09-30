@@ -58,6 +58,8 @@ export const PERMISSIONS = {
   "team.manage": ["admin"],
   /** Решение по правкам опубликованных карточек (ревизиям) */
   "revisions.moderate": ["admin", "moderator"],
+  /** Метрики запуска: заявки по неделям, ответы вендоров — только числа, без ПДн */
+  "metrics.read": ALL,
 } as const satisfies Record<StaffPermission, readonly StaffRole[]>;
 
 export type Permission = StaffPermission;

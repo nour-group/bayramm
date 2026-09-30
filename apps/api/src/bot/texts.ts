@@ -117,8 +117,11 @@ export const STAFF_TEXTS: Readonly<Record<Lang, StaffTexts>> = {
   ru: {
     staffCard: (role) =>
       `Вы в команде Bayramm — ${ROLE.ru[role]}.\n\n` +
-      "Сюда приходят оповещения: сорванный срок ответа 12 часов и недоставленные уведомления.\n\n" +
-      "/stats — сводка\n/admin — панель оператора",
+      "Сюда приходят оповещения: сорванный срок ответа 12 часов и недоставленные уведомления." +
+      (role === "admin"
+        ? "\nАдминистратору — ещё сводка каждое утро, отчёт по понедельникам и ошибки сервера."
+        : "") +
+      "\n\n/stats — сводка\n/admin — панель оператора",
     adminButton: "Панель оператора",
     adminHint: "Панель оператора открывается прямо в Telegram:",
     stats: (s) =>
@@ -133,8 +136,11 @@ export const STAFF_TEXTS: Readonly<Record<Lang, StaffTexts>> = {
   uz: {
     staffCard: (role) =>
       `Siz Bayramm jamoasidasiz — ${ROLE.uz[role]}.\n\n` +
-      "Ogohlantirishlar shu yerga keladi: 12 soatlik javob muddati buzilishi va yetkazilmagan xabarlar.\n\n" +
-      "/stats — qisqa hisobot\n/admin — boshqaruv paneli",
+      "Ogohlantirishlar shu yerga keladi: 12 soatlik javob muddati buzilishi va yetkazilmagan xabarlar." +
+      (role === "admin"
+        ? "\nAdministratorga — yana har kuni ertalab qisqa hisobot, dushanba kunlari haftalik hisobot va server xatolari."
+        : "") +
+      "\n\n/stats — qisqa hisobot\n/admin — boshqaruv paneli",
     adminButton: "Boshqaruv paneli",
     adminHint: "Boshqaruv paneli toʻgʻridan-toʻgʻri Telegramda ochiladi:",
     stats: (s) =>

@@ -7,6 +7,7 @@ import { Login } from "./Login";
 import { AuditPage } from "./pages/Audit";
 import { ClientPage, ClientsPage } from "./pages/Clients";
 import { ListingNewPage, ListingPage } from "./pages/Listing";
+import { MetricsPage } from "./pages/Metrics";
 import { ModerationPage } from "./pages/Moderation";
 import { NotificationsPage } from "./pages/Notifications";
 import { RequestPage, RequestsPage } from "./pages/Requests";
@@ -109,6 +110,9 @@ function Page({ view, title, headingRef, dictionaries }: PageProps) {
       break;
     case "request":
       content = <RequestPage key={view.id} id={view.id} dictionaries={dictionaries} />;
+      break;
+    case "metrics":
+      content = <MetricsPage />;
       break;
     case "clients":
       content = <ClientsPage />;

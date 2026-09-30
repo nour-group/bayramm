@@ -3,6 +3,7 @@ import { Client } from "pg";
 import { scheduled } from "./cron";
 import type { AppEnv } from "./env";
 import { handleError, notFound } from "./errors";
+import { reportApiError } from "./notify/api-errors";
 import { mountRateLimits } from "./ratelimit";
 import { auth } from "./routes/auth";
 import { catalog } from "./routes/catalog";
@@ -67,7 +68,13 @@ app.route("/telegram", telegram);
 app.route("/vendor", vendor);
 
 app.notFound((c) => c.json(notFound().toBody(), 404));
-app.onError(handleError);
+// Ответ 5xx — ещё и счётчик ошибок с оповещением команде в боте (не чаще раза в 30 минут):
+// после ответа, запрос его не ждёт (notify/api-errors.ts)
+app.onError((err, c) => {
+  const res = handleError(err, c);
+  if (res.status >= 500) reportApiError(c);
+  return res;
+});
 
 // Воркер: fetch — приложение Hono, scheduled — cron раз в минуту (SLA и outbox).
 // Экспорт — само приложение с обработчиком cron: тесты зовут app.request как раньше
