@@ -9,13 +9,14 @@ import type {
   PiiAccessList,
   StaffDictionaries,
 } from "@bayramm/shared/api/staff";
-import { type CalendarTexts, DateField, Select } from "@bayramm/ui/react";
+import { type CalendarTexts, DateField, Dialog, Select } from "@bayramm/ui/react";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { useLoad } from "../api";
 import { formatDay, formatMoment } from "../format";
+import { usePhone } from "../layout";
 import type { View } from "../router";
 import { t } from "../texts";
-import { Link, LoadedView } from "../ui";
+import { FilterButton, Link, LoadedView } from "../ui";
 import { monthTitle, tashkentToday } from "./Calendar";
 
 type Tab = "actions" | "pii";
@@ -64,9 +65,12 @@ function queryOf(tab: Tab, filters: Filters, offset = 0): URLSearchParams {
 }
 
 export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | null }) {
+  const phone = usePhone();
   const [state, setState] = useState(() => initialState(window.location.search));
   const [draft, setDraft] = useState<Filters>(state.filters);
   const [offset, setOffset] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const active = FILTER_KEYS.filter((key) => Boolean(state.filters[key])).length;
 
   const apply = (tab: Tab, filters: Filters) => {
     setState({ tab, filters });
@@ -96,21 +100,46 @@ export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | 
           </button>
         ))}
       </fieldset>
-      <FilterForm
-        tab={state.tab}
-        draft={draft}
-        onDraft={setDraft}
-        dictionaries={dictionaries}
-        onApply={() => apply(state.tab, draft)}
-        onReset={() => {
-          setDraft({});
-          apply(state.tab, {});
-        }}
-      />
-      {state.tab === "pii" ? (
-        <PiiList path={path} offset={offset} onPage={setOffset} />
+      {phone ? (
+        <div className="toolbar">
+          <FilterButton count={active} open={filtersOpen} onOpen={() => setFiltersOpen(true)} />
+        </div>
+      ) : null}
+      {phone ? (
+        <Dialog open={filtersOpen} title={t.filters} onClose={() => setFiltersOpen(false)}>
+          <FilterForm
+            tab={state.tab}
+            draft={draft}
+            onDraft={setDraft}
+            dictionaries={dictionaries}
+            onApply={() => {
+              apply(state.tab, draft);
+              setFiltersOpen(false);
+            }}
+            onReset={() => {
+              setDraft({});
+              apply(state.tab, {});
+              setFiltersOpen(false);
+            }}
+          />
+        </Dialog>
       ) : (
-        <ActionList path={path} offset={offset} onPage={setOffset} />
+        <FilterForm
+          tab={state.tab}
+          draft={draft}
+          onDraft={setDraft}
+          dictionaries={dictionaries}
+          onApply={() => apply(state.tab, draft)}
+          onReset={() => {
+            setDraft({});
+            apply(state.tab, {});
+          }}
+        />
+      )}
+      {state.tab === "pii" ? (
+        <PiiList path={path} offset={offset} onPage={setOffset} phone={phone} />
+      ) : (
+        <ActionList path={path} offset={offset} onPage={setOffset} phone={phone} />
       )}
     </div>
   );
@@ -209,6 +238,8 @@ function FilterForm({ tab, draft, onDraft, dictionaries, onApply, onReset }: Fil
             className="input"
             value={draft.object ?? ""}
             maxLength={100}
+            autoComplete="off"
+            enterKeyHint="search"
             onChange={(event) => set("object")(event.target.value)}
           />
         </FilterField>
@@ -219,6 +250,8 @@ function FilterForm({ tab, draft, onDraft, dictionaries, onApply, onReset }: Fil
               className="input"
               value={draft.action ?? ""}
               maxLength={60}
+              autoComplete="off"
+              enterKeyHint="search"
               placeholder="listing."
               onChange={(event) => set("action")(event.target.value)}
             />
@@ -269,13 +302,31 @@ function objectView(type: string, id: string): View | null {
   }
 }
 
-function ObjectRef({ type, id, labels }: { type: string; id: string; labels: Record<string, string> }) {
+function ObjectRef({
+  type,
+  id,
+  labels,
+  inline = false,
+}: {
+  type: string;
+  id: string;
+  labels: Record<string, string>;
+  /** В строку (карточка на телефоне), а не второй строкой ячейки */
+  inline?: boolean;
+}) {
   const view = objectView(type, id);
   const short = id.length > 13 ? `${id.slice(0, 8)}…` : id;
+  const ref = view ? <Link to={view}>{short}</Link> : short;
+  if (inline)
+    return (
+      <>
+        {labels[type] ?? type} · {ref}
+      </>
+    );
   return (
     <>
       {labels[type] ?? type}
-      <span className="sub">{view ? <Link to={view}>{short}</Link> : short}</span>
+      <span className="sub">{ref}</span>
     </>
   );
 }
@@ -303,6 +354,8 @@ interface ListProps {
   path: string;
   offset: number;
   onPage: (offset: number) => void;
+  /** Телефон: записи — карточками */
+  phone: boolean;
 }
 
 function Pager({ total, offset, onPage }: { total: number; offset: number; onPage: (o: number) => void }) {
@@ -332,13 +385,37 @@ function Pager({ total, offset, onPage }: { total: number; offset: number; onPag
   );
 }
 
-function ActionList({ path, offset, onPage }: ListProps) {
+function ActionList({ path, offset, onPage, phone }: ListProps) {
   const { loaded, reload } = useLoad<AuditList>(path);
   return (
     <LoadedView loaded={loaded} onRetry={reload}>
       {(list) =>
         list.items.length === 0 ? (
           <p className="empty">{t.auditEmpty}</p>
+        ) : phone ? (
+          <>
+            <ul className="rcards">
+              {list.items.map((entry: AuditEntry) => (
+                <li key={entry.id} className="rcard">
+                  <p className="rcard-meta">
+                    {formatMoment(entry.at)} · {actorText(entry)}
+                  </p>
+                  <p className="rcard-title">{t.auditActions[entry.action] ?? entry.action}</p>
+                  <dl className="rcard-facts">
+                    <dt>{t.colAction}</dt>
+                    <dd>{entry.action}</dd>
+                    <dt>{t.colObject}</dt>
+                    <dd>
+                      <ObjectRef type={entry.objectType} id={entry.objectId} labels={t.auditTypes} inline />
+                    </dd>
+                    <dt>{t.colDetail}</dt>
+                    <dd className="detail-cell">{detailText(entry.detail) || t.none}</dd>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+            <Pager total={list.total} offset={offset} onPage={onPage} />
+          </>
         ) : (
           <>
             <div className="table-wrap">
@@ -378,13 +455,40 @@ function ActionList({ path, offset, onPage }: ListProps) {
   );
 }
 
-function PiiList({ path, offset, onPage }: ListProps) {
+function PiiList({ path, offset, onPage, phone }: ListProps) {
   const { loaded, reload } = useLoad<PiiAccessList>(path);
   return (
     <LoadedView loaded={loaded} onRetry={reload}>
       {(list) =>
         list.items.length === 0 ? (
           <p className="empty">{t.auditEmpty}</p>
+        ) : phone ? (
+          <>
+            <ul className="rcards">
+              {list.items.map((entry: PiiAccessEntry) => (
+                <li key={entry.id} className="rcard">
+                  <p className="rcard-meta">
+                    {formatMoment(entry.at)} · {actorText(entry)}
+                  </p>
+                  <p className="rcard-title">{t.piiPurposes[entry.purpose] ?? entry.purpose}</p>
+                  <dl className="rcard-facts">
+                    <dt>{t.colObject}</dt>
+                    <dd>
+                      <ObjectRef
+                        type={entry.subjectKind}
+                        id={entry.subjectId}
+                        labels={t.piiSubjects}
+                        inline
+                      />
+                    </dd>
+                    <dt>{t.reason}</dt>
+                    <dd className="detail-cell">{entry.reason ?? t.none}</dd>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+            <Pager total={list.total} offset={offset} onPage={onPage} />
+          </>
         ) : (
           <>
             <div className="table-wrap">

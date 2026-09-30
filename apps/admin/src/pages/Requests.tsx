@@ -12,17 +12,22 @@ import type {
   StaffRequestDetail,
   StaffRequestList,
 } from "@bayramm/shared/api/staff";
-import { SearchField } from "@bayramm/ui/react";
-import { type FormEvent, useCallback, useId, useState } from "react";
+import { Dialog, RadioGroup, SearchField } from "@bayramm/ui/react";
+import { type FormEvent, useCallback, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { formatDay, formatMoment, formatSum, vendorLabel } from "../format";
+import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
+  ActionBar,
+  ActiveFilter,
   ConfirmForm,
   ErrorText,
+  FilterButton,
   Link,
   LoadedView,
   PhoneReveal,
+  PhoneSheet,
   Pill,
   ReasonPhoneReveal,
   type Tone,
@@ -69,13 +74,16 @@ function filterCount(list: StaffRequestList, filter: SlaFilter): number {
 }
 
 export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries | null }) {
+  const phone = usePhone();
   const [sla, setSla] = useState<SlaFilter | null>(null);
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const params = new URLSearchParams({ limit: "100" });
   if (sla) params.set("sla", sla);
   if (query) params.set("q", query);
   const { loaded, reload } = useLoad<StaffRequestList>(`/staff/requests?${params}`);
+  const list = loaded.state === "ready" ? loaded.data : null;
 
   return (
     <div className="stack">
@@ -94,30 +102,98 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
           aria-label={t.search}
           maxLength={100}
         />
-        <button type="submit" className="btn">
-          {t.search}
-        </button>
+        {phone ? (
+          <FilterButton count={sla ? 1 : 0} open={filtersOpen} onOpen={() => setFiltersOpen(true)} />
+        ) : (
+          <button type="submit" className="btn">
+            {t.search}
+          </button>
+        )}
       </form>
+      {phone && sla ? <ActiveFilter label={filterLabel(sla)} onClear={() => setSla(null)} /> : null}
+      {phone ? (
+        <Dialog
+          open={filtersOpen}
+          title={t.filters}
+          onClose={() => setFiltersOpen(false)}
+          actions={
+            <>
+              <button type="button" className="ui-btn ui-btn-secondary" onClick={() => setSla(null)}>
+                {t.reset}
+              </button>
+              <button type="button" className="ui-btn ui-btn-primary" onClick={() => setFiltersOpen(false)}>
+                {t.done}
+              </button>
+            </>
+          }
+        >
+          <RadioGroup<SlaFilter | "all">
+            variant="row"
+            label={t.colDue}
+            value={sla ?? "all"}
+            onChange={(value) => setSla(value === "all" ? null : value)}
+            options={SLA_FILTERS.map((filter) => ({
+              value: filter ?? "all",
+              label: filterLabel(filter),
+              ...(filter && list ? { hint: t.requestsCount(filterCount(list, filter)) } : {}),
+            }))}
+          />
+        </Dialog>
+      ) : null}
       <LoadedView loaded={loaded} onRetry={reload}>
         {(list) => (
           <>
-            <fieldset className="chips">
-              <legend className="visually-hidden">{t.colDue}</legend>
-              {SLA_FILTERS.map((filter) => (
-                <button
-                  key={filter ?? "all"}
-                  type="button"
-                  className="chip"
-                  aria-pressed={sla === filter}
-                  onClick={() => setSla(filter)}
-                >
-                  {filterLabel(filter)}
-                  {filter && <span className="chip-count">{filterCount(list, filter)}</span>}
-                </button>
-              ))}
-            </fieldset>
+            {phone ? null : (
+              <fieldset className="chips">
+                <legend className="visually-hidden">{t.colDue}</legend>
+                {SLA_FILTERS.map((filter) => (
+                  <button
+                    key={filter ?? "all"}
+                    type="button"
+                    className="chip"
+                    aria-pressed={sla === filter}
+                    onClick={() => setSla(filter)}
+                  >
+                    {filterLabel(filter)}
+                    {filter && <span className="chip-count">{filterCount(list, filter)}</span>}
+                  </button>
+                ))}
+              </fieldset>
+            )}
             {list.items.length === 0 ? (
               <p className="empty">{t.requestsEmpty}</p>
+            ) : phone ? (
+              <ul className="rcards">
+                {list.items.map((request) => (
+                  <li key={request.id} className="rcard rcard-tap">
+                    <div className="rcard-head">
+                      <Link to={{ name: "request", id: request.id }} className="rcard-link">
+                        {t.requestNo(request.publicNo)}
+                      </Link>
+                      <SlaPill sla={request.sla} />
+                    </div>
+                    <p className="rcard-meta">
+                      {t.requestStatus[request.status]} · {formatMoment(request.createdAt)}
+                    </p>
+                    <dl className="rcard-facts">
+                      <dt>{t.colVendor}</dt>
+                      <dd>
+                        {request.listing.name} · {vendorLabel(request.vendor)}
+                      </dd>
+                      <dt>{t.colEvent}</dt>
+                      <dd>
+                        {formatDay(request.eventDate)} · {occasionName(dictionaries, request.occasionCode)} ·{" "}
+                        {t.guests(request.guests)}
+                      </dd>
+                      <dt>{t.colDue}</dt>
+                      <dd>
+                        {formatMoment(request.slaDueAt)}
+                        {request.reminders > 0 ? ` · ${t.reminders(request.reminders)}` : ""}
+                      </dd>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <div className="table-wrap">
                 <table className="table">
@@ -210,107 +286,133 @@ function RequestView({
     },
     [api, request.id],
   );
+  const phone = usePhone();
   const budget =
     request.budgetMinUzs !== null || request.budgetMaxUzs !== null
       ? `${formatSum(request.budgetMinUzs)} — ${formatSum(request.budgetMaxUzs)}`
       : t.none;
 
+  const facts = (
+    <section className="panel" aria-label={t.views.request}>
+      <dl className="dl">
+        <dt>{t.colVendor}</dt>
+        <dd>
+          <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link> ·{" "}
+          <Link to={{ name: "vendor", id: request.vendor.id }}>{vendorLabel(request.vendor)}</Link>
+        </dd>
+        <dt>{t.colEvent}</dt>
+        <dd>
+          {formatDay(request.eventDate)} · {occasionName(dictionaries, request.occasionCode)} ·{" "}
+          {t.guests(request.guests)}
+        </dd>
+        <dt>{t.requestBudget}</dt>
+        <dd>{budget}</dd>
+        <dt>{t.colDue}</dt>
+        <dd>{formatMoment(request.slaDueAt)}</dd>
+        <dt>{t.firstViewed}</dt>
+        <dd>{formatMoment(request.firstViewedAt)}</dd>
+        <dt>{t.firstResponse}</dt>
+        <dd>
+          {formatMoment(request.firstResponseAt)}
+          {request.firstResponseBy ? ` · ${t.historyBy[request.firstResponseBy]}` : ""}
+        </dd>
+        {request.declineReason && (
+          <>
+            <dt>{t.requestStatus.declined}</dt>
+            <dd>
+              {t.declineReasons[request.declineReason]}
+              {request.declineNote ? ` · ${request.declineNote}` : ""}
+            </dd>
+          </>
+        )}
+        <dt>{t.source}</dt>
+        <dd>{request.source}</dd>
+      </dl>
+    </section>
+  );
+  const history = (
+    <section className="panel" aria-labelledby="history-title">
+      <h2 id="history-title">{t.history}</h2>
+      <ol className="history">
+        {request.history.map((entry) => (
+          <li key={`${entry.at}-${entry.to}`}>
+            <span className="sub">{formatMoment(entry.at)}</span>{" "}
+            {entry.from ? `${t.requestStatus[entry.from]} → ` : ""}
+            <strong>{t.requestStatus[entry.to]}</strong>
+            <span className="sub"> · {t.historyBy[entry.actorKind]}</span>
+            {entry.reason && <p className="reason">{entry.reason}</p>}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+  const client = (
+    <section className="panel" aria-labelledby="client-title">
+      <h2 id="client-title">{t.requestClient}</h2>
+      {request.contactPurged ? (
+        <p className="muted">{t.contactPurged}</p>
+      ) : (
+        <>
+          <p>
+            <strong>{request.contactName ?? t.none}</strong>
+          </p>
+          {request.comment && (
+            <p>
+              <span className="sub">{t.requestComment}</span>
+              {request.comment}
+            </p>
+          )}
+          {can("client_phones.read") && (
+            <ReasonPhoneReveal
+              label={t.clientPhone}
+              hint={t.clientPhoneHint}
+              reasonLabel={t.clientPhoneReason}
+              load={loadClientPhone}
+            />
+          )}
+        </>
+      )}
+    </section>
+  );
+  const phones = (
+    <section className="panel" aria-labelledby="vendor-phones-title">
+      <h2 id="vendor-phones-title">{t.vendorPhones}</h2>
+      <PhoneReveal label={t.listingPhone} load={pick("listingPhone")} />
+      <PhoneReveal label={t.phoneMain} load={pick("phone")} />
+      <PhoneReveal label={t.phoneAlternative} load={pick("phoneAlt")} />
+    </section>
+  );
+
   return (
     <div className="stack">
-      <p>
+      <p className="pills">
         <SlaPill sla={request.sla} /> <Pill tone="outline">{t.requestStatus[request.status]}</Pill>
       </p>
       {can("requests.write") && <RequestActions request={request} onChange={onChange} />}
-      <div className="columns">
-        <div className="stack">
-          <section className="panel">
-            <dl className="dl">
-              <dt>{t.colVendor}</dt>
-              <dd>
-                <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link> ·{" "}
-                <Link to={{ name: "vendor", id: request.vendor.id }}>{vendorLabel(request.vendor)}</Link>
-              </dd>
-              <dt>{t.colEvent}</dt>
-              <dd>
-                {formatDay(request.eventDate)} · {occasionName(dictionaries, request.occasionCode)} ·{" "}
-                {t.guests(request.guests)}
-              </dd>
-              <dt>{t.requestBudget}</dt>
-              <dd>{budget}</dd>
-              <dt>{t.colDue}</dt>
-              <dd>{formatMoment(request.slaDueAt)}</dd>
-              <dt>{t.firstViewed}</dt>
-              <dd>{formatMoment(request.firstViewedAt)}</dd>
-              <dt>{t.firstResponse}</dt>
-              <dd>
-                {formatMoment(request.firstResponseAt)}
-                {request.firstResponseBy ? ` · ${t.historyBy[request.firstResponseBy]}` : ""}
-              </dd>
-              {request.declineReason && (
-                <>
-                  <dt>{t.requestStatus.declined}</dt>
-                  <dd>
-                    {t.declineReasons[request.declineReason]}
-                    {request.declineNote ? ` · ${request.declineNote}` : ""}
-                  </dd>
-                </>
-              )}
-              <dt>{t.source}</dt>
-              <dd>{request.source}</dd>
-            </dl>
-          </section>
+      {phone ? (
+        // Телефон: сначала главное — данные заявки, клиент, как дозвониться вендору
+        <>
+          {facts}
+          {client}
+          {phones}
           <Timeline events={request.timeline} />
           <Notes request={request} onChange={onChange} />
-          <section className="panel" aria-labelledby="history-title">
-            <h2 id="history-title">{t.history}</h2>
-            <ol className="history">
-              {request.history.map((entry) => (
-                <li key={`${entry.at}-${entry.to}`}>
-                  <span className="sub">{formatMoment(entry.at)}</span>{" "}
-                  {entry.from ? `${t.requestStatus[entry.from]} → ` : ""}
-                  <strong>{t.requestStatus[entry.to]}</strong>
-                  <span className="sub"> · {t.historyBy[entry.actorKind]}</span>
-                  {entry.reason && <p className="reason">{entry.reason}</p>}
-                </li>
-              ))}
-            </ol>
-          </section>
+          {history}
+        </>
+      ) : (
+        <div className="columns">
+          <div className="stack">
+            {facts}
+            <Timeline events={request.timeline} />
+            <Notes request={request} onChange={onChange} />
+            {history}
+          </div>
+          <div className="stack">
+            {client}
+            {phones}
+          </div>
         </div>
-        <div className="stack">
-          <section className="panel" aria-labelledby="client-title">
-            <h2 id="client-title">{t.requestClient}</h2>
-            {request.contactPurged ? (
-              <p className="muted">{t.contactPurged}</p>
-            ) : (
-              <>
-                <p>
-                  <strong>{request.contactName ?? t.none}</strong>
-                </p>
-                {request.comment && (
-                  <p>
-                    <span className="sub">{t.requestComment}</span>
-                    {request.comment}
-                  </p>
-                )}
-                {can("client_phones.read") && (
-                  <ReasonPhoneReveal
-                    label={t.clientPhone}
-                    hint={t.clientPhoneHint}
-                    reasonLabel={t.clientPhoneReason}
-                    load={loadClientPhone}
-                  />
-                )}
-              </>
-            )}
-          </section>
-          <section className="panel" aria-labelledby="vendor-phones-title">
-            <h2 id="vendor-phones-title">{t.vendorPhones}</h2>
-            <PhoneReveal label={t.listingPhone} load={pick("listingPhone")} />
-            <PhoneReveal label={t.phoneMain} load={pick("phone")} />
-            <PhoneReveal label={t.phoneAlternative} load={pick("phoneAlt")} />
-          </section>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -325,6 +427,7 @@ function RequestActions({
   onChange: (request: StaffRequestDetail) => void;
 }) {
   const { api } = useSession();
+  const contactButton = useRef<HTMLButtonElement>(null);
   const [contacting, setContacting] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
@@ -366,7 +469,7 @@ function RequestActions({
   return (
     <section className="panel" aria-labelledby="actions-title">
       <h2 id="actions-title">{t.requestActions}</h2>
-      <div className="acts">
+      <ActionBar label={t.requestActions}>
         <button
           type="button"
           className="btn btn-primary"
@@ -376,6 +479,7 @@ function RequestActions({
           {t.remindVendor}
         </button>
         <button
+          ref={contactButton}
           type="button"
           className="btn"
           aria-expanded={contacting}
@@ -383,7 +487,7 @@ function RequestActions({
         >
           {t.markContacted}
         </button>
-      </div>
+      </ActionBar>
       <p className="muted small">
         {unreachable
           ? t.remindUnreachable
@@ -397,7 +501,12 @@ function RequestActions({
         </p>
       )}
       {failure && <ErrorText failure={failure} />}
-      {contacting && (
+      <PhoneSheet
+        open={contacting}
+        title={t.markContacted}
+        onClose={() => setContacting(false)}
+        returnFocus={contactButton}
+      >
         <ConfirmForm
           hint={t.markContactedHint}
           label={t.comment}
@@ -405,7 +514,7 @@ function RequestActions({
           onSubmit={contacted}
           onCancel={() => setContacting(false)}
         />
-      )}
+      </PhoneSheet>
     </section>
   );
 }

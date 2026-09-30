@@ -15,10 +15,10 @@ import type {
   StaffListingPackage,
 } from "@bayramm/shared/api/staff";
 import { Select, type SelectOption } from "@bayramm/ui/react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useId, useState } from "react";
 import type { Failure } from "../api";
 import { t } from "../texts";
-import { ErrorText, Field, fieldErrors } from "../ui";
+import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
 
 type PackageKind = StaffListingPackage["kind"];
 
@@ -184,6 +184,8 @@ interface ListingFormProps {
   readOnly?: boolean;
   /** Название, цена, описания и пакеты уйдут на модерацию — подсказать у этих полей */
   moderated?: boolean;
+  /** Есть несохранённые правки (true) или форма как в карточке (false) */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 /** Что ушло на модерацию и было ли в правке что-то ещё (оно сохранено сразу) */
@@ -199,6 +201,7 @@ export function ListingForm({
   submitLabel,
   readOnly,
   moderated = false,
+  onDirtyChange,
 }: ListingFormProps) {
   const creating = listing === null;
   const [before, setBefore] = useState(() => initial(listing));
@@ -211,6 +214,14 @@ export function ListingForm({
   const [sent, setSent] = useState<Sent | null>(null);
   const errors = fieldErrors(failure, t.listingFieldErrors);
   const moderatedHint = moderated && !readOnly ? t.moderatedHint : undefined;
+  const form = useRevealErrors(failure);
+  const formId = useId();
+  // Несохранённое есть, если запрос правки был бы не пуст; на телефоне тогда видна «Сохранить»
+  const dirty =
+    !creating && !readOnly && Object.keys(listingBody(values, before, rows, beforeRows, false)).length > 0;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   // Любая новая правка — старое «Сохранено» или «Отправлено» уже не про неё
   const touch = () => {
@@ -273,6 +284,8 @@ export function ListingForm({
           onChange={set(key)}
           maxLength={extra.maxLength}
           inputMode={extra.numeric ? "numeric" : undefined}
+          autoComplete="off"
+          enterKeyHint="done"
           readOnly={readOnly}
           required={extra.required}
         />
@@ -298,7 +311,7 @@ export function ListingForm({
   );
 
   return (
-    <form className="form" onSubmit={submit} noValidate>
+    <form id={formId} ref={form} className="form" onSubmit={submit} noValidate>
       {moderatedHint && <p className="notice notice-warn">{t.moderatedNotice}</p>}
       <section className="fs">
         <div className="fs-head">
@@ -455,6 +468,7 @@ export function ListingForm({
                     {...props}
                     className="input"
                     inputMode="numeric"
+                    enterKeyHint="done"
                     value={row.price}
                     maxLength={16}
                     readOnly={readOnly}
@@ -536,6 +550,7 @@ export function ListingForm({
                 value={values.phone}
                 onChange={set("phone")}
                 maxLength={24}
+                enterKeyHint="done"
                 readOnly={readOnly}
               />
             )}
@@ -545,24 +560,26 @@ export function ListingForm({
 
       {failure && <ErrorText failure={failure} />}
       {!readOnly && (
-        <div className="formbar">
-          {saved && (
-            <span className="saved" role="status">
-              {t.saved}
-            </span>
-          )}
-          {sent && (
-            <span className="sent" role="status">
-              {t.sentForModeration(
-                sent.fields.map((field) => t.revisionFields[field] ?? field).join(", "),
-                sent.rest,
-              )}
-            </span>
-          )}
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? t.saving : submitLabel}
-          </button>
-        </div>
+        <FormBar
+          formId={formId}
+          show={creating || dirty}
+          busy={busy}
+          submitLabel={submitLabel}
+          note={
+            saved ? (
+              <span className="saved" role="status">
+                {t.saved}
+              </span>
+            ) : sent ? (
+              <span className="sent" role="status">
+                {t.sentForModeration(
+                  sent.fields.map((field) => t.revisionFields[field] ?? field).join(", "),
+                  sent.rest,
+                )}
+              </span>
+            ) : null
+          }
+        />
       )}
     </form>
   );

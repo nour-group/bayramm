@@ -19,18 +19,32 @@ import { fakeTelegram, telegramState } from "../support/telegram";
 /* Панель оператора: страница входа (хаб на сайте и бот окружения, виджета здесь нет),
    вход как Mini App по initData, работа сотрудника на перехваченном /api — карточка
    создаётся, и чего не хватает для публикации, панель говорит словами, а не кодами.
-   Вход через хаб целиком — hub/hub.spec.ts. */
+   Вход через хаб целиком — hub/hub.spec.ts. Идёт и на компьютере (admin-desktop), и на
+   телефоне (admin-phone); телефонное — ещё и в mobile.spec.ts. */
 
 const CONTROLS = [
   ".btn",
   ".action",
   ".nav a",
+  ".tab",
+  ".appbar-btn",
+  ".appbar-account",
   ".chips button",
   "button.sort",
   "input:not([type=hidden])",
   ".ui-select",
   ".ui-icon-btn",
 ].join(", ");
+
+/**
+ * Вошедший сотрудник на экране: имя — в шапке (компьютер) или в подписи кнопки аккаунта
+ * (телефон и планшет). На экране оно бывает и в списках (менеджер, автор заметки)
+ */
+const signedIn = (page: Page) =>
+  page
+    .locator(".who")
+    .getByText(STAFF.displayName)
+    .or(page.getByRole("banner").getByRole("button", { name: STAFF.displayName }));
 // Коды блокеров из базы — на экране их быть не должно, только слова
 const BLOCKER_CODES =
   /\b(price|capacity|district|descriptions|packages|photos|contract|stir|contacts|pd_consent)\b/;
@@ -82,7 +96,7 @@ test.describe("вход", () => {
     const api = await start(page, { signedIn: false });
     await fakeTelegram(page);
     await page.goto("/requests");
-    await expect(page.locator(".who").getByText(STAFF.displayName)).toBeVisible();
+    await expect(signedIn(page)).toBeVisible();
     await expect(page).toHaveURL("/requests");
     expect(api.webapp).toHaveLength(1);
     expect(api.webapp[0]).toContain("hash=");
@@ -152,7 +166,7 @@ test.describe("работа сотрудника", () => {
       const api = await start(page);
       await page.goto(screen.path);
       // Имя — в шапке: на экране оно бывает и в списках (менеджер, автор заметки)
-      await expect(page.locator(".who").getByText(STAFF.displayName)).toBeVisible();
+      await expect(signedIn(page)).toBeVisible();
       await expect(page.getByRole("status")).toHaveCount(0);
       await expectNoAxeViolations(page, screen.name);
       await expectHitAreas(page, screen.name, CONTROLS);
@@ -202,7 +216,7 @@ test.describe("работа сотрудника", () => {
   }) => {
     const api = await start(page);
     await page.goto("/team");
-    await expect(page.locator(".who").getByText(STAFF.displayName)).toBeVisible();
+    await expect(signedIn(page)).toBeVisible();
     const form = page.locator("form.fs");
     await form.getByRole("radio", { name: t.inviteByPhone }).check();
     // Вход по телефону в окружении выключен — подсказка честно об этом
@@ -221,7 +235,7 @@ test.describe("работа сотрудника", () => {
   test("вендоры: фокус с клавиатуры виден", async ({ page }) => {
     await start(page);
     await page.goto("/vendors");
-    await expect(page.getByText(STAFF.displayName)).toBeVisible();
+    await expect(signedIn(page)).toBeVisible();
     await expectVisibleFocus(page, "вендоры", 12);
   });
 });

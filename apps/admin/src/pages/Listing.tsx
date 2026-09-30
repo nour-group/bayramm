@@ -13,16 +13,20 @@ import type {
   RevealedPhone,
   StaffDictionaries,
 } from "@bayramm/shared/api/staff";
-import { type FormEvent, useCallback, useId, useState } from "react";
+import { type FormEvent, useCallback, useId, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { formatMoment, vendorLabel } from "../format";
+import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
+  ActionBar,
   Blockers,
   ErrorText,
   Link,
   LoadedView,
+  OverflowMenu,
   PhoneReveal,
+  PhoneSheet,
   publishBlockers,
   StatusPill,
   useEntityTitle,
@@ -73,7 +77,9 @@ export function ListingNewPage({
   return (
     <div className="stack">
       <p>
-        <Link to={{ name: "vendor", id: vendorId }}>← {t.openVendor}</Link>
+        <Link to={{ name: "vendor", id: vendorId }} className="back-link">
+          ← {t.openVendor}
+        </Link>
       </p>
       <ListingForm
         listing={null}
@@ -88,7 +94,7 @@ export function ListingNewPage({
 export function ListingPage({ id, dictionaries }: { id: string; dictionaries: StaffDictionaries | null }) {
   const { loaded, reload, set } = useLoad<ListingDetail>(`/staff/listings/${id}`);
   return (
-    <LoadedView loaded={loaded} onRetry={reload}>
+    <LoadedView loaded={loaded} onRetry={reload} skeleton="detail">
       {(listing) => (
         <ListingView listing={listing} dictionaries={dictionaries} onChange={set} onReload={reload} />
       )}
@@ -106,6 +112,8 @@ interface ListingViewProps {
 function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewProps) {
   const { api } = useSession();
   const can = useCan();
+  // Правка формы не сохранена — на телефоне внизу «Сохранить», а не смена статуса
+  const [dirty, setDirty] = useState(false);
   useEntityTitle(listing.name);
   const save = useCallback(
     async (body: ListingInput): Promise<Failure | ListingSaveResult> => {
@@ -157,7 +165,7 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
 
       {listing.pendingRevision && <PendingRevisionNotice revision={listing.pendingRevision} />}
 
-      <StatusActions listing={listing} onChange={onChange} />
+      <StatusActions listing={listing} onChange={onChange} hidden={dirty} />
 
       {showReview && <Blockers title={t.blockersReview} codes={listing.blockers.review} />}
       {listing.status !== "active" && (
@@ -203,6 +211,7 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
           submitLabel={t.save}
           readOnly={!can("listings.write")}
           moderated={moderated}
+          onDirtyChange={setDirty}
         />
       </div>
     </div>
@@ -231,16 +240,31 @@ function PendingRevisionNotice({ revision }: { revision: PendingRevision }) {
 
 // ── действия со статусом ───────────────────────────────────────────────────
 
+/** Главное действие для панели внизу телефона: вперёд по пути к публикации */
+const PRIMARY: readonly ListingAction[] = ["publish", "submit"];
+
+function actionClass(action: ListingAction): string {
+  if (PRIMARY.includes(action)) return "btn btn-primary";
+  if (action === "suspend" || action === "reject") return "btn btn-danger";
+  return "btn";
+}
+
 function StatusActions({
   listing,
   onChange,
+  hidden,
 }: {
   listing: ListingDetail;
   onChange: (l: ListingDetail) => void;
+  /** Форма карточки не сохранена: на телефоне панель внизу отдана «Сохранить» */
+  hidden: boolean;
 }) {
   const { api } = useSession();
   const can = useCan();
+  const phone = usePhone();
   const reasonId = useId();
+  const primaryButton = useRef<HTMLButtonElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
   const [pending, setPending] = useState<ListingAction | null>(null);
   const [reason, setReason] = useState("");
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -263,54 +287,94 @@ function StatusActions({
     }
   };
 
+  const choose = (action: ListingAction) => {
+    setPending(pending === action ? null : action);
+    setFailure(null);
+  };
+  // Телефон: главное действие — кнопкой, остальные — в «Ещё»
+  const primary = phone ? (actions.find((action) => PRIMARY.includes(action)) ?? actions[0]) : undefined;
+  const rest = phone ? actions.filter((action) => action !== primary) : actions;
+
   return (
     <section className="panel actions-panel" aria-label={t.listingFields.status}>
-      <div className="acts">
-        {actions.map((action) => (
-          <button
-            key={action}
-            type="button"
-            className={`btn${action === "publish" || action === "submit" ? " btn-primary" : ""}${action === "suspend" || action === "reject" ? " btn-danger" : ""}`}
-            aria-expanded={pending === action}
-            onClick={() => {
-              setPending(pending === action ? null : action);
-              setFailure(null);
-            }}
-          >
-            {t.actions[action]}
-          </button>
-        ))}
-      </div>
-      {pending && (
-        <form className="confirm" onSubmit={run} noValidate>
-          <p className="muted small">{t.actionHints[pending]}</p>
-          <label htmlFor={reasonId}>
-            {REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
-          </label>
-          <textarea
-            id={reasonId}
-            className="input"
-            rows={2}
-            maxLength={1000}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            required={REASON_REQUIRED.has(pending)}
-          />
-          <div className="acts">
+      {phone && hidden ? null : (
+        <ActionBar label={t.listingFields.status ?? ""}>
+          {primary ? (
             <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={busy || (REASON_REQUIRED.has(pending) && reason.trim() === "")}
+              ref={primaryButton}
+              type="button"
+              className={actionClass(primary)}
+              aria-expanded={pending === primary}
+              onClick={() => choose(primary)}
             >
-              {t.actions[pending]}
+              {t.actions[primary]}
             </button>
-            <button type="button" className="btn" onClick={() => setPending(null)}>
-              {t.cancel}
-            </button>
-          </div>
-        </form>
+          ) : null}
+          {phone ? (
+            <OverflowMenu
+              title={t.actionsTitle}
+              context={t.listingActionsContext}
+              buttonRef={moreButton}
+              actions={rest.map((action) => ({
+                key: action,
+                label: t.actions[action],
+                danger: action === "suspend" || action === "reject",
+                run: () => choose(action),
+              }))}
+            />
+          ) : (
+            rest.map((action) => (
+              <button
+                key={action}
+                type="button"
+                className={actionClass(action)}
+                aria-expanded={pending === action}
+                onClick={() => choose(action)}
+              >
+                {t.actions[action]}
+              </button>
+            ))
+          )}
+        </ActionBar>
       )}
-      {failure && <ErrorText failure={failure} />}
+      <PhoneSheet
+        open={pending !== null}
+        title={pending ? t.actions[pending] : ""}
+        onClose={() => setPending(null)}
+        returnFocus={pending === primary ? primaryButton : moreButton}
+      >
+        {pending && (
+          <form className="confirm" onSubmit={run} noValidate>
+            <p className="muted small">{t.actionHints[pending]}</p>
+            <label htmlFor={reasonId}>
+              {REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
+            </label>
+            <textarea
+              id={reasonId}
+              className="input"
+              rows={2}
+              maxLength={1000}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              required={REASON_REQUIRED.has(pending)}
+            />
+            <div className="acts">
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={busy || (REASON_REQUIRED.has(pending) && reason.trim() === "")}
+              >
+                {t.actions[pending]}
+              </button>
+              <button type="button" className="btn" onClick={() => setPending(null)}>
+                {t.cancel}
+              </button>
+            </div>
+            {phone && failure && <ErrorText failure={failure} />}
+          </form>
+        )}
+      </PhoneSheet>
+      {!(phone && pending) && failure && <ErrorText failure={failure} />}
     </section>
   );
 }

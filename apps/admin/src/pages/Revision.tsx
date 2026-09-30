@@ -10,11 +10,21 @@ import type {
   RevisionValue,
   StaffListingPackage,
 } from "@bayramm/shared/api/staff";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { formatMoment, formatSum, vendorLabel } from "../format";
+import { usePhone } from "../layout";
 import { t } from "../texts";
-import { ConfirmForm, Link, LoadedView, Pill, StatusPill, useEntityTitle } from "../ui";
+import {
+  ActionBar,
+  ConfirmForm,
+  Link,
+  LoadedView,
+  PhoneSheet,
+  Pill,
+  StatusPill,
+  useEntityTitle,
+} from "../ui";
 
 export function RevisionPage({ id }: { id: string }) {
   const { loaded, reload, set } = useLoad<RevisionDetail>(`/staff/revisions/${id}`);
@@ -58,7 +68,10 @@ function RevisionView({
   useEntityTitle(`${t.views.revision}: ${revision.listing.name}`);
   const { api } = useSession();
   const can = useCan();
+  const phone = usePhone();
   const [pending, setPending] = useState<"approve" | "decline" | null>(null);
+  const approveButton = useRef<HTMLButtonElement>(null);
+  const declineButton = useRef<HTMLButtonElement>(null);
 
   const decide = async (reason: string): Promise<Failure | null> => {
     const result =
@@ -109,35 +122,58 @@ function RevisionView({
       {open && revision.stale && <p className="notice notice-warn">{t.revisionStale}</p>}
       {open && !revision.valid && <p className="notice notice-error">{t.revisionInvalid}</p>}
 
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th scope="col">{t.revisionField}</th>
-              <th scope="col">{t.revisionNow}</th>
-              <th scope="col">{t.revisionProposed[revision.proposedBy.kind]}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {revision.changes.map((change) => (
-              <tr key={change.field}>
-                <th scope="row">{t.revisionFields[change.field] ?? change.field}</th>
-                <td>
+      {phone ? (
+        <ul className="rcards" aria-label={t.revisionField}>
+          {revision.changes.map((change) => (
+            <li key={change.field} className="rcard">
+              <p className="rcard-title">{t.revisionFields[change.field] ?? change.field}</p>
+              <div className="change">
+                <p className="change-label">{t.revisionNow}</p>
+                <div className="change-value">
                   <Value field={change.field} value={change.before} />
-                </td>
-                <td>
+                </div>
+              </div>
+              <div className="change change-new">
+                <p className="change-label">{t.revisionProposed[revision.proposedBy.kind]}</p>
+                <div className="change-value">
                   <Value field={change.field} value={change.after} />
-                </td>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">{t.revisionField}</th>
+                <th scope="col">{t.revisionNow}</th>
+                <th scope="col">{t.revisionProposed[revision.proposedBy.kind]}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {revision.changes.map((change) => (
+                <tr key={change.field}>
+                  <th scope="row">{t.revisionFields[change.field] ?? change.field}</th>
+                  <td>
+                    <Value field={change.field} value={change.before} />
+                  </td>
+                  <td>
+                    <Value field={change.field} value={change.after} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {open && can("revisions.moderate") && (
-        <section className="panel" aria-label={t.revisions}>
-          <div className="acts">
+        <section className="panel panel-actions" aria-label={t.revisions}>
+          <ActionBar label={t.revisions}>
             <button
+              ref={approveButton}
               type="button"
               className="btn btn-primary"
               disabled={!revision.valid}
@@ -147,6 +183,7 @@ function RevisionView({
               {t.revisionApprove}
             </button>
             <button
+              ref={declineButton}
               type="button"
               className="btn btn-danger"
               aria-expanded={pending === "decline"}
@@ -154,8 +191,13 @@ function RevisionView({
             >
               {t.revisionDecline}
             </button>
-          </div>
-          {pending === "approve" && (
+          </ActionBar>
+          <PhoneSheet
+            open={pending === "approve"}
+            title={t.revisionApprove}
+            onClose={() => setPending(null)}
+            returnFocus={approveButton}
+          >
             <ConfirmForm
               key="approve"
               hint={t.revisionApproveHint}
@@ -163,8 +205,13 @@ function RevisionView({
               onSubmit={decide}
               onCancel={() => setPending(null)}
             />
-          )}
-          {pending === "decline" && (
+          </PhoneSheet>
+          <PhoneSheet
+            open={pending === "decline"}
+            title={t.revisionDecline}
+            onClose={() => setPending(null)}
+            returnFocus={declineButton}
+          >
             <ConfirmForm
               key="decline"
               hint={t.revisionDeclineHint}
@@ -175,7 +222,7 @@ function RevisionView({
               onSubmit={decide}
               onCancel={() => setPending(null)}
             />
-          )}
+          </PhoneSheet>
         </section>
       )}
     </div>

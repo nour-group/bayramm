@@ -3,12 +3,24 @@
    согласий, блокировка с причиной; телефон — только администратору и с причиной. */
 
 import type { ClientDetail, ClientList, RevealedPhone } from "@bayramm/shared/api/staff";
-import { SearchField } from "@bayramm/ui/react";
-import { useCallback, useState } from "react";
+import { Dialog, SearchField, Switch } from "@bayramm/ui/react";
+import { useCallback, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { formatDay, formatMoment } from "../format";
+import { usePhone } from "../layout";
 import { t } from "../texts";
-import { ConfirmForm, Link, LoadedView, Pill, ReasonPhoneReveal, useEntityTitle } from "../ui";
+import {
+  ActionBar,
+  ActiveFilter,
+  ConfirmForm,
+  FilterButton,
+  Link,
+  LoadedView,
+  PhoneSheet,
+  Pill,
+  ReasonPhoneReveal,
+  useEntityTitle,
+} from "../ui";
 import { SlaPill } from "./Requests";
 
 function ClientState({ client }: { client: { blocked: boolean; deleted: boolean } }) {
@@ -18,9 +30,11 @@ function ClientState({ client }: { client: { blocked: boolean; deleted: boolean 
 }
 
 export function ClientsPage() {
+  const phone = usePhone();
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [blocked, setBlocked] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const params = new URLSearchParams({ limit: "50" });
   if (query) params.set("q", query);
   if (blocked) params.set("blocked", "1");
@@ -44,20 +58,80 @@ export function ClientsPage() {
           aria-describedby="clients-search-hint"
           maxLength={100}
         />
-        <button type="submit" className="btn">
-          {t.search}
-        </button>
-        <button type="button" className="chip" aria-pressed={blocked} onClick={() => setBlocked(!blocked)}>
-          {t.onlyBlocked}
-        </button>
+        {phone ? (
+          <FilterButton count={blocked ? 1 : 0} open={filtersOpen} onOpen={() => setFiltersOpen(true)} />
+        ) : (
+          <>
+            <button type="submit" className="btn">
+              {t.search}
+            </button>
+            <button
+              type="button"
+              className="chip"
+              aria-pressed={blocked}
+              onClick={() => setBlocked(!blocked)}
+            >
+              {t.onlyBlocked}
+            </button>
+          </>
+        )}
       </form>
       <p id="clients-search-hint" className="muted small">
         {t.clientsSearchHint}
       </p>
+      {phone && blocked ? <ActiveFilter label={t.onlyBlocked} onClear={() => setBlocked(false)} /> : null}
+      {phone ? (
+        <Dialog
+          open={filtersOpen}
+          title={t.filters}
+          onClose={() => setFiltersOpen(false)}
+          actions={
+            <>
+              <button type="button" className="ui-btn ui-btn-secondary" onClick={() => setBlocked(false)}>
+                {t.reset}
+              </button>
+              <button type="button" className="ui-btn ui-btn-primary" onClick={() => setFiltersOpen(false)}>
+                {t.done}
+              </button>
+            </>
+          }
+        >
+          <Switch checked={blocked} onChange={setBlocked}>
+            {t.onlyBlocked}
+          </Switch>
+        </Dialog>
+      ) : null}
       <LoadedView loaded={loaded} onRetry={reload}>
         {(list) =>
           list.items.length === 0 ? (
             <p className="empty">{t.clientsEmpty}</p>
+          ) : phone ? (
+            <>
+              <ul className="rcards">
+                {list.items.map((client) => (
+                  <li key={client.id} className="rcard rcard-tap">
+                    <div className="rcard-head">
+                      <Link to={{ name: "client", id: client.id }} className="rcard-link">
+                        {client.ref}
+                      </Link>
+                      <ClientState client={client} />
+                    </div>
+                    <dl className="rcard-facts">
+                      <dt>{t.colSince}</dt>
+                      <dd>{formatMoment(client.createdAt)}</dd>
+                      <dt>{t.colLastSeen}</dt>
+                      <dd>{formatMoment(client.lastSeenAt)}</dd>
+                      <dt>{t.colRequests}</dt>
+                      <dd>
+                        {client.requests}
+                        {client.lastRequestAt ? ` · ${formatMoment(client.lastRequestAt)}` : ""}
+                      </dd>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted small">{t.total(list.total)}</p>
+            </>
           ) : (
             <>
               <div className="table-wrap">
@@ -130,7 +204,7 @@ function ClientView({ client, onChange }: { client: ClientDetail; onChange: (c: 
 
   return (
     <div className="stack">
-      <p>
+      <p className="pills">
         <ClientState client={client} />
       </p>
       <div className="columns">
@@ -177,17 +251,17 @@ function ClientView({ client, onChange }: { client: ClientDetail; onChange: (c: 
             ) : (
               <ul className="cards">
                 {client.requestList.map((request) => (
-                  <li key={request.id} className="card-row">
-                    <div>
-                      <Link to={{ name: "request", id: request.id }} className="row-link">
+                  <li key={request.id} className="card-row rcard-tap">
+                    <div className="rcard-head">
+                      <Link to={{ name: "request", id: request.id }} className="rcard-link">
                         {t.requestNo(request.publicNo)}
-                      </Link>{" "}
+                      </Link>
                       <SlaPill sla={request.sla} />
-                      <span className="sub">
-                        {request.listing.name} · {formatDay(request.eventDate)} ·{" "}
-                        {t.requestStatus[request.status]}
-                      </span>
                     </div>
+                    <span className="sub">
+                      {request.listing.name} · {formatDay(request.eventDate)} ·{" "}
+                      {t.requestStatus[request.status]}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -222,6 +296,8 @@ function ClientView({ client, onChange }: { client: ClientDetail; onChange: (c: 
 function Blocking({ client, onChange }: { client: ClientDetail; onChange: (c: ClientDetail) => void }) {
   const { api } = useSession();
   const [open, setOpen] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const label = client.blockedInfo ? t.unblock : t.block;
 
   const act = async (reason: string): Promise<Failure | null> => {
     const result = client.blockedInfo
@@ -246,27 +322,29 @@ function Blocking({ client, onChange }: { client: ClientDetail; onChange: (c: Cl
       ) : (
         <p className="muted small">{t.blockHint}</p>
       )}
-      {open ? (
-        <ConfirmForm
-          hint={client.blockedInfo ? t.unblock : t.blockHint}
-          submitLabel={client.blockedInfo ? t.unblock : t.block}
-          {...(client.blockedInfo ? {} : { label: t.reason, required: true, maxLength: 500 })}
-          danger={!client.blockedInfo}
-          onSubmit={act}
-          onCancel={() => setOpen(false)}
-        />
-      ) : (
-        <div>
+      {open ? null : (
+        <ActionBar label={t.blockTitle}>
           <button
+            ref={toggle}
             type="button"
             className={`btn${client.blockedInfo ? "" : " btn-danger"}`}
             aria-expanded={open}
             onClick={() => setOpen(true)}
           >
-            {client.blockedInfo ? t.unblock : t.block}
+            {label}
           </button>
-        </div>
+        </ActionBar>
       )}
+      <PhoneSheet open={open} title={label} onClose={() => setOpen(false)} returnFocus={toggle}>
+        <ConfirmForm
+          hint={client.blockedInfo ? t.unblock : t.blockHint}
+          submitLabel={label}
+          {...(client.blockedInfo ? {} : { label: t.reason, required: true, maxLength: 500 })}
+          danger={!client.blockedInfo}
+          onSubmit={act}
+          onCancel={() => setOpen(false)}
+        />
+      </PhoneSheet>
     </section>
   );
 }
