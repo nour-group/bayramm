@@ -98,7 +98,7 @@
         "ADMIN_APP_URL": "https://admin.bayramm.uz",
         "API_URL": "https://api.bayramm.uz",
         "TELEGRAM_LOGIN_DOMAIN": "bayramm.uz",
-        "OTP_PROVIDER": "off",
+        "OTP_PROVIDER": "tg_gateway",
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFKW6kfx8xk13qs_"
       },
       "triggers": { "crons": ["* * * * *"] },
