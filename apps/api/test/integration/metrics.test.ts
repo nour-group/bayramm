@@ -19,16 +19,14 @@ import { createDb } from "../../src/db/client";
 import app from "../../src/index";
 import { recordApiError } from "../../src/notify/api-errors";
 import { type OutboxRow, renderNotice } from "../../src/notify/render";
-import { signLoginWidget } from "../../src/testing/login-widget";
 import {
   adminClient,
   apiDatabaseUrl,
-  BOT_TOKEN,
   cleanupStaff,
   inviteStaff,
   makeEnv,
   newStaffUsername,
-  postStaffLogin,
+  staffLoginToken,
 } from "./helpers";
 
 let admin: Client;
@@ -58,13 +56,7 @@ vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
 async function staffToken(role: Who): Promise<void> {
   const username = newStaffUsername();
   staffIds[role] = await inviteStaff(admin, { username, role, displayName: `Metrics ${role} ${tag}` });
-  const fields = await signLoginWidget(
-    { id: 8_000_000_000 + randomInt(0, 999_999_999), first_name: "Staff", username },
-    BOT_TOKEN,
-  );
-  const res = await postStaffLogin(fields);
-  if (res.status !== 200) throw new Error(`вход сотрудника: ${res.status}`);
-  tokens[role] = ((await res.json()) as { token: string }).token;
+  tokens[role] = await staffLoginToken(username);
 }
 
 async function api(who: Who, method: string, path: string, body?: unknown): Promise<Response> {
