@@ -249,11 +249,12 @@ describe("раздел «Метрики»", () => {
     expect(nav).not.toContain(t.metrics);
   });
 
-  it("полоса — классом с шагом 10 %; ниже 40 % — тревога", () => {
+  it("полоса — классом с шагом 10 %; меньше половины — тревога", () => {
     expect(barClass(null)).toBe("bar-fill bar-w0");
     expect(barClass(64)).toBe("bar-fill bar-w6");
     expect(barClass(100)).toBe("bar-fill bar-w10");
-    expect(barClass(39.9)).toBe("bar-fill bar-w4 bar-low");
+    expect(barClass(49.9)).toBe("bar-fill bar-w5 bar-low");
+    expect(barClass(50)).toBe("bar-fill bar-w5");
   });
 
   it("сортировка: пустые значения всегда внизу, при равенстве — по коду", () => {

@@ -1179,7 +1179,7 @@ textarea.input {
   background: var(--plum);
 }
 
-/* Ниже 40 % — коралловой заливкой */
+/* Меньше половины в срок — коралловой заливкой */
 .bar-low {
   background: var(--coral);
 }

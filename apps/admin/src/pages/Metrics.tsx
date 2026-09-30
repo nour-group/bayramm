@@ -20,8 +20,8 @@ import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel } 
 import { t } from "../texts";
 import { Link, LoadedView, Pill, StatusPill } from "../ui";
 
-/** Цель запуска — от 60 % ответов в срок; ниже 40 % — тревога */
-const RATE_LOW = 40;
+/** Меньше половины заявок отвечено в срок — полоса коралловая */
+const RATE_LOW = 50;
 
 const QUEUES: readonly (keyof OpsQueues)[] = [
   "awaiting",
