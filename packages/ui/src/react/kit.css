@@ -972,6 +972,29 @@ button.ui-cal-day {
   color: var(--sel-ink);
 }
 
+/* ---------- связь ---------- */
+
+/* Живая область «нет связи» есть всегда; пустая места не занимает */
+.ui-net:empty {
+  display: none;
+}
+
+.ui-net-banner {
+  margin: 0;
+  padding: 6px 16px;
+  background: var(--plum-deep);
+  color: var(--sel-ink);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* Нет связи — полоса снизу; вернулась — без неё: разница не только цветом, текст говорит сам */
+.ui-net-off {
+  box-shadow: inset 0 -3px 0 var(--peach);
+}
+
 /* ---------- подсказка ---------- */
 
 .ui-tooltip {

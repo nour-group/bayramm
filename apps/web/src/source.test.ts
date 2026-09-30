@@ -29,8 +29,15 @@ describe("исходники клиента", () => {
     expect(hits.map((s) => s.path)).toEqual([]);
   });
 
-  it("токен и черновик — не в localStorage", () => {
-    expect(sources.filter(({ code }) => /localStorage/.test(code)).map((s) => s.path)).toEqual([]);
+  it("токен и черновик — не в localStorage: между визитами — только язык и избранное гостя", () => {
+    expect(sources.filter(({ code }) => /localStorage/.test(code)).map((s) => s.path)).toEqual([
+      "storage.ts",
+    ]);
+    const users = sources
+      .filter(({ path, code }) => path !== "storage.ts" && /\blocal(Get|Set|Remove)\w*\(/.test(code))
+      .map((s) => s.path)
+      .sort();
+    expect(users).toEqual(["context.tsx", "favorites.tsx"]);
   });
 
   it("initData не пишется в лог и в хранилище", () => {

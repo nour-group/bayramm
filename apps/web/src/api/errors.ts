@@ -25,6 +25,13 @@ export const isApiError = (error: unknown): error is ApiError => error instanceo
 
 export const isNotFound = (error: unknown) => isApiError(error) && error.status === 404;
 
+/**
+ * Повторить, когда вернётся связь: запрос не дошёл или сервер не ответил (5xx). Ответ
+ * сервера по существу (404, 403…) повтор не изменит
+ */
+export const isRetryable = (error: unknown) =>
+  isApiError(error) ? error.status === 0 || error.status >= 500 : !isAbort(error);
+
 /** Запрос отменён (экран ушёл или фильтр сменился) — это не ошибка для показа */
 export const isAbort = (error: unknown) =>
   typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError";

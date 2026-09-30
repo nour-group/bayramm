@@ -2,6 +2,7 @@ import type { ListingDetail } from "@bayramm/shared/api";
 import { type UIEvent, useMemo, useState } from "react";
 import { isNotFound } from "../api/errors";
 import { Calendar } from "../components/Calendar";
+import { FavoriteButton } from "../components/FavoriteButton";
 import { Link } from "../components/Link";
 import { NewBadge } from "../components/NewBadge";
 import { Photo } from "../components/Photo";
@@ -96,6 +97,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
             {listing.name}
           </h1>
           <NewBadge />
+          <FavoriteButton listing={listing} className="fav-btn fav-inline" />
         </div>
         <p className="venue-meta">
           <Icon name="pin" size={14} />

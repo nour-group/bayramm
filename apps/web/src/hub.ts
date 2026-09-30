@@ -74,7 +74,9 @@ export const isTelegramLink = () => sessionGet(LINK_KEY) === "telegram";
 export const clearTelegramLink = () => sessionRemove(LINK_KEY);
 
 /** Адрес хаба с запросом на вход (полная загрузка страницы: у /auth свой CSP) */
-export function authHref(params: { return?: string; link?: "telegram"; fresh?: boolean } = {}): string {
+export function authHref(
+  params: { return?: string; link?: "telegram" | "phone"; fresh?: boolean } = {},
+): string {
   const query = new URLSearchParams();
   const back = safeReturn(params.return ?? null);
   if (back) query.set("return", back);

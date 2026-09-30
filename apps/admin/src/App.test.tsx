@@ -33,6 +33,7 @@ const ACCOUNT_TOKEN = "A".repeat(43);
 const METHODS = {
   telegram: { bot: BOT, loginDomain: "bayramm.example" },
   phone: false,
+  turnstileSiteKey: null,
   apps: { web: "https://bayramm.example", vendor: "https://vendor.example", admin: "https://admin.example" },
 };
 const PENDING_KEY = "bayramm.admin.hub";
@@ -287,6 +288,30 @@ describe("сессия сотрудника", () => {
     ).toBe(true);
     expect(link(t.toClientApp).getAttribute("href")).toBe("https://bayramm.example");
     expect([...container.querySelectorAll("a")].some((a) => a.textContent === t.toCabinet)).toBe(false);
+  });
+
+  it("нет связи — полоса над панелью; вернулась — упавший раздел загружается сам", async () => {
+    window.sessionStorage.setItem(TOKEN_KEY, TOKEN);
+    let offline = true;
+    mockApi({
+      ...BOT_INFO,
+      "GET /api/staff/me": json(STAFF),
+      "GET /api/me": json({ roles: { client: null, vendors: [], staff: { role: "manager" } } }),
+    });
+    const online = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (offline && String(input).startsWith("/api/staff/requests")) throw new TypeError("offline");
+      return online?.(input, init) ?? new Response("{}", { status: 404 });
+    });
+    await mount("/requests");
+    await act(async () => void window.dispatchEvent(new Event("offline")));
+    expect(container.querySelector(".ui-net")?.textContent).toBe(t.offline);
+    const before = calls.filter((c) => c.url.startsWith("/api/staff/requests")).length;
+    offline = false;
+    await act(async () => void window.dispatchEvent(new Event("online")));
+    await settle();
+    expect(container.querySelector(".ui-net")?.textContent).toBe(t.backOnline);
+    expect(calls.filter((c) => c.url.startsWith("/api/staff/requests")).length).toBeGreaterThan(before);
   });
 
   it("токен больше не действует — стирается, страница входа без ошибки", async () => {

@@ -6,6 +6,7 @@ import type {
   ConsentTexts,
   CreateRequest,
   Dictionaries,
+  ListingCards,
   ListingDetail,
   Locale,
   RequestCreated,
@@ -22,11 +23,18 @@ import type {
   ClientDataExport,
   ClientMePatch,
   ConsentWithdrawn,
+  Favorites,
   Me,
   WithdrawConsent,
 } from "@bayramm/shared/api/me";
 
 export type { SessionToken };
+
+/** Чем запрос кода на телефон доказывает, что его шлёт человек */
+export interface PhoneProof {
+  readonly turnstileToken?: string;
+  readonly initData?: string;
+}
 
 /** GET /telegram/bot */
 export interface BotInfo {
@@ -47,6 +55,8 @@ export interface ClientApi {
   listing(slug: string, signal?: AbortSignal): Promise<ListingDetail>;
   consentTexts(locale: Locale, signal?: AbortSignal): Promise<ConsentTexts>;
   bot(signal?: AbortSignal): Promise<BotInfo>;
+  /** Карточки опубликованных площадок по id (избранное гостя); остальных в ответе нет */
+  listingCards(ids: readonly string[], signal?: AbortSignal): Promise<ListingCards>;
   /* Дальше — только с сессией клиента (Telegram) */
   createRequest(body: CreateRequest): Promise<RequestCreated>;
   myRequests(signal?: AbortSignal): Promise<ClientRequests>;
@@ -59,13 +69,23 @@ export interface ClientApi {
   withdrawConsent(body: WithdrawConsent): Promise<ConsentWithdrawn>;
   /** Удалить аккаунт. После него вход в этой вкладке закрыт: новый вход создал бы аккаунт заново */
   deleteAccount(): Promise<void>;
+  /* Избранное вошедшего клиента (гость держит список в браузере) */
+  favorites(signal?: AbortSignal): Promise<Favorites>;
+  /** Отметить; не опубликована — 404, список полон — 409 favorites_full */
+  addFavorite(listingId: string): Promise<void>;
+  removeFavorite(listingId: string): Promise<void>;
+  /** Гостевой список — в аккаунт после входа; ответ — весь список */
+  mergeFavorites(listingIds: readonly string[]): Promise<Favorites>;
   /* Вход на сайте (хаб /auth) и способы входа (@bayramm/shared/api/account) */
   /** Чем можно войти в этом окружении и адреса приложений */
   authMethods(signal?: AbortSignal): Promise<AuthMethods>;
   /** Вход виджетом Telegram: поля из адреса возврата виджета как есть */
   signInWidget(fields: Readonly<Record<string, string>>, locale: Locale): Promise<SessionToken>;
-  /** Код в сообщении на телефон; 429 — рано или лимит (retryAfter) */
-  sendPhoneCode(phone: string): Promise<OtpSent>;
+  /**
+   * Код в сообщении на телефон; 429 — рано или лимит (retryAfter). С проверкой «не робот»
+   * (AuthMethods.turnstileSiteKey) — токен Turnstile из хаба или initData из Mini App
+   */
+  sendPhoneCode(phone: string, proof?: PhoneProof): Promise<OtpSent>;
   /** Вход по коду из сообщения */
   verifyPhoneCode(phone: string, code: string, locale: Locale): Promise<SessionToken>;
   /** Код хаба для кабинета или панели — с текущей сессией */

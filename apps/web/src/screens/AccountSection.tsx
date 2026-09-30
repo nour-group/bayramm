@@ -1,7 +1,7 @@
 import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { Me } from "@bayramm/shared/api/me";
 import { type MouseEvent, useState } from "react";
-import { PhoneCode } from "../components/PhoneCode";
+import { type HumanProof, humanProofFor, PhoneCode } from "../components/PhoneCode";
 import { canSignIn, useAccount, useLang, useServices } from "../context";
 import { useAsync } from "../hooks";
 import { authHref, browser } from "../hub";
@@ -14,7 +14,9 @@ import { haptic } from "../telegram";
        ссылки на приложения: без сессии они сами идут в хаб входа и возвращаются с кодом —
        второй раз входить не нужно (в Telegram — то же, в том же окне);
      · способы входа: Telegram и телефон — подключены или «добавить». Способ другого
-       аккаунта не добавить (409), слияния нет;
+       аккаунта не добавить (409), слияния нет. Телефон с проверкой «не робот» на сайте
+       добавляется в хабе (/auth?link=phone: виджет Turnstile разрешён только там), в
+       Telegram — здесь же, запрос кода подписан initData;
      · на сайте — «Войти» (хаб) и «Выйти». Ссылки в хаб — полной загрузкой: у /auth свой CSP */
 
 // Имя бота по правилам @BotFather: латиница, цифры, _, в конце bot
@@ -67,7 +69,17 @@ function Roles({ me, methods }: { me: Me; methods: AuthMethods | null }) {
   );
 }
 
-function Methods({ me, phoneOn, widgetOn }: { me: Me; phoneOn: boolean; widgetOn: boolean }) {
+function Methods({
+  me,
+  phoneOn,
+  widgetOn,
+  human,
+}: {
+  me: Me;
+  phoneOn: boolean;
+  widgetOn: boolean;
+  human: HumanProof | null;
+}) {
   const { api, identity, webApp } = useServices();
   const { t } = useLang();
   const { me: meState } = useAccount();
@@ -106,6 +118,10 @@ function Methods({ me, phoneOn, widgetOn }: { me: Me; phoneOn: boolean; widgetOn
           <span className="method-name">{t.accPhone}</span>
           {has("phone") ? (
             <span className="muted small">{t.accMethodOn}</span>
+          ) : phoneOn && human?.kind === "turnstile" ? (
+            <a className="link-btn" href={authHref({ link: "phone", return: hrefFor({ name: "profile" }) })}>
+              {t.accAddPhone}
+            </a>
           ) : phoneOn && !adding ? (
             <button type="button" className="link-btn" onClick={() => setAdding(true)}>
               {t.accAddPhone}
@@ -113,7 +129,7 @@ function Methods({ me, phoneOn, widgetOn }: { me: Me; phoneOn: boolean; widgetOn
           ) : null}
         </li>
       </ul>
-      {adding ? <PhoneCode onCode={onCode} submitLabel={t.accAddPhone} /> : null}
+      {adding ? <PhoneCode onCode={onCode} submitLabel={t.accAddPhone} human={human} /> : null}
       {linked ? (
         <p className="small" role="status">
           {t.accLinked}
@@ -124,7 +140,7 @@ function Methods({ me, phoneOn, widgetOn }: { me: Me; phoneOn: boolean; widgetOn
 }
 
 export function AccountSection() {
-  const { api, identity } = useServices();
+  const { api, identity, webApp } = useServices();
   const { t } = useLang();
   const { me, deleted } = useAccount();
   const methods = useAsync("auth-methods", (signal) => api.authMethods(signal));
@@ -172,7 +188,12 @@ export function AccountSection() {
         {t.accTitle}
       </h2>
       <Roles me={profile} methods={ready} />
-      <Methods me={profile} phoneOn={ready?.phone === true} widgetOn={widgetOn} />
+      <Methods
+        me={profile}
+        phoneOn={ready?.phone === true}
+        widgetOn={widgetOn}
+        human={ready ? humanProofFor(ready, webApp?.initData) : null}
+      />
       {identity === "site" ? (
         <button type="button" className="btn btn-secondary wide" disabled={leaving} onClick={signOut}>
           {t.accSignOut}

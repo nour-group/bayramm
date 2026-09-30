@@ -20,6 +20,8 @@ const ru = {
   retry: "Повторить",
   loading: "Загрузка…",
   loadFailed: "Не удалось загрузить. Проверьте интернет и попробуйте ещё раз.",
+  offline: "Нет подключения к интернету. Когда связь вернётся, покажем свежие данные.",
+  backOnline: "Связь вернулась.",
   // кнопки своих контролов (@bayramm/ui/react): крестик шторки и очистка поля
   close: "Закрыть",
   clear: "Очистить",
@@ -294,6 +296,8 @@ const uz: VendorDict = {
   retry: "Qayta urinish",
   loading: "Yuklanmoqda…",
   loadFailed: "Yuklab boʻlmadi. Internetni tekshiring va qayta urinib koʻring.",
+  offline: "Internet aloqasi yoʻq. Aloqa tiklanganda yangi maʼlumotlarni koʻrsatamiz.",
+  backOnline: "Aloqa tiklandi.",
   close: "Yopish",
   clear: "Tozalash",
 

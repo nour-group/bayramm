@@ -1,13 +1,20 @@
 import type { Dict } from "@bayramm/shared";
+import type { AuthMethods } from "@bayramm/shared/api/account";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
+import type { PhoneProof } from "../api/types";
 import { useLang, useServices } from "../context";
 import { formatPhone, PHONE_PREFIX, phoneDigits } from "../format";
+import { HumanCheck, type HumanCheckHandle } from "./HumanCheck";
 
 /* Вход и добавление телефона кодом из сообщения: номер → «Получить код» → код → «Войти».
    Код генерирует сервер и шлёт провайдер (Telegram Gateway); чаще раза в минуту не
    попросить, пять неверных попыток — код сгорает. Что делать с кодом, решает onCode:
-   войти (хаб) или добавить телефон к аккаунту (профиль). */
+   войти (хаб) или добавить телефон к аккаунту (профиль).
+
+   Если в окружении включена проверка «не робот», код просит человек: в хабе — виджет
+   Turnstile рядом с кнопкой (его токен одноразовый: после каждой отправки — новый), в
+   Mini App — initData Telegram вместо виджета. */
 
 /** Текст ошибки входа или кода по коду ответа API */
 export function authErrorText(t: Dict, error: unknown): string {
@@ -33,6 +40,11 @@ export function authErrorText(t: Dict, error: unknown): string {
       return t.authErrPhoneOff;
     case "otp_delivery_failed":
       return t.authErrDelivery;
+    case "turnstile_required":
+    case "turnstile_failed":
+      return t.humanCheckFailed;
+    case "turnstile_unavailable":
+      return t.humanCheckOff;
     case "identity_taken":
       return t.accErrTaken;
     case "identity_kind_taken":
@@ -44,17 +56,37 @@ export function authErrorText(t: Dict, error: unknown): string {
   }
 }
 
+/** Чем запрос кода докажет, что его шлёт человек */
+export type HumanProof =
+  | { readonly kind: "turnstile"; readonly siteKey: string }
+  | { readonly kind: "initData"; readonly initData: string };
+
+/**
+ * Проверка «не робот» у кода на телефон: в Telegram — его initData, в браузере — виджет
+ * Turnstile (если он включён в окружении: есть ключ виджета)
+ */
+export function humanProofFor(
+  methods: Pick<AuthMethods, "turnstileSiteKey">,
+  initData: string | undefined,
+): HumanProof | null {
+  if (methods.turnstileSiteKey === null) return null;
+  if (initData) return { kind: "initData", initData };
+  return { kind: "turnstile", siteKey: methods.turnstileSiteKey };
+}
+
 interface PhoneCodeProps {
   /** Код введён: войти или добавить телефон. Ошибка — текст под полем, форма остаётся */
   readonly onCode: (phone: string, code: string) => Promise<void>;
   readonly submitLabel: string;
+  /** Проверка «не робот» у запроса кода; нет — не нужна (выключена в окружении) */
+  readonly human?: HumanProof | null;
 }
 
 type Step =
   | { readonly kind: "phone" }
   | { readonly kind: "code"; readonly phone: string; readonly until: number };
 
-export function PhoneCode({ onCode, submitLabel }: PhoneCodeProps) {
+export function PhoneCode({ onCode, submitLabel, human = null }: PhoneCodeProps) {
   const { api, now } = useServices();
   const { t } = useLang();
   const id = useId();
@@ -65,6 +97,8 @@ export function PhoneCode({ onCode, submitLabel }: PhoneCodeProps) {
   const [error, setError] = useState<string | null>(null);
   const [, setTick] = useState(0);
   const codeInput = useRef<HTMLInputElement>(null);
+  const check = useRef<HumanCheckHandle>(null);
+  const [token, setToken] = useState<string | null>(null);
 
   // Обратный отсчёт до «Отправить код ещё раз»
   const waiting = step.kind === "code" ? Math.max(0, Math.ceil((step.until - now()) / 1000)) : 0;
@@ -75,10 +109,19 @@ export function PhoneCode({ onCode, submitLabel }: PhoneCodeProps) {
   }, [waiting]);
 
   const send = async (phone: string) => {
+    let proof: PhoneProof = {};
+    if (human?.kind === "initData") proof = { initData: human.initData };
+    if (human?.kind === "turnstile") {
+      if (token === null) {
+        setError(t.humanCheckWait);
+        return;
+      }
+      proof = { turnstileToken: token };
+    }
     setBusy(true);
     setError(null);
     try {
-      const sent = await api.sendPhoneCode(phone);
+      const sent = await api.sendPhoneCode(phone, proof);
       setStep({ kind: "code", phone, until: now() + sent.resendAfter * 1000 });
       setCode("");
       // Поле кода — после того как оно появилось на экране
@@ -86,9 +129,16 @@ export function PhoneCode({ onCode, submitLabel }: PhoneCodeProps) {
     } catch (err) {
       setError(authErrorText(t, err));
     } finally {
+      // Токен Turnstile потрачен, чем бы ни кончилось: для следующей попытки — новый
+      if (human?.kind === "turnstile") check.current?.reset();
       setBusy(false);
     }
   };
+
+  const humanCheck =
+    human?.kind === "turnstile" ? (
+      <HumanCheck ref={check} siteKey={human.siteKey} onToken={setToken} />
+    ) : null;
 
   const onPhone = (event: FormEvent) => {
     event.preventDefault();
@@ -143,6 +193,7 @@ export function PhoneCode({ onCode, submitLabel }: PhoneCodeProps) {
             />
           </div>
         </div>
+        {humanCheck}
         {error ? (
           <p className="fld-error" id={`${id}-error`} role="alert">
             {error}
@@ -186,6 +237,8 @@ export function PhoneCode({ onCode, submitLabel }: PhoneCodeProps) {
       <button type="submit" className="btn btn-primary wide" disabled={busy}>
         {submitLabel}
       </button>
+      {/* Новый код — снова с проверкой: виджет появляется вместе с кнопкой «ещё раз» */}
+      {waiting > 0 ? null : humanCheck}
       <div className="phone-code-more">
         {waiting > 0 ? (
           <p className="muted small">{t.authResendIn(waiting)}</p>
