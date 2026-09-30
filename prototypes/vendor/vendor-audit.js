@@ -7,9 +7,11 @@ const w=dom.window,d=w.document;w.open=()=>{};
 const CSS=src.split('<style>')[1].split('</style>')[0];
 /* токенов два блока: базовый и дополнения — берём оба */
 const rootTok=[...CSS.matchAll(/:root\{([\s\S]*?)\}/g)].map(m=>m[1]).join(';');
-const V=k=>{const m=rootTok.match(new RegExp(k.replace(/-/g,'\\-')+':\\s*([^;]+)'));
+/* имя токена — в регулярку буквально */
+const escRe=k=>k.replace(/[\\^$.*+?()[\]{}|-]/g,'\\$&');
+const V=k=>{const m=rootTok.match(new RegExp(escRe(k)+':\\s*([^;]+)'));
   if(m)return m[1].trim();
-  const m2=CSS.match(new RegExp(k.replace(/-/g,'\\-')+':\\s*([^;]+);'));return m2?m2[1].trim():null};
+  const m2=CSS.match(new RegExp(escRe(k)+':\\s*([^;]+);'));return m2?m2[1].trim():null};
 function toRGB(c,depth){if(!c||(depth||0)>4)return null;c=String(c).trim();
   if(c.startsWith('--'))return toRGB(V(c),(depth||0)+1);
   if(c.startsWith('var('))return toRGB(V(c.slice(4,-1).split(',')[0].trim()),(depth||0)+1);
