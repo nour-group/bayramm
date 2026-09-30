@@ -63,8 +63,9 @@ media — параметр `imageOrigins: mediaImageOrigins(dev)` (только 
 для виджета входа Telegram: опция `telegramLoginPaths` пускает его скрипт и фрейм
 `oauth.telegram.org` только на этих путях — у сайта это хаб `/auth`, больше нигде. Колбэк
 `data-onauth` виджет исполняет через `eval`, поэтому хаб берёт данные через редирект
-`data-auth-url` (`/auth/telegram`). Панель — ещё и Mini App: `telegramWebApp` и
-`frameAncestors: ["https://web.telegram.org"]`.
+`data-auth-url` (`/auth/telegram`). Так же `turnstilePaths` пускает скрипт и фрейм
+`challenges.cloudflare.com` (проверка «не робот») — у сайта тоже только на `/auth`. Панель —
+ещё и Mini App: `telegramWebApp` и `frameAncestors: ["https://web.telegram.org"]`.
 
 ### Аккаунт: один на все роли
 
@@ -86,6 +87,14 @@ media — параметр `imageOrigins: mediaImageOrigins(dev)` (только 
 (хаб, профиль, кабинет, панель) упоминают телефон, только если `phone: true`. Старые
 `/auth/vendor/telegram` и `/auth/staff/telegram` приложения не вызывают: они устарели, остаются
 для старых сборок и пишут каждое обращение в лог (`auth.legacy`) — удалить, когда обращений нет.
+Тесты их не используют: на каждый — один явный интеграционный тест «работает и пишет в лог».
+
+Код на телефон просит человек (`apps/api/src/auth/turnstile.ts`): с секретом
+`TURNSTILE_SECRET_KEY` `POST /auth/phone/send` из браузера принимает только токен Cloudflare
+Turnstile (виджет — в хабе, ключ `TURNSTILE_SITE_KEY` отдаёт `GET /auth/methods`), Mini App —
+свою `initData`. Siteverify — с `remoteip`, `idempotency_key`, action `phone_code` и сайтом
+окружения (`WEB_APP_URL`); сбой — отказ (503). Без секрета проверки нет. Поэтому телефон к
+аккаунту на сайте добавляется в хабе (`/auth?link=phone`), в Mini App — прямо в профиле.
 
 Кабинет и панель вне Telegram входят через хаб на сайте (`apps/web/src/screens/SignIn.tsx`):
 уводят браузер на `<сайт>/auth?app=…&state=…&challenge=…` (PKCE S256,
@@ -151,7 +160,15 @@ HMAC от IP, `POST /requests` по IP и по клиенту; превышен�
 (`apps/api/src/maintenance`). Отдельный Cron Trigger не заводить — их мало на
 бесплатном тарифе. Права клиента на свои данные — `GET /me/export`,
 `POST /me/consents/withdraw`, `DELETE /me` (функции `app.client_*`, только над
-собой). Доступность staging и production каждые 15 минут проверяет workflow
+собой).
+
+Избранное («Сохранённое», вкладка клиента): у вошедшего — `app.favorites` (строки видит только
+сам клиент; добавляют только `app.client_favorite_add` и `app.client_favorites_merge`, не
+больше 100), `GET/PUT/DELETE /me/favorites/:listingId`; у гостя — id в localStorage и карточки
+`GET /catalog/cards?ids=…`. При входе гостевой список сливается с аккаунтом и из браузера
+стирается. Снятая с публикации площадка из списка просто пропадает; выгрузка своих данных
+его содержит, удаление аккаунта стирает. localStorage в клиенте — только это и язык гостя
+(`apps/web/src/storage.ts`), токен и черновики — во вкладке. Доступность staging и production каждые 15 минут проверяет workflow
 `Uptime`.
 
 Демо-залы для показа — только staging: workflow `Demo data (staging)` (seed / reset) рисует
@@ -309,7 +326,9 @@ cd prototypes/admin  && pnpm test   # дымовые тесты панели о�
 используются: в Telegram и старых вебвью они выглядят чужими, а список и календарь
 не знают про безопасные зоны. Вместо них — `@bayramm/ui/react`: `Select`,
 `Checkbox`, `Switch`, `RadioGroup`, `NumberStepper`, `DateField`/`Calendar`,
-`FileDrop`, `SearchField`, `ConfirmSheet`/`Dialog`, `useToast`, `Tooltip`; стили —
+`FileDrop`, `SearchField`, `ConfirmSheet`/`Dialog`, `useToast`, `Tooltip`, а для связи —
+`ConnectivityProvider` + `OfflineBanner` (события online/offline; загрузчики экранов
+повторяют упавший без сети запрос через `useOnReconnect`); стили —
 `@bayramm/ui/kit.css` (подключать между `tokens.css` и стилями приложения). Под
 рисунком галочек, радиокнопок и выбора файлов — настоящий `<input>`. Список и
 календарь на телефоне — шторка снизу, на компьютере — панель у поля; страница под
