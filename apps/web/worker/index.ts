@@ -17,5 +17,8 @@ export default createSiteWorker({
   // Хаб входа (/auth): виджет входа Telegram — только на его страницах. У бота в @BotFather
   // /setdomain — домен сайта окружения; остальные страницы сайта виджета не пускают
   telegramLoginPaths: ["/auth"],
+  // Проверка «не робот» (Cloudflare Turnstile) перед кодом на телефон — тоже только в хабе:
+  // скрипт и фрейм challenges.cloudflare.com, остальные страницы сайта их не пускают
+  turnstilePaths: ["/auth"],
   before: taklifnomaRedirect,
 }) satisfies ExportedHandler<Env>;

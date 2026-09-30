@@ -4,7 +4,7 @@
 //   POST /auth/telegram         { initData, app? }     → 200 SessionToken  Mini App: клиент (web), кабинет (vendor)
 //   POST /auth/vendor/telegram  { initData }           → 200 SessionToken  устарел: то же, что app: vendor
 //   POST /auth/widget           { widget, locale? }    → 200 SessionToken  хаб входа на сайте
-//   POST /auth/phone/send       { phone }              → 200 OtpSent
+//   POST /auth/phone/send       { phone, turnstileToken? | initData? } → 200 OtpSent
 //   POST /auth/phone/verify     { phone, code }        → 200 SessionToken  хаб входа на сайте
 //   POST /auth/hub/code         (Bearer) HubCodeRequest → 200 HubCode
 //   POST /auth/hub/exchange     HubExchange            → 200 SessionToken  кабинет, панель (их Origin)
@@ -20,7 +20,9 @@
 // хаб) создаёт роль клиента; в кабинет — только партнёру.
 //
 // Ограничение частоты по IP — middleware перед маршрутами (src/ratelimit.ts); коды из
-// сообщения считает ещё и база: раз в минуту, три за 10 минут на номер и на IP.
+// сообщения считает ещё и база: раз в минуту, три за 10 минут на номер и на IP. Сам код
+// на телефон просит человек: с TURNSTILE_SECRET_KEY браузер присылает токен Turnstile
+// (хаб /auth), Mini App — свою initData (auth/turnstile.ts).
 //
 // Устаревшие адреса (/auth/vendor/telegram, /auth/staff/telegram) приложения больше не
 // вызывают: они остаются для старых сборок, открытых во вкладках и вебвью, и пишут в лог
@@ -42,7 +44,7 @@ import {
 } from "../auth/account";
 import { phoneHash } from "../auth/crypto";
 import { exchangeHubCode, issueHubCode, parseHubCodeRequest, parseHubExchange } from "../auth/hub";
-import { requestIpHash } from "../auth/ip";
+import { clientIp, requestIpHash } from "../auth/ip";
 import {
   generateOtpCode,
   normalizeOtpCode,
@@ -55,6 +57,7 @@ import {
 import { normalizeUzPhone } from "../auth/phone";
 import { authenticate, requireAccountSession, requireSession } from "../auth/session";
 import { elevateSession, signInStaff, signInStaffWebApp } from "../auth/staff";
+import { turnstileEnabled, turnstileSiteKey, verifyTurnstile } from "../auth/turnstile";
 import { assertPartner, membershipsIn } from "../auth/vendor";
 import { httpUrl } from "../config";
 import { SYSTEM, withActor } from "../db/actor";
@@ -119,6 +122,7 @@ auth.get("/methods", async (c) => {
     {
       telegram: { bot, loginDomain },
       phone: otpSenderFor(c.env) !== null,
+      turnstileSiteKey: turnstileSiteKey(c.env),
       apps: {
         web: httpUrl("WEB_APP_URL", c.env.WEB_APP_URL),
         vendor: httpUrl("VENDOR_APP_URL", c.env.VENDOR_APP_URL),
@@ -205,10 +209,27 @@ interface IssueRow {
   retry_after: number;
 }
 
+/**
+ * Код на телефон просит человек, а не скрипт (с TURNSTILE_SECRET_KEY): Mini App — своей
+ * initData (подпись Telegram; неверная — 401, как у входа), браузер — токеном Turnstile
+ * из хаба. Без секрета проверки нет. Выбор — по телу: initData есть — это Mini App
+ */
+async function assertHuman(env: Env, headers: Headers, body: Readonly<Record<string, unknown>>) {
+  if (!turnstileEnabled(env)) return;
+  if (body.initData !== undefined) {
+    await verifyWebApp(env, initDataOf(body));
+    return;
+  }
+  await verifyTurnstile(env, { token: body.turnstileToken, remoteIp: clientIp(headers) });
+}
+
 auth.post("/phone/send", limitBody, async (c) => {
   const sender = otpSenderFor(c.env);
   if (sender === null) throw phoneUnavailable();
-  const phone = phoneOf(await readJsonObject(c.req.raw));
+  const input = await readJsonObject(c.req.raw);
+  const phone = phoneOf(input);
+  // До базы: без проверки код не выдаётся и не считается в лимитах номера
+  await assertHuman(c.env, c.req.raw.headers, input);
 
   const code = generateOtpCode();
   const [phoneH, codeH, ipH] = await Promise.all([

@@ -149,21 +149,23 @@ jobs:
               echo "::error::CSP панели оператора без «$expected»"; exit 1
             fi
           done
-          for unexpected in "telegram-widget.js" "oauth.telegram.org"; do
+          for unexpected in "telegram-widget.js" "oauth.telegram.org" "challenges.cloudflare.com"; do
             if grep -qiF "$unexpected" <<<"$csp"; then
-              echo "::error::CSP панели оператора пускает «$unexpected» — виджет входа только на хабе"; exit 1
+              echo "::error::CSP панели оператора пускает «$unexpected» — виджеты входа только на хабе"; exit 1
             fi
           done
 
-          # Хаб входа: виджет Telegram разрешён только на /auth, на остальных страницах сайта — нет
+          # Хаб входа: виджет Telegram и Turnstile разрешены только на /auth, на остальных страницах сайта — нет
           hub=$(curl -sSf --retry 5 --retry-delay 3 --retry-all-errors -D - -o /dev/null "https://$host/auth" | grep -i '^content-security-policy:' || true)
           home=$(curl -sSf --retry 5 --retry-delay 3 --retry-all-errors -D - -o /dev/null "https://$host/" | grep -i '^content-security-policy:' || true)
-          for expected in "https://telegram.org/js/telegram-widget.js" "frame-src https://oauth.telegram.org"; do
+          for expected in "https://telegram.org/js/telegram-widget.js" "frame-src https://oauth.telegram.org" "https://challenges.cloudflare.com"; do
             if ! grep -qiF "$expected" <<<"$hub"; then echo "::error::CSP хаба /auth без «$expected»"; exit 1; fi
           done
-          if grep -qiF "telegram-widget.js" <<<"$home"; then
-            echo "::error::CSP главной пускает виджет Telegram — он нужен только на /auth"; exit 1
-          fi
+          for unexpected in "telegram-widget.js" "challenges.cloudflare.com"; do
+            if grep -qiF "$unexpected" <<<"$home"; then
+              echo "::error::CSP главной пускает «$unexpected» — он нужен только на /auth"; exit 1
+            fi
+          done
 
           # media: несуществующее фото — 404, а не 500. Путь правильной формы, поэтому воркер
           # доходит до Storage: проверяются и воркер, и SUPABASE_URL, и разбор ошибок хранилища

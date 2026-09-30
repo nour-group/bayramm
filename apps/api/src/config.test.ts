@@ -49,6 +49,14 @@ describe("VENDOR_APP_URL и API_URL в wrangler.jsonc API", () => {
   });
 });
 
+describe("TURNSTILE_SITE_KEY в wrangler.jsonc API", () => {
+  // Публичный ключ виджета — переменная каждого окружения (не наследуется): без неё хаб не
+  // покажет проверку, а с секретом TURNSTILE_SECRET_KEY код на телефон из браузера не уйдёт
+  it.each([undefined, "staging", "production"])("%s — строка (пусто — проверки нет)", (env) => {
+    expect(typeof read(API_CONFIG, env).vars.TURNSTILE_SITE_KEY).toBe("string");
+  });
+});
+
 describe("cron в wrangler.jsonc API", () => {
   // SLA и outbox — раз в минуту в каждом окружении
   it.each([undefined, "staging", "production"])("%s — раз в минуту", (env) => {

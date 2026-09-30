@@ -1,9 +1,11 @@
-// Вход сотрудников через виджет Telegram, сессии сотрудников и /staff на
-// настоящем Postgres, ролью bayramm_api
-import { createHash, randomInt } from "node:crypto";
+// Вход сотрудников (панель как Mini App: initData из кнопки бота), сессии сотрудников и
+// /staff на настоящем Postgres, ролью bayramm_api. Хаб входа с повышением сессии —
+// accounts.test.ts; устаревший виджет на домене панели — один тест в конце
+import { createHash } from "node:crypto";
 import type { Client } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { signLoginWidget, type TestWidgetUser } from "../../src/testing/login-widget";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { initDataFor, type TestTelegramUser } from "../../src/testing/init-data";
+import { signLoginWidget } from "../../src/testing/login-widget";
 import {
   adminClient,
   BOT_TOKEN,
@@ -16,6 +18,7 @@ import {
   newStaffUsername,
   newTelegramUser,
   postStaffLogin,
+  staffTelegramUser,
   tgIdHash,
 } from "./helpers";
 
@@ -24,6 +27,8 @@ let admin: Client;
 beforeAll(async () => {
   admin = await adminClient();
 });
+
+afterEach(() => vi.restoreAllMocks());
 
 afterAll(async () => {
   await cleanupStaff(admin);
@@ -35,18 +40,11 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const TWELVE_HOURS_MS = 12 * 3600 * 1000;
 const DENIED = { error: { code: "forbidden", message: "Access denied" } };
 
-// Telegram ID — случайные на каждый прогон
-function widgetUser(username?: string): TestWidgetUser {
-  const user: TestWidgetUser = { id: 8_000_000_000 + randomInt(0, 999_999_999), first_name: "Staff" };
-  if (username !== undefined) user.username = username;
-  return user;
+async function staffLogin(user: TestTelegramUser, authDate?: number): Promise<Response> {
+  return postStaffLogin(await initDataFor(user, { botToken: BOT_TOKEN, authDate }));
 }
 
-async function staffLogin(user: TestWidgetUser, authDate?: number): Promise<Response> {
-  return postStaffLogin(await signLoginWidget(user, BOT_TOKEN, authDate));
-}
-
-async function staffToken(user: TestWidgetUser): Promise<string> {
+async function staffToken(user: TestTelegramUser): Promise<string> {
   const res = await staffLogin(user);
   if (res.status !== 200) throw new Error(`вход сотрудника не удался: ${res.status} ${await res.text()}`);
   return ((await res.json()) as { token: string }).token;
@@ -61,12 +59,12 @@ async function binding(staffId: string) {
   return rows[0];
 }
 
-describe("POST /auth/staff/telegram: приглашение по имени", () => {
+describe("POST /auth/staff/webapp: приглашение по имени", () => {
   it("первый вход принимает приглашение, /staff/me отдаёт сотрудника", async () => {
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username, role: "moderator", displayName: "Test Moderator" });
     // Имя в Telegram может быть в другом регистре — приглашение хранится в нижнем
-    const user = widgetUser(username.toUpperCase());
+    const user = staffTelegramUser(username.toUpperCase());
 
     const res = await staffLogin(user);
     expect(res.status).toBe(200);
@@ -122,10 +120,10 @@ describe("POST /auth/staff/telegram: приглашение по имени", ()
   it("принятое приглашение: другой аккаунт с тем же именем — 403, привязка не меняется", async () => {
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const owner = widgetUser(username);
+    const owner = staffTelegramUser(username);
     await staffToken(owner);
 
-    const intruder = widgetUser(username);
+    const intruder = staffTelegramUser(username);
     const res = await staffLogin(intruder);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual(DENIED);
@@ -138,10 +136,10 @@ describe("POST /auth/staff/telegram: приглашение по имени", ()
   it("привязанный сотрудник входит по id и после смены имени, и без имени", async () => {
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const user = widgetUser(username);
+    const user = staffTelegramUser(username);
     await staffToken(user);
 
-    for (const renamed of [widgetUser(newStaffUsername()), widgetUser()]) {
+    for (const renamed of [staffTelegramUser(newStaffUsername()), staffTelegramUser()]) {
       const token = await staffToken({ ...renamed, id: user.id });
       const me = (await (await call("/staff/me", bearer(token))).json()) as { id: string };
       expect(me.id).toBe(staffId);
@@ -151,7 +149,7 @@ describe("POST /auth/staff/telegram: приглашение по имени", ()
   it("два человека одновременно принимают одно приглашение — выигрывает один", async () => {
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const [a, b] = [widgetUser(username), widgetUser(username)];
+    const [a, b] = [staffTelegramUser(username), staffTelegramUser(username)];
     const statuses = (await Promise.all([staffLogin(a), staffLogin(b)])).map((r) => r.status).sort();
     expect(statuses).toEqual([200, 403]);
 
@@ -162,7 +160,7 @@ describe("POST /auth/staff/telegram: приглашение по имени", ()
   it("два одновременных первых входа одного человека — одна привязка, входят оба", async () => {
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const user = widgetUser(username);
+    const user = staffTelegramUser(username);
     const statuses = (await Promise.all([staffLogin(user), staffLogin(user)])).map((r) => r.status);
     expect(statuses).toEqual([200, 200]);
     const { rows } = await admin.query(
@@ -175,18 +173,18 @@ describe("POST /auth/staff/telegram: приглашение по имени", ()
 
 describe("отказы во входе сотрудника", () => {
   it("неизвестное имя, отключённое приглашение — тот же 403", async () => {
-    const unknown = await staffLogin(widgetUser(newStaffUsername()));
+    const unknown = await staffLogin(staffTelegramUser(newStaffUsername()));
     expect(unknown.status).toBe(403);
     expect(await unknown.json()).toEqual(DENIED);
 
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username, active: false });
-    const disabled = await staffLogin(widgetUser(username));
+    const disabled = await staffLogin(staffTelegramUser(username));
     expect(disabled.status).toBe(403);
     expect(await disabled.json()).toEqual(DENIED);
     expect((await binding(staffId))?.tg_id_hash).toBeNull();
 
-    const noName = await staffLogin(widgetUser());
+    const noName = await staffLogin(staffTelegramUser());
     expect(noName.status).toBe(403);
     expect(await noName.json()).toEqual(DENIED);
   });
@@ -194,7 +192,7 @@ describe("отказы во входе сотрудника", () => {
   it("отключённый сотрудник: вход — 403, его живые сессии — 401", async () => {
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const user = widgetUser(username);
+    const user = staffTelegramUser(username);
     const token = await staffToken(user);
     expect((await call("/staff/me", bearer(token))).status).toBe(200);
 
@@ -206,30 +204,37 @@ describe("отказы во входе сотрудника", () => {
   });
 
   it("подпись чужого бота — 401, приглашение не принимается", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const res = await postStaffLogin(await signLoginWidget(widgetUser(username), "999:someone-else"));
+    const res = await postStaffLogin(
+      await initDataFor(staffTelegramUser(username), { botToken: "999:someone-else" }),
+    );
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({
-      error: { code: "unauthorized", message: "Invalid Telegram login data" },
+      error: { code: "unauthorized", message: "Invalid Telegram init data" },
     });
     expect((await binding(staffId))?.tg_id_hash).toBeNull();
   });
 
   it("чужой id в подписанных данных — 401", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const fields = await signLoginWidget(widgetUser(username), BOT_TOKEN);
-    const res = await postStaffLogin({ ...fields, id: String(Number(fields.id) + 1) });
+    const user = staffTelegramUser(username);
+    const params = new URLSearchParams(await initDataFor(user, { botToken: BOT_TOKEN }));
+    params.set("user", JSON.stringify({ ...user, id: user.id + 1 }));
+    const res = await postStaffLogin(params.toString());
     expect(res.status).toBe(401);
     expect((await binding(staffId))?.tg_id_hash).toBeNull();
   });
 
-  it("данные виджета старше 10 минут — 401", async () => {
+  it("initData старше часа — 401", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const elevenMinutesAgo = Math.floor(Date.now() / 1000) - 11 * 60;
-    const res = await staffLogin(widgetUser(username), elevenMinutesAgo);
+    const overAnHourAgo = Math.floor(Date.now() / 1000) - 61 * 60;
+    const res = await staffLogin(staffTelegramUser(username), overAnHourAgo);
     expect(res.status).toBe(401);
     expect((await binding(staffId))?.tg_id_hash).toBeNull();
   });
@@ -246,7 +251,7 @@ describe("сессии сотрудников и границы маршруто
   it("сессия сотрудника не открывает клиентские маршруты — 403", async () => {
     const username = newStaffUsername();
     await inviteStaff(admin, { username });
-    const token = await staffToken(widgetUser(username));
+    const token = await staffToken(staffTelegramUser(username));
     const res = await call("/requests", bearer(token));
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual(DENIED);
@@ -267,7 +272,7 @@ describe("сессии сотрудников и границы маршруто
   it("просроченная сессия сотрудника — 401", async () => {
     const username = newStaffUsername();
     const staffId = await inviteStaff(admin, { username });
-    const token = await staffToken(widgetUser(username));
+    const token = await staffToken(staffTelegramUser(username));
     await admin.query(
       `update app.sessions set created_at = now() - interval '13 hours', expires_at = now() - interval '1 hour'
        where staff_id = $1`,
@@ -279,12 +284,35 @@ describe("сессии сотрудников и границы маршруто
   it("выход сотрудника отзывает только его сессию", async () => {
     const username = newStaffUsername();
     await inviteStaff(admin, { username });
-    const user = widgetUser(username);
+    const user = staffTelegramUser(username);
     const first = await staffToken(user);
     const second = await staffToken(user);
 
     expect((await call("/auth/logout", { method: "POST", ...bearer(first) })).status).toBe(204);
     expect((await call("/staff/me", bearer(first))).status).toBe(401);
     expect((await call("/staff/me", bearer(second))).status).toBe(200);
+  });
+});
+
+describe("устаревший вход панели виджетом Telegram", () => {
+  it("POST /auth/staff/telegram для старых сборок работает так же и пишет в лог", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const username = newStaffUsername();
+    const staffId = await inviteStaff(admin, { username, role: "manager" });
+    const user = staffTelegramUser(username);
+    const res = await call("/auth/staff/telegram", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(await signLoginWidget(user, BOT_TOKEN)),
+    });
+    expect(res.status).toBe(200);
+    const token = ((await res.json()) as { token: string }).token;
+    const me = (await (await call("/staff/me", bearer(token))).json()) as { id: string; role: string };
+    expect(me).toMatchObject({ id: staffId, role: "manager" });
+    expect((await binding(staffId))?.tg_id_hash).toEqual(tgIdHash(user.id));
+    expect(warn).toHaveBeenCalledWith("auth.legacy: deprecated endpoint used", {
+      path: "/auth/staff/telegram",
+    });
+    warn.mockRestore();
   });
 });

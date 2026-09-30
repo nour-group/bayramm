@@ -8,6 +8,7 @@ import type { AccountMe, SessionToken } from "@bayramm/shared/api/account";
 import type { TeamList, TeamMember } from "@bayramm/shared/api/staff";
 import type { Client } from "pg";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import app from "../../src/index";
 import { initDataFor, type TestTelegramUser } from "../../src/testing/init-data";
 import { signLoginWidget } from "../../src/testing/login-widget";
 import {
@@ -20,6 +21,7 @@ import {
   deleteAccounts,
   ID_HASH_KEY,
   inviteStaff,
+  makeEnv,
   newStaffUsername,
   newTelegramUser,
   trackStaff,
@@ -205,6 +207,8 @@ describe("GET /auth/methods", () => {
     expect(body).toEqual({
       telegram: { bot: null, loginDomain: null },
       phone: true,
+      // Проверки «не робот» без секрета Turnstile нет
+      turnstileSiteKey: null,
       apps: { web: "http://localhost:5173", vendor: VENDOR_ORIGIN, admin: ADMIN_ORIGIN },
     });
   });
@@ -511,8 +515,6 @@ describe("код из сообщения: лимиты", () => {
   });
 
   it("без провайдера вход по телефону выключен — 503", async () => {
-    const { makeEnv } = await import("./helpers");
-    const { default: app } = await import("../../src/index");
     const ctx = {
       waitUntil: () => {},
       passThroughOnException: () => {},
@@ -538,6 +540,73 @@ describe("код из сообщения: лимиты", () => {
     expect(rows[0]?.code_hash).toEqual(
       createHmac("sha256", ID_HASH_KEY).update(`otp:${phone}:${code}`).digest(),
     );
+  });
+});
+
+describe("код из сообщения: проверка «не робот» (Turnstile)", () => {
+  const SITE_KEY = "0x4AAAAAAA-integration-site-key";
+  const env = () =>
+    ({
+      ...makeEnv(),
+      TURNSTILE_SECRET_KEY: "0x4AAAAAAA-integration-secret",
+      TURNSTILE_SITE_KEY: SITE_KEY,
+    }) as unknown as Env;
+  const ctx = {
+    waitUntil: () => {},
+    passThroughOnException: () => {},
+    props: {},
+  } as unknown as ExecutionContext;
+  const send = (body: Record<string, unknown>) => app.request("/auth/phone/send", json(body), env(), ctx);
+  const issued = async (phone: string) =>
+    (await admin.query("select 1 from app.otp_codes where phone_hash = $1", [phoneHash(phone)])).rowCount;
+  // siteverify отвечает за сайт окружения (WEB_APP_URL — localhost) и действие phone_code
+  const siteverify = (answer: Record<string, unknown>) =>
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(answer));
+
+  it("браузер: без токена — 400, код не выдаётся; с принятым токеном — код отправлен", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const phone = randomPhone();
+    expect(await errorOf(send({ phone }))).toEqual({ status: 400, code: "turnstile_required" });
+    expect(await issued(phone)).toBe(0);
+
+    const verify = siteverify({ success: true, action: "phone_code", hostname: "localhost" });
+    expect((await send({ phone, turnstileToken: "token-from-widget" })).status).toBe(200);
+    expect(await issued(phone)).toBe(1);
+    expect(verify).toHaveBeenCalledTimes(1);
+  });
+
+  it("токен не принят (погашен, чужой сайт) — 403, кода нет", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const phone = randomPhone();
+    siteverify({ success: false, "error-codes": ["timeout-or-duplicate"] });
+    expect(await errorOf(send({ phone, turnstileToken: "spent" }))).toEqual({
+      status: 403,
+      code: "turnstile_failed",
+    });
+    siteverify({ success: true, action: "phone_code", hostname: "evil.example.test" });
+    expect(await errorOf(send({ phone, turnstileToken: "foreign" }))).toEqual({
+      status: 403,
+      code: "turnstile_failed",
+    });
+    expect(await issued(phone)).toBe(0);
+  });
+
+  it("Mini App: подписанная initData вместо токена — код отправлен, siteverify не зовётся", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    const verify = vi.spyOn(globalThis, "fetch");
+    const phone = randomPhone();
+    const initData = await initDataFor(newTelegramUser(), { botToken: BOT_TOKEN });
+    expect((await send({ phone, initData })).status).toBe(200);
+    expect(await issued(phone)).toBe(1);
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("GET /auth/methods отдаёт ключ виджета", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
+    const res = await app.request("/auth/methods", {}, env(), ctx);
+    expect(((await res.json()) as { turnstileSiteKey: string | null }).turnstileSiteKey).toBe(SITE_KEY);
   });
 });
 

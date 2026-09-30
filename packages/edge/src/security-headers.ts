@@ -14,6 +14,11 @@ import { TELEGRAM_WEB_APP_SCRIPT } from "@bayramm/tg/webapp";
 export const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.js";
 export const TELEGRAM_OAUTH_ORIGIN = "https://oauth.telegram.org";
 
+/* Cloudflare Turnstile (проверка «не робот» перед кодом на телефон): скрипт api.js и фрейм
+   с виджетом — оба с challenges.cloudflare.com. Виджет рисуется явно (render=explicit) из
+   кода приложения, встроенного скрипта и колбэка по имени нет */
+export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+
 /* SDK Mini App: telegram-web-app.js (путь точный). С клиентом Telegram он говорит через
    postMessage и мост вебвью — других источников ему не нужно. Адрес — один на CSP и на
    загрузчик SDK (loadTelegramWebApp в @bayramm/tg/webapp) */
@@ -29,6 +34,11 @@ export interface SecurityOptions {
   readonly telegramLogin?: boolean;
   /** SDK Mini App (telegram-web-app.js): клиент и кабинет вендора, открытые в Telegram */
   readonly telegramWebApp?: boolean;
+  /**
+   * Виджет Cloudflare Turnstile: его скрипт и фрейм (challenges.cloudflare.com). Только
+   * страницам, где он нужен, — у сайта это хаб входа (turnstilePaths воркера)
+   */
+  readonly turnstile?: boolean;
   /**
    * Откуда ещё можно грузить картинки (img-src): origin вида https://host[:port], без пути.
    * Для фото площадок — воркер media. http: допустим только вместе с dev
@@ -82,11 +92,16 @@ export function contentSecurityPolicy({
   frameAncestors = [],
   telegramLogin = false,
   telegramWebApp = false,
+  turnstile = false,
   imageOrigins = [],
   dev = false,
 }: SecurityOptions = {}): string {
   const images = imageOrigins.map((origin) => assertOrigin(origin, dev));
   const inline = dev ? ["'unsafe-inline'"] : [];
+  const frames = [
+    ...(telegramLogin ? [TELEGRAM_OAUTH_ORIGIN] : []),
+    ...(turnstile ? [TURNSTILE_ORIGIN] : []),
+  ];
   const directives: [string, readonly string[]][] = [
     ["default-src", ["'self'"]],
     [
@@ -95,11 +110,12 @@ export function contentSecurityPolicy({
         "'self'",
         ...(telegramLogin ? [TELEGRAM_WIDGET_SCRIPT] : []),
         ...(telegramWebApp ? [TELEGRAM_WEB_APP_SCRIPT] : []),
+        ...(turnstile ? [TURNSTILE_ORIGIN] : []),
         ...inline,
       ],
     ],
-    // Без виджета frame-src не задаём: фреймы подчиняются default-src 'self'
-    ...(telegramLogin ? [["frame-src", [TELEGRAM_OAUTH_ORIGIN]] as [string, string[]]] : []),
+    // Без виджетов frame-src не задаём: фреймы подчиняются default-src 'self'
+    ...(frames.length > 0 ? [["frame-src", frames] as [string, string[]]] : []),
     ["style-src", ["'self'", ...inline]],
     ["img-src", ["'self'", "data:", "blob:", ...images]],
     ["font-src", ["'self'"]],

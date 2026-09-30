@@ -69,20 +69,20 @@ describe("воркер клиента", () => {
     expect(csp).toContain("connect-src 'self';");
   });
 
-  it("хаб входа (/auth): виджет Telegram — только на его страницах", async () => {
+  it("хаб входа (/auth): виджет Telegram и Turnstile — только на его страницах", async () => {
     const { get } = setup();
     for (const path of ["/auth", "/auth/telegram?id=1&hash=2"]) {
       const csp = (await get(path)).headers.get("content-security-policy") ?? "";
       expect(csp, path).toContain(
-        "script-src 'self' https://telegram.org/js/telegram-widget.js https://telegram.org/js/telegram-web-app.js;",
+        "script-src 'self' https://telegram.org/js/telegram-widget.js https://telegram.org/js/telegram-web-app.js https://challenges.cloudflare.com;",
       );
-      expect(csp, path).toContain("frame-src https://oauth.telegram.org;");
+      expect(csp, path).toContain("frame-src https://oauth.telegram.org https://challenges.cloudflare.com;");
       expect(csp, path).toContain("frame-ancestors https://web.telegram.org");
     }
-    for (const path of ["/profile", "/authorize", "/venue/auth"]) {
-      expect((await get(path)).headers.get("content-security-policy") ?? "", path).not.toContain(
-        "telegram-widget.js",
-      );
+    for (const path of ["/", "/profile", "/authorize", "/venue/auth"]) {
+      const csp = (await get(path)).headers.get("content-security-policy") ?? "";
+      expect(csp, path).not.toContain("telegram-widget.js");
+      expect(csp, path).not.toContain("challenges.cloudflare.com");
     }
   });
 });

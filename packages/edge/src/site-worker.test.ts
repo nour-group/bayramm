@@ -112,6 +112,30 @@ describe("createSiteWorker", () => {
   it("telegramLoginPaths: кривой путь — ошибка при создании воркера", () => {
     for (const path of ["auth", "/", "/auth/", "/a b", "*"]) {
       expect(() => createSiteWorker({ telegramLoginPaths: [path] }), path).toThrow(TypeError);
+      expect(() => createSiteWorker({ turnstilePaths: [path] }), path).toThrow(TypeError);
     }
+  });
+
+  it("turnstilePaths: Turnstile — только на этих страницах, вместе с виджетом Telegram", async () => {
+    const options = {
+      telegramWebApp: true,
+      frameAncestors: ["https://web.telegram.org"],
+      telegramLoginPaths: ["/auth"],
+      turnstilePaths: ["/auth"],
+    };
+    const { get } = setup(options);
+    const hub = contentSecurityPolicy({ ...options, telegramLogin: true, turnstile: true });
+    expect((await get("/auth")).headers.get("content-security-policy")).toBe(hub);
+    expect(hub).toContain("frame-src https://oauth.telegram.org https://challenges.cloudflare.com");
+    for (const path of ["/", "/profile", "/authx", "/venue/auth"]) {
+      expect((await get(path)).headers.get("content-security-policy"), path).not.toContain("challenges");
+    }
+  });
+
+  it("turnstilePaths без telegramLoginPaths: виджета Telegram на этих страницах нет", async () => {
+    const { get } = setup({ turnstilePaths: ["/signup"] });
+    const csp = (await get("/signup")).headers.get("content-security-policy") ?? "";
+    expect(csp).toBe(contentSecurityPolicy({ turnstile: true }));
+    expect(csp).not.toContain("oauth.telegram.org");
   });
 });

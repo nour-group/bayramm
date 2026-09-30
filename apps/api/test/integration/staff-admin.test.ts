@@ -25,16 +25,7 @@ import type {
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import app from "../../src/index";
-import { signLoginWidget } from "../../src/testing/login-widget";
-import {
-  adminClient,
-  BOT_TOKEN,
-  ID_HASH_KEY,
-  inviteStaff,
-  makeEnv,
-  newStaffUsername,
-  postStaffLogin,
-} from "./helpers";
+import { adminClient, ID_HASH_KEY, inviteStaff, makeEnv, newStaffUsername, staffLoginToken } from "./helpers";
 
 const STORAGE_URL = trimTrailingSlashes(process.env.TEST_SUPABASE_URL ?? "http://127.0.0.1:54321");
 const SERVICE_KEY = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY ?? "";
@@ -46,13 +37,7 @@ type Who = keyof typeof tokens;
 async function staffToken(role: Who): Promise<string> {
   const username = newStaffUsername();
   await inviteStaff(admin, { username, role, displayName: `Test ${role}` });
-  const fields = await signLoginWidget(
-    { id: 8_000_000_000 + randomInt(0, 999_999_999), first_name: "Staff", username },
-    BOT_TOKEN,
-  );
-  const res = await postStaffLogin(fields);
-  if (res.status !== 200) throw new Error(`вход ${role}: ${res.status}`);
-  return ((await res.json()) as { token: string }).token;
+  return staffLoginToken(username);
 }
 
 /** Запрос к API от имени сотрудника; env — с ключом Storage, если он есть */

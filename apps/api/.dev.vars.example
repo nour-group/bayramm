@@ -33,3 +33,10 @@ SUPABASE_SERVICE_ROLE_KEY=
 # Telegram. Нужен, только если в wrangler.jsonc OTP_PROVIDER = "tg_gateway"; без него
 # вход по телефону в окружении выключен. Локально не нужен: там коды пишутся в лог
 TELEGRAM_GATEWAY_TOKEN=
+
+# Секрет виджета Cloudflare Turnstile (проверка «не робот» перед кодом на телефон из
+# браузера, src/auth/turnstile.ts). Пусто — проверки нет. Публичный ключ того же виджета —
+# TURNSTILE_SITE_KEY в wrangler.jsonc. Локально можно взять тестовую пару Cloudflare
+# (секрет 1x0000000000000000000000000000000AA, ключ 1x00000000000000000000AA) — она
+# принимается только при APP_ENV=local
+TURNSTILE_SECRET_KEY=
