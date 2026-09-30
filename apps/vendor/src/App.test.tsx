@@ -280,6 +280,24 @@ describe("вход в кабинет", () => {
     expect(heading()).toBe("Заявки");
   });
 
+  it("нет связи — полоса «нет подключения»; вернулась — вход повторяется сам", async () => {
+    insideTelegram();
+    let fail = true;
+    routes["POST /api/auth/telegram"] = () =>
+      fail
+        ? { status: 503, body: { error: { code: "service_unavailable", message: "x" } } }
+        : defaultRoutes()["POST /api/auth/telegram"]?.({}, new URL("https://x"));
+    await mount("/requests");
+    expect(heading()).toBe("Не удалось войти");
+    await act(async () => void window.dispatchEvent(new Event("offline")));
+    expect(container.querySelector(".ui-net")?.textContent).toContain("Нет подключения к интернету");
+    fail = false;
+    await act(async () => void window.dispatchEvent(new Event("online")));
+    await flush();
+    expect(heading()).toBe("Заявки");
+    expect(container.querySelector(".ui-net")?.textContent).toBe("Связь вернулась.");
+  });
+
   it("язык после входа — из профиля вендора; переключение сохраняется в профиле", async () => {
     insideTelegram();
     routes = defaultRoutes("uz");

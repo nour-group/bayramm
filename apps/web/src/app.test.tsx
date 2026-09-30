@@ -288,15 +288,38 @@ describe("мои заявки", () => {
 });
 
 describe("язык и оболочка", () => {
-  it("RU/UZ: тексты, lang документа; выбор — в sessionStorage, не в localStorage", async () => {
+  it("RU/UZ: тексты, lang документа; выбор — во вкладке и между визитами (только язык)", async () => {
     await mount({ path: "/profile" });
     expect(document.documentElement.lang).toBe("ru");
     await click(document.querySelector('.top button[lang="uz"]'));
     expect(document.documentElement.lang).toBe("uz");
     expect(document.querySelector("h1")?.textContent).toBe("Profil");
     expect(window.sessionStorage.getItem(LANG_KEY)).toBe("uz");
-    expect(window.localStorage.length).toBe(0);
+    expect(window.localStorage.getItem(LANG_KEY)).toBe("uz");
+    expect(window.localStorage.length).toBe(1);
     expect(document.querySelector("nav")?.getAttribute("aria-label")).toBe("Boʻlimlar");
+  });
+
+  it("гость: язык из прошлого визита (localStorage), даже в новой вкладке", async () => {
+    window.sessionStorage.clear();
+    window.localStorage.setItem(LANG_KEY, "uz");
+    await mount({ path: "/profile", identity: "guest" });
+    expect(document.documentElement.lang).toBe("uz");
+    expect(document.querySelector("h1")?.textContent).toBe("Profil");
+  });
+
+  it("хранилище недоступно (приватный режим) — язык живёт до перезагрузки, без ошибок", async () => {
+    window.sessionStorage.clear();
+    const blocked = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    try {
+      await mount({ path: "/profile", identity: "guest" });
+      await click(document.querySelector('.top button[lang="uz"]'));
+      expect(document.documentElement.lang).toBe("uz");
+    } finally {
+      blocked.mockRestore();
+    }
   });
 
   it("язык сохраняется в профиле: по нему пишет бот", async () => {
@@ -306,8 +329,9 @@ describe("язык и оболочка", () => {
     await waitFor(() => api.profile().locale === "uz", "язык в профиле");
   });
 
-  it("не выбран в этой вкладке — язык из профиля, а не из Telegram", async () => {
+  it("не выбран в этой вкладке — язык из профиля, а не из Telegram и не из прошлого визита", async () => {
     window.sessionStorage.clear();
+    window.localStorage.setItem(LANG_KEY, "uz");
     const { webApp } = fakeWebApp({
       initDataUnsafe: { user: { id: 1, first_name: "A", language_code: "uz" } },
     });

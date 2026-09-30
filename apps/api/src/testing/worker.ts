@@ -37,6 +37,9 @@ export function makeEnv(overrides: Partial<Env> = {}): Env {
     TELEGRAM_LOGIN_DOMAIN: "",
     OTP_PROVIDER: "console",
     TELEGRAM_GATEWAY_TOKEN: "",
+    // Проверки «не робот» нет: её включает секрет Turnstile (тесты src/auth/turnstile.test.ts)
+    TURNSTILE_SECRET_KEY: "",
+    TURNSTILE_SITE_KEY: "",
     // Порт 1: соединение, если бы до него дошло, сразу упало бы
     HYPERDRIVE: { connectionString: "postgresql://nobody:nothing@127.0.0.1:1/none" } as Hyperdrive,
     RATE_LIMIT_AUTH_IP: allowAllLimiter(),

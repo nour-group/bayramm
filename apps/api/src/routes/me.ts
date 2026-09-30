@@ -8,6 +8,10 @@
 //   GET    /me/export               (Bearer, клиент) → 200 JSON-файл: аккаунт, профиль, согласия, заявки
 //   POST   /me/consents/withdraw    (Bearer, клиент) { purpose, listingId? } → 200 { withdrawn }
 //   DELETE /me                      (Bearer) → 204: аккаунт удалён для всех ролей
+//   GET    /me/favorites            (Bearer, клиент) → 200 Favorites: опубликованные, новые сверху
+//   PUT    /me/favorites/:listingId (Bearer, клиент) → 204; 404 — не опубликована; 409 favorites_full
+//   DELETE /me/favorites/:listingId (Bearer, клиент) → 204
+//   POST   /me/favorites            (Bearer, клиент) { listingIds } → 200 Favorites: гостевой список при входе
 //
 // GET /me — любая сессия (аккаунта или сотрудника): роли показывают приложениям,
 // какие кнопки давать («Кабинет партнёра», «Панель оператора»). Способы входа — только
@@ -52,6 +56,14 @@ import { database } from "../db/middleware";
 import { clientProfilesAs } from "../db/pii";
 import type { AppEnv, SessionInfo } from "../env";
 import { ApiError, notFound } from "../errors";
+import {
+  addFavorite,
+  listFavorites,
+  listingIdParam,
+  mergeFavorites,
+  parseListingIds,
+  removeFavorite,
+} from "../favorites/service";
 import { checkOtp, otpInput, phoneUnavailable, readJsonObject } from "./auth";
 import { clientSource } from "./requests";
 
@@ -286,6 +298,32 @@ me.delete("/", async (c) => {
     sql`select * from app.account_delete(${source}::app.source, ${ipHash}::bytea)`.execute(trx),
   );
   return c.body(null, 204);
+});
+
+// ── избранное ───────────────────────────────────────────────────────────────
+
+me.get("/favorites", async (c) => {
+  const { actor } = requireClient(c);
+  return c.json(await listFavorites(c.var.db, actor));
+});
+
+me.put("/favorites/:listingId", async (c) => {
+  const { actor } = requireClient(c);
+  await addFavorite(c.var.db, actor, listingIdParam(c.req.param("listingId")));
+  return c.body(null, 204);
+});
+
+me.delete("/favorites/:listingId", async (c) => {
+  const { actor } = requireClient(c);
+  await removeFavorite(c.var.db, actor, listingIdParam(c.req.param("listingId")));
+  return c.body(null, 204);
+});
+
+// Гостевое избранное (браузер) — в аккаунт после входа: 100 id — около 4 КБ
+me.post("/favorites", limitProofBody, async (c) => {
+  const { actor } = requireClient(c);
+  const body = await readJsonObject(c.req.raw);
+  return c.json(await mergeFavorites(c.var.db, actor, parseListingIds(body.listingIds, "listingIds")));
 });
 
 async function readJson(request: Request): Promise<unknown> {

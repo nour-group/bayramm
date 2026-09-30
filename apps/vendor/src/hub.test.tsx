@@ -18,6 +18,7 @@ const TOKEN = "k".repeat(43);
 const METHODS: AuthMethods = {
   telegram: { bot: "bayramm_test_bot", loginDomain: "bayramm.example" },
   phone: false,
+  turnstileSiteKey: null,
   apps: { web: "https://bayramm.example", vendor: "https://vendor.example", admin: "https://admin.example" },
 };
 

@@ -6,7 +6,7 @@ import type { TelegramWebApp } from "@bayramm/tg/webapp";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ClientApi } from "./api/types";
 import { type AsyncResult, useAsync } from "./hooks";
-import { sessionGet, sessionSet } from "./storage";
+import { localGet, localSet, sessionGet, sessionSet } from "./storage";
 
 /**
  * Кто открыл приложение: telegram — Mini App с входом по initData; site — обычный браузер
@@ -39,11 +39,12 @@ export const canSignIn = (identity: Identity) => identity !== "guest";
 export const LANG_KEY = "bayramm.web.lang";
 const isLang = (value: unknown): value is Lang => LANGS.includes(value as Lang);
 
-/* Язык: выбор в этой вкладке → язык Telegram → язык браузера → узбекский (умолчание базы).
-   С входом через Telegram язык живёт ещё и в профиле (PATCH /me): по нему пишет бот, и при
+/* Язык: выбор в этой вкладке → выбор в прошлые визиты (localStorage: гость без входа
+   сохраняет язык между визитами) → язык Telegram → язык браузера → узбекский (умолчание
+   базы). У вошедшего язык живёт ещё и в профиле (PATCH /me): по нему пишет бот, и при
    следующем открытии приложение возьмёт его оттуда — если в этой вкладке язык не выбирали */
 export function initialLang(webApp: TelegramWebApp | null): Lang {
-  const saved = sessionGet(LANG_KEY);
+  const saved = sessionGet(LANG_KEY) ?? localGet(LANG_KEY);
   if (isLang(saved)) return saved;
   const candidates = [
     webApp?.initDataUnsafe.user?.language_code,
@@ -130,6 +131,8 @@ export function AppProviders({ services, children }: { services: Services; child
     (next: Lang) => {
       setLangState(next);
       sessionSet(LANG_KEY, next);
+      // Между визитами — и гостю, и вошедшему (после выхода язык останется тем же)
+      localSet(LANG_KEY, next);
       if (!signedIn) return;
       // Не сохранилось — язык в этой вкладке всё равно сменился; бот пишет на прежнем
       services.api.updateMe({ locale: next }).then(replaceMe, () => {});

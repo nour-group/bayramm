@@ -120,6 +120,21 @@ describe("styles.css клиента", () => {
     );
   });
 
+  it(".fav-btn: рисунок 36px, зона нажатия 44px+ — невидимым слоем (::after)", () => {
+    const body = declarationsOf(".fav-btn");
+    const size = Number(/width:\s*(\d+)px/.exec(body)?.[1]);
+    const inset = Number(/inset:\s*-(\d+)px/.exec(declarationsOf(".fav-btn::after"))?.[1]);
+    expect(size + 2 * inset).toBeGreaterThanOrEqual(44);
+    // Своё правило: в общем списке с position: relative сердечко уехало бы в поток (ловушка №8)
+    const shared = rules.filter((rule) => rule.selectors.includes(".fav-btn") && rule.selectors.length > 1);
+    expect(shared).toEqual([]);
+    expect(body).toMatch(/position:\s*absolute/);
+  });
+
+  it("нижняя панель — четыре вкладки", () => {
+    expect(declarationsOf(".tabs")).toMatch(/grid-template-columns:\s*repeat\(4, 1fr\)/);
+  });
+
   it("отказ и отправка в форме — одной ширины", () => {
     expect(declarationsOf(".form-bar")).toMatch(/grid-template-columns:\s*1fr 1fr/);
     expect(declarationsOf(".two-buttons")).toMatch(/grid-template-columns:\s*1fr 1fr/);

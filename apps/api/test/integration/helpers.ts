@@ -32,6 +32,9 @@ export function makeEnv(): Env {
     TELEGRAM_LOGIN_DOMAIN: "",
     OTP_PROVIDER: "console",
     TELEGRAM_GATEWAY_TOKEN: "",
+    // Проверки «не робот» нет: её включает секрет Turnstile (тесты src/auth/turnstile.test.ts)
+    TURNSTILE_SECRET_KEY: "",
+    TURNSTILE_SITE_KEY: "",
     HYPERDRIVE: { connectionString: apiDatabaseUrl } as Hyperdrive,
     // Storage локального стека, если тестам дали ключ (как в CI); без ключа — заглушка:
     // маршруты, которые до хранилища не доходят (404, 403, 422), работают и так
@@ -95,12 +98,32 @@ export async function adminClient(): Promise<Client> {
 
 // ── сотрудники ──────────────────────────────────────────────────────────────
 
-export function postStaffLogin(fields: Record<string, unknown>): Promise<Response> {
-  return call("/auth/staff/telegram", {
+/**
+ * Вход сотрудника так, как панель входит сейчас из Telegram: initData из кнопки бота
+ * (POST /auth/staff/webapp). Хаб входа с повышением сессии (/auth/staff/elevate) проверяет
+ * accounts.test.ts; устаревший виджет на домене панели (/auth/staff/telegram) — один
+ * отдельный тест в staff.test.ts
+ */
+export function postStaffLogin(initData: string): Promise<Response> {
+  return call("/auth/staff/webapp", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(fields),
+    body: JSON.stringify({ initData }),
   });
+}
+
+/** Сотрудник в Telegram: Telegram ID — случайный на каждый прогон, имя — из приглашения */
+export function staffTelegramUser(username?: string): TestTelegramUser {
+  const user: TestTelegramUser = { id: 8_000_000_000 + randomInt(0, 999_999_999), first_name: "Staff" };
+  if (username !== undefined) user.username = username;
+  return user;
+}
+
+/** Вход сотрудника с этим именем пользователя → токен сессии сотрудника */
+export async function staffLoginToken(username: string): Promise<string> {
+  const res = await postStaffLogin(await initDataFor(staffTelegramUser(username), { botToken: BOT_TOKEN }));
+  if (res.status !== 200) throw new Error(`вход сотрудника не удался: ${res.status} ${await res.text()}`);
+  return ((await res.json()) as { token: string }).token;
 }
 
 // Приглашения тестов — со случайными вымышленными именами; по id убираем за собой

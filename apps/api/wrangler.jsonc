@@ -18,7 +18,10 @@
   // хаб показывает виджет входа Telegram (пусто — виджета нет). OTP_PROVIDER — кто
   // доставляет коды входа по телефону: off — вход по телефону выключен; console —
   // код в лог, только APP_ENV=local; tg_gateway — Telegram Gateway (секрет
-  // TELEGRAM_GATEWAY_TOKEN, без него — выключен)
+  // TELEGRAM_GATEWAY_TOKEN, без него — выключен). TURNSTILE_SITE_KEY — публичный ключ
+  // виджета Cloudflare Turnstile на хабе входа: с секретом TURNSTILE_SECRET_KEY код на
+  // телефон из браузера отправляется только после проверки «не робот» (src/auth/turnstile.ts).
+  // Пусто и без секрета — проверки нет
   "vars": {
     "APP_ENV": "local",
     "GIT_SHA": "dev",
@@ -28,7 +31,8 @@
     "ADMIN_APP_URL": "http://localhost:5175",
     "API_URL": "http://localhost:8787",
     "TELEGRAM_LOGIN_DOMAIN": "",
-    "OTP_PROVIDER": "console"
+    "OTP_PROVIDER": "console",
+    "TURNSTILE_SITE_KEY": ""
   },
   // Раз в минуту: SLA заявок и отправка уведомлений из outbox (src/cron.ts).
   // Локально: wrangler dev --test-scheduled, затем /__scheduled
@@ -61,7 +65,8 @@
         "ADMIN_APP_URL": "https://admin-staging.bayramm.uz",
         "API_URL": "https://api-staging.bayramm.uz",
         "TELEGRAM_LOGIN_DOMAIN": "staging.bayramm.uz",
-        "OTP_PROVIDER": "off"
+        "OTP_PROVIDER": "off",
+        "TURNSTILE_SITE_KEY": ""
       },
       "triggers": { "crons": ["* * * * *"] },
       // Worker рядом с базой (Supabase, eu-central-1)
@@ -93,7 +98,8 @@
         "ADMIN_APP_URL": "https://admin.bayramm.uz",
         "API_URL": "https://api.bayramm.uz",
         "TELEGRAM_LOGIN_DOMAIN": "bayramm.uz",
-        "OTP_PROVIDER": "off"
+        "OTP_PROVIDER": "off",
+        "TURNSTILE_SITE_KEY": ""
       },
       "triggers": { "crons": ["* * * * *"] },
       "placement": { "region": "aws:eu-central-1" },

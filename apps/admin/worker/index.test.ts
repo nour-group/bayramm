@@ -18,19 +18,19 @@ function setup() {
 describe("воркер панели оператора", () => {
   it("/api/* уходит в API без префикса, заголовки запроса сохраняются", async () => {
     const { env, get } = setup();
-    const res = await get("/api/auth/staff/telegram?x=1", {
+    const res = await get("/api/auth/staff/webapp?x=1", {
       method: "POST",
       headers: { authorization: "Bearer token" },
       body: '{"id":"1"}',
     });
     expect(await res.json()).toMatchObject({
       method: "POST",
-      path: "/auth/staff/telegram",
+      path: "/auth/staff/webapp",
       search: "?x=1",
       body: '{"id":"1"}',
     });
     const forwarded = env.API.requests[0];
-    expect(forwarded?.url).toBe(`${ORIGIN}/auth/staff/telegram?x=1`);
+    expect(forwarded?.url).toBe(`${ORIGIN}/auth/staff/webapp?x=1`);
     expect(forwarded?.headers.get("authorization")).toBe("Bearer token");
     expect(env.ASSETS.requests).toEqual([]);
   });

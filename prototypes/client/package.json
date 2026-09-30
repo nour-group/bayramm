@@ -8,6 +8,7 @@
     "shots": "node shots.js"
   },
   "devDependencies": {
-    "jsdom": "^30.1.1"
+    "jsdom": "^30.1.1",
+    "sharp": "^0.35.4"
   }
 }

@@ -5,6 +5,7 @@
 
 import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { StaffMe, StaffPermission } from "@bayramm/shared/api/staff";
+import { useOnReconnect } from "@bayramm/ui/react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { fetchMethods } from "./session";
 
@@ -111,7 +112,8 @@ export type Loaded<T> =
 
 /**
  * Данные экрана по GET-пути. reload — перечитать; set — заменить ответом правки
- * (API возвращает объект целиком). Ответ на устаревший путь отбрасывается.
+ * (API возвращает объект целиком). Ответ на устаревший путь отбрасывается. Не загрузилось
+ * без сети или на 5xx, а связь потом вернулась (событие online) — повтор сам.
  */
 export function useLoad<T>(path: string | null) {
   const { api } = useSession();
@@ -138,6 +140,10 @@ export function useLoad<T>(path: string | null) {
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
   const set = useCallback((data: T) => setLoaded({ state: "ready", data }), []);
+  const retryable = loaded.state === "error" && (loaded.failure.status === 0 || loaded.failure.status >= 500);
+  useOnReconnect(() => {
+    if (retryable) reload();
+  });
   return { loaded, reload, set } as const;
 }
 

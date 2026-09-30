@@ -28,6 +28,7 @@ const CONTROLS = [
   ".link-btn",
   ".contact-phone",
   ".row-link",
+  ".fav-btn",
 ].join(", ");
 
 interface Screen {
@@ -60,6 +61,18 @@ const SCREENS: readonly Screen[] = [
     },
   },
   { name: "площадка", path: PATHS.venue(VENUE.slug), ready: ".venue-head h1" },
+  {
+    // Сердечко на карточке каталога, потом вкладка «Сохранённое»
+    name: "сохранённое",
+    path: PATHS.catalog,
+    ready: ".card",
+    setup: async (page, t) => {
+      await page.locator(".card .fav-btn").first().click();
+      await page.locator("nav.tabs").getByRole("link", { name: t.svTitle }).click();
+      await page.locator(".favorites .card").first().waitFor();
+    },
+  },
+  { name: "сохранённое пусто", path: PATHS.favorites, ready: ".state-empty", guest: true },
   {
     name: "форма заявки с ошибками",
     path: PATHS.request(VENUE.slug),
@@ -139,7 +152,7 @@ test.describe("доступность", () => {
   });
 
   for (const screen of SCREENS.filter((s) =>
-    ["каталог", "площадка", "форма заявки с ошибками", "профиль"].includes(s.name),
+    ["каталог", "площадка", "сохранённое", "форма заявки с ошибками", "профиль"].includes(s.name),
   )) {
     test(`${screen.name}: фокус с клавиатуры виден`, async ({ page }) => {
       await prepare(page);

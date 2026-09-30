@@ -1,7 +1,13 @@
 import { LANGS, type Lang } from "@bayramm/shared";
 import type { VendorMembership } from "@bayramm/shared/api/account";
 import type { RequestTab, VendorMe } from "@bayramm/shared/api/vendor";
-import { Tooltip, UiTextsProvider } from "@bayramm/ui/react";
+import {
+  ConnectivityProvider,
+  OfflineBanner,
+  Tooltip,
+  UiTextsProvider,
+  useOnReconnect,
+} from "@bayramm/ui/react";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccountLinks, VendorChooser } from "./Account";
 import { ApiFailure, accountMe, api, setUnauthorizedHandler, signIn, tokenStore } from "./api";
@@ -129,7 +135,16 @@ function NavLink({ to, current, navigate, className, children }: NavLinkProps) {
   );
 }
 
+/** Кабинет со связью: баннер «нет связи» и повтор упавших загрузок, когда она вернётся */
 export function App() {
+  return (
+    <ConnectivityProvider>
+      <Cabinet />
+    </ConnectivityProvider>
+  );
+}
+
+function Cabinet() {
   const [location, navigate] = useRoute();
   const [lang, setLang] = useState<Lang>(initialLang);
   const [auth, setAuth] = useState<Auth>({ kind: "loading" });
@@ -203,6 +218,10 @@ export function App() {
   }, [path]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  // Вход упал без сети — связь вернулась, пробуем снова сами
+  useOnReconnect(() => {
+    if (auth.kind === "error") retry();
+  });
   const uiTexts = useMemo(() => ({ close: t.close, clear: t.clear }), [t]);
   const screenProps = { t, lang, headingRef: heading } as const;
 
@@ -298,6 +317,7 @@ export function App() {
             ))}
           </div>
         </header>
+        <OfflineBanner offline={t.offline} back={t.backOnline} />
         <main id="main" className="main" tabIndex={-1}>
           {screen}
           {auth.kind === "ready" ? <AccountLinks t={t} onSwitch={switchVendor} /> : null}

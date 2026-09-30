@@ -18,6 +18,11 @@ export interface SiteWorkerOptions extends SecurityOptions {
    * документа: CSP страницы задаёт ответ, с которым она загружена
    */
   readonly telegramLoginPaths?: readonly string[];
+  /**
+   * Пути страниц, где разрешён виджет Cloudflare Turnstile (скрипт и фрейм
+   * challenges.cloudflare.com): сам путь и всё под ним, как telegramLoginPaths
+   */
+  readonly turnstilePaths?: readonly string[];
 }
 
 // Путь страницы виджета — «/auth» и всё под «/auth/»; «/authx» — нет
@@ -32,13 +37,17 @@ function underPath(pathname: string, base: string): boolean {
  *
  * Порядок: before → /api/* в API без префикса → статика с заголовками безопасности.
  */
-export function createSiteWorker(options: SiteWorkerOptions = {}) {
-  const loginPaths = options.telegramLoginPaths ?? [];
-  for (const path of loginPaths) {
-    if (!/^\/[a-z0-9/-]*[a-z0-9]$/.test(path))
-      throw new TypeError(`telegramLoginPaths: путь ${JSON.stringify(path)}`);
+/** Пути страниц с виджетом: «/auth», «/a/b»; без «/» в конце, звёздочек и пробелов */
+function checkPaths(name: string, paths: readonly string[]): readonly string[] {
+  for (const path of paths) {
+    if (!/^\/[a-z0-9/-]*[a-z0-9]$/.test(path)) throw new TypeError(`${name}: путь ${JSON.stringify(path)}`);
   }
-  const withLogin: SecurityOptions = { ...options, telegramLogin: true };
+  return paths;
+}
+
+export function createSiteWorker(options: SiteWorkerOptions = {}) {
+  const loginPaths = checkPaths("telegramLoginPaths", options.telegramLoginPaths ?? []);
+  const turnstilePaths = checkPaths("turnstilePaths", options.turnstilePaths ?? []);
   // Неверный источник в параметрах — ошибка при загрузке модуля, а не на первом запросе
   contentSecurityPolicy(options);
   return {
@@ -54,7 +63,16 @@ export function createSiteWorker(options: SiteWorkerOptions = {}) {
       // Путь, которого нет среди файлов сборки, ASSETS отдаёт как index.html со статусом 200.
       // Заголовки ставим на всё из ASSETS: HTML они защищают, остальному не мешают
       const login = loginPaths.some((base) => underPath(url.pathname, base));
-      return withSecurityHeaders(await env.ASSETS.fetch(request), login ? withLogin : options);
+      const turnstile = turnstilePaths.some((base) => underPath(url.pathname, base));
+      const security: SecurityOptions =
+        login || turnstile
+          ? {
+              ...options,
+              telegramLogin: options.telegramLogin === true || login,
+              turnstile: options.turnstile === true || turnstile,
+            }
+          : options;
+      return withSecurityHeaders(await env.ASSETS.fetch(request), security);
     },
   };
 }

@@ -60,11 +60,24 @@ export interface WidgetSignIn {
   readonly locale?: Locale;
 }
 
-/** POST /auth/phone/send → 200 OtpSent; 429 otp_too_soon | otp_limit (Retry-After); 503 phone_unavailable */
+/**
+ * POST /auth/phone/send → 200 OtpSent; 429 otp_too_soon | otp_limit (Retry-After); 503 phone_unavailable.
+ * Если в окружении включена проверка «не робот» (AuthMethods.turnstileSiteKey не null), нужно
+ * одно из двух: токен виджета Turnstile (хаб входа в браузере) или initData (Mini App).
+ * Без них — 400 turnstile_required; токен не принят — 403 turnstile_failed; проверка
+ * недоступна — 503 turnstile_unavailable; неверная initData — 401 unauthorized
+ */
 export interface OtpSend {
   /** +998XXXXXXXXX (пробелы, скобки и дефисы допустимы) */
   readonly phone: string;
+  /** Токен виджета Turnstile (action phone_code), одноразовый */
+  readonly turnstileToken?: string;
+  /** Mini App: initData вместо виджета */
+  readonly initData?: string;
 }
+
+/** action виджета Turnstile у кода на телефон: сервер сверяет его с ответом siteverify */
+export const TURNSTILE_ACTION_PHONE = "phone_code";
 
 export interface OtpSent {
   /** Через сколько секунд можно попросить код ещё раз */
@@ -125,6 +138,11 @@ export interface AuthMethods {
   };
   /** Вход по коду из сообщения включён (есть провайдер) */
   readonly phone: boolean;
+  /**
+   * Публичный ключ виджета Cloudflare Turnstile: код на телефон из браузера — только с его
+   * токеном (OtpSend.turnstileToken). null — проверка в окружении выключена
+   */
+  readonly turnstileSiteKey: string | null;
   /** Адреса приложений окружения, без завершающего «/» */
   readonly apps: Readonly<Record<AppCode, string>>;
 }
@@ -194,7 +212,8 @@ export type LinkPhone = OtpVerify;
  *   vendor_not_linked, vendor_disabled · 409 vendor_choice_required (несколько
  *   вендоров — нужен заголовок VENDOR_HEADER), identity_taken, identity_kind_taken ·
  *   400 invalid_request, invalid_phone, invalid_code, otp_invalid, otp_expired, otp_attempts ·
- *   429 otp_too_soon, otp_limit, rate_limited · 503 phone_unavailable, otp_delivery_failed
+ *   429 otp_too_soon, otp_limit, rate_limited · 503 phone_unavailable, otp_delivery_failed ·
+ *   проверка «не робот»: 400 turnstile_required · 403 turnstile_failed · 503 turnstile_unavailable
  */
 export type AccountErrorCode =
   | "unauthorized"
@@ -217,7 +236,10 @@ export type AccountErrorCode =
   | "otp_limit"
   | "rate_limited"
   | "phone_unavailable"
-  | "otp_delivery_failed";
+  | "otp_delivery_failed"
+  | "turnstile_required"
+  | "turnstile_failed"
+  | "turnstile_unavailable";
 
 // ── формат state и PKCE ────────────────────────────────────────────────────
 

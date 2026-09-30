@@ -2,6 +2,7 @@ import { type ListingCard as Card, estimatedTotalUzs } from "@bayramm/shared/api
 import { useDictionaries, useLang } from "../context";
 import { formatDayMonth, formatMoney, formatPriceFrom } from "../format";
 import { hrefFor } from "../router";
+import { FavoriteButton } from "./FavoriteButton";
 import { Link } from "./Link";
 import { NewBadge } from "./NewBadge";
 import { Photo } from "./Photo";
@@ -16,6 +17,7 @@ interface ListingCardProps {
 
 /**
  * Карточка зала в выдаче. Рейтинга и отзывов нет (правило продукта): вместо них — «Новый».
+ * Сердечко «Сохранить» — в углу фото, как в прототипе.
  * Занятый на дату зал не прячется и не бледнеет текстом: отметка «занято» и приглушённое фото.
  * С числом гостей у цены за гостя — примерная сумма на них: по ней и сортирует каталог
  */
@@ -57,6 +59,8 @@ export function ListingCard({ card, date, guests, eager }: ListingCardProps) {
           {estimate ? <p className="card-estimate">{estimate}</p> : null}
         </div>
       </Link>
+      {/* Сердечко — рядом со ссылкой, а не внутри: кнопка в ссылке недопустима */}
+      <FavoriteButton listing={card} />
     </article>
   );
 }

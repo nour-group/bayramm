@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
+import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "./api/errors";
 import { createMockApi, DEMO_OTP_CODE, type MockApi } from "./api/mock";
 import { SESSION_KEY } from "./api/session";
+import type { TurnstileApi } from "./components/HumanCheck";
 import { LANG_KEY } from "./context";
 import {
   authHref,
@@ -13,7 +16,20 @@ import {
   saveReturn,
   startTelegramLink,
 } from "./hub";
-import { byText, cleanup, click, field, LISTINGS, mount, NOW, text, type, waitFor } from "./test/harness";
+import {
+  byText,
+  cleanup,
+  click,
+  fakeWebApp,
+  field,
+  LISTINGS,
+  mount,
+  NOW,
+  settle,
+  text,
+  type,
+  waitFor,
+} from "./test/harness";
 
 const STATE = "sTaTe_0123456789abcdef";
 const CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
@@ -32,6 +48,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  delete window.turnstile;
 });
 
 const api = (options: Parameters<typeof createMockApi>[0] = {}): MockApi =>
@@ -250,5 +267,133 @@ describe("профиль: аккаунт", () => {
     await click(await waitFor(() => byText("button", "Выйти"), "кнопка выхода"));
     expect(out).toHaveBeenCalled();
     expect(replaced).toEqual(["/profile"]);
+  });
+});
+
+// Поддельный Turnstile: виджеты, которые нарисовало приложение, их сбросы и удаления
+function fakeTurnstile() {
+  const widgets: { container: HTMLElement; options: Parameters<TurnstileApi["render"]>[1] }[] = [];
+  const resets: string[] = [];
+  const removed: string[] = [];
+  window.turnstile = {
+    render(container, options) {
+      widgets.push({ container, options });
+      return `w${widgets.length}`;
+    },
+    reset: (id) => void resets.push(id),
+    remove: (id) => void removed.push(id),
+  };
+  const solve = async (index: number, token: string) => {
+    await act(async () => widgets[index]?.options.callback(token));
+    await settle();
+  };
+  return { widgets, resets, removed, solve };
+}
+
+const SITE_KEY = "0x4AAAAAAA-test-site-key";
+
+describe("проверка «не робот» (Turnstile) у кода на телефон", () => {
+  it("хаб: виджет рядом с кнопкой; без токена код не просим; токен уходит один раз", async () => {
+    const turnstile = fakeTurnstile();
+    const mock = api({ turnstileSiteKey: SITE_KEY });
+    await mount({ path: "/auth", identity: "guest", api: mock });
+    await waitFor(() => turnstile.widgets.length === 1, "виджет");
+    expect(turnstile.widgets[0]?.options).toMatchObject({ sitekey: SITE_KEY, action: "phone_code" });
+    expect(document.querySelector("fieldset.human-check legend")?.textContent).toBe(
+      "Проверка, что вы не робот",
+    );
+
+    await type(field("Номер телефона"), "901234567");
+    await click(byText("button", "Получить код"));
+    expect(mock.codesSent).toEqual([]);
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Дождитесь проверки");
+
+    await turnstile.solve(0, "token-1");
+    await click(byText("button", "Получить код"));
+    expect(mock.phoneProofs).toEqual([{ turnstileToken: "token-1" }]);
+    // Токен потрачен — виджет сброшен; шаг кода — старый виджет убран
+    expect(turnstile.resets).toEqual(["w1"]);
+    expect(turnstile.removed).toEqual(["w1"]);
+    expect(text()).toContain("Код отправлен");
+  });
+
+  it("проверка не прошла — наши слова и повтор без перезагрузки", async () => {
+    const turnstile = fakeTurnstile();
+    await mount({ path: "/auth", identity: "guest", api: api({ turnstileSiteKey: SITE_KEY }) });
+    await waitFor(() => turnstile.widgets.length === 1, "виджет");
+    await act(async () => void turnstile.widgets[0]?.options["error-callback"]());
+    expect(text()).toContain("Проверка не прошла. Попробуйте ещё раз.");
+  });
+
+  it("api.js не загрузился (сеть, блокировщик) — объяснение, вход через Telegram остаётся", async () => {
+    vi.spyOn(document.head, "append").mockImplementation((...nodes) => {
+      for (const node of nodes) if (node instanceof HTMLScriptElement) node.dispatchEvent(new Event("error"));
+    });
+    await mount({ path: "/auth", identity: "guest", api: api({ turnstileSiteKey: SITE_KEY }) });
+    await waitFor(() => text().includes("Проверка сейчас недоступна"), "объяснение");
+  });
+
+  it("Mini App: вместо виджета — initData; профиль добавляет телефон тут же", async () => {
+    const turnstile = fakeTurnstile();
+    const { webApp } = fakeWebApp();
+    const mock = api({ turnstileSiteKey: SITE_KEY });
+    await mount({ path: "/profile", identity: "telegram", webApp, api: mock });
+    await click(await waitFor(() => byText("button", "Добавить телефон"), "кнопка"));
+    await type(field("Номер телефона"), "901234567");
+    await click(byText("button", "Получить код"));
+    expect(mock.phoneProofs).toEqual([{ initData: webApp.initData }]);
+    expect(turnstile.widgets).toEqual([]);
+  });
+
+  it("сайт: «Добавить телефон» ведёт в хаб (виджет разрешён только там) и возвращает в профиль", async () => {
+    await mount({ path: "/profile", identity: "site", api: api({ turnstileSiteKey: SITE_KEY }) });
+    const link = await waitFor(() => byText("a", "Добавить телефон"), "ссылка в хаб");
+    expect(link.getAttribute("href")).toBe("/auth?return=%2Fprofile&link=phone");
+  });
+
+  it("хаб link=phone: код с проверкой — телефон к своему аккаунту, назад в профиль", async () => {
+    const turnstile = fakeTurnstile();
+    const mock = api({ turnstileSiteKey: SITE_KEY });
+    await mount({ path: "/auth?link=phone&return=%2Fprofile", identity: "site", api: mock });
+    expect(document.querySelector("h1")?.textContent).toBe("Добавить телефон");
+    expect(document.querySelector(".tg-login")).toBeNull();
+    await waitFor(() => turnstile.widgets.length === 1, "виджет");
+    await turnstile.solve(0, "token-1");
+    await type(field("Номер телефона"), "901234567");
+    await click(byText("button", "Получить код"));
+    await type(field("Код из сообщения"), DEMO_OTP_CODE);
+    await click(byText("button", "Добавить телефон"));
+    await waitFor(() => window.location.pathname === "/profile", "профиль");
+    expect(replaced).toEqual([]);
+  });
+});
+
+describe("хаб: способы входа не загрузились", () => {
+  it("«Повторить» загружает заново", async () => {
+    let fail = true;
+    const mock = api({
+      failWith: (method) => (method === "authMethods" && fail ? new ApiError(0, "network") : null),
+    });
+    await mount({ path: "/auth", identity: "guest", api: mock });
+    await waitFor(() => byText("button", "Повторить"), "повтор");
+    expect(text()).toContain("Не удалось загрузить");
+    fail = false;
+    await click(byText("button", "Повторить"));
+    await waitFor(() => field("Номер телефона"), "форма входа");
+  });
+
+  it("связь вернулась (событие online) — загрузка повторяется сама; баннер «нет связи»", async () => {
+    let fail = true;
+    const mock = api({
+      failWith: (method) => (method === "authMethods" && fail ? new ApiError(0, "network") : null),
+    });
+    await mount({ path: "/auth", identity: "guest", api: mock });
+    await waitFor(() => byText("button", "Повторить"), "повтор");
+    await act(async () => void window.dispatchEvent(new Event("offline")));
+    expect(document.querySelector(".ui-net")?.textContent).toContain("Нет подключения к интернету");
+    fail = false;
+    await act(async () => void window.dispatchEvent(new Event("online")));
+    await waitFor(() => field("Номер телефона"), "форма входа без нажатия");
+    expect(document.querySelector(".ui-net")?.textContent).toBe("Связь вернулась.");
   });
 });

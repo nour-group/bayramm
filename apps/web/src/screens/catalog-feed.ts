@@ -1,4 +1,5 @@
 import type { CatalogQuery, CatalogSort, ListingCard } from "@bayramm/shared/api";
+import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAbort } from "../api/errors";
 import type { ClientApi } from "../api/types";
@@ -138,6 +139,12 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
   }, [api, cursor, status]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  // Связь вернулась, а выдача не загрузилась — ещё раз сами
+  useOnReconnect(() => {
+    if (status === "error") retry();
+    else if (status === "more-error") loadMore();
+  });
 
   return { items, status, hasMore: cursor !== null, retry, loadMore };
 }

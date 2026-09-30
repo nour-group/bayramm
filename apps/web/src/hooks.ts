@@ -1,5 +1,6 @@
+import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isAbort } from "./api/errors";
+import { isAbort, isRetryable } from "./api/errors";
 
 export type AsyncState<T> =
   | { readonly status: "loading" }
@@ -15,7 +16,8 @@ export type AsyncResult<T> = AsyncState<T> & {
 
 /**
  * Данные экрана: загрузка, ошибка, готово. key — всё, от чего зависит запрос: при его смене
- * старый запрос отменяется, а его поздний ответ не перетрёт новый
+ * старый запрос отменяется, а его поздний ответ не перетрёт новый. Упала загрузка, а связь
+ * потом вернулась (событие online) — повтор сам, без «Повторить»
  */
 export function useAsync<T>(key: string, load: (signal: AbortSignal) => Promise<T>): AsyncResult<T> {
   const [state, setState] = useState<AsyncState<T>>({ status: "loading" });
@@ -40,6 +42,10 @@ export function useAsync<T>(key: string, load: (signal: AbortSignal) => Promise<
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
   const replace = useCallback((data: T) => setState({ status: "ready", data }), []);
+  const failed = state.status === "error" && isRetryable(state.error);
+  useOnReconnect(() => {
+    if (failed) reload();
+  });
   return { ...state, reload, replace };
 }
 

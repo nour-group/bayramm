@@ -73,7 +73,7 @@ describe("POST /auth/*: лимит по IP", () => {
   it("под лимитом все POST /auth/*: вход сотрудника и выход тоже", async () => {
     const limiter = denyAllLimiter();
     const env = makeEnv({ RATE_LIMIT_AUTH_IP: limiter });
-    for (const path of ["/auth/staff/telegram", "/auth/logout"]) {
+    for (const path of ["/auth/staff/webapp", "/auth/logout"]) {
       const { res } = await call(path, post({ "CF-Connecting-IP": "203.0.113.7" }), env);
       expect(res.status, path).toBe(429);
     }

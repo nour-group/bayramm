@@ -37,6 +37,21 @@ describe("Content-Security-Policy", () => {
     }
   });
 
+  it("turnstile добавляет только скрипт и фрейм challenges.cloudflare.com", () => {
+    const withTurnstile = parseCsp(contentSecurityPolicy({ turnstile: true }));
+    expect(withTurnstile["script-src"]).toEqual(["'self'", "https://challenges.cloudflare.com"]);
+    expect(withTurnstile["frame-src"]).toEqual(["https://challenges.cloudflare.com"]);
+    for (const [name, sources] of Object.entries(withTurnstile)) {
+      if (name !== "script-src" && name !== "frame-src") expect(sources).toEqual(csp[name]);
+    }
+    expect(csp["frame-src"]).toBeUndefined();
+  });
+
+  it("виджет Telegram и Turnstile вместе — оба фрейма в одном frame-src", () => {
+    const both = parseCsp(contentSecurityPolicy({ telegramLogin: true, turnstile: true }));
+    expect(both["frame-src"]).toEqual(["https://oauth.telegram.org", "https://challenges.cloudflare.com"]);
+  });
+
   it("imageOrigins добавляет источники только в img-src", () => {
     const origins = ["https://media.example", "https://media-staging.example"];
     const withImages = parseCsp(contentSecurityPolicy({ imageOrigins: origins }));

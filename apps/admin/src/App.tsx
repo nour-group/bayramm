@@ -1,6 +1,6 @@
 import type { StaffDictionaries } from "@bayramm/shared/api/staff";
 import { getWebApp, loadTelegramWebApp } from "@bayramm/tg/webapp";
-import { UiTextsProvider } from "@bayramm/ui/react";
+import { ConnectivityProvider, OfflineBanner, UiTextsProvider } from "@bayramm/ui/react";
 import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Session, SessionContext, useLoad } from "./api";
 import { Login } from "./Login";
@@ -384,19 +384,23 @@ export function App() {
   );
 
   return (
-    <UiTextsProvider texts={UI_TEXTS}>
-      {session && staff ? (
-        <SessionContext.Provider value={session}>
-          <Shell staff={staff} token={token ?? ""} onSignOut={onSignOut} />
-        </SessionContext.Provider>
-      ) : (
-        <Login
-          checking={auth.kind === "checking"}
-          error={auth.kind === "signedOut" ? auth.error : null}
-          onSignIn={onSignIn}
-        />
-      )}
-    </UiTextsProvider>
+    <ConnectivityProvider>
+      <UiTextsProvider texts={UI_TEXTS}>
+        {/* Нет связи — полоса над панелью; упавшие загрузки повторятся, когда она вернётся */}
+        <OfflineBanner offline={t.offline} back={t.backOnline} />
+        {session && staff ? (
+          <SessionContext.Provider value={session}>
+            <Shell staff={staff} token={token ?? ""} onSignOut={onSignOut} />
+          </SessionContext.Provider>
+        ) : (
+          <Login
+            checking={auth.kind === "checking"}
+            error={auth.kind === "signedOut" ? auth.error : null}
+            onSignIn={onSignIn}
+          />
+        )}
+      </UiTextsProvider>
+    </ConnectivityProvider>
   );
 }
 

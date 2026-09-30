@@ -1,4 +1,6 @@
+import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiFailure } from "./api";
 
 export type Load<T> =
   | { readonly state: "loading" }
@@ -10,7 +12,8 @@ export type Load<T> =
  * отбрасывается. reload — ещё раз с тем же ключом, set — поправить загруженное
  * на месте (после действия, без повторного запроса), refresh — перечитать тихо: экран
  * остаётся на месте (без «Загрузка…», фокус не теряется), ответ заменяет данные.
- * refresh отвечает, удалось ли: не удалось — данные прежние.
+ * refresh отвечает, удалось ли: не удалось — данные прежние. Загрузка упала без сети
+ * или на 5xx, а связь потом вернулась (событие online) — повтор сам.
  */
 export function useLoad<T>(key: string | null, load: (key: string) => Promise<T>) {
   const [result, setResult] = useState<Load<T>>({ state: "loading" });
@@ -35,6 +38,10 @@ export function useLoad<T>(key: string | null, load: (key: string) => Promise<T>
   }, [key, attempt]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const retryable = result.state === "error" && isRetryable(result.error);
+  useOnReconnect(() => {
+    if (retryable) reload();
+  });
   const set = useCallback(
     (update: (data: T) => T) =>
       setResult((current) =>
@@ -56,4 +63,9 @@ export function useLoad<T>(key: string | null, load: (key: string) => Promise<T>
     }
   }, []);
   return [result, reload, set, refresh] as const;
+}
+
+/** Повторить, когда вернётся связь: запрос не дошёл или сервер не ответил (5xx) */
+export function isRetryable(error: unknown): boolean {
+  return error instanceof ApiFailure ? error.status === 0 || error.status >= 500 : true;
 }

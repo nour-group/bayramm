@@ -21,6 +21,7 @@ export const METHODS: AuthMethods = {
   // Домен виджета — не localhost: виджет Telegram в тестах не грузится
   telegram: { bot: BOT, loginDomain: null },
   phone: false,
+  turnstileSiteKey: null,
   apps: APPS,
 };
 

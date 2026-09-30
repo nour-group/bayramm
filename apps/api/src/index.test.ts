@@ -114,9 +114,9 @@ describe("POST /auth/telegram: отказ до базы", () => {
   });
 });
 
-function staffLogin(body: unknown, env = makeEnv()) {
+function post(path: string, body: unknown, env = makeEnv()) {
   return call(
-    "/auth/staff/telegram",
+    path,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -126,20 +126,40 @@ function staffLogin(body: unknown, env = makeEnv()) {
   );
 }
 
+// Хаб входа: поля виджета — в { widget }
+const widgetLogin = (fields: unknown, env = makeEnv()) => post("/auth/widget", { widget: fields }, env);
+
 const STAFF_USER = { id: 100000001, first_name: "Staff", username: "test_staff" };
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
-describe("POST /auth/staff/telegram: отказ до базы", () => {
-  it("тело не JSON-объект — 400", async () => {
-    for (const body of ["not json", [], "null", '"fields"', "42"]) {
-      const { res } = await staffLogin(body);
+describe("POST /auth/staff/webapp: отказ до базы", () => {
+  it("тело не JSON-объект или без initData — 400", async () => {
+    for (const body of ["not json", [], "null", '"fields"', "42", {}, { initData: "" }]) {
+      const { res } = await post("/auth/staff/webapp", body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_request");
+    }
+  });
+
+  it("подпись чужого бота — 401", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const initData = await initDataFor(STAFF_USER, { botToken: "999:other-bot" });
+    const { res } = await post("/auth/staff/webapp", { initData });
+    expect(res.status).toBe(401);
+  });
+});
+
+describe("POST /auth/widget: отказ до базы", () => {
+  it("тело не JSON-объект или без полей виджета — 400", async () => {
+    for (const body of ["not json", [], "null", '"fields"', "42", {}, { widget: "x" }, { widget: [] }]) {
+      const { res } = await post("/auth/widget", body);
       expect(res.status, JSON.stringify(body)).toBe(400);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_request");
     }
   });
 
   it("слишком большое тело — 413", async () => {
-    const { res } = await staffLogin({ ...STAFF_USER, last_name: "x".repeat(40 * 1024) });
+    const { res } = await widgetLogin({ ...STAFF_USER, last_name: "x".repeat(40 * 1024) });
     expect(res.status).toBe(413);
   });
 
@@ -159,7 +179,7 @@ describe("POST /auth/staff/telegram: отказ до базы", () => {
     ],
   ])("%s — 401, в базу не ходит", async (_name, fields, reason) => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { res } = await staffLogin(await fields());
+    const { res } = await widgetLogin(await fields());
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({
       error: { code: "unauthorized", message: "Invalid Telegram login data" },
@@ -170,14 +190,14 @@ describe("POST /auth/staff/telegram: отказ до базы", () => {
   it("без токена бота — 500, а не вход без проверки", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const fields = await signLoginWidget(STAFF_USER, BOT_TOKEN);
-    const { res } = await staffLogin(fields, makeEnv({ TELEGRAM_BOT_TOKEN: "" }));
+    const { res } = await widgetLogin(fields, makeEnv({ TELEGRAM_BOT_TOKEN: "" }));
     expect(res.status).toBe(500);
   });
 
   it("без ID_HASH_KEY — 500 до записи в базу", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const fields = await signLoginWidget(STAFF_USER, BOT_TOKEN);
-    const { res } = await staffLogin(fields, makeEnv({ ID_HASH_KEY: "short" }));
+    const { res } = await widgetLogin(fields, makeEnv({ ID_HASH_KEY: "short" }));
     expect(res.status).toBe(500);
   });
 });

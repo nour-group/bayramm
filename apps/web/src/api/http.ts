@@ -8,6 +8,7 @@ import {
   type ConsentTexts,
   type CreateRequest,
   type Dictionaries,
+  type ListingCards,
   type ListingDetail,
   type Locale,
   type RequestCreated,
@@ -23,6 +24,7 @@ import type {
   ClientDataExport,
   ClientMePatch,
   ConsentWithdrawn,
+  Favorites,
   Me,
   WithdrawConsent,
 } from "@bayramm/shared/api/me";
@@ -38,7 +40,7 @@ export const API_BASE = "/api";
 type Fetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 interface CallOptions {
-  readonly method?: "GET" | "POST" | "PATCH" | "DELETE";
+  readonly method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   readonly query?: Readonly<Record<string, string | number | undefined>>;
   readonly body?: unknown;
   /** Нужна сессия клиента: Authorization: Bearer, при 401 — один повторный вход */
@@ -149,6 +151,10 @@ export function createHttpApi({
     listing: (slug, signal) => get<ListingDetail>(`/catalog/listings/${encodeURIComponent(slug)}`, signal),
     consentTexts: (locale: Locale, signal) => get<ConsentTexts>("/consent-texts", signal, { locale }),
     bot: (signal) => get<BotInfo>("/telegram/bot", signal),
+    listingCards: (ids, signal) =>
+      ids.length === 0
+        ? Promise.resolve({ items: [] })
+        : get<ListingCards>("/catalog/cards", signal, { ids: ids.join(",") }),
     createRequest: (body: CreateRequest) =>
       call<RequestCreated>(fetchFn, base, "/requests", { method: "POST", body, auth: session, source }),
     myRequests: (signal) =>
@@ -175,11 +181,31 @@ export function createHttpApi({
       ended = true;
       auth.invalidate();
     },
+    favorites: (signal) => call<Favorites>(fetchFn, base, "/me/favorites", { auth: session, signal, source }),
+    addFavorite: (listingId) =>
+      call<void>(fetchFn, base, `/me/favorites/${encodeURIComponent(listingId)}`, {
+        method: "PUT",
+        auth: session,
+        source,
+      }),
+    removeFavorite: (listingId) =>
+      call<void>(fetchFn, base, `/me/favorites/${encodeURIComponent(listingId)}`, {
+        method: "DELETE",
+        auth: session,
+        source,
+      }),
+    mergeFavorites: (listingIds) =>
+      call<Favorites>(fetchFn, base, "/me/favorites", {
+        method: "POST",
+        body: { listingIds },
+        auth: session,
+        source,
+      }),
     authMethods: (signal) => get<AuthMethods>("/auth/methods", signal),
     signInWidget: (widget, locale) =>
       call<SessionToken>(fetchFn, base, "/auth/widget", { method: "POST", body: { widget, locale } }),
-    sendPhoneCode: (phone) =>
-      call<OtpSent>(fetchFn, base, "/auth/phone/send", { method: "POST", body: { phone } }),
+    sendPhoneCode: (phone, proof = {}) =>
+      call<OtpSent>(fetchFn, base, "/auth/phone/send", { method: "POST", body: { phone, ...proof } }),
     verifyPhoneCode: (phone, code, locale) =>
       call<SessionToken>(fetchFn, base, "/auth/phone/verify", {
         method: "POST",

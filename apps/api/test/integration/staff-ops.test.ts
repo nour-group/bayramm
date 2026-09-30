@@ -24,10 +24,8 @@ import type {
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import app from "../../src/index";
-import { signLoginWidget } from "../../src/testing/login-widget";
 import {
   adminClient,
-  BOT_TOKEN,
   bearer,
   call,
   cleanup,
@@ -36,7 +34,7 @@ import {
   makeEnv,
   newStaffUsername,
   newTelegramUser,
-  postStaffLogin,
+  staffLoginToken,
   tgIdHash,
 } from "./helpers";
 
@@ -59,20 +57,10 @@ vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
   return realFetch(input, init);
 });
 
-async function staffLogin(username: string): Promise<string> {
-  const fields = await signLoginWidget(
-    { id: 8_000_000_000 + randomInt(0, 999_999_999), first_name: "Staff", username },
-    BOT_TOKEN,
-  );
-  const res = await postStaffLogin(fields);
-  if (res.status !== 200) throw new Error(`вход сотрудника: ${res.status}`);
-  return ((await res.json()) as { token: string }).token;
-}
-
 async function staffToken(role: Who): Promise<void> {
   const username = newStaffUsername();
   staffIds[role] = await inviteStaff(admin, { username, role, displayName: `Ops ${role} ${tag}` });
-  tokens[role] = await staffLogin(username);
+  tokens[role] = await staffLoginToken(username);
 }
 
 async function api(who: Who | string, method: string, path: string, body?: unknown): Promise<Response> {
@@ -734,7 +722,7 @@ describe("команда", () => {
     const username = newStaffUsername();
     const id = await inviteStaff(admin, { username, role: "manager", displayName: `Ops extra ${tag}` });
     extraStaff.push(id);
-    const token = await staffLogin(username);
+    const token = await staffLoginToken(username);
     expect(await status(api(token, "GET", "/staff/requests"))).toBe(200);
 
     await ok<TeamList>(api("admin", "POST", `/staff/team/${id}/role`, { role: "moderator" }));

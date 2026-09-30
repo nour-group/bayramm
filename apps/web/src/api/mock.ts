@@ -8,16 +8,17 @@ import {
   type CreateRequest,
   comparablePriceUzs,
   type Dictionaries,
+  FAVORITES_MAX,
   type ListingCard,
   type ListingDetail,
   type Locale,
   type RequestStatus,
 } from "@bayramm/shared/api";
 import type { AccountIdentity, AppCode, VendorMembership } from "@bayramm/shared/api/account";
-import type { ClientDataExport, ClientMe, Me } from "@bayramm/shared/api/me";
+import type { ClientDataExport, ClientMe, Favorites, Me } from "@bayramm/shared/api/me";
 import { addDays, tashkentToday } from "../format";
 import { ApiError } from "./errors";
-import type { ClientApi } from "./types";
+import type { ClientApi, PhoneProof } from "./types";
 
 /* Демо-реализация API в памяти: для тестов и для `pnpm dev:web` без сервера.
    Ведёт себя по контракту @bayramm/shared/api: занятые на дату — в конце выдачи при
@@ -262,6 +263,15 @@ export interface MockOptions {
   readonly phone?: boolean;
   /** Домен виджета входа Telegram; по умолчанию — нет (виджет в демо не работает) */
   readonly loginDomain?: string | null;
+  /**
+   * Проверка «не робот» (Turnstile) у кода на телефон: ключ виджета. Тогда код без токена
+   * или initData — 400 turnstile_required, как у настоящего API
+   */
+  readonly turnstileSiteKey?: string | null;
+  /** Избранное демо-аккаунта (id площадок, последние отмеченные — первыми) */
+  readonly favorites?: readonly string[];
+  /** Площадки «сняты с публикации»: в выдаче, карточках и избранном их нет, карточка — 404 */
+  readonly hidden?: readonly string[];
 }
 
 /** Код из сообщения в демо: сообщений нет, код всегда этот */
@@ -286,6 +296,10 @@ export interface MockApi extends ClientApi {
   readonly hubCodes: { readonly app: string; readonly state: string; readonly codeChallenge: string }[];
   /** Номера, на которые «отправлен» код */
   readonly codesSent: string[];
+  /** Чем каждый запрос кода доказал, что его шлёт человек */
+  readonly phoneProofs: PhoneProof[];
+  /** Избранное аккаунта сейчас */
+  readonly favoriteIds: () => readonly string[];
 }
 
 const DEMO_CREATED = "2026-09-01T09:00:00.000Z";
@@ -302,7 +316,8 @@ const DEMO_ME: ClientMe = {
 
 export function createMockApi(options: MockOptions = {}): MockApi {
   const now = options.now ?? Date.now;
-  const listings = options.listings ?? demoListings(tashkentToday(now()));
+  const hidden = new Set(options.hidden ?? []);
+  const listings = (options.listings ?? demoListings(tashkentToday(now()))).filter((l) => !hidden.has(l.id));
   const requests: ClientRequest[] = [...(options.requests ?? [])];
   const created: CreateRequest[] = [];
   const latency = options.latencyMs ?? 0;
@@ -313,6 +328,15 @@ export function createMockApi(options: MockOptions = {}): MockApi {
   ];
   const hubCodes: MockApi["hubCodes"] = [];
   const codesSent: string[] = [];
+  const phoneProofs: PhoneProof[] = [];
+  let favoriteIds: string[] = [...(options.favorites ?? [])];
+  const published = (id: string) => listings.find((l) => l.id === id);
+  const favoritesNow = (): Favorites => ({
+    items: favoriteIds.flatMap((id) => {
+      const listing = published(id);
+      return listing ? [toCard(listing, undefined)] : [];
+    }),
+  });
   const apps = options.apps ?? DEMO_APPS;
   const account = (): Me => ({
     ...me,
@@ -371,6 +395,8 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     deleted: () => deleted,
     hubCodes,
     codesSent,
+    phoneProofs,
+    favoriteIds: () => favoriteIds,
     dictionaries: (signal) => respond("dictionaries", signal, () => DEMO_DICTIONARIES),
 
     catalog: (query: CatalogQuery, signal) =>
@@ -402,6 +428,43 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const listing = listings.find((l) => l.slug === slug);
         if (!listing) throw new ApiError(404, "not_found");
         return listing;
+      }),
+
+    listingCards: (ids, signal) =>
+      respond("listingCards", signal, () => ({
+        items: ids.flatMap((id) => {
+          const listing = published(id);
+          return listing ? [toCard(listing, undefined)] : [];
+        }),
+      })),
+
+    favorites: (signal) =>
+      respond("favorites", signal, () => {
+        signedIn();
+        return favoritesNow();
+      }),
+
+    addFavorite: (listingId) =>
+      respond("addFavorite", undefined, () => {
+        signedIn();
+        if (!published(listingId)) throw new ApiError(404, "not_found");
+        if (favoriteIds.includes(listingId)) return;
+        if (favoriteIds.length >= FAVORITES_MAX) throw new ApiError(409, "favorites_full");
+        favoriteIds = [listingId, ...favoriteIds];
+      }),
+
+    removeFavorite: (listingId) =>
+      respond("removeFavorite", undefined, () => {
+        signedIn();
+        favoriteIds = favoriteIds.filter((id) => id !== listingId);
+      }),
+
+    mergeFavorites: (ids) =>
+      respond("mergeFavorites", undefined, () => {
+        signedIn();
+        const fresh = [...new Set(ids)].filter((id) => published(id) && !favoriteIds.includes(id));
+        favoriteIds = [...favoriteIds, ...fresh].slice(0, FAVORITES_MAX);
+        return favoritesNow();
       }),
 
     consentTexts: (locale, signal) =>
@@ -493,6 +556,13 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           profile: null,
           consents: [],
           requests: [],
+          favorites: favoriteIds.map((id) => {
+            const listing = published(id);
+            return {
+              listing: { id, slug: listing?.slug ?? null, name: listing?.name ?? null },
+              savedAt: new Date(now()).toISOString(),
+            };
+          }),
         };
       }),
 
@@ -510,6 +580,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         signedIn();
         deleted = true;
         requests.length = 0;
+        favoriteIds = [];
       }),
 
     authMethods: (signal) =>
@@ -519,15 +590,20 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           loginDomain: options.loginDomain ?? null,
         },
         phone: options.phone ?? true,
+        turnstileSiteKey: options.turnstileSiteKey ?? null,
         apps,
       })),
 
     signInWidget: () => respond("signInWidget", undefined, demoSession),
 
-    sendPhoneCode: (raw) =>
+    sendPhoneCode: (raw, proof = {}) =>
       respond("sendPhoneCode", undefined, () => {
         if (options.phone === false) throw new ApiError(503, "phone_unavailable");
-        codesSent.push(phoneOf(raw));
+        const phone = phoneOf(raw);
+        if (options.turnstileSiteKey && !proof.turnstileToken && !proof.initData)
+          throw new ApiError(400, "turnstile_required");
+        phoneProofs.push(proof);
+        codesSent.push(phone);
         return { resendAfter: 60, expiresIn: 600 };
       }),
 

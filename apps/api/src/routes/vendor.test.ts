@@ -35,23 +35,29 @@ describe("/vendor без сессии кабинета", () => {
   });
 });
 
-describe("POST /auth/vendor/telegram: отказ до базы", () => {
+describe("POST /auth/telegram { app: vendor }: отказ до базы", () => {
   const login = (body: unknown) =>
-    call("/auth/vendor/telegram", {
+    call("/auth/telegram", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: typeof body === "string" ? body : JSON.stringify(body),
     });
 
-  it("тело не JSON или без initData — 400", async () => {
-    for (const body of ["not json", {}, { initData: "" }, { initData: 42 }]) {
+  it("тело не JSON, без initData или неизвестное приложение — 400", async () => {
+    for (const body of [
+      "not json",
+      { app: "vendor" },
+      { initData: "", app: "vendor" },
+      { initData: 42, app: "vendor" },
+      { initData: "x", app: "admin" },
+    ]) {
       const { res } = await login(body);
       expect(res.status, JSON.stringify(body)).toBe(400);
     }
   });
 
   it("слишком большое тело — 413", async () => {
-    const { res } = await login({ initData: "x".repeat(40 * 1024) });
+    const { res } = await login({ initData: "x".repeat(40 * 1024), app: "vendor" });
     expect(res.status).toBe(413);
   });
 
@@ -61,19 +67,11 @@ describe("POST /auth/vendor/telegram: отказ до базы", () => {
       { id: 100000001, first_name: "Vendor" },
       { botToken: "999:other-bot" },
     );
-    const { res } = await login({ initData });
+    const { res } = await login({ initData, app: "vendor" });
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({
       error: { code: "unauthorized", message: "Invalid Telegram init data" },
     });
     expect(warn).toHaveBeenCalledWith("auth: initData rejected", "bad_hash");
-  });
-
-  it("адрес устарел: каждое обращение — в лог, без данных запроса", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await login({});
-    expect(warn).toHaveBeenCalledWith("auth.legacy: deprecated endpoint used", {
-      path: "/auth/vendor/telegram",
-    });
   });
 });

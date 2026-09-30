@@ -43,10 +43,12 @@ describe("маршруты клиента", () => {
       expect(matchRoute(hrefFor(match))).toEqual(match);
   });
 
-  it("пути не повторяются; вкладки — каталог, заявки, профиль", () => {
+  it("пути не повторяются; вкладки — каталог, сохранённое, заявки, профиль", () => {
     const paths = Object.values(ROUTES);
     expect(new Set(paths).size).toBe(paths.length);
-    expect(TABS).toEqual(["catalog", "requests", "profile"]);
+    expect(TABS).toEqual(["catalog", "favorites", "requests", "profile"]);
+    expect(matchRoute("/favorites")).toEqual({ name: "favorites" });
+    expect(tabOf({ name: "favorites" })).toBe("favorites");
   });
 
   it("назад с внутреннего экрана — к родителю; вкладка внутреннего — каталог", () => {

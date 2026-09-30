@@ -7,6 +7,7 @@ export const ROUTES = {
   catalog: "/",
   venue: "/venue/:slug",
   request: "/venue/:slug/request",
+  favorites: "/favorites",
   requests: "/requests",
   profile: "/profile",
   // Хаб входа: вход на сайт и вход в кабинет и панель (hub.ts). Ссылки сюда — только
@@ -21,13 +22,14 @@ export type Match =
   | { readonly name: "catalog" }
   | { readonly name: "venue"; readonly slug: string }
   | { readonly name: "request"; readonly slug: string }
+  | { readonly name: "favorites" }
   | { readonly name: "requests" }
   | { readonly name: "profile" }
   | { readonly name: "auth" }
   | { readonly name: "authTelegram" };
 
-/** Вкладки нижней панели, по порядку */
-export const TABS = ["catalog", "requests", "profile"] as const satisfies readonly RouteName[];
+/** Вкладки нижней панели, по порядку: как в прототипе — главная, сохранённое, заявки; и профиль */
+export const TABS = ["catalog", "favorites", "requests", "profile"] as const satisfies readonly RouteName[];
 export type Tab = (typeof TABS)[number];
 
 // Как slug листинга в базе и id в start_param: строчная латиница, цифры, дефис
@@ -39,6 +41,7 @@ const REQUEST_RE = new RegExp(`^/venue/${SLUG}/request$`);
 export function matchRoute(pathname: string): Match | null {
   const path = trimTrailingSlashes(pathname) || "/";
   if (path === ROUTES.catalog) return { name: "catalog" };
+  if (path === ROUTES.favorites) return { name: "favorites" };
   if (path === ROUTES.requests) return { name: "requests" };
   if (path === ROUTES.profile) return { name: "profile" };
   if (path === ROUTES.auth) return { name: "auth" };
@@ -73,7 +76,7 @@ export function parentOf(match: Match | null): Match | null {
 /** Вкладка, к которой относится экран: внутренние экраны — к каталогу */
 export function tabOf(match: Match | null): Tab | null {
   if (!match || match.name === "auth" || match.name === "authTelegram") return null;
-  if (match.name === "requests" || match.name === "profile") return match.name;
+  if (match.name === "favorites" || match.name === "requests" || match.name === "profile") return match.name;
   return "catalog";
 }
 

@@ -432,7 +432,8 @@ export const uz: Dict = {
     "Tadbir narxini zal sigʻimiga boʻlamiz. Mehmonlar sonini kiriting — summalarni solishtiramiz.",
   sortHintTotal: (guests: number) => `${guests} mehmon uchun taxminiy summa solishtiriladi.`,
   myData: "Mening maʼlumotlarim",
-  myDataLead: "Bayramm siz haqingizda nimani saqlaydi: Telegram profili, roziliklar va soʻrovlar.",
+  myDataLead:
+    "Bayramm siz haqingizda nimani saqlaydi: Telegram profili, roziliklar, soʻrovlar va saqlangan maydonlar.",
   exportData: "Maʼlumotlarimni yuklab olish",
   exporting: "Fayl tayyorlanmoqda…",
   exportReady: (file: string) =>
@@ -446,7 +447,7 @@ export const uz: Dict = {
   deleteAccount: "Hisobni oʻchirish",
   deleteQ: "Hisob oʻchirilsinmi?",
   deleteWhat: [
-    "Ism, Telegram ID va telefon oʻchiriladi.",
+    "Ism, Telegram ID, telefon va saqlangan maydonlar oʻchiriladi.",
     "Roziliklar bekor qilinadi, ochiq soʻrovlar ham: hamkor soʻrov endi dolzarb emasligini koʻradi.",
     "Yuborilgan soʻrovlar hamkorlarda shaxssiz qoladi: sana, mehmonlar va holat — ism, telefon va izohsiz.",
     "Bayrammni qayta ochsangiz, yangi boʻsh hisob boshlanadi.",
@@ -511,4 +512,19 @@ export const uz: Dict = {
     "Bu kirish usuli boshqa Bayramm hisobida. Oʻsha usul bilan kiring va ortiqcha hisobni oʻchiring yoki bizga yozing.",
   accErrKindTaken: "Hisobda bunday kirish usuli allaqachon bor.",
   ctaSignIn: "Saytda kirish",
+  // избранное (подписи к текстам прототипа sv*)
+  favToggle: (name: string) => `Saqlash: ${name}`,
+  favFull:
+    "Saqlanganlarda allaqachon 100 ta maydon bor. Yangisini qoʻshish uchun keraksizlarini olib tashlang.",
+  favErr: "Saqlab boʻlmadi. Internetni tekshirib, qayta urinib koʻring.",
+  // связь
+  offline: "Internet aloqasi yoʻq. Aloqa tiklanganda yangi maʼlumotlarni koʻrsatamiz.",
+  backOnline: "Aloqa tiklandi.",
+  // проверка «не робот» перед кодом на телефон (хаб входа)
+  humanCheck: "Robot emasligingizni tekshirish",
+  humanCheckNote: "Tekshiruvni Cloudflare Turnstile oʻtkazadi: odatda rasm va topshiriqlarsiz.",
+  humanCheckWait: "Tekshiruvni kuting — bir necha soniya.",
+  humanCheckFailed: "Tekshiruvdan oʻtilmadi. Qayta urinib koʻring.",
+  humanCheckOff: "Tekshiruv hozir ishlamayapti. Keyinroq urinib koʻring yoki Telegram orqali kiring.",
+  authLinkPhoneTitle: "Telefon qoʻshish",
 };

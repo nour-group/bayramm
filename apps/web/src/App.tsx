@@ -1,14 +1,16 @@
 import { parseStartParam } from "@bayramm/tg";
-import { UiTextsProvider } from "@bayramm/ui/react";
+import { ConnectivityProvider, OfflineBanner, ToastProvider, UiTextsProvider } from "@bayramm/ui/react";
 import { useEffect, useMemo, useRef } from "react";
 import { LangSwitch } from "./components/LangSwitch";
 import { Link } from "./components/Link";
 import { EmptyState } from "./components/States";
 import { AppProviders, type Services, useLang, useServices } from "./context";
+import { FavoritesProvider } from "./favorites";
 import { useDocumentTitle } from "./hooks";
 import { Icon, type IconName } from "./icons";
 import { hrefFor, type Match, RouterContext, TABS, type Tab, tabOf, useNav, useRouter } from "./router";
 import { Catalog } from "./screens/Catalog";
+import { Favorites } from "./screens/Favorites";
 import { MyRequests } from "./screens/MyRequests";
 import { Profile } from "./screens/Profile";
 import { RequestForm } from "./screens/RequestForm";
@@ -19,9 +21,14 @@ import { hasNativeBack, useBackButton } from "./telegram";
 /* Вкладки: подпись и иконки (обычная и активная) — в одной карте с маршрутами (ловушка №9) */
 const TAB_VIEW = {
   catalog: { label: "navHome", icon: "home", active: "homeFill" },
+  // Подпись — как у экрана и уведомления «Список во вкладке «Сохранённое»» (прототип)
+  favorites: { label: "svTitle", icon: "heart", active: "heartFill" },
   requests: { label: "navRequests", icon: "notepad", active: "notepadFill" },
   profile: { label: "navProfile", icon: "user", active: "userFill" },
 } as const satisfies Record<Tab, { label: string; icon: IconName; active: IconName }>;
+
+/** Уведомления — над нижней панелью вкладок (её высота с запасом), px */
+const TABS_HEIGHT = 80;
 
 /** Внутренние экраны: без нижней панели, с «назад» */
 const isInner = (match: Match | null) => match?.name === "venue" || match?.name === "request";
@@ -51,6 +58,8 @@ function Screen({ match }: { match: Match | null }) {
       return <Catalog />;
     case "venue":
       return <Venue key={match.slug} slug={match.slug} />;
+    case "favorites":
+      return <Favorites />;
     case "request":
       return <RequestForm key={match.slug} slug={match.slug} />;
     case "requests":
@@ -140,31 +149,36 @@ function Shell() {
 
   return (
     <UiTextsProvider texts={uiTexts}>
-      <div className={inner ? "app inner" : "app"}>
-        <a className="skip" href="#main">
-          {t.skipToMain}
-        </a>
-        <header className="top">
-          {inner && !hasNativeBack(webApp) ? (
-            <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
-              <Icon name="back" size={17} />
-            </button>
-          ) : null}
-          <Link className="brand" href={hrefFor({ name: "catalog" })}>
-            Bayramm
-          </Link>
-          <LangSwitch />
-        </header>
-        {api.mode === "mock" ? (
-          <p className="demo-ribbon" role="note">
-            {t.demoData}
-          </p>
-        ) : null}
-        <main id="main" className="main" tabIndex={-1} ref={main}>
-          <Screen match={match} />
-        </main>
-        {inner || isAuth(match) ? null : <Tabs current={tabOf(match)} />}
-      </div>
+      <ToastProvider offset={inner || isAuth(match) ? 16 : TABS_HEIGHT}>
+        <FavoritesProvider>
+          <div className={inner ? "app inner" : "app"}>
+            <a className="skip" href="#main">
+              {t.skipToMain}
+            </a>
+            <header className="top">
+              {inner && !hasNativeBack(webApp) ? (
+                <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
+                  <Icon name="back" size={17} />
+                </button>
+              ) : null}
+              <Link className="brand" href={hrefFor({ name: "catalog" })}>
+                Bayramm
+              </Link>
+              <LangSwitch />
+            </header>
+            {api.mode === "mock" ? (
+              <p className="demo-ribbon" role="note">
+                {t.demoData}
+              </p>
+            ) : null}
+            <OfflineBanner offline={t.offline} back={t.backOnline} />
+            <main id="main" className="main" tabIndex={-1} ref={main}>
+              <Screen match={match} />
+            </main>
+            {inner || isAuth(match) ? null : <Tabs current={tabOf(match)} />}
+          </div>
+        </FavoritesProvider>
+      </ToastProvider>
     </UiTextsProvider>
   );
 }
@@ -172,10 +186,12 @@ function Shell() {
 export function App({ services }: { services: Services }) {
   const router = useRouter();
   return (
-    <AppProviders services={services}>
-      <RouterContext.Provider value={router}>
-        <Shell />
-      </RouterContext.Provider>
-    </AppProviders>
+    <ConnectivityProvider>
+      <AppProviders services={services}>
+        <RouterContext.Provider value={router}>
+          <Shell />
+        </RouterContext.Provider>
+      </AppProviders>
+    </ConnectivityProvider>
   );
 }
