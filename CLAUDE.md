@@ -154,6 +154,11 @@ HMAC от IP, `POST /requests` по IP и по клиенту; превышен�
 собой). Доступность staging и production каждые 15 минут проверяет workflow
 `Uptime`.
 
+Демо-залы для показа — только staging: workflow `Demo data (staging)` (seed / reset) рисует
+фото и зовёт `POST /ops/demo` (`apps/api/src/demo`). Seed заводит три зала с пометкой «Демо»
+теми же шагами, что панель; reset (`app.demo_purge()`) убирает только их — id из диапазона
+`00000000-0000-4000-8000-de…` — с заявками и фото. Вне staging и без секрета `DEMO_SEED_KEY` — 404.
+
 ---
 
 ## Что делать в первую очередь
