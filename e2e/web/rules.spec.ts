@@ -45,6 +45,11 @@ test.describe("телефон виден сразу", () => {
       const barCall = page.locator(`.venue-bar a.call[href="${tel}"]`);
       await expect(barCall).toBeVisible();
       await expect(barCall).toBeInViewport();
+      // Цена в панели не уходит под кнопку звонка
+      const priceBox = await page.locator(".venue-bar .bar-price b").boundingBox();
+      const callBox = await barCall.boundingBox();
+      expect(priceBox && callBox && priceBox.x + priceBox.width <= callBox.x).toBe(true);
+      expect(await page.locator(".venue-bar .bar-price b").evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       // Ни формы, ни согласий на пути к номеру нет
       await expect(page.locator("form.request")).toHaveCount(0);
     });
