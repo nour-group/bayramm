@@ -526,6 +526,56 @@ const ACTIONS: Record<ListingAction, ActionPlan> = {
 
 const illegalTransition = () => new ApiError(409, "illegal_transition", "Status transition is not allowed");
 
+/**
+ * Действие со статусом карточки — шаги по плану ACTIONS, если её версия — version.
+ * Проверку прав делает вызывающий: панель — requirePermission, демо-данные staging
+ * (demo/) — актор system. Возвращает новую версию
+ */
+export async function applyListingAction(
+  trx: Tx,
+  id: string,
+  action: ListingAction,
+  version: number,
+  reason: string | null = null,
+): Promise<number> {
+  const plan = ACTIONS[action];
+  const current = await trx
+    .selectFrom("app.listings")
+    .select(["status", "version"])
+    .where("id", "=", id)
+    .executeTakeFirst();
+  if (!current) throw notFound();
+  if (current.version !== version) throw versionConflict();
+  const steps = plan.steps[current.status];
+  if (!steps) throw illegalTransition();
+
+  // Комментарий к шагу без обязательной причины — в историю статусов (app.reason)
+  if (reason && !plan.reasonRequired) {
+    await sql`select set_config('app.reason', ${reason}, true)`.execute(trx);
+  }
+  // Модератор публикует карточку целиком: готовые фото, ждущие решения, одобряются
+  if (action === "publish") {
+    await trx
+      .updateTable("app.photos")
+      .set({ moderation: "approved" })
+      .where("listing_id", "=", id)
+      .where("deleted_at", "is", null)
+      .where("status", "=", "ready")
+      .where("moderation", "=", "pending")
+      .execute();
+  }
+
+  let next = version;
+  for (const status of steps) {
+    const statusReason = status === "suspended" || status === "rejected" ? reason : undefined;
+    next = await updateListing(trx, id, next, {
+      status,
+      ...(statusReason !== undefined ? { status_reason: statusReason } : {}),
+    });
+  }
+  return next;
+}
+
 for (const [action, plan] of Object.entries(ACTIONS) as [ListingAction, ActionPlan][]) {
   listings.post(`/:id/${action}`, requirePermission(plan.permission), limitJson, async (c) => {
     const id = pathId(c.req.param("id"));
@@ -536,40 +586,7 @@ for (const [action, plan] of Object.entries(ACTIONS) as [ListingAction, ActionPl
     if (typeof version !== "number") throw invalidInput(["version"]);
 
     const listing = await withActor(c.var.db, staffOf(c), async (trx) => {
-      const current = await trx
-        .selectFrom("app.listings")
-        .select(["status", "version"])
-        .where("id", "=", id)
-        .executeTakeFirst();
-      if (!current) throw notFound();
-      if (current.version !== version) throw versionConflict();
-      const steps = plan.steps[current.status];
-      if (!steps) throw illegalTransition();
-
-      // Комментарий к шагу без обязательной причины — в историю статусов (app.reason)
-      if (reason && !plan.reasonRequired) {
-        await sql`select set_config('app.reason', ${reason}, true)`.execute(trx);
-      }
-      // Модератор публикует карточку целиком: готовые фото, ждущие решения, одобряются
-      if (action === "publish") {
-        await trx
-          .updateTable("app.photos")
-          .set({ moderation: "approved" })
-          .where("listing_id", "=", id)
-          .where("deleted_at", "is", null)
-          .where("status", "=", "ready")
-          .where("moderation", "=", "pending")
-          .execute();
-      }
-
-      let next = version;
-      for (const status of steps) {
-        const statusReason = status === "suspended" || status === "rejected" ? (reason ?? null) : undefined;
-        next = await updateListing(trx, id, next, {
-          status,
-          ...(statusReason !== undefined ? { status_reason: statusReason } : {}),
-        });
-      }
+      await applyListingAction(trx, id, action, version, reason ?? null);
       return loadListing(trx, id);
     });
     return c.json(listing);

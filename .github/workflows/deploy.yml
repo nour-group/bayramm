@@ -184,6 +184,16 @@ jobs:
           code=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors -o /dev/null -w '%{http_code}' -X POST "https://$api/telegram/webhook")
           if [ "$code" != 401 ]; then echo "::error::POST https://$api/telegram/webhook без секрета ответил HTTP $code, ожидался 401"; exit 1; fi
 
+          # Демо-данные (POST /ops/demo) — только staging: в production маршрута нет ни с каким
+          # ключом (404); на staging без ключа — 401, а пока секрет DEMO_SEED_KEY не задан — 404
+          code=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors -o /dev/null -w '%{http_code}' -X POST "https://$api/ops/demo")
+          if [ "$TARGET" = production ] && [ "$code" != 404 ]; then
+            echo "::error::POST https://$api/ops/demo в production ответил HTTP $code, ожидался 404"; exit 1
+          fi
+          if [ "$TARGET" = staging ] && [ "$code" != 401 ] && [ "$code" != 404 ]; then
+            echo "::error::POST https://$api/ops/demo без ключа ответил HTTP $code, ожидался 401 или 404"; exit 1
+          fi
+
           if true; then
             body=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors "https://$host/api/health")
             echo "$body"

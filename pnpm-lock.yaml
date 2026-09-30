@@ -91,6 +91,9 @@ importers:
       kysely-codegen:
         specifier: ^0.20.0
         version: 0.20.0(kysely@0.29.6)(pg@8.23.0)(typescript@6.0.3)
+      sharp:
+        specifier: ^0.35.4
+        version: 0.35.4(@types/node@26.6.2)
       typescript:
         specifier: ^6.0.2
         version: 6.0.3

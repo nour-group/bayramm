@@ -399,6 +399,61 @@ vendors.patch("/:id", requirePermission("vendors.write"), limitJson, async (c) =
 
 // ── чек-лист проверки ───────────────────────────────────────────────────────
 
+/**
+ * Отметка пункта чек-листа проверки вендора (или её снятие). by — сотрудник, который
+ * отметил; null — система (демо-данные staging, demo/). Панель оператора и демо-данные
+ */
+export async function setChecklistItem(
+  trx: Tx,
+  vendorId: string,
+  item: ChecklistItem,
+  done: boolean,
+  by: string | null,
+): Promise<void> {
+  const current = await trx
+    .selectFrom("app.vendor_accounts as v")
+    .leftJoin(vendorContactsAs("vc"), "vc.vendor_id", "v.id")
+    .select(["v.id", "vc.stir"])
+    .where("v.id", "=", vendorId)
+    .executeTakeFirst();
+  if (current === undefined) throw notFound();
+
+  // СТИР сверяют с реестром — отметить можно, только когда он вписан
+  if (item === "stir" && done && current.stir === null) {
+    throw new ApiError(409, "stir_missing", "Enter the STIR before marking it verified");
+  }
+
+  const columns = CHECKLIST_COLUMNS[item];
+  const set: Record<string, unknown> = done
+    ? { [columns.at]: sql`coalesce(${sql.ref(columns.at)}, now())`, [columns.by]: by }
+    : { [columns.at]: null, [columns.by]: null };
+
+  // Согласие ПДн подписано по действующему тексту цели vendor_contact: его версия
+  // и юрлицо оператора остаются в pd_consent_text_id
+  if (item === "pdConsent") {
+    if (done) {
+      const text = await trx
+        .selectFrom("app.consent_texts")
+        .select("id")
+        .where("purpose", "=", "vendor_contact")
+        .where("published_at", "<=", sql<Date>`now()`)
+        .where((eb) => eb.or([eb("retired_at", "is", null), eb("retired_at", ">", sql<Date>`now()`)]))
+        .orderBy("version", "desc")
+        .orderBy(sql`locale = 'ru'`, "desc")
+        .limit(1)
+        .executeTakeFirst();
+      if (!text) {
+        throw new ApiError(409, "consent_text_missing", "No current consent text for vendor contacts");
+      }
+      set.pd_consent_text_id = text.id;
+    } else {
+      set.pd_consent_text_id = null;
+    }
+  }
+
+  await trx.updateTable("app.vendor_accounts").set(set).where("id", "=", vendorId).execute();
+}
+
 vendors.post("/:id/checklist", requirePermission("vendors.write"), limitJson, async (c) => {
   const actor = staffOf(c);
   const id = pathId(c.req.param("id"));
@@ -409,48 +464,7 @@ vendors.post("/:id/checklist", requirePermission("vendors.write"), limitJson, as
   if (!item || done === undefined) throw invalidInput(["item", "done"]);
 
   const vendor = await withActor(c.var.db, actor, async (trx) => {
-    const current = await trx
-      .selectFrom("app.vendor_accounts as v")
-      .leftJoin(vendorContactsAs("vc"), "vc.vendor_id", "v.id")
-      .select(["v.id", "vc.stir"])
-      .where("v.id", "=", id)
-      .executeTakeFirst();
-    if (current === undefined) throw notFound();
-
-    // СТИР сверяют с реестром — отметить можно, только когда он вписан
-    if (item === "stir" && done && current.stir === null) {
-      throw new ApiError(409, "stir_missing", "Enter the STIR before marking it verified");
-    }
-
-    const columns = CHECKLIST_COLUMNS[item];
-    const set: Record<string, unknown> = done
-      ? { [columns.at]: sql`coalesce(${sql.ref(columns.at)}, now())`, [columns.by]: actor.id }
-      : { [columns.at]: null, [columns.by]: null };
-
-    // Согласие ПДн подписано по действующему тексту цели vendor_contact: его версия
-    // и юрлицо оператора остаются в pd_consent_text_id
-    if (item === "pdConsent") {
-      if (done) {
-        const text = await trx
-          .selectFrom("app.consent_texts")
-          .select("id")
-          .where("purpose", "=", "vendor_contact")
-          .where("published_at", "<=", sql<Date>`now()`)
-          .where((eb) => eb.or([eb("retired_at", "is", null), eb("retired_at", ">", sql<Date>`now()`)]))
-          .orderBy("version", "desc")
-          .orderBy(sql`locale = 'ru'`, "desc")
-          .limit(1)
-          .executeTakeFirst();
-        if (!text) {
-          throw new ApiError(409, "consent_text_missing", "No current consent text for vendor contacts");
-        }
-        set.pd_consent_text_id = text.id;
-      } else {
-        set.pd_consent_text_id = null;
-      }
-    }
-
-    await trx.updateTable("app.vendor_accounts").set(set).where("id", "=", id).execute();
+    await setChecklistItem(trx, id, item, done, actor.id);
     return loadVendor(trx, id);
   });
   return c.json(vendor);

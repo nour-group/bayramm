@@ -7,6 +7,7 @@ import { mountRateLimits } from "./ratelimit";
 import { auth } from "./routes/auth";
 import { catalog } from "./routes/catalog";
 import { me } from "./routes/me";
+import { ops } from "./routes/ops";
 import { reference } from "./routes/reference";
 import { requests } from "./routes/requests";
 import { staff } from "./routes/staff";
@@ -64,6 +65,8 @@ app.route("/catalog", catalog);
 app.route("/requests", requests);
 app.route("/staff", staff);
 app.route("/telegram", telegram);
+// Служебное: демо-данные staging (только APP_ENV=staging и секрет DEMO_SEED_KEY)
+app.route("/ops", ops);
 app.route("/vendor", vendor);
 
 app.notFound((c) => c.json(notFound().toBody(), 404));
