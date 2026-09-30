@@ -1,8 +1,9 @@
 import type { Dict } from "@bayramm/shared";
 import type { ConsentText, ListingDetail, RequestCreated } from "@bayramm/shared/api";
+import { Checkbox, DateField, NumberStepper, RadioGroup } from "@bayramm/ui/react";
 import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { isApiError, isNotFound } from "../api/errors";
-import { Calendar } from "../components/Calendar";
+import { useCalendarTexts } from "../components/Calendar";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
@@ -124,7 +125,7 @@ function describedBy(id: string, error: string | undefined, hint?: boolean): str
   return ids.length ? ids.join(" ") : undefined;
 }
 
-/** Согласие: галочка не отмечена, полный текст раскрывается здесь же */
+/** Согласие: галочка (Checkbox набора) не отмечена, полный текст раскрывается здесь же */
 function Consent({
   id,
   text,
@@ -144,17 +145,16 @@ function Consent({
   const [open, setOpen] = useState(false);
   return (
     <div className={checked ? "consent on" : "consent"}>
-      <label className="consent-check">
-        <input
-          id={id}
-          type="checkbox"
-          checked={checked}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${id}-error` : undefined}
-          onChange={(event) => onChange(event.target.checked)}
-        />
-        <span>{label}</span>
-      </label>
+      <Checkbox
+        id={id}
+        className="consent-check"
+        checked={checked}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        onChange={onChange}
+      >
+        {label}
+      </Checkbox>
       <button
         type="button"
         className="link-btn"
@@ -265,7 +265,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [dateOpen, setDateOpen] = useState(() => draft.date === null);
+  const calendarTexts = useCalendarTexts();
   const id = useId();
   const fieldId = (field: Field | "budget" | "comment") => `${id}-${field}`;
 
@@ -302,7 +302,6 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
     const first = FIELDS.find((field) => found[field]);
     if (first || !transferText) {
       haptic(webApp, "error");
-      if (first === "date") setDateOpen(true);
       if (first) document.getElementById(fieldId(first))?.focus({ preventScroll: false });
       return;
     }
@@ -319,7 +318,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
     } catch (error) {
       haptic(webApp, "error");
       if (isApiError(error) && error.status === 409 && error.existingId) {
-        navigate(hrefFor({ name: "requests" }, { open: error.existingId }));
+        navigate(hrefFor({ name: "requests" }, { open: error.existingId, dup: 1 }));
         return;
       }
       setSendError(sendErrorText(error, t, listing.capMax));
@@ -330,9 +329,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
     }
   };
 
-  const dateLabel = draft.date
-    ? `${formatDayMonth(draft.date, t)}, ${t.weekdaysMon[weekdayMon(draft.date)] ?? ""}`
-    : t.pickAny;
+  const dateLabel = (date: string) => `${formatDayMonth(date, t)}, ${t.weekdaysMon[weekdayMon(date)] ?? ""}`;
 
   return (
     <form className="screen request" onSubmit={onSubmit} noValidate>
@@ -351,52 +348,30 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
       </div>
 
       <Fld id={fieldId("occasion")} label={t.fOcc} required error={errors.occasion} group>
-        <div className="choices">
-          {occasions.map((occasion, i) => (
-            <label key={occasion.code} className={draft.occasion === occasion.code ? "choice on" : "choice"}>
-              <input
-                id={i === 0 ? fieldId("occasion") : undefined}
-                type="radio"
-                name={`${id}-occasion`}
-                value={occasion.code}
-                checked={draft.occasion === occasion.code}
-                onChange={() => update({ occasion: occasion.code })}
-              />
-              <span>{pick(occasion.name, lang)}</span>
-            </label>
-          ))}
-        </div>
+        <RadioGroup
+          id={fieldId("occasion")}
+          name={`${id}-occasion`}
+          value={draft.occasion}
+          options={occasions.map((occasion) => ({ value: occasion.code, label: pick(occasion.name, lang) }))}
+          onChange={(occasion) => update({ occasion })}
+        />
       </Fld>
 
-      <Fld id={fieldId("date")} label={t.rqDate} required error={errors.date} group>
-        <button
+      <Fld id={fieldId("date")} label={t.rqDate} required error={errors.date}>
+        <DateField
           id={fieldId("date")}
-          type="button"
-          className={draft.date ? "field-input field-button on" : "field-input field-button"}
-          aria-expanded={dateOpen}
-          aria-controls={`${id}-calendar`}
+          label={t.rqDate}
+          placeholder={t.pickAny}
+          value={draft.date}
+          min={addDays(today, 1)}
+          max={addDays(today, EVENT_MAX_DAYS_AHEAD)}
+          busy={busy}
+          format={dateLabel}
+          texts={calendarTexts}
           aria-invalid={errors.date ? true : undefined}
-          onClick={() => setDateOpen((open) => !open)}
-        >
-          <Icon name="calB" size={17} />
-          <span>{dateLabel}</span>
-          <Icon name={dateOpen ? "minus" : "caretDown"} size={12} />
-        </button>
-        {dateOpen ? (
-          <div id={`${id}-calendar`}>
-            <Calendar
-              label={t.rqDate}
-              min={addDays(today, 1)}
-              max={addDays(today, EVENT_MAX_DAYS_AHEAD)}
-              busy={busy}
-              selected={draft.date}
-              onSelect={(date) => {
-                update({ date });
-                setDateOpen(false);
-              }}
-            />
-          </div>
-        ) : null}
+          aria-describedby={describedBy(fieldId("date"), errors.date)}
+          onChange={(date) => update({ date })}
+        />
       </Fld>
 
       <Fld
@@ -410,53 +385,27 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
             : t.people(listing.capMax)
         }
       >
-        <div className="stepper">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={`${t.rqG} −${GUESTS_STEP}`}
-            onClick={() => update({ guests: String(Math.max(1, (guests ?? GUESTS_STEP) - GUESTS_STEP)) })}
-          >
-            <Icon name="minus" size={14} />
-          </button>
-          <input
-            id={fieldId("guests")}
-            className="field-input"
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={Math.min(MAX_GUESTS, listing.capMax)}
-            value={draft.guests}
-            aria-invalid={errors.guests ? true : undefined}
-            aria-describedby={describedBy(fieldId("guests"), errors.guests, true)}
-            onChange={(event) => update({ guests: event.target.value })}
-          />
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={`${t.rqG} +${GUESTS_STEP}`}
-            onClick={() => update({ guests: String(Math.min(listing.capMax, (guests ?? 0) + GUESTS_STEP)) })}
-          >
-            <Icon name="plus" size={14} />
-          </button>
-        </div>
+        <NumberStepper
+          id={fieldId("guests")}
+          min={1}
+          max={Math.min(MAX_GUESTS, listing.capMax)}
+          step={GUESTS_STEP}
+          decrementLabel={`${t.rqG} −${GUESTS_STEP}`}
+          incrementLabel={`${t.rqG} +${GUESTS_STEP}`}
+          value={draft.guests}
+          aria-invalid={errors.guests ? true : undefined}
+          aria-describedby={describedBy(fieldId("guests"), errors.guests, true)}
+          onChange={(value) => update({ guests: value })}
+        />
       </Fld>
 
       <Fld id={fieldId("budget")} label={t.rqBud} required={false} error={undefined} group>
-        <div className="choices">
-          {t.budgets.map((label, i) => (
-            <label key={label} className={draft.budget === i ? "choice on" : "choice"}>
-              <input
-                type="radio"
-                name={`${id}-budget`}
-                value={i}
-                checked={draft.budget === i}
-                onChange={() => update({ budget: i })}
-              />
-              <span>{label}</span>
-            </label>
-          ))}
-        </div>
+        <RadioGroup
+          name={`${id}-budget`}
+          value={draft.budget === null ? null : String(draft.budget)}
+          options={t.budgets.map((label, i) => ({ value: String(i), label }))}
+          onChange={(budget) => update({ budget: Number(budget) })}
+        />
       </Fld>
 
       <Fld id={fieldId("name")} label={t.rqName} required error={errors.name}>

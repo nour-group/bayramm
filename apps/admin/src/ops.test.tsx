@@ -554,8 +554,10 @@ describe("команда", () => {
         id: ME_ID,
         displayName: "Test admin",
         username: "test_admin",
+        invitedBy: "telegram",
         role: "admin",
         active: true,
+        accepted: true,
         linked: true,
         linkedAt: "2026-09-01T06:00:00.000Z",
         createdAt: "2026-09-01T06:00:00.000Z",
@@ -565,8 +567,23 @@ describe("команда", () => {
         id: "00000000-0000-0000-0000-00000000a002",
         displayName: "Test manager",
         username: "test_manager",
+        invitedBy: "telegram",
         role: "manager",
         active: true,
+        accepted: false,
+        linked: false,
+        linkedAt: null,
+        createdAt: "2026-09-01T06:00:00.000Z",
+        self: false,
+      },
+      {
+        id: "00000000-0000-0000-0000-00000000a003",
+        displayName: "Test phone",
+        username: null,
+        invitedBy: "phone",
+        role: "moderator",
+        active: true,
+        accepted: true,
         linked: false,
         linkedAt: null,
         createdAt: "2026-09-01T06:00:00.000Z",
@@ -574,6 +591,8 @@ describe("команда", () => {
       },
     ],
   };
+  // Текстовые поля формы приглашения: радиокнопки «Как войдёт» — не они
+  const inviteInputs = (form: HTMLFormElement) => [...form.querySelectorAll("input:not([type=radio])")];
 
   it("себя — без действий; отключение — через подтверждение", async () => {
     mockApi(staff("admin", ADMIN), {
@@ -587,8 +606,12 @@ describe("команда", () => {
     expect(rows[0]?.textContent).toContain(t.you);
     expect(rows[0]?.querySelector("button")).toBeNull();
     expect(rows[1]?.textContent).toContain(t.memberPending);
+    // Приглашённый по телефону: номера в списке нет, приглашение уже принято
+    expect(rows[2]?.textContent).toContain(t.invitedByPhone);
+    expect(rows[2]?.textContent).toContain(t.memberAccepted);
 
-    await click(rows[1]?.querySelector("button") ?? undefined);
+    // Первая кнопка строки — список ролей (Select набора), отключение — по тексту
+    await click([...(rows[1]?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.deactivate));
     expect(calls.some((c) => c.url.endsWith("/deactivate"))).toBe(false);
     const confirm = container.querySelector(".confirm") as HTMLFormElement;
     await click([...confirm.querySelectorAll("button")].find((b) => b.textContent === t.deactivate));
@@ -603,15 +626,52 @@ describe("команда", () => {
     });
     await mount("/team");
     const form = container.querySelector("form.fs") as HTMLFormElement;
-    const [name, username] = [...form.querySelectorAll("input")];
+    const [name, username] = inviteInputs(form);
     await type(name ?? null, "Новый модератор");
     await type(username ?? null, "@new_moderator");
-    await type(form.querySelector("select"), "moderator");
+    // Роль — свой список (Select): открыть и выбрать вариант; системного select нет
+    expect(form.querySelector("select")).toBeNull();
+    await click(form.querySelector("button[aria-haspopup=listbox]") ?? undefined);
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.roles.moderator),
+    );
     await click(button(t.invite));
     expect(lastCall("/team")?.body).toEqual({
       displayName: "Новый модератор",
       username: "@new_moderator",
       role: "moderator",
+    });
+    expect(text()).toContain(t.invited);
+  });
+
+  it("приглашение по телефону: номер приводится к +998…, неверный — ошибка у поля без запроса", async () => {
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/team": json(TEAM),
+      "POST /api/staff/team": json(TEAM, 201),
+    });
+    await mount("/team");
+    const form = container.querySelector("form.fs") as HTMLFormElement;
+    // Выключенный вход по телефону (API не ответило) — подсказка об этом
+    await click(
+      [...form.querySelectorAll("label.ui-radio")].find(
+        (l) => l.textContent === t.inviteByPhone,
+      ) as HTMLElement,
+    );
+    expect(text()).toContain(t.inviteHintPhoneOff);
+    const [name, phone] = inviteInputs(form);
+    expect(phone?.getAttribute("type")).toBe("tel");
+    await type(name ?? null, "Новый менеджер");
+    await type(phone ?? null, "+7 900 123 45 67");
+    await click(button(t.invite));
+    expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/team"))).toBe(false);
+    expect(form.querySelector(".field-error")?.textContent).toBe(t.fieldErrors.phone);
+
+    await type(phone ?? null, "90 123-45-67");
+    await click(button(t.invite));
+    expect(lastCall("/team")?.body).toEqual({
+      displayName: "Новый менеджер",
+      role: "manager",
+      phone: "+998901234567",
     });
     expect(text()).toContain(t.invited);
   });
@@ -664,6 +724,12 @@ describe("настройки", () => {
     await click(forms[1]?.querySelector("button[type=submit]") ?? undefined);
     expect(lastCall("/sla_reminder_hours")?.body).toEqual({ value: [2] });
     expect(forms[1]?.textContent).toContain(t.saved);
+
+    // Числа — текст с цифровой клавиатурой, тихие часы — свой список времени, не системные
+    expect(container.querySelector('input[type="number"], input[type="time"]')).toBeNull();
+    expect(forms[0]?.querySelector("input")?.inputMode).toBe("numeric");
+    const times = [...(forms[2]?.querySelectorAll("button[aria-haspopup=listbox]") ?? [])];
+    expect(times.map((b) => b.textContent)).toEqual(["22:00", "08:00"]);
   });
 });
 

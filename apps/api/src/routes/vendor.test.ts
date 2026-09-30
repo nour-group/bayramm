@@ -20,6 +20,9 @@ describe("/vendor без сессии кабинета", () => {
     ["GET", `/vendor/listings/${ID}/calendar`],
     ["PUT", `/vendor/listings/${ID}/calendar/2026-10-05`],
     ["DELETE", `/vendor/listings/${ID}/calendar/2026-10-05`],
+    ["GET", `/vendor/listings/${ID}/revisions`],
+    ["POST", `/vendor/listings/${ID}/revisions`],
+    ["POST", `/vendor/listings/${ID}/revisions/${ID}/withdraw`],
   ])("%s %s без токена — 401", async (method, path) => {
     const { res } = await call(path, { method });
     expect(res.status).toBe(401);
@@ -63,6 +66,14 @@ describe("POST /auth/vendor/telegram: отказ до базы", () => {
     expect(await res.json()).toEqual({
       error: { code: "unauthorized", message: "Invalid Telegram init data" },
     });
-    expect(warn).toHaveBeenCalledWith("auth.vendor: initData rejected", "bad_hash");
+    expect(warn).toHaveBeenCalledWith("auth: initData rejected", "bad_hash");
+  });
+
+  it("адрес устарел: каждое обращение — в лог, без данных запроса", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await login({});
+    expect(warn).toHaveBeenCalledWith("auth.legacy: deprecated endpoint used", {
+      path: "/auth/vendor/telegram",
+    });
   });
 });

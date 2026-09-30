@@ -32,7 +32,6 @@ p {
 
 button,
 input,
-select,
 textarea {
   font: inherit;
   color: inherit;
@@ -308,27 +307,6 @@ img {
   font-size: var(--fs-15);
 }
 
-.field-button {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-7);
-  text-align: left;
-  cursor: pointer;
-}
-
-.field-button > span {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.field-button svg {
-  flex: none;
-  color: var(--coral);
-}
-
 textarea.field-input {
   min-height: 96px;
   padding: 12px;
@@ -568,17 +546,6 @@ textarea.field-input {
   grid-column: 1 / -1;
 }
 
-.date-panel {
-  margin-top: 12px;
-}
-
-.panel-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--gap-9);
-  margin-top: 8px;
-}
-
 .list-head {
   display: flex;
   flex-wrap: wrap;
@@ -599,40 +566,10 @@ textarea.field-input {
   color: var(--coral);
 }
 
-.sort select {
-  min-height: var(--hit-min);
-  padding: 0 12px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-999);
-  background: var(--white);
-  color: var(--ink);
-  font-size: var(--fs-13-5);
-  font-weight: 600;
-}
-
-/* Выпадающий список: своя стрелка вместо системной. Системную Chrome и Safari прижимают
-   к рамке и не отодвигают отступом. Стрелка не ловит нажатия — тап приходится в select.
-   Правило после .field-input и .sort select, которые оно переопределяет (ловушка №7) */
-.select {
-  position: relative;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.select select {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  padding-right: 40px;
-  cursor: pointer;
-}
-
-.select-caret {
-  position: absolute;
-  right: 14px;
-  color: var(--muted);
-  pointer-events: none;
+/* Как сравнили цены за гостя и за мероприятие — строкой под заголовком и порядком */
+.list-head .sort-hint {
+  flex-basis: 100%;
+  margin-top: 0;
 }
 
 .cards {
@@ -708,6 +645,11 @@ textarea.field-input {
   margin-top: 4px;
 }
 
+.card-estimate {
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+}
+
 .card-price b,
 .bar-price b {
   color: var(--plum);
@@ -728,123 +670,6 @@ textarea.field-input {
 .more {
   width: 100%;
   margin-top: 16px;
-}
-
-/* ---------- календарь ---------- */
-
-/* Без боковых отступов: на экране 360px клетка дня — не меньше 44px */
-.cal {
-  padding: 12px 0;
-}
-
-.cal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-9);
-  margin-bottom: 8px;
-}
-
-.cal-title {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  color: var(--plum);
-  font-weight: 700;
-  text-align: center;
-}
-
-.cal-sum {
-  color: var(--muted);
-  font-size: var(--fs-12-5);
-  font-weight: 600;
-}
-
-.cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: var(--gap-3);
-}
-
-.cal-wd {
-  padding: 2px 0;
-  color: var(--muted-lt);
-  font-size: var(--fs-11);
-  font-weight: 700;
-  text-align: center;
-}
-
-.cal-wd.we {
-  color: var(--coral-deep);
-}
-
-.cal-day {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  min-height: var(--hit-min);
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-11);
-  background: var(--cell);
-  color: var(--ink);
-  font-size: var(--fs-15);
-  font-weight: 600;
-}
-
-button.cal-day {
-  cursor: pointer;
-}
-
-.cal-day.we {
-  background: var(--cell-wk);
-}
-
-/* Прошедшие и дальние дни: выбрать нельзя */
-.cal-day.out {
-  background: transparent;
-  color: var(--muted-lt);
-  font-weight: 400;
-}
-
-/* Занятый день выцветает, а не краснеет: красный значит «нажми» */
-.cal-day.busy {
-  background: var(--busy);
-  color: var(--busy-ink);
-  text-decoration: line-through;
-}
-
-.cal-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-12);
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: var(--fs-12-5);
-}
-
-.leg::before {
-  content: "";
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 6px;
-  border-radius: var(--r-3);
-  vertical-align: -1px;
-}
-
-.leg-free::before {
-  border: 1px solid var(--rule);
-  background: var(--cell);
-}
-
-.leg-busy::before {
-  background: var(--busy-ink);
-}
-
-.leg-sel::before {
-  background: var(--plum);
 }
 
 /* ---------- площадка ---------- */
@@ -1074,54 +899,6 @@ button.cal-day {
   font-weight: 700;
 }
 
-.choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-7);
-}
-
-/* Вариант выбора: настоящая радиокнопка под всей пилюлей — нажимается и с клавиатуры */
-.choice {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--hit-min);
-  padding: 0 14px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-999);
-  background: var(--white);
-  color: var(--ink);
-  font-size: var(--fs-13-5);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.choice input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.choice:focus-within {
-  outline: 3px solid var(--coral);
-  outline-offset: 2px;
-}
-
-.stepper {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-9);
-}
-
-.stepper .field-input {
-  flex: 0 1 120px;
-  text-align: center;
-}
-
 .phone-input {
   display: flex;
   align-items: center;
@@ -1145,22 +922,9 @@ button.cal-day {
   border-color: var(--plum);
 }
 
+/* Галочка согласия — Checkbox из @bayramm/ui/react: не отмечена, зона нажатия — вся строка */
 .consent-check {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--gap-9);
-  min-height: var(--hit-min);
-  padding-top: 10px;
   font-size: var(--fs-14);
-  cursor: pointer;
-}
-
-.consent-check input {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  margin: 0;
-  accent-color: var(--plum);
 }
 
 .consent-text {
@@ -1397,11 +1161,35 @@ button.cal-day {
   background: var(--white);
 }
 
+/* Раскрывашка: <details> остаётся (Enter и пробел, «развёрнуто» для диктора), системный
+   треугольник — нет: у каждого браузера свой. Свой уголок справа от текста */
 .doc summary {
   min-height: 48px;
   padding: 12px 0;
   font-weight: 700;
+  list-style: none;
   cursor: pointer;
+}
+
+.doc summary::-webkit-details-marker {
+  display: none;
+}
+
+.doc summary::after {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 10px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  vertical-align: 3px;
+}
+
+.doc[open] summary::after {
+  transform: rotate(-135deg);
+  vertical-align: -1px;
 }
 
 .doc summary svg {
@@ -1418,6 +1206,38 @@ button.cal-day {
 .doc .prose {
   padding-bottom: 12px;
   font-size: var(--fs-14);
+}
+
+/* Мои данные: выгрузка, уведомления, удаление — блоки друг под другом */
+.data-block {
+  display: grid;
+  justify-items: start;
+  gap: var(--gap-9);
+  margin-top: 12px;
+}
+
+.data-block .doc,
+.data-block .confirm {
+  justify-self: stretch;
+}
+
+.data-dump {
+  max-height: 320px;
+  margin: 0 0 12px;
+  overflow: auto;
+  font-size: var(--fs-12-5);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.delete-what {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  font-size: var(--fs-13-5);
+}
+
+.delete-what li + li {
+  margin-top: 4px;
 }
 
 .tg-cta {
@@ -1463,8 +1283,6 @@ button.cal-day {
 
   .btn-secondary:not(:disabled):hover,
   .icon-btn:not(:disabled):hover,
-  button.cal-day:not(:disabled):hover,
-  .choice:hover,
   .row-link:hover {
     background: var(--lilac);
   }
@@ -1498,23 +1316,6 @@ button.cal-day {
   color: var(--coral);
 }
 
-.choice.on {
-  border-color: var(--plum);
-  background: var(--plum);
-  color: var(--sel-ink);
-}
-
-.cal-day.sel,
-.cal-day[aria-pressed="true"] {
-  background: var(--plum);
-  color: var(--sel-ink);
-  text-decoration: none;
-}
-
-.field-button.on {
-  border-color: var(--plum);
-}
-
 /* Фокус с клавиатуры: кольцо --coral, 3:1 на всех фонах */
 :focus-visible {
   outline: 3px solid var(--coral);
@@ -1535,6 +1336,64 @@ button.cal-day {
   outline: none;
 }
 
+/* ---------- вход: хаб /auth и аккаунт в профиле ---------- */
+
+.auth-lead {
+  margin-top: 8px;
+  color: var(--muted);
+}
+.auth-block {
+  display: grid;
+  justify-items: stretch;
+  gap: var(--gap-12);
+}
+.tg-login {
+  min-height: 44px;
+}
+.phone-code {
+  display: grid;
+  gap: var(--gap-9);
+}
+.phone-code-more {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--gap-12);
+}
+.code-input {
+  letter-spacing: 0.3em;
+  font-variant-numeric: tabular-nums;
+}
+.roles,
+.methods {
+  display: grid;
+  gap: var(--gap-9);
+  margin-top: 12px;
+}
+.roles .row-link {
+  margin-top: 0;
+}
+.method-list {
+  display: grid;
+  gap: var(--gap-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.method {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-9);
+  min-height: 44px;
+}
+.method-ico {
+  flex: none;
+  color: var(--coral);
+}
+.method-name {
+  flex: 1;
+}
+
 /* ---------- шире телефона ---------- */
 
 @media (min-width: 560px) {
@@ -1552,7 +1411,8 @@ button.cal-day {
     grid-template-columns: 1fr 1fr;
   }
 
-  .cal {
+  /* Календарь занятости на странице площадки — в рамке; в поле даты рамку даёт панель */
+  .section .ui-cal {
     padding: 12px;
     border: 1px solid var(--rule);
     border-radius: var(--r-18);

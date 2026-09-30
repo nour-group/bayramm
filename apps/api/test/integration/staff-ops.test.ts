@@ -493,7 +493,8 @@ describe("клиенты", () => {
       blocked: true,
       blockedInfo: { reason: "Спам заявками", by: `Ops manager ${tag}` },
     });
-    expect(await error(call("/me", bearer(clientToken)))).toMatchObject({
+    // Сессия — аккаунта: клиентские маршруты закрыты, свой аккаунт виден с отметкой блокировки
+    expect(await error(call("/requests", bearer(clientToken)))).toMatchObject({
       status: 403,
       code: "client_blocked",
     });
@@ -504,7 +505,7 @@ describe("клиенты", () => {
 
     const unblocked = await ok<ClientDetail>(api("manager", "POST", `/staff/clients/${id}/unblock`));
     expect(unblocked.blockedInfo).toBeNull();
-    expect(await status(call("/me", bearer(clientToken)))).toBe(200);
+    expect(await status(call("/requests", bearer(clientToken)))).toBe(200);
 
     const audit = await ok<AuditList>(api("admin", "GET", `/staff/audit?type=client&object=${id}`));
     expect(audit.items.map((e) => e.action)).toEqual(["client.unblock", "client.block"]);
@@ -749,6 +750,8 @@ describe("команда", () => {
       "staff.activate",
       "staff.deactivate",
       "staff.role",
+      // вход в панель — сессия сотрудника по свежему доказательству
+      "staff.elevate",
       "staff.telegram_claim",
     ]);
     expect(audit.items[2]?.detail).toEqual({ from: "manager", to: "moderator" });

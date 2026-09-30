@@ -18,7 +18,7 @@
 
 import { type RawBuilder, sql, type Updateable } from "kysely";
 import type { Tx } from "./actor";
-import type { PiiVendorContacts } from "./schema.generated";
+import type { AppStaffRole, PiiVendorContacts } from "./schema.generated";
 
 // ── таблицы для join ───────────────────────────────────────────────────────
 // «pii.<таблица> as <псевдоним>» с литеральным типом — по нему Kysely проверяет
@@ -263,4 +263,25 @@ export async function clearVendorUserTelegram(trx: Tx, vendorUserId: string): Pr
     .set({ telegram_user_id: null, telegram_chat_id: null })
     .where("vendor_user_id", "=", vendorUserId)
     .execute();
+}
+
+/**
+ * Приглашение сотрудника: имя для панели, роль и способ входа — имя пользователя Telegram
+ * или HMAC номера телефона (phoneHash из auth/crypto.ts; сам номер нигде не хранится).
+ * Строку сотрудника и профиль с именем (pii.staff_profiles) пишут функции базы
+ * app.staff_invite и app.staff_invite_phone — только администратору; занятое имя или
+ * номер — 23505 (username_taken, staff_phone_taken). Панель оператора
+ */
+export async function inviteStaff(
+  trx: Tx,
+  invite: { displayName: string; role: AppStaffRole } & ({ username: string } | { phoneHash: Uint8Array }),
+): Promise<void> {
+  if ("username" in invite) {
+    // Имя приводит к виду виджета (без «@», нижний регистр) триггер базы
+    await sql`select app.staff_invite(${invite.username}::text, ${invite.displayName}::text,
+                                      ${invite.role}::app.staff_role)`.execute(trx);
+    return;
+  }
+  await sql`select app.staff_invite_phone(${invite.phoneHash}::bytea, ${invite.displayName}::text,
+                                          ${invite.role}::app.staff_role)`.execute(trx);
 }

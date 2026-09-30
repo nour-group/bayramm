@@ -13,11 +13,15 @@ import {
   adminClient,
   apiDatabaseUrl,
   BOT_TOKEN,
+  bearer,
   call,
+  cleanup,
   cleanupStaff,
   ID_HASH_KEY,
   inviteStaff,
+  loginToken,
   newStaffUsername,
+  newTelegramUser,
   tgIdHash,
 } from "./helpers";
 
@@ -110,6 +114,7 @@ afterAll(async () => {
   await admin.query("delete from app.vendor_users where id = $1", [vendorUserId]);
   await admin.query("delete from app.vendor_accounts where id = $1", [vendorId]);
   await cleanupStaff(admin);
+  await cleanup(admin);
   await admin.end();
 });
 
@@ -159,6 +164,22 @@ describe("вебхук: /start", () => {
       username: newStaffUsername(),
     };
     await webhook({ update_id: nextUpdateId(), message: { ...message(tgId, { text: "/stats" }), from } });
+    expect(sent.map((m) => m.text)).toEqual([BOT_TEXTS.ru.welcome, BOT_TEXTS.ru.partnerPrompt]);
+  });
+});
+
+describe("вебхук: язык ответа", () => {
+  it("язык, сохранённый клиентом в профиле, главнее языка Telegram", async () => {
+    const user = newTelegramUser({ language_code: "uz" });
+    const token = await loginToken(user);
+    const patched = await call("/me", {
+      method: "PATCH",
+      headers: { ...bearer(token).headers, "content-type": "application/json" },
+      body: JSON.stringify({ locale: "ru" }),
+    });
+    expect(patched.status).toBe(200);
+    const from = { id: user.id, is_bot: false, first_name: "Test", language_code: "uz" };
+    await webhook({ update_id: nextUpdateId(), message: { ...message(user.id, { text: "/start" }), from } });
     expect(sent.map((m) => m.text)).toEqual([BOT_TEXTS.ru.welcome, BOT_TEXTS.ru.partnerPrompt]);
   });
 });

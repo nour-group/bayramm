@@ -101,11 +101,7 @@ describe("styles.css клиента", () => {
 
   it("выбранное объявлено после наведения (ловушка №7)", () => {
     const hover = css.search(/@media \(hover: hover\)/);
-    for (const selector of [
-      '.lang button[aria-pressed="true"]',
-      '.tabs a[aria-current="page"]',
-      ".choice.on",
-    ])
+    for (const selector of ['.lang button[aria-pressed="true"]', '.tabs a[aria-current="page"]'])
       expect(css.indexOf(selector), selector).toBeGreaterThan(hover);
   });
 
@@ -115,8 +111,6 @@ describe("styles.css клиента", () => {
     ".link-btn",
     ".lang button",
     ".field-input",
-    ".choice",
-    ".cal-day",
     ".contact-phone",
     ".brand",
     ".skip",
@@ -131,12 +125,6 @@ describe("styles.css клиента", () => {
     expect(declarationsOf(".two-buttons")).toMatch(/grid-template-columns:\s*1fr 1fr/);
   });
 
-  it("занятый день выцветает, а не краснеет", () => {
-    const busy = declarationsOf(".cal-day.busy");
-    expect(busy).toMatch(/color:\s*var\(--busy-ink\)/);
-    expect(busy).not.toMatch(/coral|berry/);
-  });
-
   it("анимация отключается при prefers-reduced-motion", () => {
     expect(atRuleBody(/@media \(prefers-reduced-motion: reduce\)/)).toMatch(/animation:\s*none/);
   });
@@ -145,13 +133,23 @@ describe("styles.css клиента", () => {
     expect(declarationsOf(":focus-visible")).toMatch(/outline:\s*3px solid var\(--coral\)/);
   });
 
-  it("выпадающий список — своя стрелка с отступом от рамки, после правил, которые переопределяет", () => {
-    const select = declarationsOf(".select select");
-    expect(select).toMatch(/(^|[;\s])appearance:\s*none/);
-    expect(select).toMatch(/padding-right:\s*40px/);
-    expect(declarationsOf(".select-caret")).toMatch(/pointer-events:\s*none/);
-    expect(css.indexOf(".select select {")).toBeGreaterThan(css.indexOf(".sort select {"));
-    expect(css.indexOf(".select select {")).toBeGreaterThan(css.indexOf(".field-input {"));
+  it("раскрывашки <details> — без системного треугольника, со своим уголком", () => {
+    expect(declarationsOf(".doc summary")).toMatch(/list-style:\s*none/);
+    expect(declarationsOf(".doc summary::-webkit-details-marker")).toMatch(/display:\s*none/);
+    expect(declarationsOf(".doc[open] summary::after")).toMatch(/transform:/);
+  });
+
+  it("контролы — из набора @bayramm/ui/kit.css: своих правил для системных нет", () => {
+    // Выпадающий список, выбор, календарь, число — в kit.css (свои тесты в packages/ui)
+    for (const selector of ["select", ".select", ".choice", ".cal-day", ".stepper", ".field-button"])
+      expect(rules.some((rule) => rule.selectors.some((s) => s.split(/[\s>+~:]/)[0] === selector))).toBe(
+        false,
+      );
+    expect(css).not.toMatch(/accent-color|appearance/);
+    // kit.css — раньше стилей клиента: клиент может подправить вид, не наоборот
+    const main = readFileSync(new URL("./main.tsx", import.meta.url), "utf8");
+    expect(main.indexOf('"@bayramm/ui/kit.css"')).toBeGreaterThan(main.indexOf('"@bayramm/ui/tokens.css"'));
+    expect(main.indexOf('"@bayramm/ui/kit.css"')).toBeLessThan(main.indexOf('"./styles.css"'));
   });
 
   it("узор в data-URI без «#»", () => {

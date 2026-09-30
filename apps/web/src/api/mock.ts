@@ -1,16 +1,20 @@
-import type {
-  CatalogPage,
-  CatalogQuery,
-  ClientConsentPurpose,
-  ClientRequest,
-  ConsentText,
-  CreateRequest,
-  Dictionaries,
-  ListingCard,
-  ListingDetail,
-  Locale,
-  RequestStatus,
+import { normalizeUzPhone } from "@bayramm/shared";
+import {
+  type CatalogPage,
+  type CatalogQuery,
+  type ClientConsentPurpose,
+  type ClientRequest,
+  type ConsentText,
+  type CreateRequest,
+  comparablePriceUzs,
+  type Dictionaries,
+  type ListingCard,
+  type ListingDetail,
+  type Locale,
+  type RequestStatus,
 } from "@bayramm/shared/api";
+import type { AccountIdentity, AppCode, VendorMembership } from "@bayramm/shared/api/account";
+import type { ClientDataExport, ClientMe, Me } from "@bayramm/shared/api/me";
 import { addDays, tashkentToday } from "../format";
 import { ApiError } from "./errors";
 import type { ClientApi } from "./types";
@@ -248,13 +252,53 @@ export interface MockOptions {
   readonly botUsername?: string;
   /** Ответ на любой вызов — эта ошибка (проверка экранов ошибок) */
   readonly failWith?: (method: keyof ClientApi) => ApiError | null;
+  /** Профиль демо-клиента: язык и уведомления */
+  readonly me?: Partial<ClientMe>;
+  /** Роли демо-аккаунта кроме клиента: членства в вендорах, роль сотрудника */
+  readonly roles?: { readonly vendors?: readonly VendorMembership[]; readonly staff?: Me["roles"]["staff"] };
+  /** Адреса приложений (GET /auth/methods): хаб ведёт туда по коду */
+  readonly apps?: Readonly<Record<AppCode, string>>;
+  /** Вход по коду из сообщения включён (по умолчанию да; код — DEMO_OTP_CODE) */
+  readonly phone?: boolean;
+  /** Домен виджета входа Telegram; по умолчанию — нет (виджет в демо не работает) */
+  readonly loginDomain?: string | null;
 }
+
+/** Код из сообщения в демо: сообщений нет, код всегда этот */
+export const DEMO_OTP_CODE = "123456";
+
+/** Адреса приложений в разработке: те же порты, что у pnpm dev:vendor и dev:admin */
+export const DEMO_APPS: Readonly<Record<AppCode, string>> = {
+  web: "http://localhost:5173",
+  vendor: "http://localhost:5174",
+  admin: "http://localhost:5175",
+};
 
 export interface MockApi extends ClientApi {
   /** Тела всех принятых POST /requests — для проверок в тестах */
   readonly created: CreateRequest[];
   readonly requests: ClientRequest[];
+  /** Профиль демо-клиента сейчас (после PATCH /me, отзыва, удаления) */
+  readonly profile: () => ClientMe;
+  /** Аккаунт удалён (DELETE /me) */
+  readonly deleted: () => boolean;
+  /** Выданные коды хаба: приложение, state и challenge — для проверок в тестах */
+  readonly hubCodes: { readonly app: string; readonly state: string; readonly codeChallenge: string }[];
+  /** Номера, на которые «отправлен» код */
+  readonly codesSent: string[];
 }
+
+const DEMO_CREATED = "2026-09-01T09:00:00.000Z";
+
+const DEMO_ME: ClientMe = {
+  id: "00000000-0000-4000-8500-000000000001",
+  locale: "uz",
+  firstName: "Demo",
+  lastName: null,
+  username: null,
+  canMessage: true,
+  notifications: true,
+};
 
 export function createMockApi(options: MockOptions = {}): MockApi {
   const now = options.now ?? Date.now;
@@ -262,6 +306,43 @@ export function createMockApi(options: MockOptions = {}): MockApi {
   const requests: ClientRequest[] = [...(options.requests ?? [])];
   const created: CreateRequest[] = [];
   const latency = options.latencyMs ?? 0;
+  let me: ClientMe = { ...DEMO_ME, ...options.me };
+  let deleted = false;
+  let identities: AccountIdentity[] = [
+    { kind: "telegram", verifiedAt: new Date(now() - 30 * 24 * HOUR).toISOString() },
+  ];
+  const hubCodes: MockApi["hubCodes"] = [];
+  const codesSent: string[] = [];
+  const apps = options.apps ?? DEMO_APPS;
+  const account = (): Me => ({
+    ...me,
+    account: { id: "00000000-0000-4000-8600-000000000001", locale: me.locale, createdAt: DEMO_CREATED },
+    profile: { firstName: me.firstName, lastName: me.lastName, username: me.username },
+    identities,
+    roles: {
+      client: { id: me.id, locale: me.locale, canMessage: me.canMessage, blocked: false },
+      vendors: options.roles?.vendors ?? [],
+      staff: options.roles?.staff ?? null,
+    },
+    session: { kind: "account", app: "web" },
+  });
+  const demoSession = () => ({
+    token: "demo-session-token",
+    expiresAt: new Date(now() + 7 * 24 * HOUR).toISOString(),
+  });
+  const phoneOf = (raw: string) => {
+    const phone = normalizeUzPhone(raw);
+    if (phone === null) throw new ApiError(400, "invalid_phone");
+    return phone;
+  };
+  const checkCode = (phone: string, code: string) => {
+    if (!codesSent.includes(phone)) throw new ApiError(400, "otp_expired");
+    if (code !== DEMO_OTP_CODE) throw new ApiError(400, "otp_invalid");
+  };
+  // После удаления аккаунта запросы с сессией — как у настоящего API после auth.end()
+  const signedIn = () => {
+    if (deleted) throw new ApiError(401, "account_deleted");
+  };
 
   async function respond<T>(
     method: keyof ClientApi,
@@ -286,6 +367,10 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     mode: "mock",
     created,
     requests,
+    profile: () => me,
+    deleted: () => deleted,
+    hubCodes,
+    codesSent,
     dictionaries: (signal) => respond("dictionaries", signal, () => DEMO_DICTIONARIES),
 
     catalog: (query: CatalogQuery, signal) =>
@@ -297,11 +382,13 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           .filter((l) => !query.district || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax >= query.guests)
           .map((l) => toCard(l, query.date));
-        // Без sort — по возрастанию цены, как у сервера
+        // Без sort — по возрастанию цены, как у сервера; цены сравниваются по той же
+        // формуле (за мероприятие и за гостя — на одной шкале, с гостями — сумма на них)
+        const price = (card: ListingCard) => comparablePriceUzs(card, query.guests ?? null);
         const order = (a: ListingCard, b: ListingCard) => {
-          if (query.sort === "price_desc") return b.priceFromUzs - a.priceFromUzs;
-          if (query.sort === "capacity_desc") return b.capMax - a.capMax;
-          return a.priceFromUzs - b.priceFromUzs;
+          if (query.sort === "price_desc") return price(b) - price(a) || a.id.localeCompare(b.id);
+          if (query.sort === "capacity_desc") return b.capMax - a.capMax || a.id.localeCompare(b.id);
+          return price(a) - price(b) || a.id.localeCompare(b.id);
         };
         // Занятые на дату — в конце при любом порядке; оплаты в демо нет вовсе
         rows.sort((a, b) => Number(a.busyOnDate === true) - Number(b.busyOnDate === true) || order(a, b));
@@ -361,7 +448,11 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         };
       }),
 
-    myRequests: (signal) => respond("myRequests", signal, () => ({ items: [...requests] })),
+    myRequests: (signal) =>
+      respond("myRequests", signal, () => {
+        signedIn();
+        return { items: [...requests] };
+      }),
 
     withdrawRequest: (id) =>
       respond("withdrawRequest", undefined, () => {
@@ -372,5 +463,109 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         requests[index] = next;
         return next;
       }),
+
+    me: (signal) =>
+      respond("me", signal, () => {
+        signedIn();
+        return account();
+      }),
+
+    updateMe: (patch) =>
+      respond("updateMe", undefined, () => {
+        signedIn();
+        me = { ...me, locale: patch.locale };
+        return account();
+      }),
+
+    exportMyData: () =>
+      respond("exportMyData", undefined, (): ClientDataExport => {
+        signedIn();
+        return {
+          version: 1,
+          generatedAt: new Date(now()).toISOString(),
+          account: {
+            id: me.id,
+            locale: me.locale,
+            canMessage: me.canMessage,
+            createdAt: new Date(now() - 30 * 24 * HOUR).toISOString(),
+            lastSeenAt: new Date(now()).toISOString(),
+          },
+          profile: null,
+          consents: [],
+          requests: [],
+        };
+      }),
+
+    withdrawConsent: (body) =>
+      respond("withdrawConsent", undefined, () => {
+        signedIn();
+        if (body.purpose !== "bot_notifications") return { withdrawn: false };
+        const withdrawn = me.notifications;
+        me = { ...me, notifications: false };
+        return { withdrawn };
+      }),
+
+    deleteAccount: () =>
+      respond("deleteAccount", undefined, () => {
+        signedIn();
+        deleted = true;
+        requests.length = 0;
+      }),
+
+    authMethods: (signal) =>
+      respond("authMethods", signal, () => ({
+        telegram: {
+          bot: options.botUsername ?? "bayramm_demo_bot",
+          loginDomain: options.loginDomain ?? null,
+        },
+        phone: options.phone ?? true,
+        apps,
+      })),
+
+    signInWidget: () => respond("signInWidget", undefined, demoSession),
+
+    sendPhoneCode: (raw) =>
+      respond("sendPhoneCode", undefined, () => {
+        if (options.phone === false) throw new ApiError(503, "phone_unavailable");
+        codesSent.push(phoneOf(raw));
+        return { resendAfter: 60, expiresIn: 600 };
+      }),
+
+    verifyPhoneCode: (raw, code) =>
+      respond("verifyPhoneCode", undefined, () => {
+        checkCode(phoneOf(raw), code);
+        deleted = false;
+        return demoSession();
+      }),
+
+    hubCode: (request) =>
+      respond("hubCode", undefined, () => {
+        signedIn();
+        hubCodes.push(request);
+        const url = new URL("/auth/callback", apps[request.app]);
+        url.searchParams.set("code", `demo-code-${hubCodes.length}`.padEnd(43, "x"));
+        url.searchParams.set("state", request.state);
+        return { redirectUrl: url.href };
+      }),
+
+    linkPhone: (raw, code) =>
+      respond("linkPhone", undefined, () => {
+        signedIn();
+        checkCode(phoneOf(raw), code);
+        if (identities.some((i) => i.kind === "phone")) throw new ApiError(409, "identity_kind_taken");
+        identities = [...identities, { kind: "phone", verifiedAt: new Date(now()).toISOString() }];
+        return account();
+      }),
+
+    linkTelegram: () =>
+      respond("linkTelegram", undefined, () => {
+        signedIn();
+        if (identities.some((i) => i.kind === "telegram")) throw new ApiError(409, "identity_kind_taken");
+        identities = [...identities, { kind: "telegram", verifiedAt: new Date(now()).toISOString() }];
+        return account();
+      }),
+
+    signOut: () => respond("signOut", undefined, () => undefined),
+    forgetSession: () => {},
   };
 }

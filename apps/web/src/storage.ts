@@ -30,6 +30,21 @@ export function sessionRemove(key: string): void {
   }
 }
 
+/** Убрать все ключи с этим началом (черновики заявок после удаления аккаунта) */
+export function sessionRemovePrefix(prefix: string): void {
+  for (const key of [...memory.keys()]) if (key.startsWith(prefix)) memory.delete(key);
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < window.sessionStorage.length; i++) {
+      const key = window.sessionStorage.key(i);
+      if (key?.startsWith(prefix)) keys.push(key);
+    }
+    for (const key of keys) window.sessionStorage.removeItem(key);
+  } catch {
+    // нечего чистить
+  }
+}
+
 /** JSON из хранилища; битое или чужое значение — null */
 export function sessionGetJson<T>(key: string, isValid: (value: unknown) => value is T): T | null {
   const raw = sessionGet(key);

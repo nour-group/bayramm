@@ -1,5 +1,5 @@
 import { LANGS } from "@bayramm/shared";
-import type { ListingDetail } from "@bayramm/shared/api";
+import { comparablePriceUzs, type ListingDetail } from "@bayramm/shared/api";
 import type { Locator, Page } from "@playwright/test";
 import { formatDayMonth, formatPhone } from "../../apps/web/src/format";
 import { expect, test } from "../support/offline";
@@ -19,10 +19,11 @@ const RATINGS = /★|☆|⭐|рейтинг|reyting|отзыв|sharh|\bbaho(?!r)
 /** Заполнить форму заявки целиком, кроме согласий */
 async function fillRequest(page: Page, comment: string) {
   const form = page.locator("form.request");
-  await form.locator("label.choice").first().click();
-  // Первый свободный день в открытом календаре
-  await form.locator("button.cal-day:not([disabled])").first().click();
-  await form.locator('input[type="number"]').fill("100");
+  await form.locator("label.ui-radio").first().click();
+  // Первый свободный день в календаре поля даты (панель или шторка — в портале body)
+  await form.locator("button[aria-haspopup=dialog]").click();
+  await page.locator(".ui-layer button.ui-cal-day:not([aria-disabled])").first().click();
+  await form.getByRole("spinbutton").fill("100");
   await form.locator('input[autocomplete="name"]').fill("Азиза");
   await form.locator('input[type="tel"]').fill("90 123 45 67");
   await form.locator("textarea").fill(comment);
@@ -86,7 +87,9 @@ test.describe("тексты экранов", () => {
       expect(seen).toHaveLength(SCREENS.length + 4);
       // Вместо рейтинга — «Новый»
       await open(page, PATHS.catalog, ".card");
-      await expect(page.locator(".card .badge-new").first()).toHaveText(T[lang].newBadge);
+      await expect(page.locator('.card .badge-new [aria-hidden="true"]').first()).toHaveText(
+        T[lang].newBadge,
+      );
     });
   }
 });
@@ -140,9 +143,11 @@ test.describe("согласие", () => {
 
 test.describe("занятые на дату", () => {
   const busyOn = (l: ListingDetail) => l.busyDates.includes(BUSY_DAY);
+  // Цены за гостя и за мероприятие — на одной шкале, как у API (без числа гостей — на гостя)
+  const price = (l: ListingDetail) => comparablePriceUzs(l, null);
   const ORDERS = {
-    price_asc: (a: ListingDetail, b: ListingDetail) => a.priceFromUzs - b.priceFromUzs,
-    price_desc: (a: ListingDetail, b: ListingDetail) => b.priceFromUzs - a.priceFromUzs,
+    price_asc: (a: ListingDetail, b: ListingDetail) => price(a) - price(b),
+    price_desc: (a: ListingDetail, b: ListingDetail) => price(b) - price(a),
     capacity_desc: (a: ListingDetail, b: ListingDetail) => b.capMax - a.capMax,
   } as const;
 

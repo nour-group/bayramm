@@ -2,6 +2,7 @@
    его занятым или снимает отметку. Прошедшие дни не меняются. «Сегодня» — по Ташкенту. */
 
 import type { Availability, BusyDay } from "@bayramm/shared/api/staff";
+import { Tooltip } from "@bayramm/ui/react";
 import { useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { t } from "../texts";
@@ -112,19 +113,23 @@ export function Calendar({ listingId }: { listingId: string }) {
                 const busy = busyByDay.get(day);
                 const past = day < today;
                 const label = `${dayTitle.format(new Date(`${day}T00:00:00Z`))}${busy ? ` — ${t.busy}, ${t.busySources[busy.source] ?? ""}` : ""}`;
+                // Подсказка под мышью повторяет aria-label: диктору её не дублируем
                 return (
-                  <button
-                    key={day}
-                    type="button"
-                    className={`cal-day${busy ? " cal-busy" : ""}${day === today ? " cal-today" : ""}`}
-                    aria-pressed={Boolean(busy)}
-                    aria-label={label}
-                    title={label}
-                    disabled={!editable || past || pending !== null}
-                    onClick={() => void toggle(day, busy, availability)}
-                  >
-                    {Number(day.slice(8))}
-                  </button>
+                  <Tooltip key={day} text={label} describe={false}>
+                    {(tip) => (
+                      <button
+                        {...tip}
+                        type="button"
+                        className={`cal-day${busy ? " cal-busy" : ""}${day === today ? " cal-today" : ""}`}
+                        aria-pressed={Boolean(busy)}
+                        aria-label={label}
+                        disabled={!editable || past || pending !== null}
+                        onClick={() => void toggle(day, busy, availability)}
+                      >
+                        {Number(day.slice(8))}
+                      </button>
+                    )}
+                  </Tooltip>
                 );
               })}
             </div>

@@ -3,7 +3,19 @@
 
    Приложение обязано работать и в обычном браузере, и в старом клиенте Telegram, поэтому
    методы SDK в типе необязательные: каждый вызов — через проверку наличия (`webApp.ready?.()`).
-   Данные initDataUnsafe не проверены — для прав только initData, которую сверяет сервер. */
+   Данные initDataUnsafe не проверены — для прав только initData, которую сверяет сервер.
+
+   SDK грузит loadTelegramWebApp — из кода, а не тегом в index.html, и только если страницу
+   открыл Telegram: в обычном браузере чужой скрипт не нужен вовсе. */
+
+/**
+ * Адрес SDK Mini App. Путь точный — CSP (@bayramm/edge) пускает ровно его. Без integrity:
+ * Telegram обновляет файл по тому же адресу, хэш сломал бы Mini App
+ */
+export const TELEGRAM_WEB_APP_SCRIPT = "https://telegram.org/js/telegram-web-app.js";
+
+/** Сколько ждать SDK, прежде чем решить, что он не загрузится */
+export const SDK_TIMEOUT_MS = 8_000;
 
 export interface WebAppUser {
   readonly id: number;
@@ -108,4 +120,82 @@ export function getWebApp(scope: unknown = globalThis): TelegramWebApp | null {
   if (typeof webApp.initData !== "string" || webApp.initData.length === 0) return null;
   if (!isRecord(webApp.initDataUnsafe)) return null;
   return webApp as unknown as TelegramWebApp;
+}
+
+// ── загрузка SDK ───────────────────────────────────────────────────────────
+
+/** Нужная загрузчику часть окна браузера: в тестах — подделка без DOM */
+interface ScriptLike {
+  src: string;
+  addEventListener(type: "load" | "error", listener: () => void, options?: { once?: boolean }): void;
+}
+
+interface BrowserScope {
+  readonly location?: { readonly hash: string; readonly search: string };
+  readonly sessionStorage?: { getItem(key: string): string | null };
+  readonly document?: {
+    createElement(tag: "script"): ScriptLike;
+    readonly head: { append(node: ScriptLike): void };
+  };
+}
+
+// Telegram передаёт параметры запуска в адресе (#tgWebAppData=…&tgWebAppVersion=…),
+// а SDK при загрузке сохраняет их в sessionStorage — на случай перезагрузки без них
+const LAUNCH_PARAM_RE = /[#&?]tgWebApp[A-Za-z]+=/;
+const SDK_SESSION_KEY = "__telegram__initParams";
+
+/** Открыта ли страница из Telegram (Mini App), даже если SDK ещё не загружен */
+export function launchedFromTelegram(scope: unknown = globalThis): boolean {
+  if (!isRecord(scope)) return false;
+  const { location, sessionStorage } = scope as BrowserScope;
+  if (location && (LAUNCH_PARAM_RE.test(location.hash) || LAUNCH_PARAM_RE.test(location.search))) return true;
+  try {
+    return (sessionStorage?.getItem(SDK_SESSION_KEY) ?? null) !== null;
+  } catch {
+    // хранилище запрещено (приватный режим, старый вебвью)
+    return false;
+  }
+}
+
+// Одна загрузка на окно: несколько вызовов при старте ждут один и тот же скрипт
+const loading = new WeakMap<object, Promise<TelegramWebApp | null>>();
+
+/**
+ * SDK Mini App: уже есть — сразу; страница открыта не из Telegram — null без загрузки
+ * (обычный браузер не тянет чужой скрипт); иначе — скрипт TELEGRAM_WEB_APP_SCRIPT, ждём
+ * не дольше timeoutMs. Не загрузился — null, следующий вызов пробует снова.
+ * scope — для тестов, по умолчанию globalThis.
+ */
+export function loadTelegramWebApp(
+  scope: unknown = globalThis,
+  timeoutMs: number = SDK_TIMEOUT_MS,
+): Promise<TelegramWebApp | null> {
+  const ready = getWebApp(scope);
+  if (ready) return Promise.resolve(ready);
+  if (!isRecord(scope) || !launchedFromTelegram(scope)) return Promise.resolve(null);
+  const doc = (scope as BrowserScope).document;
+  if (!doc) return Promise.resolve(null);
+
+  const pending = loading.get(scope);
+  if (pending) return pending;
+  const attempt = new Promise<TelegramWebApp | null>((resolve) => {
+    const script = doc.createElement("script");
+    let settled = false;
+    // Первое из трёх: загрузка, ошибка, время вышло. Опоздавший load старой попытки
+    // не трогает следующую
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (loading.get(scope) === attempt) loading.delete(scope);
+      resolve(getWebApp(scope));
+    };
+    const timer = setTimeout(done, timeoutMs);
+    script.addEventListener("load", done, { once: true });
+    script.addEventListener("error", done, { once: true });
+    script.src = TELEGRAM_WEB_APP_SCRIPT;
+    doc.head.append(script);
+  });
+  loading.set(scope, attempt);
+  return attempt;
 }

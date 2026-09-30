@@ -3,24 +3,28 @@
 // писать (отозвал согласие, отключён, отвязан), не ищем обходными путями —
 // строка уходит в dead с причиной.
 
-import type { Lang } from "@bayramm/shared";
+import { type Lang, trimTrailingSlashes } from "@bayramm/shared";
+import { type CatalogLinkFilters, clientCatalogPath, clientRequestPath } from "@bayramm/shared/api";
 import { sql } from "kysely";
 import type { Tx } from "../db/actor";
 import { clientProfilesAs, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
-import type { AppActorKind, Json } from "../db/schema.generated";
+import type { AppActorKind, AppStaffRole, Json } from "../db/schema.generated";
+import { can } from "../staff/access";
 import type { ReplyMarkup, SendMessageParams } from "../telegram/client";
 import {
   formatDate,
   NOTICE_TEXTS,
   type OpsSlaFacts,
   opsOutboxDead,
+  opsRevisionSubmitted,
   opsSlaBreach,
   type RequestFacts,
 } from "./texts";
 
 /**
  * Вид уведомления (app.outbox.kind) — список в миграции 20260930110500_bot_outbox_sla.sql;
- * vendor.ops_reminder — напоминание от сотрудника (20260930180000_admin_v02.sql)
+ * vendor.ops_reminder — напоминание от сотрудника (20260930180000_admin_v02.sql);
+ * ops.revision_submitted — правка карточки от партнёра (20260930200000_revisions_phone_invites.sql)
  */
 export const NOTICE_KINDS = [
   "vendor.request_new",
@@ -30,8 +34,17 @@ export const NOTICE_KINDS = [
   "client.sla_breach",
   "ops.sla_breach",
   "ops.outbox_dead",
+  "ops.revision_submitted",
 ] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
+
+/**
+ * Может ли сотрудник этой роли получить оповещение: о правке карточки — тот, кто решает
+ * по правкам (revisions.moderate), остальные оповещения команды — администратору
+ */
+function staffMayReceive(kind: string, role: AppStaffRole): boolean {
+  return kind === "ops.revision_submitted" ? can(role, "revisions.moderate") : role === "admin";
+}
 
 /** Строка outbox, взятая на отправку */
 export interface OutboxRow {
@@ -60,11 +73,21 @@ export type Rendered =
 const skip = (reason: string): Rendered => ({ ok: false, reason });
 
 // ── ссылки ─────────────────────────────────────────────────────────────────
-// Заявка в кабинете вендора — /requests/<id>. Клиенту — корень Mini App: там
-// «Мои заявки» и каталог (куда вести на «похожие», решает клиентское приложение)
+// Кнопка открывает Mini App сразу на нужном экране (web_app с путём):
+//   · вендору — заявка в кабинете, /requests/<id>;
+//   · клиенту о статусе — эта заявка в «Моих заявках»;
+//   · клиенту об отказе и просрочке — каталог «похожих»: та же дата, столько же
+//     гостей, тот же район, что в заявке (пути — @bayramm/shared/api, их же
+//     разбирает apps/web).
 
 export const vendorRequestUrl = (urls: Urls, requestId: string) =>
-  `${urls.vendorAppUrl}/requests/${requestId}`;
+  `${trimTrailingSlashes(urls.vendorAppUrl)}/requests/${requestId}`;
+
+export const clientRequestUrl = (urls: Urls, requestId: string) =>
+  `${trimTrailingSlashes(urls.webAppUrl)}${clientRequestPath(requestId)}`;
+
+export const clientSimilarUrl = (urls: Urls, filters: CatalogLinkFilters) =>
+  `${trimTrailingSlashes(urls.webAppUrl)}${clientCatalogPath(filters)}`;
 
 const button = (text: string, url: string): ReplyMarkup => ({
   inline_keyboard: [[{ text, web_app: { url } }]],
@@ -124,7 +147,8 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
         .select(["s.active", "s.role", "p.telegram_chat_id"])
         .where("s.id", "=", id)
         .executeTakeFirst();
-      if (staff === undefined || !staff.active || staff.role !== "admin") return "staff_inactive";
+      if (staff === undefined || !staff.active || !staffMayReceive(row.kind, staff.role))
+        return "staff_inactive";
       const chatId = chatIdOf(staff.telegram_chat_id);
       if (chatId === null) return "staff_no_chat";
       // Команде — по-русски: панель оператора русская
@@ -139,10 +163,14 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
 
 interface RequestRow {
   readonly facts: Readonly<Record<Lang, RequestFacts>>;
+  /** Фильтры «похожих»: дата события, гости, район площадки */
+  readonly similar: CatalogLinkFilters;
   readonly clientId: string;
   readonly vendorId: string;
   readonly vendorCode: string;
   readonly slaDueAt: Date;
+  /** Кто дал первый ответ: staff — «связались» отметил сотрудник, а не площадка */
+  readonly firstResponseBy: AppActorKind | null;
 }
 
 async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null> {
@@ -159,7 +187,9 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
       "r.vendor_id",
       "r.created_at",
       "r.sla_due_at",
+      "r.first_response_by",
       "l.name as listing",
+      "l.district_code",
       "o.name_ru",
       "o.name_uz",
       "v.public_code",
@@ -176,10 +206,12 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
   };
   return {
     facts: { ru: { ...base, occasion: row.name_ru }, uz: { ...base, occasion: row.name_uz } },
+    similar: { date: row.event_date, guests: row.guests, district: row.district_code },
     clientId: row.client_id,
     vendorId: row.vendor_id,
     vendorCode: row.public_code,
     slaDueAt: row.sla_due_at,
+    firstResponseBy: row.first_response_by,
   };
 }
 
@@ -232,6 +264,27 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
     );
   }
 
+  if (kind === "ops.revision_submitted") {
+    const revisionId = field(row.payload, "revision_id");
+    if (revisionId === null) return skip("bad_payload");
+    const revision = await trx
+      .selectFrom("app.listing_revisions as rv")
+      .innerJoin("app.listings as l", "l.id", "rv.listing_id")
+      .innerJoin("app.vendor_accounts as v", "v.id", "l.vendor_id")
+      .select(["rv.status", "rv.payload", "l.name", "v.public_code"])
+      .where("rv.id", "=", revisionId)
+      .executeTakeFirst();
+    if (revision === undefined) return skip("not_found");
+    // Правку уже отозвали или решили — оповещать не о чем
+    if (revision.status !== "pending") return skip("revision_decided");
+    const payload = revision.payload;
+    const fields =
+      typeof payload === "object" && payload !== null && !Array.isArray(payload) ? Object.keys(payload) : [];
+    return message(
+      opsRevisionSubmitted({ listing: revision.name, vendorCode: revision.public_code, fields }),
+    );
+  }
+
   const requestId = row.request_id ?? field(row.payload, "request_id");
   if (requestId === null) return skip("bad_payload");
   const request = await requestOf(trx, requestId);
@@ -260,16 +313,23 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
     case "client.request_status":
       switch (field(row.payload, "status")) {
         case "contacted":
-          return message(t.contacted(facts), button(t.buttons.openApp, urls.webAppUrl));
+          // «Связались» бывает раз — первым ответом; отметил его сотрудник — другой текст
+          return message(
+            request.firstResponseBy === "staff" ? t.contactedByTeam(facts) : t.contacted(facts),
+            button(t.buttons.myRequest, clientRequestUrl(urls, requestId)),
+          );
         case "deal":
-          return message(t.deal(facts), button(t.buttons.openApp, urls.webAppUrl));
+          return message(t.deal(facts), button(t.buttons.myRequest, clientRequestUrl(urls, requestId)));
         case "declined":
-          return message(t.declined(facts), button(t.buttons.similar, urls.webAppUrl));
+          return message(
+            t.declined(facts),
+            button(t.buttons.similar, clientSimilarUrl(urls, request.similar)),
+          );
         default:
           return skip("bad_payload");
       }
     case "client.sla_breach":
-      return message(t.slaBreach(facts), button(t.buttons.similar, urls.webAppUrl));
+      return message(t.slaBreach(facts), button(t.buttons.similar, clientSimilarUrl(urls, request.similar)));
     case "ops.sla_breach": {
       const ops: OpsSlaFacts = { ...request.facts.ru, vendorCode: request.vendorCode };
       return message(opsSlaBreach(ops));

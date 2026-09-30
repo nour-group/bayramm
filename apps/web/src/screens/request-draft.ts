@@ -1,6 +1,6 @@
 import type { ConsentText, CreateRequest, ListingDetail } from "@bayramm/shared/api";
 import { addDays, isIsoDate, isPhoneDigits, PHONE_PREFIX, phoneDigits } from "../format";
-import { sessionGetJson, sessionRemove, sessionSetJson } from "../storage";
+import { sessionGetJson, sessionRemove, sessionRemovePrefix, sessionSetJson } from "../storage";
 import { parseGuests } from "./catalog-feed";
 
 /* Черновик заявки. Живёт в хранилище вкладки, пока заявка не ушла: ни одно поле, включая
@@ -44,7 +44,13 @@ export const NAME_MAX = 80;
 export const EVENT_MAX_DAYS_AHEAD = 730;
 export const COMMENT_MAX = 1000;
 
-const draftKey = (slug: string) => `bayramm.web.draft.${slug}`;
+const DRAFT_PREFIX = "bayramm.web.draft.";
+const draftKey = (slug: string) => `${DRAFT_PREFIX}${slug}`;
+
+/** Все черновики вкладки (в них телефон и имя) — после удаления аккаунта */
+export function clearDrafts(): void {
+  sessionRemovePrefix(DRAFT_PREFIX);
+}
 
 function isDraft(value: unknown): value is Draft {
   if (typeof value !== "object" || value === null) return false;

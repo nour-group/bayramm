@@ -12,6 +12,8 @@ import type {
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPage,
+  VendorRevision,
+  VendorRevisionList,
 } from "@bayramm/shared/api/vendor";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -65,11 +67,12 @@ function vendorTelegramUser(): TestTelegramUser {
   return { id: 6_000_000_000 + randomInt(0, 999_999_999), first_name: "Vendor", language_code: "ru" };
 }
 
+/** Вход кабинета из Mini App: POST /auth/telegram { initData, app: "vendor" } */
 async function vendorLogin(user: TestTelegramUser): Promise<Response> {
-  return call("/auth/vendor/telegram", {
+  return call("/auth/telegram", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ initData: await initDataFor(user, { botToken: BOT_TOKEN }) }),
+    body: JSON.stringify({ initData: await initDataFor(user, { botToken: BOT_TOKEN }), app: "vendor" }),
   });
 }
 
@@ -242,6 +245,12 @@ afterAll(async () => {
     ]);
     await admin.query("delete from app.audit_log where object_id = any($1::text[])", [ids]);
     await admin.query("delete from app.outbox where request_id = any($1::uuid[])", [ids]);
+    // Оповещения команды о правках карточек тестовых площадок
+    await admin.query(
+      `delete from app.outbox where kind = 'ops.revision_submitted' and payload ->> 'revision_id' in (
+         select id::text from app.listing_revisions where listing_id = any($1::uuid[]))`,
+      [vendors.flatMap((v) => [v.listingId, v.draftId])],
+    );
     await admin.query("delete from app.availability where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from pii.request_contacts where request_id = any($1::uuid[])", [ids]);
     await admin.query("delete from app.requests where id = any($1::uuid[])", [ids]);
@@ -254,7 +263,23 @@ afterAll(async () => {
     await admin.query("delete from app.sessions where vendor_user_id = any($1::uuid[])", [
       vendors.map((v) => v.userId),
     ]);
+    const partnerAccounts = await admin.query<{ id: string }>(
+      "select distinct account_id as id from app.vendor_users where vendor_id = any($1::uuid[]) and account_id is not null",
+      [accounts],
+    );
     await admin.query("delete from app.vendor_users where vendor_id = any($1::uuid[])", [accounts]);
+    await admin.query("delete from app.sessions where account_id = any($1::uuid[])", [
+      partnerAccounts.rows.map((r) => r.id),
+    ]);
+    await admin.query("delete from app.account_identities where account_id = any($1::uuid[])", [
+      partnerAccounts.rows.map((r) => r.id),
+    ]);
+    await admin.query("delete from pii.account_profiles where account_id = any($1::uuid[])", [
+      partnerAccounts.rows.map((r) => r.id),
+    ]);
+    await admin.query("delete from app.accounts where id = any($1::uuid[])", [
+      partnerAccounts.rows.map((r) => r.id),
+    ]);
     await admin.query("delete from pii.vendor_contacts where vendor_id = any($1::uuid[])", [accounts]);
     await admin.query("delete from app.vendor_accounts where id = any($1::uuid[])", [accounts]);
     await admin.query("delete from app.consent_texts where id = any($1::uuid[])", [
@@ -270,21 +295,28 @@ afterAll(async () => {
 
 // ── вход ────────────────────────────────────────────────────────────────────
 
-describe("POST /auth/vendor/telegram", () => {
-  it("привязанный Telegram — сессия кабинета на 12 часов, via tg_partner, отметка входа", async () => {
+describe("POST /auth/telegram { app: vendor }", () => {
+  it("привязанный Telegram — сессия аккаунта партнёра на 7 дней, via tg_webapp, отметка входа", async () => {
     const res = await vendorLogin(A.telegram);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { token: string; expiresAt: string };
     expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     const ttl = Date.parse(body.expiresAt) - Date.now();
-    expect(ttl).toBeGreaterThan(12 * 3600 * 1000 - 60_000);
-    expect(ttl).toBeLessThanOrEqual(12 * 3600 * 1000);
+    expect(ttl).toBeGreaterThan(7 * 24 * 3600 * 1000 - 60_000);
+    expect(ttl).toBeLessThanOrEqual(7 * 24 * 3600 * 1000);
 
-    const { rows } = await admin.query<{ via: string; vendor_user_id: string }>(
-      "select via, vendor_user_id from app.sessions where token_hash = $1",
-      [createHash("sha256").update(body.token).digest()],
+    // Роль партнёра — не в сессии, а в членстве аккаунта: сессия только аккаунта
+    const { rows } = await admin.query<{
+      via: string;
+      app: string;
+      vendor_user_id: string | null;
+      mine: boolean;
+    }>(
+      `select s.via, s.app, s.vendor_user_id, s.account_id = u.account_id as mine
+       from app.sessions s, app.vendor_users u where s.token_hash = $1 and u.id = $2`,
+      [createHash("sha256").update(body.token).digest(), A.userId],
     );
-    expect(rows).toEqual([{ via: "tg_partner", vendor_user_id: A.userId }]);
+    expect(rows).toEqual([{ via: "tg_webapp", app: "vendor", vendor_user_id: null, mine: true }]);
     const { rows: users } = await admin.query<{ locale: string; logged_in: boolean }>(
       "select locale, last_login_at is not null as logged_in from app.vendor_users where id = $1",
       [A.userId],
@@ -306,12 +338,28 @@ describe("POST /auth/vendor/telegram", () => {
 
   it("чужая подпись — 401", async () => {
     const initData = await initDataFor(A.telegram, { botToken: "999:other-bot-token" });
+    const res = await call("/auth/telegram", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ initData, app: "vendor" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("устаревший POST /auth/vendor/telegram для старых сборок работает так же и пишет в лог", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const res = await call("/auth/vendor/telegram", {
       method: "POST",
       headers: json,
-      body: JSON.stringify({ initData }),
+      body: JSON.stringify({ initData: await initDataFor(A.telegram, { botToken: BOT_TOKEN }) }),
     });
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    const token = ((await res.json()) as { token: string }).token;
+    expect((await call("/vendor/me", bearer(token))).status).toBe(200);
+    expect(warn).toHaveBeenCalledWith("auth.legacy: deprecated endpoint used", {
+      path: "/auth/vendor/telegram",
+    });
+    warn.mockRestore();
   });
 });
 
@@ -410,6 +458,8 @@ describe("заявки вендора A", () => {
     expect(Date.parse(item.sla.dueAt) - Date.parse(item.createdAt)).toBe(12 * 3600 * 1000);
     expect(item.sla).toMatchObject({ firstResponseAt: null, breached: false });
     expect(JSON.stringify(page)).not.toContain("+998");
+    // Сначала та, где время истекает раньше: ra1 подана раньше ra2 — её срок ближе
+    expect(page.items.map((r) => r.id)).toEqual([ra1.id, ra2.id]);
   });
 
   it("постранично: курсор продолжает с того же места", async () => {
@@ -422,7 +472,11 @@ describe("заявки вендора A", () => {
       await call(`/vendor/requests?tab=new&limit=1&cursor=${first.nextCursor}`, bearer(A.token))
     ).json()) as VendorRequestPage;
     expect(second.items).toHaveLength(1);
-    expect(second.items[0]?.id).not.toBe(first.items[0]?.id);
+    expect([first.items[0]?.id, second.items[0]?.id]).toEqual([ra1.id, ra2.id]);
+    expect(second.nextCursor).toBeNull();
+    // Курсор открытой вкладки не подходит закрытой
+    const other = await call(`/vendor/requests?tab=closed&cursor=${first.nextCursor}`, bearer(A.token));
+    expect(other.status).toBe(422);
   });
 
   it("открытие новой заявки: просмотрена, телефон клиента — с записью в журнал", async () => {
@@ -499,6 +553,25 @@ describe("заявки вендора A", () => {
       [ra1.id],
     );
     expect(rows[0]?.first_response_by).toBe("vendor_user");
+  });
+
+  it("«В работе»: ждущая ответа выше ответившей, хотя её срок позже", async () => {
+    // ra1 уже «связались»; ra2 открываем — просмотрена, ответа ещё нет
+    expect((await call(`/vendor/requests/${ra2.id}`, bearer(A.token))).status).toBe(200);
+    const page = (await (
+      await call("/vendor/requests?tab=active", bearer(A.token))
+    ).json()) as VendorRequestPage;
+    expect(page.items.map((r) => [r.id, r.status])).toEqual([
+      [ra2.id, "viewed"],
+      [ra1.id, "contacted"],
+    ]);
+    const first = (await (
+      await call("/vendor/requests?tab=active&limit=1", bearer(A.token))
+    ).json()) as VendorRequestPage;
+    const second = (await (
+      await call(`/vendor/requests?tab=active&limit=1&cursor=${first.nextCursor}`, bearer(A.token))
+    ).json()) as VendorRequestPage;
+    expect([first.items[0]?.id, second.items[0]?.id]).toEqual([ra2.id, ra1.id]);
   });
 
   it("отказ без причины — 422; «занято» занимает дату, возврат её освобождает", async () => {
@@ -662,28 +735,181 @@ describe("площадка вендора A", () => {
   });
 });
 
+describe("правки карточки из кабинета", () => {
+  const post = (token: string, body: unknown): RequestInit => ({
+    method: "POST",
+    headers: { ...json, Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const errorOf = async (res: Response) => {
+    const body = (await res.json()) as { error: { code: string; details?: string[] } };
+    return { status: res.status, code: body.error.code, details: body.error.details };
+  };
+  const revisionsUrl = (listingId: string) => `/vendor/listings/${listingId}/revisions`;
+  let pending: VendorRevision;
+
+  it("пока предложений нет — пустой список", async () => {
+    const res = await call(revisionsUrl(A.listingId), bearer(A.token));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as VendorRevisionList).items).toEqual([]);
+  });
+
+  it("ничего не изменилось — 422 no_changes; неверные поля и чужие ключи — 422 со списком", async () => {
+    const same = await call(
+      revisionsUrl(A.listingId),
+      post(A.token, { name: "Test Hall A", price_from_uzs: 150_000 }),
+    );
+    expect(await errorOf(same)).toMatchObject({ status: 422, code: "no_changes" });
+    const bad = await call(
+      revisionsUrl(A.listingId),
+      post(A.token, { price_from_uzs: "по запросу", address_ru: "x" }),
+    );
+    expect(await errorOf(bad)).toMatchObject({
+      status: 422,
+      code: "invalid_input",
+      details: expect.arrayContaining(["price_from_uzs", "address_ru"]),
+    });
+    // У зала будни и выходные обязательны
+    const noWeekend = await call(
+      revisionsUrl(A.listingId),
+      post(A.token, {
+        packages: [{ kind: "weekday", name_ru: "Будни", name_uz: "Ish kuni", price_uzs: 160_000 }],
+      }),
+    );
+    expect(await errorOf(noWeekend)).toMatchObject({ status: 422, details: ["packages"] });
+  });
+
+  it("предложение: только изменённые поля, от текущей версии карточки; карточка — прежняя", async () => {
+    const res = await call(
+      revisionsUrl(A.listingId),
+      post(A.token, {
+        name: "Test Hall A",
+        price_from_uzs: 170_000,
+        description_uz: "Yangi tavsif",
+        packages: [
+          {
+            kind: "weekday",
+            name_ru: "Будни",
+            name_uz: "Ish kuni",
+            price_uzs: 170_000,
+            price_unit: "per_guest",
+          },
+          { kind: "weekend", name_ru: "Выходные", name_uz: "Dam olish", price_uzs: 180_000 },
+        ],
+      }),
+    );
+    expect(res.status).toBe(201);
+    pending = (await res.json()) as VendorRevision;
+    expect(pending).toMatchObject({
+      status: "pending",
+      decidedAt: null,
+      decisionReason: null,
+      payload: {
+        price_from_uzs: 170_000,
+        description_uz: "Yangi tavsif",
+        packages: [
+          { kind: "weekday", price_uzs: 170_000, price_unit: "per_guest" },
+          { kind: "weekend", price_uzs: 180_000, price_unit: "per_guest" },
+        ],
+      },
+    });
+    expect(Object.keys(pending.payload)).toEqual(["price_from_uzs", "description_uz", "packages"]);
+
+    const { rows } = await admin.query<{ submitted_by: string; same_version: boolean }>(
+      `select r.submitted_by, r.base_version = l.version as same_version
+       from app.listing_revisions r join app.listings l on l.id = r.listing_id where r.id = $1`,
+      [pending.id],
+    );
+    expect(rows).toEqual([{ submitted_by: A.userId, same_version: true }]);
+    // Клиент видит одобренную версию: карточка не изменилась
+    const listing = (await (
+      await call(`/vendor/listings/${A.listingId}`, bearer(A.token))
+    ).json()) as VendorListing;
+    expect(listing.priceFromUzs).toBe(150_000);
+    // Команде — оповещение: в outbox только id правки
+    const outbox = await admin.query<{ payload: unknown }>(
+      "select payload from app.outbox where kind = 'ops.revision_submitted' and payload ->> 'revision_id' = $1",
+      [pending.id],
+    );
+    for (const row of outbox.rows) expect(row.payload).toEqual({ revision_id: pending.id });
+  });
+
+  it("одна открытая правка на площадку: вторая — 409 revision_pending", async () => {
+    const res = await call(revisionsUrl(A.listingId), post(A.token, { name: "Test Hall A+" }));
+    expect(await errorOf(res)).toMatchObject({ status: 409, code: "revision_pending" });
+  });
+
+  it("чужая площадка и правка — 404", async () => {
+    expect((await call(revisionsUrl(A.listingId), bearer(B.token))).status).toBe(404);
+    expect((await call(revisionsUrl(A.listingId), post(B.token, { name: "Hijack" }))).status).toBe(404);
+    expect(
+      (await call(`${revisionsUrl(A.listingId)}/${pending.id}/withdraw`, as(B.token, "POST"))).status,
+    ).toBe(404);
+    expect(
+      (await call(`${revisionsUrl(B.listingId)}/${pending.id}/withdraw`, as(B.token, "POST"))).status,
+    ).toBe(404);
+  });
+
+  it("отозвать открытую — можно один раз; после — новая правка", async () => {
+    const res = await call(`${revisionsUrl(A.listingId)}/${pending.id}/withdraw`, as(A.token, "POST"));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as VendorRevision).status).toBe("withdrawn");
+    const again = await call(`${revisionsUrl(A.listingId)}/${pending.id}/withdraw`, as(A.token, "POST"));
+    expect(await errorOf(again)).toMatchObject({ status: 409, code: "illegal_transition" });
+    const next = await call(revisionsUrl(A.listingId), post(A.token, { name: "Test Hall A Grand" }));
+    expect(next.status).toBe(201);
+    pending = (await next.json()) as VendorRevision;
+  });
+
+  it("отказ команды: причина видна партнёру; список — новые первыми", async () => {
+    await admin.query(
+      "update app.listing_revisions set status = 'declined', decision_reason = 'Название не как на вывеске' where id = $1",
+      [pending.id],
+    );
+    const list = (await (
+      await call(revisionsUrl(A.listingId), bearer(A.token))
+    ).json()) as VendorRevisionList;
+    expect(list.items.map((r) => r.status)).toEqual(["declined", "withdrawn"]);
+    expect(list.items[0]).toMatchObject({
+      id: pending.id,
+      decisionReason: "Название не как на вывеске",
+      payload: { name: "Test Hall A Grand" },
+    });
+    expect(list.items[0]?.decidedAt).not.toBeNull();
+  });
+});
+
 // ── конец сессии ────────────────────────────────────────────────────────────
 
 describe("сессия кабинета", () => {
-  it("отключённый пользователь: вход — 403 vendor_disabled, живая сессия — 401", async () => {
+  it("отключённый пользователь: вход — 403 vendor_disabled, живая сессия — тоже 403 vendor_disabled", async () => {
     const token = await vendorToken(B.telegram);
     await admin.query("update app.vendor_users set disabled_at = now() where id = $1", [B.userId]);
-    expect((await call("/vendor/me", bearer(token))).status).toBe(401);
+    const live = await call("/vendor/me", bearer(token));
+    expect(live.status).toBe(403);
+    expect(((await live.json()) as { error: { code: string } }).error.code).toBe("vendor_disabled");
     const res = await vendorLogin(B.telegram);
     expect(res.status).toBe(403);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_disabled");
   });
 
-  it("привязку к Telegram сняли — сессия больше не действует", async () => {
+  it("пользователя вендора отвязали от аккаунта — кабинет закрыт со следующего запроса", async () => {
     const token = await vendorToken(A.telegram);
-    await admin.query("update app.vendor_users set tg_user_hash = null, tg_linked_at = null where id = $1", [
-      A.userId,
-    ]);
-    expect((await call("/vendor/me", bearer(token))).status).toBe(401);
-    await admin.query("update app.vendor_users set tg_user_hash = $2, tg_linked_at = now() where id = $1", [
-      A.userId,
-      tgIdHash(A.telegram.id),
-    ]);
+    const { rows } = await admin.query<{ account_id: string }>(
+      "select account_id from app.vendor_users where id = $1",
+      [A.userId],
+    );
+    await admin.query(
+      "update app.vendor_users set account_id = null, tg_user_hash = null, tg_linked_at = null where id = $1",
+      [A.userId],
+    );
+    const res = await call("/vendor/me", bearer(token));
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe("vendor_not_linked");
+    await admin.query(
+      "update app.vendor_users set account_id = $2, tg_user_hash = $3, tg_linked_at = now() where id = $1",
+      [A.userId, rows[0]?.account_id, tgIdHash(A.telegram.id)],
+    );
   });
 
   it("выход отзывает сессию", async () => {

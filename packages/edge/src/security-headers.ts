@@ -6,6 +6,8 @@
    media (imageOrigins — фото площадок).
    Понадобится внешний источник — добавлять сюда явным параметром, а не ослаблять политику. */
 
+import { TELEGRAM_WEB_APP_SCRIPT } from "@bayramm/tg/webapp";
+
 /* Виджет входа Telegram: скрипт telegram-widget.js (путь точный — остальной telegram.org не
    нужен) и кнопка входа во фрейме с oauth.telegram.org. Колбэк data-onauth виджет собирает
    через eval — его CSP не пропустит; панель берёт данные через редирект data-auth-url */
@@ -13,8 +15,9 @@ export const TELEGRAM_WIDGET_SCRIPT = "https://telegram.org/js/telegram-widget.j
 export const TELEGRAM_OAUTH_ORIGIN = "https://oauth.telegram.org";
 
 /* SDK Mini App: telegram-web-app.js (путь точный). С клиентом Telegram он говорит через
-   postMessage и мост вебвью — других источников ему не нужно */
-export const TELEGRAM_WEB_APP_SCRIPT = "https://telegram.org/js/telegram-web-app.js";
+   postMessage и мост вебвью — других источников ему не нужно. Адрес — один на CSP и на
+   загрузчик SDK (loadTelegramWebApp в @bayramm/tg/webapp) */
+export { TELEGRAM_WEB_APP_SCRIPT };
 
 export interface SecurityOptions {
   /** Кому разрешено встраивать страницу во фрейм. Пусто — никому: frame-ancestors 'none' */

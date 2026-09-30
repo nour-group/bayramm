@@ -1,5 +1,6 @@
 import { parseStartParam } from "@bayramm/tg";
-import { useEffect, useRef } from "react";
+import { UiTextsProvider } from "@bayramm/ui/react";
+import { useEffect, useMemo, useRef } from "react";
 import { LangSwitch } from "./components/LangSwitch";
 import { Link } from "./components/Link";
 import { EmptyState } from "./components/States";
@@ -11,6 +12,7 @@ import { Catalog } from "./screens/Catalog";
 import { MyRequests } from "./screens/MyRequests";
 import { Profile } from "./screens/Profile";
 import { RequestForm } from "./screens/RequestForm";
+import { SignIn, TelegramCallback } from "./screens/SignIn";
 import { Venue } from "./screens/Venue";
 import { hasNativeBack, useBackButton } from "./telegram";
 
@@ -23,6 +25,8 @@ const TAB_VIEW = {
 
 /** Внутренние экраны: без нижней панели, с «назад» */
 const isInner = (match: Match | null) => match?.name === "venue" || match?.name === "request";
+/** Хаб входа: без нижней панели и без «назад» — дальше ведёт он сам */
+const isAuth = (match: Match | null) => match?.name === "auth" || match?.name === "authTelegram";
 
 function NotFound() {
   const { t } = useLang();
@@ -53,6 +57,10 @@ function Screen({ match }: { match: Match | null }) {
       return <MyRequests />;
     case "profile":
       return <Profile />;
+    case "auth":
+      return <SignIn />;
+    case "authTelegram":
+      return <TelegramCallback />;
     default:
       return <NotFound />;
   }
@@ -85,6 +93,8 @@ function Shell() {
   const main = useRef<HTMLElement>(null);
   const shown = useRef<string | null>(null);
   const started = useRef(false);
+  // Подписи кнопок своих контролов (@bayramm/ui/react) — на языке клиента
+  const uiTexts = useMemo(() => ({ close: t.infoClose, clear: t.clearField }), [t]);
 
   useBackButton(webApp, inner, back);
 
@@ -129,31 +139,33 @@ function Shell() {
   }, [screenKey]);
 
   return (
-    <div className={inner ? "app inner" : "app"}>
-      <a className="skip" href="#main">
-        {t.skipToMain}
-      </a>
-      <header className="top">
-        {inner && !hasNativeBack(webApp) ? (
-          <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
-            <Icon name="back" size={17} />
-          </button>
+    <UiTextsProvider texts={uiTexts}>
+      <div className={inner ? "app inner" : "app"}>
+        <a className="skip" href="#main">
+          {t.skipToMain}
+        </a>
+        <header className="top">
+          {inner && !hasNativeBack(webApp) ? (
+            <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
+              <Icon name="back" size={17} />
+            </button>
+          ) : null}
+          <Link className="brand" href={hrefFor({ name: "catalog" })}>
+            Bayramm
+          </Link>
+          <LangSwitch />
+        </header>
+        {api.mode === "mock" ? (
+          <p className="demo-ribbon" role="note">
+            {t.demoData}
+          </p>
         ) : null}
-        <Link className="brand" href={hrefFor({ name: "catalog" })}>
-          Bayramm
-        </Link>
-        <LangSwitch />
-      </header>
-      {api.mode === "mock" ? (
-        <p className="demo-ribbon" role="note">
-          {t.demoData}
-        </p>
-      ) : null}
-      <main id="main" className="main" tabIndex={-1} ref={main}>
-        <Screen match={match} />
-      </main>
-      {inner ? null : <Tabs current={tabOf(match)} />}
-    </div>
+        <main id="main" className="main" tabIndex={-1} ref={main}>
+          <Screen match={match} />
+        </main>
+        {inner || isAuth(match) ? null : <Tabs current={tabOf(match)} />}
+      </div>
+    </UiTextsProvider>
   );
 }
 

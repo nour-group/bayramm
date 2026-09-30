@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import type {
   VendorCalendar,
+  VendorListing,
   VendorMe,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPage,
+  VendorRevision,
 } from "@bayramm/shared/api/vendor";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -92,7 +94,7 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}) {
 function defaultRoutes(locale: "ru" | "uz" = "ru"): Record<string, Handler> {
   return {
     "GET /api/telegram/bot": () => ({ body: { username: "bayramm_test_bot", miniAppUrl: "https://x" } }),
-    "POST /api/auth/vendor/telegram": () => ({
+    "POST /api/auth/telegram": () => ({
       body: { token: "t".repeat(43), expiresAt: "2026-10-01T20:00:00Z" },
     }),
     "GET /api/vendor/me": () => ({ body: me(locale) }),
@@ -181,15 +183,27 @@ afterEach(() => {
 });
 
 describe("вход в кабинет", () => {
-  it("вне Telegram — «откройте из бота» со ссылкой на бота окружения, без попытки входа", async () => {
+  it("вне Telegram — «войдите» (хаб) и ссылка на бота окружения, без попытки входа", async () => {
     await mount("/requests");
-    expect(heading()).toBe("Откройте кабинет из бота");
+    expect(heading()).toBe("Войдите в кабинет");
+    expect(byText("button", "Войти")).toBeDefined();
     const link = byText<HTMLAnchorElement>("a", "Открыть бота");
     expect(link?.getAttribute("href")).toBe("https://t.me/bayramm_test_bot?start=partner");
-    expect(calls.some((c) => c.path.startsWith("/api/auth"))).toBe(false);
+    expect(calls.some((c) => c.method === "POST" && c.path.startsWith("/api/auth"))).toBe(false);
     expect(container.querySelector("nav.tabbar")).toBeNull();
+    // Вход на сайте по телефону здесь не включён (API не сказало иного) — о нём ни слова
+    expect(container.textContent).not.toContain("по номеру");
     // Вне Telegram SDK с telegram.org не грузится
     expect(document.head.querySelector("script")).toBeNull();
+  });
+
+  it("вне Telegram, вход по телефону на сайте включён — его и называем", async () => {
+    routes["GET /api/auth/methods"] = () => ({
+      body: { telegram: { bot: "bayramm_test_bot", loginDomain: null }, phone: true, apps: {} },
+    });
+    await mount("/requests");
+    await flush();
+    expect(container.textContent).toContain("по номеру, который вы дали менеджеру");
   });
 
   it("открыт из Telegram, а SDK не загрузился — ошибка и «Повторить», а не «откройте из бота»", async () => {
@@ -207,8 +221,10 @@ describe("вход в кабинет", () => {
     await mount("/");
     expect(webApp.ready).toHaveBeenCalled();
     expect(webApp.expand).toHaveBeenCalled();
-    const login = calls.find((c) => c.path === "/api/auth/vendor/telegram");
-    expect(login?.body).toEqual({ initData: webApp.initData });
+    const login = calls.find((c) => c.path === "/api/auth/telegram");
+    expect(login?.body).toEqual({ initData: webApp.initData, app: "vendor" });
+    // Устаревший адрес входа кабинета больше не вызывается
+    expect(calls.some((c) => c.path === "/api/auth/vendor/telegram")).toBe(false);
     expect(calls.find((c) => c.path === "/api/vendor/me")?.auth).toBe(`Bearer ${"t".repeat(43)}`);
     expect(window.location.pathname).toBe("/requests");
     expect(heading()).toBe("Заявки");
@@ -217,12 +233,14 @@ describe("вход в кабинет", () => {
 
   it("Telegram не привязан — «сначала привяжите», ссылка в бота открывается внутри Telegram", async () => {
     const webApp = insideTelegram();
-    routes["POST /api/auth/vendor/telegram"] = () => ({
+    routes["POST /api/auth/telegram"] = () => ({
       status: 403,
       body: { error: { code: "vendor_not_linked", message: "x" } },
     });
     await mount("/requests");
-    expect(heading()).toBe("Сначала привяжите Telegram");
+    expect(heading()).toBe("Сначала привяжите номер");
+    // Внутри Telegram хаб не предлагаем: вход — по кнопке бота
+    expect(byText("button", "Войти другим аккаунтом")).toBeUndefined();
     await click(byText("a", "Открыть бота"));
     expect(webApp.openTelegramLink).toHaveBeenCalledWith("https://t.me/bayramm_test_bot?start=partner");
     expect(calls.some((c) => c.path.startsWith("/api/vendor/"))).toBe(false);
@@ -230,7 +248,7 @@ describe("вход в кабинет", () => {
 
   it("доступ отключён — отдельный текст", async () => {
     insideTelegram();
-    routes["POST /api/auth/vendor/telegram"] = () => ({
+    routes["POST /api/auth/telegram"] = () => ({
       status: 403,
       body: { error: { code: "vendor_disabled", message: "x" } },
     });
@@ -241,10 +259,10 @@ describe("вход в кабинет", () => {
   it("API не ответило — ошибка и «Повторить»", async () => {
     insideTelegram();
     let fail = true;
-    routes["POST /api/auth/vendor/telegram"] = () =>
+    routes["POST /api/auth/telegram"] = () =>
       fail
         ? { status: 503, body: { error: { code: "service_unavailable", message: "x" } } }
-        : defaultRoutes()["POST /api/auth/vendor/telegram"]?.({}, new URL("https://x"));
+        : defaultRoutes()["POST /api/auth/telegram"]?.({}, new URL("https://x"));
     await mount("/requests");
     expect(heading()).toBe("Не удалось войти");
     fail = false;
@@ -462,9 +480,150 @@ describe("календарь", () => {
   });
 });
 
-describe("площадка", () => {
-  it("карточка только для чтения, подсказка про менеджера и код вендора", async () => {
+const LISTING: VendorListing = {
+  id: LISTING_ID,
+  slug: "test-hall",
+  name: "Test Hall",
+  status: "active",
+  statusReason: null,
+  categoryCode: "hall",
+  districtCode: "chilonzor",
+  address: { ru: "ул. Тестовая, 1", uz: "Test koʻchasi, 1" },
+  description: { ru: "Большой зал", uz: "Katta zal" },
+  priceFromUzs: 150_000,
+  priceUnit: "per_guest",
+  capMin: 50,
+  capMax: 300,
+  packages: [
+    { kind: "weekday", name: { ru: "Будни", uz: "Ish kuni" }, priceUzs: 150_000, priceUnit: "per_guest" },
+    { kind: "weekend", name: { ru: "Выходные", uz: "Dam olish" }, priceUzs: 180_000, priceUnit: "per_guest" },
+  ],
+  photos: [],
+  phone: "+998000000999",
+  blockers: [],
+};
+
+const REVISION_ID = "cccccccc-0000-0000-0000-0000000000f1";
+const revision = (patch: Partial<VendorRevision> = {}): VendorRevision => ({
+  id: REVISION_ID,
+  status: "pending",
+  submittedAt: new Date().toISOString(),
+  decidedAt: null,
+  decisionReason: null,
+  payload: { price_from_uzs: 170_000 },
+  ...patch,
+});
+
+describe("изменения карточки", () => {
+  const revisionsPath = `/api/vendor/listings/${LISTING_ID}/revisions`;
+  const posted = () => calls.filter((c) => c.method === "POST" && c.path === revisionsPath);
+  const field = (label: string) => {
+    const id = byText<HTMLLabelElement>("label", label)?.htmlFor;
+    return (id ? container.querySelector<HTMLInputElement>(`[id="${id}"]`) : null) ?? undefined;
+  };
+  const type = async (input: HTMLInputElement | HTMLTextAreaElement | undefined, value: string) => {
+    if (!input) throw new Error("поле не найдено");
+    const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), "value")?.set;
+    await act(async () => {
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+
+  beforeEach(() => {
     insideTelegram();
+    routes[`GET /api/vendor/listings/${LISTING_ID}`] = () => ({ body: LISTING });
+    routes[`GET ${revisionsPath}`] = () => ({ body: { items: [] } });
+  });
+
+  it("предложение уходит только с изменённым полем и ждёт проверки; клиент видит прежнюю карточку", async () => {
+    routes[`POST ${revisionsPath}`] = (init) => ({
+      status: 201,
+      body: revision({ payload: JSON.parse(String(init.body)) }),
+    });
+    await mount("/card");
+    await click(byText("button", "Предложить изменения"));
+    // Ничего не изменили — без запроса
+    await click(byText("button", "Отправить на проверку"));
+    expect(posted()).toEqual([]);
+    expect(container.textContent).toContain("Вы ничего не изменили.");
+
+    await type(field("Цена от, сум"), "170 000");
+    await click(byText("button", "Отправить на проверку"));
+    expect(posted().map((c) => c.body)).toEqual([{ price_from_uzs: 170_000 }]);
+    expect(container.textContent).toContain("Предложение на проверке");
+    expect(container.textContent).toContain("от 170\u202f000 сум за гостя");
+    expect(container.textContent).toContain("Отправлено на проверку");
+    // Карточка — прежняя: цена в фактах не изменилась
+    expect(container.querySelector(".venue > .facts")?.textContent).toContain("от 150\u202f000 сум за гостя");
+  });
+
+  it("цена не числом — ошибка у поля без запроса; «по запросу» не бывает", async () => {
+    await mount("/card");
+    await click(byText("button", "Предложить изменения"));
+    await type(field("Цена от, сум"), "по запросу");
+    await click(byText("button", "Отправить на проверку"));
+    expect(posted()).toEqual([]);
+    expect(field("Цена от, сум")?.getAttribute("aria-invalid")).toBe("true");
+    expect(container.textContent).toContain("Без цены карточку не опубликуют");
+  });
+
+  it("неверные поля от сервера подсвечиваются", async () => {
+    routes[`POST ${revisionsPath}`] = () => ({
+      status: 422,
+      body: { error: { code: "invalid_input", message: "x", details: ["name"] } },
+    });
+    await mount("/card");
+    await click(byText("button", "Предложить изменения"));
+    await type(field("Название"), "X");
+    await click(byText("button", "Отправить на проверку"));
+    expect(field("Название")?.getAttribute("aria-invalid")).toBe("true");
+    expect(container.textContent).toContain("Проверьте выделенные поля.");
+  });
+
+  it("открытое предложение: видно, что предложено; отозвать — через подтверждение", async () => {
+    routes[`GET ${revisionsPath}`] = () => ({ body: { items: [revision()] } });
+    routes[`POST ${revisionsPath}/${REVISION_ID}/withdraw`] = () => ({
+      body: revision({ status: "withdrawn" }),
+    });
+    await mount("/card");
+    expect(byText("button", "Предложить изменения")).toBeUndefined();
+    await click(byText("button", "Отозвать предложение"));
+    const dialog = document.querySelector('[role="alertdialog"]');
+    expect(dialog?.textContent).toContain("Отозвать предложение?");
+    await click(
+      [...(dialog?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Отозвать предложение"),
+    );
+    expect(
+      calls.some((c) => c.method === "POST" && c.path === `${revisionsPath}/${REVISION_ID}/withdraw`),
+    ).toBe(true);
+    expect(byText("button", "Предложить изменения")).toBeDefined();
+  });
+
+  it("отказ команды — причина видна; можно предложить заново", async () => {
+    routes[`GET ${revisionsPath}`] = () => ({
+      body: {
+        items: [
+          revision({
+            status: "declined",
+            decidedAt: new Date().toISOString(),
+            decisionReason: "Цена ниже, чем в договоре",
+          }),
+        ],
+      },
+    });
+    await mount("/card");
+    expect(container.textContent).toContain(
+      "Прошлое предложение отклонено. Причина: Цена ниже, чем в договоре",
+    );
+    expect(byText("button", "Предложить изменения")).toBeDefined();
+  });
+});
+
+describe("площадка", () => {
+  it("карточка как в базе: подсказка про предложения и менеджера, код вендора; полей ввода нет", async () => {
+    insideTelegram();
+    routes[`GET /api/vendor/listings/${LISTING_ID}/revisions`] = () => ({ body: { items: [] } });
     routes[`GET /api/vendor/listings/${LISTING_ID}`] = () => ({
       body: {
         id: LISTING_ID,
@@ -495,7 +654,8 @@ describe("площадка", () => {
     });
     await mount("/card");
     expect(heading()).toBe("Площадка");
-    expect(container.textContent).toContain("Карточку меняет ваш менеджер");
+    expect(container.textContent).toContain("изменения проверит команда Bayramm");
+    expect(container.textContent).toContain("Фото, адрес и вместимость меняет ваш менеджер");
     expect(container.textContent).toContain("V101");
     expect(container.textContent).toContain("от 150 000 сум за гостя");
     expect(container.textContent).toContain("50–300 гостей");

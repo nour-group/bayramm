@@ -1,7 +1,8 @@
 # @bayramm/ui
 
-Дизайн-токены Bayramm: палитра двух тем, кегли, скругления, зазоры, иконки, движение,
-безопасные зоны Telegram. Пакет отдаёт исходники TS и готовый CSS, сборки нет.
+Дизайн-система Bayramm: палитра двух тем, кегли, скругления, зазоры, иконки, движение,
+безопасные зоны Telegram, свои шрифты — и свои контролы на React вместо системных. Пакет
+отдаёт исходники TS и готовый CSS, сборки нет.
 
 | Файл | Что внутри |
 |---|---|
@@ -9,6 +10,9 @@
 | `src/tokens.css` | CSS-переменные, **генерируется** из `tokens.ts` |
 | `src/pairs.ts` | разрешённые пары «текст на фоне» |
 | `src/contrast.ts` | формула контраста WCAG 2.2 |
+| `src/fonts.css`, `fonts/` | @font-face и файлы шрифтов (woff2), лицензии OFL |
+| `src/react/` | свои контролы на React вместо системных (`@bayramm/ui/react`) |
+| `src/react/kit.css` | их стили, только токены (`@bayramm/ui/kit.css`) |
 
 ## Подключение
 
@@ -26,6 +30,27 @@ import { base, lux, TEXT_PAIRS } from "@bayramm/ui";
 Премиум переопределяет **те же базовые токены** (`--paper`, `--ink`, `--coral`…), а не
 отдельные классы. Обе темы задают одинаковый набор цветов — это проверяет тип `Palette`
 и тест. Компоненты пишутся один раз и берут только переменные.
+
+## Шрифты
+
+Свои файлы, без Google Fonts (CSP: `font-src 'self'`): Manrope — текст, Unbounded —
+заголовки. Лицензия — SIL OFL 1.1, тексты лицензий в `fonts/`.
+
+```ts
+import "@bayramm/ui/fonts.css"; // до tokens.css
+```
+
+Только подмножества latin и cyrillic, по одному вариативному woff2 на подмножество
+(Manrope 400–800, Unbounded 500–700), `font-display: swap`. В Manrope нет узбекских
+ʻ (U+02BB) и ʼ (U+02BC) — в latin-файле они отданы глифам ‘ и ’ того же шрифта.
+Основной файл предзагружает `index.html` каждого приложения:
+
+```html
+<link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />
+```
+
+Тест `src/fonts.test.ts` разбирает сами файлы (WOFF2 → cmap) и проверяет, что обещанные
+буквы в них есть.
 
 ## Шкалы
 
@@ -106,10 +131,56 @@ Unbounded — не мельче 13px. При `prefers-reduced-motion` длите
 - Не перенесены неиспользуемые `--t0`, `--r-m`, `--r-l`, `--shadow`, а также картинки
   `--sc-*` и узор `--star` / `--star-lg` — это изображения, а не токены.
 
+## Контролы: `@bayramm/ui/react`
+
+Системных контролов в приложениях нет — только эти. Под галочкой, радиокнопкой и выбором
+файлов лежит настоящий `<input>` (невидимый, накрывает рисунок): клавиатура, диктор,
+подпись и системный выбор файлов работают как у системного, своё — только вид.
+
+| Компонент | Вместо | Главное |
+|---|---|---|
+| `Select` | `<select>` | кнопка + `role="listbox"`; стрелки, Home/End, PageUp/PageDown, поиск по буквам, Enter/пробел, Esc, Tab; на телефоне (уже 560px) — шторка снизу |
+| `DateField`, `Calendar` | `<input type="date">` | месяц с понедельника, занятые дни выцветают; roving tabindex: стрелки, Home/End, PageUp/PageDown |
+| `Checkbox`, `Switch` | `type="checkbox"` | согласия — только `Checkbox`, не отмеченный по умолчанию |
+| `RadioGroup` | `type="radio"` | `pill`, `row`, `segmented`; в `<fieldset>` — без своей роли, иначе `role="radiogroup"` |
+| `NumberStepper` | `type="number"` | текст с цифровой клавиатурой, `role="spinbutton"`, «−»/«+» по 44px |
+| `FileDrop` | `type="file"` | input остаётся (системный выбор), своё лицо и перетаскивание |
+| `SearchField` | `type="search"` | тип остаётся, системный крестик спрятан, свой — 44px |
+| `ConfirmSheet`, `Dialog` | `window.confirm`, `<dialog>` | модальные: inert под ними, Tab по кругу, Esc; две кнопки одной ширины |
+| `ToastProvider`, `useToast` | `alert` | живые области `status`/`alert` существуют заранее |
+| `Tooltip` | `title=` | мышь и фокус с клавиатуры, Esc; текст — в `aria-describedby` |
+
+```tsx
+import "@bayramm/ui/tokens.css";
+import "@bayramm/ui/kit.css"; // до стилей приложения: приложение может подправить вид
+import { Select, UiTextsProvider } from "@bayramm/ui/react";
+
+<UiTextsProvider texts={{ close: t.close, clear: t.clear }}>
+  <Select label={t.district} value={district} options={options} onChange={setDistrict} />
+</UiTextsProvider>;
+```
+
+Правила набора:
+
+- **Слов внутри нет.** «Закрыть» и «Очистить» — `UiTextsProvider` в корне приложения (без него
+  компонент падает, а не рисует кнопку без подписи), подписи полей и кнопок — пропсами.
+- **Фокус без прокрутки** (ловушка №3): только `focus({ preventScroll: true })`; вернуть фокус
+  полю — после того, как страница перестала быть inert.
+- **Слой — портал в `body`** с `data-theme` и `lang` поля: премиум-тема и язык не теряются,
+  `overflow` предков панель не обрезает.
+- **Список и календарь как системные:** пока открыты, страница под ними inert (нажатие мимо
+  только закрывает), шторка ещё и не даёт странице прокручиваться. Шторка стоит над `--pad-b`.
+- **Старые вебвью** (ловушка №5): без pointer-событий, `matchMedia` и `:has` всё работает —
+  `mousedown`/`touchstart`, ширина окна, запасное кольцо фокуса через `:focus-within`.
+- Классы — с префиксом `ui-`, по тексту `kit.css` проходят те же проверки, что стили приложений.
+
+`src/react/native-controls.test.ts` разбирает исходники `apps/*/src` компилятором TypeScript
+и падает на любом системном контроле из таблицы выше.
+
 ## Команды
 
 ```bash
-pnpm --filter @bayramm/ui test        # контраст, темы, шкалы, сверка tokens.css
+pnpm --filter @bayramm/ui test        # контраст, темы, шкалы, сверка tokens.css, контролы
 pnpm --filter @bayramm/ui css         # пересобрать tokens.css после правки tokens.ts
 pnpm --filter @bayramm/ui typecheck
 ```

@@ -1,20 +1,23 @@
 // Команда — только администратор. Сотрудника приглашают по имени пользователя
-// Telegram; при первом входе через виджет приглашение привязывается к Telegram ID
-// (app.staff_sign_in). Менять команду может только база (app.staff_invite,
-// app.staff_set_role, app.staff_set_active): себя не отключить и роль не сменить,
-// последнего действующего администратора — никак.
+// Telegram или по номеру телефона: приглашение принимает первый вход аккаунта с этим
+// Telegram или кодом на этот номер (номер уже подтверждён у аккаунта — сразу). Номер
+// не хранится — только его HMAC (app.staff.phone_hash). Менять команду может только
+// база (app.staff_invite, app.staff_invite_phone, app.staff_set_role,
+// app.staff_set_active): себя не отключить и роль не сменить, последнего действующего
+// администратора — никак.
 //
 //   GET  /staff/team                     все сотрудники: действующие сверху
-//   POST /staff/team                     { username, displayName, role } → 201
+//   POST /staff/team                     { username | phone, displayName, role } → 201
 //   POST /staff/team/:id/role            { role }
 //   POST /staff/team/:id/deactivate | activate
 
 import type { StaffRole, TeamList, TeamMember } from "@bayramm/shared/api/staff";
 import { Hono } from "hono";
 import { sql } from "kysely";
+import { phoneHash } from "../auth/crypto";
 import { staffOf } from "../auth/session";
 import { type Tx, withActor } from "../db/actor";
-import { staffProfilesAs } from "../db/pii";
+import { inviteStaff, staffProfilesAs } from "../db/pii";
 import type { AppEnv } from "../env";
 import { notFound } from "../errors";
 import { requirePermission } from "./access";
@@ -39,6 +42,9 @@ async function loadTeam(trx: Tx, self: string): Promise<TeamList> {
       "s.created_at",
       "p.display_name",
       "p.telegram_username",
+      // Сам хэш номера панели не нужен — только то, что пригласили по телефону
+      sql<boolean>`s.phone_hash is not null and p.telegram_username is null`.as("by_phone"),
+      sql<boolean>`s.account_id is not null`.as("accepted"),
     ])
     .orderBy("s.active", "desc")
     .orderBy("p.display_name")
@@ -50,8 +56,10 @@ async function loadTeam(trx: Tx, self: string): Promise<TeamList> {
         id: row.id,
         displayName: row.display_name,
         username: row.telegram_username,
+        invitedBy: row.by_phone ? "phone" : "telegram",
         role: row.role,
         active: row.active,
+        accepted: row.accepted || row.tg_linked_at !== null,
         linked: row.tg_linked_at !== null,
         linkedAt: iso(row.tg_linked_at),
         createdAt: iso(row.created_at),
@@ -66,21 +74,29 @@ team.get("/", requirePermission("team.manage"), async (c) => {
   return c.json(await withActor(c.var.db, actor, (trx) => loadTeam(trx, actor.id)));
 });
 
+// Приглашение: имя пользователя Telegram или номер телефона — одно из двух
 team.post("/", requirePermission("team.manage"), limitJson, async (c) => {
   const actor = staffOf(c);
   const input = new Input(await readBody(c.req.raw));
-  const username = input.pattern("username", USERNAME_RE, true);
+  const byPhone = input.has("phone") && !input.has("username");
+  const username = byPhone ? undefined : input.pattern("username", USERNAME_RE, true);
+  // Номер Узбекистана в любой записи → «+998XXXXXXXXX»; другой — 422 с полем phone
+  const phone = byPhone ? input.phone("phone", true) : undefined;
+  if (input.has("phone") && input.has("username")) input.fail("phone");
   const displayName = input.text("displayName", { max: 80, required: true });
   const role = input.oneOf("role", ROLES, true);
   input.done();
-  if (typeof username !== "string" || typeof displayName !== "string" || !role) {
-    throw invalidInput(["username", "displayName", "role"]);
+  if (typeof displayName !== "string" || !role) throw invalidInput(["displayName", "role"]);
+  let invite: Parameters<typeof inviteStaff>[1];
+  if (typeof phone === "string") {
+    invite = { displayName, role, phoneHash: await phoneHash(c.env.ID_HASH_KEY, phone) };
+  } else if (typeof username === "string") {
+    invite = { displayName, role, username };
+  } else {
+    throw invalidInput([byPhone ? "phone" : "username"]);
   }
   const body = await withActor(c.var.db, actor, async (trx) => {
-    // Имя приводит к виду виджета (без «@», нижний регистр) триггер базы
-    await sql`select app.staff_invite(${username}::text, ${displayName}::text, ${role}::app.staff_role)`.execute(
-      trx,
-    );
+    await inviteStaff(trx, invite);
     return loadTeam(trx, actor.id);
   });
   return c.json(body, 201);

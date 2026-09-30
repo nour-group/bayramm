@@ -6,9 +6,12 @@
 // Ответы в чат уходят после коммита (routes/telegram.ts), их отправка — best effort.
 //
 // Сотрудник: приглашение в app.staff заведено на имя пользователя Telegram. Первое
-// сообщение боту принимает его так же, как вход в панель через виджет
+// сообщение боту принимает его так же, как любой вход через Telegram
 // (app.staff_sign_in: имя — из подписанного Telegram обновления). Сотруднику — своя
-// карточка с кнопкой панели и команды /stats (сводка без ПДн) и /admin.
+// карточка и команды /stats (сводка без ПДн) и /admin.
+//
+// Под каждым приветствием — кнопки всех ролей аккаунта этого Telegram: приложение,
+// кабинет партнёра, панель оператора. Все три — Mini App, вход в них по initData.
 //
 // Вход вендора: сотрудник заводит пользователя вендора с телефоном, вендор жмёт
 // «Я партнёр» и делится контактом. Telegram даёт так отправить только свой
@@ -54,12 +57,22 @@ const webAppButton = (text: string, url: string): ReplyMarkup => ({
   inline_keyboard: [[{ text, web_app: { url } }]],
 });
 
-const staffKeyboard = (config: BotConfig, lang: "ru" | "uz"): ReplyMarkup => ({
-  inline_keyboard: [
-    [{ text: STAFF_TEXTS[lang].adminButton, url: config.adminAppUrl }],
-    [{ text: BOT_TEXTS[lang].openApp, web_app: { url: config.webAppUrl } }],
-  ],
-});
+/**
+ * Кнопки всех ролей аккаунта: панель оператора — сотруднику, кабинет — партнёру,
+ * приложение — всем. Все три открываются в Telegram как Mini App (web_app): вход —
+ * по initData, без второго входа
+ */
+export function roleKeyboard(
+  config: BotConfig,
+  lang: "ru" | "uz",
+  roles: { readonly staff: boolean; readonly vendor: boolean },
+): ReplyMarkup {
+  const rows: { text: string; web_app: { url: string } }[][] = [];
+  if (roles.staff) rows.push([{ text: STAFF_TEXTS[lang].adminButton, web_app: { url: config.adminAppUrl } }]);
+  if (roles.vendor) rows.push([{ text: BOT_TEXTS[lang].openCabinet, web_app: { url: config.vendorAppUrl } }]);
+  rows.push([{ text: BOT_TEXTS[lang].openApp, web_app: { url: config.webAppUrl } }]);
+  return { inline_keyboard: rows };
+}
 
 const partnerKeyboard = (t: BotTexts): ReplyMarkup => ({
   keyboard: [[{ text: t.partnerButton, request_contact: true }]],
@@ -81,9 +94,10 @@ export interface StartedAs {
 }
 
 /**
- * Ответ на /start и любое другое сообщение: приветствие с кнопкой приложения;
- * вендору — кнопка кабинета, остальным — просьба поделиться номером, если они
- * партнёры. /start partner — сразу просьба (или кабинет, если уже привязан)
+ * Ответ на /start и любое другое сообщение: приветствие (сотруднику — карточка
+ * команды) с кнопкой каждой роли аккаунта — приложение, кабинет, панель; не
+ * партнёру — ещё просьба поделиться номером, если он партнёр. /start partner —
+ * сразу просьба (или кабинет, если уже привязан)
  */
 export function startReplies(
   config: BotConfig,
@@ -99,26 +113,24 @@ export function startReplies(
   // Сотруднику — его карточка вместо приветствия клиента; просьба о номере — только по
   // /start partner (проверить кабинет партнёра), иначе она лишняя
   if (role !== null && payload !== PARTNER_START_PAYLOAD) {
-    replies.push({
-      chat_id: chatId,
-      text: STAFF_TEXTS[lang].staffCard(role),
-      reply_markup: staffKeyboard(config, lang),
-    });
-    if (who.vendor) {
-      replies.push({
+    return [
+      {
         chat_id: chatId,
-        text: t.vendorLinked,
-        reply_markup: webAppButton(t.openCabinet, config.vendorAppUrl),
-      });
-    }
-    return replies;
+        text: STAFF_TEXTS[lang].staffCard(role),
+        reply_markup: roleKeyboard(config, lang, { staff: true, vendor: who.vendor }),
+      },
+    ];
   }
   if (payload !== PARTNER_START_PAYLOAD) {
     replies.push({
       chat_id: chatId,
-      text: t.welcome,
-      reply_markup: webAppButton(t.openApp, config.webAppUrl),
+      text: who.vendor ? `${t.welcome}\n\n${t.vendorLinked}` : t.welcome,
+      reply_markup: roleKeyboard(config, lang, { staff: false, vendor: who.vendor }),
     });
+    if (!who.vendor) {
+      replies.push({ chat_id: chatId, text: t.partnerPrompt, reply_markup: partnerKeyboard(t) });
+    }
+    return replies;
   }
   if (who.vendor) {
     replies.push({
@@ -139,14 +151,14 @@ export function commandReplies(
   languageCode: string | undefined,
   command: StaffCommand,
   stats: BotStats | null,
+  vendor = false,
 ): Reply[] {
   const lang = botLang(languageCode);
+  const keyboard = roleKeyboard(config, lang, { staff: true, vendor });
   if (command === "stats" && stats !== null) {
-    return [
-      { chat_id: chatId, text: STAFF_TEXTS[lang].stats(stats), reply_markup: staffKeyboard(config, lang) },
-    ];
+    return [{ chat_id: chatId, text: STAFF_TEXTS[lang].stats(stats), reply_markup: keyboard }];
   }
-  return [{ chat_id: chatId, text: STAFF_TEXTS[lang].adminHint, reply_markup: staffKeyboard(config, lang) }];
+  return [{ chat_id: chatId, text: STAFF_TEXTS[lang].adminHint, reply_markup: keyboard }];
 }
 
 /** Ответ на контакт: привязали — клавиатуру убрать и дать кнопку кабинета */
@@ -273,6 +285,24 @@ async function loadStats(trx: Tx): Promise<BotStats> {
   return row;
 }
 
+/**
+ * Язык, который человек сохранил в Bayramm: клиента (переключатель в профиле; при первом
+ * входе — язык Telegram или сайта), иначе — партнёра, если он уже входил в кабинет (там
+ * язык выбирает сам). null — такого языка нет: тогда язык Telegram
+ */
+export async function savedLocale(trx: Tx, tgHash: Uint8Array): Promise<"ru" | "uz" | null> {
+  const { rows } = await sql<{ locale: "ru" | "uz" | null }>`
+    select coalesce(
+             (select c.locale from app.clients c where c.account_id = a.id and c.deleted_at is null),
+             (select u.locale from app.vendor_users u
+              where u.account_id = a.id and u.disabled_at is null and u.last_login_at is not null
+              order by u.created_at limit 1)) as locale
+    from app.account_identities i
+    join app.accounts a on a.id = i.account_id
+    where i.kind = 'telegram' and i.value_hash = ${tgHash}::bytea and a.deleted_at is null`.execute(trx);
+  return rows[0]?.locale ?? null;
+}
+
 /** Обрабатывает сообщение и возвращает ответы, которые надо отправить после коммита */
 export async function handleUpdate(db: Db, config: BotConfig, update: BotUpdate): Promise<Reply[]> {
   const { message, chatId, from } = update;
@@ -298,15 +328,19 @@ export async function handleUpdate(db: Db, config: BotConfig, update: BotUpdate)
         return claimReplies(config, chatId, from.languageCode, "not_found", staffRole !== null);
       }
       const result = await claim(trx, update, tgHash, contact);
-      return claimReplies(config, chatId, from.languageCode, result, staffRole !== null);
+      // Привязали — дальше отвечаем на языке, который партнёр сохранил в кабинете
+      const lang = (await savedLocale(trx, tgHash)) ?? from.languageCode;
+      return claimReplies(config, chatId, lang, result, staffRole !== null);
     }
 
     const who = await started(trx, update, tgHash);
+    // Язык ответа: сохранённый в Bayramm (профиль, кабинет), иначе — язык Telegram
+    const lang = (await savedLocale(trx, tgHash)) ?? from.languageCode;
     if (message.kind === "command" && staffRole !== null) {
       const stats = message.name === "stats" ? await loadStats(trx) : null;
-      return commandReplies(config, chatId, from.languageCode, message.name, stats);
+      return commandReplies(config, chatId, lang, message.name, stats, who.vendor);
     }
     const payload = message.kind === "start" ? message.payload : null;
-    return startReplies(config, chatId, from.languageCode, payload, { ...who, staffRole });
+    return startReplies(config, chatId, lang, payload, { ...who, staffRole });
   });
 }

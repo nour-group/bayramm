@@ -11,7 +11,11 @@ export default createSiteWorker({
   imageOrigins: mediaImageOrigins(dev),
   // Mini App в Telegram Web открывается во фрейме web.telegram.org — встраивать разрешено только ему
   frameAncestors: ["https://web.telegram.org"],
-  // SDK Mini App: telegram-web-app.js в script-src (index.html грузит его до бандла)
+  // SDK Mini App: telegram-web-app.js в script-src. Грузит его код приложения и только
+  // внутри Telegram (loadTelegramWebApp в @bayramm/tg/webapp); в index.html его нет
   telegramWebApp: true,
+  // Хаб входа (/auth): виджет входа Telegram — только на его страницах. У бота в @BotFather
+  // /setdomain — домен сайта окружения; остальные страницы сайта виджета не пускают
+  telegramLoginPaths: ["/auth"],
   before: taklifnomaRedirect,
 }) satisfies ExportedHandler<Env>;

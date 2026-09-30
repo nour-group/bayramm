@@ -28,7 +28,13 @@ import { iso, staffName } from "./shared";
 
 export const audit = new Hono<AppEnv>();
 
-const ACTOR_KINDS = ["client", "vendor_user", "staff", "system"] as const satisfies readonly ActorKind[];
+const ACTOR_KINDS = [
+  "account",
+  "client",
+  "vendor_user",
+  "staff",
+  "system",
+] as const satisfies readonly ActorKind[];
 const TYPE_RE = /^[a-z][a-z_]{1,39}$/;
 const ACTION_RE = /^[a-z][a-z_.]{0,59}$/;
 

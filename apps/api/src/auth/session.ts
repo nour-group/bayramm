@@ -1,7 +1,9 @@
+import { VENDOR_HEADER } from "@bayramm/shared/api/account";
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
 import { sql } from "kysely";
 import {
+  type AccountActor,
   type Actor,
   type ClientActor,
   GUEST,
@@ -11,30 +13,30 @@ import {
   type VendorActor,
   withActor,
 } from "../db/actor";
-import type { AppEnv } from "../env";
+import type { AppEnv, SessionInfo } from "../env";
 import { clientBlocked, forbidden, unauthorized } from "../errors";
+import type { AppCode } from "./account";
 import { hashToken, parseAuthorization } from "./crypto";
+import { vendorActorFor } from "./vendor";
 
 /**
- * Актор запроса по заголовку `Authorization: Bearer <токен>`.
+ * Сессия запроса по заголовку `Authorization: Bearer <токен>`.
  *
  * Нет заголовка — guest. Заголовок есть, но токен кривой, неизвестный,
- * просроченный или отозванный — 401. Сессию ищем под актором system: до этого
- * момента актора ещё нет.
+ * просроченный или отозванный, аккаунт отключён или удалён — 401. Сессию ищем под
+ * актором system: до этого момента актора ещё нет.
  *
- *   · сессия клиента (via = tg_client) — актор client; клиент удалён — 401,
- *     заблокирован — 403;
- *   · сессия сотрудника (via = tg_staff) — актор staff с ролью; роль и
- *     активность читаются на каждый запрос, поэтому отключение сотрудника
- *     действует сразу: его сессии получают 401;
- *   · сессия кабинета (via = tg_partner) — актор vendor_user с вендором;
- *     отключение пользователя или снятая привязка к Telegram действуют так же
- *     сразу — 401.
+ *   · сессия аккаунта — актор account. Роль для маршрута выводят из членств
+ *     аккаунта: клиент — requireClient, партнёр — requireVendor;
+ *   · сессия сотрудника (staff_id) — актор staff с ролью. Роль и активность
+ *     читаются на каждый запрос, поэтому отключение сотрудника действует сразу:
+ *     его сессии получают 401.
  */
 export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
   const bearer = parseAuthorization(c.req.header("Authorization"));
   if (bearer.kind === "none") {
     c.set("actor", GUEST);
+    c.set("session", null);
     c.set("sessionId", null);
     await next();
     return;
@@ -42,78 +44,112 @@ export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
   if (bearer.kind === "invalid") throw unauthorized();
 
   const tokenHash = await hashToken(bearer.token);
-  const session = await withActor(c.var.db, SYSTEM, (trx) =>
+  const row = await withActor(c.var.db, SYSTEM, (trx) =>
     trx
       .selectFrom("app.sessions as s")
-      .leftJoin("app.clients as cl", "cl.id", "s.client_id")
+      .innerJoin("app.accounts as a", "a.id", "s.account_id")
       .leftJoin("app.staff as st", "st.id", "s.staff_id")
-      .leftJoin("app.vendor_users as vu", "vu.id", "s.vendor_user_id")
+      .leftJoin("app.clients as cl", "cl.account_id", "s.account_id")
       .select([
         "s.id as sessionId",
+        "s.account_id as accountId",
+        "s.app",
         "s.via",
-        "cl.id as clientId",
-        "cl.blocked_at",
-        "cl.deleted_at",
+        "s.proof_at as proofAt",
+        "a.disabled_at as accountDisabledAt",
+        "a.deleted_at as accountDeletedAt",
         "st.id as staffId",
         "st.role as staffRole",
         "st.active as staffActive",
-        "vu.id as vendorUserId",
-        "vu.vendor_id as vendorId",
-        "vu.disabled_at as vendorDisabledAt",
-        sql<boolean>`vu.tg_user_hash is not null`.as("vendorLinked"),
+        "st.account_id as staffAccountId",
+        "cl.id as clientId",
+        sql<boolean>`cl.blocked_at is not null`.as("clientBlocked"),
+        sql<boolean>`cl.deleted_at is not null`.as("clientDeleted"),
       ])
       .where("s.token_hash", "=", tokenHash)
       .where("s.revoked_at", "is", null)
       .where("s.expires_at", ">", sql<Date>`now()`)
       .executeTakeFirst(),
   );
-  if (session === undefined) throw unauthorized();
+  if (row === undefined) throw unauthorized();
+  if (row.accountDisabledAt !== null || row.accountDeletedAt !== null) throw unauthorized();
+
+  const session: SessionInfo = {
+    id: row.sessionId,
+    accountId: row.accountId,
+    kind: row.staffId === null ? "account" : "staff",
+    app: row.app as AppCode,
+    via: row.via,
+    proofAt: row.proofAt,
+    client:
+      row.clientId === null
+        ? null
+        : { id: row.clientId, blocked: row.clientBlocked, deleted: row.clientDeleted },
+  };
 
   let actor: Actor;
-  if (session.clientId !== null) {
-    if (session.deleted_at !== null) throw unauthorized();
-    if (session.blocked_at !== null) throw clientBlocked();
-    actor = { kind: "client", id: session.clientId };
-  } else if (session.staffId !== null && session.staffRole !== null) {
-    if (session.staffActive !== true) throw unauthorized();
-    actor = { kind: "staff", id: session.staffId, role: session.staffRole };
-  } else if (session.vendorUserId !== null && session.vendorId !== null) {
-    if (session.vendorDisabledAt !== null) throw unauthorized();
-    // Вход был по Telegram: привязку сняли — сессия больше не его
-    if (session.via === "tg_partner" && session.vendorLinked !== true) throw unauthorized();
-    actor = { kind: "vendor_user", id: session.vendorUserId, vendorId: session.vendorId };
+  if (row.staffId !== null) {
+    // Роль сотрудника — только своего аккаунта и только действующая
+    if (row.staffActive !== true || row.staffRole === null || row.staffAccountId !== row.accountId) {
+      throw unauthorized();
+    }
+    actor = { kind: "staff", id: row.staffId, role: row.staffRole };
   } else {
-    throw unauthorized();
+    actor = { kind: "account", id: row.accountId };
   }
 
   c.set("actor", actor);
-  c.set("sessionId", session.sessionId);
+  c.set("session", session);
+  c.set("sessionId", session.id);
   await next();
 });
 
-/** Любая сессия (клиента, сотрудника или кабинета) или 401. Для выхода. */
+/** Сессия запроса (любая) или 401. Для выхода и своего аккаунта */
 export function requireSession(c: Context<AppEnv>): {
-  actor: ClientActor | StaffActor | VendorActor;
-  sessionId: string;
+  actor: AccountActor | StaffActor | ClientActor | VendorActor;
+  session: SessionInfo;
 } {
   const actor = c.get("actor");
-  const sessionId = c.get("sessionId");
-  if (actor === undefined || actor.kind === "guest" || actor.kind === "system" || !sessionId) {
+  const session = c.get("session");
+  if (actor === undefined || actor.kind === "guest" || actor.kind === "system" || !session) {
     throw unauthorized();
   }
-  return { actor, sessionId };
+  return { actor, session };
 }
 
-/** Клиент с сессией: гостю — 401, сотруднику — 403. Для маршрутов под authenticate. */
+/** Сессия аккаунта (не сотрудника) или 401/403 */
+export function requireAccountSession(c: Context<AppEnv>): SessionInfo {
+  const { session } = requireSession(c);
+  if (session.kind !== "account") throw forbidden();
+  return session;
+}
+
+/** Актор своего аккаунта для любой сессии: GET /me, способы входа, удаление */
+export function accountOf(c: Context<AppEnv>): AccountActor {
+  const { session } = requireSession(c);
+  return { kind: "account", id: session.accountId };
+}
+
+/**
+ * Клиент: роль клиента аккаунта из сессии аккаунта. Гостю — 401; сессии сотрудника
+ * и аккаунту без роли клиента — 403; заблокированному клиенту — 403 client_blocked.
+ * Актор запроса дальше — клиент.
+ */
 export function requireClient(c: Context<AppEnv>): { actor: ClientActor; sessionId: string } {
-  const { actor, sessionId } = requireSession(c);
-  if (actor.kind !== "client") throw forbidden();
-  return { actor, sessionId };
+  const current = c.get("actor");
+  const session = requireAccountSession(c);
+  if (current?.kind === "client") return { actor: current, sessionId: session.id };
+  const client = session.client;
+  if (client === null || client.deleted) throw forbidden();
+  if (client.blocked) throw clientBlocked();
+  const actor: ClientActor = { kind: "client", id: client.id };
+  c.set("actor", actor);
+  return { actor, sessionId: session.id };
 }
 
 /**
  * Защита маршрутов панели оператора (после authenticate): гостю — 401,
- * клиенту — 403, сотруднику не из перечисленных ролей — 403.
+ * не сессии сотрудника — 403, сотруднику не из перечисленных ролей — 403.
  * Без ролей — любой действующий сотрудник. Роли не упорядочены: admin не
  * включает manager и moderator — их перечисляют явно.
  */
@@ -128,17 +164,19 @@ export function requireStaff(...roles: StaffRole[]) {
 }
 
 /**
- * Защита маршрутов кабинета вендора (после authenticate): гостю — 401, клиенту и
- * сотруднику — 403. Какие заявки и листинги видны — решает RLS по вендору сессии.
+ * Защита маршрутов кабинета вендора (после authenticate): гостю — 401, сессии
+ * сотрудника — 403. Актор — пользователь вендора из членств аккаунта: одно — оно,
+ * несколько — по заголовку VENDOR_HEADER (auth/vendor.ts). Какие заявки и листинги
+ * видны — решает RLS по вендору актора.
  */
 export const requireVendor = createMiddleware<AppEnv>(async (c, next) => {
-  const actor = c.get("actor");
-  if (actor === undefined || actor.kind === "guest") throw unauthorized();
-  if (actor.kind !== "vendor_user") throw forbidden();
+  const session = requireAccountSession(c);
+  const actor = await vendorActorFor(c.var.db, session.accountId, c.req.header(VENDOR_HEADER));
+  c.set("actor", actor);
   await next();
 });
 
-/** Пользователь вендора — в обработчиках за requireVendor. Без сессии кабинета — 401. */
+/** Пользователь вендора — в обработчиках за requireVendor. Без кабинета — 401. */
 export function vendorOf(c: Context<AppEnv>): VendorActor {
   const actor = c.get("actor");
   if (actor?.kind !== "vendor_user") throw unauthorized();

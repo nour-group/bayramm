@@ -2,7 +2,9 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { bootstrap } from "./bootstrap";
+import "@bayramm/ui/fonts.css";
 import "@bayramm/ui/tokens.css";
+import "@bayramm/ui/kit.css";
 import "./styles.css";
 
 const root = document.getElementById("root");

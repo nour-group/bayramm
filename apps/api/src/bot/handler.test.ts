@@ -29,6 +29,8 @@ interface DbState {
   /** app.staff_sign_in: роль действующего сотрудника */
   staffRole?: "admin" | "manager" | "moderator";
   stats?: BotStats;
+  /** Язык, сохранённый в Bayramm (профиль клиента, кабинет, аккаунт) */
+  locale?: "ru" | "uz";
 }
 
 function db(state: DbState = {}) {
@@ -38,6 +40,7 @@ function db(state: DbState = {}) {
       return state.staffRole ? [{ role: state.staffRole, claimed: false }] : [];
     if (q.sql.includes("app.telegram_started")) return [state.started ?? { staff: false, vendor: false }];
     if (q.sql.includes('"activeListings"')) return state.stats ? [state.stats] : [];
+    if (q.sql.includes("app.account_identities")) return state.locale ? [{ locale: state.locale }] : [];
     if (q.sql.includes("app.vendor_user_claim_telegram")) {
       return [
         { result: state.claim ?? "not_found", vendor_user_id: state.claim === "claimed" ? "vu-1" : null },
@@ -151,7 +154,7 @@ describe("handleUpdate: /start", () => {
     ]);
   });
 
-  it("сотруднику — карточка команды с кнопкой панели вместо приветствия клиента и просьбы о номере", async () => {
+  it("сотруднику — карточка команды с кнопками ролей (панель — Mini App) вместо приветствия и просьбы о номере", async () => {
     const replies = await handleUpdate(
       db({ staffRole: "admin", started: { staff: true, vendor: false } }).db,
       CONFIG,
@@ -163,7 +166,7 @@ describe("handleUpdate: /start", () => {
         text: STAFF_TEXTS.uz.staffCard("admin"),
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Boshqaruv paneli", url: "https://admin.example" }],
+            [{ text: "Boshqaruv paneli", web_app: { url: "https://admin.example" } }],
             [{ text: BOT_TEXTS.uz.openApp, web_app: { url: "https://app.example" } }],
           ],
         },
@@ -185,12 +188,21 @@ describe("handleUpdate: /start", () => {
     );
   });
 
-  it("сотрудник-партнёр: карточка команды и кнопка кабинета; /start partner — просьба о номере", async () => {
+  it("сотрудник-партнёр: одна карточка с кнопкой каждой роли; /start partner — просьба о номере", async () => {
     const both = db({ staffRole: "manager", started: { staff: true, vendor: true } }).db;
     const replies = await handleUpdate(both, CONFIG, start(null, "ru"));
-    expect(replies.map((reply) => reply.text)).toEqual([
-      STAFF_TEXTS.ru.staffCard("manager"),
-      BOT_TEXTS.ru.vendorLinked,
+    expect(replies).toEqual([
+      {
+        chat_id: USER_ID,
+        text: STAFF_TEXTS.ru.staffCard("manager"),
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Панель оператора", web_app: { url: "https://admin.example" } }],
+            [{ text: "Открыть кабинет", web_app: { url: "https://vendor.example" } }],
+            [{ text: BOT_TEXTS.ru.openApp, web_app: { url: "https://app.example" } }],
+          ],
+        },
+      },
     ]);
     const partner = await handleUpdate(
       db({ staffRole: "admin", started: { staff: true, vendor: false } }).db,
@@ -198,6 +210,40 @@ describe("handleUpdate: /start", () => {
       start("partner"),
     );
     expect(partner.map((reply) => reply.text)).toEqual([BOT_TEXTS.uz.partnerPrompt]);
+  });
+
+  it("партнёру — приветствие с кнопками приложения и кабинета, без просьбы о номере", async () => {
+    const replies = await handleUpdate(
+      db({ started: { staff: false, vendor: true } }).db,
+      CONFIG,
+      start(null, "ru"),
+    );
+    expect(replies).toEqual([
+      {
+        chat_id: USER_ID,
+        text: `${BOT_TEXTS.ru.welcome}\n\n${BOT_TEXTS.ru.vendorLinked}`,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Открыть кабинет", web_app: { url: "https://vendor.example" } }],
+            [{ text: BOT_TEXTS.ru.openApp, web_app: { url: "https://app.example" } }],
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("язык, сохранённый в Bayramm, главнее языка Telegram; без аккаунта — язык Telegram", async () => {
+    const saved = await handleUpdate(db({ locale: "ru" }).db, CONFIG, start(null, "uz"));
+    expect(saved.map((reply) => reply.text)).toEqual([BOT_TEXTS.ru.welcome, BOT_TEXTS.ru.partnerPrompt]);
+    const uz = await handleUpdate(db({ locale: "uz" }).db, CONFIG, start(null, "ru"));
+    expect(uz[0]?.text).toBe(BOT_TEXTS.uz.welcome);
+    const none = await handleUpdate(db().db, CONFIG, start(null, "ru"));
+    expect(none[0]?.text).toBe(BOT_TEXTS.ru.welcome);
+    // язык ищется по псевдониму Telegram ID, а не по самому ID
+    const fake = db({ locale: "ru" });
+    await handleUpdate(fake.db, CONFIG, start());
+    const lookup = fake.queries.find((q) => q.sql.includes("app.account_identities"));
+    expect(lookup?.parameters).toEqual([new Uint8Array(hmac(String(USER_ID)))]);
   });
 
   it("любое другое сообщение — как /start", async () => {
@@ -233,7 +279,10 @@ describe("handleUpdate: команды команды Bayramm", () => {
     expect(replies[0]?.text).toBe(STAFF_TEXTS.ru.stats(STATS));
     expect(replies[0]?.text).toContain("Ждут ответа: 5");
     expect(replies[0]?.reply_markup).toMatchObject({
-      inline_keyboard: [[{ text: "Панель оператора", url: "https://admin.example" }], expect.anything()],
+      inline_keyboard: [
+        [{ text: "Панель оператора", web_app: { url: "https://admin.example" } }],
+        expect.anything(),
+      ],
     });
   });
 

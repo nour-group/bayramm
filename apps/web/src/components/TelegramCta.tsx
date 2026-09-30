@@ -1,6 +1,7 @@
 import { buildStartParam } from "@bayramm/tg";
 import { useLang, useServices } from "../context";
 import { useAsync } from "../hooks";
+import { authHref } from "../hub";
 import { Icon } from "../icons";
 import { ErrorState } from "./States";
 
@@ -21,7 +22,7 @@ export function telegramLink(username: string, slug?: string): string | null {
   }
 }
 
-/** Вне Telegram: заявки и «Мои заявки» — только после входа, а вход — через Telegram */
+/** Вне Telegram без входа: заявки и «Мои заявки» — после входа: в Telegram или на сайте (хаб) */
 export function TelegramCta({ slug, headingLevel = 2 }: { slug?: string; headingLevel?: 1 | 2 }) {
   const { api } = useServices();
   const { t } = useLang();
@@ -50,6 +51,13 @@ export function TelegramCta({ slug, headingLevel = 2 }: { slug?: string; heading
       ) : (
         <ErrorState message={t.tgUnavailable} onRetry={bot.reload} />
       )}
+      {/* Или на сайте: хаб входа — Telegram или код из сообщения; после входа — сюда же */}
+      <a
+        className="btn btn-secondary"
+        href={authHref({ return: window.location.pathname + window.location.search })}
+      >
+        {t.ctaSignIn}
+      </a>
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import type {
   BusyDay,
+  ListingRevisionPayload,
   RequestTab,
   VendorCalendar,
   VendorListing,
@@ -7,13 +8,16 @@ import type {
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPatch,
+  VendorRevision,
 } from "@bayramm/shared/api/vendor";
 import { TAB_STATUSES } from "@bayramm/shared/api/vendor";
 import type { Page, Route } from "@playwright/test";
+import { APPS, accountMe, BOT, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
 
 /* API кабинета вендора в памяти теста: page.route перехватывает /api/* до сети.
    Контракт — @bayramm/shared/api/vendor. Заявки и календарь меняются по PATCH/PUT/DELETE,
-   как у настоящего API; всё незнакомое — 404 и запись в unexpected (тест это проверит). */
+   как у настоящего API; всё незнакомое — 404 и запись в unexpected (тест это проверит).
+   Вход — по initData (внутри Telegram) или кодом хаба входа на сайте (hub). */
 
 export const NOW = new Date("2026-10-01T07:00:00Z");
 const HOUR = 3_600_000;
@@ -33,6 +37,10 @@ export interface VendorApi {
   readonly patches: { readonly id: string; readonly body: VendorRequestPatch }[];
   readonly calls: string[];
   readonly busy: Map<string, BusyDay>;
+  /** Предложения правок карточки, новые первыми */
+  readonly revisions: VendorRevision[];
+  /** Чем входили: тело POST /auth/telegram */
+  readonly signIns: unknown[];
 }
 
 function item(
@@ -62,7 +70,11 @@ function item(
 export function vendorMe(locale: "ru" | "uz" = "ru"): VendorMe {
   return {
     user: { id: "00000000-0000-4000-8200-000000000001", locale, fullName: "Шахло Каримова" },
-    vendor: { id: "00000000-0000-4000-8400-000000000001", code: "V101", name: "Lola" },
+    vendor: {
+      id: VENDOR_MEMBERSHIP.vendorId,
+      code: VENDOR_MEMBERSHIP.code,
+      name: VENDOR_MEMBERSHIP.name ?? "",
+    },
     listings: [{ id: LISTING_ID, name: "Lola zali", status: "active" }],
   };
 }
@@ -109,18 +121,37 @@ const LISTING: VendorListing = {
 };
 
 export const isApi = (url: URL) => url.hostname === "localhost" && url.pathname.startsWith("/api/");
+const TOKEN = "e2e-vendor-token";
 
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 const fail = (route: Route, status: number, code: string) =>
   json(route, status, { error: { code, message: code } });
 
-/** Подменить /api кабинета. signIn — чем ответит вход по initData */
+export interface VendorApiOptions {
+  /** Чем ответит вход по initData */
+  readonly signIn?: SignIn;
+  /** У аккаунта есть и роль сотрудника: в кабинете видна ссылка на панель */
+  readonly staff?: boolean;
+  /** Обмен кода хаба (POST /auth/hub/exchange) сверяется с навигациями страницы */
+  readonly hub?: HubWatch;
+  /** Какие запросы перехватывать: по умолчанию /api любого localhost */
+  readonly match?: (url: URL) => boolean;
+}
+
+/** Подменить /api кабинета */
 export async function mockVendorApi(
   page: Page,
-  { signIn = "ok" }: { signIn?: SignIn } = {},
+  { signIn = "ok", staff = false, hub, match = isApi }: VendorApiOptions = {},
 ): Promise<VendorApi> {
-  const state: VendorApi = { unexpected: [], patches: [], calls: [], busy: new Map() };
+  const state: VendorApi = {
+    unexpected: [],
+    patches: [],
+    calls: [],
+    busy: new Map(),
+    revisions: [],
+    signIns: [],
+  };
   let locale: "ru" | "uz" = "ru";
   const requests = new Map<string, VendorRequestDetail>([
     [
@@ -156,27 +187,44 @@ export async function mockVendorApi(
   };
 
   // Только /api/* своего origin: исходники в разработке тоже бывают по путям с «/api/»
-  await page.route(isApi, async (route) => {
+  await page.route(match, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname.replace(/^\/api/, "");
     const method = request.method();
     const key = `${method} ${path}`;
 
-    if (key === "GET /telegram/bot")
-      return json(route, 200, { username: "bayramm_demo_bot", miniAppUrl: "http://localhost:4310" });
-    if (key === "POST /auth/vendor/telegram") {
+    if (key === "GET /telegram/bot") return json(route, 200, { username: BOT, miniAppUrl: APPS.web });
+    if (key === "GET /auth/methods") return json(route, 200, METHODS);
+    if (key === "POST /auth/hub/exchange") {
+      const ok = hub?.exchange(url.origin, "vendor", request.postDataJSON()) ?? false;
+      return ok
+        ? json(route, 200, { token: TOKEN, expiresAt: new Date(NOW.getTime() + 7 * 24 * HOUR).toISOString() })
+        : fail(route, 400, "invalid_code");
+    }
+    // Кабинет входит общим адресом с app: "vendor"; устаревший /auth/vendor/telegram — в unexpected
+    if (key === "POST /auth/telegram") {
+      const body = request.postDataJSON() as { app?: unknown };
+      state.signIns.push(body);
+      if (body.app !== "vendor") return fail(route, 400, "invalid_request");
       if (signIn === "not_linked") return fail(route, 403, "vendor_not_linked");
       if (signIn === "disabled") return fail(route, 403, "vendor_disabled");
       if (signIn === "expired") return fail(route, 401, "invalid_init_data");
       if (signIn === "error") return fail(route, 503, "service_unavailable");
       return json(route, 200, {
-        token: "e2e-vendor-token",
+        token: TOKEN,
         expiresAt: new Date(NOW.getTime() + 12 * HOUR).toISOString(),
       });
     }
-    if (request.headers().authorization !== "Bearer e2e-vendor-token")
-      return fail(route, 401, "unauthorized");
+    if (request.headers().authorization !== `Bearer ${TOKEN}`) return fail(route, 401, "unauthorized");
+
+    if (key === "GET /me")
+      return json(
+        route,
+        200,
+        accountMe({ vendors: [VENDOR_MEMBERSHIP], staff }, { kind: "account", app: "vendor" }),
+      );
+    if (key === "POST /auth/logout") return route.fulfill({ status: 204 });
 
     if (key === "GET /vendor/me") return json(route, 200, vendorMe(locale));
     if (key === "PATCH /vendor/me") {
@@ -228,6 +276,31 @@ export async function mockVendorApi(
       }
     }
     if (key === `GET /vendor/listings/${LISTING_ID}`) return json(route, 200, LISTING);
+    const revisions = `/vendor/listings/${LISTING_ID}/revisions`;
+    if (key === `GET ${revisions}`) return json(route, 200, { items: state.revisions });
+    if (key === `POST ${revisions}`) {
+      if (state.revisions.some((r) => r.status === "pending")) return fail(route, 409, "revision_pending");
+      const revision: VendorRevision = {
+        id: `00000000-0000-4000-8700-00000000000${state.revisions.length + 1}`,
+        status: "pending",
+        submittedAt: NOW.toISOString(),
+        decidedAt: null,
+        decisionReason: null,
+        payload: request.postDataJSON() as ListingRevisionPayload,
+      };
+      state.revisions.unshift(revision);
+      return json(route, 201, revision);
+    }
+    const withdraw = new RegExp(`^${revisions}/([0-9a-f-]{36})/withdraw$`).exec(path);
+    if (withdraw && method === "POST") {
+      const index = state.revisions.findIndex((r) => r.id === withdraw[1]);
+      const current = state.revisions[index];
+      if (!current) return fail(route, 404, "not_found");
+      if (current.status !== "pending") return fail(route, 409, "illegal_transition");
+      const next: VendorRevision = { ...current, status: "withdrawn" };
+      state.revisions[index] = next;
+      return json(route, 200, next);
+    }
     if (key === `GET /vendor/listings/${LISTING_ID}/calendar`) {
       const month = url.searchParams.get("month") ?? "2026-10";
       const calendar: VendorCalendar = {

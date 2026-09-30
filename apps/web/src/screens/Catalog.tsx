@@ -1,6 +1,7 @@
 import type { CatalogSort } from "@bayramm/shared/api";
+import { DateField, NumberStepper, Select } from "@bayramm/ui/react";
 import { useEffect, useId, useRef, useState } from "react";
-import { Calendar } from "../components/Calendar";
+import { useCalendarTexts } from "../components/Calendar";
 import { ListingCard } from "../components/ListingCard";
 import { EmptyState, ErrorState, Loading } from "../components/States";
 import { pick, useDictionaries, useLang, useServices } from "../context";
@@ -62,16 +63,13 @@ function GuestsField({
       <label className="field-label" htmlFor={id}>
         {t.fGuests}
       </label>
-      <input
+      <NumberStepper
         id={id}
-        className="field-input"
-        type="number"
-        inputMode="numeric"
         min={1}
         max={MAX_GUESTS}
         placeholder={t.anyGuestV}
         value={text}
-        onChange={(event) => setText(event.target.value)}
+        onChange={setText}
         onBlur={() => {
           const parsed = parseGuests(text);
           if (parsed !== value) onCommit(parsed);
@@ -89,10 +87,9 @@ export function Catalog() {
   const today = tashkentToday(now());
   const filters = readFilters(query, today);
   const feed = useCatalogFeed(api, filters);
-  const [dateOpen, setDateOpen] = useState(false);
+  const calendarTexts = useCalendarTexts();
   const dateId = useId();
   const districtId = useId();
-  const sortId = useId();
   const sentinel = useRef<HTMLDivElement>(null);
   useDocumentTitle(t.hallsTitle);
 
@@ -113,79 +110,54 @@ export function Catalog() {
 
   const districts = dicts.status === "ready" ? dicts.data.districts : [];
   const items = busyLast(feed.items);
+  // Цены за гостя и за мероприятие вперемешку — объясняем, как их сравнили
+  const priceSort = filters.sort !== "capacity_desc";
+  const mixedUnits =
+    items.some((i) => i.priceUnit === "per_guest") && items.some((i) => i.priceUnit === "per_event");
+  const sortHint =
+    priceSort && mixedUnits
+      ? filters.guests === null
+        ? t.sortHintPerGuest
+        : t.sortHintTotal(filters.guests)
+      : null;
 
   return (
     <div className="screen catalog">
       <section className="filters" aria-label={t.cats}>
         <div className="field">
-          <span className="field-label" id={`${dateId}-label`}>
+          <label className="field-label" htmlFor={dateId}>
             {t.fDate}
-          </span>
-          <button
-            type="button"
-            className="field-input field-button"
-            aria-labelledby={`${dateId}-label ${dateId}-value`}
-            aria-expanded={dateOpen}
-            aria-controls={`${dateId}-panel`}
-            onClick={() => setDateOpen((open) => !open)}
-          >
-            <Icon name="calB" size={17} />
-            <span id={`${dateId}-value`}>{filters.date ? formatDayMonth(filters.date, t) : t.anyDateV}</span>
-          </button>
+          </label>
+          <DateField
+            id={dateId}
+            label={t.fDate}
+            placeholder={t.anyDateV}
+            value={filters.date}
+            min={today}
+            max={addDays(today, DATE_HORIZON_DAYS)}
+            format={(date) => formatDayMonth(date, t)}
+            texts={calendarTexts}
+            clearLabel={t.anyDate}
+            onChange={(date) => setFilters({ date })}
+          />
         </div>
         <GuestsField value={filters.guests} onCommit={(guests) => setFilters({ guests })} />
         <div className="field">
           <label className="field-label" htmlFor={districtId}>
             {t.fDistrict}
           </label>
-          <span className="select">
-            <select
-              id={districtId}
-              className="field-input"
-              value={filters.district ?? ""}
-              onChange={(event) => setFilters({ district: event.target.value || null })}
-            >
-              <option value="">{t.anyDistrict}</option>
-              {districts.map((district) => (
-                <option key={district.code} value={district.code}>
-                  {pick(district.name, lang)}
-                </option>
-              ))}
-            </select>
-            <Icon name="caretDown" size={14} className="select-caret" />
-          </span>
+          <Select
+            id={districtId}
+            label={t.fDistrict}
+            value={filters.district ?? ""}
+            options={[
+              { value: "", label: t.anyDistrict },
+              ...districts.map((district) => ({ value: district.code, label: pick(district.name, lang) })),
+            ]}
+            onChange={(district) => setFilters({ district: district || null })}
+          />
         </div>
       </section>
-
-      {dateOpen ? (
-        <div className="date-panel" id={`${dateId}-panel`}>
-          <Calendar
-            label={t.fDate}
-            min={today}
-            max={addDays(today, DATE_HORIZON_DAYS)}
-            selected={filters.date}
-            onSelect={(date) => {
-              setFilters({ date });
-              setDateOpen(false);
-            }}
-          />
-          <div className="panel-actions">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => {
-                setFilters({ date: null });
-                setDateOpen(false);
-              }}
-            >
-              {t.anyDate}
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={() => setDateOpen(false)}>
-              {t.done}
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="list-head">
         <div>
@@ -195,28 +167,16 @@ export function Catalog() {
           <p className="muted small">{t.note}</p>
         </div>
         <div className="sort">
-          <label className="sr-only" htmlFor={sortId}>
-            {t.sortBy}
-          </label>
-          <Icon name="sliders" size={14} />
-          <span className="select">
-            <select
-              id={sortId}
-              value={filters.sort ?? DEFAULT_SORT}
-              onChange={(event) => {
-                const sort = SORTS.find((s) => s === event.target.value) ?? DEFAULT_SORT;
-                setFilters({ sort: sort === DEFAULT_SORT ? null : sort });
-              }}
-            >
-              {SORTS.map((sort) => (
-                <option key={sort} value={sort}>
-                  {t[SORT_LABEL[sort]]}
-                </option>
-              ))}
-            </select>
-            <Icon name="caretDown" size={14} className="select-caret" />
-          </span>
+          <Select
+            size="compact"
+            label={t.sortBy}
+            icon={<Icon name="sliders" size={14} />}
+            value={filters.sort ?? DEFAULT_SORT}
+            options={SORTS.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
+            onChange={(sort) => setFilters({ sort: sort === DEFAULT_SORT ? null : sort })}
+          />
         </div>
+        {sortHint ? <p className="muted small sort-hint">{sortHint}</p> : null}
       </div>
 
       {feed.status === "loading" ? <Loading /> : null}

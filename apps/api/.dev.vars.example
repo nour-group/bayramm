@@ -28,3 +28,8 @@ ID_HASH_KEY=
 # (SERVICE_ROLE_KEY или SECRET_KEY), на staging/production — из настроек проекта
 # (Project Settings → API Keys). Адрес проекта — SUPABASE_URL в wrangler.jsonc
 SUPABASE_SERVICE_ROLE_KEY=
+
+# Токен Telegram Gateway (gateway.telegram.org) — коды входа по телефону приходят в
+# Telegram. Нужен, только если в wrangler.jsonc OTP_PROVIDER = "tg_gateway"; без него
+# вход по телефону в окружении выключен. Локально не нужен: там коды пишутся в лог
+TELEGRAM_GATEWAY_TOKEN=

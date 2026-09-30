@@ -1,11 +1,15 @@
 /* Вызовы API кабинета. Всё идёт через свой origin: /api/* воркер кабинета отдаёт API.
 
-   Токен сессии — в sessionStorage: переживает перезагрузку Mini App, но не закрытие.
-   Закрыли и открыли из бота — новая initData, новый вход. sessionStorage недоступен
-   (старый вебвью, запрет) — токен только в памяти, до перезагрузки. */
+   Сессия — сессия аккаунта партнёра (7 дней): в Telegram — по initData из кнопки бота,
+   вне Telegram — через хаб входа на сайте (hub.ts). Токен — в sessionStorage: переживает
+   перезагрузку, но не закрытие вкладки. sessionStorage недоступен (старый вебвью,
+   запрет) — токен только в памяти, до перезагрузки. */
 
+import type { AuthMethods } from "@bayramm/shared/api/account";
+import type { Me } from "@bayramm/shared/api/me";
 import type {
   BusyDay,
+  ListingRevisionPayload,
   VendorCalendar,
   VendorListing,
   VendorMe,
@@ -13,7 +17,11 @@ import type {
   VendorRequestItem,
   VendorRequestPage,
   VendorRequestPatch,
+  VendorRevision,
+  VendorRevisionList,
+  VendorSignIn,
 } from "@bayramm/shared/api/vendor";
+import { vendorHeaders } from "./hub";
 
 const API = "/api";
 const TOKEN_KEY = "bayramm.vendor.session";
@@ -46,16 +54,21 @@ export const tokenStore = {
   },
 };
 
-/** Отказ API: статус и стабильный код ошибки. status 0 — сеть или API не ответило */
+/**
+ * Отказ API: статус и стабильный код ошибки. status 0 — сеть или API не ответило.
+ * details — у 422 invalid_input имена неверных полей
+ */
 export class ApiFailure extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: readonly string[];
 
-  constructor(status: number, code: string) {
+  constructor(status: number, code: string, details: readonly string[] = []) {
     super(`${status} ${code}`);
     this.name = "ApiFailure";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -63,6 +76,8 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const token = tokenStore.get();
   const headers = new Headers(init.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  // Партнёр нескольких вендоров: какой из них — заголовок (hub.ts)
+  for (const [name, value] of Object.entries(vendorHeaders())) headers.set(name, value);
   if (init.body !== undefined) headers.set("content-type", "application/json");
   try {
     return await fetch(`${API}${path}`, { ...init, headers, credentials: "omit", cache: "no-store" });
@@ -79,9 +94,14 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 }
 
 async function failure(res: Response): Promise<ApiFailure> {
-  const body = (await res.json().catch(() => null)) as { error?: { code?: unknown } } | null;
+  const body = (await res.json().catch(() => null)) as {
+    error?: { code?: unknown; details?: unknown };
+  } | null;
   const code = typeof body?.error?.code === "string" ? body.error.code : "unknown";
-  return new ApiFailure(res.status, code);
+  const details = Array.isArray(body?.error?.details)
+    ? body.error.details.filter((d): d is string => typeof d === "string")
+    : [];
+  return new ApiFailure(res.status, code, details);
 }
 
 async function checked(path: string, init?: RequestInit): Promise<Response> {
@@ -104,13 +124,35 @@ async function empty(path: string, init?: RequestInit): Promise<void> {
 
 // ── вход ───────────────────────────────────────────────────────────────────
 
+/** Свой аккаунт и роли (GET /me): вендоры для выбора, роль сотрудника для кнопки панели */
+export const accountMe = () => json<Me>("/me");
+
+/** Выйти: отозвать сессию; токен забывается в любом случае */
+export async function signOut(): Promise<void> {
+  try {
+    await send("/auth/logout", { method: "POST" });
+  } finally {
+    tokenStore.clear();
+  }
+}
+
 /** Вход по initData Mini App. Токен сохраняется; отказ — ApiFailure (403 vendor_not_linked…) */
 export async function signIn(initData: string): Promise<void> {
-  const session = await json<{ token: string }>("/auth/vendor/telegram", {
+  const body: VendorSignIn = { initData, app: "vendor" };
+  const session = await json<{ token: string }>("/auth/telegram", {
     method: "POST",
-    body: JSON.stringify({ initData }),
+    body: JSON.stringify(body),
   });
   tokenStore.set(session.token);
+}
+
+/** Чем можно войти на сайте (GET /auth/methods); null — API не ответило */
+export async function fetchAuthMethods(): Promise<AuthMethods | null> {
+  try {
+    return await json<AuthMethods>("/auth/methods");
+  } catch {
+    return null;
+  }
 }
 
 // Имя бота: 5–32 символа латиницы, цифр и _, в конце — bot (правила @BotFather)
@@ -155,4 +197,17 @@ export const api = {
     json<BusyDay>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar/${day}`, { method: "PUT" }),
   markFree: (listingId: string, day: string) =>
     empty(`/vendor/listings/${encodeURIComponent(listingId)}/calendar/${day}`, { method: "DELETE" }),
+
+  revisions: (listingId: string) =>
+    json<VendorRevisionList>(`/vendor/listings/${encodeURIComponent(listingId)}/revisions`),
+  proposeRevision: (listingId: string, payload: ListingRevisionPayload) =>
+    json<VendorRevision>(`/vendor/listings/${encodeURIComponent(listingId)}/revisions`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  withdrawRevision: (listingId: string, revisionId: string) =>
+    json<VendorRevision>(
+      `/vendor/listings/${encodeURIComponent(listingId)}/revisions/${encodeURIComponent(revisionId)}/withdraw`,
+      { method: "POST" },
+    ),
 };

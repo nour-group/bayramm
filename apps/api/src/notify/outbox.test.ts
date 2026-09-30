@@ -34,6 +34,9 @@ interface World {
   client?: Record<string, unknown> | null;
   staff?: Record<string, unknown> | null;
   deadRow?: Record<string, unknown> | null;
+  /** Кто дал первый ответ по заявке (requests.first_response_by) */
+  firstResponseBy?: string | null;
+  revision?: Record<string, unknown> | null;
 }
 
 function db(world: World = {}) {
@@ -67,12 +70,16 @@ function db(world: World = {}) {
           created_at: CREATED,
           sla_due_at: new Date(CREATED.getTime() + 12 * 3_600_000),
           listing: "Test Hall",
+          district_code: "chilonzor",
           name_ru: "Свадьба",
           name_uz: "Toʻy",
           public_code: "V101",
+          first_response_by: world.firstResponseBy ?? null,
         },
       ];
     }
+    if (q.sql.includes('from "app"."listing_revisions" as "rv"'))
+      return world.revision ? [world.revision] : [];
     if (q.sql.includes('from "app"."outbox" as "o"')) return world.deadRow ? [world.deadRow] : [];
     return [];
   });
@@ -179,7 +186,7 @@ describe("dispatchOutbox: сообщения", () => {
     });
   });
 
-  it("клиенту — на его языке; отказ — кнопка «похожие» в Mini App", async () => {
+  it("клиенту — на его языке; отказ — «похожие»: каталог на дату, гостей и район заявки", async () => {
     const { tg } = await run({
       rows: [
         outboxRow({
@@ -193,8 +200,106 @@ describe("dispatchOutbox: сообщения", () => {
     expect(tg.calls[0]?.chat_id).toBe(7001);
     expect(tg.calls[0]?.text).toContain("soʻrovni qabul qila olmaydi");
     expect(tg.calls[0]?.reply_markup).toEqual({
-      inline_keyboard: [[{ text: "Oʻxshashlarini koʻrish", web_app: { url: "https://app.example" } }]],
+      inline_keyboard: [
+        [
+          {
+            text: "Oʻxshashlarini koʻrish",
+            web_app: { url: "https://app.example/?date=2026-12-12&guests=200&district=chilonzor" },
+          },
+        ],
+      ],
     });
+  });
+
+  it("клиенту о статусе — кнопка открывает эту заявку в «Моих заявках»", async () => {
+    for (const status of ["contacted", "deal"]) {
+      const { tg } = await run({
+        rows: [
+          outboxRow({
+            kind: "client.request_status",
+            recipient_kind: "client",
+            recipient_id: CLIENT_ID,
+            payload: { request_id: REQUEST_ID, status },
+          }),
+        ],
+      });
+      expect(tg.calls[0]?.reply_markup, status).toEqual({
+        inline_keyboard: [
+          [{ text: "Soʻrovni ochish", web_app: { url: `https://app.example/requests?open=${REQUEST_ID}` } }],
+        ],
+      });
+    }
+  });
+
+  it("«связались» отметил сотрудник — клиенту: команда связалась с площадкой; кнопка — та же заявка", async () => {
+    const status = (firstResponseBy: string) =>
+      run({
+        firstResponseBy,
+        rows: [
+          outboxRow({
+            kind: "client.request_status",
+            recipient_kind: "client",
+            recipient_id: CLIENT_ID,
+            payload: { request_id: REQUEST_ID, status: "contacted" },
+          }),
+        ],
+      });
+    const team = await status("staff");
+    const text = team.tg.calls[0]?.text ?? "";
+    expect(text).toContain("Bayramm jamoasi");
+    expect(text).toContain("Test Hall");
+    expect(text).not.toContain("javob berdi");
+    expect(text).not.toMatch(/\+?998\d{9}/);
+    expect(team.tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [
+        [{ text: "Soʻrovni ochish", web_app: { url: `https://app.example/requests?open=${REQUEST_ID}` } }],
+      ],
+    });
+    // Ответила сама площадка — как прежде
+    const vendor = await status("vendor_user");
+    expect(vendor.tg.calls[0]?.text).toContain("javob berdi");
+  });
+
+  it("правка карточки от партнёра — модератору: площадка, вендор, поля; менеджеру — нет", async () => {
+    const revisionRow = (recipient: string) =>
+      outboxRow({
+        id: `0b0b0b0b-0000-4000-8000-00000000000${recipient === "moderator" ? 3 : 4}`,
+        kind: "ops.revision_submitted",
+        recipient_kind: "staff",
+        recipient_id: STAFF_ID,
+        request_id: null,
+        payload: { revision_id: "0c0c0c0c-0000-4000-8000-000000000001" },
+      });
+    const revision = {
+      status: "pending",
+      payload: { price_from_uzs: 180000, description_ru: "Новое" },
+      name: "Test Hall",
+      public_code: "V101",
+    };
+    const moderator = await run({
+      revision,
+      staff: { active: true, role: "moderator", telegram_chat_id: "9002" },
+      rows: [revisionRow("moderator")],
+    });
+    expect(moderator.report.sent).toBe(1);
+    expect(moderator.tg.calls[0]?.chat_id).toBe(9002);
+    for (const part of ["Test Hall", "V101", "цена, описание (рус.)"])
+      expect(moderator.tg.calls[0]?.text).toContain(part);
+
+    const manager = await run({
+      revision,
+      staff: { active: true, role: "manager", telegram_chat_id: "9003" },
+      rows: [revisionRow("manager")],
+    });
+    expect(manager.tg.calls).toHaveLength(0);
+    expect(manager.report.dead).toBe(1);
+
+    // Правку уже отозвали — не о чем оповещать
+    const withdrawn = await run({
+      revision: { ...revision, status: "withdrawn" },
+      rows: [revisionRow("moderator")],
+    });
+    expect(withdrawn.tg.calls).toHaveLength(0);
   });
 
   it("просрочка: клиенту — предложение посмотреть похожие, администратору — оповещение по-русски", async () => {
@@ -210,6 +315,16 @@ describe("dispatchOutbox: сообщения", () => {
       ],
     });
     expect(tg.calls[0]?.text).toContain("12 soat ichida javob bermadi");
+    expect(tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          {
+            text: "Oʻxshashlarini koʻrish",
+            web_app: { url: "https://app.example/?date=2026-12-12&guests=200&district=chilonzor" },
+          },
+        ],
+      ],
+    });
     expect(tg.calls[1]?.chat_id).toBe(9001);
     expect(tg.calls[1]?.text).toContain("V101");
   });

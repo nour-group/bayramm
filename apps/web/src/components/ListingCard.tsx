@@ -1,8 +1,9 @@
-import type { ListingCard as Card } from "@bayramm/shared/api";
+import { type ListingCard as Card, estimatedTotalUzs } from "@bayramm/shared/api";
 import { useDictionaries, useLang } from "../context";
-import { formatDayMonth, formatPriceFrom } from "../format";
+import { formatDayMonth, formatMoney, formatPriceFrom } from "../format";
 import { hrefFor } from "../router";
 import { Link } from "./Link";
+import { NewBadge } from "./NewBadge";
 import { Photo } from "./Photo";
 
 interface ListingCardProps {
@@ -15,7 +16,8 @@ interface ListingCardProps {
 
 /**
  * Карточка зала в выдаче. Рейтинга и отзывов нет (правило продукта): вместо них — «Новый».
- * Занятый на дату зал не прячется и не бледнеет текстом: отметка «занято» и приглушённое фото
+ * Занятый на дату зал не прячется и не бледнеет текстом: отметка «занято» и приглушённое фото.
+ * С числом гостей у цены за гостя — примерная сумма на них: по ней и сортирует каталог
  */
 export function ListingCard({ card, date, guests, eager }: ListingCardProps) {
   const { t } = useLang();
@@ -23,6 +25,10 @@ export function ListingCard({ card, date, guests, eager }: ListingCardProps) {
   const price = formatPriceFrom(card.priceFromUzs, card.priceUnit, t);
   const district = districtName(card.districtCode);
   const busy = card.busyOnDate === true;
+  const estimate =
+    guests !== null && card.priceUnit === "per_guest"
+      ? t.estimateFor(formatMoney(estimatedTotalUzs(card, guests), t), guests)
+      : null;
   const href = hrefFor({ name: "venue", slug: card.slug }, { date, guests });
 
   return (
@@ -41,15 +47,14 @@ export function ListingCard({ card, date, guests, eager }: ListingCardProps) {
         <div className="card-body">
           <div className="card-top">
             <h2 className="card-name">{card.name}</h2>
-            <span className="badge-new" title={t.newBadgeHint}>
-              {t.newBadge}
-            </span>
+            <NewBadge />
           </div>
           <p className="card-meta">{[district, t.people(card.capMax)].filter(Boolean).join(" · ")}</p>
           <p className="card-price">
             <b>{price.amount}</b>
             {price.unit ? <span className="unit"> {price.unit}</span> : null}
           </p>
+          {estimate ? <p className="card-estimate">{estimate}</p> : null}
         </div>
       </Link>
     </article>

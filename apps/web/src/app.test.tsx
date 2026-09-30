@@ -1,19 +1,21 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api/errors";
 import { createMockApi, demoRequests } from "./api/mock";
 import { LANG_KEY } from "./context";
 import {
   byText,
+  calendarDay,
+  choose,
   cleanup,
   click,
   fakeWebApp,
+  field,
   LISTINGS,
   mount,
   NOW,
   settle,
   text,
-  type,
   waitFor,
 } from "./test/harness";
 
@@ -34,13 +36,14 @@ describe("каталог", () => {
   it("фильтры живут в адресе и уходят в запрос", async () => {
     await mount({ path: "/?guests=200&district=chilonzor" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
-    const guests = document.querySelector<HTMLInputElement>('input[type="number"]');
+    const guests = field("Гости");
     expect(guests?.value).toBe("200");
-    const district = document.querySelector<HTMLSelectElement>("select");
-    expect(district?.value).toBe("chilonzor");
+    expect(guests?.inputMode).toBe("numeric");
+    const district = field("Район");
+    expect(district?.textContent).toBe("Чиланзар");
     for (const card of document.querySelectorAll(".card")) expect(card.textContent).toContain("Чиланзар");
 
-    await type(district, "");
+    await choose(district, "все районы");
     await waitFor(() => !window.location.search.includes("district"), "район снят");
     expect(window.location.search).toBe("?guests=200");
   });
@@ -82,15 +85,55 @@ describe("каталог", () => {
     expect(document.body.textContent).not.toContain("Сбросить фильтры");
   });
 
-  it("у выпадающих списков своя стрелка", async () => {
+  it("выпадающие списки — свои: кнопка со списком и стрелкой, системных select нет", async () => {
     await mount();
     await waitFor(() => document.querySelectorAll(".card").length > 0, "каталог");
-    const selects = [...document.querySelectorAll("select")];
-    expect(selects.length).toBeGreaterThanOrEqual(2);
-    for (const select of selects) {
-      expect(select.parentElement?.classList.contains("select")).toBe(true);
-      expect(select.parentElement?.querySelector(".select-caret")).not.toBeNull();
-    }
+    expect(document.querySelector("select")).toBeNull();
+    const lists = [...document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="listbox"]')];
+    expect(lists.length).toBeGreaterThanOrEqual(2);
+    for (const list of lists) expect(list.querySelector(".ui-select-caret")).not.toBeNull();
+    // Порядок: выбор в списке уходит в адрес
+    await choose(document.querySelector(".sort button"), "Сначала вместительнее");
+    await waitFor(() => window.location.search === "?sort=capacity_desc", "порядок в адресе");
+  });
+
+  it("дата — из своего календаря: день уходит в адрес, «Без даты» сбрасывает", async () => {
+    await mount();
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "каталог");
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+    const date = field("Дата");
+    expect(date?.getAttribute("aria-haspopup")).toBe("dialog");
+    await click(date);
+    await click(calendarDay("20 окт"));
+    await waitFor(() => window.location.search === "?date=2026-10-20", "дата в адресе");
+    expect(date?.textContent).toContain("20 окт");
+    await click(date);
+    await click(byText(".ui-date-actions button", "Без даты"));
+    await waitFor(() => window.location.search === "", "дата сброшена");
+  });
+
+  it("цены за гостя и за мероприятие: с гостями — примерная сумма на них и подсказка", async () => {
+    await mount({ path: "/?guests=200" });
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
+    const cards = [...document.querySelectorAll(".card")];
+    const perGuest = cards.find((c) => c.textContent?.includes("за гостя"));
+    expect(perGuest?.querySelector(".card-estimate")?.textContent).toMatch(/^около .+ на 200 гостей$/);
+    const perEvent = cards.find((c) => !c.textContent?.includes("за гостя"));
+    expect(perEvent?.querySelector(".card-estimate")).toBeNull();
+    expect(document.querySelector(".sort-hint")?.textContent).toBe(
+      "Сравниваем примерную сумму на 200 гостей.",
+    );
+    cleanup();
+
+    await mount({ path: "/" });
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
+    expect(document.querySelector(".card-estimate")).toBeNull();
+    expect(document.querySelector(".sort-hint")?.textContent).toContain("делим на вместимость");
+    cleanup();
+
+    await mount({ path: "/?sort=capacity_desc" });
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
+    expect(document.querySelector(".sort-hint")).toBeNull();
   });
 
   it("карточка ведёт на площадку и передаёт дату и гостей", async () => {
@@ -219,6 +262,15 @@ describe("мои заявки", () => {
     expect(first?.querySelector(".confirm")).toBeNull();
   });
 
+  it("ссылка из бота ?open=<id> раскрывает заявку — без пометки о повторе", async () => {
+    const target = requests[2];
+    await mount({ path: `/requests?open=${target?.id}`, mock: { requests } });
+    const item = await waitFor(() => document.querySelector(".req.highlighted"), "раскрытая заявка");
+    expect(item.textContent).toContain(target?.listing.name);
+    await waitFor(() => document.activeElement === item, "фокус на заявке");
+    expect(text()).not.toContain("уже отправлена");
+  });
+
   it("пусто — подсказка следующего шага", async () => {
     await mount({ path: "/requests", mock: { requests: [] } });
     await waitFor(() => byText("a", "В каталог"), "пустое состояние");
@@ -245,6 +297,41 @@ describe("язык и оболочка", () => {
     expect(window.sessionStorage.getItem(LANG_KEY)).toBe("uz");
     expect(window.localStorage.length).toBe(0);
     expect(document.querySelector("nav")?.getAttribute("aria-label")).toBe("Boʻlimlar");
+  });
+
+  it("язык сохраняется в профиле: по нему пишет бот", async () => {
+    const api = createMockApi({ now: () => NOW, listings: LISTINGS, me: { locale: "ru" } });
+    await mount({ path: "/profile", api });
+    await click(document.querySelector('.top button[lang="uz"]'));
+    await waitFor(() => api.profile().locale === "uz", "язык в профиле");
+  });
+
+  it("не выбран в этой вкладке — язык из профиля, а не из Telegram", async () => {
+    window.sessionStorage.clear();
+    const { webApp } = fakeWebApp({
+      initDataUnsafe: { user: { id: 1, first_name: "A", language_code: "uz" } },
+    });
+    await mount({ path: "/profile", identity: "telegram", webApp, mock: { me: { locale: "ru" } } });
+    await waitFor(() => document.documentElement.lang === "ru", "язык из профиля");
+    expect(document.querySelector("h1")?.textContent).toBe("Профиль");
+  });
+
+  it("гостю профиль не запрашивается и язык в него не пишется", async () => {
+    const asked: string[] = [];
+    await mount({
+      path: "/profile",
+      identity: "guest",
+      mock: {
+        failWith: (method) => {
+          if (method === "me" || method === "updateMe") asked.push(method);
+          return null;
+        },
+      },
+    });
+    await click(document.querySelector('.top button[lang="uz"]'));
+    expect(document.documentElement.lang).toBe("uz");
+    expect(asked).toEqual([]);
+    expect(text()).not.toContain("Mening maʼlumotlarim");
   });
 
   it("язык по умолчанию — из Telegram", async () => {
@@ -288,5 +375,69 @@ describe("язык и оболочка", () => {
     const live = { ...createMockApi({ now: () => NOW, listings: LISTINGS }), mode: "live" as const };
     await mount({ path: "/", api: live });
     expect(document.querySelector(".demo-ribbon")).toBeNull();
+  });
+});
+
+describe("мои данные", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("выгрузка — файл JSON и те же данные на экране", async () => {
+    const created = vi.fn((_blob: Blob | MediaSource) => "blob:bayramm-test");
+    vi.spyOn(URL, "createObjectURL").mockImplementation(created);
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    await mount({ path: "/profile" });
+    await click(await waitFor(() => byText("button", "Скачать мои данные"), "кнопка выгрузки"));
+    await waitFor(() => text().includes("bayramm-my-data-2026-10-01.json"), "файл готов");
+    expect(created).toHaveBeenCalledTimes(1);
+    const blob = created.mock.calls[0]?.[0] as Blob | undefined;
+    expect(blob?.type).toBe("application/json");
+    expect(document.querySelector(".data-dump")?.textContent).toContain('"version": 1');
+  });
+
+  it("уведомления: отключить — и объяснение, как включить снова", async () => {
+    const api = createMockApi({ now: () => NOW, listings: LISTINGS, me: { notifications: true } });
+    await mount({ path: "/profile", api });
+    await waitFor(() => text().includes("Ответы площадок приходят в Telegram-бот"), "уведомления включены");
+    await click(byText("button", "Отключить уведомления"));
+    await waitFor(() => text().includes("Уведомления в боте выключены"), "выключены");
+    expect(api.profile().notifications).toBe(false);
+    expect(byText("button", "Отключить уведомления")).toBeNull();
+  });
+
+  it("удаление: подтверждение с объяснением, кнопки одного размера; после — без входа", async () => {
+    window.sessionStorage.setItem("bayramm.web.draft.lola-zali", JSON.stringify({ phone: "901234567" }));
+    const api = createMockApi({ now: () => NOW, listings: LISTINGS, requests: demoRequests(LISTINGS, NOW) });
+    await mount({ path: "/profile", api });
+    await click(await waitFor(() => byText("button", "Удалить аккаунт"), "удалить"));
+    const confirm = document.querySelector(".confirm");
+    expect(confirm?.querySelector("legend")?.textContent).toBe("Удалить аккаунт?");
+    expect(confirm?.textContent).toContain("останутся у площадок обезличенными");
+    const buttons = [...(confirm?.querySelectorAll("button") ?? [])];
+    expect(buttons.map((b) => [b.textContent, b.className])).toEqual([
+      ["Удалить", "btn btn-secondary"],
+      ["Оставить", "btn btn-secondary"],
+    ]);
+
+    await click(buttons[0]);
+    await waitFor(() => text().includes("Аккаунт удалён"), "удалён");
+    expect(api.deleted()).toBe(true);
+    expect(window.sessionStorage.getItem("bayramm.web.draft.lola-zali")).toBeNull();
+    expect(byText("button", "Скачать мои данные")).toBeNull();
+
+    await click(byText("nav a", "Заявки"));
+    await waitFor(() => byText("h2", "Аккаунт удалён"), "в «Моих заявках» — тоже");
+    expect(document.querySelectorAll(".req")).toHaveLength(0);
+  });
+
+  it("«Оставить» закрывает подтверждение, аккаунт на месте", async () => {
+    const api = createMockApi({ now: () => NOW, listings: LISTINGS });
+    await mount({ path: "/profile", api });
+    await click(await waitFor(() => byText("button", "Удалить аккаунт"), "удалить"));
+    await click(byText(".confirm button", "Оставить"));
+    expect(document.querySelector(".confirm")).toBeNull();
+    expect(api.deleted()).toBe(false);
   });
 });

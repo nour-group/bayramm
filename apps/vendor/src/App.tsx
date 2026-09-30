@@ -1,9 +1,13 @@
 import { LANGS, type Lang } from "@bayramm/shared";
+import type { VendorMembership } from "@bayramm/shared/api/account";
 import type { RequestTab, VendorMe } from "@bayramm/shared/api/vendor";
-import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { ApiFailure, api, setUnauthorizedHandler, signIn, tokenStore } from "./api";
+import { Tooltip, UiTextsProvider } from "@bayramm/ui/react";
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AccountLinks, VendorChooser } from "./Account";
+import { ApiFailure, accountMe, api, setUnauthorizedHandler, signIn, tokenStore } from "./api";
 import { Calendar } from "./Calendar";
 import { Gate, type GateKind } from "./Gate";
+import { CALLBACK_PATH, chooseVendor, finishHub, SIGNIN_PARAM, startHub } from "./hub";
 import { LANG_NAMES, vendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
 import { initialLang, saveLang } from "./lang";
@@ -12,6 +16,7 @@ import { Requests } from "./Requests";
 import {
   HOME,
   type Location,
+  matchRoute,
   NAV,
   type Navigate,
   pathOf,
@@ -19,11 +24,14 @@ import {
   type Section,
   useRoute,
 } from "./router";
-import { announceReady, launchedFromTelegram, loadTelegramSdk } from "./telegram";
+import { announceReady, launchedFromTelegram, loadTelegramWebApp } from "./telegram";
 import { Heading } from "./ui";
 import { Venue } from "./Venue";
 
-type Auth = { readonly kind: GateKind } | { readonly kind: "ready"; readonly me: VendorMe };
+type Auth =
+  | { readonly kind: GateKind; readonly back?: string }
+  | { readonly kind: "choose"; readonly vendors: readonly VendorMembership[] }
+  | { readonly kind: "ready"; readonly me: VendorMe; readonly back?: string };
 
 const NAV_ICON: Readonly<Record<Section, IconName>> = {
   requests: "requests",
@@ -31,15 +39,60 @@ const NAV_ICON: Readonly<Record<Section, IconName>> = {
   card: "hall",
 };
 
+/** Кабинет по сессии: партнёр одного вендора — сразу, нескольких — выбор */
+async function openCabinet(back?: string): Promise<Auth> {
+  try {
+    return { kind: "ready", me: await api.me(), back };
+  } catch (err) {
+    if (!(err instanceof ApiFailure)) return { kind: "error" };
+    if (err.code === "vendor_not_linked") return { kind: "not_linked" };
+    if (err.code === "vendor_disabled") return { kind: "disabled" };
+    if (err.code === "vendor_choice_required") {
+      try {
+        return { kind: "choose", vendors: (await accountMe()).roles.vendors };
+      } catch {
+        return { kind: "error" };
+      }
+    }
+    if (err.code === "forbidden") {
+      // Выбранный раньше вендор больше не наш — выбор заново
+      chooseVendor(null);
+      return openCabinet(back);
+    }
+    return { kind: err.status === 401 ? "expired" : "error" };
+  }
+}
+
 /**
- * Вход: внутри Telegram — по свежей initData. initData живёт час; если Mini App
- * перезагрузили позже, а сессия (12 часов) ещё жива — работаем по ней. Вне Telegram
- * кабинета нет: экран «откройте из бота». Открыт из Telegram, а SDK не загрузился —
- * ошибка с повтором.
+ * Вход: внутри Telegram — по свежей initData из кнопки бота; сессия (7 дней) — на
+ * случай, если Mini App перезагрузили позже часа. Вне Telegram — через хаб входа на
+ * сайте: /auth/callback меняет одноразовый код на сессию, ?signin=1 (пришли из другого
+ * приложения Bayramm) сразу уводит в хаб, иначе — экран «войдите». Открыт из Telegram,
+ * а SDK не загрузился — ошибка с повтором.
  */
+// Возврат из хаба обрабатывается один раз: обмен сразу убирает код из адреса, а вход
+// запускается повторно (StrictMode в разработке) — повтор ждёт тот же обмен
+let hubReturn: ReturnType<typeof finishHub> | null = null;
+
 async function startSession(): Promise<Auth> {
-  const webApp = await loadTelegramSdk();
-  if (!webApp) return { kind: launchedFromTelegram() ? "error" : "outside" };
+  if (window.location.pathname === CALLBACK_PATH) hubReturn = finishHub(window.location.search);
+  if (hubReturn) {
+    const running = hubReturn;
+    const result = await running;
+    if (hubReturn === running) hubReturn = null;
+    if (result.kind === "bad") return { kind: "hub_failed", back: "/" };
+    tokenStore.set(result.token);
+    return openCabinet(result.back);
+  }
+  const webApp = await loadTelegramWebApp();
+  if (!webApp) {
+    if (launchedFromTelegram()) return { kind: "error" };
+    if (tokenStore.get() !== null) return openCabinet();
+    if (new URLSearchParams(window.location.search).has(SIGNIN_PARAM) && (await startHub())) {
+      return { kind: "loading" };
+    }
+    return { kind: "outside" };
+  }
   announceReady(webApp);
   try {
     await signIn(webApp.initData);
@@ -50,11 +103,7 @@ async function startSession(): Promise<Auth> {
     if (err.status !== 401 || tokenStore.get() === null)
       return { kind: err.status === 401 ? "expired" : "error" };
   }
-  try {
-    return { kind: "ready", me: await api.me() };
-  } catch (err) {
-    return { kind: err instanceof ApiFailure && err.status === 401 ? "expired" : "error" };
-  }
+  return openCabinet();
 }
 
 interface NavLinkProps {
@@ -99,6 +148,12 @@ export function App() {
     void startSession().then((result) => {
       if (!active) return;
       setAuth(result);
+      // Вернулись из хаба: экран — тот, с которого уходили
+      if ("back" in result && result.back !== undefined) {
+        navigate(matchRoute(new URL(result.back, window.location.origin).pathname) ?? { route: HOME }, {
+          replace: true,
+        });
+      }
       if (result.kind === "ready") {
         // После входа язык — из профиля вендора (его же видит бот)
         setLang(result.me.user.locale);
@@ -148,11 +203,27 @@ export function App() {
   }, [path]);
 
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  const uiTexts = useMemo(() => ({ close: t.close, clear: t.clear }), [t]);
   const screenProps = { t, lang, headingRef: heading } as const;
 
+  const signInHub = useCallback(() => {
+    // Токен этого аккаунта не подошёл (не партнёр) — войти другим: старый забыть
+    tokenStore.clear();
+    chooseVendor(null);
+    void startHub().then((started) => {
+      if (!started) setAuth({ kind: "error" });
+    });
+  }, []);
+  const switchVendor = useCallback(() => {
+    chooseVendor(null);
+    retry();
+  }, [retry]);
+
   let screen: ReactNode;
-  if (auth.kind !== "ready") {
-    screen = <Gate kind={auth.kind} t={t} headingRef={heading} onRetry={retry} />;
+  if (auth.kind === "choose") {
+    screen = <VendorChooser vendors={auth.vendors} t={t} headingRef={heading} onChosen={retry} />;
+  } else if (auth.kind !== "ready") {
+    screen = <Gate kind={auth.kind} t={t} headingRef={heading} onRetry={retry} onSignIn={signInHub} />;
   } else if (!location) {
     screen = (
       <section className="page" aria-labelledby="page-title">
@@ -198,49 +269,55 @@ export function App() {
   }
 
   return (
-    <div className={`app${auth.kind === "ready" ? " app-tabs" : ""}`}>
-      <a className="skip" href="#main">
-        {t.skip}
-      </a>
-      <header className="top">
-        <p className="brand">
-          Bayramm <span className="brand-area">{t.area}</span>
-        </p>
-        {/* biome-ignore lint/a11y/useSemanticElements: группа кнопок-переключателей, fieldset здесь не форма */}
-        <div className="lang" role="group" aria-label={t.language}>
-          {LANGS.map((code) => (
-            <button
-              key={code}
-              type="button"
-              lang={code}
-              title={LANG_NAMES[code]}
-              aria-pressed={code === lang}
-              onClick={() => chooseLang(code)}
-            >
-              {code.toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </header>
-      <main id="main" className="main" tabIndex={-1}>
-        {screen}
-      </main>
-      {auth.kind === "ready" ? (
-        <nav className="tabbar" aria-label={t.sections}>
-          {NAV.map((item) => (
-            <NavLink
-              key={item}
-              to={{ route: item }}
-              current={section === item}
-              navigate={navigate}
-              className="tab"
-            >
-              <Icon name={NAV_ICON[item]} size={24} />
-              <span>{t[item]}</span>
-            </NavLink>
-          ))}
-        </nav>
-      ) : null}
-    </div>
+    <UiTextsProvider texts={uiTexts}>
+      <div className={`app${auth.kind === "ready" ? " app-tabs" : ""}`}>
+        <a className="skip" href="#main">
+          {t.skip}
+        </a>
+        <header className="top">
+          <p className="brand">
+            Bayramm <span className="brand-area">{t.area}</span>
+          </p>
+          {/* biome-ignore lint/a11y/useSemanticElements: группа кнопок-переключателей, fieldset здесь не форма */}
+          <div className="lang" role="group" aria-label={t.language}>
+            {LANGS.map((code) => (
+              <Tooltip key={code} text={LANG_NAMES[code]}>
+                {(tip) => (
+                  <button
+                    {...tip}
+                    type="button"
+                    lang={code}
+                    aria-pressed={code === lang}
+                    onClick={() => chooseLang(code)}
+                  >
+                    {code.toUpperCase()}
+                  </button>
+                )}
+              </Tooltip>
+            ))}
+          </div>
+        </header>
+        <main id="main" className="main" tabIndex={-1}>
+          {screen}
+          {auth.kind === "ready" ? <AccountLinks t={t} onSwitch={switchVendor} /> : null}
+        </main>
+        {auth.kind === "ready" ? (
+          <nav className="tabbar" aria-label={t.sections}>
+            {NAV.map((item) => (
+              <NavLink
+                key={item}
+                to={{ route: item }}
+                current={section === item}
+                navigate={navigate}
+                className="tab"
+              >
+                <Icon name={NAV_ICON[item]} size={24} />
+                <span>{t[item]}</span>
+              </NavLink>
+            ))}
+          </nav>
+        ) : null}
+      </div>
+    </UiTextsProvider>
   );
 }

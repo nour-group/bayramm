@@ -21,7 +21,7 @@
 ```
 apps/web          клиент: Telegram Mini App + сайт (Vite + React) → Cloudflare Workers (static assets)
 apps/vendor       кабинет вендора (Vite + React) → Cloudflare Workers (static assets)
-apps/admin        панель оператора (Vite + React) → Workers; вход сотрудников — виджет Telegram
+apps/admin        панель оператора (Vite + React) → Workers; вход — хаб на сайте или Mini App из бота
 apps/api          сервер (Hono) → Cloudflare Workers
 apps/media        варианты фото: /<ширина>/<ключ> → Supabase Storage через Image Transformations
 supabase/         миграции и сид Postgres (Supabase)
@@ -29,7 +29,8 @@ packages/edge     воркер статических приложений: /api
 packages/media    фото: сжатие в браузере, проверка байтов на сервере, ключи и адреса вариантов
 packages/tg       Telegram: проверка initData и виджета входа, deep links startapp, секрет вебхука
 packages/shared   словари RU/UZ (типизированные), normalizeUz
-packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста
+packages/ui       дизайн-токены (tokens.ts → tokens.css), две темы, тест контраста, свои шрифты (fonts.css);
+                  свои контролы на React вместо системных (@bayramm/ui/react + kit.css)
 prototypes/       client · vendor · admin — спецификация, не основа кода
 e2e/              сквозные проверки в браузере (Playwright + axe): правила продукта, доступность
 internal/         приватные документы (клон bayramm-internal, в .gitignore)
@@ -59,23 +60,63 @@ CSP и прочими заголовками безопасности. CSP пу�
 допускает встроенных скриптов и стилей; нужен внешний источник (шрифт,
 `telegram-web-app.js`) — добавить его в `security-headers.ts` явно. Фото с воркера
 media — параметр `imageOrigins: mediaImageOrigins(dev)` (только чистый origin). Так сделано
-для виджета входа Telegram: опция `telegramLogin` пускает его скрипт и фрейм
-`oauth.telegram.org` — только в admin. Колбэк `data-onauth` виджет исполняет
-через `eval`, поэтому панель берёт данные через редирект `data-auth-url`.
+для виджета входа Telegram: опция `telegramLoginPaths` пускает его скрипт и фрейм
+`oauth.telegram.org` только на этих путях — у сайта это хаб `/auth`, больше нигде. Колбэк
+`data-onauth` виджет исполняет через `eval`, поэтому хаб берёт данные через редирект
+`data-auth-url` (`/auth/telegram`). Панель — ещё и Mini App: `telegramWebApp` и
+`frameAncestors: ["https://web.telegram.org"]`.
 
-Сотрудники входят через виджет Telegram по приглашению: запись в `app.staff` и
-`pii.staff_profiles.telegram_username`, при первом входе приглашение
-привязывается к Telegram ID (`app.staff_sign_in`). Так же его принимает первое
-сообщение боту (имя пользователя — из подписанного обновления): сотруднику бот
-показывает карточку команды с кнопкой панели (`ADMIN_APP_URL`), `/stats` и `/admin`.
-Приглашает, меняет роль и отключает администратор в разделе «Команда» (функции
-`app.staff_invite`, `app.staff_set_role`, `app.staff_set_active`): себя — нельзя,
+### Аккаунт: один на все роли
+
+Человек — одна запись `app.accounts`; способы входа — `app.account_identities`
+(`telegram` и `phone`, значение — HMAC от `ID_HASH_KEY`, у каждого способа один
+владелец); клиент, партнёр вендора (`app.vendor_users`) и сотрудник (`app.staff`) — роли
+с `account_id`. Имя из Telegram — `pii.account_profiles`. Слияния аккаунтов нет: способ,
+который уже у другого аккаунта, не добавляется (`identity_taken`). Сессия (`app.sessions`)
+всегда принадлежит аккаунту: `kind` account — 7 дней, staff — 12 часов и только по
+входу не старше 12 часов (`proof_at`); отключение сотрудника или аккаунта отзывает сессии.
+
+Входы (`apps/api/src/routes/auth.ts`): initData Mini App (`POST /auth/telegram`, кабинет —
+с `app: "vendor"`), виджет на хабе (`POST /auth/widget`), код по телефону
+(`POST /auth/phone/send` → `/verify`: 3 кода за 10 минут на номер и на IP, 5 попыток,
+код живёт 10 минут, повтор через 60 секунд, хранится HMAC). Отправитель кода —
+`OTP_PROVIDER`: `off` (вход по телефону выключен), `console` (только `APP_ENV=local`),
+`tg_gateway` (Telegram Gateway, секрет `TELEGRAM_GATEWAY_TOKEN`). `GET /auth/methods` —
+чем можно войти и адреса приложений; `GET /me` — аккаунт, способы входа и роли. Тексты входа
+(хаб, профиль, кабинет, панель) упоминают телефон, только если `phone: true`. Старые
+`/auth/vendor/telegram` и `/auth/staff/telegram` приложения не вызывают: они устарели, остаются
+для старых сборок и пишут каждое обращение в лог (`auth.legacy`) — удалить, когда обращений нет.
+
+Кабинет и панель вне Telegram входят через хаб на сайте (`apps/web/src/screens/SignIn.tsx`):
+уводят браузер на `<сайт>/auth?app=…&state=…&challenge=…` (PKCE S256,
+`@bayramm/shared/pkce`), хаб после входа берёт одноразовый код (`POST /auth/hub/code`:
+60 секунд, один раз, привязан к приложению, его origin, state и challenge) и уводит на
+`<приложение>/auth/callback`; приложение меняет код + verifier на свою сессию
+(`POST /auth/hub/exchange`). Общих cookie между поддоменами нет. Панель затем повышает
+сессию аккаунта до сессии сотрудника (`POST /auth/staff/elevate`) и сразу отзывает
+первую; в Telegram — `POST /auth/staff/webapp` по initData. Ссылка с `?signin=1` из
+другого приложения сразу уводит в хаб; внутри Telegram ссылки на другие роли идут через
+бота (`?start=cabinet|admin`, `?startapp`). Партнёр нескольких вендоров выбирает кабинет:
+заголовок `X-Bayramm-Vendor` (без него — 409 `vendor_choice_required`).
+
+Сотрудники входят по приглашению: запись в `app.staff` с
+`pii.staff_profiles.telegram_username` или `app.staff.phone_hash`; приглашение принимает первый
+вход аккаунта с этим Telegram или номером — оно привязывается к аккаунту. По телефону
+приглашают из «Команды» (`app.staff_invite_phone`, через `apps/api/src/db/pii.ts`): хранится
+только HMAC номера; номер, уже подтверждённый у аккаунта, принимает приглашение сразу. Так же его
+принимает первое сообщение боту (имя пользователя — из подписанного обновления).
+`/start` показывает кнопку каждой роли аккаунта (панель, кабинет, приложение) на языке,
+сохранённом в профиле, иначе — на языке Telegram; сотруднику — карточку команды, `/stats`
+и `/admin`. Приглашает, меняет роль и отключает администратор в разделе «Команда»
+(функции `app.staff_invite`, `app.staff_set_role`, `app.staff_set_active`): себя — нельзя,
 последнего действующего администратора база не отключит и не понизит никаким путём.
-У бота каждого окружения в @BotFather `/setdomain` — домен панели этого окружения.
+Виджет входа работает на одном домене бота: у бота каждого окружения в @BotFather
+`/setdomain` — домен сайта этого окружения, тот же в `TELEGRAM_LOGIN_DOMAIN` API.
 
 Имя бота нигде не вписано: у каждого окружения свой бот, API узнаёт его по
 токену (`getMe`, кэш на час) и отдаёт в `GET /api/telegram/bot` вместе с
-адресом Mini App (`WEB_APP_URL`); панель берёт имя оттуда. Команды, описания и
+адресом Mini App (`WEB_APP_URL`), а также в `GET /api/auth/methods`; приложения берут
+имя оттуда. Команды, описания и
 кнопку меню задаёт код — `apps/api/src/telegram/bot-profile.ts`; деплой
 применяет его через `POST /telegram/sync` (секрет `TELEGRAM_SYNC_KEY` в воркере
 API и в GitHub Environment). В @BotFather вручную — только `/setdomain` и
@@ -85,11 +126,18 @@ API и в GitHub Environment). В @BotFather вручную — только `/s
 `/telegram/sync` на `API_URL`; секрет выводится из `ID_HASH_KEY`). Вендор
 привязывает Telegram, поделившись своим контактом: номер сверяется с
 `app.vendor_users.phone_hash` = HMAC(`ID_HASH_KEY`, «+998XXXXXXXXX») —
-`phoneHash` в `apps/api/src/auth/crypto.ts`, привязка — `app.vendor_user_claim_telegram`.
-Кабинет вендора — `VENDOR_APP_URL`. Уведомления ставят в `app.outbox` триггеры
+`phoneHash` в `apps/api/src/auth/crypto.ts`, привязка — `app.vendor_user_claim_telegram`
+(номер уникален внутри вендора: один человек бывает партнёром нескольких). Вход аккаунта
+с этим номером по коду привязывает к нему все такие записи.
+Кабинет вендора — `VENDOR_APP_URL`. Карточку партнёр меняет предложением правки
+(`/vendor/listings/:id/revisions` → `app.listing_revisions`: название, цена, описания, пакеты;
+одна открытая на площадку, в правке только изменённые поля), решает команда в «Модерации»;
+клиент до решения видит прежнюю карточку. Уведомления ставят в `app.outbox` триггеры
 базы (в payload только id), отправляет cron API раз в минуту; маршрут, после
 которого ждать минуту не хочется, вешает `outboxKick`
-(`apps/api/src/notify/kick.ts`). SLA 12 часов — там же, по cron.
+(`apps/api/src/notify/kick.ts`). SLA 12 часов — там же, по cron. «Связались», отмеченное
+сотрудником (`first_response_by = staff`), клиенту — не «площадка ответила», а «команда
+связалась с площадкой»; новая правка карточки — `ops.revision_submitted` тем, кто решает по правкам.
 
 Лимиты частоты — привязки Workers Rate Limiting (`ratelimits` в
 `apps/api/wrangler.jsonc`, `apps/api/src/ratelimit.ts`): `POST /auth/*` по
@@ -233,6 +281,20 @@ cd prototypes/admin  && pnpm test   # дымовые тесты панели о�
 зазоры 3·5·7·9·12, отступы только чётные, иконки 12·14·17·20·24·26.
 
 Зона нажатия минимум 44px — расширять невидимым слоем, не увеличивая рисунок.
+
+### Контролы — только свои
+
+Системные `<select>`, `<input type="checkbox|radio|number|date|file|search">`,
+`<dialog>`, `window.confirm/alert/prompt` и подсказки `title=` в приложениях не
+используются: в Telegram и старых вебвью они выглядят чужими, а список и календарь
+не знают про безопасные зоны. Вместо них — `@bayramm/ui/react`: `Select`,
+`Checkbox`, `Switch`, `RadioGroup`, `NumberStepper`, `DateField`/`Calendar`,
+`FileDrop`, `SearchField`, `ConfirmSheet`/`Dialog`, `useToast`, `Tooltip`; стили —
+`@bayramm/ui/kit.css` (подключать между `tokens.css` и стилями приложения). Под
+рисунком галочек, радиокнопок и выбора файлов — настоящий `<input>`. Список и
+календарь на телефоне — шторка снизу, на компьютере — панель у поля; страница под
+ними inert. Слов в наборе нет: «Закрыть»/«Очистить» — `UiTextsProvider` в корне
+приложения, остальное — пропсами. Страж — `packages/ui/src/react/native-controls.test.ts`.
 
 ### Иконки и узор
 

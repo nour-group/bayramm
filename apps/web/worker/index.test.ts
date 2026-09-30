@@ -68,16 +68,40 @@ describe("воркер клиента", () => {
     expect(csp).not.toContain("oauth.telegram.org");
     expect(csp).toContain("connect-src 'self';");
   });
+
+  it("хаб входа (/auth): виджет Telegram — только на его страницах", async () => {
+    const { get } = setup();
+    for (const path of ["/auth", "/auth/telegram?id=1&hash=2"]) {
+      const csp = (await get(path)).headers.get("content-security-policy") ?? "";
+      expect(csp, path).toContain(
+        "script-src 'self' https://telegram.org/js/telegram-widget.js https://telegram.org/js/telegram-web-app.js;",
+      );
+      expect(csp, path).toContain("frame-src https://oauth.telegram.org;");
+      expect(csp, path).toContain("frame-ancestors https://web.telegram.org");
+    }
+    for (const path of ["/profile", "/authorize", "/venue/auth"]) {
+      expect((await get(path)).headers.get("content-security-policy") ?? "", path).not.toContain(
+        "telegram-widget.js",
+      );
+    }
+  });
 });
 
 describe("index.html клиента", () => {
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
-  it("SDK Mini App подключён до бандла приложения, обычным скриптом", () => {
-    const sdk = html.indexOf('<script src="https://telegram.org/js/telegram-web-app.js"></script>');
-    const app = html.indexOf('<script type="module" src="/src/main.tsx"></script>');
-    expect(sdk).toBeGreaterThan(-1);
-    expect(app).toBeGreaterThan(sdk);
+  it("сторонних скриптов нет: SDK Mini App грузит код и только внутри Telegram", () => {
+    const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]);
+    expect(scripts).toEqual(["/src/main.tsx"]);
+    expect(html).not.toContain("telegram.org");
+    expect(html).not.toContain("nosemgrep");
+  });
+
+  it("основной шрифт предзагружается со своего origin", () => {
+    expect(html).toContain(
+      '<link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />',
+    );
+    for (const host of ["fonts.googleapis.com", "fonts.gstatic.com"]) expect(html).not.toContain(host);
   });
 
   it("встроенных скриптов и стилей нет (CSP их не пропустит)", () => {

@@ -5,7 +5,7 @@ import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { EmptyState, ErrorState, Loading } from "../components/States";
 import { TelegramCta } from "../components/TelegramCta";
-import { canSignIn, useDictionaries, useLang, useServices } from "../context";
+import { canSignIn, useAccount, useDictionaries, useLang, useServices } from "../context";
 import { formatDayMonth, formatDuration, formatMomentTashkent, hoursLeft } from "../format";
 import { useAsync, useDocumentTitle, useNow } from "../hooks";
 import { Icon } from "../icons";
@@ -48,10 +48,14 @@ const WITHDRAWABLE: readonly RequestStatus[] = ["new", "viewed", "contacted"];
 function RequestItem({
   request,
   highlighted,
+  duplicate,
   onWithdrawn,
 }: {
   request: ClientRequest;
+  /** Открыта по ссылке (?open=<id>): кнопка бота или повторная заявка */
   highlighted: boolean;
+  /** Сюда привела повторная заявка на ту же дату (?dup=1) */
+  duplicate: boolean;
   onWithdrawn: (next: ClientRequest) => void;
 }) {
   const { api, webApp, now } = useServices();
@@ -121,7 +125,7 @@ function RequestItem({
         </span>
       </div>
 
-      {highlighted ? <p className="callout">{t.duplicateNote}</p> : null}
+      {highlighted && duplicate ? <p className="callout">{t.duplicateNote}</p> : null}
 
       {waiting && !breached ? (
         <p className="req-sla">
@@ -196,7 +200,9 @@ function RequestList() {
   const { t } = useLang();
   const { query } = useNav();
   const requests = useAsync("my-requests", (signal) => api.myRequests(signal));
+  // ?open=<id> — раскрыть заявку: так ведут кнопки бота о статусе и повторная заявка (&dup=1)
   const open = query.get("open");
+  const duplicate = query.get("dup") === "1";
 
   if (requests.status === "loading") return <Loading />;
   if (requests.status === "error") {
@@ -225,6 +231,7 @@ function RequestList() {
           key={request.id}
           request={request}
           highlighted={request.id === open}
+          duplicate={duplicate}
           onWithdrawn={(next) =>
             requests.replace({ items: items.map((item) => (item.id === next.id ? next : item)) })
           }
@@ -236,8 +243,13 @@ function RequestList() {
 
 export function MyRequests() {
   const { identity } = useServices();
+  const { deleted } = useAccount();
   const { t } = useLang();
   useDocumentTitle(t.mrTitle);
+
+  let body = <TelegramCta />;
+  if (deleted) body = <EmptyState title={t.accountDeletedH} text={t.accountDeletedP} />;
+  else if (canSignIn(identity)) body = <RequestList />;
 
   return (
     <div className="screen my-requests">
@@ -245,7 +257,7 @@ export function MyRequests() {
         {t.mrTitle}
       </h1>
       <p className="muted">{t.mrNote}</p>
-      {canSignIn(identity) ? <RequestList /> : <TelegramCta />}
+      {body}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { initDataFields, initDataFor, signInitData } from "../../src/testing/init-data";
 import {
+  accountOfClient,
   adminClient,
   BOT_TOKEN,
   bearer,
@@ -29,18 +30,29 @@ afterAll(async () => {
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 
 interface Me {
-  id: string;
+  id: string | null;
   locale: string;
   firstName: string | null;
   lastName: string | null;
   username: string | null;
   canMessage: boolean;
+  account: { id: string };
+  roles: { client: { id: string; blocked: boolean } | null };
 }
 
 async function me(token: string): Promise<Me> {
   const res = await call("/me", bearer(token));
   expect(res.status).toBe(200);
   return (await res.json()) as Me;
+}
+
+/** Сессии аккаунта клиента */
+async function sessionsOf(clientId: string | undefined) {
+  const { rows } = await admin.query<{ id: string; revoked_at: Date | null }>(
+    "select s.id, s.revoked_at from app.sessions s join app.clients c on c.account_id = s.account_id where c.id = $1",
+    [clientId],
+  );
+  return rows;
 }
 
 async function clientIdOf(telegramId: number): Promise<string | undefined> {
@@ -75,13 +87,24 @@ describe("POST /auth/telegram → GET /me", () => {
     expect(ttl).toBeGreaterThan(7 * 24 * 3600 * 1000 - 60_000);
     expect(ttl).toBeLessThanOrEqual(7 * 24 * 3600 * 1000);
 
-    expect(await me(body.token)).toEqual({
-      id: await clientIdOf(user.id),
+    const clientId = await clientIdOf(user.id);
+    const profile = await me(body.token);
+    expect(profile).toMatchObject({
+      id: clientId,
       locale: "ru",
       firstName: "Азиз",
       lastName: "Тестов",
       username: "aziz_test",
       canMessage: true,
+      notifications: false,
+      account: { id: await accountOfClient(admin, clientId ?? "") },
+      identities: [{ kind: "telegram" }],
+      roles: {
+        client: { id: clientId, locale: "ru", canMessage: true, blocked: false },
+        vendors: [],
+        staff: null,
+      },
+      session: { kind: "account", app: "web" },
     });
   });
 
@@ -91,14 +114,16 @@ describe("POST /auth/telegram → GET /me", () => {
     const clientId = await clientIdOf(user.id);
     expect(clientId).toBeDefined();
 
-    const sessions = await admin.query<{ token_hash: Buffer; via: string; row: string }>(
-      "select token_hash, via, to_jsonb(s)::text as row from app.sessions s where client_id = $1",
+    const sessions = await admin.query<{ token_hash: Buffer; via: string; app: string; row: string }>(
+      `select s.token_hash, s.via, s.app, to_jsonb(s)::text as row
+       from app.sessions s join app.clients c on c.account_id = s.account_id where c.id = $1`,
       [clientId],
     );
     expect(sessions.rows).toHaveLength(1);
     const [session] = sessions.rows;
     expect(session?.token_hash).toEqual(createHash("sha256").update(token).digest());
-    expect(session?.via).toBe("tg_client");
+    expect(session?.via).toBe("tg_webapp");
+    expect(session?.app).toBe("web");
     expect(session?.row).not.toContain(token);
     expect(session?.row).not.toContain(Buffer.from(token).toString("hex"));
 
@@ -126,8 +151,7 @@ describe("POST /auth/telegram → GET /me", () => {
     expect(second.firstName).toBe("New");
     expect(second.username).toBe("renamed_user");
     expect(second.locale).toBe("uz");
-    const { rows } = await admin.query("select 1 from app.sessions where client_id = $1", [first.id]);
-    expect(rows).toHaveLength(2);
+    expect(await sessionsOf(first.id ?? undefined)).toHaveLength(2);
   });
 
   it("язык не ru/uz — умолчание базы; писать боту без разрешения нельзя", async () => {
@@ -153,12 +177,17 @@ describe("POST /auth/telegram → GET /me", () => {
     const user = newTelegramUser({ first_name: "Before" });
     const oldToken = await loginToken(user);
     const clientId = await clientIdOf(user.id);
-    await admin.query("update app.clients set deleted_at = now() where id = $1", [clientId]);
-    await admin.query("delete from pii.client_profiles where client_id = $1", [clientId]);
+    const accountId = await accountOfClient(admin, clientId ?? "");
+    expect((await call("/me", { method: "DELETE", ...bearer(oldToken) })).status).toBe(204);
     expect((await call("/me", bearer(oldToken))).status).toBe(401);
+    const { rows } = await admin.query("select 1 from pii.account_profiles where account_id = $1", [
+      accountId,
+    ]);
+    expect(rows).toHaveLength(0);
 
     const profile = await me(await loginToken({ ...user, first_name: "After" }));
     expect(profile.id).toBe(clientId);
+    expect(profile.account.id).toBe(accountId);
     expect(profile.firstName).toBe("After");
   });
 });
@@ -210,17 +239,18 @@ describe("отказы во входе", () => {
     expect(await res.json()).toEqual({ error: { code: "client_blocked", message: "Account is blocked" } });
 
     // Транзакция входа откатилась: ни новой сессии, ни правок профиля
-    const sessions = await admin.query("select 1 from app.sessions where client_id = $1", [clientId]);
-    expect(sessions.rows).toHaveLength(1);
+    expect(await sessionsOf(clientId)).toHaveLength(1);
     const profile = await admin.query<{ first_name: string }>(
       "select first_name from pii.client_profiles where client_id = $1",
       [clientId],
     );
     expect(profile.rows[0]?.first_name).toBe("Test");
 
-    const meRes = await call("/me", bearer(oldToken));
-    expect(meRes.status).toBe(403);
-    expect(((await meRes.json()) as { error: { code: string } }).error.code).toBe("client_blocked");
+    // Старая сессия — аккаунта: он видит, что заблокирован, но клиентские маршруты закрыты
+    expect((await me(oldToken)).roles.client?.blocked).toBe(true);
+    const requestsRes = await call("/requests", bearer(oldToken));
+    expect(requestsRes.status).toBe(403);
+    expect(((await requestsRes.json()) as { error: { code: string } }).error.code).toBe("client_blocked");
   });
 });
 
@@ -233,10 +263,7 @@ describe("сессии", () => {
 
     expect((await call("/me", bearer(token))).status).toBe(401);
     expect((await call("/auth/logout", { method: "POST", ...bearer(token) })).status).toBe(401);
-    const { rows } = await admin.query<{ revoked_at: Date | null }>(
-      "select revoked_at from app.sessions where client_id = $1",
-      [await clientIdOf(user.id)],
-    );
+    const rows = await sessionsOf(await clientIdOf(user.id));
     expect(rows[0]?.revoked_at).toBeInstanceOf(Date);
   });
 
@@ -252,8 +279,8 @@ describe("сессии", () => {
     const user = newTelegramUser();
     const token = await loginToken(user);
     await admin.query(
-      `update app.sessions set created_at = now() - interval '2 days', expires_at = now() - interval '1 day'
-       where client_id = $1`,
+      `update app.sessions s set created_at = now() - interval '2 days', expires_at = now() - interval '1 day'
+       from app.clients c where c.account_id = s.account_id and c.id = $1`,
       [await clientIdOf(user.id)],
     );
     expect((await call("/me", bearer(token))).status).toBe(401);

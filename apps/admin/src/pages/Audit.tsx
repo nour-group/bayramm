@@ -9,12 +9,14 @@ import type {
   PiiAccessList,
   StaffDictionaries,
 } from "@bayramm/shared/api/staff";
+import { type CalendarTexts, DateField, Select } from "@bayramm/ui/react";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { useLoad } from "../api";
-import { formatMoment } from "../format";
+import { formatDay, formatMoment } from "../format";
 import type { View } from "../router";
 import { t } from "../texts";
 import { Link, LoadedView } from "../ui";
+import { monthTitle, tashkentToday } from "./Calendar";
 
 type Tab = "actions" | "pii";
 
@@ -23,7 +25,21 @@ const FILTER_KEYS = ["actor", "actorKind", "type", "object", "action", "from", "
 type FilterKey = (typeof FILTER_KEYS)[number];
 type Filters = Partial<Record<FilterKey, string>>;
 
-const ACTOR_KINDS = ["staff", "vendor_user", "client", "system"] as const;
+const ACTOR_KINDS = ["staff", "vendor_user", "client", "account", "system"] as const;
+
+const dayName = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+
+/** Календарь фильтра дат: без пометок «свободно/занято» — здесь выбирают период журнала */
+const CALENDAR_TEXTS: CalendarTexts = {
+  prev: t.prevMonth,
+  next: t.nextMonth,
+  weekdays: t.weekdays,
+  monthTitle: (month) => monthTitle(month.slice(0, 7)),
+  dayLabel: (day) => dayName.format(new Date(`${day}T00:00:00Z`)),
+  free: "",
+  busy: "",
+  selected: "",
+};
 
 /** Фильтры из адреса страницы: так их можно переслать ссылкой */
 function initialState(search: string): { tab: Tab; filters: Filters } {
@@ -119,54 +135,73 @@ function FilterForm({ tab, draft, onDraft, dictionaries, onApply, onReset }: Fil
     onApply();
   };
   const types = tab === "pii" ? t.piiSubjects : t.auditTypes;
+  // Журнал — не старше двух лет назад и не позже сегодняшнего дня по Ташкенту
+  const today = tashkentToday();
+  const earliest = `${Number(today.slice(0, 4)) - 2}-01-01`;
+  const date = (key: "from" | "to", label: string, min: string, max: string) => (
+    <FilterField id={`${id}-${key}`} label={label}>
+      <DateField
+        id={`${id}-${key}`}
+        className="input"
+        label={label}
+        placeholder={t.auditAnyDate}
+        value={draft[key] ?? null}
+        min={min}
+        max={max}
+        defaultMonth={max}
+        legend={false}
+        format={formatDay}
+        texts={CALENDAR_TEXTS}
+        clearLabel={t.auditNoDate}
+        onChange={(value) => set(key)(value ?? "")}
+      />
+    </FilterField>
+  );
 
   return (
     <form className="panel filters" onSubmit={submit} noValidate>
       <div className="fields fields-3">
         <FilterField id={`${id}-actor`} label={t.auditActor}>
-          <select
+          <Select
             id={`${id}-actor`}
             className="input"
+            label={t.auditActor}
             value={draft.actor ?? ""}
-            onChange={(event) => set("actor")(event.target.value)}
-          >
-            <option value="">{t.auditActorAny}</option>
-            {(dictionaries?.staff ?? []).map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.displayName}
-              </option>
-            ))}
-          </select>
+            onChange={set("actor")}
+            options={[
+              { value: "", label: t.auditActorAny },
+              ...(dictionaries?.staff ?? []).map((member) => ({
+                value: member.id,
+                label: member.displayName,
+              })),
+            ]}
+          />
         </FilterField>
         <FilterField id={`${id}-kind`} label={t.auditActorKind}>
-          <select
+          <Select
             id={`${id}-kind`}
             className="input"
+            label={t.auditActorKind}
             value={draft.actorKind ?? ""}
-            onChange={(event) => set("actorKind")(event.target.value)}
-          >
-            <option value="">{t.auditActorAny}</option>
-            {ACTOR_KINDS.map((kind) => (
-              <option key={kind} value={kind}>
-                {t.historyBy[kind]}
-              </option>
-            ))}
-          </select>
+            onChange={set("actorKind")}
+            options={[
+              { value: "", label: t.auditActorAny },
+              ...ACTOR_KINDS.map((kind) => ({ value: kind, label: t.historyBy[kind] ?? kind })),
+            ]}
+          />
         </FilterField>
         <FilterField id={`${id}-type`} label={t.auditType}>
-          <select
+          <Select
             id={`${id}-type`}
             className="input"
+            label={t.auditType}
             value={draft.type ?? ""}
-            onChange={(event) => set("type")(event.target.value)}
-          >
-            <option value="">{t.auditTypeAny}</option>
-            {Object.entries(types).map(([code, label]) => (
-              <option key={code} value={code}>
-                {label}
-              </option>
-            ))}
-          </select>
+            onChange={set("type")}
+            options={[
+              { value: "", label: t.auditTypeAny },
+              ...Object.entries(types).map(([code, label]) => ({ value: code, label })),
+            ]}
+          />
         </FilterField>
         <FilterField id={`${id}-object`} label={t.auditObject}>
           <input
@@ -189,24 +224,8 @@ function FilterForm({ tab, draft, onDraft, dictionaries, onApply, onReset }: Fil
             />
           </FilterField>
         )}
-        <FilterField id={`${id}-from`} label={t.auditFrom}>
-          <input
-            id={`${id}-from`}
-            className="input"
-            type="date"
-            value={draft.from ?? ""}
-            onChange={(event) => set("from")(event.target.value)}
-          />
-        </FilterField>
-        <FilterField id={`${id}-to`} label={t.auditTo}>
-          <input
-            id={`${id}-to`}
-            className="input"
-            type="date"
-            value={draft.to ?? ""}
-            onChange={(event) => set("to")(event.target.value)}
-          />
-        </FilterField>
+        {date("from", t.auditFrom, earliest, draft.to || today)}
+        {date("to", t.auditTo, draft.from || earliest, today)}
       </div>
       <div className="acts">
         <button type="submit" className="btn btn-primary">

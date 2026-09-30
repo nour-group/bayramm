@@ -9,7 +9,7 @@ import type { OutboxDeadItem, OutboxHealth, OutboxStatus } from "@bayramm/shared
 import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
-import { type Tx, withActor } from "../db/actor";
+import { roleActorKind, type Tx, withActor } from "../db/actor";
 import type { AppEnv } from "../env";
 import { notFound } from "../errors";
 import { outboxKick } from "../notify/kick";
@@ -70,7 +70,7 @@ async function loadHealth(trx: Tx): Promise<OutboxHealth> {
       (row): OutboxDeadItem => ({
         id: row.id,
         kind: row.kind,
-        recipientKind: row.recipient_kind,
+        recipientKind: roleActorKind(row.recipient_kind),
         recipientRef: row.recipient_id ? row.recipient_id.slice(0, 8) : null,
         attempts: row.attempts,
         error: row.last_error ? row.last_error.slice(0, ERROR_MAX) : null,

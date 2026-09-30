@@ -1,5 +1,7 @@
+import { clientCatalogPath, clientRequestPath } from "@bayramm/shared/api";
 import { describe, expect, it } from "vitest";
 import { hrefFor, matchRoute, parentOf, ROUTES, TABS, tabOf } from "./router";
+import { readFilters } from "./screens/catalog-feed";
 
 describe("маршруты клиента", () => {
   it.each([
@@ -54,5 +56,23 @@ describe("маршруты клиента", () => {
     expect(tabOf({ name: "venue", slug: "x-1" })).toBe("catalog");
     expect(tabOf({ name: "profile" })).toBe("profile");
     expect(tabOf(null)).toBeNull();
+  });
+});
+
+describe("ссылки из бота (@bayramm/shared/api) ведут на экраны клиента", () => {
+  const at = (path: string) => new URL(path, "https://bayramm.uz");
+
+  it("заявка — «Мои заявки» с ?open=<id>", () => {
+    const url = at(clientRequestPath("eeeeeeee-0000-4000-8000-0000000000a1"));
+    expect(matchRoute(url.pathname)).toEqual({ name: "requests" });
+    expect(url.searchParams.get("open")).toBe("eeeeeeee-0000-4000-8000-0000000000a1");
+  });
+
+  it("похожие — каталог с фильтрами заявки, как у кнопки «Показать похожие»", () => {
+    const filters = { date: "2026-10-20", guests: 200, district: "chilonzor" };
+    const url = at(clientCatalogPath(filters));
+    expect(matchRoute(url.pathname)).toEqual({ name: "catalog" });
+    expect(readFilters(url.searchParams, "2026-10-01")).toEqual({ ...filters, sort: null });
+    expect(`${url.pathname}${url.search}`).toBe(hrefFor({ name: "catalog" }, filters));
   });
 });

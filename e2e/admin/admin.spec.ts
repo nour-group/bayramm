@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
+import { BOT } from "../support/account";
 import { expect, test } from "../support/offline";
 import {
   CLIENT_ID,
@@ -12,14 +13,22 @@ import {
   STAFF,
   VENDOR_ID,
 } from "../support/staff-api";
+import { fakeTelegram, telegramState } from "../support/telegram";
 
-/* Панель оператора: страница входа с виджетом Telegram, вход по данным виджета,
-   работа сотрудника на перехваченном /api — карточка создаётся, и чего не хватает для
-   публикации, панель говорит словами, а не кодами. */
+/* Панель оператора: страница входа (хаб на сайте и бот окружения, виджета здесь нет),
+   вход как Mini App по initData, работа сотрудника на перехваченном /api — карточка
+   создаётся, и чего не хватает для публикации, панель говорит словами, а не кодами.
+   Вход через хаб целиком — hub/hub.spec.ts. */
 
-const CONTROLS = [".btn", ".action", ".nav a", ".chips button", "input:not([type=hidden])", "select"].join(
-  ", ",
-);
+const CONTROLS = [
+  ".btn",
+  ".action",
+  ".nav a",
+  ".chips button",
+  "input:not([type=hidden])",
+  ".ui-select",
+  ".ui-icon-btn",
+].join(", ");
 // Коды блокеров из базы — на экране их быть не должно, только слова
 const BLOCKER_CODES =
   /\b(price|capacity|district|descriptions|packages|photos|contract|stir|contacts|pd_consent)\b/;
@@ -32,49 +41,53 @@ async function start(page: Page, options: Parameters<typeof mockStaffApi>[1] = {
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
 
 test.describe("вход", () => {
-  test("страница входа: контейнер виджета Telegram с ботом окружения и адресом возврата", async ({
-    page,
-  }) => {
+  test("страница входа: «Войти через Bayramm» и бот окружения; виджета Telegram нет", async ({ page }) => {
     const api = await start(page, { signedIn: false });
     await page.goto("/");
     await expect(page).toHaveURL("/login");
     await expect(heading(page)).toHaveText(t.login);
-
-    const script = page.locator(".tg-login script");
-    await expect(script).toHaveCount(1);
-    await expect(script).toHaveAttribute("src", /^https:\/\/telegram\.org\/js\/telegram-widget\.js/);
-    await expect(script).toHaveAttribute("data-telegram-login", "bayramm_demo_bot");
-    await expect(script).toHaveAttribute("data-auth-url", `${new URL(page.url()).origin}/login/telegram`);
-    // Колбэк через eval CSP не пропустит — только редирект data-auth-url
-    await expect(script).not.toHaveAttribute("data-onauth", /.*/);
+    await expect(page.getByRole("button", { name: t.loginHub })).toBeVisible();
+    await expect(page.getByRole("link", { name: t.loginOpenBot })).toHaveAttribute(
+      "href",
+      `https://t.me/${BOT}?start=admin`,
+    );
+    // Виджет работает на одном домене бота — на сайте; у панели его нет
+    await expect(page.locator("script[src*='telegram-widget']")).toHaveCount(0);
     await expectNoAxeViolations(page, "вход");
+    await expectHitAreas(page, "вход", CONTROLS);
     expect(api.unexpected).toEqual([]);
   });
 
-  test("API не отдало бота: ошибка словами и «Повторить»", async ({ page }) => {
-    await start(page, { signedIn: false, botDown: true });
+  test("API не ответило: в хаб не уйти — ошибка словами", async ({ page }) => {
+    await start(page, { signedIn: false, methodsDown: true });
     await page.goto("/login");
-    await expect(page.getByRole("alert")).toHaveText(t.loginBotFailed);
-    await expect(page.getByRole("button", { name: t.retry })).toBeVisible();
+    await page.getByRole("button", { name: t.loginHub }).click();
+    await expect(page.getByRole("alert")).toHaveText(t.errors.unavailable);
+    await expect(page).toHaveURL("/login");
     await expectNoAxeViolations(page, "вход: ошибка");
-    await expectHitAreas(page, "вход: ошибка", CONTROLS);
   });
 
-  test("возврат виджета: вход, подписанные данные убраны из адреса", async ({ page }) => {
-    await start(page, { signedIn: false });
-    const auth = Math.floor(NOW.getTime() / 1000);
-    await page.goto(`/login/telegram?id=42&first_name=Dilnoza&auth_date=${auth}&hash=e2e-good`);
-    await expect(page.getByText(STAFF.displayName)).toBeVisible();
-    await expect(page).toHaveURL("/vendors");
-    expect(page.url()).not.toContain("hash=");
-    await expect(heading(page)).toHaveText(t.vendors);
-  });
-
-  test("возврат виджета с неверной подписью: снова вход и объяснение", async ({ page }) => {
-    await start(page, { signedIn: false });
-    await page.goto("/login/telegram?id=42&first_name=X&auth_date=1&hash=forged");
+  test("возврат из хаба без своего запроса: код не меняется, снова вход и объяснение", async ({ page }) => {
+    const api = await start(page, { signedIn: false });
+    await page.goto(`/auth/callback?code=${"c".repeat(43)}&state=forged_state_0123456789`);
     await expect(page).toHaveURL("/login");
     await expect(page.getByRole("alert")).toHaveText(t.errors.invalid);
+    expect(api.elevated).toBe(0);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("панель как Mini App: вход по initData кнопки бота, сразу сессия сотрудника", async ({ page }) => {
+    const api = await start(page, { signedIn: false });
+    await fakeTelegram(page);
+    await page.goto("/requests");
+    await expect(page.locator(".who").getByText(STAFF.displayName)).toBeVisible();
+    await expect(page).toHaveURL("/requests");
+    expect(api.webapp).toHaveLength(1);
+    expect(api.webapp[0]).toContain("hash=");
+    expect((await telegramState(page)).calls.map((c) => c.name)).toEqual(
+      expect.arrayContaining(["ready", "expand"]),
+    );
+    expect(api.unexpected).toEqual([]);
   });
 });
 
@@ -143,6 +156,27 @@ test.describe("работа сотрудника", () => {
       expect(api.unexpected).toEqual([]);
     });
   }
+
+  test("команда: приглашение по телефону — своё поле номера, неверный номер — ошибка у поля", async ({
+    page,
+  }) => {
+    const api = await start(page);
+    await page.goto("/team");
+    await expect(page.locator(".who").getByText(STAFF.displayName)).toBeVisible();
+    const form = page.locator("form.fs");
+    await form.getByRole("radio", { name: t.inviteByPhone }).check();
+    // Вход по телефону в окружении выключен — подсказка честно об этом
+    await expect(form).toContainText(t.inviteHintPhoneOff);
+    const phone = form.getByLabel(t.invitePhone);
+    await expect(phone).toHaveAttribute("type", "tel");
+    await form.getByLabel(t.inviteName).fill("Новый менеджер");
+    await phone.fill("+7 900 123 45 67");
+    await form.getByRole("button", { name: t.invite }).click();
+    await expect(form.locator(".field-error")).toHaveText(t.fieldErrors.phone ?? "");
+    await expectNoAxeViolations(page, "команда: приглашение по телефону");
+    await expectHitAreas(page, "команда: приглашение по телефону", CONTROLS);
+    expect(api.unexpected).toEqual([]);
+  });
 
   test("вендоры: фокус с клавиатуры виден", async ({ page }) => {
     await start(page);

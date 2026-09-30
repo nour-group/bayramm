@@ -639,7 +639,7 @@ body {
   flex: 1 1 160px;
 }
 
-/* Отказ с причиной */
+/* Отказ с причиной: варианты — RadioGroup из @bayramm/ui/react (строки с кружком) */
 .choices {
   display: flex;
   flex-direction: column;
@@ -647,26 +647,6 @@ body {
   margin: 0;
   padding: 0;
   border: 0;
-}
-
-.choice {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-9);
-  min-height: var(--hit-min);
-  padding: 0 12px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-11);
-  background: var(--white);
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.choice input {
-  width: 20px;
-  height: 20px;
-  margin: 0;
-  accent-color: var(--coral-deep);
 }
 
 .field-label {
@@ -948,7 +928,84 @@ body {
   white-space: pre-line;
 }
 
+/* Изменения карточки: предложение партнёра, проверка командой */
+.proposal-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+.field[aria-invalid="true"] {
+  border-color: var(--berry);
+}
+
+.field-error {
+  margin: 0;
+  color: var(--berry);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.package-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+}
+
+.package-row-bad {
+  border-color: var(--berry);
+}
+
+.package-kind {
+  margin: 0;
+  color: var(--plum);
+  font-weight: 700;
+}
+
+/* Единица цены — сегменты по содержимому, а не во всю ширину формы */
+.proposal-form .ui-radios-segmented {
+  align-self: flex-start;
+}
+
+.proposal-pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.proposal-pending p {
+  margin: 0;
+}
+
 /* Нижняя панель разделов: над безопасной зоной снизу */
+/* Аккаунт партнёра: выбор вендора и ссылки на другие роли того же аккаунта */
+.vendor-choice {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+.account-links {
+  display: grid;
+  gap: var(--gap-9);
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-9);
+}
+
 .tabbar {
   position: fixed;
   right: 0;

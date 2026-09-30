@@ -10,6 +10,11 @@ describe("actorSettings", () => {
   it("значения GUC для каждого вида актора", () => {
     expect(actorSettings(GUEST)).toEqual({ kind: "", id: "", vendorId: "" });
     expect(actorSettings(SYSTEM)).toEqual({ kind: "system", id: "", vendorId: "" });
+    expect(actorSettings({ kind: "account", id: CLIENT_ID })).toEqual({
+      kind: "account",
+      id: CLIENT_ID,
+      vendorId: "",
+    });
     expect(actorSettings({ kind: "client", id: CLIENT_ID })).toEqual({
       kind: "client",
       id: CLIENT_ID,

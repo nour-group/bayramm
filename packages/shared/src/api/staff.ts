@@ -1,7 +1,8 @@
 /* Контракт API панели оператора: общий для apps/api (маршруты /staff/*) и apps/admin.
 
    Все маршруты — за сессией сотрудника (Authorization: Bearer <token> из
-   POST /auth/staff/telegram), права по ролям проверяет сервер на каждом запросе.
+   POST /auth/staff/elevate или /auth/staff/webapp — @bayramm/shared/api/account), права
+   по ролям проверяет сервер на каждом запросе.
    Суммы — целые сумы. Дни — "YYYY-MM-DD". Моменты — ISO 8601 в UTC.
    Ошибки — { error: { code, message, details? } }: для invalid_input в details — имена
    неверных полей, для publish_blocked — коды недостающих пунктов (PublishBlocker).
@@ -9,8 +10,9 @@
    база пишет в журнал доступа к ПДн. */
 
 import type { DeclineReason, PriceUnit, RequestStatus } from "./client";
+import type { ListingRevisionPayload, RevisionStatus } from "./vendor";
 
-export type { DeclineReason, PriceUnit, RequestStatus };
+export type { DeclineReason, ListingRevisionPayload, PriceUnit, RequestStatus, RevisionStatus };
 
 export type StaffRole = "admin" | "manager" | "moderator";
 
@@ -131,9 +133,11 @@ export interface VendorUser {
   readonly fullName: string | null;
   readonly role: "owner" | "member";
   readonly locale: "ru" | "uz";
-  /** Вендор поделился контактом в боте — вход через Telegram работает */
+  /** Уведомления о заявках привязаны к Telegram партнёра */
   readonly telegramLinked: boolean;
   readonly telegramLinkedAt: string | null;
+  /** Партнёр доказал этот номер (контакт в боте или код из сообщения) — кабинет открыт его аккаунту */
+  readonly accountLinked: boolean;
   readonly lastLoginAt: string | null;
   readonly disabledAt: string | null;
   readonly createdAt: string;
@@ -660,7 +664,8 @@ export interface OutboxHealth {
 
 // ── журнал действий ────────────────────────────────────────────────────────
 
-export type ActorKind = "client" | "vendor_user" | "staff" | "system";
+/** Кто действовал: account — человек над своим аккаунтом (способы входа, удаление) */
+export type ActorKind = "account" | "client" | "vendor_user" | "staff" | "system";
 
 export interface AuditEntry {
   readonly id: string;
@@ -750,11 +755,15 @@ export interface SettingInput {
 export interface TeamMember {
   readonly id: string;
   readonly displayName: string;
-  /** Имя пользователя Telegram, по которому пригласили (без «@») */
+  /** Имя пользователя Telegram, по которому пригласили (без «@»); null — по телефону */
   readonly username: string | null;
+  /** Как пригласили: по имени в Telegram или по телефону (номер не хранится и не отдаётся) */
+  readonly invitedBy: "telegram" | "phone";
   readonly role: StaffRole;
   readonly active: boolean;
-  /** Приглашение принято: первый вход через Telegram был */
+  /** Приглашение принято: роль привязана к аккаунту Bayramm */
+  readonly accepted: boolean;
+  /** Telegram привязан (оповещения команды): первый вход через Telegram был */
   readonly linked: boolean;
   readonly linkedAt: string | null;
   readonly createdAt: string;
@@ -764,7 +773,10 @@ export interface TeamMember {
 
 /**
  * GET /staff/team → TeamList (право team.manage — только администратор).
- * POST /staff/team { username, displayName, role } → 201 TeamList; 409 username_taken.
+ * POST /staff/team TeamInviteInput → 201 TeamList; 409 username_taken — имя у действующего
+ *   сотрудника, 409 staff_phone_taken — номер у действующего сотрудника или у аккаунта с
+ *   этим номером уже есть роль сотрудника; 422 invalid_input — поле phone не номер
+ *   Узбекистана (+998 и 9 цифр).
  * POST /staff/team/:id/role { role } | /deactivate | /activate → TeamList;
  * 409 staff_self — себя нельзя, staff_last_admin — должен остаться администратор
  */
@@ -772,34 +784,23 @@ export interface TeamList {
   readonly items: readonly TeamMember[];
 }
 
-export interface TeamInviteInput {
-  readonly username: string;
+/**
+ * Приглашение: по имени пользователя Telegram или по номеру телефона — одно из двух.
+ * По телефону приглашение принимает первый вход кодом на этот номер (или сразу, если
+ * номер уже подтверждён у аккаунта Bayramm)
+ */
+export type TeamInviteInput = {
   readonly displayName: string;
   readonly role: StaffRole;
-}
+} & (
+  | { readonly username: string; readonly phone?: never }
+  | { readonly phone: string; readonly username?: never }
+);
 
 // ── правки карточек (ревизии) ──────────────────────────────────────────────
 
-export type RevisionStatus = "pending" | "approved" | "declined" | "withdrawn";
-
-/**
- * Правка опубликованной карточки от вендора (app.listing_revisions.payload): только эти
- * ключи, как столбцы базы; нет ключа — поле не меняется. packages заменяет набор целиком
- */
-export interface ListingRevisionPayload {
-  readonly name?: string;
-  readonly price_from_uzs?: number;
-  readonly price_unit?: PriceUnit;
-  readonly description_ru?: string;
-  readonly description_uz?: string;
-  readonly packages?: readonly {
-    readonly kind: "weekday" | "weekend" | "custom";
-    readonly name_ru: string;
-    readonly name_uz: string;
-    readonly price_uzs: number;
-    readonly price_unit?: PriceUnit;
-  }[];
-}
+// RevisionStatus и ListingRevisionPayload — в контракте кабинета (@bayramm/shared/api/vendor):
+// правку подаёт партнёр
 
 export type RevisionField =
   | "name"

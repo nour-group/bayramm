@@ -5,6 +5,7 @@
 // скриптов и перебора, а не учёт: точный дневной лимит заявок — в базе.
 //
 //   POST /auth/*    — по IP                 RATE_LIMIT_AUTH_IP         30 в минуту
+//   POST /me/identities/* — по IP           RATE_LIMIT_AUTH_IP         (тот же счётчик)
 //   POST /requests  — по IP                 RATE_LIMIT_REQUESTS_IP     20 в минуту
 //                   — по актору (клиенту)   RATE_LIMIT_REQUESTS_ACTOR   5 в минуту
 //
@@ -67,6 +68,7 @@ export function limitByIp(binding: RateLimitBinding): MiddlewareHandler<AppEnv> 
 
 function actorKey(actor: Actor | undefined): string | null {
   switch (actor?.kind) {
+    case "account":
     case "client":
     case "staff":
     case "vendor_user":
@@ -88,5 +90,7 @@ export function limitByActor(binding: RateLimitBinding): MiddlewareHandler<AppEn
 /** Лимиты по IP перед маршрутами. Вызывать до app.route(...). */
 export function mountRateLimits(app: Hono<AppEnv>): void {
   app.on("POST", "/auth/*", limitByIp("RATE_LIMIT_AUTH_IP"));
+  // Добавление способа входа проверяет те же подписи и коды, что и вход
+  app.on("POST", "/me/identities/*", limitByIp("RATE_LIMIT_AUTH_IP"));
   app.on("POST", "/requests", limitByIp("RATE_LIMIT_REQUESTS_IP"));
 }

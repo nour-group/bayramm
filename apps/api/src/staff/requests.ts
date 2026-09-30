@@ -29,7 +29,7 @@ import type {
 import { Hono } from "hono";
 import { type RawBuilder, sql } from "kysely";
 import { staffOf } from "../auth/session";
-import { type Tx, withActor } from "../db/actor";
+import { roleActorKind, type Tx, withActor } from "../db/actor";
 import {
   notifiableVendorUsers,
   readListingPhone,
@@ -131,7 +131,7 @@ function itemView(row: RequestRow) {
     sla: row.sla,
     slaDueAt: iso(row.sla_due_at),
     firstResponseAt: iso(row.first_response_at),
-    firstResponseBy: row.first_response_by,
+    firstResponseBy: row.first_response_by === null ? null : roleActorKind(row.first_response_by),
     occasionCode: row.occasion_code,
     eventDate: row.event_date,
     guests: row.guests,
@@ -280,7 +280,13 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
     { kind: "due", at: iso(row.sla_due_at), passed: row.sla_due_at.getTime() <= now },
     ...(row.sla_breached_at ? [{ kind: "breached" as const, at: iso(row.sla_breached_at) }] : []),
     ...(row.first_response_at && row.first_response_by
-      ? [{ kind: "response" as const, at: iso(row.first_response_at), by: row.first_response_by }]
+      ? [
+          {
+            kind: "response" as const,
+            at: iso(row.first_response_at),
+            by: roleActorKind(row.first_response_by),
+          },
+        ]
       : []),
   ];
   // По времени; при равенстве — в порядке, в котором события перечислены выше
@@ -305,7 +311,7 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
     history: history.map((h) => ({
       from: h.from_status,
       to: h.to_status,
-      actorKind: h.actor_kind,
+      actorKind: roleActorKind(h.actor_kind),
       source: h.source,
       reason: h.reason,
       at: iso(h.at),
