@@ -26,7 +26,7 @@ import {
  * Вид уведомления (app.outbox.kind) — список в миграции 20260930110500_bot_outbox_sla.sql;
  * vendor.ops_reminder — напоминание от сотрудника (20260930180000_admin_v02.sql);
  * ops.revision_submitted — правка карточки от партнёра (20260930200000_revisions_phone_invites.sql);
- * ops.photos_submitted — новые фото опубликованной карточки (20260930210000_cabinet_integrity.sql)
+ * ops.photos_submitted — новые фото опубликованной карточки (20261001010000_cabinet_integrity.sql)
  */
 export const NOTICE_KINDS = [
   "vendor.request_new",

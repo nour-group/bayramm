@@ -13,7 +13,7 @@
 //     своего раздела «Пользователи» в кабинете нет.
 //
 // То же проверяет база: карточку, пакеты, телефон, фото и правки меняет только
-// владелец (app.edits_listing в политиках RLS, миграция 20260930210000_cabinet_integrity.sql).
+// владелец (app.edits_listing в политиках RLS, миграция 20261001010000_cabinet_integrity.sql).
 // Кабинет прячет кнопки по роли из GET /vendor/me — только для удобства.
 
 import type { VendorActor, VendorRole } from "../db/actor";
