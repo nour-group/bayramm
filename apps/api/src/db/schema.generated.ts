@@ -87,6 +87,14 @@ export interface AppAccounts {
   updated_at: Generated<Timestamp>;
 }
 
+export interface AppApiErrorAlerts {
+  errors: Generated<number>;
+  id: Generated<number>;
+  last_alert_at: Timestamp | null;
+  last_error_at: Timestamp | null;
+  last_route: string | null;
+}
+
 export interface AppAuditLog {
   action: string;
   actor_id: Generated<string | null>;
@@ -364,6 +372,23 @@ export interface AppPiiAccessLog {
   subject_kind: string;
 }
 
+export interface AppRequestMetricFacts {
+  agreed: boolean | null;
+  answered_in_time: boolean | null;
+  breached: boolean | null;
+  client_id: string | null;
+  closed_at: Timestamp | null;
+  created_at: Timestamp | null;
+  listing_id: string | null;
+  measurable: boolean | null;
+  request_id: string | null;
+  response_minutes: number | null;
+  sla_due_at: Timestamp | null;
+  status: AppRequestStatus | null;
+  vendor_id: string | null;
+  vendor_response_at: Timestamp | null;
+}
+
 export interface AppRequestNotes {
   author_id: Generated<string>;
   body: string;
@@ -582,6 +607,7 @@ export interface PiiVendorUserProfiles {
 export interface DB {
   "app.account_identities": AppAccountIdentities;
   "app.accounts": AppAccounts;
+  "app.api_error_alerts": AppApiErrorAlerts;
   "app.audit_log": AppAuditLog;
   "app.availability": AppAvailability;
   "app.availability_versions": AppAvailabilityVersions;
@@ -602,6 +628,7 @@ export interface DB {
   "app.outbox": AppOutbox;
   "app.photos": AppPhotos;
   "app.pii_access_log": AppPiiAccessLog;
+  "app.request_metric_facts": AppRequestMetricFacts;
   "app.request_notes": AppRequestNotes;
   "app.request_status_log": AppRequestStatusLog;
   "app.request_transitions": AppRequestTransitions;

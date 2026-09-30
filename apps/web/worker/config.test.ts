@@ -31,5 +31,9 @@ describe("wrangler.jsonc клиента", () => {
       const routes = read(env).routes ?? [];
       expect(routes).toEqual(domain ? [{ pattern: domain, custom_domain: true }] : []);
     });
+
+    it(`${name}: логи Workers Logs включены — каждый десятый запрос (статика идёт через воркер)`, () => {
+      expect(read(env).observability).toMatchObject({ enabled: true, head_sampling_rate: 0.1 });
+    });
   }
 });

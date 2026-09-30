@@ -11,6 +11,7 @@ import { clientProfilesAs, staffProfilesAs, vendorUserProfilesAs } from "../db/p
 import type { AppActorKind, AppStaffRole, Json } from "../db/schema.generated";
 import { can } from "../staff/access";
 import type { ReplyMarkup, SendMessageParams } from "../telegram/client";
+import { isDay, loadDigest, loadWeekReport, REPORT_TEXTS, staffLocale } from "./reports";
 import {
   formatDate,
   NOTICE_TEXTS,
@@ -26,6 +27,8 @@ import {
  * Вид уведомления (app.outbox.kind) — список в миграции 20260930110500_bot_outbox_sla.sql;
  * vendor.ops_reminder — напоминание от сотрудника (20260930180000_admin_v02.sql);
  * ops.revision_submitted — правка карточки от партнёра (20260930200000_revisions_phone_invites.sql);
+ * ops.daily_digest, ops.weekly_report, ops.api_error — отчёты и ошибки API администраторам
+ * (20260930220000_launch_metrics.sql, тексты — reports.ts);
  * ops.photos_submitted — новые фото опубликованной карточки (20261001010000_cabinet_integrity.sql)
  */
 export const NOTICE_KINDS = [
@@ -37,6 +40,9 @@ export const NOTICE_KINDS = [
   "ops.sla_breach",
   "ops.outbox_dead",
   "ops.revision_submitted",
+  "ops.daily_digest",
+  "ops.weekly_report",
+  "ops.api_error",
   "ops.photos_submitted",
 ] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
@@ -150,15 +156,16 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
       const staff = await trx
         .selectFrom("app.staff as s")
         .innerJoin(staffProfilesAs("p"), "p.staff_id", "s.id")
-        .select(["s.active", "s.role", "p.telegram_chat_id"])
+        .select(["s.active", "s.role", "p.telegram_chat_id", staffLocale("s.account_id").as("locale")])
         .where("s.id", "=", id)
         .executeTakeFirst();
       if (staff === undefined || !staff.active || !staffMayReceive(row.kind, staff.role))
         return "staff_inactive";
       const chatId = chatIdOf(staff.telegram_chat_id);
       if (chatId === null) return "staff_no_chat";
-      // Команде — по-русски: панель оператора русская
-      return { chatId, lang: "ru", vendorId: null, clientId: null };
+      // Оповещения о заявках и правках — по-русски (панель оператора русская); отчёты и
+      // ошибки API — на языке аккаунта сотрудника (reports.ts)
+      return { chatId, lang: staff.locale ?? "ru", vendorId: null, clientId: null };
     }
     default:
       return "unsupported_recipient";
@@ -228,6 +235,16 @@ function field(payload: Json, key: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
+/** Неотрицательное целое из payload (счётчики оповещений) */
+function count(payload: Json, key: string): number | null {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return null;
+  const value = payload[key];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+/** Маршрут в оповещении об ошибке API: метод и шаблон, печатные ASCII (как проверяет база) */
+const API_ROUTE_RE = /^[A-Z]{3,7} [!-~]{1,190}$/;
+
 // ── сборка ─────────────────────────────────────────────────────────────────
 
 /** Сообщение для строки outbox; now — для «сколько осталось» в напоминании */
@@ -247,6 +264,27 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
       ...(reply_markup ? { reply_markup } : {}),
     },
   });
+
+  // Отчёты и ошибки API: только числа — на языке администратора
+  if (kind === "ops.daily_digest") {
+    const day = field(row.payload, "day");
+    if (!isDay(day)) return skip("bad_payload");
+    return message(REPORT_TEXTS[recipient.lang].dailyDigest(await loadDigest(trx, day)));
+  }
+
+  if (kind === "ops.weekly_report") {
+    const week = field(row.payload, "week");
+    if (!isDay(week)) return skip("bad_payload");
+    return message(REPORT_TEXTS[recipient.lang].weeklyReport(await loadWeekReport(trx, week)));
+  }
+
+  if (kind === "ops.api_error") {
+    const route = field(row.payload, "route");
+    const errors = count(row.payload, "errors");
+    if (route === null || !API_ROUTE_RE.test(route) || errors === null) return skip("bad_payload");
+    const repeated = field(row.payload, "since") !== null;
+    return message(REPORT_TEXTS[recipient.lang].apiError({ route, errors, repeated }));
+  }
 
   if (kind === "ops.outbox_dead") {
     const deadId = field(row.payload, "outbox_id");

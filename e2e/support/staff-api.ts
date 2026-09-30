@@ -11,6 +11,7 @@ import type {
   ListingList,
   ListingListItem,
   ListingSaveResult,
+  MetricsOverview,
   OutboxHealth,
   PublishBlocker,
   RevisionDetail,
@@ -23,6 +24,9 @@ import type {
   TeamList,
   VendorDetail,
   VendorList,
+  VendorMetrics,
+  VendorMetricsList,
+  VendorResponseStats,
 } from "@bayramm/shared/api/staff";
 import type { Page, Route } from "@playwright/test";
 import { accountMe, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
@@ -74,6 +78,7 @@ export const STAFF: StaffMe = {
     "settings.write",
     "team.manage",
     "revisions.moderate",
+    "metrics.read",
   ],
 };
 
@@ -405,8 +410,48 @@ const SETTINGS: StaffSettings = {
     { key: "sla_hours", value: 12, updatedAt: iso, updatedBy: null },
     { key: "sla_reminder_hours", value: [4, 8], updatedAt: iso, updatedBy: null },
     { key: "quiet_hours", value: { from: "22:00", to: "08:00" }, updatedAt: iso, updatedBy: null },
+    { key: "ops_reminder_pause_minutes", value: 30, updatedAt: iso, updatedBy: null },
     { key: "min_photos", value: 3, updatedAt: iso, updatedBy: STAFF.displayName },
   ],
+};
+
+// Метрики запуска: неделя с ответами и текущая без, вендор с низкой долей ответов в срок
+const WEEK = {
+  requests: 7,
+  clients: 5,
+  measurable: 6,
+  answeredInTime: 3,
+  answeredRate: 50,
+  responded: 4,
+  medianResponseMinutes: 330,
+  p90ResponseMinutes: 696,
+  agreed: 2,
+  agreedRate: 28.6,
+  slaBreaches: 2,
+  deadNotifications: 1,
+} as const;
+
+const METRICS: MetricsOverview = {
+  slaHours: 12,
+  weeks: [
+    { ...WEEK, weekStart: "2026-09-28", weekLabel: "2026-W40", partial: true, answeredRate: null },
+    { ...WEEK, weekStart: "2026-09-21", weekLabel: "2026-W39", partial: false },
+  ],
+  queues: { awaiting: 3, overdue: 1, deadTotal: 1, listingsReview: 0, revisionsPending: 1, photosPending: 0 },
+};
+
+const VENDOR_METRICS: VendorMetrics = {
+  vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
+  activeListings: 1,
+  requests: 5,
+  measurable: 4,
+  answeredInTime: 1,
+  answeredRate: 25,
+  responded: 2,
+  medianResponseMinutes: 840,
+  slaBreaches: 2,
+  agreed: 0,
+  lastRequestAt: iso,
 };
 
 const REVISION: RevisionDetail = {
@@ -669,6 +714,15 @@ export async function mockStaffApi(
     if (key === "GET /staff/audit/pii") return json(route, 200, { total: 0, items: [] });
     if (key === "GET /staff/team") return json(route, 200, TEAM);
     if (key === "GET /staff/settings") return json(route, 200, SETTINGS);
+    if (key === "GET /staff/metrics") return json(route, 200, METRICS);
+    if (key === "GET /staff/metrics/vendors") {
+      const list: VendorMetricsList = { days: 30, items: [VENDOR_METRICS] };
+      return json(route, 200, list);
+    }
+    if (key === `GET /staff/metrics/vendors/${VENDOR_ID}`) {
+      const stats: VendorResponseStats = { days: 30, vendor: VENDOR_METRICS, listings: [] };
+      return json(route, 200, stats);
+    }
 
     state.unexpected.push(key);
     return fail(route, 404, "not_found");
