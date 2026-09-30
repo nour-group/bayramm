@@ -118,6 +118,29 @@ describe("избранное вошедшего", () => {
     expect(window.localStorage.getItem(FAVORITES_KEY)).toBeNull();
   });
 
+  it("отметка до ответа загрузки: поздний ответ её не затирает", async () => {
+    // Две площадки с первой страницы каталога (дешевле всех)
+    const [first, second] = [...LISTINGS].sort((x, y) => x.priceFromUzs - y.priceFromUzs);
+    if (!first || !second) throw new Error("нет площадок");
+    const api = createMockApi({ now: () => NOW, listings: LISTINGS, favorites: [second.id] });
+    const real = api.favorites;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    api.favorites = async (signal) => {
+      await gate;
+      return real(signal);
+    };
+    await mount({ path: "/", api });
+    await waitFor(() => heartOf(first.name), "сердечко");
+    await click(heartOf(first.name));
+    release();
+    await waitFor(() => heartOf(second.name)?.getAttribute("aria-pressed") === "true", "список с сервера");
+    expect(heartOf(first.name)?.getAttribute("aria-pressed")).toBe("true");
+    expect(api.favoriteIds()).toEqual([first.id, second.id]);
+  });
+
   it("не сохранилось на сервере — отметка возвращается, уведомление об ошибке", async () => {
     const api = createMockApi({
       now: () => NOW,

@@ -37,6 +37,13 @@ export function guestFavorites(): string[] {
   return (localGetJson(FAVORITES_KEY, isIdList) ?? []).slice(0, FAVORITES_MAX);
 }
 
+/** Список с сервера плюс правки, которые ещё в пути: ответ загрузки их не отменяет */
+function withPending(ids: readonly string[], pending: ReadonlyMap<string, boolean>): string[] {
+  const out = ids.filter((id) => pending.get(id) !== false);
+  for (const [id, adding] of pending) if (adding && !out.includes(id)) out.unshift(id);
+  return out;
+}
+
 function saveGuestFavorites(ids: readonly string[]): void {
   if (ids.length === 0) localRemove(FAVORITES_KEY);
   else localSetJson(FAVORITES_KEY, ids);
@@ -72,8 +79,8 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   const [guest, setGuest] = useState<string[]>(guestFavorites);
   const [account, setAccount] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
-  // Правка, начатая до ответа загрузки, важнее её: загрузка её не затирает
-  const touched = useRef(false);
+  // Правки аккаунта в пути (id → добавить/убрать): загрузка, пришедшая позже, их не затирает
+  const pending = useRef(new Map<string, boolean>());
 
   // Аккаунт: гостевой список — в него (один раз), затем весь список с сервера
   useEffect(() => {
@@ -95,7 +102,12 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     load.then(
       (list) => {
         if (controller.signal.aborted) return;
-        if (!touched.current) setAccount(list.items.map((card) => card.id));
+        setAccount(
+          withPending(
+            list.items.map((card) => card.id),
+            pending.current,
+          ),
+        );
         setLoaded(true);
       },
       // Не загрузилось — сердечки пустые, экран «Сохранённое» покажет ошибку с повтором
@@ -125,15 +137,17 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         if (adding) toast(t.saved);
         return;
       }
-      touched.current = true;
+      pending.current.set(id, adding);
       setAccount((list) =>
         adding ? [id, ...list.filter((item) => item !== id)] : list.filter((i) => i !== id),
       );
       (adding ? api.addFavorite(id) : api.removeFavorite(id)).then(
         () => {
+          pending.current.delete(id);
           if (adding) toast(t.saved);
         },
         (error: unknown) => {
+          pending.current.delete(id);
           // Не сохранилось — отметка как была
           setAccount((list) => (adding ? list.filter((item) => item !== id) : [id, ...list]));
           const full = isApiError(error) && error.code === "favorites_full";
