@@ -518,11 +518,23 @@ export interface StaffApiOptions {
   readonly match?: (url: URL) => boolean;
   /** Роль вошедшего сотрудника: по умолчанию администратор */
   readonly role?: StaffRole;
+  /**
+   * Отказы API: «МЕТОД путь» (без /api) → [статус, код]. Проверяются раньше всего прочего:
+   * так тест видит, что панель говорит словами на 409/422/429
+   */
+  readonly fail?: Readonly<Record<string, readonly [number, string]>>;
 }
 
 export async function mockStaffApi(
   page: Page,
-  { signedIn = true, methodsDown = false, hub, match = isApi, role = "admin" }: StaffApiOptions = {},
+  {
+    signedIn = true,
+    methodsDown = false,
+    hub,
+    match = isApi,
+    role = "admin",
+    fail: failures = {},
+  }: StaffApiOptions = {},
 ) {
   let elevated = 0;
   const state: StaffApi = {
@@ -587,6 +599,8 @@ export async function mockStaffApi(
       }
     }
     if (authorization !== `Bearer ${TOKEN}`) return fail(route, 401, "unauthorized");
+    const refusal = failures[key];
+    if (refusal) return fail(route, refusal[0], refusal[1]);
     if (key === "POST /auth/logout") {
       state.loggedOut.push("staff");
       return route.fulfill({ status: 204 });

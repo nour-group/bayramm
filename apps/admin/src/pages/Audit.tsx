@@ -111,7 +111,15 @@ export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | 
         </div>
       ) : null}
       {phone ? (
-        <Dialog open={filtersOpen} title={t.filters} onClose={() => setFiltersOpen(false)}>
+        <Dialog
+          open={filtersOpen}
+          title={t.filters}
+          onClose={() => {
+            // Закрыли, не нажав «Показать», — в следующий раз форма снова как действующие фильтры
+            setDraft(state.filters);
+            setFiltersOpen(false);
+          }}
+        >
           <FilterForm
             tab={state.tab}
             draft={draft}

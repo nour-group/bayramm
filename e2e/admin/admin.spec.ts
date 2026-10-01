@@ -134,10 +134,17 @@ test.describe("работа сотрудника", () => {
       BLOCKER_CODES,
     );
 
-    // Попытка отправить на проверку: сервер отказал — объяснение, а не код ошибки
+    // Попытка отправить на проверку: сервер отказал — объяснение и чего не хватает (из его
+    // ответа) словами, а не код ошибки; раньше было «список ниже» без списка в шторке
     await page.getByRole("button", { name: t.actions.submit }).click();
     await page.locator("form.confirm").getByRole("button", { name: t.actions.submit }).click();
-    await expect(page.getByRole("alert")).toHaveText(t.api.publish_blocked ?? "");
+    const refusal = page.getByRole("alert");
+    await expect(refusal).toContainText(t.api.publish_blocked ?? "");
+    for (const code of ["price", "capacity", "district", "photos"])
+      await expect(refusal.getByRole("listitem").filter({ hasText: t.blockers[code] ?? code })).toHaveCount(
+        1,
+      );
+    expect(await refusal.innerText()).not.toMatch(BLOCKER_CODES);
     expect(api.actions).toEqual(["submit"]);
     await expectNoAxeViolations(page, "карточка");
     await expectHitAreas(page, "карточка", CONTROLS);

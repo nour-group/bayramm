@@ -155,7 +155,7 @@ export function App() {
     <ConnectivityProvider>
       <UiTextsProvider texts={UI_TEXTS}>
         {/* Нет связи — полоса над панелью; упавшие загрузки повторятся, когда она вернётся */}
-        <OfflineBanner offline={t.offline} back={t.backOnline} />
+        <NetSlot />
         {session && staff ? (
           <SessionContext.Provider value={session}>
             <Shell staff={staff} token={token ?? ""} onSignOut={onSignOut} />
@@ -177,6 +177,38 @@ function backPath(): string {
   const url = new URL(window.location.href);
   url.searchParams.delete(SIGNIN_PARAM);
   return parseView(url.pathname) ? `${url.pathname}${url.search}` : "/";
+}
+
+/** Где полоса «нет связи», там и её высота: шапка прилипает под ней (styles.css, --net-h) */
+const NET_H = "--net-h";
+
+/**
+ * Полоса «нет связи» прилипает к верху экрана, ниже выреза и кнопок Telegram; шапка панели
+ * прилипает под ней, а не под самым верхом — иначе в Mini App полоса уходила под кнопки
+ * Telegram, а шапка под ней ещё раз отступала на их высоту. Высоту полосы шапке сообщает
+ * CSS-переменная (как --tg-* от SDK); без ResizeObserver (старый вебвью) — полоса просто
+ * над шапкой
+ */
+function NetSlot() {
+  const slot = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = slot.current;
+    const root = document.documentElement;
+    if (!node || typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(() => {
+      root.style.setProperty(NET_H, `${Math.round(node.getBoundingClientRect().height)}px`);
+    });
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty(NET_H);
+    };
+  }, []);
+  return (
+    <div ref={slot} className="net-slot">
+      <OfflineBanner offline={t.offline} back={t.backOnline} />
+    </div>
+  );
 }
 
 /** Подписи кнопок своих контролов: крестик шторки, очистка поиска */
