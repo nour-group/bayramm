@@ -38,7 +38,6 @@ export type Actor =
     }
   | { readonly kind: "staff"; readonly id: string; readonly role: StaffRole };
 
-export type ActorKind = Actor["kind"];
 export type AccountActor = Extract<Actor, { kind: "account" }>;
 export type ClientActor = Extract<Actor, { kind: "client" }>;
 export type StaffActor = Extract<Actor, { kind: "staff" }>;

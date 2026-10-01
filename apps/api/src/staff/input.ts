@@ -13,7 +13,7 @@ import { ApiError } from "../errors";
 
 export type Body = Readonly<Record<string, unknown>>;
 
-// Самое длинное в панели — два описания по 4000 символов и пакеты
+// Самое длинное в панели — два описания по 4000 символов и поля витрины
 const MAX_JSON_BYTES = 64 * 1024;
 
 export const limitJson = bodyLimit({

@@ -2,8 +2,6 @@ import { ru, uz } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
 import {
   addDays,
-  addMonths,
-  daysInMonth,
   formatDayMonth,
   formatDuration,
   formatMomentTashkent,
@@ -39,11 +37,8 @@ describe("даты по Ташкенту", () => {
     expect(isIsoDate(value)).toBe(ok);
   });
 
-  it("арифметика дат и месяцев", () => {
+  it("арифметика дат и день недели", () => {
     expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
-    expect(addMonths("2026-12-01", 1)).toBe("2027-01-01");
-    expect(addMonths("2026-01-01", -1)).toBe("2025-12-01");
-    expect(daysInMonth("2028-02-01")).toBe(29);
     expect(weekdayMon("2026-10-05")).toBe(0); // понедельник
     expect(weekdayMon("2026-10-04")).toBe(6); // воскресенье
   });

@@ -9,6 +9,7 @@
 import { createHmac, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { webpFixture } from "@bayramm/media/testing";
 import { trimTrailingSlashes } from "@bayramm/shared";
+import type { ListingService } from "@bayramm/shared/api/services";
 import type {
   Availability,
   ListingDetail,
@@ -215,34 +216,42 @@ describe("вендор → карточка → проверка → публи�
     expect(rows).toEqual([{ actor_kind: "staff", purpose: "staff_vendor_contact", reason: "проверка" }]);
   });
 
-  it("карточка: адрес из названия, пакеты, телефон; модератор не создаёт", async () => {
+  it("карточка: адрес из названия, телефон, банкеты — услугами; модератор не создаёт", async () => {
     const input = {
       vendorId: vendor.id,
       name: `Тойхона «Хумо» ${tag}`,
       districtCode: "chilonzor",
-      priceFromUzs: 150_000,
       capMin: 50,
       capMax: 300,
       descriptionRu: "Зал на 300 гостей",
       descriptionUz: "300 mehmonga zal",
-      packages: [
-        {
-          kind: "weekday",
-          nameRu: "Будни",
-          nameUz: "Ish kunlari",
-          priceUzs: 150_000,
-          priceUnit: "per_guest",
-        },
-        { kind: "weekend", nameRu: "Выходные", nameUz: "Dam olish kunlari", priceUzs: 180_000 },
-      ],
       phone: phone(),
     };
     expect((await api("moderator", "POST", "/staff/listings", input)).status).toBe(403);
     listing = await ok<ListingDetail>(api("manager", "POST", "/staff/listings", input), 201);
-    expect(listing).toMatchObject({ status: "draft", hasPhone: true, categoryCode: "hall" });
+    expect(listing).toMatchObject({
+      status: "draft",
+      hasPhone: true,
+      categoryCode: "hall",
+      priceFromUzs: null,
+    });
     expect(listing.slug).toBe(`toyxona-xumo-${tag}`);
-    // Пакеты v0.1 — в услуги зала: от менеджера — на проверку, одобрит публикация
-    expect(listing.packages.map((p) => p.kind)).toEqual(["weekday", "weekend"]);
+    expect(listing).not.toHaveProperty("packages");
+    // Цены — только услугами: от менеджера — на проверку, одобрит публикация
+    for (const [type, priceUzs] of [
+      ["banquet_weekday", 150_000],
+      ["banquet_weekend", 180_000],
+    ] as const) {
+      await ok(
+        api("manager", "POST", `/staff/listings/${listing.id}/services`, {
+          type,
+          priceUzs,
+          priceUnit: "per_guest",
+        }),
+        201,
+      );
+    }
+    listing = await ok<ListingDetail>(api("manager", "GET", `/staff/listings/${listing.id}`));
     expect(listing.services.map((s) => [s.type, s.status])).toEqual([
       ["banquet_weekday", "review"],
       ["banquet_weekend", "review"],
@@ -410,33 +419,17 @@ describe("вендор → карточка → проверка → публи�
     expect(listing.blockers.active).toEqual([]);
   });
 
-  it("опубликованную карточку менеджер меняет правкой: пакеты и описание — на модерацию, адрес — сразу", async () => {
+  it("опубликованную карточку менеджер меняет правкой: описание — на модерацию, адрес — сразу, цена — предложением услуги", async () => {
     const saved = await ok<ListingSaveResult>(
       api("manager", "PATCH", `/staff/listings/${listing.id}`, {
         version: listing.version,
-        // Цена «от» из тела ничего не меняет — её считают услуги (здесь — пакеты зала)
+        // Полей цены у карточки больше нет: неизвестное поле тело не меняет
         priceFromUzs: 1,
         descriptionRu: "Зал на 300 гостей, своя кухня",
         addressRu: "Чиланзар, 7-й квартал",
-        packages: [
-          {
-            kind: "weekday",
-            nameRu: "Будни",
-            nameUz: "Ish kunlari",
-            priceUzs: 170_000,
-            priceUnit: "per_guest",
-          },
-          {
-            kind: "weekend",
-            nameRu: "Выходные",
-            nameUz: "Dam olish",
-            priceUzs: 180_000,
-            priceUnit: "per_guest",
-          },
-        ],
       }),
     );
-    expect(saved.sentForModeration).toEqual(["descriptionRu", "packages"]);
+    expect(saved.sentForModeration).toEqual(["descriptionRu"]);
     // Клиенты видят прежнюю цену и описание, пока не решит модератор
     expect(saved).toMatchObject({
       priceFromUzs: 150_000,
@@ -444,10 +437,20 @@ describe("вендор → карточка → проверка → публи�
       addressRu: "Чиланзар, 7-й квартал",
     });
     expect(saved.pendingRevision).toMatchObject({
-      fields: ["descriptionRu", "packages"],
+      fields: ["descriptionRu"],
       proposedBy: { kind: "staff", name: "Test manager" },
     });
     listing = saved;
+    // Цена будней — предложением правки услуги: до решения клиенты видят прежнюю
+    const weekday = listing.services.find((s) => s.type === "banquet_weekday");
+    const proposed = await ok<ListingService>(
+      api("manager", "PATCH", `/staff/listings/${listing.id}/services/${weekday?.id}`, { priceUzs: 170_000 }),
+    );
+    expect(proposed).toMatchObject({
+      status: "active",
+      priceUzs: 150_000,
+      proposal: { changes: { priceUzs: 170_000 } },
+    });
 
     // Пока правка ждёт — следующая правка модерируемых полей: 409 revision_pending, ничего не сохранено
     expect(
@@ -475,8 +478,9 @@ describe("вендор → карточка → проверка → публи�
     const item = queue.items.find((r) => r.id === saved.pendingRevision?.id);
     expect(item?.proposedBy).toEqual({ kind: "staff", name: "Test manager" });
 
-    // Решает модератор — правка применяется к карточке
+    // Решает модератор — правка применяется к карточке, предложение — к услуге
     await ok(api("moderator", "POST", `/staff/revisions/${saved.pendingRevision?.id}/approve`));
+    await ok(api("moderator", "POST", `/staff/services/${weekday?.id}/approve`));
     listing = await ok<ListingDetail>(api("manager", "GET", `/staff/listings/${listing.id}`));
     expect(listing).toMatchObject({
       priceFromUzs: 170_000,

@@ -43,13 +43,7 @@ import { type RawBuilder, sql } from "kysely";
 import { GUEST, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { listingPhone } from "../db/pii";
-import {
-  hallPackages,
-  publicPackages,
-  type ServiceRow,
-  selectServices,
-  serviceView,
-} from "../listing-services/store";
+import { type ServiceRow, selectServices, serviceView } from "../listing-services/store";
 import { addDays } from "../time";
 import { type CatalogCursor, type CatalogParams, encodeCursor } from "./query";
 
@@ -159,26 +153,46 @@ export function sortKey(sort: CatalogSort, guests: number | null): RawBuilder<st
 }
 
 /**
- * Загрузка витрины в день date (app.listing_day_load: free | partial | busy); без даты —
- * не считается. Занятые целиком идут в конце выдачи
+ * Откуда загрузка на дату (free | partial | busy): у выдачи категории — одним запросом на
+ * всю категорию (app.catalog_day_load, соединение dl), у одной карточки —
+ * app.listing_day_load. Без даты — не считается. Занятые целиком идут в конце выдачи
  */
-function loadOn(date: string | null): RawBuilder<DateLoad> {
-  return date === null
-    ? sql<DateLoad>`'free'::text`
-    : sql<DateLoad>`app.listing_day_load(l.id, ${date}::date)`;
+type DayLoadSource = { readonly date: null } | { readonly date: string; readonly category: string | null };
+
+const NO_DATE: DayLoadSource = { date: null };
+
+interface DayLoadRow {
+  listing_id: string;
+  load: DateLoad;
 }
 
-function busyOn(date: string | null): RawBuilder<boolean> {
-  return date === null
-    ? sql<boolean>`false::boolean`
-    : sql<boolean>`(app.listing_day_load(l.id, ${date}::date) = 'busy')`;
+/** Загрузка витрин категории на дату; без категории — пустое соединение */
+function dayLoadRelation(source: DayLoadSource): RawBuilder<DayLoadRow> {
+  return source.date !== null && source.category !== null
+    ? sql<DayLoadRow>`app.catalog_day_load(${source.category}, ${source.date}::date)`
+    : sql<DayLoadRow>`(select null::uuid as listing_id, null::text as load where false)`;
+}
+
+function loadOn(source: DayLoadSource): RawBuilder<DateLoad> {
+  if (source.date === null) return sql<DateLoad>`'free'::text`;
+  if (source.category === null) return sql<DateLoad>`app.listing_day_load(l.id, ${source.date}::date)`;
+  return sql<DateLoad>`coalesce(dl.load, 'free')`;
+}
+
+/** Занята ли витрина целиком на дату; без даты — нет */
+function busyOn(source: DayLoadSource): RawBuilder<boolean> {
+  if (source.date === null) return sql<boolean>`false::boolean`;
+  if (source.category === null)
+    return sql<boolean>`(app.listing_day_load(l.id, ${source.date}::date) = 'busy')`;
+  return sql<boolean>`coalesce(dl.load = 'busy', false)`;
 }
 
 /**
  * Опубликованные витрины с полями карточки и обложкой. Обложка — фото с is_cover,
- * иначе первое по sort; photo_count — число готовых одобренных фото
+ * иначе первое по sort (частичный индекс photos_public); photo_count — число готовых
+ * одобренных фото
  */
-function publicListings(trx: Tx, date: string | null) {
+function publicListings(trx: Tx, source: DayLoadSource) {
   return trx
     .selectFrom("app.listings as l")
     .innerJoin("app.categories as cat", (j) =>
@@ -206,6 +220,7 @@ function publicListings(trx: Tx, date: string | null) {
           .as("cv"),
       (j) => j.onTrue(),
     )
+    .leftJoin(dayLoadRelation(source).as("dl"), (j) => j.onRef("dl.listing_id", "=", "l.id"))
     .select([
       "l.id",
       "l.slug",
@@ -220,8 +235,8 @@ function publicListings(trx: Tx, date: string | null) {
       "cv.width as cover_width",
       "cv.height as cover_height",
       "cv.photo_count",
-      busyOn(date).as("busy"),
-      loadOn(date).as("load"),
+      busyOn(source).as("busy"),
+      loadOn(source).as("load"),
     ])
     .where("l.status", "=", "active")
     .where("l.price_from_uzs", "is not", null)
@@ -325,9 +340,10 @@ export function attributeFilter(filter: AttributeFilter): RawBuilder<boolean> {
 export async function listCatalog(db: Db, params: CatalogParams): Promise<CatalogPage> {
   const { category, filters, district, date, guests, sort, limit, after } = params;
   const key = sortKey(sort, guests);
-  const busy = busyOn(date);
+  const source: DayLoadSource = date === null ? NO_DATE : { date, category };
+  const busy = busyOn(source);
   const rows = await withActor(db, GUEST, (trx) =>
-    publicListings(trx, date)
+    publicListings(trx, source)
       .select(key.as("sort_key"))
       .where("l.category_code", "=", category)
       .$if(district !== null, (qb) => qb.where("l.district_code", "=", district as string))
@@ -362,7 +378,7 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
  */
 export async function listingCards(trx: Tx, ids: readonly string[]): Promise<ListingCard[]> {
   if (ids.length === 0) return [];
-  const rows = await publicListings(trx, null)
+  const rows = await publicListings(trx, NO_DATE)
     .where("l.id", "in", [...ids])
     .execute();
   const byId = new Map(rows.map((row) => [row.id, toCard(row, null)]));
@@ -395,7 +411,7 @@ export async function listCatalogCategories(db: Db): Promise<CatalogCategories> 
       .orderBy("code")
       .execute();
     const counts = await trx
-      .selectFrom(publicListings(trx, null).as("pl"))
+      .selectFrom(publicListings(trx, NO_DATE).as("pl"))
       .select(["pl.category_code", sql<number>`count(*)::int`.as("n")])
       .groupBy("pl.category_code")
       .execute();
@@ -472,7 +488,7 @@ export async function getListingDetail(
   today: string,
 ): Promise<ListingDetail | null> {
   return withActor(db, GUEST, async (trx) => {
-    const row = await publicListings(trx, date)
+    const row = await publicListings(trx, date === null ? NO_DATE : { date, category: null })
       .select([
         "l.description_ru",
         "l.description_uz",
@@ -495,8 +511,6 @@ export async function getListingDetail(
 
     const category = categoryConfig(row.category_code);
     const services = await publicServices(trx, row.id);
-    const packages =
-      row.category_code === "hall" ? publicPackages(await hallPackages(trx, row.id, ["active"])) : [];
     const photos = await trx
       .selectFrom("app.photos")
       .select(["storage_key", "width", "height"])
@@ -519,7 +533,6 @@ export async function getListingDetail(
       videoLinks: row.video_links,
       services,
       parallelCapacity: row.parallel_capacity,
-      packages,
       photos: photos.flatMap((p) => photo(p.storage_key, p.width, p.height) ?? []),
       phone: row.phone,
       busyDates: busy.busyDates,

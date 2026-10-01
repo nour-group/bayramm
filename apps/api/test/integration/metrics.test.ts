@@ -6,6 +6,7 @@
 
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import type {
+  CategoryMetricsList,
   MetricsOverview,
   StaffRequestDetail,
   StaffSettings,
@@ -20,6 +21,7 @@ import app from "../../src/index";
 import { recordApiError } from "../../src/notify/api-errors";
 import { type OutboxRow, renderNotice } from "../../src/notify/render";
 import {
+  addHallBanquets,
   adminClient,
   apiDatabaseUrl,
   cleanupStaff,
@@ -175,11 +177,7 @@ beforeAll(async () => {
     "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000999')",
     [listingId],
   );
-  await admin.query(
-    `insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
-       ($1, 'weekday', 'Будни', 'Ish kuni', 150000), ($1, 'weekend', 'Выходные', 'Dam olish', 180000)`,
-    [listingId],
-  );
+  await addHallBanquets(admin, listingId, 150_000, 180_000);
   for (let n = 0; n < 3; n++) {
     await admin.query(
       `insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
@@ -239,7 +237,6 @@ afterAll(async () => {
     await admin.query("delete from app.accounts where id = $1", [account.rows[0]?.id ?? null]);
     await admin.query("delete from app.listing_status_log where listing_id = $1", [listingId]);
     await admin.query("delete from app.photos where listing_id = $1", [listingId]);
-    await admin.query("delete from app.listing_packages where listing_id = $1", [listingId]);
     // Услуги и части дня — в режиме реплики каскад не срабатывает
     await admin.query("delete from app.listing_services where listing_id = $1", [listingId]);
     await admin.query("delete from app.availability_parts where listing_id = $1", [listingId]);
@@ -299,6 +296,59 @@ describe("метрики в панели", () => {
     expect((await api("admin", "GET", "/staff/metrics?weeks=0")).status).toBe(422);
     expect((await api("admin", "GET", "/staff/metrics/vendors?days=0")).status).toBe(422);
     expect((await api("admin", "GET", `/staff/metrics/vendors/${randomUUID()}`)).status).toBe(404);
+  });
+});
+
+describe("метрики по категориям", () => {
+  it("вендор и его витрины — с категориями", async () => {
+    const stats = await ok<VendorResponseStats>(
+      api("moderator", "GET", `/staff/metrics/vendors/${vendorId}`),
+    );
+    expect(stats.vendor.categories).toEqual(["hall"]);
+    expect(stats.listings[0]?.listing.categoryCode).toBe("hall");
+  });
+
+  it("фильтр категории: недели и вендоры — только её заявки; неизвестная — 422", async () => {
+    const all = await ok<MetricsOverview>(api("moderator", "GET", "/staff/metrics?weeks=1"));
+    const halls = await ok<MetricsOverview>(api("moderator", "GET", "/staff/metrics?weeks=1&category=hall"));
+    const cars = await ok<MetricsOverview>(api("moderator", "GET", "/staff/metrics?weeks=1&category=car"));
+    expect([all.category, halls.category, cars.category]).toEqual([null, "hall", "car"]);
+    expect(halls.weeks[0]?.requests).toBeGreaterThanOrEqual(3);
+    expect((halls.weeks[0]?.requests ?? 0) + (cars.weeks[0]?.requests ?? 0)).toBeLessThanOrEqual(
+      all.weeks[0]?.requests ?? 0,
+    );
+    // Очереди команды — всегда все
+    expect(halls.queues).toEqual(all.queues);
+
+    const hallVendors = await ok<VendorMetricsList>(
+      api("admin", "GET", "/staff/metrics/vendors?category=hall"),
+    );
+    expect(hallVendors.category).toBe("hall");
+    expect(hallVendors.items.find((v) => v.vendor.id === vendorId)).toMatchObject({
+      requests: 3,
+      activeListings: 1,
+    });
+    const carVendors = await ok<VendorMetricsList>(
+      api("admin", "GET", "/staff/metrics/vendors?category=car"),
+    );
+    expect(carVendors.items.map((v) => v.vendor.id)).not.toContain(vendorId);
+
+    expect((await api("admin", "GET", "/staff/metrics?category=nope")).status).toBe(422);
+    expect((await api("admin", "GET", "/staff/metrics/vendors?category=nope")).status).toBe(422);
+  });
+
+  it("сводка по категориям: включённые по порядку, заявки витрин категории", async () => {
+    const list = await ok<CategoryMetricsList>(api("moderator", "GET", "/staff/metrics/categories"));
+    expect(list.days).toBe(30);
+    const { rows } = await admin.query<{ code: string }>(
+      "select code from app.categories where enabled order by sort, code",
+    );
+    expect(list.items.map((c) => c.categoryCode)).toEqual(expect.arrayContaining(rows.map((r) => r.code)));
+    expect(list.items[0]?.categoryCode).toBe(rows[0]?.code);
+    const hall = list.items.find((c) => c.categoryCode === "hall");
+    expect(hall?.requests).toBeGreaterThanOrEqual(3);
+    expect(hall?.activeListings).toBeGreaterThanOrEqual(1);
+    expect((await api("admin", "GET", "/staff/metrics/categories?days=400")).status).toBe(422);
   });
 });
 

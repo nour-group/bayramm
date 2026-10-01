@@ -21,7 +21,7 @@ import type {
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addDays, tashkentToday } from "../../src/time";
-import { adminClient, bearer, call, loginToken, newTelegramUser, tgIdHash } from "./helpers";
+import { addHallBanquets, adminClient, bearer, call, loginToken, newTelegramUser, tgIdHash } from "./helpers";
 
 let admin: Client;
 const today = tashkentToday();
@@ -79,12 +79,8 @@ async function createListing(l: TestListing): Promise<void> {
     "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000777')",
     [l.id],
   );
-  // Пакеты v0.1 — их зеркалит в услуги зала триггер базы: цена «от» — из банкетов
-  await admin.query(
-    `insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs, price_unit, sort) values
-       ($1, 'weekend', 'Выходные', 'Dam olish', $2, $4, 2), ($1, 'weekday', 'Будни', 'Ish kuni', $3, $4, 1)`,
-    [l.id, l.price + 20_000, l.price, l.unit],
-  );
+  // Банкеты — обязательные услуги зала: цена «от» — из них
+  await addHallBanquets(admin, l.id, l.price, l.price + 20_000, l.unit);
   // Три готовых одобренных фото; обложка — второе по sort
   for (const n of [1, 2, 3]) {
     await admin.query(
@@ -386,7 +382,7 @@ describe("GET /catalog/listings", () => {
 });
 
 describe("GET /catalog/listings/:slug", () => {
-  it("гостю: описание, адрес, пакеты, фото (обложка первой), занятые даты и телефон", async () => {
+  it("гостю: описание, адрес, услуги, фото (обложка первой), занятые даты и телефон", async () => {
     const before = await admin.query(
       "select count(*)::int as n from app.pii_access_log where subject_id = $1",
       [listings.mid.id],
@@ -403,20 +399,11 @@ describe("GET /catalog/listings/:slug", () => {
       busyOnDate: null,
       photoCount: 3,
     });
-    // Пакеты v0.1 — из услуг зала: названия — из каталога услуг
-    expect(body.packages).toEqual([
-      {
-        kind: "weekday",
-        name: { ru: "Банкет — будни", uz: "Banket — ish kunlari" },
-        priceUzs: 100_000,
-        priceUnit: "per_guest",
-      },
-      {
-        kind: "weekend",
-        name: { ru: "Банкет — выходные", uz: "Banket — dam olish kunlari" },
-        priceUzs: 120_000,
-        priceUnit: "per_guest",
-      },
+    // Пакетов v0.1 больше нет — только услуги; названия — из каталога услуг
+    expect(body).not.toHaveProperty("packages");
+    expect(body.services.map((s) => s.name)).toEqual([
+      { ru: "Банкет — будни", uz: "Banket — ish kunlari" },
+      { ru: "Банкет — выходные", uz: "Banket — dam olish kunlari" },
     ]);
     expect(body.services.map((s) => [s.type, s.priceUzs])).toEqual([
       ["banquet_weekday", 100_000],

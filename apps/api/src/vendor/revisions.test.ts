@@ -3,32 +3,16 @@
 // test/integration/vendor.test.ts
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../errors";
+import { changedOnly } from "../staff/revision-diff";
 import { revisionFromBody } from "../staff/revisions";
-import { changedOnly } from "./revisions";
 
 const LISTING = {
   name: "Lola zali",
-  price_from_uzs: "25000000",
-  price_unit: "per_event" as const,
   description_ru: "Зал на 300 гостей",
   description_uz: null,
+  attributes: { halls_count: 2, stage: true },
+  video_links: [],
 };
-const PACKAGES = [
-  {
-    kind: "weekday" as const,
-    name_ru: "Будни",
-    name_uz: "Ish kunlari",
-    price_uzs: 25000000,
-    price_unit: "per_event" as const,
-  },
-  {
-    kind: "weekend" as const,
-    name_ru: "Выходные",
-    name_uz: "Dam olish",
-    price_uzs: 30000000,
-    price_unit: "per_event" as const,
-  },
-];
 
 function invalid(body: Record<string, unknown>): string[] {
   try {
@@ -43,58 +27,35 @@ function invalid(body: Record<string, unknown>): string[] {
 
 describe("правка из кабинета: разбор тела", () => {
   it("неизвестный ключ и неверные поля — 422 со всеми именами", () => {
-    expect(invalid({ address_ru: "x", price_from_uzs: 0, name: "A" })).toEqual(
-      expect.arrayContaining(["address_ru", "price_from_uzs", "name"]),
-    );
+    expect(invalid({ address_ru: "x", name: "A" })).toEqual(expect.arrayContaining(["address_ru", "name"]));
   });
 
-  it("цена «по запросу» и пакет без цены — не проходят", () => {
-    expect(invalid({ price_from_uzs: "по запросу" })).toEqual(["price_from_uzs"]);
+  it("цены и пакеты v0.1 правкой не меняются — неизвестные ключи", () => {
+    expect(invalid({ price_from_uzs: 180000 })).toEqual(["price_from_uzs"]);
+    expect(invalid({ price_unit: "per_guest" })).toEqual(["price_unit"]);
     expect(
-      invalid({ packages: [{ kind: "weekday", name_ru: "Будни", name_uz: "Ish kunlari", price_uzs: null }] }),
-    ).toEqual(["packages.0.price_uzs"]);
+      invalid({ packages: [{ kind: "weekday", name_ru: "Будни", name_uz: "Ish kunlari", price_uzs: 1 }] }),
+    ).toEqual(["packages"]);
   });
 });
 
 describe("правка из кабинета: только изменённые поля", () => {
   it("совпадает с карточкой — в правку не попадает", () => {
     const values = revisionFromBody(
-      {
-        name: " Lola zali ",
-        price_from_uzs: 25000000,
-        price_unit: "per_event",
-        description_ru: "Зал на 300 гостей",
-        packages: PACKAGES,
-      },
+      { name: " Lola zali ", description_ru: "Зал на 300 гостей", attributes: { stage: true } },
       "hall",
     );
-    expect(changedOnly(values, LISTING, PACKAGES)).toEqual({});
+    expect(changedOnly(values, LISTING)).toEqual({});
   });
 
-  it("новые цена, описание на узбекском и пакеты — в правке, остальное — нет", () => {
-    const packages = [PACKAGES[0], { ...PACKAGES[1], price_uzs: 32000000 }];
+  it("новые описание на узбекском и поле витрины — в правке, остальное — нет", () => {
     const values = revisionFromBody(
-      {
-        name: "Lola zali",
-        price_from_uzs: 26000000,
-        description_uz: "300 mehmonga zal",
-        packages,
-      },
+      { name: "Lola zali", description_uz: "300 mehmonga zal", attributes: { halls_count: 3, stage: true } },
       "hall",
     );
-    expect(changedOnly(values, LISTING, PACKAGES)).toEqual({
-      price_from_uzs: 26000000,
+    expect(changedOnly(values, LISTING)).toEqual({
       description_uz: "300 mehmonga zal",
-      packages,
-    });
-  });
-
-  it("пакет без единицы цены — за гостя, как в панели", () => {
-    const custom = { kind: "custom", name_ru: "VIP", name_uz: "VIP", price_uzs: 40000000 };
-    const values = revisionFromBody({ packages: [...PACKAGES, custom] }, "hall");
-    expect(changedOnly(values, LISTING, PACKAGES).packages?.[2]).toEqual({
-      ...custom,
-      price_unit: "per_guest",
+      attributes: { halls_count: 3 },
     });
   });
 });

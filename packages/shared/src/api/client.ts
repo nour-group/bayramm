@@ -219,17 +219,6 @@ export interface ListingCards {
   readonly items: readonly ListingCard[];
 }
 
-/**
- * Пакет зала v0.1 — из услуг зала: banquet_weekday → weekday, banquet_weekend → weekend,
- * «другая услуга» → custom. Только для прежних экранов; новые показывают services
- */
-export interface ListingPackage {
-  readonly kind: "weekday" | "weekend" | "custom";
-  readonly name: Localized;
-  readonly priceUzs: number;
-  readonly priceUnit: PriceUnit;
-}
-
 /** Опция услуги: клиент отмечает её в заявке (id — в details.services[].options) */
 export interface ServiceOption {
   readonly id: string;
@@ -279,8 +268,6 @@ export interface ListingDetail extends ListingCard {
   readonly services: readonly PublicService[];
   /** Сколько заказов витрина берёт одновременно (режим parts) */
   readonly parallelCapacity: number;
-  /** Пакеты v0.1 — только у залов, из услуг (см. ListingPackage) */
-  readonly packages: readonly ListingPackage[];
   /** Готовые и одобренные фото; обложка первой */
   readonly photos: readonly Photo[];
   /** Публичный телефон площадки. Отдаётся до заявки — правило продукта */

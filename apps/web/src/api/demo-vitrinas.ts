@@ -594,7 +594,6 @@ export function demoVitrinas(today: string): ListingDetail[] {
       videoLinks: spec.videoLinks ?? [],
       services,
       parallelCapacity: spec.parallelCapacity ?? 1,
-      packages: [],
       photos,
       phone: `+998000000${String(n).padStart(3, "0")}`,
       busyDates: (spec.busy ?? []).map((offset) => addDays(today, offset)).sort(),

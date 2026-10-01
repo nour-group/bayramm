@@ -14,7 +14,7 @@ import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { listingPhone, vendorContactsAs, vendorUserProfilesAs } from "../db/pii";
 import { ApiError, notFound } from "../errors";
-import { hallPackages, listServices } from "../listing-services/store";
+import { listServices } from "../listing-services/store";
 
 const LOCALES: readonly Locale[] = ["ru", "uz"];
 
@@ -133,7 +133,6 @@ export async function getListing(
       .executeTakeFirst();
     if (listing === undefined) throw notFound();
 
-    const packages = listing.category_code === "hall" ? await hallPackages(trx, listingId) : [];
     const services = await listServices(trx, listingId);
     const category = categoryConfig(listing.category_code);
     const attributes = category === undefined ? {} : readAttributes(category, listing.attributes);
@@ -168,12 +167,6 @@ export async function getListing(
       videoLinks: listing.video_links,
       parallelCapacity: listing.parallel_capacity,
       services,
-      packages: packages.map((p) => ({
-        kind: p.kind,
-        name: { ru: p.nameRu, uz: p.nameUz },
-        priceUzs: p.priceUzs,
-        priceUnit: p.priceUnit,
-      })),
       photos: photos.flatMap((p) => vendorPhoto(p, media) ?? []),
       phone: listing.phone,
       blockers: listing.blockers ?? [],

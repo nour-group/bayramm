@@ -12,12 +12,10 @@
    В предложение уходят только изменённые поля (у полей витрины — только изменённые ключи,
    attributePatch); ничего не изменили — запроса нет. Поля проверяются до запроса теми же
    правилами, что на сервере (attributeErrors, videoLinkErrors); неверные поля от сервера
-   (attributes.fleet.0.class, video_links.1) тоже подсвечиваются. Старые предложения с ценой и
-   пакетами (кабинет v0.1, команда) показываются как есть. Контролы — из @bayramm/ui/react. */
+   (attributes.fleet.0.class, video_links.1) тоже подсвечиваются. Контролы — из @bayramm/ui/react. */
 
 import type {
   ListingRevisionPayload,
-  PriceUnit,
   VendorListing,
   VendorRevision,
   VendorRevisionList,
@@ -39,7 +37,7 @@ import { ConfirmSheet } from "@bayramm/ui/react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { AttributeFacts, AttributesForm } from "./Attributes";
 import { ApiFailure, api } from "./api";
-import { formatMoment, formatMoney } from "./format";
+import { formatMoment } from "./format";
 import { fill, type VendorDict } from "./i18n";
 import { LoadError, Loading } from "./ui";
 import { useLoad } from "./useLoad";
@@ -85,8 +83,6 @@ export function proposalOf(
   return payload;
 }
 
-const unitText = (unit: PriceUnit, t: VendorDict) => (unit === "per_guest" ? t.perGuest : t.perEvent);
-
 // ── что предложено ─────────────────────────────────────────────────────────
 
 function Proposed({
@@ -101,20 +97,12 @@ function Proposed({
   lang: "ru" | "uz";
 }) {
   const category = categoryConfig(listing.categoryCode);
-  const price = payload.price_from_uzs ?? listing.priceFromUzs;
-  const unit = payload.price_unit ?? listing.priceUnit;
   return (
     <dl className="facts proposal-facts">
       {payload.name !== undefined ? (
         <div className="facts-wide">
           <dt>{t.nameLabel}</dt>
           <dd>{payload.name}</dd>
-        </div>
-      ) : null}
-      {(payload.price_from_uzs !== undefined || payload.price_unit !== undefined) && price !== null ? (
-        <div className="facts-wide">
-          <dt>{t.priceLabel}</dt>
-          <dd>{`${fill(t.priceFrom, { price: formatMoney(price, t, lang) })} ${unitText(unit, t)}`}</dd>
         </div>
       ) : null}
       {payload.description_ru !== undefined ? (
@@ -154,23 +142,6 @@ function Proposed({
                 ))}
               </ul>
             )}
-          </dd>
-        </div>
-      ) : null}
-      {payload.packages !== undefined ? (
-        <div className="facts-wide">
-          <dt>{t.packages}</dt>
-          <dd>
-            <ul className="packages">
-              {payload.packages.map((pack) => (
-                <li key={`${pack.kind}-${pack.name_ru}-${pack.price_uzs}`}>
-                  <span>{lang === "uz" ? pack.name_uz : pack.name_ru}</span>
-                  <strong className="package-price">
-                    {formatMoney(pack.price_uzs, t, lang)} {unitText(pack.price_unit ?? "per_guest", t)}
-                  </strong>
-                </li>
-              ))}
-            </ul>
           </dd>
         </div>
       ) : null}

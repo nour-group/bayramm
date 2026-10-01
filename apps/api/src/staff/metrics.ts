@@ -1,11 +1,21 @@
 // Метрики запуска в панели: только чтение, только числа (право metrics.read — все роли).
 // Определения и расчёт — в базе (metrics/queries.ts → app.metrics_*).
 //
-//   GET /staff/metrics?weeks=8                по неделям (текущая — первой) и очереди команды
-//   GET /staff/metrics/vendors?days=30        ответы вендоров за последние N дней
-//   GET /staff/metrics/vendors/:id?days=30    вендор и его площадки
+//   GET /staff/metrics?weeks=8&category=              по неделям (текущая — первой) и очереди команды
+//   GET /staff/metrics/categories?days=30             сводка по категориям за последние N дней
+//   GET /staff/metrics/vendors?days=30&category=      ответы вендоров за последние N дней
+//   GET /staff/metrics/vendors/:id?days=30            вендор и его площадки (с категориями)
+//
+// category — код категории из конфигурации (@bayramm/shared/categories): только заявки витрин
+// этой категории; пусто — все; неизвестный — 422 invalid_input ["category"].
 
-import type { MetricsOverview, VendorMetricsList, VendorResponseStats } from "@bayramm/shared/api/staff";
+import type {
+  CategoryMetricsList,
+  MetricsOverview,
+  VendorMetricsList,
+  VendorResponseStats,
+} from "@bayramm/shared/api/staff";
+import { categoryConfig } from "@bayramm/shared/categories";
 import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
@@ -15,6 +25,7 @@ import { notFound } from "../errors";
 import {
   DAYS_DEFAULT,
   DAYS_MAX,
+  loadCategories,
   loadListings,
   loadQueues,
   loadVendors,
@@ -36,25 +47,42 @@ export function intParam(raw: string | undefined, name: string, fallback: number
   return value;
 }
 
+/** Код категории из запроса: нет — null (все категории); неизвестный — 422 ["category"] */
+export function categoryParam(raw: string | undefined): string | null {
+  if (raw === undefined || raw === "") return null;
+  if (categoryConfig(raw) === undefined) throw invalidInput(["category"]);
+  return raw;
+}
+
 metrics.get("/", requirePermission("metrics.read"), async (c) => {
   const weeks = intParam(c.req.query("weeks"), "weeks", WEEKS_DEFAULT, WEEKS_MAX);
+  const category = categoryParam(c.req.query("category"));
   const body: MetricsOverview = await withActor(c.var.db, staffOf(c), async (trx) => {
     const { rows } = await sql<{
       hours: number | null;
     }>`select app.setting_int('sla_hours') as hours`.execute(trx);
     return {
       slaHours: rows[0]?.hours ?? 12,
-      weeks: await loadWeekly(trx, weeks),
+      category,
+      weeks: await loadWeekly(trx, weeks, category),
       queues: await loadQueues(trx),
     };
   });
   return c.json(body);
 });
 
+metrics.get("/categories", requirePermission("metrics.read"), async (c) => {
+  const days = intParam(c.req.query("days"), "days", DAYS_DEFAULT, DAYS_MAX);
+  const items = await withActor(c.var.db, staffOf(c), (trx) => loadCategories(trx, days));
+  const body: CategoryMetricsList = { days, items };
+  return c.json(body);
+});
+
 metrics.get("/vendors", requirePermission("metrics.read"), async (c) => {
   const days = intParam(c.req.query("days"), "days", DAYS_DEFAULT, DAYS_MAX);
-  const items = await withActor(c.var.db, staffOf(c), (trx) => loadVendors(trx, days));
-  const body: VendorMetricsList = { days, items };
+  const category = categoryParam(c.req.query("category"));
+  const items = await withActor(c.var.db, staffOf(c), (trx) => loadVendors(trx, days, null, category));
+  const body: VendorMetricsList = { days, category, items };
   return c.json(body);
 });
 

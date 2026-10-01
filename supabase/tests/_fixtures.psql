@@ -100,9 +100,10 @@ begin
   foreach v_listing in array array['aaaaaaaa-0000-0000-0000-000000000101',
                                    'bbbbbbbb-0000-0000-0000-000000000101']::uuid[] loop
     insert into pii.listing_contacts (listing_id, public_phone) values (v_listing, '+998000000999');
-    insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
-      (v_listing, 'weekday', 'Будни', 'Ish kuni', 150000),
-      (v_listing, 'weekend', 'Выходные', 'Dam olish', 180000);
+    -- банкеты будни и выходные — обязательные услуги зала; цена «от» — из них
+    insert into app.listing_services (listing_id, category_code, service_type, status, price_uzs, price_unit, sort) values
+      (v_listing, 'hall', 'banquet_weekday', 'active', 150000, 'per_guest', 1),
+      (v_listing, 'hall', 'banquet_weekend', 'active', 180000, 'per_guest', 2);
     -- готовые фото: файл проверен (тип, размер, размеры, sha256 известны)
     insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
                             sort, no_faces_ack)

@@ -35,7 +35,7 @@ set local role bayramm_api;
 select pg_temp.as_actor('vendor_user', 'aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000001');
 select lives_ok(
   $$insert into app.listing_revisions (listing_id, payload, base_version)
-    select id, '{"price_from_uzs": 170000}', version from app.listings where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
+    select id, '{"description_ru": "Новое описание"}', version from app.listings where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
   'партнёр предлагает правку своей карточки');
 select throws_ok(
   $$insert into app.listing_revisions (listing_id, payload, base_version)

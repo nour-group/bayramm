@@ -136,6 +136,16 @@ jobs:
           if ! grep -qi '^content-security-policy:' vendor-headers.txt; then
             echo "::error::https://$vendor/ отдаёт HTML без Content-Security-Policy"; exit 1
           fi
+          # Кэш (packages/edge, cache-headers.ts): страница — со сверкой, файл сборки с хэшем — год и immutable
+          if ! grep -qiE '^cache-control: *no-cache' vendor-headers.txt; then
+            echo "::error::https://$vendor/ отдаёт HTML без Cache-Control: no-cache"; exit 1
+          fi
+          asset=$(curl -sSf --retry 5 --retry-delay 3 --retry-all-errors "https://$vendor/" | grep -oE '/assets/[^"]+\.js' | head -n1 || true)
+          if [ -z "$asset" ]; then echo "::error::в HTML https://$vendor/ нет скрипта /assets/*.js"; exit 1; fi
+          cache=$(curl -sSf --retry 5 --retry-delay 3 --retry-all-errors -D - -o /dev/null "https://$vendor$asset" | grep -i '^cache-control:' || true)
+          if ! grep -qiF "immutable" <<<"$cache"; then
+            echo "::error::https://$vendor$asset — файл сборки без Cache-Control immutable"; exit 1
+          fi
 
           # Панель оператора: 200 на странице входа. Она же Mini App (фрейм — только
           # web.telegram.org, SDK Telegram); вход в браузере — через хаб, виджета здесь нет
