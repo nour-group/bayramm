@@ -43,8 +43,8 @@
 -- Открытые правки с пакетами (их применяло зеркало в услуги) или только с ценой —
 -- отклонены: менять цены теперь — услугами. Причину партнёр видит в кабинете
 insert into app.audit_log (actor_kind, action, object_type, object_id, detail, source)
-select 'system', 'listing_revision.legacy_declined', 'listing_revision', rv.id::text,
-       jsonb_build_object('listing_id', rv.listing_id,
+select 'system', 'listing_revision.legacy_declined', 'listing', rv.listing_id::text,
+       jsonb_build_object('revision_id', rv.id,
                           'keys', to_jsonb(array(select k from jsonb_object_keys(rv.payload) k order by k))),
        'system'
 from app.listing_revisions rv
