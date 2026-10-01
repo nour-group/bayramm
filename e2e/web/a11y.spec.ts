@@ -96,6 +96,12 @@ const SCREENS: readonly Screen[] = [
       }
     },
   },
+  {
+    // Фильтр задан — «Сбросить фильтры» в блоке «Фильтры» (на компьютере — в колонке слева)
+    name: "каталог кортежа с фильтром",
+    path: `/catalog?category=car&date=${BUSY_DAY}&a.fleet.class=premium`,
+    ready: ".filters-reset",
+  },
   { name: "витрина кортежа на дату", path: `/venue/oq-kortej?date=${BUSY_DAY}`, ready: ".parts" },
   { name: "витрина фото и видео", path: "/venue/kadr-media", ready: ".videos" },
   { name: "витрина торта", path: "/venue/shirin-cake", ready: ".lead-note" },

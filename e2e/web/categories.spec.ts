@@ -89,8 +89,8 @@ test.describe("лендинг → каталог категории", () => {
     await expect(page.locator(".cat-soon")).toHaveCount(0);
     await page.locator(".cat-tile").filter({ hasText: "Кортеж" }).click();
     await expect(page).toHaveURL((url) => url.pathname === PATHS.catalog && url.search === "?category=car");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catTitle("Кортеж"));
-    await expect(page.locator(".cat-switch a[aria-current=page]")).toHaveText("Кортеж");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catTitle(ru.catName.car));
+    await expect(page.locator(".cat-switch a[aria-current=page]")).toHaveText(ru.catName.car);
     await expect(page.locator(".cards .card")).toHaveCount(3);
     await expectNoAxeViolations(page, "каталог кортежа");
     await expectHitAreas(page, "каталог кортежа", CONTROLS);
@@ -234,7 +234,8 @@ test.describe("заявка по категории", () => {
     await open(page, `${PATHS.request(CAKE.slug)}?date=${addDays(TODAY, 2)}`, "form.request .consents");
     const date = fieldOf(page, ru.rqDate);
     await expect(date).toContainText(ru.pickAny);
-    await expect(date).toContainText(ru.leadNote(5));
+    // Срок — с ближайшей датой, на которую можно заказать
+    await expect(date).toContainText(ru.leadNoteFrom(5, formatDayMonth(addDays(TODAY, 5), ru)));
     await date.locator("button[aria-haspopup=dialog]").click();
     await expect(
       page.locator(`.ui-layer button.ui-cal-day[aria-label^="${ru.dayMonth(4, "окт")}"]`),
@@ -280,7 +281,7 @@ test.describe("категории в Telegram", () => {
     await prepare(page);
     await fakeTelegram(page);
     await open(page, `/?category=car&date=${BUSY_DAY}`, ".card .chip");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catTitle("Кортеж"));
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catTitle(ru.catName.car));
     await expect(page.locator(".landing, .site-footer")).toHaveCount(0);
     await page.locator(".cards .card-link").first().click();
     await expect(page.locator(".venue-head h1")).toHaveText(CAR.name);

@@ -303,6 +303,10 @@ describe("заявка по форме категории", () => {
     await click(transferCheckbox());
     await click(byText("button", "Отправить заявку"));
     await waitFor(() => byText("h1", "Заявка отправлена"), "отправлено");
+    // Искать дальше — в том же разделе, а не в залах
+    expect(byText<HTMLAnchorElement>(".sent a", "К поиску")?.getAttribute("href")).toBe(
+      "/catalog?category=car",
+    );
 
     const created = (api as MockApi).created[0];
     expect(created).not.toHaveProperty("guests");

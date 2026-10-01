@@ -1,7 +1,7 @@
 import { isListingPhotoKey, mediaUrl } from "@bayramm/media";
 import { type Dict, dictionaries, LANGS, type Lang } from "@bayramm/shared";
 import type { ListingDetail } from "@bayramm/shared/api";
-import { categoryName } from "../src/categories";
+import { categoryName } from "../src/category-names";
 import { formatPriceFrom } from "../src/format";
 import { mediaEnvFor } from "../src/media";
 import {

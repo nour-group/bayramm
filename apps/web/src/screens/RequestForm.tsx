@@ -18,6 +18,7 @@ import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useS
 import { isApiError, isNotFound } from "../api/errors";
 import { categoryName, catText, clientCategory } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
+import { categoryHref } from "../components/Categories";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
@@ -271,7 +272,8 @@ function Sent({ listing, created }: { listing: ListingDetail; created: RequestCr
         <Link className="btn btn-secondary" href={hrefFor({ name: "requests" })}>
           {t.toMyRequests}
         </Link>
-        <Link className="btn btn-secondary" href={hrefFor({ name: "catalog" })}>
+        {/* Дальше искать — в том же разделе, откуда пришли (кортеж → кортежи) */}
+        <Link className="btn btn-secondary" href={categoryHref(listing.categoryCode)}>
           {t.sentSearch}
         </Link>
       </div>

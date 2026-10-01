@@ -1,4 +1,4 @@
-import { LANGS } from "@bayramm/shared";
+import { GLOSSARY_FORBIDDEN, LANGS } from "@bayramm/shared";
 import { comparablePriceUzs, type ListingDetail } from "@bayramm/shared/api";
 import type { Locator, Page } from "@playwright/test";
 import { formatDayMonth, formatPhone, formatPriceFrom } from "../../apps/web/src/format";
@@ -116,6 +116,9 @@ test.describe("тексты экранов", () => {
         const text = await humanText(page);
         expect.soft(text, `${lang} · ${name}: «брон»`).not.toMatch(FORBIDDEN_BOOKING);
         expect.soft(text, `${lang} · ${name}: рейтинг/отзывы`).not.toMatch(RATINGS);
+        // Глоссарий клиента (packages/shared/src/i18n/glossary.ts): ни «вендора», ни «ariza»
+        for (const word of GLOSSARY_FORBIDDEN[lang])
+          expect.soft(text, `${lang} · ${name}: глоссарий`).not.toMatch(word);
         seen.push(name);
       };
 

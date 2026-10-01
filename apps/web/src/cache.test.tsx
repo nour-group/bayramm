@@ -193,7 +193,9 @@ describe("кэш на экранах", () => {
   it("каталог → витрина → «назад»: та же выдача сразу, без запроса и заглушки; прокрутка на месте", async () => {
     const { api, calls } = counted();
     const scrolls: [number, number][] = [];
-    window.scrollTo = ((x: number, y: number) => scrolls.push([x, y])) as typeof window.scrollTo;
+    window.scrollTo = ((x: number, y: number) => {
+      scrolls.push([x, y]);
+    }) as unknown as typeof window.scrollTo;
     Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 5000 });
     Object.defineProperty(window, "scrollY", { configurable: true, value: 640 });
     try {
@@ -236,7 +238,9 @@ describe("scrollWhenReady", () => {
   it("страница ещё короткая — ждёт, пока дорастёт; не дождалась — прокручивает по сроку", async () => {
     vi.useFakeTimers();
     const scrolls: number[] = [];
-    window.scrollTo = ((_x: number, y: number) => scrolls.push(y)) as typeof window.scrollTo;
+    window.scrollTo = ((_x: number, y: number) => {
+      scrolls.push(y);
+    }) as unknown as typeof window.scrollTo;
     let height = 0;
     Object.defineProperty(document.documentElement, "scrollHeight", {
       configurable: true,
@@ -261,7 +265,9 @@ describe("scrollWhenReady", () => {
   it("отмена — ни прокрутки, ни ожидания", async () => {
     vi.useFakeTimers();
     const scrolls: number[] = [];
-    window.scrollTo = ((_x: number, y: number) => scrolls.push(y)) as typeof window.scrollTo;
+    window.scrollTo = ((_x: number, y: number) => {
+      scrolls.push(y);
+    }) as unknown as typeof window.scrollTo;
     Object.defineProperty(document.documentElement, "scrollHeight", { configurable: true, value: 0 });
     const stop = scrollWhenReady(700, document.body, 3000);
     stop();

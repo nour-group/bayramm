@@ -1933,11 +1933,11 @@ textarea.field-input {
   grid-template-columns: auto minmax(0, 1fr);
   align-content: center;
   align-items: center;
-  column-gap: var(--gap-12);
+  column-gap: var(--gap-9);
   row-gap: var(--gap-3);
   height: 100%;
-  min-height: 72px;
-  padding: 12px;
+  min-height: 64px;
+  padding: 10px;
   border: 1px solid var(--rule);
   border-radius: var(--r-18);
   background: var(--white);
@@ -1953,9 +1953,9 @@ textarea.field-input {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--r-14);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-11);
   background: var(--lilac);
   color: var(--plum);
 }
@@ -1965,11 +1965,27 @@ textarea.field-input {
   grid-row: span 2;
 }
 
+/* Длинное слово («Fotostudiyalar») переносится, а не вылезает за плитку */
 .cat-tile-name {
   color: var(--plum);
   font-size: var(--fs-15);
   font-weight: 800;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+/* Узкий телефон (до 360px): значок над названием — рядом с ним названию не хватает места.
+   После основных правил плитки (ловушка №7) */
+@media (max-width: 359px) {
+  .cat-tile {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    row-gap: var(--gap-7);
+  }
+
+  .cat-tile.is-soon .cat-tile-ico {
+    grid-row: auto;
+  }
 }
 
 .cat-soon {
@@ -2584,10 +2600,6 @@ textarea.field-input {
     grid-column: 1 / -1;
   }
 
-  .cat-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
   /* Чипы категорий — в несколько строк, без ленты и без угасания у края */
   .cat-switch {
     margin-right: 0;
@@ -2795,9 +2807,11 @@ textarea.field-input {
     grid-row: 1 / span 10;
   }
 
-  /* Пометка о заявке — под карточкой с кнопками (на телефоне она над панелью) */
+  /* Пометка о заявке — под карточкой с кнопками (на телефоне она над панелью); карточка —
+     вровень с фото, без зазора от пометки над ней в разметке */
   .venue-side .bar-note {
     order: 1;
+    margin-top: 8px;
   }
 
   /* Номер — в карточке справа: второй раз в описании он не нужен */
@@ -2814,6 +2828,11 @@ textarea.field-input {
     border: 1px solid var(--rule);
     border-radius: var(--r-22);
     background: var(--white);
+  }
+
+  /* Вес как у «пометка + панель» (зазор под пометкой на телефоне): здесь панель — вровень с фото */
+  .venue-side .venue-bar {
+    margin: 0;
   }
 
   .venue-bar .bar-price b {
@@ -2907,6 +2926,12 @@ textarea.field-input {
   }
 
   .ln-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* Разделы — в четыре колонки только здесь: на планшете в четверть ширины не влезают
+     названия рядом со значком («Декор и оформление») */
+  .cat-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 

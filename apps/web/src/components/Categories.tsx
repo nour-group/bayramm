@@ -83,7 +83,7 @@ export function CategoryGrid({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
           <li key={category.code}>
             <Link className={soon ? "cat-tile is-soon" : "cat-tile"} href={categoryHref(category.code)}>
               <span className="cat-tile-ico" aria-hidden="true">
-                <Icon name={categoryIcon(category.code)} size={26} />
+                <Icon name={categoryIcon(category.code)} size={24} />
               </span>
               <Name className="cat-tile-name">{categoryName(category.code, t, lang)}</Name>
               {soon ? <span className="cat-soon">{t.catSoon}</span> : null}
