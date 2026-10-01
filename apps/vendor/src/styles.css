@@ -1,6 +1,13 @@
-/* Кабинет вендора. Цвета, кегли, скругления и зазоры — только переменные из
+/* Кабинет партнёра. Цвета, кегли, скругления и зазоры — только переменные из
    @bayramm/ui/tokens.css; значения здесь не повторяются. Пары «текст на фоне» — только
-   из packages/ui/src/pairs.ts. Раскладка — под телефон (Mini App), шире — по центру. */
+   из packages/ui/src/pairs.ts.
+
+   Раскладка — те же границы, что в layout.ts: телефон (Mini App) — до 719px: шапка и
+   нижняя панель разделов; планшет — 720–1023px: шапка и колонка разделов слева; компьютер —
+   от 1024px: боковая панель, заявки списком и карточкой рядом, календарь с легендой сбоку,
+   карточка площадки в две колонки. Оболочку под раскладку выбирает React (.app-phone,
+   .app-tablet, .app-desktop; до входа — .app-gate); @media здесь — то, что зависит от
+   ширины внутри экрана. */
 
 *,
 *::before,
@@ -29,6 +36,27 @@ body {
   min-height: 100vh;
   /* biome-ignore lint/suspicious/noDuplicateProperties: dvh fallback */
   min-height: 100dvh;
+}
+
+/* Содержимое рядом с колонкой разделов: не шире своей колонки */
+.frame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Только для диктора: счётчик новых у раздела «Заявки» словами */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .icon {
@@ -123,8 +151,19 @@ body {
   padding: 20px calc(var(--sa-r) + 16px) calc(var(--pad-b) + 24px) calc(var(--sa-l) + 16px);
 }
 
-.app-tabs .main {
+.app-phone .main {
   padding-bottom: calc(var(--pad-b) + 96px);
+}
+
+/* Экран входа из браузера на компьютере — шире: рассказ и вход рядом */
+.app-gate .main {
+  max-width: 1120px;
+}
+
+/* Узкий экран и на компьютере (аккаунт, «не найдено»): строка текста не растягивается */
+.page-narrow {
+  width: 100%;
+  max-width: 720px;
 }
 
 .page,
@@ -349,11 +388,26 @@ body {
   cursor: pointer;
 }
 
-/* Вкладки входящих — на всю ширину, чтобы три помещались на телефоне */
+/* Вкладки входящих — на всю ширину, ширина каждой — по её подписи: «В работе 2» не
+   переносится на две строки, «Закрытые» не уходит за край */
 .pills-fill .pill {
-  flex: 1 1 0;
+  flex: 1 1 auto;
   justify-content: center;
-  padding: 0 8px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+/* Узкий телефон (320–374px): три подписи со счётчиками в строку не влезают — счётчик под
+   подписью, вкладки равной ширины */
+@media (max-width: 374px) {
+  .pills-fill .pill {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+    padding: 4px 6px;
+    line-height: 1.2;
+  }
 }
 
 .pill-count {
@@ -615,6 +669,7 @@ body {
 .panel-title {
   margin: 0;
   color: var(--plum);
+  font-size: var(--fs-15);
   font-weight: 700;
 }
 
@@ -1001,8 +1056,9 @@ body {
   font-weight: 700;
 }
 
-/* Единица цены — сегменты по содержимому, а не во всю ширину формы */
-.proposal-form .ui-radios-segmented {
+/* Сегменты (единица цены, язык) — по содержимому, а не во всю ширину формы и раздела */
+.proposal-form .ui-radios-segmented,
+.panel > .ui-radios-segmented {
   align-self: flex-start;
 }
 
@@ -1016,26 +1072,141 @@ body {
   margin: 0;
 }
 
-/* Нижняя панель разделов: над безопасной зоной снизу */
-/* Аккаунт партнёра: выбор вендора и ссылки на другие роли того же аккаунта */
+/* Выбор кабинета: партнёр нескольких площадок */
 .vendor-choice {
   flex-direction: column;
   align-items: stretch;
   width: 100%;
 }
-.account-links {
-  display: grid;
-  gap: var(--gap-9);
-  margin-top: 32px;
-  padding-top: 16px;
-  border-top: 1px solid var(--rule);
+
+.vendor-option {
+  justify-content: space-between;
 }
+
+.vendor-code {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* Раздел «Аккаунт» */
+.account-person {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.account-role {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-14);
+}
+
 .account-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-9);
 }
 
+.account-switch,
+.account-signout {
+  align-self: flex-start;
+}
+
+/* Вход из браузера: что это за кабинет, как получить доступ, вход */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  width: 100%;
+  max-width: 560px;
+  margin: 8px auto 0;
+}
+
+.welcome-intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.welcome-signin {
+  gap: var(--gap-12);
+}
+
+.welcome-subtitle {
+  margin: 8px 0 0;
+  color: var(--plum);
+  font-size: var(--fs-15);
+}
+
+.welcome-signin .btn-ghost {
+  align-self: flex-start;
+}
+
+.welcome-points {
+  display: grid;
+  gap: var(--gap-12);
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.welcome-points li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-12);
+}
+
+.welcome-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+  color: var(--coral);
+}
+
+.welcome-point {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
+.welcome-point-title {
+  color: var(--plum);
+  font-size: var(--fs-15);
+}
+
+/* ── разделы кабинета ─────────────────────────────────────────────────────── */
+
+.nav-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Новых заявок: число у иконки раздела, словами — для диктора (.sr-only) */
+.nav-count {
+  position: absolute;
+  top: -6px;
+  right: -12px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-999);
+  background: var(--coral-deep);
+  color: var(--btn-ink);
+  font-size: var(--fs-11);
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* Телефон: нижняя панель над безопасной зоной снизу */
 .tabbar {
   position: fixed;
   right: 0;
@@ -1043,7 +1214,7 @@ body {
   left: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   padding: 6px calc(var(--sa-r) + 8px) calc(var(--pad-b) + 6px) calc(var(--sa-l) + 8px);
   border-top: 1px solid var(--rule);
   background: var(--rail-bg);
@@ -1055,6 +1226,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 2px;
+  min-width: 0;
   min-height: var(--hit-min);
   padding: 4px 0;
   border-radius: var(--r-14);
@@ -1064,10 +1236,242 @@ body {
   text-decoration: none;
 }
 
+/* Подпись не шире своей четверти: «Календарь» на 320px не раздвигает панель */
+.tab .nav-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Планшет: шапка сверху, узкая колонка разделов слева */
+.app-tablet {
+  display: grid;
+  grid-template-areas:
+    "top top"
+    "rail frame";
+  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+}
+
+.app-tablet .top {
+  grid-area: top;
+}
+
+.app-tablet .frame {
+  grid-area: frame;
+}
+
+.app-tablet .main {
+  max-width: 760px;
+  padding: 24px calc(var(--sa-r) + 24px) calc(var(--pad-b) + 32px) 24px;
+}
+
+.rail {
+  position: sticky;
+  /* под шапкой: 8 + 44 + 8 + линия и верхние безопасные зоны */
+  top: calc(var(--pad-t) + 61px);
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  gap: var(--gap-5);
+  grid-area: rail;
+  padding: 16px 8px 16px calc(var(--sa-l) + 8px);
+}
+
+.rail-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap-3);
+  min-height: 64px;
+  padding: 6px 4px;
+  border-radius: var(--r-14);
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+/* Компьютер: боковая панель — название, разделы, кабинет и язык */
+.app-desktop {
+  display: grid;
+  grid-template-areas: "side frame";
+  grid-template-columns: 232px minmax(0, 1fr);
+}
+
+.app-desktop .frame {
+  grid-area: frame;
+}
+
+.app-desktop .main {
+  max-width: 1200px;
+  margin: 0;
+  padding: calc(var(--pad-t) + 28px) calc(var(--sa-r) + 40px) calc(var(--pad-b) + 40px) 40px;
+}
+
+.side {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  grid-area: side;
+  height: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: dvh fallback */
+  height: 100dvh;
+  padding: calc(var(--pad-t) + 20px) 14px calc(var(--pad-b) + 20px) calc(var(--sa-l) + 14px);
+  border-right: 1px solid var(--rule);
+  background: var(--white);
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.side .brand {
+  padding: 0 12px;
+}
+
+.side-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+.side-link {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-12);
+  min-height: var(--hit-min);
+  padding: 4px 12px;
+  border-radius: var(--r-14);
+  color: var(--muted);
+  font-size: var(--fs-15);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.side-link .nav-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.side-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-12);
+  margin-top: auto;
+  padding: 16px 12px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.side-vendor {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.side-vendor-name {
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.side-vendor-code {
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.side-foot .lang {
+  background: var(--lilac);
+}
+
+/* Заявки на компьютере: список слева (свой прокрут), карточка заявки справа */
+.inbox {
+  display: grid;
+  grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+
+.inbox > .inbox-list {
+  position: sticky;
+  top: calc(var(--pad-t) + 16px);
+  max-height: calc(100vh - var(--pad-t) - 32px);
+  /* запас под кольцо фокуса карточек: прокрутка его не обрезает */
+  padding: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.inbox-detail {
+  min-width: 0;
+}
+
+/* Заявка не выбрана — подсказка в рамке на месте карточки */
+.inbox-detail > .empty {
+  justify-content: center;
+  min-height: 360px;
+  border: 1px dashed var(--rule);
+  border-radius: var(--r-22);
+}
+
+/* Календарь: месяц и легенда (на телефоне — под месяцем, на компьютере — сбоку) */
+.cal-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.cal-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+}
+
+.dot-today {
+  border: 2px solid var(--coral);
+  background: var(--cell);
+}
+
+/* Площадка: фото и сведения (на компьютере — рядом) */
+.venue-grid,
+.venue-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+/* Форма правок: поля парами шире телефона (ниже, в @media) */
+.form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.package-unit {
+  justify-content: flex-end;
+}
+
 /* Наведение — только там, где есть курсор (ловушка №6) */
 @media (hover: hover) {
   .lang button:hover,
   .tab:hover {
+    color: var(--ink);
+  }
+
+  .side-link:hover,
+  .rail-link:hover {
+    background: var(--lilac);
     color: var(--ink);
   }
 
@@ -1109,6 +1513,18 @@ body {
   color: var(--plum);
 }
 
+.side-link[aria-current="page"],
+.rail-link[aria-current="page"] {
+  background: var(--lilac);
+  color: var(--plum);
+}
+
+/* Заявка, открытая рядом со списком (компьютер) */
+.rq[aria-current="page"] {
+  border-color: var(--plum);
+  box-shadow: inset 0 0 0 1px var(--plum);
+}
+
 /* Фокус с клавиатуры: кольцо --coral, 3:1 на всех фонах */
 :focus-visible {
   outline: 3px solid var(--coral);
@@ -1120,15 +1536,114 @@ body {
   outline: none;
 }
 
+/* Шире телефона: поля формы парами, фото в три колонки, дни календаря выше */
 @media (min-width: 720px) {
   .photos {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .tabbar {
-    right: 50%;
-    left: auto;
-    width: 720px;
-    transform: translateX(50%);
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .welcome-points {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cal-day {
+    min-height: 56px;
+  }
+
+  /* Кнопка начала правок — по содержимому, а не на всю ширину раздела */
+  .proposal-start {
+    align-self: flex-start;
+  }
+}
+
+/* Компьютер: заявки рядом, календарь крупнее с легендой сбоку, карточка в две колонки */
+@media (min-width: 1024px) {
+  .page-title {
+    font-size: var(--fs-23);
+  }
+
+  .cal-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    align-items: start;
+    gap: 24px;
+  }
+
+  .cal {
+    padding: 20px 20px 24px;
+  }
+
+  .cal-month {
+    font-size: var(--fs-19);
+  }
+
+  .cal-grid {
+    gap: var(--gap-5);
+  }
+
+  .cal-day {
+    min-height: 68px;
+    font-size: var(--fs-16);
+  }
+
+  .cal-aside {
+    position: sticky;
+    top: calc(var(--pad-t) + 16px);
+  }
+
+  .cal-aside .cal-legend {
+    flex-direction: column;
+    gap: var(--gap-9);
+  }
+
+  .venue-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
+    align-items: start;
+    gap: 24px;
+  }
+
+  .welcome {
+    display: grid;
+    grid-template-areas:
+      "intro signin"
+      "points signin";
+    grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr);
+    grid-template-rows: auto 1fr;
+    align-items: start;
+    gap: 24px 48px;
+    max-width: 1040px;
+    margin-top: 40px;
+  }
+
+  .welcome-intro {
+    grid-area: intro;
+  }
+
+  .welcome-intro .page-title {
+    font-size: var(--fs-27);
+  }
+
+  .welcome-signin {
+    grid-area: signin;
+    padding: 24px;
+  }
+
+  .welcome-points {
+    grid-area: points;
+    gap: 20px 24px;
+  }
+}
+
+/* Широкий компьютер: список заявок шире */
+@media (min-width: 1280px) {
+  .inbox {
+    grid-template-columns: 380px minmax(0, 1fr);
+    gap: 32px;
   }
 }

@@ -7,7 +7,10 @@
    «занято» занимает дату сам. Каждая правка несёт версию календаря, которую видел
    человек (If-Match); правки уходят по очереди, каждая — от версии из прошлого ответа.
    Кто-то успел изменить календарь раньше (409 calendar_conflict) — месяц перечитывается,
-   человек видит, что его изменили, и отмечает заново: чужая правка молча не затирается. */
+   человек видит, что его изменили, и отмечает заново: чужая правка молча не затирается.
+
+   Подпись дня для диктора называет всё, что видно глазами: занят ли, кем (отказ «занято»,
+   менеджер), есть ли заявка, сегодня ли. На компьютере месяц крупнее, легенда — сбоку. */
 
 import type { BusyDay, VendorCalendar, VendorListingRef } from "@bayramm/shared/api/vendor";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,6 +40,27 @@ interface MonthProps {
   readonly t: VendorDict;
   readonly pendingDays: ReadonlySet<string>;
   readonly onToggle: (day: string, busy: BusyDay | undefined) => void;
+}
+
+/** Подпись дня: дата, занят ли и кем, есть ли заявка, сегодня ли */
+export function dayLabel(
+  day: string,
+  entry: BusyDay | undefined,
+  extras: { readonly request: boolean; readonly today: boolean },
+  t: VendorDict,
+): string {
+  const date = formatDate(day, t, true);
+  const state = !entry
+    ? t.dayFree
+    : entry.source === "request_decline"
+      ? t.dayBusyDecline
+      : entry.source === "staff"
+        ? t.dayBusyStaff
+        : t.dayBusy;
+  const parts = [fill(state, { date })];
+  if (extras.request) parts.push(t.legendRequest);
+  if (extras.today) parts.push(t.legendToday);
+  return parts.join(", ");
 }
 
 function MonthGrid({ calendar, t, pendingDays, onToggle }: MonthProps) {
@@ -69,7 +93,7 @@ function MonthGrid({ calendar, t, pendingDays, onToggle }: MonthProps) {
         ]
           .filter(Boolean)
           .join(" ");
-        const label = fill(entry ? t.dayBusy : t.dayFree, { date: formatDate(day, t, true) });
+        const label = dayLabel(day, entry, { request: requests.has(day), today: day === calendar.today }, t);
         return (
           <button
             key={day}
@@ -77,6 +101,7 @@ function MonthGrid({ calendar, t, pendingDays, onToggle }: MonthProps) {
             className={classes}
             aria-pressed={entry !== undefined}
             aria-label={label}
+            aria-current={day === calendar.today ? "date" : undefined}
             aria-disabled={locked || undefined}
             disabled={past || beyond || pendingDays.has(day)}
             onClick={() => onToggle(day, entry)}
@@ -215,67 +240,79 @@ export function Calendar({ t, headingRef, listings, listingId, onListing }: Cale
   const canNext = ready ? month < ready.maxDay.slice(0, 7) : false;
 
   return (
-    <section className="page" aria-labelledby="page-title">
+    <section className="page page-calendar" aria-labelledby="page-title">
       <Heading headingRef={headingRef}>{t.calendar}</Heading>
       <p className="lead">{t.calendarNote}</p>
       <ListingPicker listings={listings} value={listingId} onChange={onListing} t={t} />
 
-      <div className="cal">
-        <div className="cal-head">
-          <p className="cal-month" aria-live="polite">
-            {monthName} <span>{year}</span>
-          </p>
-          <div className="cal-nav">
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label={t.prevMonth}
-              disabled={!canPrev}
-              onClick={() => setMonth((m) => shiftMonth(m, -1))}
-            >
-              <Icon name="prev" size={14} />
-            </button>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label={t.nextMonth}
-              disabled={!canNext}
-              onClick={() => setMonth((m) => shiftMonth(m, 1))}
-            >
-              <Icon name="next" size={14} />
-            </button>
+      <div className="cal-layout">
+        <div className="cal">
+          <div className="cal-head">
+            <p className="cal-month" aria-live="polite">
+              {monthName} <span>{year}</span>
+            </p>
+            <div className="cal-nav">
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={t.prevMonth}
+                disabled={!canPrev}
+                onClick={() => setMonth((m) => shiftMonth(m, -1))}
+              >
+                <Icon name="prev" size={14} />
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={t.nextMonth}
+                disabled={!canNext}
+                onClick={() => setMonth((m) => shiftMonth(m, 1))}
+              >
+                <Icon name="next" size={14} />
+              </button>
+            </div>
           </div>
+          {calendar.state === "loading" ? <Loading t={t} /> : null}
+          {calendar.state === "error" ? <LoadError t={t} onRetry={reload} /> : null}
+          {ready ? <MonthGrid calendar={ready} t={t} pendingDays={pendingDays} onToggle={toggle} /> : null}
+          {/* Сообщение — у самого месяца: на компьютере легенда сбоку, низ страницы далеко */}
+          {message ? (
+            <p className={message === "failed" ? "form-error" : "notice"} role="alert">
+              {t[MESSAGE_TEXT[message]]}
+            </p>
+          ) : null}
         </div>
-        {calendar.state === "loading" ? <Loading t={t} /> : null}
-        {calendar.state === "error" ? <LoadError t={t} onRetry={reload} /> : null}
-        {ready ? <MonthGrid calendar={ready} t={t} pendingDays={pendingDays} onToggle={toggle} /> : null}
-        <ul className="cal-legend">
-          <li>
-            <span className="dot dot-busy" />
-            {t.legendBusy}
-          </li>
-          <li>
-            <span className="dot dot-decline" />
-            {t.legendDecline}
-          </li>
-          <li>
-            <span className="dot dot-staff" />
-            {t.legendStaff}
-          </li>
-          <li>
-            <span className="dot dot-req" />
-            {t.legendRequest}
-          </li>
-        </ul>
+        <aside className="cal-aside" aria-labelledby="legend-title">
+          <h2 className="panel-title" id="legend-title">
+            {t.legendTitle}
+          </h2>
+          <ul className="cal-legend">
+            <li>
+              <span className="dot dot-busy" />
+              {t.legendBusy}
+            </li>
+            <li>
+              <span className="dot dot-decline" />
+              {t.legendDecline}
+            </li>
+            <li>
+              <span className="dot dot-staff" />
+              {t.legendStaff}
+            </li>
+            <li>
+              <span className="dot dot-req" />
+              {t.legendRequest}
+            </li>
+            <li>
+              <span className="dot dot-today" />
+              {t.legendToday}
+            </li>
+          </ul>
+          <p className="note">
+            {t.calendarHint} {t.tz}
+          </p>
+        </aside>
       </div>
-      {message ? (
-        <p className={message === "failed" ? "form-error" : "notice"} role="alert">
-          {t[MESSAGE_TEXT[message]]}
-        </p>
-      ) : null}
-      <p className="note">
-        {t.calendarHint} {t.tz}
-      </p>
     </section>
   );
 }

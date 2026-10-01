@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
+import { PHONE_MAX, TABLET_MAX } from "./layout";
 
 const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
 const tokens = readFileSync(createRequire(import.meta.url).resolve("@bayramm/ui/tokens.css"), "utf8");
@@ -42,6 +43,15 @@ describe("styles.css кабинета вендора", () => {
   it("100vh идёт перед 100dvh (ловушка №4)", () => {
     const app = declarationsOf(".app");
     expect(app).toMatch(/min-height:\s*100vh;[\s\S]*min-height:\s*100dvh/);
+    // Боковая панель компьютера — во всю высоту окна
+    expect(declarationsOf(".side")).toMatch(/height:\s*100vh;[\s\S]*height:\s*100dvh/);
+  });
+
+  it("границы раскладки — те же, что в layout.ts", () => {
+    const widths = [...css.matchAll(/@media \(min-width: (\d+)px\)/g)].map(([, w]) => Number(w));
+    expect(widths).toContain(PHONE_MAX + 1);
+    expect(widths).toContain(TABLET_MAX + 1);
+    expect(widths.every((w) => [PHONE_MAX + 1, TABLET_MAX + 1, 1280].includes(w))).toBe(true);
   });
 
   it.each([
@@ -55,6 +65,7 @@ describe("styles.css кабинета вендора", () => {
     ".field",
     ".cal-day",
     ".tab",
+    ".side-link",
   ])("%s: зона нажатия не меньше 44px", (selector) => {
     expect(declarationsOf(selector)).toMatch(/min-height:\s*var\(--hit-min\)/);
   });
@@ -62,7 +73,7 @@ describe("styles.css кабинета вендора", () => {
   it("безопасные зоны: сверху — обе зоны (--pad-t), снизу панель над --pad-b", () => {
     expect(declarationsOf(".top")).toMatch(/padding:\s*calc\(var\(--pad-t\)/);
     expect(declarationsOf(".tabbar")).toContain("var(--pad-b)");
-    expect(declarationsOf(".app-tabs .main")).toContain("var(--pad-b)");
+    expect(declarationsOf(".app-phone .main")).toContain("var(--pad-b)");
   });
 
   it("прокрутка вбок задаёт обе оси (ловушка №2)", () => {

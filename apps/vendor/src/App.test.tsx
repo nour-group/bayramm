@@ -19,8 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { tashkentToday } from "./format";
 
-// Сжатие фото — канвас браузера, которого в jsdom нет: подменяем, проверяем остальное
-vi.mock("@bayramm/media/browser", () => ({ compressForUpload: vi.fn() }));
+// Сжатие фото — канвас браузера, которого в jsdom нет: подменено в test-setup.ts
 
 // React ждёт этот флаг, чтобы act() дожидался эффектов
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -184,7 +183,12 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(fakeFetch));
 });
 
+/** Ширина окна: раскладку выбирает layout.ts (в jsdom нет matchMedia — по innerWidth) */
+const resize = (width: number) =>
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+
 afterEach(() => {
+  resize(390);
   act(() => root.unmount());
   container.remove();
   delete (window as { Telegram?: unknown }).Telegram;
@@ -193,14 +197,22 @@ afterEach(() => {
 });
 
 describe("вход в кабинет", () => {
-  it("вне Telegram — «войдите» (хаб) и ссылка на бота окружения, без попытки входа", async () => {
+  it("вне Telegram — что это за кабинет, как получить доступ, «Войти» (хаб) и бот; без попытки входа", async () => {
     await mount("/requests");
-    expect(heading()).toBe("Войдите в кабинет");
+    expect(heading()).toBe("Кабинет площадок-партнёров Bayramm");
+    const welcome = container.querySelector(".welcome")?.textContent ?? "";
+    for (const point of ["Заявки клиентов", "12 часов на ответ", "Календарь занятости", "Карточка площадки"])
+      expect(welcome).toContain(point);
+    expect(welcome).toContain("Кабинет открывает команда Bayramm");
+    expect(welcome).toContain("Регистрации здесь нет");
+    // Чисел о площадке и партнёрах нет — только обещание 12 часов
+    expect(welcome.match(/\d+/g)).toEqual(["12", "12"]);
     expect(byText("button", "Войти")).toBeDefined();
     const link = byText<HTMLAnchorElement>("a", "Открыть бота");
     expect(link?.getAttribute("href")).toBe("https://t.me/bayramm_test_bot?start=partner");
     expect(calls.some((c) => c.method === "POST" && c.path.startsWith("/api/auth"))).toBe(false);
-    expect(container.querySelector("nav.tabbar")).toBeNull();
+    expect(container.querySelector("nav")).toBeNull();
+    expect(document.title).toBe("кабинет партнёра · Bayramm");
     // Вход на сайте по телефону здесь не включён (API не сказало иного) — о нём ни слова
     expect(container.textContent).not.toContain("по номеру");
     // Вне Telegram SDK с telegram.org не грузится
@@ -669,7 +681,9 @@ describe("изменения карточки", () => {
     expect(container.textContent).toContain("от 170\u202f000 сум за гостя");
     expect(container.textContent).toContain("Отправлено на проверку");
     // Карточка — прежняя: цена в фактах не изменилась
-    expect(container.querySelector(".venue > .facts")?.textContent).toContain("от 150\u202f000 сум за гостя");
+    expect(container.querySelector(".venue-side > .facts")?.textContent).toContain(
+      "от 150\u202f000 сум за гостя",
+    );
   });
 
   it("цена не числом — ошибка у поля без запроса; «по запросу» не бывает", async () => {
@@ -935,5 +949,176 @@ describe("площадка", () => {
     expect(container.querySelector("input, textarea, select")).toBeNull();
     expect(container.querySelector(".photo-delete")).toBeNull();
     expect(byText("button", "Предложить изменения")).toBeUndefined();
+  });
+});
+
+describe("раскладка", () => {
+  beforeEach(() => {
+    insideTelegram();
+  });
+
+  it("телефон: нижняя панель из четырёх разделов; у «Заявок» — число новых, словами для диктора", async () => {
+    await mount("/requests");
+    const tabs = [...container.querySelectorAll("nav.tabbar a")];
+    expect(tabs.map((a) => a.getAttribute("href"))).toEqual(["/requests", "/calendar", "/card", "/account"]);
+    expect(tabs[0]?.getAttribute("aria-current")).toBe("page");
+    expect(tabs[0]?.querySelector(".nav-count")?.textContent).toBe("1");
+    expect(tabs[0]?.querySelector(".sr-only")?.textContent).toBe("новых: 1");
+    expect(container.querySelector(".side, .rail")).toBeNull();
+  });
+
+  it("планшет: колонка разделов слева, экраны по одному", async () => {
+    resize(800);
+    await mount(`/requests/${REQUEST_ID}`);
+    expect(container.querySelector("nav.rail")).not.toBeNull();
+    expect(container.querySelector("nav.tabbar")).toBeNull();
+    expect(heading()).toBe("Заявка № 1001");
+    expect(container.querySelector(".rq-list")).toBeNull();
+  });
+
+  it("компьютер: боковая панель; заявки — список и карточка рядом, без самооткрытия", async () => {
+    resize(1280);
+    await mount("/requests");
+    expect(container.querySelector("aside.side nav.side-nav")).not.toBeNull();
+    expect(container.querySelector("nav.tabbar, nav.rail")).toBeNull();
+    expect(container.querySelector(".side-vendor")?.textContent).toContain("V101");
+    // Заявку сами не открываем: открытие делает её просмотренной
+    expect(container.textContent).toContain("Выберите заявку");
+    expect(calls.some((c) => c.path === `/api/vendor/requests/${REQUEST_ID}`)).toBe(false);
+
+    const lists = () => calls.filter((c) => c.method === "GET" && c.path.startsWith("/api/vendor/requests?"));
+    expect(lists()).toHaveLength(1);
+    await click(container.querySelector(".rq") ?? undefined);
+    expect(window.location.pathname).toBe(`/requests/${REQUEST_ID}`);
+    // Список остаётся, открытая заявка в нём отмечена; заголовок карточки — h2 под h1
+    expect(heading()).toBe("Заявки");
+    expect(container.querySelector("h2#request-title")?.textContent).toBe("Заявка № 1001");
+    expect(container.querySelector(".rq")?.getAttribute("aria-current")).toBe("page");
+    expect(byText("a", "Назад")).toBeUndefined();
+    // Фокус — на заголовок открытой заявки (для диктора)
+    expect(document.activeElement?.id).toBe("request-title");
+    // Открытие сделало заявку просмотренной — список перечитан тихо
+    expect(lists()).toHaveLength(2);
+
+    await click(byText("button", "Я связался с клиентом"));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ status: "contacted" });
+    expect(lists()).toHaveLength(3);
+    // id заголовков не повторяются
+    const ids = [...container.querySelectorAll("[id]")].map((el) => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("компьютер: заявка по ссылке с другой вкладки — список переходит на её вкладку", async () => {
+    resize(1280);
+    await mount(`/requests/${REQUEST_ID}`);
+    // Открытая заявка — «Ждёт ответа», то есть во вкладке «В работе»
+    expect(calls.some((c) => c.path === "/api/vendor/requests?tab=active")).toBe(true);
+    expect(container.querySelector(".pill[aria-pressed='true']")?.textContent).toContain("В работе");
+  });
+});
+
+describe("фокус после перехода", () => {
+  it("экран, который ещё грузится, получает фокус на заголовок, когда тот появится", async () => {
+    insideTelegram();
+    await mount("/requests");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // Карточка заявки отвечает не сразу: экран пока без заголовка
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      if (String(input).endsWith(REQUEST_ID)) await gate;
+      return fakeFetch(input, init);
+    });
+    await click(container.querySelector(".rq") ?? undefined);
+    expect(container.querySelector("h1")).toBeNull();
+    release();
+    await flush();
+    expect(heading()).toBe("Заявка № 1001");
+    expect(document.activeElement?.tagName).toBe("H1");
+  });
+});
+
+describe("календарь: подписи дней", () => {
+  it("диктор слышит всё, что видно: кем занят день, есть ли заявка, сегодня ли", async () => {
+    insideTelegram();
+    const today = tashkentToday();
+    const month = today.slice(0, 7);
+    const other = `${month}-${today.slice(8) === "28" ? "27" : "28"}`;
+    routes[`GET /api/vendor/listings/${LISTING_ID}/calendar`] = () => ({
+      body: {
+        listingId: LISTING_ID,
+        month,
+        today,
+        maxDay: "2099-12-31",
+        busy: [
+          { day: today, source: "staff", requestId: null },
+          { day: other, source: "request_decline", requestId: REQUEST_ID },
+        ],
+        requestDays: [other],
+        version: 1,
+      } satisfies VendorCalendar,
+    });
+    await mount("/calendar");
+    const label = (day: string) =>
+      container.querySelector(`.cal-day[aria-label^="${Number(day.slice(8))} "]`)?.getAttribute("aria-label");
+    expect(label(today)).toMatch(/, закрыл менеджер, сегодня$/);
+    expect(label(other)).toMatch(/, занято отказом, есть заявка$/);
+    expect(container.querySelector(".cal-today")?.getAttribute("aria-current")).toBe("date");
+    expect(container.querySelector(".cal-aside")?.textContent).toContain("Обозначения");
+  });
+});
+
+describe("аккаунт", () => {
+  beforeEach(() => {
+    routes["GET /api/me"] = () => ({ body: { roles: { client: null, vendors: [], staff: null } } });
+    routes["GET /api/auth/methods"] = () => ({
+      body: {
+        telegram: { bot: "bayramm_test_bot", loginDomain: null },
+        phone: false,
+        apps: {
+          web: "https://bayramm.example",
+          vendor: "https://vendor.example",
+          admin: "https://admin.example",
+        },
+      },
+    });
+  });
+
+  it("кабинет, код для менеджера и роль; язык — в профиле; в Telegram выхода нет", async () => {
+    insideTelegram();
+    await mount("/account");
+    expect(heading()).toBe("Аккаунт");
+    const text = container.textContent ?? "";
+    expect(text).toContain("Test LLC");
+    expect(text).toContain("Ваш код для менеджера: V101");
+    expect(text).toContain("Вы — владелец кабинета");
+    expect(byText("button", "Выйти")).toBeUndefined();
+    await click(byText("label", "Oʻzbekcha")?.querySelector("input") ?? undefined);
+    expect(calls.find((c) => c.method === "PATCH" && c.path === "/api/vendor/me")?.body).toEqual({
+      locale: "uz",
+    });
+    expect(heading()).toBe("Hisob");
+  });
+
+  it("сотрудник площадки — так и сказано: карточку меняет владелец", async () => {
+    insideTelegram();
+    routes["GET /api/vendor/me"] = () => ({ body: me("ru", "member") });
+    await mount("/account");
+    expect(container.textContent).toContain("Вы — сотрудник площадки");
+  });
+});
+
+describe("сессия кончилась в браузере", () => {
+  it("«войдите снова» через сайт, а не «откройте из бота»", async () => {
+    window.sessionStorage.setItem("bayramm.vendor.session", "s".repeat(43));
+    routes["GET /api/vendor/me"] = () => ({
+      status: 401,
+      body: { error: { code: "unauthorized", message: "x" } },
+    });
+    await mount("/requests");
+    expect(heading()).toBe("Сессия закончилась");
+    expect(container.textContent).toContain("Войдите снова — через сайт Bayramm.");
+    expect(byText("button", "Войти")).toBeDefined();
   });
 });

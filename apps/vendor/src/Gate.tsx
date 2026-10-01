@@ -2,7 +2,11 @@
    отключён, сессия кончилась, вход через хаб не завершился или API не ответило.
    «Войти» ведёт в хаб входа на сайте Bayramm (hub.ts). Ссылка на бота — с именем бота
    окружения из API (в сборке его нет) и стартом партнёра. Вход на сайте по номеру
-   упоминаем, только если он в окружении включён (GET /auth/methods → phone). */
+   упоминаем, только если он в окружении включён (GET /auth/methods → phone).
+
+   Вне Telegram без сессии (outside) — не короткий экран, а Welcome.tsx: что это за кабинет и
+   как получить доступ, затем вход. Сессия кончилась в браузере — «войдите снова», а не
+   «откройте из бота»: человек пришёл не из бота. */
 
 import { type MouseEvent, useEffect, useState } from "react";
 import { fetchAuthMethods, fetchBotLink } from "./api";
@@ -35,7 +39,7 @@ const WANTS_BOT: readonly GateKind[] = ["outside", "not_linked", "expired"];
 const WANTS_SIGN_IN: readonly GateKind[] = ["outside", "expired", "hub_failed", "not_linked"];
 
 /** Есть ли вход по телефону на сайте; пока не знаем (и если API не ответило) — нет */
-function usePhoneSignIn(enabled: boolean): boolean {
+export function usePhoneSignIn(enabled: boolean): boolean {
   const [phone, setPhone] = useState(false);
   useEffect(() => {
     if (!enabled) return;
@@ -50,7 +54,7 @@ function usePhoneSignIn(enabled: boolean): boolean {
   return phone;
 }
 
-function BotLink({ t, primary }: { t: VendorDict; primary: boolean }) {
+export function BotLink({ t, primary }: { t: VendorDict; primary: boolean }) {
   const [link, setLink] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,9 +101,15 @@ export function Gate({ kind, t, headingRef, onRetry, onSignIn }: GateProps) {
     );
   }
   const [title, withPhone] = TEXTS[kind];
-  const text = phone ? withPhone : (TEXTS_WITHOUT_PHONE[kind] ?? withPhone);
+  const telegram = inTelegram();
+  const text =
+    kind === "expired" && !telegram
+      ? "gateExpiredTextWeb"
+      : phone
+        ? withPhone
+        : (TEXTS_WITHOUT_PHONE[kind] ?? withPhone);
   // Внутри Telegram вход — по кнопке бота; хаб — для браузера
-  const signIn = WANTS_SIGN_IN.includes(kind) && !inTelegram();
+  const signIn = WANTS_SIGN_IN.includes(kind) && !telegram;
   return (
     <section className="gate" aria-labelledby="page-title">
       <span className="empty-art">

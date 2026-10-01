@@ -203,12 +203,20 @@ describe("хаб входа из кабинета", () => {
     const last = calls.filter((c) => c.path === "/api/vendor/me").at(-1);
     expect(last?.headers.get("X-Bayramm-Vendor")).toBe(VENDOR_B);
     expect(heading()).toBe("Заявки");
+    // Сменить кабинет — в разделе «Аккаунт»
+    await act(async () => byText<HTMLAnchorElement>("a", "Аккаунт")?.click());
+    for (let i = 0; i < 8; i++) await act(async () => {});
+    expect(heading()).toBe("Аккаунт");
     expect(byText("button", "Другой кабинет")).toBeDefined();
   });
 
-  it("ссылки аккаунта: клиентское приложение и панель — только сотруднику", async () => {
+  it("раздел «Аккаунт»: клиентское приложение и панель — только сотруднику; выход в браузере", async () => {
     window.sessionStorage.setItem("bayramm.vendor.session", TOKEN);
-    await mount("/requests");
+    await mount("/account");
+    expect(heading()).toBe("Аккаунт");
+    expect(byText("button", "Выйти")).toBeDefined();
+    // Один кабинет — менять нечего
+    expect(byText("button", "Другой кабинет")).toBeUndefined();
     expect(byText<HTMLAnchorElement>("a", "Bayramm для клиентов")?.getAttribute("href")).toBe(
       "https://bayramm.example",
     );

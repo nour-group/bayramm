@@ -8,7 +8,10 @@
    Фото: на фото не должно быть лиц — предупреждение всегда на виду, без галочки (не
    отмеченной заранее) файлы не выбрать. Каждый файл перекодирует браузер
    (compressForUpload: без EXIF и геопозиции) и отправляет по одному; новое фото ждёт
-   модератора. Удаление — через подтверждение. Порядок и обложку выбирает команда. */
+   модератора. Удаление — через подтверждение. Порядок и обложку выбирает команда.
+
+   На компьютере — две колонки: фото слева, сведения карточки справа; правки — ниже во всю
+   ширину, поля формы парами (RU рядом с UZ). */
 
 import { isImageError } from "@bayramm/media";
 import { compressForUpload } from "@bayramm/media/browser";
@@ -151,7 +154,7 @@ function Photos({ listing, t, owner, onChanged }: PhotosProps) {
               <img
                 src={photo.src}
                 srcSet={photo.srcSet}
-                sizes="(min-width: 720px) 300px, 50vw"
+                sizes="(min-width: 1024px) 220px, (min-width: 720px) 30vw, 50vw"
                 width={photo.width}
                 height={photo.height}
                 alt={`${listing.name} — ${t.photos} ${index + 1}`}
@@ -299,67 +302,73 @@ export function Venue({ t, lang, headingRef, listings, listingId, onListing, ven
             </div>
           ) : null}
 
-          {/* Ключ — площадка: галочка и ошибки загрузки другой площадки не переносятся.
+          <div className="venue-grid">
+            {/* Ключ — площадка: галочка и ошибки загрузки другой площадки не переносятся.
               Не тот же, что у Proposal: ключи соседей в одном родителе обязаны различаться */}
-          <Photos
-            key={`photos-${listing.data.id}`}
-            listing={listing.data}
-            t={t}
-            owner={owner}
-            onChanged={refreshListing}
-          />
+            <Photos
+              key={`photos-${listing.data.id}`}
+              listing={listing.data}
+              t={t}
+              owner={owner}
+              onChanged={refreshListing}
+            />
 
-          <dl className="facts">
-            <div>
-              <dt>{t.priceLabel}</dt>
-              <dd>
-                {listing.data.priceFromUzs !== null
-                  ? `${fill(t.priceFrom, { price: formatMoney(listing.data.priceFromUzs, t, lang) })} ${
-                      listing.data.priceUnit === "per_guest" ? t.perGuest : t.perEvent
-                    }`
-                  : t.notSet}
-              </dd>
-            </div>
-            <div>
-              <dt>{t.capacity}</dt>
-              <dd>
-                <Capacity listing={listing.data} t={t} />
-              </dd>
-            </div>
-            <div>
-              <dt>{t.district}</dt>
-              <dd>{listing.data.districtCode ? textOf(t, `dist_${listing.data.districtCode}`) : t.notSet}</dd>
-            </div>
-            <div>
-              <dt>{t.phoneLabel}</dt>
-              <dd>{listing.data.phone ? formatPhone(listing.data.phone) : t.notSet}</dd>
-            </div>
-            <div className="facts-wide">
-              <dt>{t.address}</dt>
-              <dd>{listing.data.address[lang] || t.notSet}</dd>
-            </div>
-          </dl>
+            <div className="venue-side">
+              <dl className="facts">
+                <div>
+                  <dt>{t.priceLabel}</dt>
+                  <dd>
+                    {listing.data.priceFromUzs !== null
+                      ? `${fill(t.priceFrom, { price: formatMoney(listing.data.priceFromUzs, t, lang) })} ${
+                          listing.data.priceUnit === "per_guest" ? t.perGuest : t.perEvent
+                        }`
+                      : t.notSet}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t.capacity}</dt>
+                  <dd>
+                    <Capacity listing={listing.data} t={t} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t.district}</dt>
+                  <dd>
+                    {listing.data.districtCode ? textOf(t, `dist_${listing.data.districtCode}`) : t.notSet}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t.phoneLabel}</dt>
+                  <dd>{listing.data.phone ? formatPhone(listing.data.phone) : t.notSet}</dd>
+                </div>
+                <div className="facts-wide">
+                  <dt>{t.address}</dt>
+                  <dd>{listing.data.address[lang] || t.notSet}</dd>
+                </div>
+              </dl>
 
-          {listing.data.packages.length > 0 ? (
-            <div className="panel">
-              <p className="panel-title">{t.packages}</p>
-              <ul className="packages">
-                {listing.data.packages.map((pack) => (
-                  <li key={`${pack.kind}-${pack.name.ru}`}>
-                    <span>{pack.name[lang]}</span>
-                    <strong className="package-price">
-                      {formatMoney(pack.priceUzs, t, lang)}{" "}
-                      {pack.priceUnit === "per_guest" ? t.perGuest : t.perEvent}
-                    </strong>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
+              {listing.data.packages.length > 0 ? (
+                <div className="panel">
+                  <p className="panel-title">{t.packages}</p>
+                  <ul className="packages">
+                    {listing.data.packages.map((pack) => (
+                      <li key={`${pack.kind}-${pack.name.ru}`}>
+                        <span>{pack.name[lang]}</span>
+                        <strong className="package-price">
+                          {formatMoney(pack.priceUzs, t, lang)}{" "}
+                          {pack.priceUnit === "per_guest" ? t.perGuest : t.perEvent}
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
 
-          <div className="panel">
-            <p className="panel-title">{t.description}</p>
-            <p className="description">{listing.data.description[lang] || t.notSet}</p>
+              <div className="panel">
+                <p className="panel-title">{t.description}</p>
+                <p className="description">{listing.data.description[lang] || t.notSet}</p>
+              </div>
+            </div>
           </div>
 
           {/* Ключ — площадка: при смене площадки форма и предложения — заново */}

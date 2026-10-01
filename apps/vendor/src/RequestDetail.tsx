@@ -2,7 +2,11 @@
    Телефон клиента — сразу, без «разблокировки»; нажатие на него пишется в журнал.
    Действия — ровно те переходы, что разрешает база:
      new/viewed → «Я связался» | «Отказать»;  contacted → «Договорились» | «Не подошло»;
-     deal/declined → «Вернуть в активные». Отказ — с причиной; «занято» занимает дату. */
+     deal/declined → «Вернуть в активные». Отказ — с причиной; «занято» занимает дату.
+
+   На компьютере карточка стоит рядом со списком (split): заголовок — h2 под h1 «Заявки»,
+   ссылки «Назад» нет (список и так на экране), а после открытия и каждого действия список
+   перечитывается (onChanged) — статус и счётчики в нём меняются вместе с карточкой. */
 
 import {
   DECLINE_NOTE_MAX,
@@ -12,7 +16,7 @@ import {
   type VendorRequestPatch,
 } from "@bayramm/shared/api/vendor";
 import { RadioGroup } from "@bayramm/ui/react";
-import { type FormEvent, type MouseEvent, useCallback, useId, useState } from "react";
+import { type FormEvent, type MouseEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { formatBudget, formatDate, formatGuests, formatMoment, formatPhone, slaView } from "./format";
 import { fill, textOf, type VendorDict } from "./i18n";
@@ -79,16 +83,43 @@ function DeclineForm({ t, busy, onSubmit, onCancel }: DeclineFormProps) {
 interface RequestDetailProps extends ScreenProps {
   readonly id: string;
   readonly navigate: Navigate;
+  /** Рядом со списком (компьютер) */
+  readonly split?: boolean;
+  /** Заявка открыта (стала просмотренной) или изменилась — перечитать список */
+  readonly onChanged?: () => void;
+  /** Первый ответ API по заявке: её статус (список переходит на её вкладку) */
+  readonly onLoaded?: (status: VendorRequestDetail["status"]) => void;
 }
 
 type Notice = "failed" | "stale" | null;
 
-export function RequestDetail({ id, t, lang, headingRef, navigate }: RequestDetailProps) {
+export function RequestDetail({
+  id,
+  t,
+  lang,
+  headingRef,
+  navigate,
+  split = false,
+  onChanged,
+  onLoaded,
+}: RequestDetailProps) {
   const now = useNow();
   const [detail, reload, setDetail] = useLoad<VendorRequestDetail>(id, (key) => api.request(key));
   const [pending, setPending] = useState(false);
   const [declining, setDeclining] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const titleId = split ? "request-title" : "page-title";
+  const level = split ? 2 : 1;
+
+  // Открытие новой заявки делает её просмотренной: список рядом должен это показать
+  const reported = useRef(false);
+  const ready = detail.state === "ready" ? detail.data : null;
+  useEffect(() => {
+    if (!ready || reported.current) return;
+    reported.current = true;
+    onLoaded?.(ready.status);
+    onChanged?.();
+  }, [ready, onLoaded, onChanged]);
 
   const back = useCallback(() => navigate({ route: "requests" }), [navigate]);
   const nativeBack = useBackButton(back);
@@ -114,11 +145,13 @@ export function RequestDetail({ id, t, lang, headingRef, navigate }: RequestDeta
             : [...current.history, { status: item.status, at: new Date().toISOString(), by: "vendor_user" }],
       }));
       setDeclining(false);
+      onChanged?.();
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "illegal_transition") {
         setNotice("stale");
         setDeclining(false);
         reload();
+        onChanged?.();
       } else {
         setNotice("failed");
       }
@@ -127,20 +160,33 @@ export function RequestDetail({ id, t, lang, headingRef, navigate }: RequestDeta
     }
   };
 
-  if (detail.state === "loading") return <Loading t={t} />;
+  // Ссылка «Назад» — в браузере на телефоне; в Telegram — его кнопка, рядом со списком — не нужна
+  const backTo =
+    nativeBack || split ? null : (
+      <a className="back-link" href="/requests" onClick={backLink}>
+        <Icon name="back" size={14} />
+        {t.back}
+      </a>
+    );
+
+  if (detail.state === "loading") {
+    return (
+      <section className="page request" aria-busy="true">
+        {backTo}
+        <Loading t={t} />
+      </section>
+    );
+  }
   if (detail.state === "error") {
     const missing = detail.error instanceof ApiFailure && detail.error.status === 404;
     return (
-      <section className="page" aria-labelledby="page-title">
-        {nativeBack ? null : (
-          <a className="back-link" href="/requests" onClick={backLink}>
-            <Icon name="back" size={14} />
-            {t.back}
-          </a>
-        )}
+      <section className="page request" aria-labelledby={missing ? titleId : undefined}>
+        {backTo}
         {missing ? (
           <>
-            <Heading headingRef={headingRef}>{t.requestNotFound}</Heading>
+            <Heading headingRef={headingRef} level={level} id={titleId}>
+              {t.requestNotFound}
+            </Heading>
             <p className="lead">{t.requestNotFoundText}</p>
           </>
         ) : (
@@ -151,20 +197,18 @@ export function RequestDetail({ id, t, lang, headingRef, navigate }: RequestDeta
   }
 
   const request = detail.data;
+  const Sub = split ? "h3" : "h2";
   const budget = formatBudget(request.budgetMinUzs, request.budgetMaxUzs, t, lang);
   const late = awaitsAnswer(request) && slaView(request.sla, now).kind === "late";
   const status = request.status;
 
   return (
-    <section className="page" aria-labelledby="page-title">
-      {nativeBack ? null : (
-        <a className="back-link" href="/requests" onClick={backLink}>
-          <Icon name="back" size={14} />
-          {t.back}
-        </a>
-      )}
+    <section className="page request" aria-labelledby={titleId}>
+      {backTo}
       <div className="detail-top">
-        <Heading headingRef={headingRef}>{fill(t.requestNo, { n: request.publicNo })}</Heading>
+        <Heading headingRef={headingRef} level={level} id={titleId}>
+          {fill(t.requestNo, { n: request.publicNo })}
+        </Heading>
         <StatusChip status={status} late={late} t={t} />
       </div>
       {awaitsAnswer(request) ? <SlaTimer item={request} t={t} now={now} /> : null}
@@ -315,7 +359,7 @@ export function RequestDetail({ id, t, lang, headingRef, navigate }: RequestDeta
 
       {request.history.length > 0 ? (
         <div className="history">
-          <h2 className="section-title">{t.history}</h2>
+          <Sub className="section-title">{t.history}</Sub>
           <ol>
             {request.history.map((entry) => (
               <li key={`${entry.at}-${entry.status}`}>
