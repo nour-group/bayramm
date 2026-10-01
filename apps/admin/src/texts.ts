@@ -965,6 +965,7 @@ export const t = {
   } as Record<string, string>,
   serviceProposal: "Правка ждёт решения",
   serviceDeclined: (reason: string) => `Отклонена: ${reason}`,
+  serviceProposalDeclined: (reason: string) => `Правку отклонили: ${reason}`,
   serviceMin: (n: number, unit: string) => `минимум ${n}, ${unit}`,
   serviceLead: (n: number) => `заказ за ${n} дн.`,
   serviceNew: "Новая услуга",

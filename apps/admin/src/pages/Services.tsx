@@ -223,8 +223,12 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
                       .join("; ")}
                   </span>
                 ) : null}
-                {service.status === "rejected" && service.decision?.reason ? (
-                  <p className="reason">{t.serviceDeclined(service.decision.reason)}</p>
+                {service.decision?.outcome === "declined" && service.decision.reason ? (
+                  <p className="reason">
+                    {service.status === "rejected"
+                      ? t.serviceDeclined(service.decision.reason)
+                      : t.serviceProposalDeclined(service.decision.reason)}
+                  </p>
                 ) : null}
                 {service.proposal ? (
                   <div className="notice notice-warn">
