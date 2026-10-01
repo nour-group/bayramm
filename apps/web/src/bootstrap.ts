@@ -2,8 +2,10 @@ import { loadTelegramWebApp } from "@bayramm/tg/webapp";
 import { createHttpApi, telegramSignIn } from "./api/http";
 import { createSiteAuth, createTelegramAuth, hasSiteSession } from "./api/session";
 import { initialLang, type Services, takeLangParam } from "./context";
+import { loadDictionary } from "./i18n";
 import { mediaEnvFor } from "./media";
-import { legacyCatalogHref } from "./routes";
+import { legacyCatalogHref, matchRoute, screenOf } from "./routes";
+import { loadStartScreen, preloadScreens, SCREEN_CHUNK } from "./screens";
 import { initTelegram } from "./telegram";
 
 /* Сборка сервисов при старте: Telegram или обычный браузер, настоящий API или демо.
@@ -12,11 +14,22 @@ import { initTelegram } from "./telegram";
    обычный браузер не тянет чужой скрипт. Не загрузился — приложение работает как сайт.
 
    Демо-API — только в `pnpm dev:web` (import.meta.env.DEV) и только если не просили
-   настоящий (VITE_API=live). В сборке ветка вырезается целиком вместе с модулем mock. */
+   настоящий (VITE_API=live). В сборке ветка вырезается целиком вместе с модулем mock.
+
+   До первой отрисовки — словарь своего языка (второй грузится при переключении) и, у
+   лендинга, его экран: лендинг сменяет пререндер из HTML за одну отрисовку, без заглушки.
+   Экран другого маршрута только начинает грузиться — показ как раньше, с заглушкой.
+   Оба куска обычно уже в кэше: их заранее просит public/boot.js (modulepreload). */
 export async function bootstrap(): Promise<Services> {
   const webApp = await loadTelegramWebApp();
   if (webApp) initTelegram(webApp);
   normalizeStartUrl(webApp !== null);
+  const start = screenOf(matchRoute(window.location.pathname), webApp !== null);
+  if (start && start.name !== "home") preloadScreens([SCREEN_CHUNK[start.name]]);
+  await Promise.all([
+    loadDictionary(initialLang(webApp)),
+    start?.name === "home" ? loadStartScreen(SCREEN_CHUNK.home) : null,
+  ]);
   const mediaEnv = mediaEnvFor(window.location.hostname);
   const now = () => Date.now();
 

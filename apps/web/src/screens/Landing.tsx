@@ -111,7 +111,11 @@ function Featured() {
   if (venues.status === "ready" && venues.data.items.length === 0) return null;
 
   return (
-    <section className="ln-section" aria-labelledby="ln-venues" aria-busy={venues.status === "loading"}>
+    <section
+      className="ln-section ln-venues"
+      aria-labelledby="ln-venues"
+      aria-busy={venues.status === "loading"}
+    >
       <div className="ln-head">
         <div>
           <h2 className="ln-h2" id="ln-venues">

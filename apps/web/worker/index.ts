@@ -3,6 +3,7 @@ import { mediaImageOrigins } from "@bayramm/media";
 import { matchRoute } from "../src/routes";
 import { taklifnomaRedirect } from "./legacy";
 import { indexingAllowed, injectMeta, pageMeta, type VenueLookup } from "./meta";
+import { applyPrerender, wantsPrerender } from "./prerender";
 import { lookupVenue, robotsTxt, sitemapXml } from "./seo";
 
 // Vite подставляет значение при сборке: в dist всегда false, строгий CSP
@@ -30,7 +31,8 @@ const site = createSiteWorker({
 const isPagePath = (pathname: string) => !/\.[a-z0-9]+$/i.test(pathname) && !pathname.startsWith("/api");
 
 /**
- * Страница приложения (index.html из ASSETS) с разметкой для поисковиков и превью ссылок.
+ * Страница приложения (index.html из ASSETS) с разметкой для поисковиков и превью ссылок,
+ * у главной — с пререндером лендинга (worker/prerender.ts).
  * Условные заголовки не передаём: у каждой страницы свой HTML, а 304 от ASSETS относился бы
  * к общему index.html. Неизвестный путь и снятая с публикации площадка — 404 (тот же SPA
  * покажет «Не найдено»), а не 200
@@ -50,8 +52,11 @@ async function page(request: Request, env: Env, url: URL): Promise<Response> {
   headers.delete("ETag");
   headers.delete("Content-Length");
   headers.set("Cache-Control", "no-cache");
-  const body = request.method === "HEAD" ? null : injectMeta(await res.text(), meta);
-  return new Response(body, { status: meta.status, headers });
+  if (request.method === "HEAD") return new Response(null, { status: meta.status, headers });
+  // Главная — с лендингом на языке страницы прямо в HTML; шаблоны пререндера — ни у кого
+  const lang = meta.status === 200 && wantsPrerender(url) ? meta.lang : null;
+  const { html, prerendered } = applyPrerender(await res.text(), lang);
+  return new Response(injectMeta(html, meta, { prerendered }), { status: meta.status, headers });
 }
 
 export default {

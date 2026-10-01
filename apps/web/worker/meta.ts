@@ -190,14 +190,17 @@ const DESCRIPTION_RE = /\s*<meta name="description"[^>]*>/;
 
 /**
  * HTML приложения с разметкой страницы: <html lang>, теги вместо <title> из index.html,
- * текст для тех, кто без JS, — после #root. Чего нет в шаблоне — HTML как есть
+ * текст для тех, кто без JS, — после #root (у страницы с пререндером он уже в #root, там
+ * не нужен). Чего нет в шаблоне — HTML как есть
  */
-export function injectMeta(html: string, meta: PageMeta): string {
+export function injectMeta(html: string, meta: PageMeta, { prerendered = false } = {}): string {
   if (!TITLE_RE.test(html)) return html;
-  return html
+  const page = html
     .replace(/<html lang="[a-z]+"/, `<html lang="${meta.lang}"`)
     .replace(ROBOTS_RE, "")
     .replace(DESCRIPTION_RE, "")
-    .replace(TITLE_RE, () => headTags(meta))
-    .replace('<div id="root"></div>', () => `<div id="root"></div>${noscript(meta)}`);
+    .replace(TITLE_RE, () => headTags(meta));
+  return prerendered
+    ? page
+    : page.replace('<div id="root"></div>', () => `<div id="root"></div>${noscript(meta)}`);
 }

@@ -1,3 +1,4 @@
+import type { Lang } from "@bayramm/shared";
 import { parseStartParam } from "@bayramm/tg";
 import { ConnectivityProvider, OfflineBanner, ToastProvider, UiTextsProvider } from "@bayramm/ui/react";
 import { Suspense, useEffect, useMemo, useRef } from "react";
@@ -15,6 +16,7 @@ import {
   isAuth,
   isInner,
   type Match,
+  type Router,
   RouterContext,
   screenOf,
   TABS,
@@ -124,7 +126,12 @@ function Sections({ current, className }: { current: Tab | null; className: "tab
   );
 }
 
-function Shell() {
+/**
+ * Оболочка: шапка, экран, подвал, вкладки. prerender — разметка для пререндера при сборке:
+ * без уведомлений и избранного (уведомления — портал в body, его нет при рендере в строку;
+ * экрану лендинга до данных API ни то ни другое не нужно)
+ */
+function Shell({ prerender = false }: { prerender?: boolean }) {
   const router = useNav();
   const { api, webApp, identity } = useServices();
   const { deleted } = useAccount();
@@ -206,68 +213,90 @@ function Shell() {
   // Сайт (не Mini App): под экраном — подвал
   const site = webApp === null && !auth;
 
+  const page = (
+    <div className={["app", inner ? "inner" : "", site ? "site" : ""].filter(Boolean).join(" ")}>
+      <a className="skip" href="#main">
+        {t.skipToMain}
+      </a>
+      <header className="top">
+        {inner && !hasNativeBack(webApp) ? (
+          <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
+            <Icon name="back" size={17} />
+          </button>
+        ) : null}
+        <Link className="brand" href={hrefFor({ name: "home" })}>
+          Bayramm
+        </Link>
+        {auth ? null : <Sections current={tabOf(match)} className="site-nav" />}
+        <LangSwitch />
+        {guest && !auth && !webApp ? (
+          <a className="btn btn-secondary top-signin" href={authHref({ return: here })}>
+            {t.accSignIn}
+          </a>
+        ) : null}
+      </header>
+      {api.mode === "mock" ? (
+        <p className="demo-ribbon" role="note">
+          {t.demoData}
+        </p>
+      ) : null}
+      <OfflineBanner offline={t.offline} back={t.backOnline} />
+      <main id="main" className={`main main-${widthOf(match)}`} tabIndex={-1} ref={main}>
+        {/* Пока грузится кусок экрана — место во весь экран: подвал не прыгает вниз */}
+        <Suspense
+          fallback={
+            <div className="screen-fallback">
+              <Loading />
+            </div>
+          }
+        >
+          <Screen match={match} />
+        </Suspense>
+      </main>
+      {/* Подвал — у сайта; в Mini App его место — нижняя панель */}
+      {site ? <SiteFooter /> : null}
+      {inner || auth ? null : <Sections current={tabOf(match)} className="tabs" />}
+    </div>
+  );
+
   return (
     <UiTextsProvider texts={uiTexts}>
-      <ToastProvider offset={inner || auth ? 16 : TABS_HEIGHT}>
-        <FavoritesProvider>
-          <div className={["app", inner ? "inner" : "", site ? "site" : ""].filter(Boolean).join(" ")}>
-            <a className="skip" href="#main">
-              {t.skipToMain}
-            </a>
-            <header className="top">
-              {inner && !hasNativeBack(webApp) ? (
-                <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
-                  <Icon name="back" size={17} />
-                </button>
-              ) : null}
-              <Link className="brand" href={hrefFor({ name: "home" })}>
-                Bayramm
-              </Link>
-              {auth ? null : <Sections current={tabOf(match)} className="site-nav" />}
-              <LangSwitch />
-              {guest && !auth && !webApp ? (
-                <a className="btn btn-secondary top-signin" href={authHref({ return: here })}>
-                  {t.accSignIn}
-                </a>
-              ) : null}
-            </header>
-            {api.mode === "mock" ? (
-              <p className="demo-ribbon" role="note">
-                {t.demoData}
-              </p>
-            ) : null}
-            <OfflineBanner offline={t.offline} back={t.backOnline} />
-            <main id="main" className={`main main-${widthOf(match)}`} tabIndex={-1} ref={main}>
-              {/* Пока грузится кусок экрана — место во весь экран: подвал не прыгает вниз */}
-              <Suspense
-                fallback={
-                  <div className="screen-fallback">
-                    <Loading />
-                  </div>
-                }
-              >
-                <Screen match={match} />
-              </Suspense>
-            </main>
-            {/* Подвал — у сайта; в Mini App его место — нижняя панель */}
-            {site ? <SiteFooter /> : null}
-            {inner || auth ? null : <Sections current={tabOf(match)} className="tabs" />}
-          </div>
-        </FavoritesProvider>
-      </ToastProvider>
+      {prerender ? (
+        page
+      ) : (
+        <ToastProvider offset={inner || auth ? 16 : TABS_HEIGHT}>
+          <FavoritesProvider>{page}</FavoritesProvider>
+        </ToastProvider>
+      )}
     </UiTextsProvider>
+  );
+}
+
+/**
+ * Провайдеры и оболочка с экраном. У приложения адрес живой (App), у пререндера при
+ * сборке (prerender.tsx) — неподвижный, язык задан (prerenderLang): одна и та же разметка
+ */
+export function AppFrame({
+  services,
+  router,
+  prerenderLang,
+}: {
+  services: Services;
+  router: Router;
+  prerenderLang?: Lang;
+}) {
+  return (
+    <ConnectivityProvider>
+      <AppProviders services={services} lang={prerenderLang}>
+        <RouterContext.Provider value={router}>
+          <Shell prerender={prerenderLang !== undefined} />
+        </RouterContext.Provider>
+      </AppProviders>
+    </ConnectivityProvider>
   );
 }
 
 export function App({ services }: { services: Services }) {
   const router = useRouter();
-  return (
-    <ConnectivityProvider>
-      <AppProviders services={services}>
-        <RouterContext.Provider value={router}>
-          <Shell />
-        </RouterContext.Provider>
-      </AppProviders>
-    </ConnectivityProvider>
-  );
+  return <AppFrame services={services} router={router} />;
 }

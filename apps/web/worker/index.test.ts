@@ -92,7 +92,8 @@ describe("index.html клиента", () => {
 
   it("сторонних скриптов нет: SDK Mini App грузит код и только внутри Telegram", () => {
     const scripts = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => m[1]);
-    expect(scripts).toEqual(["/src/main.tsx"]);
+    // boot.js — до первой отрисовки (пререндер, куски заранее), обычный скрипт из public/
+    expect(scripts).toEqual(["/boot.js", "/src/main.tsx"]);
     expect(html).not.toContain("telegram.org");
     expect(html).not.toContain("nosemgrep");
   });

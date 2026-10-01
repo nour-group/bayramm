@@ -3,9 +3,12 @@
   "private": true,
   "type": "module",
   "description": "Общий код клиента, кабинета и API: словари RU/UZ и помощники. Экспортирует исходники TS, сборки нет.",
+  "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
     "./i18n": "./src/i18n/index.ts",
+    "./i18n/ru": "./src/i18n/ru.ts",
+    "./i18n/uz": "./src/i18n/uz.ts",
     "./api": "./src/api/client.ts",
     "./api/account": "./src/api/account.ts",
     "./api/me": "./src/api/me.ts",
