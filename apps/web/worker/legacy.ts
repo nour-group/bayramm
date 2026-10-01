@@ -3,7 +3,8 @@
 export const TAKLIFNOMA_ORIGIN = "https://taklifnoma.bayramm.uz";
 
 const PAGES = new Set(["/paketlar", "/classic", "/arabic", "/envelope"]);
-const FILES = new Set(["/og.png", "/apple-touch-icon.png", "/manifest.webmanifest", "/sitemap.xml"]);
+// /og.png и /sitemap.xml теперь свои: превью ссылок Bayramm и карта сайта (worker/seo.ts)
+const FILES = new Set(["/apple-touch-icon.png", "/manifest.webmanifest"]);
 
 export function isTaklifnomaPath(pathname: string): boolean {
   if (pathname.startsWith("/demo/")) return true;

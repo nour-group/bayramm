@@ -1,6 +1,6 @@
 import { expectNoAxeViolations } from "../support/a11y";
 import { expect, test } from "../support/offline";
-import { LISTINGS, open, PATHS, prepare, T } from "../support/web";
+import { isDesktop, LISTINGS, open, PATHS, prepare, sections, T } from "../support/web";
 
 /* Избранное без входа, язык гостя между визитами, связь (баннер и повтор) и проверка
    «не робот» в хабе. Всё — на демо-API клиента в браузере, без сети. */
@@ -28,9 +28,9 @@ test.describe("избранное гостя", () => {
     await page.locator(heart(SECOND.name)).click();
     await expect(page.locator(heart(SECOND.name))).toHaveAttribute("aria-pressed", "true");
 
-    // Вкладка — из нижней панели; последние отмеченные — первыми
+    // Вкладка — из нижней панели (на компьютере — раздел в шапке); последние отмеченные — первыми
     await open(page, PATHS.catalog, ".card", { guest: true });
-    await page.locator("nav.tabs").getByRole("link", { name: ru.svTitle }).click();
+    await sections(page).getByRole("link", { name: ru.svTitle }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.svTitle);
     const names = page.locator(".favorites .card-name");
     await expect(names).toHaveText([SECOND.name, FIRST.name]);
@@ -45,14 +45,19 @@ test.describe("избранное гостя", () => {
     await expect(names).toHaveText([FIRST.name]);
     await page.locator(heart(FIRST.name)).click();
     await expect(page.locator(".state-empty")).toContainText(ru.svEmptyH);
-    await expect(page.getByRole("link", { name: ru.svGo })).toHaveAttribute("href", "/");
+    await expect(page.getByRole("link", { name: ru.svGo })).toHaveAttribute("href", PATHS.catalog);
   });
 
-  test("четыре вкладки внизу — каждая не меньше 44px и без горизонтальной прокрутки", async ({ page }) => {
+  test("четыре раздела — каждый не меньше 44px: внизу на телефоне, в шапке на компьютере", async ({
+    page,
+  }) => {
     await prepare(page);
     await open(page, PATHS.catalog, ".card", { guest: true });
-    const tabs = page.locator("nav.tabs a");
-    await expect(tabs).toHaveText([ru.navHome, ru.svTitle, ru.navRequests, ru.navProfile]);
+    const tabs = sections(page).locator("a");
+    await expect(page.locator(isDesktop(page) ? "nav.site-nav" : "nav.tabs")).toBeVisible();
+    await expect(page.locator(isDesktop(page) ? "nav.tabs" : "nav.site-nav")).toBeHidden();
+    // На сайте первый раздел — «Каталог»: главная сайта — лендинг (в Telegram — «Главная»)
+    await expect(tabs).toHaveText([ru.navCatalog, ru.svTitle, ru.navRequests, ru.navProfile]);
     for (const box of await tabs.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON()))) {
       expect(box.width).toBeGreaterThanOrEqual(44);
       expect(box.height).toBeGreaterThanOrEqual(44);

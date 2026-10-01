@@ -29,7 +29,7 @@ const toast = () => document.querySelector(".ui-toasts")?.textContent ?? "";
 
 describe("избранное гостя (без входа)", () => {
   it("сердечко на карточке: переключатель, список в браузере, уведомление как в прототипе", async () => {
-    await mount({ path: "/", identity: "guest" });
+    await mount({ path: "/catalog", identity: "guest" });
     await waitFor(() => heartOf(A.name), "сердечко на карточке");
     const heart = heartOf(A.name);
     expect(heart?.getAttribute("aria-pressed")).toBe("false");
@@ -50,7 +50,7 @@ describe("избранное гостя (без входа)", () => {
     window.localStorage.setItem(FAVORITES_KEY, JSON.stringify([B.id, A.id]));
     await mount({ path: "/favorites", identity: "guest" });
     const tabs = [...document.querySelectorAll("nav.tabs a")].map((a) => a.textContent);
-    expect(tabs).toEqual(["Главная", "Сохранённое", "Заявки", "Профиль"]);
+    expect(tabs).toEqual(["Каталог", "Сохранённое", "Заявки", "Профиль"]);
     expect(document.querySelector('nav.tabs a[aria-current="page"]')?.textContent).toBe("Сохранённое");
     expect(document.querySelector("h1")?.textContent).toBe("Сохранённое");
     await waitFor(() => cardNames().length === 2, "две карточки");
@@ -66,7 +66,7 @@ describe("избранное гостя (без входа)", () => {
     await waitFor(() => document.querySelector(".state-empty"), "пустое состояние");
     expect(text()).toContain("Пока пусто");
     expect(text()).toContain("Нажимайте сердечко на карточках — список соберётся здесь. Входить не нужно.");
-    expect(byText("a", "К поиску")?.getAttribute("href")).toBe("/");
+    expect(byText("a", "К поиску")?.getAttribute("href")).toBe("/catalog");
   });
 
   it("снятая с публикации площадка пропадает из списка без ошибки", async () => {
@@ -89,7 +89,7 @@ describe("избранное гостя (без входа)", () => {
       (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
     );
     window.localStorage.setItem(FAVORITES_KEY, JSON.stringify(hundred));
-    await mount({ path: "/", identity: "guest" });
+    await mount({ path: "/catalog", identity: "guest" });
     await waitFor(() => heartOf(A.name), "сердечко");
     await click(heartOf(A.name));
     expect(heartOf(A.name)?.getAttribute("aria-pressed")).toBe("false");
@@ -132,7 +132,7 @@ describe("избранное вошедшего", () => {
       await gate;
       return real(signal);
     };
-    await mount({ path: "/", api });
+    await mount({ path: "/catalog", api });
     await waitFor(() => heartOf(first.name), "сердечко");
     await click(heartOf(first.name));
     release();
@@ -147,7 +147,7 @@ describe("избранное вошедшего", () => {
       listings: LISTINGS,
       failWith: (method) => (method === "addFavorite" ? new ApiError(409, "favorites_full") : null),
     });
-    await mount({ path: "/", api });
+    await mount({ path: "/catalog", api });
     await waitFor(() => heartOf(A.name), "сердечко");
     await click(heartOf(A.name));
     await waitFor(() => heartOf(A.name)?.getAttribute("aria-pressed") === "false", "отметка вернулась");

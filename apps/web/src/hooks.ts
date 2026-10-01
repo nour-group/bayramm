@@ -59,8 +59,16 @@ export function useNow(now: () => number, intervalMs = 60_000): number {
   return value;
 }
 
-export function useDocumentTitle(title: string): void {
+/**
+ * Заголовок вкладки «<экран> · Bayramm» (full — заголовок как есть, у лендинга) и описание
+ * страницы, если оно задано. Первую загрузку размечает воркер (worker/meta.ts) — тут
+ * переходы внутри приложения: вкладка и браузер видят тот же текст
+ */
+export function useDocumentTitle(title: string, description?: string, full = false): void {
   useEffect(() => {
-    document.title = title ? `${title} · Bayramm` : "Bayramm";
-  }, [title]);
+    document.title = full ? title : title ? `${title} · Bayramm` : "Bayramm";
+  }, [title, full]);
+  useEffect(() => {
+    if (description) document.querySelector('meta[name="description"]')?.setAttribute("content", description);
+  }, [description]);
 }

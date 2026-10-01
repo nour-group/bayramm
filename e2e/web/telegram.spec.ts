@@ -1,6 +1,6 @@
 import { expect, test } from "../support/offline";
 import { clickBackButton, clickMainButton, fakeTelegram, telegramState } from "../support/telegram";
-import { LISTINGS, open, PATHS, prepare, T, VENUE } from "../support/web";
+import { isDesktop, LISTINGS, open, PATHS, prepare, T, VENUE } from "../support/web";
 
 /* Клиент внутри Telegram (поддельный WebApp) и в обычном браузере: ссылка на площадку,
    безопасные зоны, кнопки Telegram, путь к заявке без Telegram. */
@@ -15,12 +15,13 @@ test.describe("внутри Telegram", () => {
     const venue = LISTINGS[5] ?? VENUE;
     await prepare(page);
     await fakeTelegram(page, { startParam: `vendor_${venue.slug}` });
-    await open(page, PATHS.catalog);
+    // Корень Mini App — каталог (в браузере на этом адресе лендинг)
+    await open(page, PATHS.home);
 
     await expect(page).toHaveURL(PATHS.venue(venue.slug));
     await expect(page.locator(".venue-head h1")).toHaveText(venue.name);
-    // Телефон — и здесь до заявки
-    await expect(page.locator(`.contact a[href="tel:${venue.phone}"]`).first()).toBeVisible();
+    // Телефон — и здесь до заявки (на телефоне — раздел «Телефон», на компьютере — карточка справа)
+    await expect(page.locator(`a.contact-phone[href="tel:${venue.phone}"]:visible`)).toHaveCount(1);
 
     // Своя кнопка заявки не рисуется: её место — главная кнопка Telegram с тем же текстом
     await expect
@@ -40,7 +41,8 @@ test.describe("внутри Telegram", () => {
     await clickBackButton(page);
     await expect(page).toHaveURL(PATHS.venue(venue.slug));
     await clickBackButton(page);
-    await expect(page).toHaveURL(PATHS.catalog);
+    await expect(page).toHaveURL(PATHS.home);
+    await expect(page.locator(".catalog .card").first()).toBeVisible();
     await expect.poll(async () => (await telegramState(page)).back.visible).toBe(false);
 
     const calls = (await telegramState(page)).calls.map((c) => c.name);
@@ -50,8 +52,10 @@ test.describe("внутри Telegram", () => {
   test("незнакомый start_param не уводит с главной", async ({ page }) => {
     await prepare(page);
     await fakeTelegram(page, { startParam: "vendor_Not_A_Slug" });
-    await open(page, PATHS.catalog, ".card");
-    await expect(page).toHaveURL(PATHS.catalog);
+    await open(page, PATHS.home, ".card");
+    await expect(page).toHaveURL(PATHS.home);
+    // В Mini App ни лендинга, ни подвала сайта
+    await expect(page.locator(".landing, .site-footer")).toHaveCount(0);
   });
 
   test("безопасные зоны: шапка ниже выреза и кнопок Telegram, панели выше жест-бара", async ({ page }) => {
@@ -59,7 +63,11 @@ test.describe("внутри Telegram", () => {
     const content = { top: 46, bottom: 8 };
     await prepare(page);
     await fakeTelegram(page, { safeArea: safe, contentSafeArea: content });
-    await open(page, PATHS.catalog, ".card");
+    await open(page, PATHS.home, ".card");
+    // Свои отступы шапки и полей: на телефоне 6 и 16px, в раскладке компьютера — 10 и 32px
+    const desktop = isDesktop(page);
+    const ownTop = desktop ? 10 : 6;
+    const ownSide = desktop ? 32 : 16;
 
     const px = (selector: string, property: string) =>
       page
@@ -67,17 +75,18 @@ test.describe("внутри Telegram", () => {
         .first()
         .evaluate((el, prop) => Number.parseFloat(getComputedStyle(el).getPropertyValue(prop)), property);
 
-    // Верх складывает обе зоны: вырез + кнопки Telegram (+ свой отступ шапки 6px)
-    expect(await px(".top", "padding-top")).toBe(safe.top + content.top + 6);
+    // Верх складывает обе зоны: вырез + кнопки Telegram (+ свой отступ шапки)
+    expect(await px(".top", "padding-top")).toBe(safe.top + content.top + ownTop);
     // Низ панели вкладок: жест-бар + зона Telegram (+ 4px)
     expect(await px(".tabs", "padding-bottom")).toBe(safe.bottom + content.bottom + 4);
-    // Бока содержимого — вырез в альбомной ориентации (+ 16px)
-    expect(await px(".main", "padding-left")).toBe(safe.left + 16);
-    expect(await px(".main", "padding-right")).toBe(safe.right + 16);
+    // Бока содержимого — вырез в альбомной ориентации (+ свой отступ)
+    expect(await px(".main", "padding-left")).toBe(safe.left + ownSide);
+    expect(await px(".main", "padding-right")).toBe(safe.right + ownSide);
 
-    // Панель действий площадки прилипает выше жест-бара
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1");
-    expect(await px(".venue-bar", "padding-bottom")).toBe(safe.bottom + content.bottom + 12);
+    // Панель действий площадки прилипает выше жест-бара; на компьютере она — карточка справа
+    if (desktop) await expect(page.locator(".venue-side .venue-bar")).toBeInViewport();
+    else expect(await px(".venue-bar", "padding-bottom")).toBe(safe.bottom + content.bottom + 12);
     // Шапка не залезает под кнопки Telegram: заголовок ниже обеих зон
     const brand = await page.locator(".top .brand").boundingBox();
     expect(brand?.y ?? 0).toBeGreaterThanOrEqual(safe.top + content.top);
@@ -88,7 +97,7 @@ test.describe("внутри Telegram", () => {
     await open(page, PATHS.catalog, ".card");
     const top = await page.locator(".top").evaluate((el) => getComputedStyle(el).paddingTop);
     const tabs = await page.locator(".tabs").evaluate((el) => getComputedStyle(el).paddingBottom);
-    expect([top, tabs]).toEqual(["6px", "4px"]);
+    expect([top, tabs]).toEqual([isDesktop(page) ? "10px" : "6px", "4px"]);
   });
 });
 

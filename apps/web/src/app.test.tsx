@@ -34,7 +34,7 @@ if (!VENUE) throw new Error("нет демо-площадки");
 
 describe("каталог", () => {
   it("фильтры живут в адресе и уходят в запрос", async () => {
-    await mount({ path: "/?guests=200&district=chilonzor" });
+    await mount({ path: "/catalog?guests=200&district=chilonzor" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const guests = field("Гости");
     expect(guests?.value).toBe("200");
@@ -49,7 +49,7 @@ describe("каталог", () => {
   });
 
   it("лента догружается по курсору, без повторов", async () => {
-    await mount({ path: "/" });
+    await mount({ path: "/catalog" });
     await waitFor(() => document.querySelectorAll(".card").length === 20, "первая страница");
     await click(byText("button", "Показать ещё"));
     await waitFor(() => document.querySelectorAll(".card").length === LISTINGS.length, "вторая страница");
@@ -71,7 +71,7 @@ describe("каталог", () => {
   });
 
   it("пусто — объяснение и сброс фильтров", async () => {
-    await mount({ path: "/?guests=5000" });
+    await mount({ path: "/catalog?guests=5000" });
     await waitFor(() => byText("h2", "Под эти условия никого"), "пустое состояние");
     await click(byText("button", "Сбросить фильтры"));
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки после сброса");
@@ -113,7 +113,7 @@ describe("каталог", () => {
   });
 
   it("цены за гостя и за мероприятие: с гостями — примерная сумма на них и подсказка", async () => {
-    await mount({ path: "/?guests=200" });
+    await mount({ path: "/catalog?guests=200" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const cards = [...document.querySelectorAll(".card")];
     const perGuest = cards.find((c) => c.textContent?.includes("за гостя"));
@@ -125,19 +125,19 @@ describe("каталог", () => {
     );
     cleanup();
 
-    await mount({ path: "/" });
+    await mount({ path: "/catalog" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     expect(document.querySelector(".card-estimate")).toBeNull();
     expect(document.querySelector(".sort-hint")?.textContent).toContain("делим на вместимость");
     cleanup();
 
-    await mount({ path: "/?sort=capacity_desc" });
+    await mount({ path: "/catalog?sort=capacity_desc" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     expect(document.querySelector(".sort-hint")).toBeNull();
   });
 
   it("карточка ведёт на площадку и передаёт дату и гостей", async () => {
-    await mount({ path: "/?date=2026-10-20&guests=100" });
+    await mount({ path: "/catalog?date=2026-10-20&guests=100" });
     const link = await waitFor(() => document.querySelector<HTMLAnchorElement>(".card-link"), "карточка");
     expect(link.getAttribute("href")).toMatch(/^\/venue\/[a-z0-9-]+\?date=2026-10-20&guests=100$/);
   });
@@ -147,7 +147,7 @@ describe("площадка", () => {
   it("несуществующая — «не найдена» со ссылкой в каталог", async () => {
     await mount({ path: "/venue/net-takoy" });
     await waitFor(() => byText("h1", "Площадка не найдена"), "404");
-    expect(byText<HTMLAnchorElement>("a", "В каталог")?.getAttribute("href")).toBe("/");
+    expect(byText<HTMLAnchorElement>("a", "В каталог")?.getAttribute("href")).toBe("/catalog");
   });
 
   it("фото — варианты с воркера media, первое без ленивой загрузки", async () => {
@@ -242,7 +242,7 @@ describe("мои заявки", () => {
     const similar = items[1]?.querySelector<HTMLAnchorElement>(".req-breached a");
     const listing = LISTINGS[1];
     expect(similar?.getAttribute("href")).toBe(
-      `/?date=${requests[1]?.eventDate}&guests=${requests[1]?.guests}&district=${listing?.districtCode}`,
+      `/catalog?date=${requests[1]?.eventDate}&guests=${requests[1]?.guests}&district=${listing?.districtCode}`,
     );
     expect(items[2]?.textContent).toContain("ответили за 2 ч 15 мин");
     expect(items[3]?.textContent).toContain("Причина: дата занята");
@@ -369,9 +369,10 @@ describe("язык и оболочка", () => {
 
   it("вкладки: текущая помечена; на внутренних экранах панели нет", async () => {
     await mount({ path: "/requests", mock: { requests: [] } });
-    expect(byText("nav a", "Заявки")?.getAttribute("aria-current")).toBe("page");
-    await click(byText("nav a", "Главная"));
-    expect(window.location.pathname).toBe("/");
+    expect(byText("nav.tabs a", "Заявки")?.getAttribute("aria-current")).toBe("page");
+    // На сайте первая вкладка — «Каталог» (главная сайта — лендинг), в Telegram — «Главная»
+    await click(byText("nav.tabs a", "Каталог"));
+    expect(window.location.pathname).toBe("/catalog");
     const card = await waitFor(() => document.querySelector<HTMLAnchorElement>(".card-link"), "карточка");
     await click(card);
     await waitFor(() => window.location.pathname.startsWith("/venue/"), "площадка");
@@ -393,11 +394,11 @@ describe("язык и оболочка", () => {
   });
 
   it("демо-режим помечен", async () => {
-    await mount({ path: "/" });
+    await mount({ path: "/catalog" });
     expect(document.querySelector(".demo-ribbon")?.textContent).toBe("Демо-данные: сервер не подключён");
     cleanup();
     const live = { ...createMockApi({ now: () => NOW, listings: LISTINGS }), mode: "live" as const };
-    await mount({ path: "/", api: live });
+    await mount({ path: "/catalog", api: live });
     expect(document.querySelector(".demo-ribbon")).toBeNull();
   });
 });

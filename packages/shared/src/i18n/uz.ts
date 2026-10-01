@@ -527,4 +527,68 @@ export const uz: Dict = {
   humanCheckFailed: "Tekshiruvdan oʻtilmadi. Qayta urinib koʻring.",
   humanCheckOff: "Tekshiruv hozir ishlamayapti. Keyinroq urinib koʻring yoki Telegram orqali kiring.",
   authLinkPhoneTitle: "Telefon qoʻshish",
+  // ── сайт: шапка, лендинг, документы, подвал, мета-теги ──────────────────
+  navCatalog: "Katalog",
+  galleryPrev: "Oldingi surat",
+  galleryNext: "Keyingi surat",
+  docsLead: "Amaldagi rozilik matnlari — soʻrov shaklida belgilaydiganlaringiz bilan bir xil.",
+  metaHomeTitle: "Bayramm — Toshkentda bayramlar uchun zallar",
+  metaHomeDesc:
+    "Toshkent zallari va toʻyxonalari narxlari va bandlik taqvimi bilan. Maydon telefoni darhol koʻrinadi, soʻrov bepul, javob — 12 soat ichida.",
+  metaCatalogDesc:
+    "Sana, mehmonlar soni va tumanni tanlang: katalog Toshkent zallarini narxlari, boʻsh sanalari va telefonlari bilan koʻrsatadi.",
+  metaVenueDesc: (facts: string) => `${facts}. Maydon telefoni va bandlik taqvimi — sahifada, soʻrov bepul.`,
+  metaDocsDesc: "Bayramm rozilik matnlari va soʻrov qanday ishlashi.",
+  lnKicker: "Toshkent zallari va toʻyxonalari",
+  lnTitle: "Bayram uchun zal — narxi va boʻsh sanasi bilan",
+  lnLead:
+    "Toʻy, beshik toʻyi, tugʻilgan kun yoki korporativ: sana va mehmonlar sonini tanlang — qaysi zallar boʻsh, qancha turadi va qayerga qoʻngʻiroq qilishni koʻrasiz.",
+  lnSearchLabel: "Zal tanlash",
+  lnSearch: "Zallarni koʻrsatish",
+  lnBrowse: "Butun katalog",
+  lnVenuesH: "Katalogdagi zallar",
+  lnVenuesP:
+    "Narxlarni maydonlarning oʻzi koʻrsatadi, ustamasiz. Tartib — narx boʻyicha: toʻlov unga taʼsir qilmaydi.",
+  lnVenuesAll: "Barcha zallarni koʻrish",
+  lnHowH: "Qanday ishlaydi",
+  lnStepH: [
+    "Sana va mehmonlarni tanlang",
+    "Qoʻngʻiroq qiling yoki soʻrov qoldiring",
+    "Toʻgʻridan-toʻgʻri kelishing",
+  ],
+  lnStepP: [
+    "Katalog mehmonlaringiz sigʻadigan zallarni koʻrsatadi va shu kuni qaysilari boʻshligini belgilaydi.",
+    "Maydon telefoni darhol koʻrinadi — soʻrovsiz qoʻngʻiroq qilish mumkin. Yoki soʻrov yuboring: sana, mehmonlar va istaklaringiz maydonga Telegramda boradi.",
+    "Maydon 12 soat ichida javob beradi. Shartlar va toʻlovni u bilan kelishasiz — Bayramm hisob-kitobda qatnashmaydi.",
+  ],
+  lnPromH: "Vaʼdalarimiz",
+  lnPromT: ["Siz uchun bepul", "Narx darhol koʻrinadi", "Soʻrovsiz telefon", "12 soatda javob"],
+  lnPromP: [
+    "Na komissiya, na soʻrov uchun toʻlov. Pul Bayramm orqali oʻtmaydi.",
+    "Har bir zalning boshlangʻich narxi koʻrsatilgan. Narxsiz maydon katalogga chiqmaydi.",
+    "Maydon raqami uning sahifasida ochiq: soʻrovsiz ham qoʻngʻiroq qiling.",
+    "Maydon 12 soatda javob bermasa — shu sanaga oʻxshash zallarni koʻrsatamiz.",
+  ],
+  lnPartnerH: "Zal egasimisiz?",
+  lnPartnerP:
+    "Soʻrovlar Telegramga keladi — sana, mehmonlar soni va byudjet bilan. Kartochka va bandlik taqvimini hamkor kabinetida yuritasiz. Buyurtmalardan komissiya olinmaydi.",
+  lnPartnerNote: "Kabinet — Bayrammga ulangan maydonlar uchun.",
+  lnFaqH: "Koʻp beriladigan savollar",
+  lnFaqQ: [
+    "Bu qancha turadi?",
+    "Soʻrov sanani biriktiradimi?",
+    "Maydon javob bermasa-chi?",
+    "Soʻrovni qanday yuboraman?",
+    "Narxlar va taqvim qayerdan?",
+  ],
+  lnFaqA: [
+    "Siz uchun — hech narsa: na komissiya, na soʻrov uchun toʻlov. Zal narxini maydon bilan toʻgʻridan-toʻgʻri kelishib, toʻlaysiz.",
+    "Yoʻq. Soʻrov — maydonga murojaat: sana va shartlarni u oʻzi tasdiqlaydi. Eng tezi — qoʻngʻiroq qilish: raqam darhol koʻrinadi.",
+    "Maydonga javob uchun 12 soat beriladi. U javob bermasa, «Mening soʻrovlarim»da shu sanaga oʻxshash zallar paydo boʻladi.",
+    "Zal sahifasini oching va «Soʻrov qoldirish» tugmasini bosing. Telegram orqali kirish mumkin — parol kerak emas.",
+    "Ularni maydonlarning oʻzi yuritadi. Boshlangʻich narx koʻrsatilgan: bayramingiz uchun aniq summani maydon aytadi.",
+  ],
+  ftAbout: "Toshkentda bayramlar uchun zal qidirish.",
+  ftNav: "Bayramm haqida",
+  ftTelegram: "Bayramm Telegramda",
 };

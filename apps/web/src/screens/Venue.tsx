@@ -1,5 +1,5 @@
 import type { ListingDetail } from "@bayramm/shared/api";
-import { type UIEvent, useMemo, useState } from "react";
+import { type UIEvent, useMemo, useRef, useState } from "react";
 import { isNotFound } from "../api/errors";
 import { Calendar } from "../components/Calendar";
 import { FavoriteButton } from "../components/FavoriteButton";
@@ -25,10 +25,14 @@ import { hrefFor, useNav } from "../router";
 import { useMainButton } from "../telegram";
 import { DATE_HORIZON_DAYS, parseGuests } from "./catalog-feed";
 
+/** Ширина главного фото: на компьютере — левая колонка рядом с карточкой связи (styles.css, .venue) */
+const GALLERY_SIZES = "(min-width: 1280px) 830px, (min-width: 1024px) 60vw, (min-width: 768px) 720px, 100vw";
+
 function Gallery({ listing }: { listing: ListingDetail }) {
   const { t } = useLang();
   const photos = listing.photos.length > 0 ? listing.photos : [listing.cover];
   const [index, setIndex] = useState(0);
+  const track = useRef<HTMLUListElement>(null);
   const total = photos.length;
 
   const onScroll = (event: UIEvent<HTMLUListElement>) => {
@@ -36,26 +40,56 @@ function Gallery({ listing }: { listing: ListingDetail }) {
     if (list.clientWidth > 0) setIndex(Math.round(list.scrollLeft / list.clientWidth));
   };
 
+  // Листать кнопками — мышью на компьютере (вбок колесо не крутит). scrollTo есть не везде
+  // (ловушка №5) — тогда сдвигаем scrollLeft напрямую
+  const go = (step: number) => {
+    const list = track.current;
+    if (!list) return;
+    const left = Math.max(0, Math.min(total - 1, index + step)) * list.clientWidth;
+    if (typeof list.scrollTo === "function") list.scrollTo({ left, behavior: "smooth" });
+    else list.scrollLeft = left;
+  };
+
   return (
     <div className="gallery">
       {/* Лента прокручивается вбок — с клавиатуры тоже: в фокусе её листают стрелки (WCAG 2.1.1) */}
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: прокручиваемая область обязана принимать фокус */}
-      <ul className="gallery-track" aria-label={t.photos} tabIndex={0} onScroll={onScroll}>
+      <ul className="gallery-track" aria-label={t.photos} tabIndex={0} onScroll={onScroll} ref={track}>
         {photos.map((photo, i) => (
           <li key={photo?.key ?? i} className="gallery-item">
             <Photo
               photo={photo}
               alt={t.photoOf(listing.name, i + 1, total)}
-              sizes="(min-width: 720px) 720px, 100vw"
+              sizes={GALLERY_SIZES}
               eager={i === 0}
             />
           </li>
         ))}
       </ul>
       {total > 1 ? (
-        <span className="gallery-count" aria-hidden="true">
-          {Math.min(index + 1, total)} / {total}
-        </span>
+        <>
+          <span className="gallery-count" aria-hidden="true">
+            {Math.min(index + 1, total)} / {total}
+          </span>
+          <button
+            type="button"
+            className="icon-btn gallery-nav gallery-prev"
+            aria-label={t.galleryPrev}
+            disabled={index <= 0}
+            onClick={() => go(-1)}
+          >
+            <Icon name="prev" size={17} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn gallery-nav gallery-next"
+            aria-label={t.galleryNext}
+            disabled={index >= total - 1}
+            onClick={() => go(1)}
+          >
+            <Icon name="next" size={17} />
+          </button>
+        </>
       ) : null}
     </div>
   );
@@ -181,21 +215,31 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         </p>
       </section>
 
-      <div className="action-bar venue-bar">
-        <div className="bar-price">
-          <b>{price.amount}</b>
-          <span className="unit">{price.unit ?? phone}</span>
+      {/* Цена, телефон и заявка: на телефоне — панель внизу экрана, на компьютере — карточка
+          справа, прилипает при прокрутке. Номер в ней виден сразу — правило продукта */}
+      <div className="venue-side">
+        <div className="action-bar venue-bar">
+          <div className="bar-price">
+            <b>{price.amount}</b>
+            <span className={price.unit ? "unit" : "unit unit-phone"}>{price.unit ?? phone}</span>
+          </div>
+          <a className="contact-phone bar-phone" href={telHref(listing.phone)}>
+            {phone}
+          </a>
+          <a className="icon-btn call" href={telHref(listing.phone)} aria-label={`${t.sentCall}: ${phone}`}>
+            <Icon name="phone" size={20} />
+            <span className="call-label" aria-hidden="true">
+              {t.sentCall}
+            </span>
+          </a>
+          {nativeMain ? null : (
+            <Link className="btn btn-primary" href={requestHref}>
+              {t.pfReq}
+            </Link>
+          )}
         </div>
-        <a className="icon-btn call" href={telHref(listing.phone)} aria-label={`${t.sentCall}: ${phone}`}>
-          <Icon name="phone" size={20} />
-        </a>
-        {nativeMain ? null : (
-          <Link className="btn btn-primary" href={requestHref}>
-            {t.pfReq}
-          </Link>
-        )}
+        <p className="bar-note">{t.pfBarNote}</p>
       </div>
-      <p className="bar-note">{t.pfBarNote}</p>
     </article>
   );
 }

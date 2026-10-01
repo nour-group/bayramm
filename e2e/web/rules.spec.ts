@@ -4,7 +4,18 @@ import type { Locator, Page } from "@playwright/test";
 import { formatDayMonth, formatPhone } from "../../apps/web/src/format";
 import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
-import { BUSY_DAY, humanText, LISTINGS, open, PATHS, prepare, SCREENS, T, VENUE } from "../support/web";
+import {
+  BUSY_DAY,
+  humanText,
+  isDesktop,
+  LISTINGS,
+  open,
+  PATHS,
+  prepare,
+  SCREENS,
+  T,
+  VENUE,
+} from "../support/web";
 
 /* Правила продукта (CLAUDE.md, «Правила продукта — нарушать нельзя») на живом клиенте
    в браузере — продолжение prototypes/client/smoke.js. Упал тест — нарушено обещание
@@ -37,18 +48,28 @@ test.describe("телефон виден сразу", () => {
       await open(page, PATHS.venue(VENUE.slug), ".venue-head h1", { guest: who !== "Telegram" });
 
       const tel = `tel:${VENUE.phone}`;
-      const number = page.locator(`.contact a.contact-phone[href="${tel}"]`);
+      const desktop = isDesktop(page);
+      // Телефон: на телефоне — раздел «Телефон» под названием, на компьютере — карточка справа
+      const number = page.locator(
+        desktop ? `.venue-side a.bar-phone[href="${tel}"]` : `.contact a.contact-phone[href="${tel}"]`,
+      );
       await expect(number).toBeVisible();
+      await expect(number).toBeInViewport();
       await expect(number).toHaveText(formatPhone(VENUE.phone));
-      await expect(page.locator(`.contact a.btn[href="${tel}"]`)).toContainText(ru.sentCall);
-      // Кнопка звонка в панели внизу — на экране без прокрутки
+      if (!desktop) await expect(page.locator(`.contact a.btn[href="${tel}"]`)).toContainText(ru.sentCall);
+      // Кнопка звонка — в панели внизу (на компьютере — в карточке), на экране без прокрутки
       const barCall = page.locator(`.venue-bar a.call[href="${tel}"]`);
       await expect(barCall).toBeVisible();
       await expect(barCall).toBeInViewport();
-      // Цена в панели не уходит под кнопку звонка
+      if (desktop) await expect(barCall).toContainText(ru.sentCall);
+      // Цена в панели не уходит под кнопку звонка: рядом с ней на телефоне, над ней — на компьютере
       const priceBox = await page.locator(".venue-bar .bar-price b").boundingBox();
       const callBox = await barCall.boundingBox();
-      expect(priceBox && callBox && priceBox.x + priceBox.width <= callBox.x).toBe(true);
+      expect(priceBox && callBox).toBeTruthy();
+      if (priceBox && callBox)
+        expect(
+          desktop ? priceBox.y + priceBox.height <= callBox.y : priceBox.x + priceBox.width <= callBox.x,
+        ).toBe(true);
       expect(
         await page.locator(".venue-bar .bar-price b").evaluate((el) => el.scrollWidth <= el.clientWidth),
       ).toBe(true);
@@ -91,7 +112,12 @@ test.describe("тексты экранов", () => {
       await expect(page.getByRole("heading", { level: 1, name: T[lang].sentH })).toBeVisible();
       await check("заявка отправлена");
 
-      expect(seen).toHaveLength(SCREENS.length + 4);
+      // Лендинг гостя: вопросы раскрыты — их текст тоже без «брони» и рейтингов
+      await open(page, PATHS.home, ".ln-faq", { guest: true });
+      for (const item of await page.locator(".ln-faq summary").all()) await item.click();
+      await check("лендинг с ответами");
+
+      expect(seen).toHaveLength(SCREENS.length + 5);
       // Вместо рейтинга — «Новый»
       await open(page, PATHS.catalog, ".card");
       await expect(page.locator('.card .badge-new [aria-hidden="true"]').first()).toHaveText(

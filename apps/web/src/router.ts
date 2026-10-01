@@ -1,84 +1,22 @@
-import { trimTrailingSlashes } from "@bayramm/shared";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { hrefFor, type Match, matchRoute, parentOf } from "./routes";
 
-/* Все маршруты клиента — в одной карте. Пути и номера экранов, вписанные по месту,
-   разъезжаются (ловушка №9 в CLAUDE.md): ссылки собираем только через hrefFor. */
-export const ROUTES = {
-  catalog: "/",
-  venue: "/venue/:slug",
-  request: "/venue/:slug/request",
-  favorites: "/favorites",
-  requests: "/requests",
-  profile: "/profile",
-  // Хаб входа: вход на сайт и вход в кабинет и панель (hub.ts). Ссылки сюда — только
-  // полной загрузкой: CSP виджета Telegram — у страниц /auth
-  auth: "/auth",
-  authTelegram: "/auth/telegram",
-} as const;
-
-export type RouteName = keyof typeof ROUTES;
-
-export type Match =
-  | { readonly name: "catalog" }
-  | { readonly name: "venue"; readonly slug: string }
-  | { readonly name: "request"; readonly slug: string }
-  | { readonly name: "favorites" }
-  | { readonly name: "requests" }
-  | { readonly name: "profile" }
-  | { readonly name: "auth" }
-  | { readonly name: "authTelegram" };
-
-/** Вкладки нижней панели, по порядку: как в прототипе — главная, сохранённое, заявки; и профиль */
-export const TABS = ["catalog", "favorites", "requests", "profile"] as const satisfies readonly RouteName[];
-export type Tab = (typeof TABS)[number];
-
-// Как slug листинга в базе и id в start_param: строчная латиница, цифры, дефис
-const SLUG = "([a-z0-9-]{1,64})";
-const VENUE_RE = new RegExp(`^/venue/${SLUG}$`);
-const REQUEST_RE = new RegExp(`^/venue/${SLUG}/request$`);
-
-/** Маршрут по пути; неизвестный путь — null */
-export function matchRoute(pathname: string): Match | null {
-  const path = trimTrailingSlashes(pathname) || "/";
-  if (path === ROUTES.catalog) return { name: "catalog" };
-  if (path === ROUTES.favorites) return { name: "favorites" };
-  if (path === ROUTES.requests) return { name: "requests" };
-  if (path === ROUTES.profile) return { name: "profile" };
-  if (path === ROUTES.auth) return { name: "auth" };
-  if (path === ROUTES.authTelegram) return { name: "authTelegram" };
-  const venue = VENUE_RE.exec(path)?.[1];
-  if (venue) return { name: "venue", slug: venue };
-  const request = REQUEST_RE.exec(path)?.[1];
-  if (request) return { name: "request", slug: request };
-  return null;
-}
-
-type Query = Readonly<Record<string, string | number | null | undefined>>;
-
-/** Адрес экрана: путь из карты плюс строка запроса без пустых значений */
-export function hrefFor(match: Match, query: Query = {}): string {
-  const path = "slug" in match ? ROUTES[match.name].replace(":slug", match.slug) : ROUTES[match.name];
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
-    if (value !== null && value !== undefined && value !== "") params.set(key, String(value));
-  }
-  const search = params.toString();
-  return search ? `${path}?${search}` : path;
-}
-
-/** Куда ведёт «назад», если в истории вкладки до этого экрана ничего нет */
-export function parentOf(match: Match | null): Match | null {
-  if (match?.name === "request") return { name: "venue", slug: match.slug };
-  if (match?.name === "venue") return { name: "catalog" };
-  return null;
-}
-
-/** Вкладка, к которой относится экран: внутренние экраны — к каталогу */
-export function tabOf(match: Match | null): Tab | null {
-  if (!match || match.name === "auth" || match.name === "authTelegram") return null;
-  if (match.name === "favorites" || match.name === "requests" || match.name === "profile") return match.name;
-  return "catalog";
-}
+/* Навигация без перезагрузки поверх карты маршрутов (routes.ts — без React, её читает и воркер) */
+export {
+  hrefFor,
+  isAuth,
+  isInner,
+  type Match,
+  matchRoute,
+  parentOf,
+  ROUTES,
+  type RouteName,
+  screenOf,
+  TABS,
+  type Tab,
+  tabOf,
+  widthOf,
+} from "./routes";
 
 export interface Router {
   readonly match: Match | null;

@@ -80,7 +80,7 @@ describe("правила продукта", () => {
   });
 
   it("рейтинга и числа отзывов нет — вместо них «Новый»", async () => {
-    await mount({ path: "/" });
+    await mount({ path: "/catalog" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const cards = [...document.querySelectorAll(".card")];
     // На глаз — «Новый», диктору — полный смысл «Новый на площадке»; подсказка мыши — не title
@@ -99,7 +99,7 @@ describe("правила продукта", () => {
   });
 
   it("занятые на дату — в конце выдачи, не спрятаны и помечены", async () => {
-    await mount({ path: `/?date=${BUSY_DAY}` });
+    await mount({ path: `/catalog?date=${BUSY_DAY}` });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const cards = [...document.querySelectorAll(".card")];
     const busy = cards.map((card) => card.classList.contains("busy"));
@@ -112,7 +112,7 @@ describe("правила продукта", () => {
   });
 
   it("порядок по цене не меняет правило «занятые внизу»", async () => {
-    await mount({ path: `/?date=${BUSY_DAY}&sort=price_desc` });
+    await mount({ path: `/catalog?date=${BUSY_DAY}&sort=price_desc` });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const busy = [...document.querySelectorAll(".card")].map((card) => card.classList.contains("busy"));
     expect(busy.slice(busy.indexOf(true)).every(Boolean)).toBe(true);

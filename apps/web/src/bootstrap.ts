@@ -1,8 +1,9 @@
 import { loadTelegramWebApp } from "@bayramm/tg/webapp";
 import { createHttpApi, telegramSignIn } from "./api/http";
 import { createSiteAuth, createTelegramAuth, hasSiteSession } from "./api/session";
-import { initialLang, type Services } from "./context";
+import { initialLang, type Services, takeLangParam } from "./context";
 import { mediaEnvFor } from "./media";
+import { legacyCatalogHref } from "./routes";
 import { initTelegram } from "./telegram";
 
 /* Сборка сервисов при старте: Telegram или обычный браузер, настоящий API или демо.
@@ -15,6 +16,7 @@ import { initTelegram } from "./telegram";
 export async function bootstrap(): Promise<Services> {
   const webApp = await loadTelegramWebApp();
   if (webApp) initTelegram(webApp);
+  normalizeStartUrl(webApp !== null);
   const mediaEnv = mediaEnvFor(window.location.hostname);
   const now = () => Date.now();
 
@@ -62,6 +64,26 @@ export async function bootstrap(): Promise<Services> {
   const api = createHttpApi({ auth, source: webApp ? "tma" : "web" });
   const identity = webApp ? "telegram" : hasSiteSession() ? "site" : "guest";
   return { api, identity, webApp, mediaEnv, now };
+}
+
+/**
+ * Адрес первой загрузки — до того, как его прочитает роутер: ?lang= становится выбором
+ * языка, а старая ссылка на каталог с фильтрами в корне (/?date=…) в браузере ведёт в
+ * /catalog — корень сайта теперь лендинг (в Telegram корень — по-прежнему каталог).
+ * Хэш остаётся на месте: в нём Telegram передаёт данные Mini App
+ */
+export function normalizeStartUrl(inTelegram: boolean): void {
+  const url = new URL(window.location.href);
+  let changed = takeLangParam(url);
+  const legacy = inTelegram ? null : legacyCatalogHref(url.pathname, url.search);
+  if (legacy) {
+    const next = new URL(legacy, url.origin);
+    url.pathname = next.pathname;
+    url.search = next.search;
+    changed = true;
+  }
+  if (changed)
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
 /** Тестовый ключ виджета Turnstile (всегда проходит): только демо, настоящего секрета нет */

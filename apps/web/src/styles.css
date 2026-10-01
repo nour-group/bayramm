@@ -147,6 +147,11 @@ img {
   padding-bottom: calc(var(--pad-b) + 16px);
 }
 
+/* Сайт: под содержимым — подвал, место под нижнюю панель оставляет он */
+.app.site .main {
+  padding-bottom: 24px;
+}
+
 /* Нижняя панель вкладок: низ складывает жест-бар и зону Telegram (--pad-b) */
 .tabs {
   position: fixed;
@@ -229,6 +234,7 @@ img {
   border-radius: var(--r-14);
   background: var(--white);
   color: var(--plum);
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -256,6 +262,14 @@ img {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--gap-9);
+}
+
+/* Разделы и вход в шапке — только на компьютере (ниже, @media 1024px); на телефоне и
+   планшете разделы — нижняя панель, вход — в профиле. После .btn: иначе его display
+   перекрыл бы это правило (ловушка №7) */
+.site-nav,
+.top-signin {
+  display: none;
 }
 
 /* Переключатель языка: кнопки 44×44, выбранная — на белом */
@@ -304,7 +318,13 @@ img {
   border-radius: var(--r-11);
   background: var(--white);
   color: var(--ink);
-  font-size: var(--fs-15);
+  /* 16px: мельче iOS увеличивает страницу при фокусе на поле */
+  font-size: var(--fs-16);
+}
+
+/* Поле числа из набора (kit.css даёт 15px) — тоже 16px, по той же причине */
+.ui-number-input {
+  font-size: var(--fs-16);
 }
 
 textarea.field-input {
@@ -379,6 +399,11 @@ textarea.field-input {
 
 .state-loading {
   align-items: stretch;
+}
+
+/* Экран ещё грузится (кусок сборки): подвал — ниже первого экрана, а не под скелетом */
+.screen-fallback {
+  min-height: 100vh;
 }
 
 .skeleton {
@@ -700,6 +725,7 @@ textarea.field-input {
   top: auto;
   right: auto;
   flex: none;
+  margin-left: auto;
 }
 
 .list-head .count {
@@ -757,6 +783,11 @@ textarea.field-input {
   font-weight: 700;
 }
 
+/* Листать кнопками — с планшета (ниже, @media 768px): на телефоне листают пальцем */
+.gallery-nav {
+  display: none;
+}
+
 .venue-head {
   display: flex;
   flex-direction: column;
@@ -765,7 +796,9 @@ textarea.field-input {
   margin-top: 16px;
 }
 
+/* Название и «Новый» — рядом, сердечко — справа (между ними значок висел посередине) */
 .venue-head .card-top {
+  justify-content: flex-start;
   width: 100%;
 }
 
@@ -875,6 +908,20 @@ textarea.field-input {
   flex: none;
   padding: 0 16px;
   white-space: nowrap;
+}
+
+/* Обёртка панели: на телефоне её нет (панель прилипает к низу экрана площадки), на
+   компьютере — колонка справа (ниже, @media 1024px). Это div, не aside: display: contents
+   у ориентира в старых браузерах стирал его роль */
+.venue-side {
+  display: contents;
+}
+
+/* Номер и подпись «Позвонить» в панели — только в карточке на компьютере: на телефоне
+   номер — в разделе «Телефон» выше, а звонок — кнопка-иконка */
+.bar-phone,
+.call-label {
+  display: none;
 }
 
 /* Узкий телефон: рядом со звонком и «Оставить заявку» цене остаётся меньше 100px */
@@ -1350,6 +1397,284 @@ textarea.field-input {
   text-transform: none;
 }
 
+/* ---------- лендинг (/ в браузере) ---------- */
+
+.ln-hero {
+  display: grid;
+  gap: var(--gap-12);
+  padding-top: 8px;
+}
+
+.ln-kicker {
+  color: var(--coral-deep);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ln-title {
+  margin-top: 8px;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-23);
+  font-weight: 600;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.ln-lead {
+  max-width: 560px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: var(--fs-16);
+}
+
+/* Подбор: дата и гости рядом, район и кнопка — во всю ширину (с планшета — в строку) */
+.ln-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--gap-9);
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-22);
+  background: var(--white);
+}
+
+.ln-search .field:nth-child(3),
+.ln-search-go {
+  grid-column: 1 / -1;
+}
+
+.ln-browse {
+  margin-top: 4px;
+}
+
+/* Совсем узкий (320px): поля подбора — друг под другом, иначе в половину ширины не влезает
+   даже «любая». После основного правила .ln-search (ловушка №7) */
+@media (max-width: 359px) {
+  .ln-search {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+}
+
+/* Иллюстрация первого экрана: узор гириха на крупной поверхности (плитка 84px) — только
+   за картинкой, текста на нём нет. На телефоне и планшете места под неё нет */
+.ln-hero-art {
+  display: none;
+}
+
+.ln-hero-art.girih {
+  background-size: 84px 84px;
+}
+
+.ln-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: var(--r-999);
+  background: var(--white);
+  color: var(--plum);
+}
+
+.ln-section {
+  margin-top: 40px;
+}
+
+.ln-h2 {
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-19);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.ln-h3 {
+  margin: 12px 0 4px;
+  color: var(--plum);
+  font-size: var(--fs-16);
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.ln-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--gap-12);
+  margin-bottom: 16px;
+}
+
+.ln-head-note {
+  max-width: 560px;
+  margin-top: 4px;
+}
+
+/* На телефоне — два зала, дальше — «Смотреть все залы» */
+.ln-cards > li:nth-child(n + 3) {
+  display: none;
+}
+
+/* Место под карточку, пока залы грузятся: фото 3:2 и подпись той же высоты, что у
+   карточки, — без сдвига вёрстки, когда залы придут */
+.card-skeleton {
+  display: grid;
+  overflow: hidden;
+  border-radius: var(--r-arch);
+  background: var(--lilac);
+  animation: pulse 1.2s var(--ease-io) infinite alternate;
+}
+
+.card-skeleton-photo {
+  aspect-ratio: 3 / 2;
+}
+
+.card-skeleton-body {
+  height: 112px;
+  background: var(--white);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-skeleton {
+    animation: none;
+  }
+}
+
+.ln-steps,
+.ln-promises {
+  display: grid;
+  gap: var(--gap-12);
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ln-step,
+.ln-promise {
+  padding: 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+}
+
+.ln-step p,
+.ln-promise p {
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
+.ln-step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-999);
+  background: var(--plum);
+  color: var(--peach);
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.ln-promise-ico {
+  color: var(--coral);
+}
+
+.ln-partner {
+  display: grid;
+  justify-items: start;
+  gap: var(--gap-12);
+  padding: 20px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-22);
+  background: var(--white);
+}
+
+.ln-partner-text p {
+  margin-top: 8px;
+}
+
+.ln-partner-art {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-18);
+  color: var(--plum);
+}
+
+.ln-faq {
+  margin-top: 16px;
+}
+
+.ln-faq-a {
+  padding-bottom: 12px;
+}
+
+/* ---------- документы и подвал сайта ---------- */
+
+.page-lead {
+  margin-top: 8px;
+}
+
+.site-footer {
+  margin-top: 24px;
+  padding: 24px max(calc(var(--sa-r) + 16px), calc(50% - 344px)) calc(var(--pad-b) + 96px)
+    max(calc(var(--sa-l) + 16px), calc(50% - 344px));
+  border-top: 1px solid var(--rule);
+}
+
+.app.inner .site-footer {
+  padding-bottom: calc(var(--pad-b) + 24px);
+}
+
+.footer-in {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-12);
+}
+
+.footer-brand {
+  max-width: 320px;
+}
+
+.footer-brand .brand {
+  margin-right: 0;
+}
+
+.footer-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5);
+}
+
+.footer-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  padding: 0 8px;
+  color: var(--plum);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.footer-ico {
+  color: var(--coral);
+}
+
+.footer-copy {
+  margin-top: 12px;
+}
+
 /* ---------- наведение и выбранное ---------- */
 
 /* Наведение — только там, где есть курсор (ловушка №6) */
@@ -1373,6 +1698,20 @@ textarea.field-input {
   .tabs a:hover {
     color: var(--ink);
   }
+
+  .site-nav a:hover {
+    background: var(--lilac);
+    color: var(--ink);
+  }
+
+  .footer-nav a:hover {
+    text-decoration: underline;
+  }
+
+  /* Карточка зала чуть приподнимается под курсором — только украшение */
+  .card-link:hover {
+    box-shadow: 0 8px 24px var(--rule);
+  }
 }
 
 .btn-primary:not(:disabled):active {
@@ -1387,6 +1726,15 @@ textarea.field-input {
 
 .tabs a[aria-current="page"] {
   color: var(--coral-deep);
+}
+
+.site-nav a[aria-current="page"] {
+  background: var(--lilac);
+  color: var(--plum);
+}
+
+.site-nav a[aria-current="page"] svg {
+  color: var(--coral);
 }
 
 .tabs a[aria-current="page"] svg {
@@ -1454,6 +1802,11 @@ textarea.field-input {
   display: grid;
   gap: var(--gap-9);
 }
+
+/* Поле номера — сразу под заголовком раздела «По номеру телефона», без лишнего зазора поля формы */
+.phone-code .fld {
+  margin-top: 0;
+}
 .phone-code-more {
   display: flex;
   flex-wrap: wrap;
@@ -1517,5 +1870,295 @@ textarea.field-input {
     border: 1px solid var(--rule);
     border-radius: var(--r-18);
     background: var(--white);
+  }
+
+  .ln-cards > li:nth-child(n + 3) {
+    display: list-item;
+  }
+
+  .ln-promises {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* ---------- планшет: колонка 720px по центру (.main), нижняя панель на месте ---------- */
+
+@media (min-width: 768px) {
+  /* Галерея — в рамке, а не от края до края; листать можно и кнопками */
+  .gallery {
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--r-22);
+  }
+
+  .gallery-nav {
+    display: inline-flex;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  .gallery-prev {
+    left: 12px;
+  }
+
+  .gallery-next {
+    right: 12px;
+  }
+
+  .ln-title {
+    font-size: var(--fs-27);
+  }
+
+  .ln-h2 {
+    font-size: var(--fs-22);
+  }
+
+  .ln-section {
+    margin-top: 48px;
+  }
+
+  /* Подбор — два ряда по два: дата и гости, район и кнопка */
+  .ln-search {
+    align-items: end;
+  }
+
+  .ln-search .field:nth-child(3),
+  .ln-search-go {
+    grid-column: auto;
+  }
+
+  .ln-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ln-partner {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 24px;
+  }
+}
+
+/* ---------- компьютер: шапка с разделами, сетка до 1280px, без нижней панели ---------- */
+
+@media (min-width: 1024px) {
+  .top {
+    gap: var(--gap-12);
+    padding: calc(var(--pad-t) + 10px) max(calc(var(--sa-r) + 32px), calc(50% - 608px)) 10px
+      max(calc(var(--sa-l) + 32px), calc(50% - 608px));
+  }
+
+  /* Разделы растягиваются между логотипом и языком; без них (хаб входа) язык прижимает
+     к краю margin-right: auto у логотипа */
+  .site-nav {
+    display: flex;
+    flex: 1;
+    gap: var(--gap-5);
+  }
+
+  .site-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--hit-min);
+    padding: 0 12px;
+    border-radius: var(--r-11);
+    color: var(--muted);
+    font-size: var(--fs-14);
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  /* В шапке — подписи без значков: значки остаются у нижней панели телефона */
+  .site-nav svg {
+    display: none;
+  }
+
+  .top-signin {
+    display: inline-flex;
+    min-height: var(--hit-min);
+    padding: 0 16px;
+  }
+
+  .tabs {
+    display: none;
+  }
+
+  .main,
+  .app.inner .main,
+  .app.site .main {
+    padding: 24px calc(var(--sa-r) + 32px) 48px calc(var(--sa-l) + 32px);
+  }
+
+  .main-wide {
+    max-width: 1280px;
+  }
+
+  .main-text {
+    max-width: 784px;
+  }
+
+  .main-form {
+    max-width: 704px;
+  }
+
+  .site-footer,
+  .app.inner .site-footer {
+    padding: 32px max(calc(var(--sa-r) + 32px), calc(50% - 608px)) calc(var(--pad-b) + 32px)
+      max(calc(var(--sa-l) + 32px), calc(50% - 608px));
+  }
+
+  /* Каталог: фильтры — панелью над сеткой, карточки — в три колонки (с 1280px — в четыре) */
+  .catalog .filters {
+    padding: 16px;
+    border: 1px solid var(--rule);
+    border-radius: var(--r-18);
+    background: var(--white);
+  }
+
+  .cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .more {
+    display: flex;
+    width: auto;
+    min-width: 280px;
+    margin: 16px auto 0;
+  }
+
+  /* Площадка: фото и описание слева, справа — карточка с ценой, телефоном и заявкой;
+     она прилипает под шапкой, пока листают описание и календарь */
+  .venue {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 32px 340px;
+    align-items: start;
+  }
+
+  .venue > * {
+    grid-column: 1;
+  }
+
+  .venue > .venue-side {
+    display: block;
+    position: sticky;
+    top: calc(var(--pad-t) + 80px);
+    grid-column: 3;
+    grid-row: 1 / span 8;
+  }
+
+  /* Номер — в карточке справа: второй раз в описании он не нужен */
+  .venue .contact {
+    display: none;
+  }
+
+  .venue-bar {
+    position: static;
+    flex-direction: column;
+    align-items: stretch;
+    margin: 0;
+    padding: 20px;
+    border: 1px solid var(--rule);
+    border-radius: var(--r-22);
+    background: var(--white);
+  }
+
+  .venue-bar .bar-price b {
+    font-size: var(--fs-22);
+  }
+
+  .venue-bar .bar-price .unit {
+    font-size: var(--fs-13-5);
+  }
+
+  .venue-bar .unit-phone {
+    display: none;
+  }
+
+  .bar-phone {
+    display: inline-flex;
+  }
+
+  .venue-bar .icon-btn.call {
+    width: auto;
+    height: auto;
+    min-height: 48px;
+    gap: var(--gap-7);
+    padding: 0 16px;
+    font-weight: 700;
+  }
+
+  .call-label {
+    display: inline;
+  }
+
+  .venue-bar .btn-primary {
+    padding: 0 20px;
+  }
+
+  .venue-side .bar-note {
+    text-align: left;
+  }
+
+  /* Форма заявки: кнопки — под формой, а не панелью у края экрана */
+  .form-bar {
+    position: static;
+    margin: 24px 0 0;
+    padding: 0;
+    border-top: 0;
+    background: none;
+  }
+
+  /* Лендинг: текст и иллюстрация рядом, подбор — строкой во всю ширину */
+  .ln-hero {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    padding-top: 24px;
+  }
+
+  .ln-hero-text {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .ln-hero-art {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 280px;
+    margin-left: 24px;
+    border-radius: var(--r-arch);
+  }
+
+  .ln-search,
+  .ln-browse {
+    grid-column: 1 / -1;
+  }
+
+  .ln-browse {
+    justify-self: start;
+  }
+
+  .ln-search {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  }
+
+  .ln-search-go {
+    padding: 0 24px;
+  }
+
+  .ln-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ln-promises {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
