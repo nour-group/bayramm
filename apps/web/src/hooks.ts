@@ -17,16 +17,41 @@ export type AsyncResult<T> = AsyncState<T> & {
 /**
  * Данные экрана: загрузка, ошибка, готово. key — всё, от чего зависит запрос: при его смене
  * старый запрос отменяется, а его поздний ответ не перетрёт новый. Упала загрузка, а связь
- * потом вернулась (событие online) — повтор сам, без «Повторить»
+ * потом вернулась (событие online) — повтор сам, без «Повторить».
+ * peek — готовый ответ из кэша вкладки (api/cache.ts): тогда экран сразу «готово», без
+ * заглушки загрузки и без запроса («назад» в витрину, витрина → форма заявки)
  */
-export function useAsync<T>(key: string, load: (signal: AbortSignal) => Promise<T>): AsyncResult<T> {
-  const [state, setState] = useState<AsyncState<T>>({ status: "loading" });
+export function useAsync<T>(
+  key: string,
+  load: (signal: AbortSignal) => Promise<T>,
+  peek?: () => T | undefined,
+): AsyncResult<T> {
+  const [state, setState] = useState<AsyncState<T>>(() => {
+    const cached = peek?.();
+    return cached === undefined ? { status: "loading" } : { status: "ready", data: cached };
+  });
   const [attempt, setAttempt] = useState(0);
   const loader = useRef(load);
   loader.current = load;
+  const peeker = useRef(peek);
+  peeker.current = peek;
+  // Ответ для этого ключа и попытки уже показан из кэша — запрос не нужен
+  const shown = useRef<string | null>(state.status === "ready" ? `${key}#${attempt}` : null);
+  const lastAttempt = useRef(attempt);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: key и attempt — и есть зависимости запроса
   useEffect(() => {
+    const id = `${key}#${attempt}`;
+    if (shown.current === id) return;
+    // Новый ключ, а ответ на него уже в кэше: сразу «готово». «Повторить» — всегда запрос
+    const retry = attempt !== lastAttempt.current;
+    lastAttempt.current = attempt;
+    const cached = retry ? undefined : peeker.current?.();
+    if (cached !== undefined) {
+      shown.current = id;
+      setState({ status: "ready", data: cached });
+      return;
+    }
+    shown.current = null;
     const controller = new AbortController();
     setState({ status: "loading" });
     loader.current(controller.signal).then(

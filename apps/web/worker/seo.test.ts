@@ -118,7 +118,8 @@ describe("разметка страниц", () => {
   it("?lang=ru — русская версия: язык страницы, тексты и canonical на неё саму", async () => {
     const { body } = await setup().html(`${PROD}/catalog?lang=ru&date=2026-10-20`);
     expect(body).toContain('<html lang="ru"');
-    expect(title(body)).toBe("Залы Ташкента · Bayramm");
+    // Название раздела — как в приложении (глоссарий клиента): вкладка не меняется после загрузки
+    expect(title(body)).toBe("Залы и тойханы в Ташкенте · Bayramm");
     expect(metaContent(body, "property", "og:locale")).toBe("ru_RU");
     // Фильтры в canonical не попадают
     expect(canonical(body)).toBe(`${PROD}/catalog?lang=ru`);
@@ -128,8 +129,8 @@ describe("разметка страниц", () => {
     const { body } = await setup().html(
       `${PROD}/catalog?category=car&lang=ru&date=2026-10-20&a.decoration=1`,
     );
-    expect(title(body)).toBe("Кортеж в Ташкенте · Bayramm");
-    expect(metaContent(body, "name", "description")).toContain("Кортеж в Ташкенте: цены «от»");
+    expect(title(body)).toBe("Кортежи в Ташкенте · Bayramm");
+    expect(metaContent(body, "name", "description")).toContain("Кортежи в Ташкенте: цены «от»");
     expect(canonical(body)).toBe(`${PROD}/catalog?category=car&amp;lang=ru`);
     expect(hreflangs(body)).toEqual([
       ["ru", `${PROD}/catalog?category=car&amp;lang=ru`],

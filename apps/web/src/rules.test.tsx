@@ -136,7 +136,7 @@ describe("правила продукта", () => {
     await fillForm();
     await click(byText("button", "Отправить заявку"));
     expect((api as ReturnType<typeof createMockApi>).created).toHaveLength(0);
-    expect(text()).toContain("Без этого согласия вендор не получит заявку");
+    expect(text()).toContain("Без этого согласия исполнитель не получит заявку");
   });
 
   it("полный текст согласия читается прямо в форме", async () => {
@@ -146,7 +146,7 @@ describe("правила продукта", () => {
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     await click(toggle);
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
-    expect(text()).toContain("Демо-текст согласия на передачу заявки вендору");
+    expect(text()).toContain("Демо-текст согласия на передачу заявки исполнителю");
   });
 
   it("клиент не платит: в форме нет платёжных полей", async () => {

@@ -1,4 +1,4 @@
-import type { Lang } from "@bayramm/shared";
+import type { Dict, Lang } from "@bayramm/shared";
 import type { DayPart } from "@bayramm/shared/api";
 import {
   CATEGORIES,
@@ -43,9 +43,16 @@ export function clientCategory(code: string | null | undefined): CategoryConfig 
   return CLIENT_CATEGORIES.find((c) => c.code === code) ?? DEFAULT;
 }
 
-/** Название категории на языке; неизвестный код — null */
-export function categoryName(code: string | null | undefined, lang: Lang): string | null {
-  const config = code ? categoryConfig(code) : undefined;
+/**
+ * Название раздела каталога для клиента — короткое, из глоссария (t.catName: «Залы и тойханы»,
+ * «Кортежи»): одно и то же в переключателе, плитках, заголовке каталога, карточках и заявках.
+ * Категории без своего названия в глоссарии — название из её описания; неизвестный код — null
+ */
+export function categoryName(code: string | null | undefined, t: Dict, lang: Lang): string | null {
+  if (!code) return null;
+  const own = (t.catName as Readonly<Record<string, string | undefined>>)[code];
+  if (own) return own;
+  const config = categoryConfig(code);
   return config ? categoryText(lang, config.label) : null;
 }
 

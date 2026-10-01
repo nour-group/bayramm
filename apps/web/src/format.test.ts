@@ -13,6 +13,7 @@ import {
   formatPriceFrom,
   hoursLeft,
   isIsoDate,
+  metaLine,
   phoneDigits,
   tashkentToday,
   telHref,
@@ -73,6 +74,18 @@ describe("даты по Ташкенту", () => {
   });
 });
 
+describe("строка фактов", () => {
+  it("через точку; переносится только после точки, число с подписью — целиком", () => {
+    expect(metaLine(["Залы и тойханы", null, "Учтепа", "до 1000 гостей", "", undefined])).toBe(
+      `Залы и тойханы${NBSP}· Учтепа${NBSP}· до${NBSP}1000${NBSP}гостей`,
+    );
+    expect(metaLine(["Свадьба", "6 дек", "Заявка № 1044"])).toBe(
+      `Свадьба${NBSP}· 6${NBSP}дек${NBSP}· Заявка №${NBSP}1044`,
+    );
+    expect(metaLine([])).toBe("");
+  });
+});
+
 describe("деньги", () => {
   it("миллионы — «млн», дробь через запятую; меньше — по разрядам", () => {
     expect(formatMoney(45_000_000, ru)).toBe(`45${NBSP}млн${NBSP}сум`);
@@ -88,7 +101,8 @@ describe("деньги", () => {
     });
     expect(formatPriceFrom(60_000_000, "per_event", uz).amount).toBe(`60${NBSP}mln${NBSP}soʻmdan`);
     expect(formatPriceFrom(150_000, "per_guest", ru).unit).toBe("за гостя");
-    expect(formatPrice(150_000, "per_guest", uz)).toBe(`150${NBSP}000${NBSP}soʻm mehmon uchun`);
+    // Глоссарий: за гостя — «mehmon boshiga», как в кабинете и панели
+    expect(formatPrice(150_000, "per_guest", uz)).toBe(`150${NBSP}000${NBSP}soʻm mehmon boshiga`);
   });
 });
 

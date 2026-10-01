@@ -19,8 +19,8 @@ import { loadStartScreen, SCREEN_CHUNK } from "./screens";
    гидрация на любом расхождении сыпала бы ошибками и перерисовывала всё равно. Экран
    лендинга bootstrap загружает до первой отрисовки, поэтому замена — без заглушки. */
 
-/** API пререндера: эффекты при рендере в строку не запускаются, запросов нет */
-const NO_API = new Proxy({ mode: "live" } as ClientApi, {
+/** API пререндера: эффекты при рендере в строку не запускаются, запросов нет; кэша тоже нет */
+const NO_API = new Proxy({ mode: "live", peek: undefined } as ClientApi, {
   get: (target, key) => (key in target ? target[key as keyof ClientApi] : () => new Promise<never>(() => {})),
 });
 
@@ -28,6 +28,7 @@ const NO_API = new Proxy({ mode: "live" } as ClientApi, {
 const ROUTER: Router = {
   match: matchRoute("/"),
   query: new URLSearchParams(),
+  restoreScroll: null,
   navigate: () => {},
   back: () => {},
 };

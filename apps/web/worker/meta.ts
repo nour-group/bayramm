@@ -1,7 +1,7 @@
 import { isListingPhotoKey, mediaUrl } from "@bayramm/media";
 import { type Dict, dictionaries, LANGS, type Lang } from "@bayramm/shared";
 import type { ListingDetail } from "@bayramm/shared/api";
-import { categoryConfig, categoryText } from "@bayramm/shared/categories";
+import { categoryName } from "../src/categories";
 import { formatPriceFrom } from "../src/format";
 import { mediaEnvFor } from "../src/media";
 import {
@@ -99,12 +99,6 @@ function clip(text: string, max = DESCRIPTION_MAX): string {
 const pick = (value: { ru: string; uz: string }, lang: Lang) =>
   value[lang] || value[lang === "ru" ? "uz" : "ru"];
 
-/** Название категории на языке; неизвестная — null */
-function categoryLabel(code: string | null, lang: Lang): string | null {
-  const config = code ? categoryConfig(code) : undefined;
-  return config ? categoryText(lang, config.label) : null;
-}
-
 /** Заголовок и описание экрана; venue — только для площадки, category — для каталога */
 function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup, category: string | null) {
   const site = (title: string) => `${title} · Bayramm`;
@@ -112,12 +106,13 @@ function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup, cat
     case "home":
       return { title: t.metaHomeTitle, description: t.metaHomeDesc };
     case "catalog": {
-      // У каждой категории — своя страница каталога; залы — без параметра
-      const name =
-        isCategoryParam(category) && category !== DEFAULT_CATEGORY ? categoryLabel(category, lang) : null;
-      return name
-        ? { title: site(t.catTitle(name)), description: t.metaCatDesc(name) }
-        : { title: site(t.hallsTitle), description: t.metaCatalogDesc };
+      // У каждой категории — своя страница каталога; залы — без параметра. Название — как в
+      // приложении (глоссарий клиента): заголовок вкладки не меняется после загрузки
+      const code = isCategoryParam(category) ? category : DEFAULT_CATEGORY;
+      const name = categoryName(code, t, lang) ?? code;
+      return code === DEFAULT_CATEGORY
+        ? { title: site(t.catTitle(name)), description: t.metaCatalogDesc }
+        : { title: site(t.catTitle(name)), description: t.metaCatDesc(name) };
     }
     case "docs":
       return { title: site(t.meDocs), description: t.metaDocsDesc };
@@ -137,7 +132,7 @@ function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup, cat
       if (venue === null) return { title: site(t.navCatalog), description: t.metaHomeDesc };
       const price = formatPriceFrom(venue.priceFromUzs, venue.priceUnit, t);
       const facts = [
-        categoryLabel(venue.categoryCode, lang),
+        categoryName(venue.categoryCode, t, lang),
         pick(venue.address, lang),
         venue.capMax === null ? null : t.people(venue.capMax),
         [price.amount, price.unit].filter(Boolean).join(" "),

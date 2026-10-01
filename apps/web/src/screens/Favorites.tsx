@@ -1,6 +1,6 @@
 import { Link } from "../components/Link";
 import { ListingCard } from "../components/ListingCard";
-import { EmptyState, ErrorState, Loading } from "../components/States";
+import { CardsLoading, EmptyState, ErrorState } from "../components/States";
 import { useLang } from "../context";
 import { useFavorites } from "../favorites";
 import { useAsync, useDocumentTitle } from "../hooks";
@@ -32,7 +32,7 @@ export function Favorites() {
         ) : null}
       </div>
 
-      {list.status === "loading" ? <Loading /> : null}
+      {list.status === "loading" ? <CardsLoading /> : null}
       {list.status === "error" ? <ErrorState onRetry={list.reload} /> : null}
       {list.status === "ready" && items.length === 0 ? (
         <EmptyState

@@ -73,16 +73,16 @@ describe("каталог", () => {
 
   it("пусто — объяснение и сброс фильтров", async () => {
     await mount({ path: "/catalog?guests=5000" });
-    await waitFor(() => byText("h2", "Под эти условия никого"), "пустое состояние");
-    await click(byText("button", "Сбросить фильтры"));
+    await waitFor(() => byText("h2", "Никого не нашли"), "пустое состояние");
+    await click(byText(".state-empty button", "Сбросить фильтры"));
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки после сброса");
     expect(window.location.search).toBe("");
   });
 
-  it("площадок ещё нет — «скоро появятся», без сброса фильтров", async () => {
+  it("исполнителей ещё нет — «скоро», как у любого раздела, без сброса фильтров", async () => {
     await mount({ mock: { listings: [] } });
-    await waitFor(() => byText("h2", "Залы скоро появятся"), "пустой каталог без фильтров");
-    expect(document.body.textContent).not.toContain("Под эти условия никого");
+    await waitFor(() => byText("h2", "«Залы и тойханы» — скоро в каталоге"), "пустой каталог без фильтров");
+    expect(document.body.textContent).not.toContain("Никого не нашли");
     expect(document.body.textContent).not.toContain("Сбросить фильтры");
   });
 
@@ -147,7 +147,7 @@ describe("каталог", () => {
 describe("площадка", () => {
   it("несуществующая — «не найдена» со ссылкой в каталог", async () => {
     await mount({ path: "/venue/net-takoy" });
-    await waitFor(() => byText("h1", "Площадка не найдена"), "404");
+    await waitFor(() => byText("h1", "Страница исполнителя не найдена"), "404");
     expect(byText<HTMLAnchorElement>("a", "В каталог")?.getAttribute("href")).toBe("/catalog");
   });
 
@@ -239,7 +239,10 @@ describe("мои заявки", () => {
     const items = [...document.querySelectorAll(".req")];
     expect(items[0]?.textContent).toContain("ждём ответа");
     expect(items[0]?.textContent).toMatch(/ответ до 1 окт, 21:00 · осталось 9 ч/);
-    expect(items[1]?.textContent).toContain("ждём дольше 12 ч");
+    // Просрочка — одной строкой, без второго «ждём дольше 12 ч» рядом
+    expect(items[1]?.querySelector(".req-breached")?.textContent).toBe(
+      "Исполнитель не ответил за 12 часов — посмотрите других, кто свободен в эту дату.Показать похожие",
+    );
     const similar = items[1]?.querySelector<HTMLAnchorElement>(".req-breached a");
     const listing = LISTINGS[1];
     expect(similar?.getAttribute("href")).toBe(
@@ -275,7 +278,7 @@ describe("мои заявки", () => {
   it("пусто — подсказка следующего шага", async () => {
     await mount({ path: "/requests", mock: { requests: [] } });
     await waitFor(() => byText("a", "В каталог"), "пустое состояние");
-    expect(text()).toContain("Заявок пока нет. Найдите подрядчика и отправьте первую.");
+    expect(text()).toContain("Заявок пока нет. Выберите исполнителя в каталоге и отправьте первую.");
   });
 
   it("гостю — вход в хабе с возвратом сюда (браузер уводит туда целиком)", async () => {
@@ -392,7 +395,7 @@ describe("язык и оболочка", () => {
   it("профиль: тексты согласий из API раскрываются", async () => {
     await mount({ path: "/profile" });
     await waitFor(() => document.querySelectorAll("details.doc").length === 3, "документы");
-    expect(text()).toContain("Передача заявки вендору");
+    expect(text()).toContain("Передача заявки исполнителю");
     expect(text()).toContain("версия 1");
   });
 
@@ -428,7 +431,10 @@ describe("мои данные", () => {
   it("уведомления: отключить — и объяснение, как включить снова", async () => {
     const api = createMockApi({ now: () => NOW, listings: LISTINGS, me: { notifications: true } });
     await mount({ path: "/profile", api });
-    await waitFor(() => text().includes("Ответы площадок приходят в Telegram-бот"), "уведомления включены");
+    await waitFor(
+      () => text().includes("Ответы исполнителей приходят в Telegram-бот"),
+      "уведомления включены",
+    );
     await click(byText("button", "Отключить уведомления"));
     await waitFor(() => text().includes("Уведомления в боте выключены"), "выключены");
     expect(api.profile().notifications).toBe(false);
@@ -442,7 +448,7 @@ describe("мои данные", () => {
     await click(await waitFor(() => byText("button", "Удалить аккаунт"), "удалить"));
     const confirm = document.querySelector(".confirm");
     expect(confirm?.querySelector("legend")?.textContent).toBe("Удалить аккаунт?");
-    expect(confirm?.textContent).toContain("останутся у площадок обезличенными");
+    expect(confirm?.textContent).toContain("останутся у исполнителей обезличенными");
     const buttons = [...(confirm?.querySelectorAll("button") ?? [])];
     expect(buttons.map((b) => [b.textContent, b.className])).toEqual([
       ["Удалить", "btn btn-secondary"],

@@ -37,7 +37,15 @@ describe("лендинг (/ в браузере)", () => {
       "Телефон без заявки",
       "Ответ за 12 часов",
     ]);
-    expect(document.querySelectorAll(".ln-faq details")).toHaveLength(5);
+    // Вопросы — только о том, чего нет в шагах и обещаниях: цена и 12 часов там уже сказаны
+    expect([...document.querySelectorAll(".ln-faq summary")].map((q) => q.textContent)).toEqual([
+      "Заявка закрепляет дату?",
+      "Как отправить заявку?",
+      "Можно заказать несколько услуг сразу?",
+      "Откуда цены и календарь?",
+    ]);
+    // Каталог в первом экране — не отдельной ссылкой: разделы — сеткой сразу под подбором
+    expect(document.querySelector(".ln-hero a[href='/catalog']")).toBeNull();
     // Подвал сайта: каталог, документы, язык
     const footer = document.querySelector(".site-footer");
     expect(footer?.querySelector('a[href="/docs"]')?.textContent).toBe("Документы");
@@ -65,15 +73,16 @@ describe("лендинг (/ в браузере)", () => {
     await mount({ path: "/", identity: "guest", mock: { listings: [...LISTINGS, ...car] } });
     await waitFor(() => document.querySelectorAll(".cat-soon").length > 0, "категории из API");
     const tiles = [...document.querySelectorAll<HTMLAnchorElement>(".cat-tile")];
+    // Названия — короткие, из глоссария клиента (без косых черт)
     expect(tiles.map((a) => a.querySelector(".cat-tile-name")?.textContent)).toEqual([
-      "Площадка / Тойхона",
-      "Кортеж",
-      "Фотостудия",
+      "Залы и тойханы",
+      "Кортежи",
+      "Фотостудии",
       "Цветы",
       "Фото и видео",
       "Торты и сладости",
       "Подарки",
-      "Декор / Оформление",
+      "Декор и оформление",
     ]);
     expect(tiles.map((a) => a.getAttribute("href"))[1]).toBe("/catalog?category=car");
     expect(tiles[0]?.getAttribute("href")).toBe("/catalog");
@@ -81,33 +90,47 @@ describe("лендинг (/ в браузере)", () => {
       .filter((a) => a.querySelector(".cat-soon"))
       .map((a) => a.querySelector(".cat-tile-name")?.textContent);
     expect(soon).toEqual([
-      "Фотостудия",
+      "Фотостудии",
       "Цветы",
       "Фото и видео",
       "Торты и сладости",
       "Подарки",
-      "Декор / Оформление",
+      "Декор и оформление",
     ]);
     expect(document.body.textContent).not.toMatch(/\d+\s+(витрин|вендор)/);
   });
 
-  it("витрины по категориям: переключатель — только категории с витринами; «весь раздел» ведёт в неё", async () => {
-    await mount({ path: "/", identity: "guest", mock: { listings: allDemoListings("2026-10-01") } });
-    await waitFor(() => cards().length === 4, "залы");
-    const chips = () => [...document.querySelectorAll<HTMLButtonElement>(".ln-pick .cat-chip")];
-    await waitFor(() => chips().length === 8, "все категории");
-    expect(chips()[0]?.getAttribute("aria-pressed")).toBe("true");
-    await click(chips().find((c) => c.textContent === "Торты и сладости"));
-    await waitFor(() => cards().includes("Bento Box"), "торты");
-    expect(cards()).toHaveLength(3);
-    expect(document.querySelector(".ln-venues .ln-head-link")?.getAttribute("href")).toBe(
-      "/catalog?category=cake",
+  it("витрины — по одной из разных разделов, раздел подписан; второго списка разделов нет", async () => {
+    const all = allDemoListings("2026-10-01");
+    await mount({ path: "/", identity: "guest", mock: { listings: all } });
+    await waitFor(() => cards().length === 4, "витрины");
+    // Первые четыре раздела с витринами — по самой доступной в каждом (порядок каталога)
+    const categories = [...document.querySelectorAll(".ln-cards .card")].map(
+      (card) => card.querySelector(".card-meta")?.textContent?.split("\u00a0· ")[0],
     );
-    expect(document.querySelector(".ln-venues .ln-head-link")?.textContent).toBe(
-      "Весь раздел: Торты и сладости",
+    expect(categories).toEqual(["Залы и тойханы", "Кортежи", "Фотостудии", "Цветы"]);
+    for (const name of cards()) expect(all.map((l) => l.name)).toContain(name);
+    // Разделы на лендинге перечислены один раз — сеткой; у витрин ни переключателя, ни «весь раздел»
+    expect(document.querySelectorAll(".ln-venues .cat-chip, .ln-venues .ln-head-link")).toHaveLength(0);
+    for (const name of ["Кортежи", "Торты и сладости"])
+      expect(
+        [...document.querySelectorAll(".landing .cat-tile-name, .landing .cat-chip")].filter(
+          (el) => el.textContent === name,
+        ),
+      ).toHaveLength(1);
+    // Цены с единицей своего раздела: кортеж — «за час»
+    expect(document.querySelector(".ln-cards")?.textContent).toMatch(/за час/);
+  });
+
+  it("витрины только в одном разделе — четыре из него", async () => {
+    const cakes = allDemoListings("2026-10-01").filter((l) => l.categoryCode === "cake");
+    await mount({ path: "/", identity: "guest", mock: { listings: [...LISTINGS, ...cakes] } });
+    await waitFor(() => cards().length === 4, "витрины");
+    // Два раздела: по две из каждого, по очереди
+    const categories = [...document.querySelectorAll(".ln-cards .card-meta")].map(
+      (meta) => meta.textContent?.split("\u00a0· ")[0],
     );
-    // Цена торта — «за кг», «за шт.»
-    expect(document.querySelector(".ln-cards")?.textContent).toMatch(/за кг|за шт\./);
+    expect(categories).toEqual(["Залы и тойханы", "Торты и сладости", "Залы и тойханы", "Торты и сладости"]);
   });
 
   it("выдача не загрузилась — блок залов просто не показываем", async () => {
@@ -124,9 +147,7 @@ describe("лендинг (/ в браузере)", () => {
     await mount({ path: "/", identity: "guest" });
     await waitFor(() => document.querySelector("form.ln-search"), "подбор");
     const form = document.querySelector("form.ln-search") as HTMLFormElement;
-    expect(form.querySelector('button[aria-haspopup="listbox"]')?.textContent).toContain(
-      "Площадка / Тойхона",
-    );
+    expect(form.querySelector('button[aria-haspopup="listbox"]')?.textContent).toContain("Залы и тойханы");
     await type(form.querySelector("input"), "120");
     await click(byText("form.ln-search button", "Показать"));
     await waitFor(() => window.location.pathname === "/catalog", "каталог");

@@ -99,7 +99,7 @@ describe("избранное гостя (без входа)", () => {
     await waitFor(() => heartOf(A.name), "сердечко");
     await click(heartOf(A.name));
     expect(heartOf(A.name)?.getAttribute("aria-pressed")).toBe("false");
-    expect(toast()).toContain("уже 100 площадок");
+    expect(toast()).toContain("уже 100 исполнителей");
     expect(stored()).toHaveLength(100);
   });
 });
@@ -124,8 +124,9 @@ describe("избранное вошедшего", () => {
     await mount({ path: "/favorites", api });
     await waitFor(() => cardNames().length === 2, "две карточки");
     const metas = [...document.querySelectorAll(".card .card-meta")].map((el) => el.textContent);
-    expect(metas[0]).toBe("Кортеж");
-    expect(metas[1]).toContain("Площадка / Тойхона");
+    // Раздел — коротким названием из глоссария клиента, как в каталоге
+    expect(metas[0]).toBe("Кортежи");
+    expect(metas[1]).toContain("Залы и тойханы");
     // Цена кортежа — с единицей: за час
     expect(document.querySelector(".card .card-price")?.textContent).toContain("за час");
   });
@@ -172,7 +173,7 @@ describe("избранное вошедшего", () => {
     await waitFor(() => heartOf(A.name), "сердечко");
     await click(heartOf(A.name));
     await waitFor(() => heartOf(A.name)?.getAttribute("aria-pressed") === "false", "отметка вернулась");
-    expect(toast()).toContain("уже 100 площадок");
+    expect(toast()).toContain("уже 100 исполнителей");
   });
 
   it("удаление аккаунта: в выгрузке было избранное, после — его нет", async () => {

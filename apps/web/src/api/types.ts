@@ -43,6 +43,16 @@ export interface BotInfo {
   readonly miniAppUrl: string;
 }
 
+/** Готовые ответы из кэша вкладки, без запроса (api/cache.ts): экран рисуется сразу */
+export interface ApiPeek {
+  listing(slug: string): ListingDetail | undefined;
+  catalog(query: CatalogQuery): CatalogPage | undefined;
+  catalogCategories(): CatalogCategories | undefined;
+  consentTexts(locale: Locale): ConsentTexts | undefined;
+  /** Сервер сказал, что текст согласия сменился: следующий запрос — мимо кэша */
+  forgetConsentTexts(): void;
+}
+
 /**
  * Всё, что клиент берёт у API (контракт — @bayramm/shared/api). Две реализации:
  * http.ts — настоящий API через /api, mock.ts — данные в памяти для тестов и
@@ -51,6 +61,8 @@ export interface BotInfo {
 export interface ClientApi {
   /** live — настоящий API; mock — демо-данные в памяти (только разработка и тесты) */
   readonly mode: "live" | "mock";
+  /** Кэш публичных ответов (withCache в bootstrap); без него — каждый раз запрос */
+  readonly peek?: ApiPeek;
   dictionaries(signal?: AbortSignal): Promise<Dictionaries>;
   /** Категории каталога с числом витрин (GET /catalog/categories); пустые клиент не показывает */
   catalogCategories(signal?: AbortSignal): Promise<CatalogCategories>;

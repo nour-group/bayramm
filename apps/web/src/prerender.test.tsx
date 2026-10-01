@@ -27,7 +27,7 @@ describe("пререндер лендинга", () => {
       expect(html.startsWith(`<div data-prerendered="${lang}">`)).toBe(true);
       expect(html).toMatch(/<h1 class="ln-title"[^>]*>/);
       expect(html.match(/<h1\b/g)).toHaveLength(1);
-      for (const line of [t.lnKicker, t.lnTitle, t.lnLead, t.lnSearch, t.lnBrowse, t.lnHowH, t.lnPromH]) {
+      for (const line of [t.lnKicker, t.lnTitle, t.lnLead, t.lnSearch, t.lnHowH, t.lnPromH]) {
         expect(body).toContain(line);
       }
       for (const line of [...t.lnStepH, ...t.lnPromT, t.lnPartnerH, t.lnFaqH, ...t.lnFaqQ, t.ftAbout]) {
@@ -40,7 +40,10 @@ describe("пререндер лендинга", () => {
         expect(html).toContain(`href="/catalog?category=${code}"`);
       expect(html.match(/class="cat-tile"/g)).toHaveLength(8);
       expect(html).not.toContain("cat-soon");
-      for (const line of [t.lnCatsH, t.lnCatsP, t.lnVenuesH]) expect(body).toContain(line);
+      // Разделы — один раз: сеткой (названия из глоссария клиента), без второго списка у витрин
+      for (const name of Object.values(t.catName)) expect(html).toContain(`class="cat-tile-name">${name}<`);
+      expect(html).not.toContain("cat-chip");
+      for (const line of [t.lnCatsH, t.lnVenuesH]) expect(body).toContain(line);
       expect(html).toContain('href="/catalog"');
       expect(html).toContain('href="/docs"');
       // Гость: «Войти» в хаб с возвратом на главную; подвал сайта; вкладки

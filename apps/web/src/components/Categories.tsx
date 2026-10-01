@@ -1,6 +1,5 @@
 import type { CatalogCategory } from "@bayramm/shared/api";
-import { categoryText } from "@bayramm/shared/categories";
-import { CLIENT_CATEGORIES, categoryIcon } from "../categories";
+import { CLIENT_CATEGORIES, categoryIcon, categoryName } from "../categories";
 import { useLang, useServices } from "../context";
 import { type AsyncResult, useAsync } from "../hooks";
 import { Icon } from "../icons";
@@ -10,11 +9,17 @@ import { Link } from "./Link";
 /* Категории в каталоге и на лендинге: список — из описания категорий (включённые, по
    порядку), сколько витрин — из API (GET /catalog/categories). Пустую категорию клиент не
    показывает как живую: в переключателе каталога её нет, на лендинге — пометка «скоро».
-   Чисел витрин не пишем: выдуманных цифр нет, а настоящие на старте малы и быстро стареют. */
+   Чисел витрин не пишем: выдуманных цифр нет, а настоящие на старте малы и быстро стареют.
+   Названия — короткие из глоссария клиента (categoryName). Сетка лендинга и переключатель
+   каталога — одно и то же место выбора раздела: второго списка разделов на экране нет. */
 
 export function useCatalogCategories(): AsyncResult<{ readonly items: readonly CatalogCategory[] }> {
   const { api } = useServices();
-  return useAsync("catalog-categories", (signal) => api.catalogCategories(signal));
+  return useAsync(
+    "catalog-categories",
+    (signal) => api.catalogCategories(signal),
+    () => api.peek?.catalogCategories(),
+  );
 }
 
 /** Есть ли в категории витрины; пока API не ответило (или ошибка) — null: не знаем */
@@ -52,7 +57,7 @@ export function CategorySwitch({ current, date }: { current: string; date: strin
               aria-current={category.code === current ? "page" : undefined}
             >
               <Icon name={categoryIcon(category.code)} size={17} className="cat-chip-ico" />
-              <span>{categoryText(lang, category.label)}</span>
+              <span>{categoryName(category.code, t, lang)}</span>
             </Link>
           </li>
         ))}
@@ -80,7 +85,7 @@ export function CategoryGrid({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
               <span className="cat-tile-ico" aria-hidden="true">
                 <Icon name={categoryIcon(category.code)} size={26} />
               </span>
-              <Name className="cat-tile-name">{categoryText(lang, category.label)}</Name>
+              <Name className="cat-tile-name">{categoryName(category.code, t, lang)}</Name>
               {soon ? <span className="cat-soon">{t.catSoon}</span> : null}
             </Link>
           </li>

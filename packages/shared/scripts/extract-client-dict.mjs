@@ -10,7 +10,8 @@
       через дописанный в конец страницы скрипт (прототип не меняется).
    2. Строки и массивы переносит как есть. Функции разбирает по исходнику:
       конкатенация и шаблоны → шаблонная строка TS с типизированными параметрами (FN_PARAMS).
-   3. Применяет правки текста из REWRITES: запрещённые слова и метка «Реклама».
+   3. Применяет правки текста из REWRITES: запрещённые слова и метка «Реклама»; русский
+      текст приводит к глоссарию клиента (src/i18n/glossary.ts): «вендор» → «исполнитель».
    4. Узбекский текст пропускает через normalizeUz (написание апострофов ждёт подтверждения).
    5. HTML внутри строк (<p>, <p class="warn">, <ul><li>, <b>) переводит в блоки rich.ts.
    6. Падает, если что-то не сошлось: правка не нашла текст, у функции нет описания
@@ -18,6 +19,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { GLOSSARY_FORBIDDEN, glossaryRu } from "../src/i18n/glossary.ts";
 import { normalizeUz } from "../src/i18n/uz-apostrophe.ts";
 
 const PROTOTYPE = new URL("../../../prototypes/client/index.html", import.meta.url);
@@ -91,6 +93,13 @@ const REWRITES = [
     lang: "uz",
     from: "suhbat boshlanishi, bron emas.",
     to: "suhbat boshlanishi, sana kafolati emas.",
+  },
+  // Глоссарий клиента (src/i18n/glossary.ts): у кого заказывают — «исполнитель», не «подрядчик»
+  {
+    key: "mrEmpty",
+    lang: "ru",
+    from: "Найдите подрядчика и отправьте первую.",
+    to: "Выберите исполнителя в каталоге и отправьте первую.",
   },
   // «Реклама помечена» (CLAUDE.md): оплаченный блок и тексты о нём называют его «Реклама»,
   // как и узбекское «Reklama».
@@ -256,7 +265,8 @@ function translateExpr(expr, params, where) {
     /^plural\(\s*(\w+)\s*,\s*('[^'\\]*'|"[^"\\]*")\s*,\s*('[^'\\]*'|"[^"\\]*")\s*,\s*('[^'\\]*'|"[^"\\]*")\s*\)$/,
   );
   if (m && params.includes(m[1])) {
-    const forms = [m[2], m[3], m[4]].map((lit) => JSON.stringify(lit.slice(1, -1)));
+    // Формы склонения — тоже текст: глоссарий (русские слова в узбекском не встречаются)
+    const forms = [m[2], m[3], m[4]].map((lit) => JSON.stringify(glossaryRu(lit.slice(1, -1))));
     return { code: `ruPlural(${m[1]}, ${forms.join(", ")})`, usesPlural: true };
   }
   throw new Error(`${where}: незнакомое выражение «${expr}»`);
@@ -305,11 +315,12 @@ function rewrite(key, lang, text) {
   return out;
 }
 
-// Правки, апострофы и проверка запретов для одного куска текста
+// Правки, апострофы, глоссарий и проверка запретов для одного куска текста
 function prepare(key, lang, text) {
-  const out = rewrite(key, lang, lang === "uz" ? normalizeUz(text) : text);
+  const rewritten = rewrite(key, lang, lang === "uz" ? normalizeUz(text) : text);
+  const out = lang === "ru" ? glossaryRu(rewritten) : rewritten;
   const plain = out.replace(/<[^>]+>/g, " ");
-  for (const re of FORBIDDEN[lang])
+  for (const re of [...FORBIDDEN[lang], ...GLOSSARY_FORBIDDEN[lang]])
     if (re.test(plain)) throw new Error(`${lang}.${key}: запрещено ${re} — «${plain}»`);
   return out;
 }

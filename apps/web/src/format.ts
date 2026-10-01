@@ -193,6 +193,19 @@ export function formatQty(unit: PriceUnit, n: number, t: Dict): string | null {
   }
 }
 
+/**
+ * Строка фактов через точку: «Кортежи · Свадьба · 6 дек · 200 гостей». Перенос — только
+ * после точки, а число с подписью («200 гостей», «6 дек», «№ 1044») не разрывается
+ */
+export function metaLine(parts: readonly (string | null | undefined | false)[]): string {
+  const glue = (part: string) =>
+    part.replace(/(\d) (?=\S)/g, `$1${NBSP}`).replace(/(^|\s)(№|до|от) (?=\d)/g, `$1$2${NBSP}`);
+  return parts
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .map(glue)
+    .join(`${NBSP}· `);
+}
+
 /* ---------- телефоны ---------- */
 
 export const PHONE_PREFIX = "+998";

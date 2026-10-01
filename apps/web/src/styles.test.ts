@@ -103,6 +103,19 @@ describe("styles.css клиента", () => {
     expect(hover).toMatch(/:hover/);
   });
 
+  it("три поля фильтров каталога — в строку с 560px: правило того же веса, что «район во всю ширину»", () => {
+    // Раньше там стояло .filters .field:last-child — вес меньше, и район растягивался и на компьютере
+    const wide = atRuleBody(/@media \(min-width: 560px\)/);
+    expect(wide).toMatch(/\.filters \.field:nth-child\(3\):last-child \{\s*grid-column: auto;/);
+  });
+
+  it("лента разделов на телефоне гаснет у края (видно, что дальше есть ещё), с планшета — нет", () => {
+    const strip = declarationsOf(".cat-switch ul");
+    expect(strip).toMatch(/-webkit-mask-image: linear-gradient/);
+    expect(strip).toMatch(/(^|;)\s*mask-image: linear-gradient/);
+    expect(atRuleBody(/@media \(min-width: 768px\)/)).toMatch(/mask-image: none/);
+  });
+
   it("выбранное объявлено после наведения (ловушка №7)", () => {
     const hover = css.search(/@media \(hover: hover\)/);
     for (const selector of ['.lang button[aria-pressed="true"]', '.tabs a[aria-current="page"]'])

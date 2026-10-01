@@ -54,10 +54,11 @@ describe("каталог категории", () => {
   it("переключатель категорий, заголовок, только свои фильтры и цены с единицей", async () => {
     await mount({ path: "/catalog?category=car", mock: { listings: ALL } });
     await waitFor(() => cardNames().length === 3, "кортежи");
-    expect(document.querySelector("h1")?.textContent).toBe("Кортеж в Ташкенте");
-    expect(document.title).toBe("Кортеж в Ташкенте · Bayramm");
+    // Название раздела — из глоссария клиента: одно и то же в заголовке и в переключателе
+    expect(document.querySelector("h1")?.textContent).toBe("Кортежи в Ташкенте");
+    expect(document.title).toBe("Кортежи в Ташкенте · Bayramm");
     const current = document.querySelector('.cat-switch a[aria-current="page"]');
-    expect(current?.textContent).toBe("Кортеж");
+    expect(current?.textContent).toBe("Кортежи");
     expect(current?.getAttribute("href")).toBe("/catalog?category=car");
     // Гостей и района у кортежа нет: каталог по ним не отбирает
     expect(field("Гости")).toBeNull();
@@ -72,10 +73,30 @@ describe("каталог категории", () => {
     ]);
   });
 
+  it("порядок экрана: заголовок, разделы, фильтры одним блоком «Фильтры», выдача; сброс — в блоке", async () => {
+    await mount({ path: "/catalog?category=car&date=2026-10-08", mock: { listings: ALL } });
+    await waitFor(() => cardNames().length === 3, "кортежи");
+    const screen = document.querySelector(".catalog") as HTMLElement;
+    const order = [".catalog-head h1", ".cat-switch", ".filters-panel", ".catalog-list"].map((selector) =>
+      [...screen.querySelectorAll("*")].indexOf(screen.querySelector(selector) as Element),
+    );
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    // Один блок фильтров с заголовком для диктора: дата и поля витрины — внутри него
+    const panel = document.querySelector(".filters-panel") as HTMLElement;
+    expect(panel.getAttribute("aria-labelledby")).toBe(panel.querySelector("h2")?.id);
+    expect(panel.querySelector("h2")?.textContent).toBe("Фильтры");
+    expect(panel.querySelector(".filters button[aria-haspopup=dialog]")).not.toBeNull();
+    expect(panel.querySelector(".filters-side .attr-filters")).not.toBeNull();
+    // Есть фильтр — «Сбросить фильтры» в блоке; он снимает всё, кроме раздела
+    await click(byText(".filters-panel .filters-reset", "Сбросить фильтры"));
+    await waitFor(() => window.location.search === "?category=car", "фильтры сняты");
+    expect(document.querySelector(".filters-reset")).toBeNull();
+  });
+
   it("смена категории сохраняет дату; отметки — свободно, частично занято, занято", async () => {
     await mount({ path: "/catalog?date=2026-10-08", mock: { listings: ALL } });
     await waitFor(() => cardNames().length > 0, "залы");
-    await click(byText(".cat-switch a", "Кортеж"));
+    await click(byText(".cat-switch a", "Кортежи"));
     await waitFor(() => window.location.search === "?category=car&date=2026-10-08", "адрес категории");
     await waitFor(() => cardNames().length === 3, "кортежи");
     expect(cardNames()).toEqual(["Oq Kortej", "Retro Avto", "Limuzin Lux"]);
@@ -126,7 +147,8 @@ describe("каталог категории", () => {
     await click(checkboxIn(sheet, "Оператор дрона"));
     await waitFor(() => window.location.search.includes("a.team=drone_operator"), "фильтр в адресе");
     await waitFor(() => cardNames().length === 1, "с дроном");
-    await click(byText('[role="dialog"] button', "Показать"));
+    // На кнопке — сколько нашлось: видно до закрытия шторки
+    await click(byText('[role="dialog"] button', "Показать 1 вариант"));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(cardNames()).toEqual(["Kadr Media"]);
   });
@@ -160,7 +182,7 @@ describe("витрина категории", () => {
     expect(text(document.querySelector(".attr-list") as HTMLElement)).toContain(
       "Mercedes-Benz E-Class · Премиум",
     );
-    expect(document.querySelector(".venue-meta")?.textContent).toBe("Кортеж");
+    expect(document.querySelector(".venue-meta")?.textContent).toBe("Кортежи");
     // Дата из каталога: частично занята — что именно
     expect(document.querySelector(".venue-head .chip")?.textContent).toBe("8 окт — частично занято");
     expect([...document.querySelectorAll(".parts .part")].map((p) => p.textContent)).toEqual([
@@ -218,7 +240,7 @@ describe("витрина категории", () => {
     await waitFor(() => document.querySelector(".lead-note"), "срок");
     expect(document.querySelector(".ui-cal")).toBeNull();
     expect(document.querySelector(".lead-note")?.textContent).toBe(
-      "Заказ — не позже чем за 3 дня до праздника.",
+      "Заказывают минимум за 3 дня до праздника.",
     );
     expect(text(document.querySelector(".svcs") as HTMLElement)).toContain("заказ за 7 дней");
   });
@@ -273,7 +295,9 @@ describe("заявка по форме категории", () => {
     await click(byText(".svc-choice-options label", /Украшение живыми цветами/)?.querySelector("input"));
     // Примерная сумма: 5 ч × 350 000 + 400 000 — подписана как предварительная
     await waitFor(() => document.querySelector(".estimate-sum b")?.textContent?.includes("2,2"), "сумма");
-    expect(text(document.querySelector(".estimate") as HTMLElement)).toContain("Точную сумму назовёт вендор");
+    expect(text(document.querySelector(".estimate") as HTMLElement)).toContain(
+      "Точную сумму назовёт исполнитель",
+    );
     await type(field("Как к вам обращаться"), "Азиза");
     await type(field("Телефон"), "00 123 45 67");
     await click(transferCheckbox());
@@ -329,7 +353,8 @@ describe("заявка по форме категории", () => {
     await mount({ path: "/venue/milliy-shirinlik/request?date=2026-10-03", api });
     await waitFor(() => transferCheckbox(), "форма");
     expect(field("Дата события")?.textContent).toContain("Выберите дату");
-    expect(text()).toContain("Заказ — не позже чем за 3 дня до праздника.");
+    // Срок — с ближайшей датой, на которую можно заказать
+    expect(text()).toContain("Заказывают минимум за 3 дня: ближайшая дата — 4 окт.");
     await click(field("Дата события"));
     expect(
       document.querySelector('button.ui-cal-day[aria-label^="3 окт"]')?.getAttribute("aria-disabled"),
@@ -346,7 +371,7 @@ describe("заявка по форме категории", () => {
     await click(transferCheckbox());
     await click(byText("button", "Отправить заявку"));
     await waitFor(() => document.querySelector(".form-error"), "ошибка");
-    expect(text()).toContain("вендору нужно больше времени на подготовку");
+    expect(text()).toContain("исполнителю нужно больше времени на подготовку");
     expect(document.querySelector(`#${CSS.escape(field("Дата события")?.id ?? "x")}-error`)).not.toBeNull();
   });
 
@@ -384,7 +409,10 @@ describe("мои заявки: категория, часть дня и дета
     await mount({ path: "/requests", mock: { listings: ALL, requests } });
     await waitFor(() => document.querySelectorAll(".req").length === requests.length, "заявки");
     const car = [...document.querySelectorAll(".req")].find((r) => r.textContent?.includes("Oq Kortej"));
-    expect(car?.querySelector(".req-main .muted")?.textContent).toContain("Кортеж · Свадьба");
+    // Факты — через точку; перенос только после неё, число с подписью не разрывается
+    expect(car?.querySelector(".req-main .muted")?.textContent).toBe(
+      "Кортежи\u00a0· Свадьба\u00a0· 6\u00a0дек\u00a0· вечер\u00a0· Заявка №\u00a01044",
+    );
     expect(car?.querySelector(".req-main .muted")?.textContent).toContain("вечер");
     const details = [...(car?.querySelectorAll(".req-details li") ?? [])].map((li) => li.textContent);
     expect(details).toEqual([

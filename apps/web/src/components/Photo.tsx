@@ -9,8 +9,10 @@ interface PhotoProps {
   readonly alt: string;
   /** Ширина в раскладке для выбора варианта из srcset */
   readonly sizes: string;
-  /** Первый экран: грузить сразу и с высоким приоритетом */
+  /** Первый экран: грузить сразу, а не лениво */
   readonly eager?: boolean;
+  /** Главное фото первого экрана (LCP): ещё и с высоким приоритетом загрузки */
+  readonly priority?: boolean;
   readonly className?: string;
 }
 
@@ -18,7 +20,7 @@ interface PhotoProps {
  * Фото площадки: варианты с воркера media (srcset), ленивая загрузка. Нет фото или оно
  * не загрузилось — подложка с узором гириха, а не значок битой картинки
  */
-export function Photo({ photo, alt, sizes, eager = false, className = "" }: PhotoProps) {
+export function Photo({ photo, alt, sizes, eager = false, priority = false, className = "" }: PhotoProps) {
   const { mediaEnv } = useServices();
   const [failed, setFailed] = useState(false);
   const sources = photo && !failed ? photoSources(photo, mediaEnv) : null;
@@ -40,7 +42,7 @@ export function Photo({ photo, alt, sizes, eager = false, className = "" }: Phot
       width={photo.width}
       height={photo.height}
       loading={eager ? "eager" : "lazy"}
-      fetchPriority={eager ? "high" : "auto"}
+      fetchPriority={priority ? "high" : "auto"}
       decoding="async"
       onError={() => setFailed(true)}
     />

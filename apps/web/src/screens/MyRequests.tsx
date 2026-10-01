@@ -7,7 +7,7 @@ import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { EmptyState, ErrorState, Loading } from "../components/States";
 import { useAccount, useDictionaries, useLang, useServices } from "../context";
-import { formatDayMonth, formatDuration, formatMomentTashkent, hoursLeft } from "../format";
+import { formatDayMonth, formatDuration, formatMomentTashkent, hoursLeft, metaLine } from "../format";
 import { useAsync, useDocumentTitle, useNow } from "../hooks";
 import { Icon } from "../icons";
 import { DEFAULT_CATEGORY, hrefFor, useNav } from "../router";
@@ -121,25 +121,28 @@ function RequestItem({
       <div className="req-head">
         <Photo photo={request.listing.cover} alt="" sizes="56px" className="rq-thumb" />
         <div className="req-main">
-          <h2 className="req-name">
-            <Link href={hrefFor({ name: "venue", slug: request.listing.slug })}>{request.listing.name}</Link>
-          </h2>
+          {/* Название и статус — строкой; подробности ниже во всю ширину, а не узкой колонкой */}
+          <div className="req-top">
+            <h2 className="req-name">
+              <Link href={hrefFor({ name: "venue", slug: request.listing.slug })}>
+                {request.listing.name}
+              </Link>
+            </h2>
+            <span className={`status status-${STATUS_TONE[request.status]}`}>
+              {t[STATUS_TEXT[request.status]]}
+            </span>
+          </div>
           <p className="muted small">
-            {[
-              hall ? null : categoryName(category, lang),
+            {metaLine([
+              categoryName(category, t, lang),
               occasionName(request.occasionCode),
               formatDayMonth(request.eventDate, t),
               request.dayPart === null ? null : t.dayPartName(request.dayPart),
               request.guests === null ? null : t.guestsShort(request.guests),
               t.requestNo(request.publicNo),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
+            ])}
           </p>
         </div>
-        <span className={`status status-${STATUS_TONE[request.status]}`}>
-          {t[STATUS_TEXT[request.status]]}
-        </span>
       </div>
 
       {summary.length > 0 ? (
@@ -164,8 +167,7 @@ function RequestItem({
 
       {breached ? (
         <div className="req-breached">
-          <p className="late">{t.mrLate}</p>
-          <p className="small">{t.slaBreachedNote}</p>
+          <p className="late">{t.slaBreachedNote}</p>
           <Link className="btn btn-secondary" href={similarHref}>
             {t.similar}
           </Link>
@@ -229,7 +231,7 @@ function RequestList() {
   const open = query.get("open");
   const duplicate = query.get("dup") === "1";
 
-  if (requests.status === "loading") return <Loading />;
+  if (requests.status === "loading") return <Loading screen />;
   if (requests.status === "error") {
     const signIn = isApiError(requests.error) && requests.error.status === 401;
     return <ErrorState message={signIn ? t.signInFailed : undefined} onRetry={requests.reload} />;
