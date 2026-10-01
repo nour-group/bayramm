@@ -1,28 +1,34 @@
 /* Общие куски экранов: заголовок, загрузка, ошибка с повтором, пустое состояние, чип статуса. */
 
 import type { RequestStatus } from "@bayramm/shared/api/vendor";
-import type { ReactNode, RefObject } from "react";
+import type { ReactNode, Ref } from "react";
 import { textOf, type VendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
 
 export interface ScreenProps {
   readonly t: VendorDict;
   readonly lang: "ru" | "uz";
-  /** Заголовок экрана: на него переходит фокус после перехода (для диктора) */
-  readonly headingRef: RefObject<HTMLHeadingElement | null>;
+  /**
+   * Заголовок экрана: на него переходит фокус после перехода (для диктора). Ref-функция:
+   * экран, который ещё грузится, получит фокус, когда заголовок появится
+   */
+  readonly headingRef: Ref<HTMLHeadingElement>;
 }
 
-export function Heading({
-  headingRef,
-  children,
-}: {
-  headingRef: ScreenProps["headingRef"];
-  children: ReactNode;
-}) {
+interface HeadingProps {
+  readonly headingRef?: ScreenProps["headingRef"];
+  /** Заголовок карточки заявки рядом со списком (компьютер) — h2 под h1 «Заявки» */
+  readonly level?: 1 | 2;
+  readonly id?: string;
+  readonly children: ReactNode;
+}
+
+export function Heading({ headingRef, level = 1, id = "page-title", children }: HeadingProps) {
+  const Tag = level === 1 ? "h1" : "h2";
   return (
-    <h1 id="page-title" className="page-title" ref={headingRef} tabIndex={-1}>
+    <Tag id={id} className="page-title" ref={headingRef} tabIndex={-1}>
       {children}
-    </h1>
+    </Tag>
   );
 }
 

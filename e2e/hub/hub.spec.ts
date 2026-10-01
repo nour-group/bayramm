@@ -30,7 +30,7 @@ test("кабинет из браузера через хаб, оттуда — �
   const { hub, vendor, staff } = await start(page);
 
   await page.goto(`${APPS.vendor}/calendar`);
-  await expect(heading(page)).toHaveText(v.gateOutsideTitle);
+  await expect(heading(page)).toHaveText(v.welcomeTitle);
   await page.getByRole("button", { name: v.signIn, exact: true }).click();
 
   // Демо-аккаунт на сайте уже вошёл: хаб сразу отдаёт код, кабинет открывается там, где уходили
@@ -39,7 +39,9 @@ test("кабинет из браузера через хаб, оттуда — �
   expect(hub.requests.map((r) => r.app)).toEqual(["vendor"]);
   expect(hub.exchanges).toEqual([{ origin: APPS.vendor, ok: true }]);
 
-  // Роль сотрудника у того же аккаунта: ссылка на панель — с ?signin=1, сразу в хаб
+  // Роль сотрудника у того же аккаунта: ссылка на панель (раздел «Аккаунт») — с ?signin=1, сразу в хаб
+  await page.getByRole("navigation", { name: v.sections }).getByRole("link", { name: v.account }).click();
+  await expect(heading(page)).toHaveText(v.account);
   const toAdmin = page.getByRole("link", { name: v.toAdmin });
   await expect(toAdmin).toHaveAttribute("href", `${APPS.admin}/?signin=1`);
   await toAdmin.click();

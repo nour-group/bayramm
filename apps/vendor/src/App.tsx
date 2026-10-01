@@ -9,16 +9,15 @@ import {
   useOnReconnect,
 } from "@bayramm/ui/react";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccountLinks, VendorChooser } from "./Account";
+import { VendorChooser } from "./Account";
 import { ApiFailure, accountMe, api, setUnauthorizedHandler, signIn, tokenStore } from "./api";
-import { Calendar } from "./Calendar";
 import { Gate, type GateKind } from "./Gate";
 import { CALLBACK_PATH, chooseVendor, finishHub, SIGNIN_PARAM, startHub } from "./hub";
-import { LANG_NAMES, vendorDict } from "./i18n";
+import { Inbox } from "./Inbox";
+import { fill, LANG_NAMES, type VendorDict, vendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
 import { initialLang, saveLang } from "./lang";
-import { RequestDetail } from "./RequestDetail";
-import { Requests } from "./Requests";
+import { type Layout, useLayout } from "./layout";
 import {
   HOME,
   type Location,
@@ -30,9 +29,18 @@ import {
   type Section,
   useRoute,
 } from "./router";
+import { Lazy, preloadScreens, SCREENS } from "./screens";
 import { announceReady, launchedFromTelegram, loadTelegramWebApp } from "./telegram";
 import { Heading } from "./ui";
-import { Venue } from "./Venue";
+import { Welcome } from "./Welcome";
+
+/* Оболочка кабинета: вход, раскладка и разделы.
+     · телефон (Mini App) — шапка с языком, нижняя панель из четырёх разделов;
+     · планшет — шапка и узкая колонка разделов слева;
+     · компьютер — боковая панель: название, разделы, кабинет (площадка и код), язык.
+   Раскладку выбирает layout.ts; те же границы — в @media styles.css. Заявки на компьютере —
+   списком и карточкой рядом (Inbox.tsx). Календарь, площадка и аккаунт — свои части сборки
+   (screens.tsx): после входа они подгружаются заранее. */
 
 type Auth =
   | { readonly kind: GateKind; readonly back?: string }
@@ -43,6 +51,7 @@ const NAV_ICON: Readonly<Record<Section, IconName>> = {
   requests: "requests",
   calendar: "calendar",
   card: "hall",
+  account: "user",
 };
 
 /** Кабинет по сессии: партнёр одного вендора — сразу, нескольких — выбор */
@@ -73,8 +82,8 @@ async function openCabinet(back?: string): Promise<Auth> {
  * Вход: внутри Telegram — по свежей initData из кнопки бота; сессия (7 дней) — на
  * случай, если Mini App перезагрузили позже часа. Вне Telegram — через хаб входа на
  * сайте: /auth/callback меняет одноразовый код на сессию, ?signin=1 (пришли из другого
- * приложения Bayramm) сразу уводит в хаб, иначе — экран «войдите». Открыт из Telegram,
- * а SDK не загрузился — ошибка с повтором.
+ * приложения Bayramm) сразу уводит в хаб, иначе — экран «что это и как войти». Открыт из
+ * Telegram, а SDK не загрузился — ошибка с повтором.
  */
 // Возврат из хаба обрабатывается один раз: обмен сразу убирает код из адреса, а вход
 // запускается повторно (StrictMode в разработке) — повтор ждёт тот же обмен
@@ -135,6 +144,77 @@ function NavLink({ to, current, navigate, className, children }: NavLinkProps) {
   );
 }
 
+function LangSwitch({ lang, t, onChange }: { lang: Lang; t: VendorDict; onChange: (code: Lang) => void }) {
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: группа кнопок-переключателей, fieldset здесь не форма
+    <div className="lang" role="group" aria-label={t.language}>
+      {LANGS.map((code) => (
+        <Tooltip key={code} text={LANG_NAMES[code]}>
+          {(tip) => (
+            <button
+              {...tip}
+              type="button"
+              lang={code}
+              aria-pressed={code === lang}
+              onClick={() => onChange(code)}
+            >
+              {code.toUpperCase()}
+            </button>
+          )}
+        </Tooltip>
+      ))}
+    </div>
+  );
+}
+
+function Brand({ t }: { t: VendorDict }) {
+  return (
+    <p className="brand">
+      Bayramm <span className="brand-area">{t.area}</span>
+    </p>
+  );
+}
+
+interface SectionsProps {
+  readonly t: VendorDict;
+  readonly section: Section | null;
+  readonly navigate: Navigate;
+  /** Новых заявок (из последнего ответа списка); null — ещё не знаем */
+  readonly fresh: number | null;
+  readonly className: string;
+  readonly linkClass: string;
+}
+
+/** Разделы кабинета: нижняя панель телефона, колонка планшета, боковая панель компьютера */
+function Sections({ t, section, navigate, fresh, className, linkClass }: SectionsProps) {
+  return (
+    <nav className={className} aria-label={t.sections}>
+      {NAV.map((item) => (
+        <NavLink
+          key={item}
+          to={{ route: item }}
+          current={section === item}
+          navigate={navigate}
+          className={linkClass}
+        >
+          <span className="nav-icon">
+            <Icon name={NAV_ICON[item]} size={24} />
+            {item === "requests" && fresh ? (
+              <span className="nav-count" aria-hidden="true">
+                {fresh > 99 ? "99+" : fresh}
+              </span>
+            ) : null}
+          </span>
+          <span className="nav-label">{t[item]}</span>
+          {item === "requests" && fresh ? (
+            <span className="sr-only">{fill(t.newCount, { n: fresh })}</span>
+          ) : null}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
 /** Кабинет со связью: баннер «нет связи» и повтор упавших загрузок, когда она вернётся */
 export function App() {
   return (
@@ -146,14 +226,15 @@ export function App() {
 
 function Cabinet() {
   const [location, navigate] = useRoute();
+  const layout: Layout = useLayout();
   const [lang, setLang] = useState<Lang>(initialLang);
   const [auth, setAuth] = useState<Auth>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [inboxTab, setInboxTab] = useState<RequestTab>("new");
   const [listingId, setListingId] = useState<string | null>(null);
+  const [fresh, setFresh] = useState<number | null>(null);
   const t = vendorDict[lang];
-  const heading = useRef<HTMLHeadingElement>(null);
-  const shownPath = useRef(location ? pathOf(location) : null);
+  const ready = auth.kind === "ready" ? auth : null;
 
   // Вход при открытии и по «Повторить»
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt — повтор входа по «Повторить»
@@ -181,6 +262,11 @@ function Cabinet() {
     };
   }, [attempt]);
 
+  // Вошли — остальные разделы подгружаются, пока человек смотрит на первый экран
+  useEffect(() => {
+    if (auth.kind === "ready") preloadScreens();
+  }, [auth.kind]);
+
   // Сессия кончилась посреди работы — «откройте из бота заново»
   useEffect(() => {
     setUnauthorizedHandler(() => setAuth({ kind: "expired" }));
@@ -191,29 +277,49 @@ function Cabinet() {
     document.documentElement.lang = lang;
   }, [lang]);
 
-  const chooseLang = (code: Lang) => {
-    setLang(code);
-    saveLang(code);
-    if (auth.kind === "ready") {
-      void api
-        .setLocale(code)
-        .then((me) => setAuth({ kind: "ready", me }))
-        .catch(() => {});
-    }
-  };
+  const chooseLang = useCallback(
+    (code: Lang) => {
+      setLang(code);
+      saveLang(code);
+      if (auth.kind === "ready") {
+        void api
+          .setLocale(code)
+          .then((me) => setAuth({ kind: "ready", me }))
+          .catch(() => {});
+      }
+    },
+    [auth.kind],
+  );
 
   const section = location ? SECTION_OF[location.route] : null;
   useEffect(() => {
-    document.title = `${section ? t[section] : t.notFound} · Bayramm`;
-  }, [section, t]);
+    // До входа — просто кабинет: разделов ещё нет
+    const name = auth.kind !== "ready" ? t.area : section ? t[section] : t.notFound;
+    document.title = `${name} · Bayramm`;
+  }, [auth.kind, section, t]);
 
   // После перехода фокус — на заголовок нового экрана, чтобы экранный диктор его прочёл.
+  // Экран ещё грузится (данные, часть сборки) — фокус получит заголовок, когда появится.
   // При первом показе фокус не трогаем. Без прокрутки (ловушка №3); scrollTo есть не везде (ловушка №5)
   const path = location ? pathOf(location) : null;
+  const shownPath = useRef(path);
+  const headingEl = useRef<HTMLHeadingElement | null>(null);
+  const focusPending = useRef(false);
+  const headingRef = useCallback((el: HTMLHeadingElement | null) => {
+    headingEl.current = el;
+    if (el && focusPending.current) {
+      focusPending.current = false;
+      el.focus({ preventScroll: true });
+    }
+  }, []);
   useEffect(() => {
     if (shownPath.current === path) return;
     shownPath.current = path;
-    heading.current?.focus({ preventScroll: true });
+    const el = headingEl.current;
+    if (el?.isConnected) {
+      focusPending.current = false;
+      el.focus({ preventScroll: true });
+    } else focusPending.current = true;
     window.scrollTo?.(0, 0);
   }, [path]);
 
@@ -223,7 +329,8 @@ function Cabinet() {
     if (auth.kind === "error") retry();
   });
   const uiTexts = useMemo(() => ({ close: t.close, clear: t.clear }), [t]);
-  const screenProps = { t, lang, headingRef: heading } as const;
+  const screenProps = { t, lang, headingRef } as const;
+  const onCounts = useCallback((counts: Readonly<Record<RequestTab, number>>) => setFresh(counts.new), []);
 
   const signInHub = useCallback(() => {
     // Токен этого аккаунта не подошёл (не партнёр) — войти другим: старый забыть
@@ -235,108 +342,137 @@ function Cabinet() {
   }, []);
   const switchVendor = useCallback(() => {
     chooseVendor(null);
+    setFresh(null);
     retry();
   }, [retry]);
 
   let screen: ReactNode;
   if (auth.kind === "choose") {
-    screen = <VendorChooser vendors={auth.vendors} t={t} headingRef={heading} onChosen={retry} />;
+    screen = <VendorChooser vendors={auth.vendors} t={t} headingRef={headingRef} onChosen={retry} />;
+  } else if (auth.kind === "outside") {
+    screen = <Welcome t={t} headingRef={headingRef} onSignIn={signInHub} />;
   } else if (auth.kind !== "ready") {
-    screen = <Gate kind={auth.kind} t={t} headingRef={heading} onRetry={retry} onSignIn={signInHub} />;
+    screen = <Gate kind={auth.kind} t={t} headingRef={headingRef} onRetry={retry} onSignIn={signInHub} />;
   } else if (!location) {
     screen = (
-      <section className="page" aria-labelledby="page-title">
-        <Heading headingRef={heading}>{t.notFound}</Heading>
+      <section className="page page-narrow" aria-labelledby="page-title">
+        <Heading headingRef={headingRef}>{t.notFound}</Heading>
         <p className="lead">{t.notFoundLead}</p>
         <NavLink to={{ route: HOME }} current={false} navigate={navigate} className="btn btn-ghost">
           {t.toHome}
         </NavLink>
       </section>
     );
-  } else if (location.route === "request" && location.id) {
-    screen = <RequestDetail key={location.id} id={location.id} navigate={navigate} {...screenProps} />;
   } else if (location.route === "calendar") {
     screen = (
-      <Calendar
-        t={t}
-        headingRef={heading}
-        listings={auth.me.listings}
-        listingId={listingId}
-        onListing={setListingId}
-      />
+      <Lazy part={SCREENS.calendar} t={t}>
+        {({ Calendar }) => (
+          <Calendar
+            t={t}
+            headingRef={headingRef}
+            listings={auth.me.listings}
+            listingId={listingId}
+            onListing={setListingId}
+          />
+        )}
+      </Lazy>
     );
   } else if (location.route === "card") {
     screen = (
-      <Venue
-        {...screenProps}
-        listings={auth.me.listings}
-        listingId={listingId}
-        onListing={setListingId}
-        vendorCode={auth.me.vendor.code}
-        role={auth.me.user.role}
-      />
+      <Lazy part={SCREENS.venue} t={t}>
+        {({ Venue }) => (
+          <Venue
+            {...screenProps}
+            listings={auth.me.listings}
+            listingId={listingId}
+            onListing={setListingId}
+            vendorCode={auth.me.vendor.code}
+            role={auth.me.user.role}
+          />
+        )}
+      </Lazy>
+    );
+  } else if (location.route === "account") {
+    screen = (
+      <Lazy part={SCREENS.account} t={t}>
+        {({ AccountPage }) => (
+          <AccountPage {...screenProps} me={auth.me} onLang={chooseLang} onSwitch={switchVendor} />
+        )}
+      </Lazy>
     );
   } else {
     screen = (
-      <Requests
+      <Inbox
         {...screenProps}
+        id={location.route === "request" ? (location.id ?? null) : null}
+        split={layout === "desktop"}
         tab={inboxTab}
         onTab={setInboxTab}
         navigate={navigate}
         listingCount={auth.me.listings.length}
+        onCounts={onCounts}
       />
     );
   }
 
+  // Разделы — только в кабинете; до входа на любой ширине — шапка и экран по центру
+  const shell = ready ? layout : "gate";
   return (
     <UiTextsProvider texts={uiTexts}>
-      <div className={`app${auth.kind === "ready" ? " app-tabs" : ""}`}>
+      <div className={`app app-${shell}`}>
         <a className="skip" href="#main">
           {t.skip}
         </a>
-        <header className="top">
-          <p className="brand">
-            Bayramm <span className="brand-area">{t.area}</span>
-          </p>
-          {/* biome-ignore lint/a11y/useSemanticElements: группа кнопок-переключателей, fieldset здесь не форма */}
-          <div className="lang" role="group" aria-label={t.language}>
-            {LANGS.map((code) => (
-              <Tooltip key={code} text={LANG_NAMES[code]}>
-                {(tip) => (
-                  <button
-                    {...tip}
-                    type="button"
-                    lang={code}
-                    aria-pressed={code === lang}
-                    onClick={() => chooseLang(code)}
-                  >
-                    {code.toUpperCase()}
-                  </button>
-                )}
-              </Tooltip>
-            ))}
-          </div>
-        </header>
-        <OfflineBanner offline={t.offline} back={t.backOnline} />
-        <main id="main" className="main" tabIndex={-1}>
-          {screen}
-          {auth.kind === "ready" ? <AccountLinks t={t} onSwitch={switchVendor} /> : null}
-        </main>
-        {auth.kind === "ready" ? (
-          <nav className="tabbar" aria-label={t.sections}>
-            {NAV.map((item) => (
-              <NavLink
-                key={item}
-                to={{ route: item }}
-                current={section === item}
-                navigate={navigate}
-                className="tab"
-              >
-                <Icon name={NAV_ICON[item]} size={24} />
-                <span>{t[item]}</span>
-              </NavLink>
-            ))}
-          </nav>
+        {shell === "desktop" && ready ? (
+          <aside className="side">
+            <Brand t={t} />
+            <Sections
+              t={t}
+              section={section}
+              navigate={navigate}
+              fresh={fresh}
+              className="side-nav"
+              linkClass="side-link"
+            />
+            <div className="side-foot">
+              <p className="side-vendor">
+                <span className="side-vendor-name">{ready.me.vendor.name || ready.me.vendor.code}</span>
+                <span className="side-vendor-code">{fill(t.vendorCode, { code: ready.me.vendor.code })}</span>
+              </p>
+              <LangSwitch lang={lang} t={t} onChange={chooseLang} />
+            </div>
+          </aside>
+        ) : (
+          <header className="top">
+            <Brand t={t} />
+            <LangSwitch lang={lang} t={t} onChange={chooseLang} />
+          </header>
+        )}
+        {shell === "tablet" ? (
+          <Sections
+            t={t}
+            section={section}
+            navigate={navigate}
+            fresh={fresh}
+            className="rail"
+            linkClass="rail-link"
+          />
+        ) : null}
+        <div className="frame">
+          <OfflineBanner offline={t.offline} back={t.backOnline} />
+          <main id="main" className="main" tabIndex={-1}>
+            {screen}
+          </main>
+        </div>
+        {shell === "phone" ? (
+          <Sections
+            t={t}
+            section={section}
+            navigate={navigate}
+            fresh={fresh}
+            className="tabbar"
+            linkClass="tab"
+          />
         ) : null}
       </div>
     </UiTextsProvider>
