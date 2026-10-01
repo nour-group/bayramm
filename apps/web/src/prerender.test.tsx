@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { dictionaries, LANGS } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
 import { renderLanding, renderLandings } from "./prerender";
@@ -7,15 +8,14 @@ import { renderLanding, renderLandings } from "./prerender";
 
 const NOW = Date.parse("2026-10-01T07:00:00Z");
 
-/** Видимый текст разметки: без тегов, SVG и меток React между текстами (<!-- -->) */
-const text = (html: string) =>
-  html
-    .replace(/<svg[\s\S]*?<\/svg>|<!--[\s\S]*?-->/g, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&amp;/g, "&")
-    .replace(/\s+/g, " ");
+/** Текст разметки: все текстовые узлы через пробел (разбор DOMParser, не регулярками) */
+function text(html: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const parts: string[] = [];
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) parts.push(node.textContent ?? "");
+  return parts.join(" ").replace(/\s+/g, " ");
+}
 
 describe("пререндер лендинга", () => {
   for (const lang of LANGS) {
