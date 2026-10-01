@@ -935,15 +935,6 @@ textarea.field-input {
   }
 }
 
-/* Совсем узкий (320px): подбор на лендинге — полями друг под другом, иначе в половину
-   ширины не влезает даже «любая» */
-@media (max-width: 359px) {
-  .ln-search {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 12px;
-  }
-}
-
 /* Совсем узкий (320px): цена — отдельной строкой над кнопками */
 @media (max-width: 359px) {
   .venue-bar {
@@ -1458,6 +1449,15 @@ textarea.field-input {
 
 .ln-browse {
   margin-top: 4px;
+}
+
+/* Совсем узкий (320px): поля подбора — друг под другом, иначе в половину ширины не влезает
+   даже «любая». После основного правила .ln-search (ловушка №7) */
+@media (max-width: 359px) {
+  .ln-search {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
 }
 
 /* Иллюстрация первого экрана: узор гириха на крупной поверхности (плитка 84px) — только

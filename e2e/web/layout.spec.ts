@@ -225,6 +225,11 @@ test.describe("узкие телефоны", () => {
       ] as const) {
         await open(page, path, ready, { guest: path === PATHS.home });
         await expectNoOverflow(page, `${width} ${path}`);
+        // Подписи в полях выбора не обрезаны многоточием: «istalgan», «barcha tumanlar»
+        const clipped = await page
+          .locator("main .ui-select-value")
+          .evaluateAll((els) => els.filter((el) => el.scrollWidth > el.clientWidth + 1).length);
+        expect(clipped, `${width} ${path}: обрезанные подписи`).toBe(0);
       }
     });
   }
