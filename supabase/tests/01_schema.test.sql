@@ -8,12 +8,13 @@ select has_schema('pii');
 
 select set_eq(
   'select code from app.categories',
-  array['hall', 'food', 'photo', 'decor', 'cake', 'music', 'kids', 'car'],
-  '8 категорий с кодами продукта');
-select results_eq(
+  array['hall', 'car', 'studio', 'flowers', 'photo', 'cake', 'gifts', 'decor',
+        'food', 'restaurant', 'attire', 'music', 'kids', 'zags'],
+  '14 категорий с кодами продукта (packages/shared/src/categories)');
+select set_eq(
   'select code from app.categories where enabled',
-  array['hall'],
-  'в v0.1 включены только залы');
+  array['hall', 'car', 'studio', 'flowers', 'photo', 'cake', 'gifts', 'decor'],
+  'в v0.2 включены залы и семь приоритетных категорий');
 select set_eq(
   'select code from app.occasions',
   array['toy', 'beshik', 'bd', 'corp', 'small'],

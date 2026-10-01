@@ -84,14 +84,21 @@ describe("разбор запроса", () => {
   });
 
   it("список: вкладка, курсор и размер страницы", () => {
-    expect(parseListQuery({})).toEqual({ tab: "new", after: null, limit: PAGE_LIMIT_DEFAULT });
+    expect(parseListQuery({})).toEqual({
+      tab: "new",
+      listingId: null,
+      after: null,
+      limit: PAGE_LIMIT_DEFAULT,
+    });
     expect(parseListQuery({ tab: "closed", cursor: "1042", limit: "10" })).toEqual({
       tab: "closed",
+      listingId: null,
       after: { kind: "newest", no: 1042 },
       limit: 10,
     });
     expect(parseListQuery({ tab: "active", cursor: "1.1790000000123456.1042" })).toEqual({
       tab: "active",
+      listingId: null,
       after: { kind: "deadline", answered: true, dueUs: 1790000000123456, no: 1042 },
       limit: PAGE_LIMIT_DEFAULT,
     });
@@ -107,6 +114,7 @@ describe("разбор запроса", () => {
       { tab: "new", cursor: "0.99999999999999999.1" },
       { limit: "0" },
       { limit: "51" },
+      { listingId: "not-a-uuid" },
     ]) {
       expect(() => parseListQuery(query), JSON.stringify(query)).toThrow(ApiError);
     }
@@ -169,6 +177,7 @@ describe("listRequests", () => {
     const fake = fakeDb();
     await listRequests(fake.db, ACTOR, {
       tab: "new",
+      listingId: null,
       after: { kind: "deadline", answered: false, dueUs: 1790000000123456, no: 1042 },
       limit: 20,
     });
@@ -192,6 +201,7 @@ describe("listRequests", () => {
     );
     const page = await listRequests(fake.db, ACTOR, {
       tab: "closed",
+      listingId: null,
       after: { kind: "newest", no: 1050 },
       limit: 20,
     });
@@ -243,13 +253,18 @@ describe("listRequests", () => {
       row({ public_no: "1002", answered: true, due_us: "1790000000000000" }),
     ];
     const fake = fakeDb((q) => (isItemQuery(q) ? open : []));
-    const page = await listRequests(fake.db, ACTOR, { tab: "new", after: null, limit: 2 });
+    const page = await listRequests(fake.db, ACTOR, { tab: "new", listingId: null, after: null, limit: 2 });
     expect(page.items.map((i) => i.publicNo)).toEqual([1001, 1003]);
     expect(page.nextCursor).toBe("0.1790000000000002.1003");
 
     const closed = [row({ public_no: "1003" }), row({ public_no: "1002" }), row({ public_no: "1001" })];
     const fakeClosed = fakeDb((q) => (isItemQuery(q) ? closed : []));
-    const last = await listRequests(fakeClosed.db, ACTOR, { tab: "closed", after: null, limit: 2 });
+    const last = await listRequests(fakeClosed.db, ACTOR, {
+      tab: "closed",
+      listingId: null,
+      after: null,
+      limit: 2,
+    });
     expect(last.nextCursor).toBe("1002");
   });
 });

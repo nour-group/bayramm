@@ -8,16 +8,21 @@
 //      клиент отдельно отметил уведомления;
 //   3. согласие request_transfer на этот листинг (и bot_notifications) — в
 //      журнал app.consents: что, когда, версия текста, откуда;
-//   4. заявка и контакты (request_contacts, db/pii). Листинг, блокировку, согласие,
-//      вместимость и лимит заявок проверяют триггеры базы.
+//   4. поля категории: число гостей по форме, details, выбранные услуги и часть дня
+//      (requests/details.ts);
+//   5. заявка и контакты (request_contacts, db/pii). Листинг, блокировку, согласие,
+//      вместимость, часть дня и лимит заявок проверяют триггеры базы.
 // Уведомление вендору ставит в очередь база (триггер на вставку заявки), не API.
 
 import type { ClientRequest, ClientSource, RequestCreated } from "@bayramm/shared/api";
+import type { RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
 import { type ClientActor, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { insertRequestContact } from "../db/pii";
 import { ApiError, isPgError, notFound } from "../errors";
+import { tashkentToday } from "../time";
+import { checkDetails } from "./details";
 import { type CreateRequestInput, consentRequired } from "./input";
 
 /** «Мои заявки» — последние столько */
@@ -48,9 +53,10 @@ export async function createRequest(
   actor: ClientActor,
   input: CreateRequestInput,
   source: ClientSource,
+  today: string = tashkentToday(),
 ): Promise<RequestCreated> {
   try {
-    return await withActor(db, actor, (trx) => insertRequest(trx, actor, input, source));
+    return await withActor(db, actor, (trx) => insertRequest(trx, actor, input, source, today));
   } catch (err) {
     // Параллельная заявка на ту же дату успела раньше: транзакция откатилась,
     // id победившей ищем уже в новой
@@ -69,10 +75,11 @@ async function insertRequest(
   actor: ClientActor,
   input: CreateRequestInput,
   source: ClientSource,
+  today: string,
 ): Promise<RequestCreated> {
   const listing = await trx
     .selectFrom("app.listings")
-    .select(["id", "vendor_id"])
+    .select(["id", "vendor_id", "category_code", "attributes"])
     .where("id", "=", input.listingId)
     .where("status", "=", "active")
     .executeTakeFirst();
@@ -89,6 +96,8 @@ async function insertRequest(
   if (occasion === undefined) {
     throw new ApiError(400, "invalid_request", "Unknown occasion", ["occasionCode"]);
   }
+
+  const checked = await checkDetails(trx, listing, input, today);
 
   // Текст той цели, о которой спрашивали. Действует ли он ещё — проверяет
   // триггер согласий (consent_text_not_current)
@@ -145,7 +154,9 @@ async function insertRequest(
       consent_id: consent.id,
       occasion_code: input.occasionCode,
       event_date: input.eventDate,
-      guests: input.guests,
+      guests: checked.guests,
+      details: JSON.stringify(checked.details),
+      day_part: checked.dayPart,
       budget_min_uzs: input.budgetMinUzs,
       budget_max_uzs: input.budgetMaxUzs,
       source,
@@ -203,6 +214,8 @@ function clientRequests(trx: Tx, clientId: string) {
       "r.decline_reason",
       "r.event_date",
       "r.guests",
+      "r.day_part",
+      "r.details",
       "r.occasion_code",
       "r.created_at",
       "r.sla_due_at",
@@ -212,6 +225,7 @@ function clientRequests(trx: Tx, clientId: string) {
       "l.slug",
       "l.name",
       "l.district_code",
+      "l.category_code",
       "cv.storage_key as cover_key",
       "cv.width as cover_width",
       "cv.height as cover_height",
@@ -233,6 +247,8 @@ function toClientRequest(row: ClientRequestRow): ClientRequest {
     declineReason: row.decline_reason,
     eventDate: row.event_date,
     guests: row.guests,
+    dayPart: row.day_part,
+    details: row.details as RequestDetails,
     occasionCode: row.occasion_code,
     createdAt: row.created_at.toISOString(),
     slaDueAt: row.sla_due_at.toISOString(),
@@ -244,6 +260,7 @@ function toClientRequest(row: ClientRequestRow): ClientRequest {
       name: row.name,
       cover,
       districtCode: row.district_code,
+      categoryCode: row.category_code,
     },
   } satisfies ClientRequest;
 }

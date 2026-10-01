@@ -32,7 +32,7 @@ const PACKAGES = [
 
 function invalid(body: Record<string, unknown>): string[] {
   try {
-    revisionFromBody(body);
+    revisionFromBody(body, "hall");
   } catch (err) {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(422);
@@ -58,24 +58,30 @@ describe("правка из кабинета: разбор тела", () => {
 
 describe("правка из кабинета: только изменённые поля", () => {
   it("совпадает с карточкой — в правку не попадает", () => {
-    const values = revisionFromBody({
-      name: " Lola zali ",
-      price_from_uzs: 25000000,
-      price_unit: "per_event",
-      description_ru: "Зал на 300 гостей",
-      packages: PACKAGES,
-    });
+    const values = revisionFromBody(
+      {
+        name: " Lola zali ",
+        price_from_uzs: 25000000,
+        price_unit: "per_event",
+        description_ru: "Зал на 300 гостей",
+        packages: PACKAGES,
+      },
+      "hall",
+    );
     expect(changedOnly(values, LISTING, PACKAGES)).toEqual({});
   });
 
   it("новые цена, описание на узбекском и пакеты — в правке, остальное — нет", () => {
     const packages = [PACKAGES[0], { ...PACKAGES[1], price_uzs: 32000000 }];
-    const values = revisionFromBody({
-      name: "Lola zali",
-      price_from_uzs: 26000000,
-      description_uz: "300 mehmonga zal",
-      packages,
-    });
+    const values = revisionFromBody(
+      {
+        name: "Lola zali",
+        price_from_uzs: 26000000,
+        description_uz: "300 mehmonga zal",
+        packages,
+      },
+      "hall",
+    );
     expect(changedOnly(values, LISTING, PACKAGES)).toEqual({
       price_from_uzs: 26000000,
       description_uz: "300 mehmonga zal",
@@ -85,7 +91,7 @@ describe("правка из кабинета: только изменённые 
 
   it("пакет без единицы цены — за гостя, как в панели", () => {
     const custom = { kind: "custom", name_ru: "VIP", name_uz: "VIP", price_uzs: 40000000 };
-    const values = revisionFromBody({ packages: [...PACKAGES, custom] });
+    const values = revisionFromBody({ packages: [...PACKAGES, custom] }, "hall");
     expect(changedOnly(values, LISTING, PACKAGES).packages?.[2]).toEqual({
       ...custom,
       price_unit: "per_guest",

@@ -23,6 +23,7 @@ const input: CreateRequestInput = {
   occasionCode: "toy",
   eventDate: "2026-10-03",
   guests: 200,
+  details: null,
   budgetMinUzs: null,
   budgetMaxUzs: 50_000_000,
   contactName: "Азиз",
@@ -49,7 +50,8 @@ async function rejection(run: () => Promise<unknown>): Promise<ApiError> {
 }
 
 const is = {
-  listing: (q: RecordedQuery) => q.sql.startsWith('select "id", "vendor_id" from "app"."listings"'),
+  listing: (q: RecordedQuery) =>
+    q.sql.startsWith('select "id", "vendor_id", "category_code", "attributes" from "app"."listings"'),
   duplicate: (q: RecordedQuery) => q.sql.startsWith('select "id" from "app"."requests"'),
   occasion: (q: RecordedQuery) => q.sql.includes('from "app"."occasions"'),
   texts: (q: RecordedQuery) => q.sql.includes('from "app"."consent_texts"'),
@@ -69,7 +71,8 @@ interface Script {
 function scriptedDb(script: Script = {}) {
   const duplicates = [...(script.duplicate ?? [])];
   return fakeDb((q) => {
-    if (is.listing(q)) return script.listing ?? [{ id: LISTING, vendor_id: VENDOR }];
+    if (is.listing(q))
+      return script.listing ?? [{ id: LISTING, vendor_id: VENDOR, category_code: "hall", attributes: {} }];
     if (is.duplicate(q)) return duplicates.shift() ?? [];
     if (is.occasion(q)) return script.occasion ?? [{ code: "toy" }];
     if (is.texts(q)) return script.texts ?? [{ id: TRANSFER, purpose: "request_transfer" }];
@@ -87,7 +90,7 @@ function scriptedDb(script: Script = {}) {
 describe("createRequest", () => {
   it("одна транзакция под клиентом: проверки → согласие → заявка → контакты", async () => {
     const fake = scriptedDb();
-    const created = await createRequest(fake.db, CLIENT, input, "tma");
+    const created = await createRequest(fake.db, CLIENT, input, "tma", "2026-09-29");
 
     expect(created).toEqual({
       id: REQUEST,

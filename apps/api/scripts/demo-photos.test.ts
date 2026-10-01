@@ -15,7 +15,7 @@ import {
 const MAX_BYTES = 60 * 1024;
 
 describe("демо-фото", () => {
-  it("столько, сколько ждёт POST /ops/demo: по три на зал", () => {
+  it("столько, сколько ждёт POST /ops/demo: по три на витрину", () => {
     expect(DEMO_PHOTO_FILES).toBe(DEMO_PHOTO_COUNT);
   });
 

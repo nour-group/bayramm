@@ -115,6 +115,11 @@ const LISTING: ListingDetail = {
   createdAt: "2026-09-29T06:00:00.000Z",
   updatedAt: "2026-09-29T06:00:00.000Z",
   hasPhone: true,
+  attributes: {},
+  missingAttributes: [],
+  videoLinks: [],
+  parallelCapacity: 1,
+  services: [],
   packages: [
     { kind: "weekday", nameRu: "Будни", nameUz: "Ish kunlari", priceUzs: 150000, priceUnit: "per_guest" },
     {
@@ -590,8 +595,10 @@ describe("заявки", () => {
     occasionCode: "toy",
     eventDate: "2026-11-10",
     guests: 150,
+    dayPart: null,
+    details: {},
     createdAt: "2026-09-28T18:00:00.000Z",
-    listing: { id: LISTING_ID, name: "Oqsaroy Hall" },
+    listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },
     vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
     budgetMinUzs: null,
     budgetMaxUzs: null,

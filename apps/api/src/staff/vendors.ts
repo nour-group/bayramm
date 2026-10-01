@@ -3,7 +3,7 @@
 // кабинета. Контракт — @bayramm/shared/api/staff.
 //
 //   GET   /staff/vendors?q=&listingStatus=&limit=&offset=   список и поиск
-//   POST  /staff/vendors                                     создать
+//   POST  /staff/vendors                                     создать (categoryCode — и первая витрина)
 //   GET   /staff/vendors/:id                                 вендор целиком
 //   PATCH /staff/vendors/:id                                 правка
 //   POST  /staff/vendors/:id/checklist  { item, done }       отметка проверки
@@ -12,6 +12,9 @@
 //   PATCH /staff/vendors/:id/users/:userId                   правка (телефон — пока не привязан)
 //   POST  /staff/vendors/:id/users/:userId/disable | enable | unlink (снять привязку Telegram)
 //   POST  /staff/vendors/:id/users/:userId/phone { reason? } телефон входа (в журнал)
+//
+// Витрина в другой категории существующему вендору — POST /staff/vendors/:id/listings
+// (staff/listings.ts). Пользователи, контакты, согласия и чек-лист — у вендора общие.
 //
 // Телефоны только пишутся: прочитать их можно лишь функциями базы read_* — каждое
 // чтение ложится в app.pii_access_log. Telegram ID пользователя наружу не
@@ -50,6 +53,7 @@ import { ApiError, notFound } from "../errors";
 import { requirePermission } from "./access";
 import { type Body, Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
 import { iso, LISTING_STATUSES, listingBriefs, pathId, staffName } from "./shared";
+import { pickSlug } from "./slug";
 
 export const vendors = new Hono<AppEnv>();
 
@@ -355,7 +359,11 @@ vendors.get("/", requirePermission("catalog.read"), async (c) => {
 // ── создать, прочитать, изменить ────────────────────────────────────────────
 
 vendors.post("/", requirePermission("vendors.write"), limitJson, async (c) => {
-  const { account, contacts } = parseVendor(await readBody(c.req.raw), true);
+  const body = await readBody(c.req.raw);
+  const categoryInput = new Input(body);
+  const categoryCode = categoryInput.pattern("categoryCode", /^[a-z_]{2,20}$/);
+  categoryInput.done();
+  const { account, contacts } = parseVendor(body, true);
   const vendor = await withActor(c.var.db, staffOf(c), async (trx) => {
     await assertManager(trx, account.manager_id);
     const created = await trx
@@ -364,6 +372,13 @@ vendors.post("/", requirePermission("vendors.write"), limitJson, async (c) => {
       .returning("id")
       .executeTakeFirstOrThrow();
     await saveVendorContacts(trx, created.id, contacts);
+    // Категорию выбирает команда: первая витрина вендора — черновиком, с его названием
+    if (typeof categoryCode === "string" && typeof account.name === "string") {
+      const slug = await pickSlug(trx, account.name);
+      await sql`select app.staff_add_listing(${created.id}::uuid, ${categoryCode}, ${account.name}, ${slug})`.execute(
+        trx,
+      );
+    }
     return loadVendor(trx, created.id);
   });
   return c.json(vendor, 201);
@@ -375,8 +390,11 @@ vendors.get("/:id", requirePermission("catalog.read"), async (c) => {
 });
 
 vendors.patch("/:id", requirePermission("vendors.write"), limitJson, async (c) => {
+  // Категория — у витрины, а не у вендора: новая витрина — POST /staff/vendors/:id/listings
   const id = pathId(c.req.param("id"));
-  const { account, contacts } = parseVendor(await readBody(c.req.raw), false);
+  const body = await readBody(c.req.raw);
+  if (Object.hasOwn(body, "categoryCode")) throw invalidInput(["categoryCode"]);
+  const { account, contacts } = parseVendor(body, false);
   const vendor = await withActor(c.var.db, staffOf(c), async (trx) => {
     await assertManager(trx, account.manager_id);
     if (Object.keys(account).length > 0) {

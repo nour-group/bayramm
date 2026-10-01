@@ -2,7 +2,8 @@
 // payload (в нём только id). Правила словарей @bayramm/shared: «заявка», а не
 // «бронь»; узбекский — латиница с ʻ (U+02BB) после o/g и ʼ (U+02BC).
 //
-// Вендору — номер заявки, площадка, дата, гости и повод; имени и телефона
+// Вендору — номер заявки, категория и витрина, дата, гости и повод, поля заявки
+// категории (часы, машины, выбранные услуги — без ПДн); имени, телефона и комментария
 // клиента в уведомлении нет: их вендор видит в кабинете, пока действует согласие.
 // Без parse_mode: название площадки пишет человек, разметка из него не исполняется.
 
@@ -12,15 +13,20 @@ import { type Lang, ruPlural } from "@bayramm/shared";
 export interface RequestFacts {
   /** Номер заявки (public_no) */
   readonly no: string;
-  /** Название площадки */
+  /** Название площадки (витрины) */
   readonly listing: string;
+  /** Категория витрины на языке получателя */
+  readonly category: string;
   /** Дата события, «ДД.ММ.ГГГГ» */
   readonly date: string;
-  readonly guests: number;
+  /** Число гостей; null — категория его не спрашивает или клиент не указал */
+  readonly guests: number | null;
   /** Повод на языке получателя */
   readonly occasion: string;
   /** Часов на ответ (из sla_due_at − created_at) */
   readonly slaHours: number;
+  /** Поля заявки категории строками (detailsSummary): без ПДн */
+  readonly details: readonly string[];
 }
 
 export interface Buttons {
@@ -35,8 +41,16 @@ export interface Buttons {
 const hoursRu = (n: number) => `${n} ${ruPlural(n, "час", "часа", "часов")}`;
 const guestsRu = (n: number) => `${n} ${ruPlural(n, "гость", "гостя", "гостей")}`;
 
-const summaryRu = (f: RequestFacts) => `${f.listing} · ${f.date} · ${guestsRu(f.guests)} · ${f.occasion}`;
-const summaryUz = (f: RequestFacts) => `${f.listing} · ${f.date} · ${f.guests} mehmon · ${f.occasion}`;
+const summaryRu = (f: RequestFacts) =>
+  [f.listing, f.date, f.guests === null ? null : guestsRu(f.guests), f.occasion]
+    .filter((x) => x !== null)
+    .join(" · ");
+const summaryUz = (f: RequestFacts) =>
+  [f.listing, f.date, f.guests === null ? null : `${f.guests} mehmon`, f.occasion]
+    .filter((x) => x !== null)
+    .join(" · ");
+/** Поля заявки категории — строками под сводкой */
+const detailsBlock = (f: RequestFacts) => (f.details.length > 0 ? `\n${f.details.join("\n")}` : "");
 
 export interface NoticeTexts {
   readonly buttons: Buttons;
@@ -67,9 +81,9 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
       similar: "Посмотреть похожие",
     },
     requestNew: (f) =>
-      `Новая заявка №${f.no}\n${summaryRu(f)}\n\n` +
-      `Контакты клиента и детали — в кабинете. Ответьте за ${hoursRu(f.slaHours)}: если зал молчит, ` +
-      "клиенту покажем похожие.",
+      `Новая заявка №${f.no} · ${f.category}\n${summaryRu(f)}${detailsBlock(f)}\n\n` +
+      `Контакты клиента и детали — в кабинете. Ответьте за ${hoursRu(f.slaHours)}: если ответа не будет, ` +
+      "клиенту покажем похожие предложения.",
     slaReminder: (f, left) =>
       `Напоминание: заявка №${f.no} ждёт ответа.\n${summaryRu(f)}\n\n` +
       `Срок ответа — ${hoursRu(f.slaHours)}, осталось ${left > 0 ? hoursRu(left) : "меньше часа"}.`,
@@ -83,11 +97,11 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
       "Площадка знает о заявке и свяжется с вами сама. Статус — в «Моих заявках».",
     deal: (f) => `Вы договорились с «${f.listing}» по заявке №${f.no} (${f.date}). Хорошего праздника!`,
     declined: (f) =>
-      `«${f.listing}» не сможет принять заявку №${f.no} на ${f.date}. Посмотрите похожие залы — ` +
-      "может, подойдёт другой.",
+      `«${f.listing}» не сможет принять заявку №${f.no} на ${f.date}. Посмотрите похожие предложения — ` +
+      "может, подойдёт другое.",
     slaBreach: (f) =>
       `«${f.listing}» пока не ответил на заявку №${f.no} (${f.date}) за ${hoursRu(f.slaHours)}. ` +
-      "Заявка в силе — зал ещё может ответить. А пока можно посмотреть похожие залы.",
+      `Заявка в силе — «${f.listing}» ещё может ответить. А пока можно посмотреть похожие предложения.`,
   },
   uz: {
     buttons: {
@@ -96,9 +110,9 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
       similar: "Oʻxshashlarini koʻrish",
     },
     requestNew: (f) =>
-      `Yangi soʻrov №${f.no}\n${summaryUz(f)}\n\n` +
-      `Mijoz kontaktlari va tafsilotlar — kabinetda. ${f.slaHours} soat ichida javob bering: zal javob ` +
-      "bermasa, mijozga oʻxshashlarini koʻrsatamiz.",
+      `Yangi soʻrov №${f.no} · ${f.category}\n${summaryUz(f)}${detailsBlock(f)}\n\n` +
+      `Mijoz kontaktlari va tafsilotlar — kabinetda. ${f.slaHours} soat ichida javob bering: javob ` +
+      "boʻlmasa, mijozga oʻxshash takliflarni koʻrsatamiz.",
     slaReminder: (f, left) =>
       `Eslatma: №${f.no} soʻrov javob kutmoqda.\n${summaryUz(f)}\n\n` +
       `Javob muddati — ${f.slaHours} soat, ${left > 0 ? `${left} soat` : "bir soatdan kam vaqt"} qoldi.`,
@@ -113,11 +127,11 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
     deal: (f) =>
       `«${f.listing}» bilan №${f.no} soʻrov boʻyicha kelishdingiz (${f.date}). Bayramingiz muborak boʻlsin!`,
     declined: (f) =>
-      `«${f.listing}» ${f.date} sanasiga №${f.no} soʻrovni qabul qila olmaydi. Oʻxshash zallarni koʻring — ` +
+      `«${f.listing}» ${f.date} sanasiga №${f.no} soʻrovni qabul qila olmaydi. Oʻxshash takliflarni koʻring — ` +
       "boshqasi mos kelishi mumkin.",
     slaBreach: (f) =>
       `«${f.listing}» №${f.no} soʻrovga (${f.date}) ${f.slaHours} soat ichida javob bermadi. Soʻrov kuchda — ` +
-      "zal hali javob berishi mumkin. Hozircha oʻxshash zallarni koʻrib chiqishingiz mumkin.",
+      `«${f.listing}» hali javob berishi mumkin. Hozircha oʻxshash takliflarni koʻrib chiqishingiz mumkin.`,
   },
 };
 
@@ -129,10 +143,80 @@ export interface OpsSlaFacts extends RequestFacts {
 }
 
 export function opsSlaBreach(f: OpsSlaFacts): string {
+  const guests = f.guests === null ? "" : ` · ${guestsRu(f.guests)}`;
   return (
     `SLA: заявка №${f.no} без ответа ${hoursRu(f.slaHours)}.\n` +
-    `Вендор ${f.vendorCode} · ${f.listing} · ${f.date} · ${guestsRu(f.guests)}.\n` +
+    `Вендор ${f.vendorCode} · ${f.category} · ${f.listing} · ${f.date}${guests}.\n` +
     "Клиенту предложены похожие; позвоните вендору."
+  );
+}
+
+// ── услуги витрины ─────────────────────────────────────────────────────────
+
+/** Решение команды по услуге — владельцу кабинета */
+export interface ServiceDecisionFacts {
+  /** Название услуги на языке получателя */
+  readonly service: string;
+  /** Название витрины */
+  readonly listing: string;
+  /** approved — услуга на витрине; declined — нет (новая — отклонена, правка — не принята) */
+  readonly outcome: "approved" | "declined";
+  /** Отклонили предложение правки, а не саму услугу: на витрине — прежняя версия */
+  readonly proposal: boolean;
+  /** Причина отказа — пишет сотрудник для партнёра */
+  readonly reason: string | null;
+}
+
+export const SERVICE_TEXTS: Readonly<
+  Record<Lang, { readonly button: string; readonly decided: (f: ServiceDecisionFacts) => string }>
+> = {
+  ru: {
+    button: "Открыть витрину",
+    decided: (f) => {
+      if (f.outcome === "approved")
+        return `Услуга «${f.service}» на витрине «${f.listing}» одобрена — клиенты видят её.`;
+      const what = f.proposal ? `Изменения услуги «${f.service}»` : `Услугу «${f.service}»`;
+      return (
+        `${what} на витрине «${f.listing}» команда Bayramm не приняла` +
+        `${f.reason ? `: ${f.reason}` : "."}\n` +
+        (f.proposal
+          ? "Клиенты видят прежнюю версию. Исправьте и отправьте снова в кабинете."
+          : "Исправьте и отправьте снова в кабинете.")
+      );
+    },
+  },
+  uz: {
+    button: "Vitrinani ochish",
+    decided: (f) => {
+      if (f.outcome === "approved") {
+        return `«${f.listing}» vitrinasidagi «${f.service}» xizmati tasdiqlandi — mijozlar uni koʻradi.`;
+      }
+      const what = f.proposal ? `«${f.service}» xizmatidagi oʻzgarishlarni` : `«${f.service}» xizmatini`;
+      return (
+        `Bayramm jamoasi «${f.listing}» vitrinasidagi ${what} qabul qilmadi` +
+        `${f.reason ? `: ${f.reason}` : "."}\n` +
+        (f.proposal
+          ? "Mijozlar oldingi variantni koʻradi. Tuzatib, kabinetdan qayta yuboring."
+          : "Tuzatib, kabinetdan qayta yuboring.")
+      );
+    },
+  },
+};
+
+/** Новые услуги и предложения правок опубликованной витрины — команде */
+export interface OpsServicesFacts {
+  readonly listing: string;
+  readonly vendorCode: string;
+  readonly category: string;
+  /** Сколько услуг и предложений ждёт решения */
+  readonly pending: number;
+}
+
+export function opsServicesSubmitted(f: OpsServicesFacts): string {
+  return (
+    `Услуги на проверке: ${f.listing} (${f.category}, вендор ${f.vendorCode}).\n` +
+    `Ждут решения: ${f.pending}. Клиенты видят только одобренное.\n` +
+    "Решение — в панели, раздел «Модерация»."
   );
 }
 

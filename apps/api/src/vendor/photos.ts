@@ -18,20 +18,24 @@
 import type { MediaEnv } from "@bayramm/media";
 import type { VendorPhoto } from "@bayramm/shared/api/vendor";
 import type { VendorActor } from "../db/actor";
-import { addListingPhoto, type PhotoDeps, removeListingPhoto } from "../photos/service";
+import { addListingPhoto, type PhotoAck, type PhotoDeps, removeListingPhoto } from "../photos/service";
 import { assertVendorCan } from "./access";
 import { vendorPhoto } from "./profile";
 
-/** POST /vendor/listings/:id/photos — подтверждение «лиц нет» проверяет маршрут */
+/**
+ * POST /vendor/listings/:id/photos — подтверждение из заголовков (X-No-Faces, X-Photo-Consent):
+ * какое нужно, решает правило фото категории витрины
+ */
 export async function uploadPhoto(
   deps: PhotoDeps,
   actor: VendorActor,
   listingId: string,
   bytes: Uint8Array,
   media: MediaEnv,
+  ack: PhotoAck | null,
 ): Promise<VendorPhoto> {
   assertVendorCan(actor, "photos.write");
-  const photo = await addListingPhoto(deps, actor, listingId, bytes, { noFacesAck: true });
+  const photo = await addListingPhoto(deps, actor, listingId, bytes, { ack });
   const view = vendorPhoto(
     {
       id: photo.id,

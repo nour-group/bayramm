@@ -6,9 +6,15 @@
 // сортировки свой (сравнимая цена, минус она, минус вместимость; сравнимая цена
 // зависит от числа гостей), поэтому страница продолжается строго после курсора
 // без смещений. Курсор от другой сортировки, даты или числа гостей не подходит —
-// 400 invalid_cursor: ключи там другие.
+// 400 invalid_cursor: ключи там другие. Фильтры по полям витрины (a.*) ключ не
+// меняют — курсор от выдачи без них продолжает и выдачу с ними.
+//
+// Без category — залы (hall), как в v0.1: у категорий разные единицы цены, общей
+// выдачи нет. Фильтры «a.<поле>» — из конфигурации категории (@bayramm/shared/categories),
+// неизвестный — 400 invalid_request.
 
 import type { CatalogSort } from "@bayramm/shared/api";
+import { type AttributeFilter, categoryConfig, parseAttributeFilters } from "@bayramm/shared/categories";
 import { ApiError } from "../errors";
 import { isIsoDate } from "../time";
 
@@ -17,6 +23,8 @@ export const DEFAULT_SORT: CatalogSort = "price_asc";
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 50;
 export const MAX_GUESTS = 5000;
+/** Категория выдачи без параметра category — залы, как в v0.1 */
+export const DEFAULT_CATEGORY = "hall";
 
 const CODE_RE = /^[a-z_]{2,30}$/;
 const POSITIVE_INT_RE = /^[1-9][0-9]{0,5}$/;
@@ -37,7 +45,9 @@ export interface CatalogCursor {
 }
 
 export interface CatalogParams {
-  readonly category: string | null;
+  readonly category: string;
+  /** Фильтры по полям витрины категории */
+  readonly filters: readonly AttributeFilter[];
   readonly district: string | null;
   readonly date: string | null;
   readonly guests: number | null;
@@ -101,7 +111,17 @@ export function dateParam(query: QueryValues, bad: string[]): string | null {
 /** GET /catalog/listings: всё проверено, неверное — 400 со списком параметров */
 export function parseCatalogQuery(query: QueryValues): CatalogParams {
   const bad: string[] = [];
-  const category = code(query, "category", bad);
+  const category = code(query, "category", bad) ?? DEFAULT_CATEGORY;
+  // Фильтры — только известные категории; у неизвестной выдача и так пустая
+  const config = categoryConfig(category);
+  let filters: readonly AttributeFilter[] = [];
+  if (config !== undefined) {
+    const parsed = parseAttributeFilters(config, query);
+    if (parsed.ok) filters = parsed.value;
+    else bad.push(...parsed.errors);
+  } else {
+    bad.push(...Object.keys(query).filter((name) => name.startsWith("a.")));
+  }
   const district = code(query, "district", bad);
   const date = dateParam(query, bad);
   const guests = int(query, "guests", MAX_GUESTS, bad);
@@ -124,7 +144,7 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
     if (after === null || after.sort !== sort || after.date !== date || after.guests !== guests)
       throw invalidCursor();
   }
-  return { category, district, date, guests, sort, limit, after };
+  return { category, filters, district, date, guests, sort, limit, after };
 }
 
 // ── курсор ─────────────────────────────────────────────────────────────────

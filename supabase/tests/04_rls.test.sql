@@ -25,7 +25,7 @@ select set_eq(
   'без актора видны только опубликованные листинги');
 select is((select count(*)::int from app.photos), 6, 'без актора видны только фото опубликованных листингов');
 select is(
-  (select count(*)::int from app.categories), 8, 'справочники публичны');
+  (select count(*)::int from app.categories), 14, 'справочники публичны');
 select is(
   (select count(*)::int from app.requests), 0,
   'select count(*) тоже возвращает ноль заявок');

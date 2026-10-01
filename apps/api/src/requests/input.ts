@@ -3,7 +3,9 @@
 // всё, что можно отсечь по самим данным.
 //
 //   · даты — по Ташкенту: событие не раньше завтрашнего дня и не дальше двух лет;
-//   · гостей 1–5000 (вместимость листинга проверяет база: BR015);
+//   · гостей 1–5000 (вместимость листинга проверяет база: BR015); нужно ли их число,
+//     решает форма категории — это и поля категории (details) проверяет
+//     requests/service.ts, когда известна витрина;
 //   · телефон — +998 и 9 цифр; пробелы, дефисы и скобки убираются;
 //   · имя до 80 символов, комментарий до 1000 — как ограничения таблицы request_contacts;
 //   · согласие на передачу контактов обязательно: без него — 422 consent_required.
@@ -29,7 +31,10 @@ export interface CreateRequestInput {
   readonly listingId: string;
   readonly occasionCode: string;
   readonly eventDate: string;
-  readonly guests: number;
+  /** null — не указано (обязательно ли — по форме категории) */
+  readonly guests: number | null;
+  /** Поля категории как пришли: проверяются по форме категории витрины */
+  readonly details: unknown;
   readonly budgetMinUzs: number | null;
   readonly budgetMaxUzs: number | null;
   readonly contactName: string;
@@ -80,11 +85,11 @@ export function parseCreateRequest(body: unknown, today: string): CreateRequestI
       : null;
   if (eventDate === null) bad.push("eventDate");
 
-  const guests =
-    typeof b.guests === "number" && Number.isInteger(b.guests) && b.guests >= 1 && b.guests <= MAX_GUESTS
-      ? b.guests
-      : null;
-  if (guests === null) bad.push("guests");
+  const guests = optionalInt(b.guests, 1, MAX_GUESTS);
+  if (guests === undefined) bad.push("guests");
+
+  const details = b.details ?? null;
+  if (details !== null && (typeof details !== "object" || Array.isArray(details))) bad.push("details");
 
   const budgetMin = optionalInt(b.budgetMinUzs, 0, MAX_UZS);
   if (budgetMin === undefined) bad.push("budgetMinUzs");
@@ -127,7 +132,8 @@ export function parseCreateRequest(body: unknown, today: string): CreateRequestI
     listingId: listingId as string,
     occasionCode: occasionCode as string,
     eventDate: eventDate as string,
-    guests: guests as number,
+    guests: guests ?? null,
+    details,
     budgetMinUzs: budgetMin ?? null,
     budgetMaxUzs: budgetMax ?? null,
     contactName: contactName as string,

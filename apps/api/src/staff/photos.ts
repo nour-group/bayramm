@@ -14,13 +14,14 @@
 
 import { MAX_UPLOAD_BYTES } from "@bayramm/media";
 import type { StaffPhoto } from "@bayramm/shared/api/staff";
+import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { staffOf } from "../auth/session";
 import { type Tx, withActor } from "../db/actor";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
-import { addListingPhoto, type PhotoDeps, removeListingPhoto } from "../photos/service";
+import { addListingPhoto, type PhotoDeps, photoAckFromHeaders, removeListingPhoto } from "../photos/service";
 import { listingPhotoStorage } from "../storage/supabase";
 import { requirePermission } from "./access";
 import { Input, invalidInput, isUuid, limitJson, readBody } from "./input";
@@ -57,12 +58,11 @@ photos.get("/:id/photos", requirePermission("catalog.read"), async (c) => {
 
 photos.post("/:id/photos", requirePermission("listings.write"), limitUpload, async (c) => {
   const id = pathId(c.req.param("id"));
-  // Правило продукта: на фото площадки нет лиц. Без подтверждения не принимаем
-  if (c.req.header("X-No-Faces") !== "1") {
-    throw new ApiError(422, "no_faces_ack_required", "Confirm that the photo shows no faces");
-  }
+  // Правило фото категории: «лиц нет» или (портфолио) согласие людей на фото — без
+  // подтверждения не принимаем (photos/service.ts)
+  const ack = photoAckFromHeaders(c.req.header(NO_FACES_HEADER), c.req.header(PHOTO_CONSENT_HEADER));
   const bytes = new Uint8Array(await c.req.arrayBuffer());
-  const photo = await addListingPhoto(deps(c), staffOf(c), id, bytes, { noFacesAck: true });
+  const photo = await addListingPhoto(deps(c), staffOf(c), id, bytes, { ack });
   const body: StaffPhoto = {
     id: photo.id,
     key: photo.storageKey,

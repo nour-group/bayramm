@@ -119,12 +119,15 @@ describe("правка карточки (ревизия)", () => {
 
   it("ключи как столбцы базы → поля карточки", () => {
     expect(
-      parseRevision({
-        name: "  Oqsaroy Grand ",
-        price_from_uzs: 180000,
-        description_ru: "Зал\r\nна 300 гостей",
-        packages: [weekday],
-      }),
+      parseRevision(
+        {
+          name: "  Oqsaroy Grand ",
+          price_from_uzs: 180000,
+          description_ru: "Зал\r\nна 300 гостей",
+          packages: [weekday],
+        },
+        "hall",
+      ),
     ).toEqual({
       fields: { name: "Oqsaroy Grand", price_from_uzs: 180000, description_ru: "Зал\nна 300 гостей" },
       packages: [
@@ -143,11 +146,11 @@ describe("правка карточки (ревизия)", () => {
     ["пакет без цены", { packages: [{ ...weekday, price_uzs: 0 }] }],
     ["пакеты не список", { packages: "weekday" }],
   ])("%s — не проходит", (_name, payload) => {
-    expect(parseRevision(payload).valid).toBe(false);
+    expect(parseRevision(payload, "hall").valid).toBe(false);
   });
 
   it("не объект — не проходит", () => {
-    expect(parseRevision([1, 2]).valid).toBe(false);
-    expect(parseRevision(null).valid).toBe(false);
+    expect(parseRevision([1, 2], "hall").valid).toBe(false);
+    expect(parseRevision(null, "hall").valid).toBe(false);
   });
 });

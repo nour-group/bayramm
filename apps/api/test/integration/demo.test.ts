@@ -1,7 +1,8 @@
 // Демо-данные staging на настоящем Postgres, ролью bayramm_api:
 //
-//   · seed — три зала опубликованы теми же шагами, что в панели (готовность проверяет
-//     база), видны клиенту с телефоном и занятыми днями; повторный seed ничего не меняет;
+//   · seed — три зала и по витрине в каждой приоритетной категории опубликованы теми же
+//     шагами, что в панели (готовность проверяет база), видны клиенту с телефоном, услугами,
+//     полями витрины и занятостью; повторный seed ничего не меняет;
 //   · reset — убирает всё демо, в том числе заявку клиента на демо-зал и партнёра,
 //     фото — из хранилища; чужое не трогает; повторный reset — нули;
 //   · маршрут POST /ops/demo — 404 вне staging при любом ключе; на staging — reset по
@@ -14,12 +15,12 @@ import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import { LISTING_PHOTOS_BUCKET } from "@bayramm/media";
 import { webpFixture } from "@bayramm/media/testing";
 import { trimTrailingSlashes } from "@bayramm/shared";
-import type { ListingDetail, RequestCreated } from "@bayramm/shared/api";
+import type { CatalogCategories, CatalogPage, ListingDetail, RequestCreated } from "@bayramm/shared/api";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Db } from "../../src/db/client";
 import { type DemoDeps, resetDemo, seedDemo } from "../../src/demo/service";
-import { DEMO_ID_PREFIX, DEMO_VENUES } from "../../src/demo/venues";
+import { DEMO_ID_PREFIX, DEMO_PHOTO_COUNT, DEMO_PHOTOS_PER_VENUE, DEMO_VENUES } from "../../src/demo/venues";
 import app from "../../src/index";
 import { type ObjectStorage, StorageError } from "../../src/storage/supabase";
 import { addDays, tashkentToday } from "../../src/time";
@@ -45,8 +46,13 @@ function memoryStorage() {
   return { storage, objects };
 }
 
-// Девять разных WebP — по три на зал (у каждого своя ширина, значит и свой sha256)
-const PHOTOS = Array.from({ length: 9 }, (_, i) => webpFixture({ width: 640 + i, height: 480 }));
+// Разные WebP — по три на витрину (у каждого своя ширина, значит и свой sha256)
+const PHOTOS = Array.from({ length: DEMO_PHOTO_COUNT }, (_, i) =>
+  webpFixture({ width: 640 + i, height: 480 }),
+);
+const N = DEMO_VENUES.length;
+const marks = (venue: (typeof DEMO_VENUES)[number]) => venue.busyDays.length + venue.busyParts.length;
+const ALL_MARKS = DEMO_VENUES.reduce((sum, venue) => sum + marks(venue), 0);
 
 // Тексты согласий прогона: версии большие и случайные — старше любых других
 const version = 2_000_000_000 + randomInt(0, 147_000_000);
@@ -111,8 +117,10 @@ async function snapshot() {
           where l.vendor_id::text like $1) as photos,
        (select count(*)::int from app.availability a join app.listings l on l.id = a.listing_id
           where l.vendor_id::text like $1) as busy,
-       (select count(*)::int from app.listing_packages k join app.listings l on l.id = k.listing_id
-          where l.vendor_id::text like $1) as packages,
+       (select count(*)::int from app.listing_services s join app.listings l on l.id = s.listing_id
+          where l.vendor_id::text like $1) as services,
+       (select count(*)::int from app.availability_parts a join app.listings l on l.id = a.listing_id
+          where l.vendor_id::text like $1) as parts,
        (select count(*)::int from app.audit_log where action like 'demo.%' and id > $2) as audit`,
     [IN_RANGE, auditFrom],
   );
@@ -120,15 +128,15 @@ async function snapshot() {
 }
 
 describe("seed", () => {
-  it("три зала опубликованы: чек-лист, фото, пакеты, телефон, занятые дни", async () => {
+  it("все витрины опубликованы: чек-лист, фото, услуги, поля витрины, телефон, занятость", async () => {
     const summary = await seedDemo(deps, PHOTOS);
     expect(summary).toEqual({
       mode: "seed",
-      venues: 3,
-      seeded: 3,
-      active: 3,
-      created: { vendors: 3, listings: 3, photos: 9, busyDays: 18 },
-      published: 3,
+      venues: N,
+      seeded: N,
+      active: N,
+      created: { vendors: N, listings: N, photos: DEMO_PHOTO_COUNT, busyDays: ALL_MARKS },
+      published: N,
     });
 
     const { rows: listings } = await admin.query(
@@ -138,28 +146,35 @@ describe("seed", () => {
               v.pd_consent_text_id,
               (select count(*)::int from app.photos p where p.listing_id = l.id and p.status = 'ready'
                  and p.moderation = 'approved' and p.deleted_at is null) as photos,
-              (select count(*)::int from app.availability a where a.listing_id = l.id and a.source = 'vendor') as busy,
+              (select count(*)::int from app.availability a where a.listing_id = l.id and a.source = 'vendor')
+                + (select count(*)::int from app.availability_parts a where a.listing_id = l.id) as busy,
+              (select count(*)::int from app.listing_services s where s.listing_id = l.id and s.status = 'active')
+                as services,
+              l.category_code,
               (select array_agg(h.to_status::text order by h.id) from app.listing_status_log h
                  where h.listing_id = l.id and h.actor_kind = 'system') as history
          from app.listings l join app.vendor_accounts v on v.id = l.vendor_id
         where v.id::text like $1 order by l.slug`,
       [IN_RANGE],
     );
-    expect(listings.map((l) => l.slug)).toEqual(["demo-zal-anor", "demo-zal-chinor", "demo-zal-girih"]);
+    expect(listings.map((l) => l.slug)).toEqual(DEMO_VENUES.map((v) => v.slug).sort());
     for (const l of listings) {
+      const venue = DEMO_VENUES.find((v) => v.slug === l.slug);
       expect(l).toMatchObject({
         status: "active",
         checked: true,
         pd_consent_text_id: texts.vendorContact,
-        photos: 3,
-        busy: 6,
+        photos: DEMO_PHOTOS_PER_VENUE,
+        busy: venue === undefined ? -1 : marks(venue),
+        services: venue?.services.length,
+        category_code: venue?.category,
         history: ["draft", "review", "active"],
       });
-      expect(l.name).toMatch(/^Демо-зал «.+» · Demo zal «.+»$/);
+      expect(l.name).toMatch(/^Демо-\S+ «.+» · Demo .+«.+»$/);
       expect(l.vendor_name).toMatch(/^Демо/);
     }
     // Фото — в хранилище, по ключам карточек
-    expect(memory.objects.size).toBe(9);
+    expect(memory.objects.size).toBe(DEMO_PHOTO_COUNT);
     for (const key of memory.objects.keys()) expect(key).toMatch(/^listings\/00000000-0000-4000-8000-de/);
 
     const { rows: audit } = await admin.query(
@@ -176,12 +191,43 @@ describe("seed", () => {
           vendor_created: true,
           checklist_marked: 4,
           listing_created: true,
-          photos: 3,
-          busy_days: 6,
+          photos: DEMO_PHOTOS_PER_VENUE,
+          busy_days: marks(venue),
           published: true,
         },
-      })),
+      })).sort((a, b) => a.object_id.localeCompare(b.object_id)),
     );
+  });
+
+  it("клиент видит демо-витрины в своих категориях: услуги, поля витрины, части дня", async () => {
+    const categories = (await (await call("/catalog/categories")).json()) as CatalogCategories;
+    for (const venue of DEMO_VENUES) {
+      expect(categories.items.find((c) => c.code === venue.category)?.listings).toBeGreaterThanOrEqual(1);
+    }
+    const car = DEMO_VENUES.find((v) => v.category === "car");
+    if (!car) throw new Error("нет демо-кортежа");
+    const page = (await (
+      await call("/catalog/listings?category=car&a.fleet.class=limousine&limit=50")
+    ).json()) as CatalogPage;
+    expect(page.items.map((i) => i.id)).toContain(car.listingId);
+    const none = (await (
+      await call("/catalog/listings?category=car&a.fleet.class=bus&limit=50")
+    ).json()) as CatalogPage;
+    expect(none.items.map((i) => i.id)).not.toContain(car.listingId);
+
+    const detail = (await (await call(`/catalog/listings/${car.slug}`)).json()) as ListingDetail;
+    expect(detail).toMatchObject({
+      categoryCode: "car",
+      capMax: null,
+      priceFromUzs: 250_000,
+      priceUnit: "per_hour",
+      parallelCapacity: car.parallelCapacity,
+    });
+    expect(detail.services.map((s) => s.type)).toEqual(car.services.map((s) => s.type));
+    expect(detail.services[0]?.options.map((o) => o.code)).toEqual(["flower_decor", "extra_hour"]);
+    expect(detail.attributes).toMatchObject({ decoration: true, service_area: "tashkent" });
+    expect(detail.busyParts.length + detail.busyDates.length).toBeGreaterThan(0);
+    expect(detail.packages).toEqual([]);
   });
 
   it("клиент видит демо-зал: название с «Демо», телефон до заявки, фото и занятые дни", async () => {
@@ -202,14 +248,14 @@ describe("seed", () => {
     const summary = await seedDemo(deps, []);
     expect(summary).toEqual({
       mode: "seed",
-      venues: 3,
-      seeded: 3,
-      active: 3,
+      venues: N,
+      seeded: N,
+      active: N,
       created: { vendors: 0, listings: 0, photos: 0, busyDays: 0 },
       published: 0,
     });
     expect(await snapshot()).toEqual(before);
-    expect(memory.objects.size).toBe(9);
+    expect(memory.objects.size).toBe(DEMO_PHOTO_COUNT);
   });
 });
 
@@ -242,14 +288,14 @@ describe("reset", () => {
     const summary = await resetDemo(deps);
     expect(summary).toEqual({
       mode: "reset",
-      removed: { vendors: 3, listings: 3, photos: 9, requests: 1, vendorUsers: 1 },
-      storageObjects: 9,
+      removed: { vendors: N, listings: N, photos: DEMO_PHOTO_COUNT, requests: 1, vendorUsers: 1 },
+      storageObjects: DEMO_PHOTO_COUNT,
     });
     expect(memory.objects.size).toBe(0);
 
     const { rows } = await admin.query(
       `select (select count(*)::int from app.vendor_accounts where id::text like $1) as vendors,
-              (select count(*)::int from app.listings where slug like 'demo-zal-%') as listings,
+              (select count(*)::int from app.listings where slug like 'demo-%') as listings,
               (select count(*)::int from app.requests where id = $2) as requests,
               (select count(*)::int from app.listings where id = $3) as control,
               (select count(*)::int from app.audit_log where action = 'demo.reset' and id > $4) as audit`,
@@ -316,7 +362,7 @@ describe("POST /ops/demo", () => {
     });
   });
 
-  it("staging: seed по одному залу с фото в multipart (как workflow), затем reset — с настоящим Storage", async (ctx) => {
+  it("staging: seed по одной витрине с фото в multipart (как workflow), затем reset — с настоящим Storage", async (ctx) => {
     if (!SERVICE_KEY || !["127.0.0.1", "localhost"].includes(new URL(STORAGE_URL).hostname)) {
       ctx.skip("нет локального Storage (TEST_SUPABASE_SERVICE_ROLE_KEY) — сквозной seed пропущен");
     }
@@ -327,7 +373,7 @@ describe("POST /ops/demo", () => {
       SUPABASE_URL: STORAGE_URL as Env["SUPABASE_URL"],
       SUPABASE_SERVICE_ROLE_KEY: SERVICE_KEY,
     };
-    for (const venue of [1, 2, 3]) {
+    for (const venue of DEMO_VENUES.map((_, i) => i + 1)) {
       const form = new FormData();
       form.append("mode", "seed");
       form.append("venue", String(venue));
@@ -335,13 +381,14 @@ describe("POST /ops/demo", () => {
         form.append("photo", new Blob([bytes], { type: "image/webp" }), `demo-${venue}-${i}.webp`);
       }
       const seeded = await callWith(env, { headers: auth, body: form });
-      expect(seeded.status, `зал ${venue}`).toBe(200);
+      expect(seeded.status, `витрина ${venue}`).toBe(200);
+      const target = DEMO_VENUES[venue - 1];
       expect(await seeded.json()).toEqual({
         mode: "seed",
-        venues: 3,
+        venues: N,
         seeded: 1,
         active: 1,
-        created: { vendors: 1, listings: 1, photos: 3, busyDays: 6 },
+        created: { vendors: 1, listings: 1, photos: 3, busyDays: target === undefined ? -1 : marks(target) },
         published: 1,
       });
     }
@@ -352,7 +399,7 @@ describe("POST /ops/demo", () => {
         where l.vendor_id::text like $1`,
       [IN_RANGE],
     );
-    expect(rows).toHaveLength(9);
+    expect(rows).toHaveLength(DEMO_PHOTO_COUNT);
     const head = (key: string) =>
       fetch(`${STORAGE_URL}/storage/v1/object/public/${LISTING_PHOTOS_BUCKET}/${key}`, { method: "HEAD" });
     expect((await head(rows[0]?.storage_key)).status).toBe(200);
@@ -361,7 +408,7 @@ describe("POST /ops/demo", () => {
     reset.append("mode", "reset");
     const cleaned = await callWith(env, { headers: auth, body: reset });
     expect(cleaned.status).toBe(200);
-    expect(await cleaned.json()).toMatchObject({ mode: "reset", storageObjects: 9 });
+    expect(await cleaned.json()).toMatchObject({ mode: "reset", storageObjects: DEMO_PHOTO_COUNT });
     expect((await head(rows[0]?.storage_key)).status).not.toBe(200);
   });
 });

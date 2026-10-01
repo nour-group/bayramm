@@ -7,6 +7,7 @@
 //   /staff/vendors        вендоры, чек-лист проверки, пользователи кабинета
 //   /staff/listings       карточки, статусы, фото, занятость
 //   /staff/revisions      правки опубликованных карточек: очередь и решение
+//   /staff/services       услуги опубликованных витрин: очередь модерации и решение
 //   /staff/requests       заявки, срок ответа вендора, напоминания, заметки
 //   /staff/clients        клиенты (псевдонимы), блокировка
 //   /staff/outbox         очередь уведомлений: что не доставлено, повтор
@@ -37,6 +38,7 @@ import { outbox } from "../staff/outbox";
 import { photos } from "../staff/photos";
 import { requests } from "../staff/requests";
 import { revisions } from "../staff/revisions";
+import { listingServices, serviceModeration, vendorListings } from "../staff/services";
 import { settings } from "../staff/settings";
 import { team } from "../staff/team";
 import { vendors } from "../staff/vendors";
@@ -46,10 +48,13 @@ export const sections = new Hono<AppEnv>();
 
 sections.route("/dictionaries", dictionaries);
 sections.route("/vendors", vendors);
+sections.route("/vendors", vendorListings);
 sections.route("/listings", listings);
+sections.route("/listings", listingServices);
 sections.route("/listings", photos);
 sections.route("/listings", availability);
 sections.route("/revisions", revisions);
+sections.route("/services", serviceModeration);
 sections.route("/requests", requests);
 sections.route("/clients", clients);
 sections.route("/outbox", outbox);

@@ -74,10 +74,12 @@ function item(
     publicNo,
     status: "new",
     declineReason: null,
-    listing: { id: LISTING_ID, name: "Lola zali" },
+    listing: { id: LISTING_ID, name: "Lola zali", categoryCode: "hall" },
     occasionCode: "toy",
     eventDate: "2026-10-24",
     guests: 180,
+    dayPart: null,
+    details: {},
     budgetMinUzs: 30_000_000,
     budgetMaxUzs: 50_000_000,
     createdAt: at(hoursAgo),
@@ -95,7 +97,7 @@ export function vendorMe(locale: "ru" | "uz" = "ru", role: VendorRole = "owner")
       code: VENDOR_MEMBERSHIP.code,
       name: VENDOR_MEMBERSHIP.name ?? "",
     },
-    listings: [{ id: LISTING_ID, name: "Lola zali", status: "active" }],
+    listings: [{ id: LISTING_ID, name: "Lola zali", status: "active", categoryCode: "hall" }],
   };
 }
 
@@ -146,6 +148,11 @@ const LISTING: VendorListing = {
   phone: "+998000000001",
   blockers: [],
   photoLimits: { min: 3, max: 10 },
+  attributes: {},
+  missingAttributes: [],
+  videoLinks: [],
+  parallelCapacity: 1,
+  services: [],
 };
 
 export const isApi = (url: URL) => url.hostname === "localhost" && url.pathname.startsWith("/api/");
@@ -387,6 +394,10 @@ export async function mockVendorApi(
         busy: [...state.busy.values()].filter((b) => b.day.startsWith(month)),
         requestDays: [...requests.values()].map((r) => r.eventDate).filter((d) => d.startsWith(month)),
         version: state.calendar.version,
+        mode: "day",
+        parallelCapacity: 1,
+        parts: [],
+        bookings: [],
       };
       return json(route, 200, calendar);
     }
@@ -407,6 +418,7 @@ export async function mockVendorApi(
       state.calendar.version += 1;
       const change: VendorCalendarChange = {
         day,
+        part: null,
         busy: state.busy.get(day) ?? null,
         version: state.calendar.version,
       };

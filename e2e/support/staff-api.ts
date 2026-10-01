@@ -139,6 +139,7 @@ function vendorDetail(listings: readonly ListingDetail[]): VendorDetail {
     listings: listings.map((l) => ({
       id: l.id,
       name: l.name,
+      categoryCode: l.categoryCode,
       status: l.status,
       slug: l.slug,
       districtCode: l.districtCode,
@@ -193,6 +194,11 @@ function newListing(input: ListingInput): ListingDetail {
     createdAt: iso,
     updatedAt: iso,
     hasPhone: false,
+    attributes: {},
+    missingAttributes: [],
+    videoLinks: [],
+    parallelCapacity: 1,
+    services: [],
     packages: [],
     photos: [],
     blockers: { review: REVIEW_BLOCKERS, active: ACTIVE_BLOCKERS },
@@ -208,6 +214,7 @@ function newListing(input: ListingInput): ListingDetail {
 const PHOTO_QUEUE_ITEM: ListingListItem = {
   id: PHOTO_QUEUE_LISTING_ID,
   name: "Bogʻ zali",
+  categoryCode: "hall",
   status: "active",
   slug: "bog-zali",
   districtCode: "yunusobod",
@@ -250,8 +257,10 @@ const REQUEST: StaffRequestDetail = {
   occasionCode: "toy",
   eventDate: "2026-10-24",
   guests: 180,
+  dayPart: null,
+  details: {},
   createdAt: new Date(NOW.getTime() - 15 * 3_600_000).toISOString(),
-  listing: { id: LISTING_ID, name: "Lola zali" },
+  listing: { id: LISTING_ID, name: "Lola zali", categoryCode: "hall" },
   vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
   budgetMinUzs: 30_000_000,
   budgetMaxUzs: 50_000_000,
@@ -682,6 +691,10 @@ export async function mockStaffApi(
         const from = url.searchParams.get("from") ?? "";
         const to = url.searchParams.get("to") ?? "";
         const availability: Availability = {
+          mode: "day",
+          parallelCapacity: 1,
+          parts: [],
+          bookings: [],
           from,
           to,
           busy: [...busyDays.values()].filter((b) => b.day >= from && b.day <= to),
@@ -701,6 +714,10 @@ export async function mockStaffApi(
         const from = days[0] ?? "";
         const to = days.at(-1) ?? from;
         const availability: Availability = {
+          mode: "day",
+          parallelCapacity: 1,
+          parts: [],
+          bookings: [],
           from,
           to,
           busy: [...busyDays.values()].filter((b) => b.day >= from && b.day <= to),

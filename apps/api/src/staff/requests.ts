@@ -27,6 +27,7 @@ import type {
   StaffRequestDetail,
   StaffRequestList,
 } from "@bayramm/shared/api/staff";
+import type { RequestDetails } from "@bayramm/shared/categories";
 import { Hono } from "hono";
 import { type RawBuilder, sql } from "kysely";
 import { staffOf } from "../auth/session";
@@ -110,9 +111,11 @@ const selectRequests = (trx: Tx) =>
       "r.occasion_code",
       "r.event_date",
       "r.guests",
+      "r.day_part",
       "r.created_at",
       "l.id as listing_id",
       "l.name as listing_name",
+      "l.category_code",
       "v.id as vendor_id",
       "v.public_code",
       "v.name as vendor_name",
@@ -136,8 +139,9 @@ function itemView(row: RequestRow) {
     occasionCode: row.occasion_code,
     eventDate: row.event_date,
     guests: row.guests,
+    dayPart: row.day_part,
     createdAt: iso(row.created_at),
-    listing: { id: row.listing_id, name: row.listing_name },
+    listing: { id: row.listing_id, name: row.listing_name, categoryCode: row.category_code },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
     reminders: row.reminders,
   };
@@ -210,6 +214,7 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
   const row = await selectRequests(trx)
     .leftJoin(requestContactsAs("rc"), "rc.request_id", "r.id")
     .select([
+      "r.details",
       "r.budget_min_uzs",
       "r.budget_max_uzs",
       "r.decline_reason",
@@ -299,6 +304,7 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
   const pauseUntil = row.reminder_pause_until;
   return {
     ...itemView(row),
+    details: row.details as RequestDetails,
     budgetMinUzs: num(row.budget_min_uzs),
     budgetMaxUzs: num(row.budget_max_uzs),
     declineReason: row.decline_reason,

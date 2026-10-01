@@ -124,7 +124,16 @@ describe("GET /staff/me и справочники", () => {
   it("справочники: районы, категории, сотрудники, минимум фото", async () => {
     const dict = await ok<StaffDictionaries>(api("manager", "GET", "/staff/dictionaries"));
     expect(dict.districts).toHaveLength(12);
-    expect(dict.categories.filter((c) => c.enabled).map((c) => c.code)).toEqual(["hall"]);
+    expect(dict.categories.filter((c) => c.enabled).map((c) => c.code)).toEqual([
+      "hall",
+      "car",
+      "studio",
+      "flowers",
+      "photo",
+      "cake",
+      "gifts",
+      "decor",
+    ]);
     expect(dict.settings.minPhotos).toBeGreaterThanOrEqual(3);
     expect(dict.staff.some((s) => s.displayName === "Test manager")).toBe(true);
   });
@@ -230,11 +239,26 @@ describe("вендор → карточка → проверка → публи�
     };
     expect((await api("moderator", "POST", "/staff/listings", input)).status).toBe(403);
     listing = await ok<ListingDetail>(api("manager", "POST", "/staff/listings", input), 201);
-    expect(listing).toMatchObject({ status: "draft", version: 1, hasPhone: true, categoryCode: "hall" });
+    expect(listing).toMatchObject({ status: "draft", hasPhone: true, categoryCode: "hall" });
     expect(listing.slug).toBe(`toyxona-xumo-${tag}`);
+    // Пакеты v0.1 — в услуги зала: от менеджера — на проверку, одобрит публикация
     expect(listing.packages.map((p) => p.kind)).toEqual(["weekday", "weekend"]);
+    expect(listing.services.map((s) => [s.type, s.status])).toEqual([
+      ["banquet_weekday", "review"],
+      ["banquet_weekend", "review"],
+    ]);
+    // Цена «от» — из услуг (до публикации — и из отправленных на проверку), не из тела
+    expect(listing.priceFromUzs).toBe(150_000);
     expect(listing.blockers.review).toEqual(["photos"]);
-    expect(listing.blockers.active).toEqual(["photos", "contract", "stir", "contacts", "pd_consent"]);
+    expect(listing.blockers.active).toEqual([
+      "price",
+      "packages",
+      "photos",
+      "contract",
+      "stir",
+      "contacts",
+      "pd_consent",
+    ]);
     expect(listing.history).toMatchObject([{ from: null, to: "draft", actorKind: "staff" }]);
   });
 
@@ -375,26 +399,44 @@ describe("вендор → карточка → проверка → публи�
     expect(Object.values(vendor.checklist).every((mark) => mark.done)).toBe(true);
   });
 
-  it("публикует модератор: фото одобряются, карточка в каталоге", async () => {
+  it("публикует модератор: фото и услуги одобряются, карточка в каталоге", async () => {
     listing = await ok<ListingDetail>(
       api("moderator", "POST", `/staff/listings/${listing.id}/publish`, { version: listing.version }),
     );
     expect(listing.status).toBe("active");
     expect(listing.publishedAt).not.toBeNull();
     expect(listing.photos.every((p) => p.moderation === "approved")).toBe(true);
+    expect(listing.services.every((s) => s.status === "active")).toBe(true);
     expect(listing.blockers.active).toEqual([]);
   });
 
-  it("опубликованную карточку менеджер меняет правкой: цена и описание — на модерацию, адрес — сразу", async () => {
+  it("опубликованную карточку менеджер меняет правкой: пакеты и описание — на модерацию, адрес — сразу", async () => {
     const saved = await ok<ListingSaveResult>(
       api("manager", "PATCH", `/staff/listings/${listing.id}`, {
         version: listing.version,
-        priceFromUzs: 170_000,
+        // Цена «от» из тела ничего не меняет — её считают услуги (здесь — пакеты зала)
+        priceFromUzs: 1,
         descriptionRu: "Зал на 300 гостей, своя кухня",
         addressRu: "Чиланзар, 7-й квартал",
+        packages: [
+          {
+            kind: "weekday",
+            nameRu: "Будни",
+            nameUz: "Ish kunlari",
+            priceUzs: 170_000,
+            priceUnit: "per_guest",
+          },
+          {
+            kind: "weekend",
+            nameRu: "Выходные",
+            nameUz: "Dam olish",
+            priceUzs: 180_000,
+            priceUnit: "per_guest",
+          },
+        ],
       }),
     );
-    expect(saved.sentForModeration).toEqual(["priceFromUzs", "descriptionRu"]);
+    expect(saved.sentForModeration).toEqual(["descriptionRu", "packages"]);
     // Клиенты видят прежнюю цену и описание, пока не решит модератор
     expect(saved).toMatchObject({
       priceFromUzs: 150_000,
@@ -402,7 +444,7 @@ describe("вендор → карточка → проверка → публи�
       addressRu: "Чиланзар, 7-й квартал",
     });
     expect(saved.pendingRevision).toMatchObject({
-      fields: ["priceFromUzs", "descriptionRu"],
+      fields: ["descriptionRu", "packages"],
       proposedBy: { kind: "staff", name: "Test manager" },
     });
     listing = saved;
@@ -464,8 +506,13 @@ describe("вендор → карточка → проверка → публи�
         "select set_config('app.actor_kind', 'staff', true), set_config('app.actor_id', $1, true)",
         [managerId],
       );
+      await client.query("savepoint services");
       await expect(
-        client.query("update app.listings set price_from_uzs = 1 where id = $1", [listing.id]),
+        client.query("update app.listing_services set price_uzs = 1 where listing_id = $1", [listing.id]),
+      ).rejects.toMatchObject({ code: "BR005" });
+      await client.query("rollback to savepoint services");
+      await expect(
+        client.query("update app.listings set description_ru = 'x' where id = $1", [listing.id]),
       ).rejects.toMatchObject({ code: "BR005" });
     } finally {
       await client.query("rollback").catch(() => {});
@@ -536,7 +583,8 @@ describe("вендор → карточка → проверка → публи�
     );
     const actions = rows.map((r) => r.action);
     expect(actions).toContain("listing.create");
-    expect(actions).toContain("listing_package.create");
+    // Пакеты панели v0.1 — услуги зала
+    expect(actions).toContain("listing_service.create");
     expect(actions).toContain("listing_contact.create");
     expect(
       rows.filter((r) => r.action === "listing.update" && (r.detail.to as string) === "suspended"),

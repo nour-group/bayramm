@@ -3,7 +3,7 @@
 // запрос до базы, ответ был бы 5xx). Seed и reset с базой — test/integration/demo.test.ts
 import { exifSegment, jpegFixture, webpFixture } from "@bayramm/media/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEMO_PHOTO_COUNT } from "../demo/venues";
+import { DEMO_PHOTO_COUNT, DEMO_VENUES } from "../demo/venues";
 import { allowAllLimiter, call, makeEnv } from "../testing/worker";
 import { DEMO_MAX_BODY_BYTES } from "./ops";
 
@@ -173,7 +173,7 @@ describe("POST /ops/demo: тело — до базы", () => {
 
   it.each([
     ["номер 0", json({ mode: "seed", venue: 0 })],
-    ["номер больше числа залов", json({ mode: "seed", venue: 4 })],
+    ["номер больше числа витрин", json({ mode: "seed", venue: DEMO_VENUES.length + 1 })],
     ["не целое", json({ mode: "seed", venue: 1.5 })],
     ["строка не числом", json({ mode: "seed", venue: "first" })],
     ["зал у reset", json({ mode: "reset", venue: 1 })],

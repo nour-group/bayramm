@@ -3,26 +3,33 @@
 //
 //   GET    /vendor/me                              → 200 VendorMe
 //   PATCH  /vendor/me                  { locale }  → 200 VendorMe
-//   GET    /vendor/requests?tab=&cursor=&limit=    → 200 VendorRequestPage
+//   GET    /vendor/requests?tab=&cursor=&limit=&listingId= → 200 VendorRequestPage
 //   GET    /vendor/requests/:id                    → 200 VendorRequestDetail (new → viewed)
 //   PATCH  /vendor/requests/:id        { status, declineReason?, declineNote? } → 200 VendorRequestItem
 //   POST   /vendor/requests/:id/call               → 204 (нажатие на телефон — в журнал)
 //   GET    /vendor/listings/:id                    → 200 VendorListing
 //   GET    /vendor/listings/:id/calendar?month=    → 200 VendorCalendar (+ ETag версии)
-//   PUT    /vendor/listings/:id/calendar/:day      If-Match: <версия> → 200 VendorCalendarChange
-//   DELETE /vendor/listings/:id/calendar/:day      If-Match: <версия> → 200 VendorCalendarChange
-//   POST   /vendor/listings/:id/photos             файл, X-No-Faces: 1 → 201 VendorPhoto
+//   PUT    /vendor/listings/:id/calendar/capacity  If-Match: <версия> { parallelCapacity } → 200
+//   PUT    /vendor/listings/:id/calendar/:day[?part=] If-Match: <версия> → 200 VendorCalendarChange
+//   DELETE /vendor/listings/:id/calendar/:day[?part=] If-Match: <версия> → 200 VendorCalendarChange
+//   POST   /vendor/listings/:id/photos             файл, X-No-Faces: 1 | X-Photo-Consent: 1 → 201 VendorPhoto
 //   DELETE /vendor/listings/:id/photos/:photoId    → 204
 //   GET    /vendor/listings/:id/revisions          → 200 VendorRevisionList
 //   POST   /vendor/listings/:id/revisions          ListingRevisionPayload → 201 VendorRevision
 //   POST   /vendor/listings/:id/revisions/:rid/withdraw → 200 VendorRevision
+//   GET    /vendor/listings/:id/services           → 200 ListingServices
+//   POST   /vendor/listings/:id/services           ServiceInput → 201 ListingService
+//   PATCH  /vendor/listings/:id/services/:sid      ServiceInput → 200 ListingService
+//   POST   /vendor/listings/:id/services/:sid/submit | withdraw → 200 ListingService
+//   DELETE /vendor/listings/:id/services/:sid      → 204
 //
 // Чужая заявка или листинг — 404, как несуществующие. Клиент или сотрудник с
 // сессией — 403, без сессии — 401. Фото и предложения правок — только владелец
-// кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required.
+// кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required. Услуги —
+// тоже только владелец; календарь и сколько заказов одновременно — любой пользователь.
 
 import { MAX_UPLOAD_BYTES } from "@bayramm/media";
-import { NO_FACES_HEADER } from "@bayramm/shared/api/vendor";
+import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { authenticate, requireVendor, vendorOf } from "../auth/session";
@@ -31,10 +38,18 @@ import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { ApiError } from "../errors";
 import { outboxKick } from "../notify/kick";
-import type { PhotoDeps } from "../photos/service";
+import { type PhotoDeps, photoAckFromHeaders } from "../photos/service";
 import { listingPhotoStorage } from "../storage/supabase";
 import { assertVendorCan } from "../vendor/access";
-import { getCalendar, markBusy, markFree, parseDay } from "../vendor/calendar";
+import {
+  getCalendar,
+  markBusy,
+  markFree,
+  parseCapacity,
+  parseDay,
+  parsePart,
+  setCapacity,
+} from "../vendor/calendar";
 import { deletePhoto, uploadPhoto } from "../vendor/photos";
 import { getListing, getMe, parseLocale, setLocale } from "../vendor/profile";
 import {
@@ -47,6 +62,14 @@ import {
   updateRequestStatus,
 } from "../vendor/requests";
 import { listRevisions, submitRevision, withdrawRevision } from "../vendor/revisions";
+import {
+  createVendorService,
+  deleteVendorService,
+  listVendorServices,
+  submitVendorService,
+  updateVendorService,
+  withdrawVendorService,
+} from "../vendor/services";
 
 // Тела здесь крошечные: статус с причиной, язык
 const limitBody = bodyLimit({
@@ -130,12 +153,24 @@ vendor.get("/listings/:id/calendar", async (c) => {
   return c.json(calendar);
 });
 
-// Правка календаря — от версии, которую видел человек (If-Match); устарела — 409 calendar_conflict
+// Сколько заказов витрина берёт одновременно — часть календаря: от версии (If-Match)
+vendor.put("/listings/:id/calendar/capacity", limitBody, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const version = versionFromIfMatch(c.req.header("If-Match"));
+  const capacity = parseCapacity(await readJson(c.req.raw));
+  const change = await setCapacity(c.var.db, vendorOf(c), id, capacity, version);
+  c.header("ETag", calendarEtag(change.version));
+  return c.json(change);
+});
+
+// Правка календаря — от версии, которую видел человек (If-Match); устарела — 409 calendar_conflict.
+// ?part= — часть дня (режим parts), без него — весь день
 vendor.put("/listings/:id/calendar/:day", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const day = parseDay(c.req.param("day"));
+  const part = parsePart(c.req.query("part"));
   const version = versionFromIfMatch(c.req.header("If-Match"));
-  const change = await markBusy(c.var.db, vendorOf(c), id, day, version);
+  const change = await markBusy(c.var.db, vendorOf(c), id, day, version, part);
   c.header("ETag", calendarEtag(change.version));
   return c.json(change);
 });
@@ -143,24 +178,25 @@ vendor.put("/listings/:id/calendar/:day", async (c) => {
 vendor.delete("/listings/:id/calendar/:day", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const day = parseDay(c.req.param("day"));
+  const part = parsePart(c.req.query("part"));
   const version = versionFromIfMatch(c.req.header("If-Match"));
-  const change = await markFree(c.var.db, vendorOf(c), id, day, version);
+  const change = await markFree(c.var.db, vendorOf(c), id, day, version, part);
   c.header("ETag", calendarEtag(change.version));
   return c.json(change);
 });
 
-// Фото площадки: только владелец кабинета; лиц на фото нет — подтверждение обязательно.
-// Оповещение команде о новом фото опубликованной карточки ставит триггер базы
+// Фото площадки: только владелец кабинета; подтверждение обязательно — «лиц нет» или (у
+// категорий-портфолио) согласие людей на фото. Оповещение команде о новом фото
+// опубликованной карточки ставит триггер базы
 vendor.post("/listings/:id/photos", limitUpload, outboxKick, async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const actor = vendorOf(c);
-  // Роль — до чтения файла: сотруднику площадки незачем гнать 10 МБ
+  // Роль и подтверждение — до чтения файла: незачем гнать 10 МБ
   assertVendorCan(actor, "photos.write");
-  if (c.req.header(NO_FACES_HEADER) !== "1") {
-    throw new ApiError(422, "no_faces_ack_required", "Confirm that the photo shows no faces");
-  }
+  const ack = photoAckFromHeaders(c.req.header(NO_FACES_HEADER), c.req.header(PHOTO_CONSENT_HEADER));
+  if (ack === null) throw new ApiError(422, "no_faces_ack_required", "Confirm that the photo shows no faces");
   const bytes = new Uint8Array(await c.req.arrayBuffer());
-  return c.json(await uploadPhoto(photoDeps(c), actor, id, bytes, c.env.APP_ENV), 201);
+  return c.json(await uploadPhoto(photoDeps(c), actor, id, bytes, c.env.APP_ENV, ack), 201);
 });
 
 vendor.delete("/listings/:id/photos/:photoId", async (c) => {
@@ -185,4 +221,41 @@ vendor.post("/listings/:id/revisions/:revisionId/withdraw", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const revisionId = idOrNotFound(c.req.param("revisionId"));
   return c.json(await withdrawRevision(c.var.db, vendorOf(c), id, revisionId));
+});
+
+// Услуги витрины — только владелец кабинета. Оповещение команде о новой услуге или
+// предложении правки опубликованной витрины ставит триггер базы
+vendor.get("/listings/:id/services", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await listVendorServices(c.var.db, vendorOf(c), id));
+});
+
+vendor.post("/listings/:id/services", limitRevision, outboxKick, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await createVendorService(c.var.db, vendorOf(c), id, await readJson(c.req.raw)), 201);
+});
+
+vendor.patch("/listings/:id/services/:serviceId", limitRevision, outboxKick, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const serviceId = idOrNotFound(c.req.param("serviceId"));
+  return c.json(await updateVendorService(c.var.db, vendorOf(c), id, serviceId, await readJson(c.req.raw)));
+});
+
+vendor.post("/listings/:id/services/:serviceId/submit", outboxKick, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const serviceId = idOrNotFound(c.req.param("serviceId"));
+  return c.json(await submitVendorService(c.var.db, vendorOf(c), id, serviceId));
+});
+
+vendor.post("/listings/:id/services/:serviceId/withdraw", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const serviceId = idOrNotFound(c.req.param("serviceId"));
+  return c.json(await withdrawVendorService(c.var.db, vendorOf(c), id, serviceId));
+});
+
+vendor.delete("/listings/:id/services/:serviceId", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const serviceId = idOrNotFound(c.req.param("serviceId"));
+  await deleteVendorService(c.var.db, vendorOf(c), id, serviceId);
+  return c.body(null, 204);
 });

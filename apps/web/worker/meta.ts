@@ -117,7 +117,7 @@ function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup) {
       const price = formatPriceFrom(venue.priceFromUzs, venue.priceUnit, t);
       const facts = [
         pick(venue.address, lang),
-        t.people(venue.capMax),
+        venue.capMax === null ? null : t.people(venue.capMax),
         [price.amount, price.unit].filter(Boolean).join(" "),
       ].filter(Boolean);
       const title = match.name === "request" ? `${t.rqTitle}: ${venue.name}` : venue.name;

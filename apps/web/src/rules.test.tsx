@@ -216,7 +216,7 @@ describe("заявка от начала до конца", () => {
     const { api } = await mount({ path: FORM_PATH });
     await waitFor(() => transferCheckbox(), "форма заявки");
     await fillForm();
-    await type(field("Гостей"), String(VENUE.capMax + 1));
+    await type(field("Гостей"), String((VENUE.capMax ?? 0) + 1));
     await click(transferCheckbox());
     await click(byText("button", "Отправить заявку"));
     expect(text()).toContain(`Зал вмещает до ${VENUE.capMax} гостей`);

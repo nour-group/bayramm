@@ -285,6 +285,9 @@ afterAll(async () => {
     await admin.query("delete from app.clients where id = any($1::uuid[])", [clients]);
     await admin.query("delete from app.photos where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.listing_packages where listing_id = any($1::uuid[])", [listings]);
+    // Услуги и части дня — в режиме реплики каскад не срабатывает
+    await admin.query("delete from app.listing_services where listing_id = any($1::uuid[])", [listings]);
+    await admin.query("delete from app.availability_parts where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from pii.listing_contacts where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.listings where id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.sessions where vendor_user_id = any($1::uuid[])", [
@@ -673,7 +676,12 @@ describe("календарь вендора A", () => {
     const busy = await call(url, at(A.token, "PUT", v0));
     expect(busy.status).toBe(200);
     const marked = (await busy.json()) as VendorCalendarChange;
-    expect(marked).toEqual({ day, busy: { day, source: "vendor", requestId: null }, version: v0 + 1 });
+    expect(marked).toEqual({
+      day,
+      part: null,
+      busy: { day, source: "vendor", requestId: null },
+      version: v0 + 1,
+    });
     expect(busy.headers.get("etag")).toBe(`"${v0 + 1}"`);
     // Повтор: день уже занят — версия прежняя
     const again = (await (
@@ -690,7 +698,7 @@ describe("календарь вендора A", () => {
     const free = await call(url, at(A.token, "DELETE", again.version));
     expect(free.status).toBe(200);
     const freed = (await free.json()) as VendorCalendarChange;
-    expect(freed).toEqual({ day, busy: null, version: again.version + 1 });
+    expect(freed).toEqual({ day, part: null, busy: null, version: again.version + 1 });
     expect((await call(url, at(A.token, "DELETE", freed.version))).status).toBe(200);
   });
 

@@ -116,6 +116,7 @@ export function demoListings(today: string): ListingDetail[] {
       cover: photos[0] ?? null,
       photoCount: photos.length,
       busyOnDate: null,
+      dateLoad: null,
       description: {
         ru: `Демо-площадка для разработки: зал на ${capMax} гостей, своя кухня и парковка.\nНастоящие описания приходят из API.`,
         uz: `Ishlab chiqish uchun demo maydon: ${capMax} mehmonga zal, oshxona va avtoturargoh bor.\nHaqiqiy tavsiflar API dan keladi.`,
@@ -124,6 +125,23 @@ export function demoListings(today: string): ListingDetail[] {
         ru: `Ташкент, ${district?.name.ru ?? ""}, демо-адрес ${i + 1}`,
         uz: `Toshkent, ${district?.name.uz ?? ""}, demo manzil ${i + 1}`,
       },
+      attributes: {},
+      videoLinks: [],
+      services: (["banquet_weekday", "banquet_weekend"] as const).map((type, k) => ({
+        id: uuid(5, i * 10 + k + 1),
+        type,
+        name:
+          k === 0
+            ? { ru: "Банкет в будни", uz: "Ish kunlari banketi" }
+            : { ru: "Банкет в выходные", uz: "Dam olish kunlari banketi" },
+        priceUzs: k === 0 ? priceFromUzs : weekend,
+        priceUnit: perGuest ? "per_guest" : "per_event",
+        minQty: null,
+        leadDays: null,
+        includes: null,
+        options: [],
+      })),
+      parallelCapacity: 1,
       packages: [
         {
           kind: "weekday",
@@ -141,6 +159,7 @@ export function demoListings(today: string): ListingDetail[] {
       photos,
       phone: `+998000000${String(i + 1).padStart(3, "0")}`,
       busyDates: [...new Set(busyDates)].sort(),
+      busyParts: [],
     } satisfies ListingDetail;
   });
 }
@@ -198,7 +217,9 @@ export function demoRequests(listings: readonly ListingDetail[], now: number): C
         status,
         declineReason,
         eventDate: addDays(today, 30 + n * 9),
-        guests: Math.min(200, listing.capMax),
+        guests: Math.min(200, listing.capMax ?? 200),
+        dayPart: null,
+        details: {},
         occasionCode: "toy",
         createdAt: at(hoursAgo),
         slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),
@@ -216,6 +237,7 @@ function pickListing(listing: ListingDetail): ClientRequest["listing"] {
     id: listing.id,
     slug: listing.slug,
     name: listing.name,
+    categoryCode: listing.categoryCode,
     cover: listing.cover,
     districtCode: listing.districtCode,
   };
@@ -235,6 +257,7 @@ function toCard(listing: ListingDetail, date: string | undefined): ListingCard {
     cover: listing.cover,
     photoCount: listing.photoCount,
     busyOnDate: date ? listing.busyDates.includes(date) : null,
+    dateLoad: date ? (listing.busyDates.includes(date) ? "busy" : "free") : null,
   };
 }
 
@@ -406,14 +429,15 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const rows = listings
           .filter((l) => !query.category || l.categoryCode === query.category)
           .filter((l) => !query.district || l.districtCode === query.district)
-          .filter((l) => !query.guests || l.capMax >= query.guests)
+          .filter((l) => !query.guests || l.capMax === null || l.capMax >= query.guests)
           .map((l) => toCard(l, query.date));
         // Без sort — по возрастанию цены, как у сервера; цены сравниваются по той же
         // формуле (за мероприятие и за гостя — на одной шкале, с гостями — сумма на них)
         const price = (card: ListingCard) => comparablePriceUzs(card, query.guests ?? null);
         const order = (a: ListingCard, b: ListingCard) => {
           if (query.sort === "price_desc") return price(b) - price(a) || a.id.localeCompare(b.id);
-          if (query.sort === "capacity_desc") return b.capMax - a.capMax || a.id.localeCompare(b.id);
+          if (query.sort === "capacity_desc")
+            return (b.capMax ?? 0) - (a.capMax ?? 0) || a.id.localeCompare(b.id);
           return price(a) - price(b) || a.id.localeCompare(b.id);
         };
         // Занятые на дату — в конце при любом порядке; оплаты в демо нет вовсе
@@ -494,7 +518,9 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           status: "new",
           declineReason: null,
           eventDate: body.eventDate,
-          guests: body.guests,
+          guests: body.guests ?? null,
+          dayPart: null,
+          details: {},
           occasionCode: body.occasionCode,
           createdAt: new Date(createdAt).toISOString(),
           slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),

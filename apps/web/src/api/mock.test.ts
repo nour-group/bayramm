@@ -52,7 +52,7 @@ describe("демо-API по контракту", () => {
 
   it("гости отсекают по вместимости; без даты busyOnDate — null", async () => {
     const items = await everything(api, { guests: 500 });
-    expect(items.every((i) => i.capMax >= 500)).toBe(true);
+    expect(items.every((i) => (i.capMax ?? 0) >= 500)).toBe(true);
     expect(items.every((i) => i.busyOnDate === null)).toBe(true);
   });
 
@@ -71,7 +71,9 @@ describe("демо-API по контракту", () => {
       expect(rich, `гостей: ${guests}`).toEqual([...rich].sort((a, b) => b - a));
     }
     const big = await everything(api, { sort: "capacity_desc" });
-    expect(big.map((i) => i.capMax)).toEqual([...big.map((i) => i.capMax)].sort((a, b) => b - a));
+    expect(big.map((i) => i.capMax)).toEqual(
+      [...big.map((i) => i.capMax)].sort((a, b) => (b ?? 0) - (a ?? 0)),
+    );
   });
 
   it("несуществующая площадка — 404", async () => {

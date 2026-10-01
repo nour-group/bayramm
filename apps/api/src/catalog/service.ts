@@ -1,43 +1,59 @@
-// Публичные данные клиента: справочники, каталог, карточка площадки, тексты
+// Публичные данные клиента: справочники, категории, каталог, карточка витрины, тексты
 // согласий. Всё читается под гостем (без актора): RLS отдаёт только активные
-// листинги и их готовые одобренные фото — выдача одинакова для всех и не
-// зависит от того, кто спрашивает.
+// листинги, их готовые одобренные фото и одобренные услуги — выдача одинакова для
+// всех и не зависит от того, кто спрашивает.
 //
 // Правила выдачи (правила продукта):
-//   · в каталоге — только активные листинги включённой категории с ценой,
-//     вместимостью и не меньше чем 3 готовыми одобренными фото;
-//   · guests отсекает площадки, где cap_max меньше; date не отсекает — занятые
-//     в этот день (строка в app.availability) идут в конце при любой сортировке;
+//   · в каталоге — только активные витрины включённой категории с ценой «от» (из
+//     одобренных услуг), вместимостью — если категория её требует (залы) — и не
+//     меньше чем минимум фото категории (не меньше 3) готовых одобренных фото;
+//   · без category — залы, как в v0.1; фильтры по полям витрины (a.*) — из
+//     конфигурации категории, значения — параметрами запроса (@>, jsonb_path_exists);
+//   · guests отсекает витрины, где cap_max меньше (у категорий без вместимости — нет);
+//     date не отсекает — занятые в этот день целиком идут в конце при любой сортировке,
+//     частично занятые (режим parts) — среди свободных, с пометкой;
 //   · порядок — только по цене или вместимости, затем по id. Оплата, премиум и
-//     продвижение на порядок не влияют (их в v0.1 и нет);
+//     продвижение на порядок не влияют (их и нет);
 //   · цены сравниваются на одной шкале, хотя у одних залов цена за гостя, у других —
 //     за мероприятие (comparablePriceUzs в @bayramm/shared/api): с числом гостей —
 //     примерная сумма на это число, без него — цена за гостя (цена за мероприятие,
-//     делённая на cap_max с округлением вверх);
-//   · телефон площадки отдаётся в карточке до заявки — listingPhone (db/pii):
+//     делённая на cap_max с округлением вверх); без вместимости — цена как есть;
+//   · телефон витрины отдаётся в карточке до заявки — listingPhone (db/pii):
 //     у активного листинга он публичен.
 
 import type {
+  BusyParts,
+  CatalogCategories,
   CatalogPage,
   CatalogSort,
   ClientConsentPurpose,
   ConsentText,
   ConsentTexts,
+  DateLoad,
+  DayPart,
   Dictionaries,
   ListingCard,
   ListingDetail,
-  ListingPackage,
   Locale,
   Photo,
+  PublicService,
 } from "@bayramm/shared/api";
-import { type NotNull, type RawBuilder, sql } from "kysely";
+import { type AttributeFilter, categoryConfig, readAttributes } from "@bayramm/shared/categories";
+import { type RawBuilder, sql } from "kysely";
 import { GUEST, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { listingPhone } from "../db/pii";
+import {
+  hallPackages,
+  publicPackages,
+  type ServiceRow,
+  selectServices,
+  serviceView,
+} from "../listing-services/store";
 import { addDays } from "../time";
 import { type CatalogCursor, type CatalogParams, encodeCursor } from "./query";
 
-/** Правило продукта «Фото обязательны»: меньше трёх — не публикуется */
+/** Правило продукта «Фото обязательны»: меньше трёх — не публикуется (у категории бывает больше) */
 export const MIN_PUBLIC_PHOTOS = 3;
 /** Сколько дней вперёд карточка отдаёт занятые даты */
 export const BUSY_DAYS_AHEAD = 180;
@@ -118,15 +134,15 @@ export async function getConsentTexts(db: Db, locale: Locale | null): Promise<Co
 
 /**
  * Сравнимая цена в SQL — то же, что comparablePriceUzs из @bayramm/shared/api:
- * с гостями — цена за гостя × гости или цена за мероприятие как есть; без гостей —
- * цена за гостя или цена за мероприятие / cap_max вверх (целочисленно: (p + c − 1) / c).
- * Целое bigint: 1e11 сумов × 5000 гостей помещается и в bigint, и в курсор
+ * с гостями — цена за гостя × гости, остальное как есть; без гостей — цена за гостя,
+ * цена за мероприятие / cap_max вверх (целочисленно: (p + c − 1) / c), если вместимость
+ * есть, иначе как есть. Целое bigint: 1e11 сумов × 5000 гостей помещается и в bigint, и в курсор
  */
 function comparablePrice(guests: number | null): RawBuilder<string> {
   if (guests !== null) {
     return sql<string>`(case when l.price_unit = 'per_guest' then l.price_from_uzs * ${guests}::bigint else l.price_from_uzs end)`;
   }
-  return sql<string>`(case when l.price_unit = 'per_guest' then l.price_from_uzs else (l.price_from_uzs + l.cap_max - 1) / l.cap_max end)`;
+  return sql<string>`(case when l.price_unit = 'per_event' and l.cap_max is not null then (l.price_from_uzs + l.cap_max - 1) / l.cap_max else l.price_from_uzs end)`;
 }
 
 // Ключ сортировки — всегда по возрастанию: «дороже» и «больше мест» — минус
@@ -138,17 +154,29 @@ export function sortKey(sort: CatalogSort, guests: number | null): RawBuilder<st
     case "price_desc":
       return sql<string>`(-${comparablePrice(guests)})`;
     case "capacity_desc":
-      return sql<string>`(-l.cap_max)::bigint`;
+      return sql<string>`(-coalesce(l.cap_max, 0))::bigint`;
   }
 }
 
-// Занята ли площадка в день date: строка app.availability присоединяется
-// левым соединением по (листинг, день); без даты не присоединяется ничего
-const BUSY = sql<boolean>`(av.listing_id is not null)`;
+/**
+ * Загрузка витрины в день date (app.listing_day_load: free | partial | busy); без даты —
+ * не считается. Занятые целиком идут в конце выдачи
+ */
+function loadOn(date: string | null): RawBuilder<DateLoad> {
+  return date === null
+    ? sql<DateLoad>`'free'::text`
+    : sql<DateLoad>`app.listing_day_load(l.id, ${date}::date)`;
+}
+
+function busyOn(date: string | null): RawBuilder<boolean> {
+  return date === null
+    ? sql<boolean>`false::boolean`
+    : sql<boolean>`(app.listing_day_load(l.id, ${date}::date) = 'busy')`;
+}
 
 /**
- * Опубликованные листинги с полями карточки и обложкой. Обложка — фото с
- * is_cover, иначе первое по sort; photo_count — число готовых одобренных фото.
+ * Опубликованные витрины с полями карточки и обложкой. Обложка — фото с is_cover,
+ * иначе первое по sort; photo_count — число готовых одобренных фото
  */
 function publicListings(trx: Tx, date: string | null) {
   return trx
@@ -178,9 +206,6 @@ function publicListings(trx: Tx, date: string | null) {
           .as("cv"),
       (j) => j.onTrue(),
     )
-    .leftJoin("app.availability as av", (j) =>
-      j.onRef("av.listing_id", "=", "l.id").on(sql<boolean>`av.day = ${date}::date`),
-    )
     .select([
       "l.id",
       "l.slug",
@@ -195,13 +220,14 @@ function publicListings(trx: Tx, date: string | null) {
       "cv.width as cover_width",
       "cv.height as cover_height",
       "cv.photo_count",
-      BUSY.as("busy"),
+      busyOn(date).as("busy"),
+      loadOn(date).as("load"),
     ])
     .where("l.status", "=", "active")
     .where("l.price_from_uzs", "is not", null)
-    .where("l.cap_max", "is not", null)
-    .where("cv.photo_count", ">=", MIN_PUBLIC_PHOTOS)
-    .$narrowType<{ price_from_uzs: NotNull; cap_max: NotNull }>();
+    .where(sql<boolean>`(l.cap_max is not null or not 'guest_capacity' = any (cat.required_fields))`)
+    .where(sql<boolean>`cv.photo_count >= greatest(${MIN_PUBLIC_PHOTOS}, cat.min_photos)`)
+    .$narrowType<{ price_from_uzs: string }>();
 }
 
 interface CardRow {
@@ -213,12 +239,13 @@ interface CardRow {
   price_from_uzs: string;
   price_unit: ListingCard["priceUnit"];
   cap_min: number | null;
-  cap_max: number;
+  cap_max: number | null;
   cover_key: string;
   cover_width: number | null;
   cover_height: number | null;
   photo_count: number;
   busy: boolean;
+  load: DateLoad;
 }
 
 function photo(key: string, width: number | null, height: number | null): Photo | null {
@@ -241,21 +268,77 @@ function toCard(row: CardRow, date: string | null): ListingCard {
     cover: photo(row.cover_key, row.cover_width, row.cover_height),
     photoCount: row.photo_count,
     busyOnDate: date === null ? null : row.busy,
+    dateLoad: date === null ? null : row.load,
   } satisfies ListingCard;
+}
+
+// JSONPath поля витрины: ключи — из конфигурации категории ([a-z0-9_]), в кавычках
+const jsonPath = (path: readonly string[]) =>
+  path.length === 1 ? `$."${path[0]}"` : `$."${path[0]}"[*]."${path[1]}"`;
+
+/**
+ * Фильтр по полю витрины. Значения — параметрами запроса: bool и enum/multi верхнего уровня —
+ * вхождение (@>, индекс listings_attributes), числа и записи списков — jsonb_path_exists
+ */
+export function attributeFilter(filter: AttributeFilter): RawBuilder<boolean> {
+  const [key = "", sub] = filter.path;
+  const contains = (value: unknown) =>
+    sql<boolean>`l.attributes @> ${JSON.stringify({ [key]: value })}::jsonb`;
+  const path = (predicate: string, vars: Record<string, unknown>) =>
+    sql<boolean>`jsonb_path_exists(l.attributes, ${`${jsonPath(filter.path)} ? (${predicate})`}::jsonpath, ${JSON.stringify(vars)}::jsonb)`;
+
+  if (sub === undefined) {
+    switch (filter.kind) {
+      case "eq":
+        return contains(true);
+      case "all":
+        return contains(filter.values);
+      case "any":
+        return sql<boolean>`(${sql.join(
+          filter.values.map((v) => contains(filter.multi ? [v] : v)),
+          sql` or `,
+        )})`;
+      case "min":
+        return path("@ >= $n", { n: filter.value });
+      case "max":
+        return path("@ <= $n", { n: filter.value });
+    }
+  }
+  switch (filter.kind) {
+    case "eq":
+      return path("@ == true", {});
+    case "any":
+      return path("@ == $v[*]", { v: filter.values });
+    case "all":
+      return sql<boolean>`(${sql.join(
+        filter.values.map((v) => path("@ == $v", { v })),
+        sql` and `,
+      )})`;
+    case "min":
+      return path("@ >= $n", { n: filter.value });
+    case "max":
+      return path("@ <= $n", { n: filter.value });
+  }
 }
 
 /** GET /catalog/listings: страница выдачи и курсор следующей (null — последняя) */
 export async function listCatalog(db: Db, params: CatalogParams): Promise<CatalogPage> {
-  const { category, district, date, guests, sort, limit, after } = params;
+  const { category, filters, district, date, guests, sort, limit, after } = params;
   const key = sortKey(sort, guests);
+  const busy = busyOn(date);
   const rows = await withActor(db, GUEST, (trx) =>
     publicListings(trx, date)
       .select(key.as("sort_key"))
-      .$if(category !== null, (qb) => qb.where("l.category_code", "=", category as string))
+      .where("l.category_code", "=", category)
       .$if(district !== null, (qb) => qb.where("l.district_code", "=", district as string))
-      .$if(guests !== null, (qb) => qb.where("l.cap_max", ">=", guests as number))
-      .$if(after !== null, (qb) => qb.where(afterCursor(key, after as CatalogCursor)))
-      .orderBy(BUSY)
+      .$if(guests !== null, (qb) =>
+        qb.where(sql<boolean>`(l.cap_max is null or l.cap_max >= ${guests as number})`),
+      )
+      .$if(filters.length > 0, (qb) =>
+        qb.where(sql<boolean>`(${sql.join(filters.map(attributeFilter), sql` and `)})`),
+      )
+      .$if(after !== null, (qb) => qb.where(afterCursor(busy, key, after as CatalogCursor)))
+      .orderBy(busy)
       .orderBy(key)
       .orderBy("l.id")
       .limit(limit + 1)
@@ -292,11 +375,90 @@ export function getListingCards(db: Db, ids: readonly string[]): Promise<Listing
 }
 
 // Строго после курсора в порядке (занята, ключ, id): false < true, как в ORDER BY
-function afterCursor(key: RawBuilder<string>, c: CatalogCursor) {
-  return sql<boolean>`(${BUSY}, ${key}, l.id) > (${c.busy}::boolean, ${c.key}::bigint, ${c.id}::uuid)`;
+function afterCursor(busy: RawBuilder<boolean>, key: RawBuilder<string>, c: CatalogCursor) {
+  return sql<boolean>`(${busy}, ${key}, l.id) > (${c.busy}::boolean, ${c.key}::bigint, ${c.id}::uuid)`;
+}
+
+// ── категории ──────────────────────────────────────────────────────────────
+
+/**
+ * GET /catalog/categories: включённые категории по порядку показа и сколько в каждой
+ * опубликованных витрин — по тем же правилам, что выдача
+ */
+export async function listCatalogCategories(db: Db): Promise<CatalogCategories> {
+  return withActor(db, GUEST, async (trx) => {
+    const categories = await trx
+      .selectFrom("app.categories")
+      .select(["code", "name_ru", "name_uz"])
+      .where("enabled", "=", true)
+      .orderBy("sort")
+      .orderBy("code")
+      .execute();
+    const counts = await trx
+      .selectFrom(publicListings(trx, null).as("pl"))
+      .select(["pl.category_code", sql<number>`count(*)::int`.as("n")])
+      .groupBy("pl.category_code")
+      .execute();
+    const byCode = new Map(counts.map((row) => [row.category_code, row.n]));
+    return {
+      items: categories.map((c) => ({
+        code: c.code,
+        name: { ru: c.name_ru, uz: c.name_uz },
+        listings: byCode.get(c.code) ?? 0,
+      })),
+    } satisfies CatalogCategories;
+  });
 }
 
 // ── карточка площадки ──────────────────────────────────────────────────────
+
+/** Одобренные услуги витрины для клиента */
+export async function publicServices(trx: Tx, listingId: string): Promise<PublicService[]> {
+  const rows = await selectServices(trx)
+    .where("s.listing_id", "=", listingId)
+    .where("s.status", "=", "active")
+    .orderBy("s.sort")
+    .orderBy("s.created_at")
+    .orderBy("s.id")
+    .execute();
+  return rows.map((raw) => {
+    const s = serviceView(raw as ServiceRow);
+    return {
+      id: s.id,
+      type: s.type,
+      name: s.name,
+      priceUzs: s.priceUzs,
+      priceUnit: s.priceUnit,
+      minQty: s.minQty,
+      leadDays: s.leadDays,
+      includes:
+        s.includes === null
+          ? null
+          : { ru: s.includes.ru ?? s.includes.uz ?? "", uz: s.includes.uz ?? s.includes.ru ?? "" },
+      options: s.options,
+    } satisfies PublicService;
+  });
+}
+
+/** Занятость витрины [from, to): целиком занятые даты и частично занятые (части дня) */
+export async function busyCalendar(
+  trx: Tx,
+  listingId: string,
+  from: string,
+  to: string,
+): Promise<{ busyDates: string[]; busyParts: BusyParts[] }> {
+  const { rows } = await sql<{ day: string; parts: string[] }>`
+    select b.day::text as day, b.parts from app.listing_busy(${listingId}::uuid, ${from}::date, ${to}::date) b
+  `.execute(trx);
+  const busyDates: string[] = [];
+  const busyParts: BusyParts[] = [];
+  for (const row of rows) {
+    const parts = Array.isArray(row.parts) ? row.parts : [];
+    if (parts.includes("all")) busyDates.push(row.day);
+    else busyParts.push({ date: row.day, parts: parts as DayPart[] });
+  }
+  return { busyDates, busyParts };
+}
 
 /**
  * GET /catalog/listings/:slug — карточка опубликованного листинга; null — нет
@@ -316,6 +478,9 @@ export async function getListingDetail(
         "l.description_uz",
         "l.address_ru",
         "l.address_uz",
+        "l.attributes",
+        "l.video_links",
+        "l.parallel_capacity",
         // Телефон активного листинга публичен (правило «телефон виден сразу»)
         listingPhone("l.id").as("phone"),
       ])
@@ -328,14 +493,10 @@ export async function getListingDetail(
       return null;
     }
 
-    const packages = await trx
-      .selectFrom("app.listing_packages")
-      .select(["kind", "name_ru", "name_uz", "price_uzs", "price_unit"])
-      .where("listing_id", "=", row.id)
-      .orderBy("sort")
-      .orderBy("kind")
-      .orderBy("created_at")
-      .execute();
+    const category = categoryConfig(row.category_code);
+    const services = await publicServices(trx, row.id);
+    const packages =
+      row.category_code === "hall" ? publicPackages(await hallPackages(trx, row.id, ["active"])) : [];
     const photos = await trx
       .selectFrom("app.photos")
       .select(["storage_key", "width", "height"])
@@ -348,31 +509,21 @@ export async function getListingDetail(
       .orderBy("created_at")
       .orderBy("id")
       .execute();
-    const busy = await trx
-      .selectFrom("app.availability")
-      .select("day")
-      .where("listing_id", "=", row.id)
-      .where("day", ">=", today)
-      .where("day", "<", addDays(today, BUSY_DAYS_AHEAD))
-      .orderBy("day")
-      .execute();
+    const busy = await busyCalendar(trx, row.id, today, addDays(today, BUSY_DAYS_AHEAD));
 
     return {
       ...toCard(row, date),
       description: { ru: row.description_ru ?? "", uz: row.description_uz ?? "" },
       address: { ru: row.address_ru ?? "", uz: row.address_uz ?? "" },
-      packages: packages.map(
-        (p) =>
-          ({
-            kind: p.kind,
-            name: { ru: p.name_ru, uz: p.name_uz },
-            priceUzs: Number(p.price_uzs),
-            priceUnit: p.price_unit,
-          }) satisfies ListingPackage,
-      ),
+      attributes: category === undefined ? {} : readAttributes(category, row.attributes),
+      videoLinks: row.video_links,
+      services,
+      parallelCapacity: row.parallel_capacity,
+      packages,
       photos: photos.flatMap((p) => photo(p.storage_key, p.width, p.height) ?? []),
       phone: row.phone,
-      busyDates: busy.map((b) => b.day),
+      busyDates: busy.busyDates,
+      busyParts: busy.busyParts,
     } satisfies ListingDetail;
   });
 }

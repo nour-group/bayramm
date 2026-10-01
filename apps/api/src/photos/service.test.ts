@@ -97,7 +97,7 @@ describe("addListingPhoto", () => {
   it("проверка → предпроверка под актором → объект → строка под актором → «готово» от system", async () => {
     const db = scriptedDb();
     const { storage, calls } = fakeStorage();
-    const photo = await addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { noFacesAck: true });
+    const photo = await addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { ack: "no_faces" });
 
     // Объект: ключ под листингом, тип из байтов
     expect(calls).toHaveLength(1);
@@ -136,7 +136,7 @@ describe("addListingPhoto", () => {
     const { storage, calls } = fakeStorage();
     const jpeg = jpegFixture({ width: 1600, height: 1200, segments: [exifSegment()] });
     const err = await apiError(() =>
-      addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, jpeg, { noFacesAck: true }),
+      addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, jpeg, { ack: "no_faces" }),
     );
     expect(err).toMatchObject({ status: 422, code: "invalid_image", details: ["metadata_present"] });
     expect(db.queries).toHaveLength(0);
@@ -147,20 +147,20 @@ describe("addListingPhoto", () => {
     const deps = { db: scriptedDb().db, storage: fakeStorage().storage };
     const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
     expect(
-      await apiError(() => addListingPhoto(deps, VENDOR, LISTING, html, { noFacesAck: true })),
+      await apiError(() => addListingPhoto(deps, VENDOR, LISTING, html, { ack: "no_faces" })),
     ).toMatchObject({
       status: 422,
       details: ["unsupported_format"],
     });
     const small = webpFixture({ width: 300, height: 200 });
     expect(
-      await apiError(() => addListingPhoto(deps, VENDOR, LISTING, small, { noFacesAck: true })),
+      await apiError(() => addListingPhoto(deps, VENDOR, LISTING, small, { ack: "no_faces" })),
     ).toMatchObject({
       details: ["dimensions_too_small"],
     });
     const huge = new Uint8Array(10 * 1024 * 1024 + 1);
     expect(
-      await apiError(() => addListingPhoto(deps, VENDOR, LISTING, huge, { noFacesAck: true })),
+      await apiError(() => addListingPhoto(deps, VENDOR, LISTING, huge, { ack: "no_faces" })),
     ).toMatchObject({
       status: 413,
       code: "payload_too_large",
@@ -177,7 +177,7 @@ describe("addListingPhoto", () => {
       const db = scriptedDb({ precheck });
       const { storage, calls } = fakeStorage();
       const err = await apiError(() =>
-        addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { noFacesAck: true }),
+        addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { ack: "no_faces" }),
       );
       expect(err).toMatchObject({ status, code });
       expect(calls).toHaveLength(0);
@@ -190,7 +190,7 @@ describe("addListingPhoto", () => {
     const db = scriptedDb();
     const { storage } = fakeStorage({ put: new StorageError("unavailable", 0, "down") });
     const err = await apiError(() =>
-      addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { noFacesAck: true }),
+      addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { ack: "no_faces" }),
     );
     expect(err).toMatchObject({ status: 503, code: "storage_unavailable" });
     expect(db.queries.some((q) => q.sql.startsWith("insert"))).toBe(false);
@@ -201,7 +201,7 @@ describe("addListingPhoto", () => {
     const db = scriptedDb({ insertError });
     const { storage, calls } = fakeStorage();
     await expect(
-      addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { noFacesAck: true }),
+      addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { ack: "no_faces" }),
     ).rejects.toBe(insertError);
     expect(calls.map((c) => c.op)).toEqual(["put", "remove"]);
     expect(calls[1]?.key).toBe(calls[0]?.key);
@@ -214,7 +214,7 @@ describe("addListingPhoto", () => {
     const db = scriptedDb({ insertError });
     const { storage } = fakeStorage({ remove: new StorageError("unavailable", 0, "down") });
     await expect(
-      addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { noFacesAck: true }),
+      addListingPhoto({ db: db.db, storage }, VENDOR, LISTING, WEBP, { ack: "no_faces" }),
     ).rejects.toBe(insertError);
     expect(error).toHaveBeenCalled();
   });
@@ -223,24 +223,53 @@ describe("addListingPhoto", () => {
     const deps = { db: scriptedDb().db, storage: fakeStorage().storage };
     const client: Actor = { kind: "client", id: "cccccccc-0000-4000-8000-000000000001" };
     expect(
-      (await apiError(() => addListingPhoto(deps, client, LISTING, WEBP, { noFacesAck: true }))).status,
+      (await apiError(() => addListingPhoto(deps, client, LISTING, WEBP, { ack: "no_faces" }))).status,
     ).toBe(403);
     expect(
-      (await apiError(() => addListingPhoto(deps, { kind: "guest" }, LISTING, WEBP, { noFacesAck: true })))
+      (await apiError(() => addListingPhoto(deps, { kind: "guest" }, LISTING, WEBP, { ack: "no_faces" })))
         .status,
     ).toBe(401);
     expect(
-      (await apiError(() => addListingPhoto(deps, VENDOR, "1 or 1=1", WEBP, { noFacesAck: true }))).status,
+      (await apiError(() => addListingPhoto(deps, VENDOR, "1 or 1=1", WEBP, { ack: "no_faces" }))).status,
     ).toBe(404);
-    const noAck = { noFacesAck: false } as unknown as { noFacesAck: true };
-    expect((await apiError(() => addListingPhoto(deps, VENDOR, LISTING, WEBP, noAck))).status).toBe(422);
+    const noAck = await apiError(() => addListingPhoto(deps, VENDOR, LISTING, WEBP, { ack: null }));
+    expect(noAck).toMatchObject({ status: 422, code: "no_faces_ack_required" });
+    // Согласие людей на фото — только у категорий-портфолио: у остальных нужно «лиц нет»
+    const consent = await apiError(() =>
+      addListingPhoto(deps, VENDOR, LISTING, WEBP, { ack: "people_consent" }),
+    );
+    expect(consent).toMatchObject({ status: 422, code: "no_faces_ack_required" });
+  });
+
+  it("портфолио (фото и видео, студия): согласие людей на фото принимается, без подтверждения — photo_consent_required", async () => {
+    const portfolio = [{ photos: 2, duplicate: false, max_photos: 10, photo_policy: "portfolio" }];
+    const missing = await apiError(() =>
+      addListingPhoto(
+        { db: scriptedDb({ precheck: portfolio }).db, storage: fakeStorage().storage },
+        VENDOR,
+        LISTING,
+        WEBP,
+        { ack: null },
+      ),
+    );
+    expect(missing).toMatchObject({ status: 422, code: "photo_consent_required" });
+
+    const db = scriptedDb({ precheck: portfolio });
+    await addListingPhoto({ db: db.db, storage: fakeStorage().storage }, VENDOR, LISTING, WEBP, {
+      ack: "people_consent",
+    });
+    const insert = db.queries.find((q) => q.sql.startsWith('insert into "app"."photos"'));
+    expect(insert?.sql).toContain('"no_faces_ack", "people_consent_ack"');
+    const at = insert?.sql.match(/\(([^)]*)\) values/)?.[1]?.split(", ") ?? [];
+    expect(insert?.parameters[at.indexOf('"no_faces_ack"')]).toBe(false);
+    expect(insert?.parameters[at.indexOf('"people_consent_ack"')]).toBe(true);
   });
 
   it("сотрудник загружает тем же путём", async () => {
     const db = scriptedDb();
     const { storage } = fakeStorage();
     const staff: Actor = { kind: "staff", id: "00000000-0000-4000-8000-00000000a001", role: "manager" };
-    await addListingPhoto({ db: db.db, storage }, staff, LISTING, WEBP, { noFacesAck: true });
+    await addListingPhoto({ db: db.db, storage }, staff, LISTING, WEBP, { ack: "no_faces" });
     expect(setConfigs(db.queries)).toEqual(["staff", "staff", "system"]);
   });
 });

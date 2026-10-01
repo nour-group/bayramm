@@ -61,7 +61,9 @@ export function ListingCard({ card, date, guests, eager, headingLevel = 2 }: Lis
             <Name className="card-name">{card.name}</Name>
             <NewBadge />
           </div>
-          <p className="card-meta">{[district, t.people(card.capMax)].filter(Boolean).join(" · ")}</p>
+          <p className="card-meta">
+            {[district, card.capMax === null ? null : t.people(card.capMax)].filter(Boolean).join(" · ")}
+          </p>
           <p className="card-price">
             <b>{price.amount}</b>
             {price.unit ? <span className="unit"> {price.unit}</span> : null}

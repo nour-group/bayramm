@@ -1,6 +1,7 @@
 // Каталог — публичный, без входа:
 //
-//   GET /catalog/listings?category&district&date&guests&sort&cursor&limit → 200 CatalogPage
+//   GET /catalog/categories                                            → 200 CatalogCategories
+//   GET /catalog/listings?category&district&date&guests&sort&cursor&limit&a.* → 200 CatalogPage
 //   GET /catalog/listings/:slug[?date]                                 → 200 ListingDetail | 404
 //   GET /catalog/cards?ids=<uuid>,…                                    → 200 ListingCards (избранное гостя)
 //
@@ -11,7 +12,7 @@
 import type { ListingCards } from "@bayramm/shared/api";
 import { Hono } from "hono";
 import { dateParam, invalidRequest, parseCatalogQuery, single } from "../catalog/query";
-import { getListingCards, getListingDetail, listCatalog } from "../catalog/service";
+import { getListingCards, getListingDetail, listCatalog, listCatalogCategories } from "../catalog/service";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { notFound } from "../errors";
@@ -28,6 +29,12 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
 export const catalog = new Hono<AppEnv>();
 
 catalog.use(database);
+
+catalog.get("/categories", async (c) => {
+  const body = await listCatalogCategories(c.var.db);
+  c.header("Cache-Control", CATALOG_CACHE_CONTROL);
+  return c.json(body);
+});
 
 catalog.get("/listings", async (c) => {
   const params = parseCatalogQuery(c.req.queries());

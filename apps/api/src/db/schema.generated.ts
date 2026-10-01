@@ -7,9 +7,13 @@ import type { ColumnType } from "kysely";
 
 export type AppActorKind = "account" | "client" | "staff" | "system" | "vendor_user";
 
+export type AppAvailabilityMode = "day" | "lead" | "parts" | "slot";
+
 export type AppConsentAction = "grant" | "withdraw";
 
 export type AppConsentPurpose = "bot_notifications" | "client_service" | "request_transfer" | "vendor_contact" | "vendor_offer" | "vendor_phone_public";
+
+export type AppDayPart = "day" | "evening" | "morning";
 
 export type AppDeclineReason = "busy" | "format" | "other" | "price";
 
@@ -29,15 +33,29 @@ export type AppOutboxStatus = "dead" | "failed" | "pending" | "sending" | "sent"
 
 export type AppPackageKind = "custom" | "weekday" | "weekend";
 
+export type AppPhotoPolicy = "no_people" | "portfolio";
+
 export type AppPhotoStatus = "failed" | "processing" | "ready" | "uploading";
 
-export type AppPriceUnit = "per_event" | "per_guest";
+export type AppPriceUnit = "per_event" | "per_guest" | "per_hour" | "per_item" | "per_kg" | "per_set" | "per_table";
 
 export type AppRequestStatus = "contacted" | "deal" | "declined" | "expired" | "new" | "viewed" | "withdrawn";
+
+export type AppServiceStatus = "active" | "draft" | "paused" | "rejected" | "review";
+
+export type AppServiceTier = "base" | "extra";
 
 export type AppSource = "admin" | "offline" | "partner_bot" | "system" | "tma" | "vendor_cabinet" | "web";
 
 export type AppStaffRole = "admin" | "manager" | "moderator";
+
+export type ArrayType<T> = ArrayTypeImpl<T> extends (infer U)[]
+  ? U[]
+  : ArrayTypeImpl<T>;
+
+export type ArrayTypeImpl<T> = T extends ColumnType<infer S, infer I, infer U>
+  ? ColumnType<S[], I[], U[]>
+  : T[];
 
 export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
@@ -121,6 +139,16 @@ export interface AppAvailability {
   source: Generated<string>;
 }
 
+export interface AppAvailabilityParts {
+  created_at: Generated<Timestamp>;
+  created_by: Generated<string | null>;
+  day: string;
+  listing_id: string;
+  part: AppDayPart;
+  request_id: string | null;
+  source: Generated<string>;
+}
+
 export interface AppAvailabilityVersions {
   listing_id: string;
   updated_at: Generated<Timestamp>;
@@ -128,10 +156,17 @@ export interface AppAvailabilityVersions {
 }
 
 export interface AppCategories {
+  availability_mode: Generated<AppAvailabilityMode>;
   code: string;
   enabled: Generated<boolean>;
+  max_video_links: Generated<number>;
+  min_photos: Generated<number>;
   name_ru: string;
   name_uz: string;
+  photo_policy: Generated<AppPhotoPolicy>;
+  required_attributes: Generated<string[]>;
+  required_fields: Generated<string[]>;
+  required_services: Generated<string[]>;
   sort: Generated<number>;
 }
 
@@ -258,6 +293,10 @@ export interface AppListingRevisions {
 export interface AppListings {
   address_ru: string | null;
   address_uz: string | null;
+  /**
+   * Поля витрины категории (packages/shared/src/categories): структуру проверяет API
+   */
+  attributes: Generated<Json>;
   cap_max: number | null;
   cap_min: number | null;
   category_code: string;
@@ -267,6 +306,13 @@ export interface AppListings {
   district_code: string | null;
   id: Generated<string>;
   name: string;
+  /**
+   * Сколько заказов витрина берёт одновременно (режим занятости parts): экипажи, машины
+   */
+  parallel_capacity: Generated<number>;
+  /**
+   * Цена «от»: самая низкая цена услуг, входящих в цену «от» (app.listing_price_from). Пишет только триггер
+   */
   price_from_uzs: Int8 | null;
   price_unit: Generated<AppPriceUnit>;
   published_at: Timestamp | null;
@@ -279,6 +325,37 @@ export interface AppListings {
   updated_at: Generated<Timestamp>;
   vendor_id: string;
   version: Generated<number>;
+  video_links: Generated<string[]>;
+}
+
+export interface AppListingServices {
+  category_code: string;
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  decision: string | null;
+  decision_reason: string | null;
+  id: Generated<string>;
+  includes_ru: string | null;
+  includes_uz: string | null;
+  lead_days: number | null;
+  listing_id: string;
+  min_qty: number | null;
+  name_ru: string | null;
+  name_uz: string | null;
+  options: Generated<Json>;
+  package_id: string | null;
+  price_unit: AppPriceUnit;
+  price_uzs: Int8;
+  proposal: Json | null;
+  proposal_at: Timestamp | null;
+  proposal_by: string | null;
+  service_type: string;
+  sort: Generated<number>;
+  status: Generated<AppServiceStatus>;
+  submitted_at: Timestamp | null;
+  submitted_by: string | null;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface AppListingStatusLog {
@@ -350,7 +427,11 @@ export interface AppPhotos {
   moderated_at: Timestamp | null;
   moderated_by: string | null;
   moderation: Generated<AppModerationStatus>;
-  no_faces_ack: boolean;
+  no_faces_ack: Generated<boolean>;
+  /**
+   * Загрузивший подтвердил согласие людей на фото — только у категорий с правилом portfolio
+   */
+  people_consent_ack: Generated<boolean>;
   processed_at: Timestamp | null;
   /**
    * sha256 файла: один и тот же файл дважды в листинг не загрузить
@@ -409,13 +490,21 @@ export interface AppRequests {
   client_id: string;
   consent_id: string;
   created_at: Generated<Timestamp>;
+  /**
+   * Часть дня (режим занятости parts): API выводит её из времени начала в details
+   */
+  day_part: AppDayPart | null;
   decline_note: string | null;
   decline_reason: AppDeclineReason | null;
+  /**
+   * Поля формы заявки категории (packages/shared/src/categories): без ПДн и свободного текста, проверяет API
+   */
+  details: Generated<Json>;
   event_date: string;
   first_response_at: Timestamp | null;
   first_response_by: AppActorKind | null;
   first_viewed_at: Timestamp | null;
-  guests: number;
+  guests: number | null;
   id: Generated<string>;
   listing_id: string;
   occasion_code: string;
@@ -445,6 +534,20 @@ export interface AppRequestTransitions {
   actor: AppActorKind;
   from_status: AppRequestStatus;
   to_status: AppRequestStatus;
+}
+
+export interface AppServiceTypes {
+  category_code: string;
+  code: string;
+  enabled: Generated<boolean>;
+  free_name: Generated<boolean>;
+  in_price_from: Generated<boolean>;
+  name_ru: string;
+  name_uz: string;
+  options: Generated<Json>;
+  sort: Generated<number>;
+  tier: Generated<AppServiceTier>;
+  units: ArrayType<AppPriceUnit>;
 }
 
 export interface AppSessions {
@@ -616,6 +719,7 @@ export interface DB {
   "app.api_error_alerts": AppApiErrorAlerts;
   "app.audit_log": AppAuditLog;
   "app.availability": AppAvailability;
+  "app.availability_parts": AppAvailabilityParts;
   "app.availability_versions": AppAvailabilityVersions;
   "app.categories": AppCategories;
   "app.clients": AppClients;
@@ -628,6 +732,7 @@ export interface DB {
   "app.legal_entities": AppLegalEntities;
   "app.listing_packages": AppListingPackages;
   "app.listing_revisions": AppListingRevisions;
+  "app.listing_services": AppListingServices;
   "app.listing_status_log": AppListingStatusLog;
   "app.listings": AppListings;
   "app.occasions": AppOccasions;
@@ -640,6 +745,7 @@ export interface DB {
   "app.request_status_log": AppRequestStatusLog;
   "app.request_transitions": AppRequestTransitions;
   "app.requests": AppRequests;
+  "app.service_types": AppServiceTypes;
   "app.sessions": AppSessions;
   "app.settings": AppSettings;
   "app.staff": AppStaff;

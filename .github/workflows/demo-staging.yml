@@ -1,8 +1,8 @@
 name: Demo data (staging)
 
-# Демо-залы на staging для показа: seed — завести три вымышленных зала (вендор, карточка,
-# фото, пакеты, занятые дни; опубликованы теми же шагами, что в панели), reset — убрать
-# всё демо вместе с заявками на демо-залы. Только вручную и только staging: маршрут
+# Демо-витрины на staging для показа: seed — завести три вымышленных зала и по витрине в
+# каждой включённой категории (вендор, карточка, фото, услуги, поля витрины, занятость;
+# опубликованы теми же шагами, что в панели), reset — убрать всё демо вместе с заявками на них. Только вручную и только staging: маршрут
 # POST /ops/demo есть лишь там (apps/api/src/routes/ops.ts). Оба режима можно запускать
 # сколько угодно раз: seed заводит только то, чего нет, reset убирает только демо.
 #
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "seed — завести демо-залы, reset — убрать всё демо"
+        description: "seed — завести демо-витрины, reset — убрать всё демо"
         type: choice
         options: [seed, reset]
         default: seed
@@ -96,7 +96,7 @@ jobs:
           }
 
           if [ "$MODE" = seed ]; then
-            # По залу за запрос — каждый вызов воркера короткий. Фото — по три на зал, по порядку
+            # По витрине за запрос — каждый вызов воркера короткий. Фото — по три на витрину, по порядку
             photos=("$RUNNER_TEMP"/demo-photos/demo-*.webp)
             totals='{"active":0,"vendors":0,"listings":0,"photos":0,"busyDays":0,"published":0}'
             venue=1
@@ -113,7 +113,7 @@ jobs:
               venue=$((venue + 1))
             done
             # Итог — только счётчики
-            summary=$(jq -r --arg venues "$venues" '"Демо-залов: \($venues), опубликовано: \(.active).\nЗаведено сейчас — вендоров: \(.vendors), карточек: \(.listings), фото: \(.photos), занятых дней: \(.busyDays); опубликовано сейчас: \(.published)."' <<<"$totals")
+            summary=$(jq -r --arg venues "$venues" '"Демо-витрин: \($venues), опубликовано: \(.active).\nЗаведено сейчас — вендоров: \(.vendors), карточек: \(.listings), фото: \(.photos), занятых дней: \(.busyDays); опубликовано сейчас: \(.published)."' <<<"$totals")
           else
             post -F mode=reset
             summary=$(jq -r '"Убрано — вендоров: \(.removed.vendors), карточек: \(.removed.listings), фото: \(.removed.photos) (объектов в Storage: \(.storageObjects)), заявок: \(.removed.requests), пользователей кабинета: \(.removed.vendorUsers)."' demo.json)

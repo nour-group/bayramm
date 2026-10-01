@@ -1,10 +1,10 @@
-// Фото демо-залов для workflow «Demo data (staging)»: абстрактные картинки —
+// Фото демо-витрин для workflow «Demo data (staging)»: абстрактные картинки —
 // градиент в цветах бренда, узор из восьмиконечных звёзд гириха и слово DEMO.
 // Ни людей, ни чужих снимков: всё рисуется здесь же, из SVG.
 //
-//   node scripts/demo-photos.ts <папка>   → demo-01.webp … demo-09.webp
+//   node scripts/demo-photos.ts <папка>   → demo-01.webp … demo-30.webp
 //
-// Порядок файлов — порядок залов в src/demo/venues.ts, по три на зал. Буквы — линии,
+// Порядок файлов — порядок витрин в src/demo/venues.ts, по три на витрину. Буквы — линии,
 // а не шрифт: картинка одинакова на любой машине. WebP без метаданных — sharp не пишет
 // EXIF, XMP и ICC, пока его об этом не попросить; POST /ops/demo всё равно проверяет
 // каждый файл тем же assertUploadable, что и любую загрузку.
@@ -18,8 +18,8 @@ import sharp from "sharp";
 
 export const DEMO_PHOTO_WIDTH = 1280;
 export const DEMO_PHOTO_HEIGHT = 853;
-/** По три на каждый из трёх демо-залов */
-export const DEMO_PHOTO_FILES = 9;
+/** По три на каждую из десяти демо-витрин (src/demo/venues.ts: DEMO_PHOTO_COUNT) */
+export const DEMO_PHOTO_FILES = 30;
 const QUALITY = 70;
 
 // Пары цветов градиента — из палитры бренда (packages/ui/src/tokens.ts)

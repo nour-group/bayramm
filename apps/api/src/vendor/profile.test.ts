@@ -83,6 +83,9 @@ describe("getListing", () => {
     price_unit: "per_guest",
     cap_min: 50,
     cap_max: 300,
+    attributes: { kitchen: "own", parking_spaces: "много" },
+    video_links: [],
+    parallel_capacity: 1,
     blockers: ["photos", "contract"],
     phone: "+998000000999",
     min_photos: 3,
@@ -92,14 +95,31 @@ describe("getListing", () => {
   it("своя площадка: цены числом, фото — адреса воркера media окружения", async () => {
     const fake = fakeDb((q) => {
       if (q.sql.includes('from "app"."listings"')) return [listing];
-      if (q.sql.includes("listing_packages"))
+      if (q.sql.includes('from "app"."listing_services"'))
         return [
           {
-            kind: "weekday",
-            name_ru: "Будни",
-            name_uz: "Ish kuni",
+            id: "s1",
+            listing_id: LISTING_ID,
+            category_code: "hall",
+            service_type: "banquet_weekday",
+            status: "active",
+            name_ru: null,
+            name_uz: null,
             price_uzs: "150000",
             price_unit: "per_guest",
+            min_qty: null,
+            lead_days: null,
+            includes_ru: null,
+            includes_uz: null,
+            options: [],
+            proposal: null,
+            proposal_at: null,
+            decision: "approved",
+            decision_reason: null,
+            decided_at: new Date("2026-09-30T10:00:00Z"),
+            submitted_at: null,
+            sort: 0,
+            updated_at: new Date("2026-09-30T10:00:00Z"),
           },
         ];
       if (q.sql.includes("app.photos") || q.sql.includes('"app"."photos"'))
@@ -114,7 +134,18 @@ describe("getListing", () => {
       priceFromUzs: 150_000,
       address: { ru: "Адрес", uz: "" },
       packages: [
-        { kind: "weekday", name: { ru: "Будни", uz: "Ish kuni" }, priceUzs: 150_000, priceUnit: "per_guest" },
+        {
+          kind: "weekday",
+          name: { ru: "Банкет — будни", uz: "Banket — ish kunlari" },
+          priceUzs: 150_000,
+          priceUnit: "per_guest",
+        },
+      ],
+      // Поля витрины — только прошедшие проверку конфигурации
+      attributes: { kitchen: "own" },
+      missingAttributes: [],
+      services: [
+        { id: "s1", type: "banquet_weekday", status: "active", priceUzs: 150_000, customName: false },
       ],
       phone: "+998000000999",
       blockers: ["photos", "contract"],

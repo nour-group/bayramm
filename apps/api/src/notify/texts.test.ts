@@ -5,17 +5,30 @@ import {
   NOTICE_TEXTS,
   opsOutboxDead,
   opsRevisionSubmitted,
+  opsServicesSubmitted,
   opsSlaBreach,
   type RequestFacts,
+  SERVICE_TEXTS,
 } from "./texts";
 
 const FACTS: RequestFacts = {
   no: "1001",
   listing: "Test Hall",
+  category: "Площадка / Тойхона",
   date: "12.10.2026",
   guests: 200,
   occasion: "Свадьба",
   slaHours: 12,
+  details: [],
+};
+
+/** Кортеж: без гостей, с полями заявки категории */
+const CAR: RequestFacts = {
+  ...FACTS,
+  listing: "Test Cars",
+  category: "Кортеж",
+  guests: null,
+  details: ["Начало: 14:00", "Сколько часов: 3", "Сколько машин: 2"],
 };
 
 // Все тексты языка на наборе фактов
@@ -32,6 +45,28 @@ function rendered(lang: "ru" | "uz", facts = FACTS): string[] {
     t.declined(facts),
     t.slaBreach(facts),
     ...Object.values(t.buttons),
+    SERVICE_TEXTS[lang].button,
+    SERVICE_TEXTS[lang].decided({
+      service: "S",
+      listing: "L",
+      outcome: "approved",
+      proposal: false,
+      reason: null,
+    }),
+    SERVICE_TEXTS[lang].decided({
+      service: "S",
+      listing: "L",
+      outcome: "declined",
+      proposal: true,
+      reason: "x",
+    }),
+    SERVICE_TEXTS[lang].decided({
+      service: "S",
+      listing: "L",
+      outcome: "declined",
+      proposal: false,
+      reason: null,
+    }),
   ];
 }
 
@@ -53,6 +88,36 @@ describe("тексты уведомлений", () => {
       expect(ru).toContain(part);
     }
     expect(NOTICE_TEXTS.uz.requestNew(FACTS)).toContain("200 mehmon");
+  });
+
+  it("новая заявка другой категории: категория, без гостей, поля заявки строками — без ПДн", () => {
+    const ru = NOTICE_TEXTS.ru.requestNew(CAR);
+    for (const part of ["№1001 · Кортеж", "Test Cars", "Начало: 14:00", "Сколько машин: 2"])
+      expect(ru).toContain(part);
+    expect(ru).not.toContain("гост");
+    expect(ru).not.toContain("зал");
+    expect(NOTICE_TEXTS.uz.requestNew({ ...CAR, category: "Kortej" })).not.toContain("mehmon");
+    for (const lang of LANGS)
+      for (const text of rendered(lang, CAR)) expect(text).not.toMatch(/undefined|null|NaN/);
+  });
+
+  it("решение по услуге: одобрено, отклонено, правка не принята — с причиной", () => {
+    const t = SERVICE_TEXTS.ru;
+    expect(
+      t.decided({ service: "Лимузин", listing: "Шарк", outcome: "approved", proposal: false, reason: null }),
+    ).toContain("одобрена");
+    expect(
+      t.decided({
+        service: "Лимузин",
+        listing: "Шарк",
+        outcome: "declined",
+        proposal: true,
+        reason: "Нет фото",
+      }),
+    ).toContain("Изменения услуги «Лимузин» на витрине «Шарк» команда Bayramm не приняла: Нет фото");
+    expect(
+      opsServicesSubmitted({ listing: "Шарк", vendorCode: "V101", category: "Кортеж", pending: 2 }),
+    ).toContain("Ждут решения: 2");
   });
 
   it("склонение часов и гостей", () => {

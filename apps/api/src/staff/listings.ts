@@ -1,11 +1,12 @@
 // Карточки (листинги) в панели оператора. Контракт — @bayramm/shared/api/staff.
 //
-//   GET   /staff/listings?status=&q=&vendorId=&photos=pending&limit=&offset=
+//   GET   /staff/listings?status=&q=&vendorId=&category=&photos=pending&limit=&offset=
 //                                                               список, очереди проверки и новых фото
-//   POST  /staff/listings                                       создать (vendorId, name)
+//   POST  /staff/listings                                       создать (vendorId, name, categoryCode)
 //   GET   /staff/listings/:id                                   карточка целиком
 //   PATCH /staff/listings/:id                                   правка (version обязателен)
 //   POST  /staff/listings/:id/submit | publish | suspend | reject | draft   { version, reason? }
+//   POST  /staff/listings/:id/category { categoryCode, version } сменить категорию (пока нет заявок)
 //   POST  /staff/listings/:id/phone  { reason? }                телефон для заявок (в журнал)
 //
 // Жизненный цикл и правила публикации — в базе (listings_before_update,
@@ -14,10 +15,16 @@
 // карточку с тех пор не меняли (триггер увеличивает version на каждом UPDATE).
 //
 // Кто заполняет карточку, тот её не публикует: у опубликованной карточки название,
-// цену, описания и пакеты сотрудник без права модерации (менеджер) меняет только
+// описания и пакеты зала сотрудник без права модерации (менеджер) меняет только
 // правкой на модерацию (app.listing_revisions) — как партнёр. Остальные поля
-// (адрес, район, вместимость, телефон, адрес страницы) сохраняются сразу. Так же
-// решает база (listings_before_update, listing_packages_guard → BR005).
+// (адрес, район, вместимость, поля витрины, ссылки на видео, телефон, адрес страницы,
+// сколько заказов одновременно) сохраняются сразу. Так же решает база
+// (listings_before_update, listing_services_guard → BR005).
+//
+// Цена «от» считается из услуг (staff/services.ts): priceFromUzs и priceUnit из тела
+// ничего не меняют — их шлёт панель v0.1. Пакеты v0.1 (только зал) переводятся в его
+// услуги: банкеты будни и выходные, «другие услуги» (listing-services/store.ts). Поля
+// витрины проверяются по конфигурации категории (@bayramm/shared/categories).
 
 import type {
   ListingAction,
@@ -32,6 +39,16 @@ import type {
   StaffPermission,
   StaffPhoto,
 } from "@bayramm/shared/api/staff";
+import {
+  type AttributeValue,
+  type CategoryConfig,
+  categoryConfig,
+  mergeAttributes,
+  missingAttributes,
+  readAttributes,
+  validateAttributePatch,
+  validateVideoLinks,
+} from "@bayramm/shared/categories";
 import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
@@ -40,15 +57,23 @@ import { hasListingPhone, readListingPhone, saveListingPhone, staffName } from "
 import type { Json } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound, versionConflict } from "../errors";
+import {
+  approveReviewServices,
+  hallPackages,
+  listServices,
+  replaceHallPackages,
+  type ServiceActor,
+} from "../listing-services/store";
 import { can, requirePermission } from "./access";
 import { Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
 import { changedOnly, currentPackages, revisionFields } from "./revision-diff";
 import { blockers, iso, LISTING_STATUSES, num, pathId } from "./shared";
-import { freeSlug, SLUG_RE, slugify } from "./slug";
+import { pickSlug, SLUG_RE } from "./slug";
 import { definedOnly, readReason } from "./vendors";
 
 export const listings = new Hono<AppEnv>();
 
+/** Единицы цены пакетов зала v0.1 */
 export const PRICE_UNITS = ["per_guest", "per_event"] as const satisfies readonly PriceUnit[];
 export const PACKAGE_KINDS = ["weekday", "weekend", "custom"] as const;
 export const MAX_PRICE = 99_999_999_999;
@@ -100,6 +125,9 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       "l.price_unit",
       "l.cap_min",
       "l.cap_max",
+      "l.attributes",
+      "l.video_links",
+      "l.parallel_capacity",
       "l.submitted_at",
       "l.published_at",
       "l.version",
@@ -116,13 +144,9 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
     .executeTakeFirst();
   if (row === undefined) throw notFound();
 
-  const packages = await trx
-    .selectFrom("app.listing_packages")
-    .select(["kind", "name_ru", "name_uz", "price_uzs", "price_unit"])
-    .where("listing_id", "=", id)
-    .orderBy("sort")
-    .orderBy("created_at")
-    .execute();
+  const packages = row.category_code === "hall" ? await hallPackages(trx, id) : [];
+  const category = categoryConfig(row.category_code);
+  const attributes = category === undefined ? {} : readAttributes(category, row.attributes);
 
   const history = await trx
     .selectFrom("app.listing_status_log as h")
@@ -172,19 +196,18 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
     priceUnit: row.price_unit,
     capMin: row.cap_min,
     capMax: row.cap_max,
+    attributes,
+    missingAttributes: category === undefined ? [] : missingAttributes(category, attributes),
+    videoLinks: row.video_links,
+    parallelCapacity: row.parallel_capacity,
+    services: await listServices(trx, id),
     submittedAt: iso(row.submitted_at),
     publishedAt: iso(row.published_at),
     version: row.version,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     hasPhone: row.has_phone,
-    packages: packages.map((p) => ({
-      kind: p.kind,
-      nameRu: p.name_ru,
-      nameUz: p.name_uz,
-      priceUzs: num(p.price_uzs),
-      priceUnit: p.price_unit,
-    })),
+    packages: packages.map((p) => ({ ...p })),
     photos: await loadPhotos(trx, id),
     blockers: { review: row.blockers_review, active: row.blockers_active },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
@@ -229,6 +252,8 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
   const status = LISTING_STATUSES.find((s) => s === statusParam);
   const vendorParam = c.req.query("vendorId");
   const vendorId = vendorParam ? pathId(vendorParam) : undefined;
+  const categoryParam = c.req.query("category");
+  const category = categoryParam && /^[a-z_]{2,20}$/.test(categoryParam) ? categoryParam : undefined;
   // Очередь «Новые фото»: опубликованные карточки, у которых есть фото на решении
   const pendingPhotos = c.req.query("photos") === "pending";
   const { limit, offset } = paging((key) => c.req.query(key));
@@ -243,6 +268,7 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
         "l.slug",
         "l.status",
         "l.status_reason",
+        "l.category_code",
         "l.district_code",
         "l.price_from_uzs",
         "l.price_unit",
@@ -278,6 +304,7 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
       );
     }
     if (vendorId) query = query.where("l.vendor_id", "=", vendorId);
+    if (category) query = query.where("l.category_code", "=", category);
     if (q !== "") {
       const pattern = likePattern(q);
       query = query.where((eb) =>
@@ -318,6 +345,7 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
       slug: row.slug,
       status: row.status,
       statusReason: row.status_reason,
+      categoryCode: row.category_code,
       districtCode: row.district_code,
       priceFromUzs: num(row.price_from_uzs),
       priceUnit: row.price_unit,
@@ -343,16 +371,22 @@ interface ListingFields {
   address_uz?: string | null;
   description_ru?: string | null;
   description_uz?: string | null;
-  price_from_uzs?: number | null;
-  price_unit?: PriceUnit;
   cap_min?: number | null;
   cap_max?: number | null;
+  /** Поля витрины после слияния с правкой — строкой JSON */
+  attributes?: string;
+  video_links?: string[];
+  parallel_capacity?: number;
 }
 
 interface ParsedListing {
   fields: ListingFields;
   packages: StaffListingPackage[] | undefined;
   phone: string | null | undefined;
+  /** Правка полей витрины как пришла — проверяется по категории (categoryFields) */
+  attributes: unknown;
+  /** Ссылки на видео как пришли — проверяются по категории */
+  videoLinks: unknown;
 }
 
 function parsePackage(item: Input): StaffListingPackage | undefined {
@@ -379,6 +413,10 @@ function parseListing(input: Input, creating: boolean): ParsedListing {
   const dayKinds = (packages ?? []).map((p) => p.kind).filter((kind) => kind !== "custom");
   if (new Set(dayKinds).size !== dayKinds.length) input.fail("packages");
 
+  // Цена «от» — из услуг: поля панели v0.1 принимаются и ничего не меняют
+  input.int("priceFromUzs", { min: 1, max: MAX_PRICE });
+  const parallel = input.int("parallelCapacity", { min: 1, max: 50 });
+  if (parallel === null) input.fail("parallelCapacity");
   const fields = definedOnly<ListingFields>({
     name: name ?? undefined,
     slug: slug ?? undefined,
@@ -387,12 +425,53 @@ function parseListing(input: Input, creating: boolean): ParsedListing {
     address_uz: input.text("addressUz", { max: 300 }),
     description_ru: input.text("descriptionRu", { max: 4000, multiline: true }),
     description_uz: input.text("descriptionUz", { max: 4000, multiline: true }),
-    price_from_uzs: input.int("priceFromUzs", { min: 1, max: MAX_PRICE }),
-    price_unit: priceUnit ?? undefined,
     cap_min: capMin,
     cap_max: capMax,
+    parallel_capacity: parallel ?? undefined,
   });
-  return { fields, packages, phone: input.phone("phone") };
+  return {
+    fields,
+    packages,
+    phone: input.phone("phone"),
+    attributes: input.peek("attributes"),
+    videoLinks: input.peek("videoLinks"),
+  };
+}
+
+/**
+ * Поля витрины и ссылки на видео из тела — по категории карточки; поля витрины
+ * сливаются с текущими (null — убрать). Неверные — 422 invalid_input (attributes.<поле>…)
+ */
+function categoryFields(
+  category: CategoryConfig | undefined,
+  parsed: ParsedListing,
+  current: Json,
+): Pick<ListingFields, "attributes" | "video_links"> {
+  const out: Pick<ListingFields, "attributes" | "video_links"> = {};
+  const errors: string[] = [];
+  if (parsed.attributes !== undefined) {
+    const result = category === undefined ? null : validateAttributePatch(category, parsed.attributes);
+    if (result === null || !result.ok) errors.push(...(result?.errors ?? ["attributes"]));
+    else {
+      const base =
+        typeof current === "object" && current !== null && !Array.isArray(current)
+          ? (current as Record<string, AttributeValue>)
+          : {};
+      out.attributes = JSON.stringify(mergeAttributes(base, result.value));
+    }
+  }
+  if (parsed.videoLinks !== undefined) {
+    const result =
+      parsed.videoLinks === null
+        ? ({ ok: true, value: [] as string[] } as const)
+        : category === undefined
+          ? null
+          : validateVideoLinks(category, parsed.videoLinks);
+    if (result === null || !result.ok) errors.push(...(result?.errors ?? ["videoLinks"]));
+    else out.video_links = result.value;
+  }
+  if (errors.length > 0) throw invalidInput(errors);
+  return out;
 }
 
 // Район — из справочника: внешний ключ дал бы непонятный 404
@@ -406,51 +485,28 @@ async function assertDistrict(trx: Tx, code: string | null | undefined): Promise
   if (!found) throw invalidInput(["districtCode"]);
 }
 
-// Набор пакетов заменяется целиком. Будни и выходные обновляются на месте (у
-// опубликованного зала их нельзя удалить даже на миг — триггер), произвольные
-// пересоздаются; убранные удаляются последними
-export async function replacePackages(
-  trx: Tx,
-  listingId: string,
-  packages: readonly StaffListingPackage[],
-): Promise<void> {
-  const existing = await trx
-    .selectFrom("app.listing_packages")
-    .select(["id", "kind"])
-    .where("listing_id", "=", listingId)
-    .execute();
-  const dayIds = new Map(existing.filter((p) => p.kind !== "custom").map((p) => [p.kind, p.id]));
-  const stale = new Set(existing.map((p) => p.id));
-
-  for (const [index, pkg] of packages.entries()) {
-    const values = {
-      name_ru: pkg.nameRu,
-      name_uz: pkg.nameUz,
-      price_uzs: pkg.priceUzs,
-      price_unit: pkg.priceUnit,
-      sort: index,
-    };
-    const id = pkg.kind === "custom" ? undefined : dayIds.get(pkg.kind);
-    if (id !== undefined) {
-      stale.delete(id);
-      await trx.updateTable("app.listing_packages").set(values).where("id", "=", id).execute();
-    } else {
-      await trx
-        .insertInto("app.listing_packages")
-        .values({ listing_id: listingId, kind: pkg.kind, ...values })
-        .execute();
-    }
-  }
-  if (stale.size > 0) {
-    await trx
-      .deleteFrom("app.listing_packages")
-      .where("id", "in", [...stale])
-      .execute();
-  }
+/** Кто правит услуги из панели: решает ли по модерации и правит ли активные только предложением */
+export function staffServiceActor(role: StaffActorRole, listingStatus: ListingStatus): ServiceActor {
+  const decides = can(role, "revisions.moderate");
+  return { decides, restricted: !decides && listingStatus === "active" };
 }
 
-async function saveExtras(trx: Tx, listingId: string, parsed: ParsedListing): Promise<void> {
-  if (parsed.packages !== undefined) await replacePackages(trx, listingId, parsed.packages);
+type StaffActorRole = ReturnType<typeof staffOf>["role"];
+
+async function saveExtras(
+  trx: Tx,
+  listingId: string,
+  parsed: ParsedListing,
+  actor: ServiceActor,
+): Promise<void> {
+  if (parsed.packages !== undefined) {
+    const listing = await trx
+      .selectFrom("app.listings")
+      .select(["id", "category_code", "status"])
+      .where("id", "=", listingId)
+      .executeTakeFirstOrThrow();
+    await replaceHallPackages(trx, listing, parsed.packages, actor);
+  }
   if (parsed.phone !== undefined) await saveListingPhone(trx, listingId, parsed.phone);
 }
 
@@ -465,8 +521,10 @@ listings.post("/", requirePermission("listings.write"), limitJson, async (c) => 
   input.done();
   const name = parsed.fields.name;
   if (!vendorId || !name) throw invalidInput(["vendorId", "name"]);
+  const actor = staffOf(c);
+  const extra = categoryFields(categoryConfig(categoryCode), parsed, {});
 
-  const listing = await withActor(c.var.db, staffOf(c), async (trx) => {
+  const listing = await withActor(c.var.db, actor, async (trx) => {
     const vendor = await trx
       .selectFrom("app.vendor_accounts")
       .select("id")
@@ -482,23 +540,22 @@ listings.post("/", requirePermission("listings.write"), limitJson, async (c) => 
     if (!category) throw invalidInput(["categoryCode"]);
     await assertDistrict(trx, parsed.fields.district_code);
 
-    let slug = parsed.fields.slug;
-    if (slug === undefined) {
-      const base = slugify(name);
-      const taken = await trx
-        .selectFrom("app.listings")
-        .select("slug")
-        .where("slug", "like", `${base}%`)
-        .execute();
-      slug = freeSlug(base, new Set(taken.map((row) => row.slug)));
-    }
+    const slug = parsed.fields.slug ?? (await pickSlug(trx, name));
 
     const created = await trx
       .insertInto("app.listings")
-      .values({ ...parsed.fields, name, slug, vendor_id: vendorId, category_code: categoryCode, status })
+      .values({
+        ...parsed.fields,
+        ...extra,
+        name,
+        slug,
+        vendor_id: vendorId,
+        category_code: categoryCode,
+        status,
+      })
       .returning("id")
       .executeTakeFirstOrThrow();
-    await saveExtras(trx, created.id, parsed);
+    await saveExtras(trx, created.id, parsed, staffServiceActor(actor.role, status));
     return loadListing(trx, created.id);
   });
   return c.json(listing, 201);
@@ -536,13 +593,14 @@ async function updateListing(
   throw exists ? versionConflict() : notFound();
 }
 
-/** Модерируемые поля карточки: у опубликованной их меняет только решение модератора */
-const MODERATED = ["name", "price_from_uzs", "price_unit", "description_ru", "description_uz"] as const;
+/**
+ * Модерируемые поля карточки: у опубликованной их меняет только решение модератора. Цена
+ * «от» — из услуг (их правка модерируется отдельно), поэтому здесь её нет
+ */
+const MODERATED = ["name", "description_ru", "description_uz"] as const;
 /** Столбец → поле контракта, для ответа 422 */
 const MODERATED_INPUT: Readonly<Record<(typeof MODERATED)[number], string>> = {
   name: "name",
-  price_from_uzs: "priceFromUzs",
-  price_unit: "priceUnit",
   description_ru: "descriptionRu",
   description_uz: "descriptionUz",
 };
@@ -591,8 +649,6 @@ async function proposeModerated(
   const proposed = {
     fields: {
       ...(typeof fields.name === "string" ? { name: fields.name } : {}),
-      ...(typeof fields.price_from_uzs === "number" ? { price_from_uzs: fields.price_from_uzs } : {}),
-      ...(fields.price_unit !== undefined ? { price_unit: fields.price_unit } : {}),
       ...(typeof fields.description_ru === "string" ? { description_ru: fields.description_ru } : {}),
       ...(typeof fields.description_uz === "string" ? { description_uz: fields.description_uz } : {}),
     },
@@ -607,7 +663,8 @@ async function proposeModerated(
       .execute();
   }
 
-  // Сразу — только немодерируемое: адрес, район, вместимость, телефон, адрес страницы
+  // Сразу — немодерируемое: адрес, район, вместимость, поля витрины, ссылки на видео,
+  // одновременные заказы, телефон, адрес страницы
   const direct: ListingFields = {
     slug: fields.slug,
     district_code: fields.district_code,
@@ -615,8 +672,18 @@ async function proposeModerated(
     address_uz: fields.address_uz,
     cap_min: fields.cap_min,
     cap_max: fields.cap_max,
+    parallel_capacity: fields.parallel_capacity,
   };
-  return { direct: { fields: definedOnly(direct), packages: undefined, phone: parsed.phone }, sent };
+  return {
+    direct: {
+      fields: definedOnly(direct),
+      packages: undefined,
+      phone: parsed.phone,
+      attributes: parsed.attributes,
+      videoLinks: parsed.videoLinks,
+    },
+    sent,
+  };
 }
 
 listings.patch("/:id", requirePermission("listings.write"), limitJson, async (c) => {
@@ -630,12 +697,19 @@ listings.patch("/:id", requirePermission("listings.write"), limitJson, async (c)
 
   const listing: ListingSaveResult = await withActor(c.var.db, actor, async (trx) => {
     await assertDistrict(trx, parsed.fields.district_code);
+    const current = await trx
+      .selectFrom("app.listings")
+      .select(["category_code", "status", "attributes"])
+      .where("id", "=", id)
+      .executeTakeFirst();
+    if (current === undefined) throw notFound();
     // Модератор и администратор правят опубликованную карточку сразу: решают они же
     const { direct, sent } = can(actor.role, "revisions.moderate")
       ? { direct: parsed, sent: [] }
       : await proposeModerated(trx, id, version, parsed);
-    await updateListing(trx, id, version, direct.fields);
-    await saveExtras(trx, id, direct);
+    const extra = categoryFields(categoryConfig(current.category_code), direct, current.attributes);
+    await updateListing(trx, id, version, { ...direct.fields, ...extra });
+    await saveExtras(trx, id, direct, staffServiceActor(actor.role, current.status));
     return { ...(await loadListing(trx, id)), sentForModeration: sent };
   });
   return c.json(listing);
@@ -705,7 +779,7 @@ export async function applyListingAction(
   if (reason && !plan.reasonRequired) {
     await sql`select set_config('app.reason', ${reason}, true)`.execute(trx);
   }
-  // Модератор публикует карточку целиком: готовые фото, ждущие решения, одобряются
+  // Модератор публикует карточку целиком: готовые фото и услуги, ждущие решения, одобряются
   if (action === "publish") {
     await trx
       .updateTable("app.photos")
@@ -715,6 +789,7 @@ export async function applyListingAction(
       .where("status", "=", "ready")
       .where("moderation", "=", "pending")
       .execute();
+    await approveReviewServices(trx, id);
   }
 
   let next = version;
@@ -744,6 +819,32 @@ for (const [action, plan] of Object.entries(ACTIONS) as [ListingAction, ActionPl
     return c.json(listing);
   });
 }
+
+// ── категория витрины ───────────────────────────────────────────────────────
+// Только пока по витрине нет заявок (иначе 409 category_locked — новая витрина). Услуги
+// прежней категории удаляются, поля витрины очищаются — app.staff_set_listing_category
+
+listings.post("/:id/category", requirePermission("listings.write"), limitJson, async (c) => {
+  const id = pathId(c.req.param("id"));
+  const input = new Input(await readBody(c.req.raw));
+  const version = input.int("version", { min: 1, max: 2_147_483_647, required: true });
+  const categoryCode = input.pattern("categoryCode", /^[a-z_]{2,20}$/, true);
+  input.done();
+  if (typeof version !== "number" || typeof categoryCode !== "string") throw invalidInput(["version"]);
+  const listing = await withActor(c.var.db, staffOf(c), async (trx) => {
+    const current = await trx
+      .selectFrom("app.listings")
+      .select("version")
+      .where("id", "=", id)
+      .forUpdate()
+      .executeTakeFirst();
+    if (current === undefined) throw notFound();
+    if (current.version !== version) throw versionConflict();
+    await sql`select app.staff_set_listing_category(${id}::uuid, ${categoryCode})`.execute(trx);
+    return loadListing(trx, id);
+  });
+  return c.json(listing);
+});
 
 // ── телефон для заявок ──────────────────────────────────────────────────────
 // У опубликованной карточки он публичный (читается без журнала), у остальных —
