@@ -111,22 +111,40 @@ test.describe("лендинг в браузере", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(T.uz.hallsTitle);
   });
 
-  test("шапка: логотип — на лендинг, разделы — на свои экраны", async ({ page }) => {
+  test("шапка гостя: каталог и сохранённое, «Войти»; логотип — на лендинг", async ({ page }) => {
     await prepare(page);
     await at(page, 1280);
     await open(page, PATHS.catalog, ".card", { guest: true });
     const nav = sections(page);
     await expect(nav).toHaveClass(/site-nav/);
+    // Личного без входа нет: ни «Заявок», ни «Профиля»; меню гостя на компьютере не нужно
+    await expect(nav.getByRole("link")).toHaveText([ru.navCatalog, ru.svTitle]);
+    await expect(page.locator(".top-signin")).toBeVisible();
+    await expect(page.locator(".top-menu")).toBeHidden();
     await expect(nav.getByRole("link", { name: ru.navCatalog })).toHaveAttribute("aria-current", "page");
     await nav.getByRole("link", { name: ru.svTitle }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.svTitle);
+    await page.locator(".top .brand").click();
+    await expect(page).toHaveURL((url) => url.pathname === PATHS.home);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.lnTitle);
+  });
+
+  test("шапка после входа: все четыре раздела, без «Войти»", async ({ page }) => {
+    await prepare(page);
+    await at(page, 1280);
+    await open(page, PATHS.catalog, ".card");
+    const nav = sections(page);
+    await expect(nav.getByRole("link")).toHaveText([
+      ru.navCatalog,
+      ru.svTitle,
+      ru.navRequests,
+      ru.navProfile,
+    ]);
+    await expect(page.locator(".top-signin")).toHaveCount(0);
     await nav.getByRole("link", { name: ru.navRequests }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.mrTitle);
     await nav.getByRole("link", { name: ru.navProfile }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.navProfile);
-    await page.locator(".top .brand").click();
-    await expect(page).toHaveURL((url) => url.pathname === PATHS.home);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.lnTitle);
   });
 });
 
@@ -188,17 +206,24 @@ test.describe("компьютер (1280)", () => {
 });
 
 test.describe("планшет (768)", () => {
-  test("колонка по центру, нижняя панель, две колонки карточек, фото листают кнопками", async ({ page }) => {
+  test("колонка по центру, шапка гостя или нижняя панель, две колонки карточек, фото листают кнопками", async ({
+    page,
+  }) => {
     await prepare(page);
     await at(page, 768, 1024);
     await open(page, PATHS.home, ".ln-cards .card", { guest: true });
-    await expect(page.locator("nav.tabs")).toBeVisible();
+    // Гость: в шапке язык, «Войти» и меню; нижней панели нет
+    await expect(page.locator("nav.tabs")).toHaveCount(0);
     await expect(page.locator("nav.site-nav")).toBeHidden();
+    for (const part of [".top > .lang", ".top-signin", ".top-menu"])
+      await expect(page.locator(part), part).toBeVisible();
     await expectNoAxeViolations(page, "лендинг 768");
     await expectHitAreas(page, "лендинг 768", CONTROLS);
     await expectNoOverflow(page, "лендинг 768");
 
+    // После входа (демо без ?guest) — нижняя панель
     await open(page, PATHS.catalog, ".card");
+    await expect(page.locator("nav.tabs")).toBeVisible();
     expect(await columns(page, ".cards")).toBe(2);
     const main = await page.locator("main").boundingBox();
     expect(main?.width ?? 0).toBeLessThanOrEqual(720);

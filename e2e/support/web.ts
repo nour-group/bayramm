@@ -57,6 +57,20 @@ export const isDesktop = (page: Page) => (page.viewportSize()?.width ?? 0) >= DE
 /** Разделы, которые видны на этой ширине: нижняя панель телефона или разделы в шапке */
 export const sections = (page: Page) => page.locator("nav.tabs:visible, nav.site-nav:visible");
 
+/**
+ * Перейти в раздел, как человек: разделы в шапке (компьютер), нижняя панель (после входа)
+ * или меню гостя (телефон и планшет — у гостя нижней панели нет)
+ */
+export async function goToSection(page: Page, name: string): Promise<void> {
+  const visible = sections(page);
+  if ((await visible.count()) > 0) {
+    await visible.getByRole("link", { name }).click();
+    return;
+  }
+  await page.locator(".top .top-menu").click();
+  await page.getByRole("dialog").getByRole("link", { name }).click();
+}
+
 export interface OpenOptions {
   /** Язык интерфейса; по умолчанию — из браузера (ru) */
   readonly lang?: Lang;
@@ -81,6 +95,9 @@ export async function prepare(page: Page, { lang }: OpenOptions = {}): Promise<v
 export async function open(page: Page, path: string, ready?: string, { guest }: OpenOptions = {}) {
   const url = guest ? `${path}${path.includes("?") ? "&" : "?"}guest` : path;
   await page.goto(url);
+  // Пререндер лендинга — HTML до приложения, кнопки в нём ещё не работают: ждём, пока
+  // приложение сменит его своей отрисовкой (иначе нажатие уйдёт в пустоту)
+  await page.locator("[data-prerendered]").waitFor({ state: "detached" });
   if (ready) await page.locator(ready).first().waitFor();
 }
 

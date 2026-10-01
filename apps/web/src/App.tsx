@@ -5,12 +5,14 @@ import { Suspense, useEffect, useMemo, useRef } from "react";
 import { LangSwitch } from "./components/LangSwitch";
 import { Link } from "./components/Link";
 import { SiteFooter } from "./components/SiteFooter";
+import { SiteMenu } from "./components/SiteMenu";
 import { EmptyState, Loading } from "./components/States";
 import { AppProviders, type Services, useAccount, useLang, useServices } from "./context";
 import { FavoritesProvider } from "./favorites";
 import { useDocumentTitle } from "./hooks";
-import { authHref } from "./hub";
+import { authHref, browser } from "./hub";
 import { Icon, type IconName } from "./icons";
+import { chromeOf, sectionsOf, signInGate } from "./nav";
 import {
   hrefFor,
   isAuth,
@@ -19,7 +21,6 @@ import {
   type Router,
   RouterContext,
   screenOf,
-  TABS,
   type Tab,
   tabOf,
   useNav,
@@ -106,13 +107,24 @@ function Screen({ match }: { match: Match | null }) {
   }
 }
 
-/** Разделы: нижняя панель на телефоне и планшете (.tabs), в шапке — на компьютере (.site-nav) */
-function Sections({ current, className }: { current: Tab | null; className: "tabs" | "site-nav" }) {
+/**
+ * Разделы: нижняя панель на телефоне и планшете (.tabs), в шапке — на компьютере (.site-nav).
+ * Какие — решает оболочка (nav.ts): гостю — каталог и сохранённое, после входа — все
+ */
+function Sections({
+  tabs,
+  current,
+  className,
+}: {
+  tabs: readonly Tab[];
+  current: Tab | null;
+  className: "tabs" | "site-nav";
+}) {
   const { webApp } = useServices();
   const { t } = useLang();
   return (
     <nav className={className} aria-label={t.sections}>
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const view = TAB_VIEW[tab];
         const on = tab === current;
         return (
@@ -206,15 +218,28 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
     if (canonical && path) canonical.setAttribute("href", new URL(path, window.location.origin).href);
   }, [path]);
 
-  // Вход в шапке сайта (на компьютере): гостю — в хаб и назад на этот же экран
+  // Вход в шапке и в меню сайта: гостю — в хаб и назад на этот же экран
   const search = query.toString();
   const here = `${path ?? "/"}${search ? `?${search}` : ""}`;
-  const guest = identity === "guest" || deleted;
+  // Оболочка гостя или приложения (nav.ts): гостю — сайт без нижней панели, с меню и входом
+  const chrome = chromeOf(identity, webApp !== null, deleted);
+  const guest = chrome === "guest";
+  const tabs = sectionsOf(chrome);
+  const signInHref = authHref({ return: here });
   // Сайт (не Mini App): под экраном — подвал
   const site = webApp === null && !auth;
+  // Личный экран без входа — в хаб и назад сюда: адрес хаба — полной загрузкой (у /auth свой CSP)
+  const gate = webApp ? null : signInGate(match, identity, here);
+  useEffect(() => {
+    if (gate) browser.replace(gate);
+  }, [gate]);
 
   const page = (
-    <div className={["app", inner ? "inner" : "", site ? "site" : ""].filter(Boolean).join(" ")}>
+    <div
+      className={["app", inner ? "inner" : "", site ? "site" : "", guest ? "guest" : ""]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <a className="skip" href="#main">
         {t.skipToMain}
       </a>
@@ -227,12 +252,15 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
         <Link className="brand" href={hrefFor({ name: "home" })}>
           Bayramm
         </Link>
-        {auth ? null : <Sections current={tabOf(match)} className="site-nav" />}
+        {auth ? null : <Sections tabs={tabs} current={tabOf(match)} className="site-nav" />}
         <LangSwitch />
-        {guest && !auth && !webApp ? (
-          <a className="btn btn-secondary top-signin" href={authHref({ return: here })}>
-            {t.accSignIn}
-          </a>
+        {guest && !auth ? (
+          <>
+            <a className="btn btn-secondary top-signin" href={signInHref}>
+              {t.accSignIn}
+            </a>
+            <SiteMenu current={tabOf(match)} signInHref={signInHref} />
+          </>
         ) : null}
       </header>
       {api.mode === "mock" ? (
@@ -250,12 +278,19 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
             </div>
           }
         >
-          <Screen match={match} />
+          {gate ? (
+            <div className="screen-fallback">
+              <Loading />
+            </div>
+          ) : (
+            <Screen match={match} />
+          )}
         </Suspense>
       </main>
-      {/* Подвал — у сайта; в Mini App его место — нижняя панель */}
+      {/* Подвал — у сайта; в Mini App его место — нижняя панель. Нижней панели нет у гостя
+          сайта (разделы — в шапке и в меню), на внутренних экранах и во входе */}
       {site ? <SiteFooter /> : null}
-      {inner || auth ? null : <Sections current={tabOf(match)} className="tabs" />}
+      {inner || auth || guest ? null : <Sections tabs={tabs} current={tabOf(match)} className="tabs" />}
     </div>
   );
 
@@ -264,7 +299,7 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
       {prerender ? (
         page
       ) : (
-        <ToastProvider offset={inner || auth ? 16 : TABS_HEIGHT}>
+        <ToastProvider offset={inner || auth || guest ? 16 : TABS_HEIGHT}>
           <FavoritesProvider>{page}</FavoritesProvider>
         </ToastProvider>
       )}

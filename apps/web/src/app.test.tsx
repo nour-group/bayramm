@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api/errors";
 import { createMockApi, demoRequests } from "./api/mock";
 import { LANG_KEY } from "./context";
+import { browser } from "./hub";
 import {
   byText,
   calendarDay,
@@ -277,13 +278,15 @@ describe("мои заявки", () => {
     expect(text()).toContain("Заявок пока нет. Найдите подрядчика и отправьте первую.");
   });
 
-  it("гостю — вход через Telegram", async () => {
-    await mount({ path: "/requests", identity: "guest" });
-    const link = await waitFor(
-      () => document.querySelector<HTMLAnchorElement>('a[href^="https://t.me/"]'),
-      "ссылка",
-    );
-    expect(link.getAttribute("href")).toBe("https://t.me/bayramm_demo_bot?startapp");
+  it("гостю — вход в хабе с возвратом сюда (браузер уводит туда целиком)", async () => {
+    const replace = vi.spyOn(browser, "replace").mockImplementation(() => {});
+    try {
+      await mount({ path: "/requests", identity: "guest" });
+      expect(replace).toHaveBeenCalledWith("/auth?return=%2Frequests");
+      expect(document.querySelector(".reqs, .tg-cta")).toBeNull();
+    } finally {
+      replace.mockRestore();
+    }
   });
 });
 
@@ -303,9 +306,9 @@ describe("язык и оболочка", () => {
   it("гость: язык из прошлого визита (localStorage), даже в новой вкладке", async () => {
     window.sessionStorage.clear();
     window.localStorage.setItem(LANG_KEY, "uz");
-    await mount({ path: "/profile", identity: "guest" });
+    await mount({ path: "/docs", identity: "guest" });
     expect(document.documentElement.lang).toBe("uz");
-    expect(document.querySelector("h1")?.textContent).toBe("Profil");
+    expect(document.querySelector("h1")?.textContent).toBe("Hujjatlar");
   });
 
   it("хранилище недоступно (приватный режим) — язык живёт до перезагрузки, без ошибок", async () => {
@@ -314,7 +317,7 @@ describe("язык и оболочка", () => {
       throw new DOMException("quota", "QuotaExceededError");
     });
     try {
-      await mount({ path: "/profile", identity: "guest" });
+      await mount({ path: "/docs", identity: "guest" });
       await click(document.querySelector('.top button[lang="uz"]'));
       expect(document.documentElement.lang).toBe("uz");
     } finally {
@@ -343,7 +346,7 @@ describe("язык и оболочка", () => {
   it("гостю профиль не запрашивается и язык в него не пишется", async () => {
     const asked: string[] = [];
     await mount({
-      path: "/profile",
+      path: "/catalog",
       identity: "guest",
       mock: {
         failWith: (method) => {
@@ -451,8 +454,11 @@ describe("мои данные", () => {
     expect(api.deleted()).toBe(true);
     expect(window.sessionStorage.getItem("bayramm.web.draft.lola-zali")).toBeNull();
     expect(byText("button", "Скачать мои данные")).toBeNull();
+    // Дальше — сайт без входа: оболочка гостя, сообщение об удалении остаётся на экране
+    expect(document.querySelector("nav.tabs")).toBeNull();
+    expect(document.querySelector(".top-signin")).not.toBeNull();
 
-    await click(byText("nav a", "Заявки"));
+    await click(byText("a.row-link", /Мои заявки/));
     await waitFor(() => byText("h2", "Аккаунт удалён"), "в «Моих заявках» — тоже");
     expect(document.querySelectorAll(".req")).toHaveLength(0);
   });

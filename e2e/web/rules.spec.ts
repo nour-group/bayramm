@@ -99,11 +99,9 @@ test.describe("тексты экранов", () => {
       // Каталог с выбранной датой: отметки «занято/свободно»
       await open(page, `${PATHS.catalog}?date=${BUSY_DAY}`, ".card .chip");
       await check("каталог на дату");
-      // Вне Telegram: форма и «Мои заявки» ведут в бота
+      // Вне Telegram без входа форма ведёт в бота и во вход («Мои заявки» — сразу во вход)
       await open(page, PATHS.request(VENUE.slug), ".tg-cta", { guest: true });
       await check("заявка из браузера");
-      await open(page, PATHS.requests, ".tg-cta", { guest: true });
-      await check("мои заявки из браузера");
       // Экран после отправки
       await open(page, PATHS.request(VENUE.slug), "form.request .consents");
       await fillRequest(page, "");
@@ -117,7 +115,7 @@ test.describe("тексты экранов", () => {
       for (const item of await page.locator(".ln-faq summary").all()) await item.click();
       await check("лендинг с ответами");
 
-      expect(seen).toHaveLength(SCREENS.length + 5);
+      expect(seen).toHaveLength(SCREENS.length + 4);
       // Вместо рейтинга — «Новый»
       await open(page, PATHS.catalog, ".card");
       await expect(page.locator('.card .badge-new [aria-hidden="true"]').first()).toHaveText(

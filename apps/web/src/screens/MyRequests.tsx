@@ -4,8 +4,7 @@ import { isApiError } from "../api/errors";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { EmptyState, ErrorState, Loading } from "../components/States";
-import { TelegramCta } from "../components/TelegramCta";
-import { canSignIn, useAccount, useDictionaries, useLang, useServices } from "../context";
+import { useAccount, useDictionaries, useLang, useServices } from "../context";
 import { formatDayMonth, formatDuration, formatMomentTashkent, hoursLeft } from "../format";
 import { useAsync, useDocumentTitle, useNow } from "../hooks";
 import { Icon } from "../icons";
@@ -241,15 +240,13 @@ function RequestList() {
   );
 }
 
+/** Свои заявки — только после входа: гостя оболочка уводит в хаб входа (nav.ts, signInGate) */
 export function MyRequests() {
-  const { identity } = useServices();
   const { deleted } = useAccount();
   const { t } = useLang();
   useDocumentTitle(t.mrTitle);
 
-  let body = <TelegramCta />;
-  if (deleted) body = <EmptyState title={t.accountDeletedH} text={t.accountDeletedP} />;
-  else if (canSignIn(identity)) body = <RequestList />;
+  const body = deleted ? <EmptyState title={t.accountDeletedH} text={t.accountDeletedP} /> : <RequestList />;
 
   return (
     <div className="screen my-requests">

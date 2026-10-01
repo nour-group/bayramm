@@ -246,27 +246,37 @@ describe("профиль: аккаунт", () => {
     expect(byText("button", "Добавить телефон")).toBeNull();
   });
 
-  it("гость — «Войти» ведёт в хаб с возвратом в профиль", async () => {
-    await mount({ path: "/profile", identity: "guest", api: api() });
-    const link = await waitFor(() => byText("a", "Войти"), "ссылка входа");
-    expect(link.getAttribute("href")).toBe("/auth?return=%2Fprofile");
-    await waitFor(() => text().includes("или по номеру телефона"), "вход и по телефону");
+  it("гость: профиля нет — сразу в хаб с возвратом сюда, пустого экрана не видно", async () => {
+    await mount({ path: "/profile?tab=x", identity: "guest", api: api() });
+    expect(replaced).toEqual(["/auth?return=%2Fprofile%3Ftab%3Dx"]);
+    expect(document.querySelector("h1")).toBeNull();
+    expect(document.querySelector("main .state-loading")).not.toBeNull();
+    expect(text()).not.toContain("Способы входа");
   });
 
-  it("гость, вход по телефону выключен — о телефоне ни слова", async () => {
-    await mount({ path: "/profile", identity: "guest", api: api({ phone: false }) });
-    await waitFor(() => byText("a", "Войти"), "ссылка входа");
-    await waitFor(() => text().includes("Войдите через Telegram"), "только Telegram");
-    expect(text()).not.toContain("по номеру телефона");
+  it("гость: «Мои заявки» — тоже в хаб, а не призыв на пустом экране", async () => {
+    await mount({ path: "/requests", identity: "guest", api: api() });
+    expect(replaced).toEqual(["/auth?return=%2Frequests"]);
+    expect(document.querySelector(".tg-cta")).toBeNull();
   });
 
-  it("на сайте — «Выйти»: сессия отзывается, страница — заново", async () => {
+  it("в Telegram и после входа на сайте личные экраны на месте", async () => {
+    await mount({ path: "/requests", identity: "site", api: api() });
+    await waitFor(() => byText("h1", "Мои заявки"), "мои заявки");
+    cleanup();
+    const { webApp } = fakeWebApp();
+    await mount({ path: "/profile", identity: "telegram", webApp, api: api() });
+    await waitFor(() => byText("h1", "Профиль"), "профиль");
+    expect(replaced).toEqual([]);
+  });
+
+  it("на сайте — «Выйти»: сессия отзывается, страница — заново, на главной", async () => {
     const mock = api();
     const out = vi.spyOn(mock, "signOut");
     await mount({ path: "/profile", identity: "site", api: mock });
     await click(await waitFor(() => byText("button", "Выйти"), "кнопка выхода"));
     expect(out).toHaveBeenCalled();
-    expect(replaced).toEqual(["/profile"]);
+    expect(replaced).toEqual(["/"]);
   });
 });
 

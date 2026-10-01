@@ -580,4 +580,6 @@ export const ru = {
   ftAbout: "Поиск залов для праздников в Ташкенте.",
   ftNav: "О Bayramm",
   ftTelegram: "Bayramm в Telegram",
+  // меню сайта для гостя (шторка из шапки на телефоне и планшете)
+  menu: "Меню",
 };

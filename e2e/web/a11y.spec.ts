@@ -19,6 +19,7 @@ const CONTROLS = [
   ".tabs a",
   ".site-nav a",
   ".top-signin",
+  ".menu-links a",
   ".footer-nav a",
   ".gallery-nav",
   ".lang button",
@@ -124,7 +125,6 @@ const SCREENS: readonly Screen[] = [
       await page.locator(".req fieldset.confirm").waitFor();
     },
   },
-  { name: "мои заявки из браузера", path: PATHS.requests, ready: ".tg-cta .btn", guest: true },
   {
     name: "профиль",
     path: PATHS.profile,
