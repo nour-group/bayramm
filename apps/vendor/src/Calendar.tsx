@@ -48,6 +48,7 @@ import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
 import { type Location, type Navigate, pathOf } from "./router";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
+import { useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 
 /** "2026-10" ± n месяцев */
@@ -673,6 +674,8 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
   };
   const capacityValue = capacity ?? String(ready?.parallelCapacity ?? 1);
   const capacityChanged = ready !== null && capacityValue !== String(ready.parallelCapacity);
+  // Новое число заказов одновременно не сохранено — уход переспросит
+  useUnsaved(capacityChanged);
 
   return (
     <>

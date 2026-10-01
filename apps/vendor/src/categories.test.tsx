@@ -594,6 +594,32 @@ describe("услуги", () => {
     expect(field("Название на узбекском")?.getAttribute("aria-invalid")).toBe("true");
   });
 
+  it("несохранённое: вписали в форму услуги — уход по разделу и смена витрины спрашивают", async () => {
+    await openCarServices();
+    await click(byText(".svc button", "Изменить"));
+    // Ничего не меняли — уйти можно без вопроса
+    const dialog = () => document.querySelector('[role="alertdialog"]');
+    await type(field("Цена, сум"), "350000");
+    await click(byText("nav.side-nav a", "Заявки"));
+    expect(dialog()?.textContent).toContain("Уйти без сохранения?");
+    // «Остаться» — форма и вписанное на месте
+    await click(byText('[role="alertdialog"] button', "Остаться"));
+    expect(heading()).toBe("Услуги");
+    expect(field("Цена, сум")?.value).toBe("350000");
+    // Другая витрина — тоже уход из формы: сначала вопрос
+    await click(byText(".side-vitrinas button", "Lola zali"));
+    expect(dialog()?.textContent).toContain("Уйти без сохранения?");
+    await click(byText('[role="alertdialog"] button', "Остаться"));
+    expect(field("Цена, сум")?.value).toBe("350000");
+    // «Уйти» — раздел, без вопроса в следующий раз
+    await click(byText("nav.side-nav a", "Заявки"));
+    await click(byText('[role="alertdialog"] button', "Уйти"));
+    expect(heading()).toBe("Заявки");
+    await click(byText("nav.side-nav a", "Календарь"));
+    expect(dialog()).toBeNull();
+    expect(heading()).toBe("Календарь");
+  });
+
   it("правка услуги на витрине опубликованной карточки — предложением; ошибки сервера — у полей", async () => {
     const patch = `PATCH ${servicesPath}/${SVC}`;
     routes[patch] = () => ({

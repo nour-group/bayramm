@@ -617,7 +617,7 @@ test.describe("витрины в разных категориях", () => {
     const notLive = page.locator(".not-live");
     await expect(notLive).toContainText(fill(t.notLiveDraft, { name: "Kadr Studio" }));
     // Список с карточкой рядом (компьютер) не сжимает вкладки под строкой — они целиком
-    const tabs = await page.getByRole("group", { name: t.requests }).boundingBox();
+    const tabs = await page.getByRole("group", { name: t.requests, exact: true }).boundingBox();
     expect(tabs?.height ?? 0).toBeGreaterThanOrEqual(44);
     await expectNoAxeViolations(page, "входящие: витрина не на сайте");
     await notLive.getByRole("button", { name: new RegExp(`^${t.whatIsLeft}`) }).click();
@@ -699,6 +699,32 @@ test.describe("витрины в разных категориях", () => {
     await expect(card.locator(".svc-proposal")).toHaveCount(0);
     expect(api.unexpected).toEqual([]);
     expect(api.ownerOnly).toEqual([]);
+  });
+
+  test("несохранённое в услуге: «назад» Telegram и браузера — вопрос; «Остаться» — вписанное на месте", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "Mini App на телефоне");
+    await start(page, { listings: "many" });
+    await page.goto("/requests");
+    await sections(page).getByRole("link", { name: t.services }).click();
+    await chooseVitrina(page, "Kortej Premium");
+    const card = page.locator(".svc").filter({ hasText: "Машина для молодожёнов" });
+    await card.getByRole("button", { name: t.svcEdit }).click();
+    const price = page.locator(".svc-editor").getByLabel(t.packagePrice, { exact: true }).first();
+    await price.fill("350000");
+    // «Назад» Telegram в форме — не явная «Отмена»: с правками — вопрос
+    await clickBackButton(page);
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText(t.unsavedTitle);
+    await expectNoAxeViolations(page, "уйти без сохранения");
+    await dialog.getByRole("button", { name: t.unsavedStay }).click();
+    await expect(price).toHaveValue("350000");
+    // «Назад» браузера — тот же вопрос; «Уйти» — туда, куда шли
+    await page.goBack();
+    await expect(dialog).toContainText(t.unsavedTitle);
+    await dialog.getByRole("button", { name: t.unsavedLeave }).click();
+    await expect(heading(page)).toHaveText(t.requests);
   });
 
   test("сотрудник площадки услуги только смотрит", async ({ page }) => {

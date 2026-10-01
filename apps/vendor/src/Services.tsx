@@ -53,6 +53,7 @@ import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
 import { useBackButton } from "./telegram";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
+import { useConfirmLeave, useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 
 /** Карточка на проверке или опубликована: услугу на витрине партнёр меняет только предложением */
@@ -307,11 +308,18 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
   useEffect(() => {
     title.current?.focus({ preventScroll: true });
   }, []);
-  // Кнопка «Назад» Telegram — та же «Отмена»; обработчик один на всё время формы, иначе
-  // кнопка мигала бы на каждом нажатии клавиши
+  // Вписанное и не сохранённое: уход с экрана (и «назад» Telegram) переспросит
+  useUnsaved(
+    create ? draft !== null : draft !== null && before !== null && serviceDirty(category, draft, before),
+  );
+  // Кнопка «Назад» Telegram — та же «Отмена», но с правками — сначала вопрос (это не явное
+  // «Отмена»); обработчик один на всё время формы, иначе кнопка мигала бы на каждом нажатии
+  const confirmLeave = useConfirmLeave();
   const cancel = useRef(onCancel);
   cancel.current = onCancel;
-  const back = useCallback(() => cancel.current(), []);
+  const leave = useRef(confirmLeave);
+  leave.current = confirmLeave;
+  const back = useCallback(() => leave.current(() => cancel.current()), []);
   useBackButton(back);
 
   const set = (patch: Partial<ServiceDraft>) => setDraft((prev) => (prev ? { ...prev, ...patch } : prev));

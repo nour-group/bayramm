@@ -43,6 +43,7 @@ import { errorText as apiErrorText } from "./errors";
 import { formatMoment, formatMoney } from "./format";
 import { fill, type VendorDict } from "./i18n";
 import { LoadError, Loading } from "./ui";
+import { useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 
 interface Values {
@@ -221,6 +222,8 @@ function ProposalForm({ listing, t, lang, onSent, onPendingExists, onCancel }: F
   const [failedText, setFailedText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const maxVideos = category?.maxVideoLinks ?? 0;
+  // Вписанное и не отправленное: уход с экрана переспросит
+  useUnsaved(Object.keys(proposalOf(listing, category, values, drafts, before, videos)).length > 0);
 
   const set = (key: keyof Values) => (value: string) => setValues((prev) => ({ ...prev, [key]: value }));
   const bad = (key: string) => invalid.has(key);

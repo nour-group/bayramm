@@ -26,6 +26,10 @@ const ru = {
   // кнопки своих контролов (@bayramm/ui/react): крестик шторки и очистка поля
   close: "Закрыть",
   clear: "Очистить",
+  unsavedTitle: "Уйти без сохранения?",
+  unsavedText: "Вписанное на этом экране не отправлено. Если уйти, оно пропадёт.",
+  unsavedLeave: "Уйти",
+  unsavedStay: "Остаться",
 
   // вход
   gateLoading: "Входим в кабинет…",
@@ -567,6 +571,10 @@ const uz: VendorDict = {
   backOnline: "Aloqa tiklandi.",
   close: "Yopish",
   clear: "Tozalash",
+  unsavedTitle: "Saqlamasdan chiqilsinmi?",
+  unsavedText: "Bu ekranda yozilganlar yuborilmagan. Chiqib ketsangiz, ular yoʻqoladi.",
+  unsavedLeave: "Chiqish",
+  unsavedStay: "Qolish",
 
   gateLoading: "Kabinetga kirilmoqda…",
   gateOutsideTitle: "Kabinetga kiring",

@@ -1,5 +1,5 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
-import { useCallback, useEffect, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 /* Все экраны кабинета — в одной карте. Пути, вписанные по месту, разъезжаются
    (ловушка №9 в CLAUDE.md). :id — единственный параметр, UUID заявки. */
@@ -67,11 +67,33 @@ export function matchRoute(pathname: string): Location | null {
   return route ? { route } : null;
 }
 
-export type Navigate = (location: Location, options?: { replace?: boolean }) => void;
+export type Navigate = (
+  location: Location,
+  options?: {
+    readonly replace?: boolean;
+    /** Без вопроса о несохранённом: форма только что отправилась и сама уводит дальше */
+    readonly force?: boolean;
+  },
+) => void;
 
-/** Текущий экран по адресной строке и переход без перезагрузки */
-export function useRoute(): readonly [Location | null, Navigate] {
+/**
+ * Что держит уход с экрана: несохранённые правки (unsaved.tsx). holding — есть что терять:
+ * адрес и запись истории экрана с правками; ask — спросить, leave — уйти
+ */
+export interface LeaveGuard {
+  readonly holding: () => { readonly url: string; readonly state: unknown } | null;
+  readonly ask: (leave: () => void) => void;
+}
+
+/**
+ * Текущий экран по адресной строке и переход без перезагрузки. guard — уход с экрана с
+ * несохранёнными правками сначала спрашивает: и переход по ссылке, и «назад» браузера или
+ * Telegram (адрес экрана возвращается в историю, «Уйти» — снова назад)
+ */
+export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Location | null, Navigate] {
   const [path, setPath] = useState(() => window.location.pathname);
+  // «Уйти» после вопроса: следующий popstate — тот самый уход, не держать
+  const passing = useRef(false);
 
   useEffect(() => {
     // Корень показывает главный экран; в адресе оставляем его настоящий путь
@@ -80,20 +102,42 @@ export function useRoute(): readonly [Location | null, Navigate] {
       window.history.replaceState(null, "", `${ROUTES[HOME]}${search}${hash}`);
       setPath(ROUTES[HOME]);
     }
-    const onPop = () => setPath(window.location.pathname);
+    const onPop = () => {
+      const held = passing.current ? null : (guard?.current?.holding() ?? null);
+      passing.current = false;
+      if (held && guard?.current) {
+        // Браузер уже ушёл: вернуть экран с правками новой записью поверх той, куда ушли
+        window.history.pushState(held.state, "", held.url);
+        guard.current.ask(() => {
+          passing.current = true;
+          window.history.back();
+        });
+        return;
+      }
+      setPath(window.location.pathname);
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [guard]);
 
-  const navigate = useCallback<Navigate>((location, options) => {
-    const next = pathOf(location);
-    if (window.location.pathname !== next) {
-      // hash (#tgWebAppData=…) не переносим: он нужен SDK только при первом открытии
-      if (options?.replace) window.history.replaceState(null, "", next);
-      else window.history.pushState(null, "", next);
-    }
-    setPath(next);
-  }, []);
+  const navigate = useCallback<Navigate>(
+    (location, options) => {
+      const next = pathOf(location);
+      const go = () => {
+        if (window.location.pathname !== next) {
+          // hash (#tgWebAppData=…) не переносим: он нужен SDK только при первом открытии
+          if (options?.replace) window.history.replaceState(null, "", next);
+          else window.history.pushState(null, "", next);
+        }
+        setPath(next);
+      };
+      // Тот же экран — никуда не уходим, спрашивать не о чем
+      const held = options?.force || next === window.location.pathname ? null : guard?.current?.holding();
+      if (held && guard?.current) guard.current.ask(go);
+      else go();
+    },
+    [guard],
+  );
 
   return [matchRoute(path), navigate] as const;
 }

@@ -32,6 +32,7 @@ import { awaitsAnswer, SlaTimer } from "./Requests";
 import type { Navigate } from "./router";
 import { useBackButton } from "./telegram";
 import { Heading, LoadError, Loading, type ScreenProps, StatusChip } from "./ui";
+import { useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 import { useNow } from "./useNow";
 
@@ -46,6 +47,8 @@ function DeclineForm({ t, busy, onSubmit, onCancel }: DeclineFormProps) {
   const [reason, setReason] = useState<DeclineReason | null>(null);
   const [note, setNote] = useState("");
   const noteId = useId();
+  // Выбранная причина или вписанный комментарий — несохранённое
+  useUnsaved(reason !== null || note.trim() !== "");
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (reason) onSubmit(reason, note);
