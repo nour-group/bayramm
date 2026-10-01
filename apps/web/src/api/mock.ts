@@ -164,20 +164,6 @@ export function demoListings(today: string): ListingDetail[] {
         options: [],
       })),
       parallelCapacity: 1,
-      packages: [
-        {
-          kind: "weekday",
-          name: { ru: "Будни", uz: "Ish kunlari" },
-          priceUzs: priceFromUzs,
-          priceUnit: perGuest ? "per_guest" : "per_event",
-        },
-        {
-          kind: "weekend",
-          name: { ru: "Выходные", uz: "Dam olish kunlari" },
-          priceUzs: weekend,
-          priceUnit: perGuest ? "per_guest" : "per_event",
-        },
-      ],
       photos,
       phone: `+998000000${String(i + 1).padStart(3, "0")}`,
       busyDates: [...new Set(busyDates)].sort(),

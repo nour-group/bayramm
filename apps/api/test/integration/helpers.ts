@@ -96,6 +96,24 @@ export async function adminClient(): Promise<Client> {
   return client;
 }
 
+/**
+ * Обязательные услуги зала — банкеты будни и выходные, сразу одобренные (SQL без актора —
+ * система): цена «от» карточки — самая низкая из них. Услуги уходят с карточкой (каскад)
+ */
+export async function addHallBanquets(
+  admin: Client,
+  listingId: string,
+  weekday: number,
+  weekend = weekday + 20_000,
+  unit: "per_guest" | "per_event" = "per_guest",
+): Promise<void> {
+  await admin.query(
+    `insert into app.listing_services (listing_id, category_code, service_type, status, price_uzs, price_unit, sort)
+     values ($1, 'hall', 'banquet_weekday', 'active', $2, $4, 1), ($1, 'hall', 'banquet_weekend', 'active', $3, $4, 2)`,
+    [listingId, weekday, weekend, unit],
+  );
+}
+
 // ── сотрудники ──────────────────────────────────────────────────────────────
 
 /**

@@ -45,7 +45,8 @@ describe("listCatalog", () => {
 
   const PER_GUEST_OR_EVENT =
     "(case when l.price_unit = 'per_event' and l.cap_max is not null then (l.price_from_uzs + l.cap_max - 1) / l.cap_max else l.price_from_uzs end)";
-  const BUSY = /\(app\.listing_day_load\(l\.id, \$\d+::date\) = 'busy'\)/;
+  // Загрузка выдачи на дату — одним запросом на категорию (app.catalog_day_load), не на строку
+  const BUSY = "coalesce(dl.load = 'busy', false)";
 
   it.each<[CatalogSort, string]>([
     ["price_asc", PER_GUEST_OR_EVENT],
@@ -54,18 +55,23 @@ describe("listCatalog", () => {
   ])("%s: занятые целиком в конце, затем ключ сортировки, затем id", async (sort, key) => {
     const fake = fakeDb();
     await listCatalog(fake.db, parseCatalogQuery({ sort: [sort], date: ["2026-10-03"] }));
-    const sql = fake.queries.find(isCatalog)?.sql ?? "";
-    const order = sql.slice(sql.indexOf("order by"));
-    expect(order).toMatch(BUSY);
-    expect(order).toContain(`, ${key}, "l"."id" limit`);
+    const query = fake.queries.find(isCatalog);
+    const sql = query?.sql ?? "";
+    const order = sql.slice(sql.lastIndexOf("order by"));
+    expect(order).toContain(`order by ${BUSY}, ${key}, "l"."id" limit`);
     expect(sql).toContain(`${key} as "sort_key"`);
+    expect(sql).toMatch(
+      /left join app\.catalog_day_load\(\$\d+, \$\d+::date\) as "dl" on "dl"\."listing_id" = "l"\."id"/,
+    );
+    expect(sql).not.toContain("listing_day_load");
+    expect(query?.parameters).toEqual(expect.arrayContaining(["hall", "2026-10-03"]));
   });
 
   it("без даты занятость не считается", async () => {
     const fake = fakeDb();
     await listCatalog(fake.db, parseCatalogQuery({}));
     const sql = fake.queries.find(isCatalog)?.sql ?? "";
-    expect(sql).not.toContain("listing_day_load");
+    expect(sql).not.toContain("day_load");
     expect(sql).toContain("order by false::boolean,");
   });
 
@@ -115,8 +121,8 @@ describe("listCatalog", () => {
     expect(query?.parameters).toEqual(expect.arrayContaining([300, "2026-10-03"]));
     // В условиях отбора занятость не участвует — только в порядке и в карточке
     const sql = query?.sql ?? "";
-    const where = sql.slice(sql.indexOf('where "l"."status"'), sql.indexOf("order by"));
-    expect(where).not.toContain("listing_day_load");
+    const where = sql.slice(sql.indexOf('where "l"."status"'), sql.lastIndexOf("order by"));
+    expect(where).not.toContain("dl.load");
   });
 
   it("фильтры по полям витрины — параметрами: вхождение и jsonb_path_exists", async () => {
@@ -227,7 +233,7 @@ describe("getListingDetail", () => {
     expect(fake.queries.some((q) => q.sql.includes("listing_services"))).toBe(false);
   });
 
-  it("телефон — через pii.read_listing_phone; услуги и пакеты зала — из одобренных; занятость — [сегодня, +180 дней)", async () => {
+  it("телефон — через pii.read_listing_phone; услуги — из одобренных; занятость — [сегодня, +180 дней)", async () => {
     const service = {
       id: ID(91),
       listing_id: ID(1),
@@ -311,19 +317,20 @@ describe("getListingDetail", () => {
           options: [],
         },
       ],
-      packages: [
-        {
-          kind: "weekday",
-          name: { ru: "Банкет — будни", uz: "Banket — ish kunlari" },
-          priceUzs: 150_000,
-          priceUnit: "per_guest",
-        },
-      ],
       photos: [{ key: "a.webp", width: 10, height: 20 }],
       busyDates: ["2026-10-03"],
       busyParts: [{ date: "2026-10-05", parts: ["evening"] }],
       busyOnDate: null,
     });
+    expect(detail).not.toHaveProperty("packages");
+  });
+
+  it("с датой — загрузка одной витрины (app.listing_day_load), без выборки всей категории", async () => {
+    const fake = fakeDb();
+    await getListingDetail(fake.db, "hall-1", "2026-10-03", "2026-09-29");
+    const sql = fake.queries.find(isCatalog)?.sql ?? "";
+    expect(sql).toMatch(/app\.listing_day_load\(l\.id, \$\d+::date\) as "load"/);
+    expect(sql).not.toContain("catalog_day_load");
   });
 
   it("активный листинг без телефона — 404 и ошибка в лог (так быть не должно)", async () => {

@@ -232,11 +232,10 @@ export interface OpsRevisionFacts {
 
 const REVISION_FIELDS_RU: Readonly<Record<string, string>> = {
   name: "название",
-  price_from_uzs: "цена",
-  price_unit: "за что цена",
   description_ru: "описание (рус.)",
   description_uz: "описание (узб.)",
-  packages: "пакеты",
+  attributes: "поля витрины",
+  video_links: "ссылки на видео",
 };
 
 export function opsRevisionSubmitted(f: OpsRevisionFacts): string {

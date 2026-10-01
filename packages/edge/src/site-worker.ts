@@ -1,4 +1,5 @@
 import { apiPath, type FetcherLike, proxyToApi } from "./api-proxy";
+import { cacheControlFor, isMissingAsset, missingAsset } from "./cache-headers";
 import { contentSecurityPolicy, type SecurityOptions, withSecurityHeaders } from "./security-headers";
 
 /** Привязки воркера статического приложения */
@@ -30,13 +31,6 @@ function underPath(pathname: string, base: string): boolean {
   return pathname === base || pathname.startsWith(`${base}/`);
 }
 
-/**
- * Воркер статического приложения. В wrangler.jsonc у него обязаны быть
- * `run_worker_first: true` (иначе /api/* и HTML обойдут воркер) и
- * `not_found_handling: "single-page-application"` (фолбэк SPA делает ASSETS).
- *
- * Порядок: before → /api/* в API без префикса → статика с заголовками безопасности.
- */
 /** Пути страниц с виджетом: «/auth», «/a/b»; без «/» в конце, звёздочек и пробелов */
 function checkPaths(name: string, paths: readonly string[]): readonly string[] {
   for (const path of paths) {
@@ -45,6 +39,14 @@ function checkPaths(name: string, paths: readonly string[]): readonly string[] {
   return paths;
 }
 
+/**
+ * Воркер статического приложения. В wrangler.jsonc у него обязаны быть
+ * `run_worker_first: true` (иначе /api/* и HTML обойдут воркер) и
+ * `not_found_handling: "single-page-application"` (фолбэк SPA делает ASSETS).
+ *
+ * Порядок: before → /api/* в API без префикса → статика с заголовками безопасности и
+ * кэша (cache-headers.ts: файлы сборки — год, страницы — со сверкой).
+ */
 export function createSiteWorker(options: SiteWorkerOptions = {}) {
   const loginPaths = checkPaths("telegramLoginPaths", options.telegramLoginPaths ?? []);
   const turnstilePaths = checkPaths("turnstilePaths", options.turnstilePaths ?? []);
@@ -72,7 +74,17 @@ export function createSiteWorker(options: SiteWorkerOptions = {}) {
               turnstile: options.turnstile === true || turnstile,
             }
           : options;
-      return withSecurityHeaders(await env.ASSETS.fetch(request), security);
+      const response = await env.ASSETS.fetch(request);
+      // Сервер разработки Vite кэшем управляет сам
+      if (options.dev) return withSecurityHeaders(response, security);
+      if (isMissingAsset(url.pathname, response)) {
+        await response.body?.cancel();
+        return withSecurityHeaders(missingAsset(), security);
+      }
+      const secured = withSecurityHeaders(response, security);
+      const cacheControl = cacheControlFor(url.pathname, secured);
+      if (cacheControl !== null) secured.headers.set("Cache-Control", cacheControl);
+      return secured;
     },
   };
 }

@@ -1,11 +1,14 @@
 // Метрики запуска: вызов функций базы app.metrics_* и перевод строк в контракт панели
 // (@bayramm/shared/api/staff). Определения — ответ площадки, «в срок», какие заявки в
-// расчёте доли — в базе (миграция 20260930220000_launch_metrics.sql) и только там: их
-// читают и панель (staff/metrics.ts), и отчёты бота (notify/reports.ts).
+// расчёте доли — в базе (миграция 20260930220000_launch_metrics.sql, категории —
+// 20261002090000_services_only_category_metrics.sql) и только там: их читают и панель
+// (staff/metrics.ts), и отчёты бота (notify/reports.ts).
 //
-// Функции базы проверяют актора сами: действующий сотрудник или система.
+// Функции базы проверяют актора сами: действующий сотрудник или система. category — код
+// категории витрины (null — все), проверяет вызывающий.
 
 import type {
+  CategoryMetrics,
   ListingMetrics,
   ListingStatus,
   OpsQueues,
@@ -80,8 +83,13 @@ interface WeekRow extends PeriodRow {
 }
 
 /** По ISO-неделям по Ташкенту: weeks последних, текущая — первой */
-export async function loadWeekly(trx: Tx, weeks: number): Promise<WeeklyMetrics[]> {
-  const { rows } = await sql<WeekRow>`select * from app.metrics_weekly(${weeks}::int)`.execute(trx);
+export async function loadWeekly(
+  trx: Tx,
+  weeks: number,
+  category: string | null = null,
+): Promise<WeeklyMetrics[]> {
+  const { rows } = await sql<WeekRow>`
+    select * from app.metrics_weekly(${weeks}::int, ${category}::text)`.execute(trx);
   return rows.map((row) => ({
     weekStart: row.week_start,
     weekLabel: row.week_label,
@@ -121,19 +129,48 @@ interface VendorRow extends ResponseRow {
   vendor_code: string;
   vendor_name: string | null;
   active_listings: number;
+  categories: string[];
 }
 
-/** По вендорам за последние days дней; vendorId — только этот (пусто — такого нет) */
+/**
+ * По вендорам за последние days дней; vendorId — только этот (пусто — такого нет);
+ * category — только заявки и витрины этой категории
+ */
 export async function loadVendors(
   trx: Tx,
   days: number,
   vendorId: string | null = null,
+  category: string | null = null,
 ): Promise<VendorMetrics[]> {
   const { rows } = await sql<VendorRow>`
-    select * from app.metrics_vendors(${days}::int, ${vendorId}::uuid)`.execute(trx);
+    select * from app.metrics_vendors(${days}::int, ${vendorId}::uuid, ${category}::text)`.execute(trx);
   return rows.map((row) => ({
     vendor: { id: row.vendor_id, code: row.vendor_code, name: row.vendor_name },
     activeListings: row.active_listings,
+    categories: row.categories,
+    ...responseView(row),
+  }));
+}
+
+interface CategoryRow extends ResponseRow {
+  category_code: string;
+  active_listings: number;
+  active_vendors: number;
+  clients: number;
+  p90_response_minutes: number | null;
+  agreed_rate: string | null;
+}
+
+/** Сводка по категориям за последние days дней, по порядку категорий */
+export async function loadCategories(trx: Tx, days: number): Promise<CategoryMetrics[]> {
+  const { rows } = await sql<CategoryRow>`select * from app.metrics_categories(${days}::int)`.execute(trx);
+  return rows.map((row) => ({
+    categoryCode: row.category_code,
+    activeListings: row.active_listings,
+    activeVendors: row.active_vendors,
+    clients: row.clients,
+    p90ResponseMinutes: row.p90_response_minutes,
+    agreedRate: rate(row.agreed_rate),
     ...responseView(row),
   }));
 }
@@ -142,6 +179,7 @@ interface ListingRow extends ResponseRow {
   listing_id: string;
   listing_name: string;
   listing_status: ListingStatus;
+  category_code: string;
 }
 
 /** По площадкам вендора за последние days дней */
@@ -149,7 +187,12 @@ export async function loadListings(trx: Tx, vendorId: string, days: number): Pro
   const { rows } = await sql<ListingRow>`
     select * from app.metrics_listings(${vendorId}::uuid, ${days}::int)`.execute(trx);
   return rows.map((row) => ({
-    listing: { id: row.listing_id, name: row.listing_name, status: row.listing_status },
+    listing: {
+      id: row.listing_id,
+      name: row.listing_name,
+      status: row.listing_status,
+      categoryCode: row.category_code,
+    },
     ...responseView(row),
   }));
 }

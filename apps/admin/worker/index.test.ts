@@ -1,4 +1,10 @@
-import { contentSecurityPolicy } from "@bayramm/edge";
+import {
+  CACHE_IMMUTABLE,
+  CACHE_NONE,
+  CACHE_REVALIDATE,
+  CACHE_STATIC,
+  contentSecurityPolicy,
+} from "@bayramm/edge";
 import { echoApi, SPA_FILES, spaAssets } from "@bayramm/edge/testing";
 import { mediaImageOrigins } from "@bayramm/media";
 import { describe, expect, it, vi } from "vitest";
@@ -78,5 +84,19 @@ describe("воркер панели оператора", () => {
     expect(headers.get("x-content-type-options")).toBe("nosniff");
     expect(headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
     expect(headers.get("permissions-policy")).toContain("camera=()");
+  });
+
+  it("кэш: файлы сборки — год и immutable, страницы — со сверкой, нет файла сборки — 404", async () => {
+    const { get } = setup();
+    expect((await get("/assets/index.js")).headers.get("cache-control")).toBe(CACHE_IMMUTABLE);
+    expect((await get("/assets/manrope-latin-Cq3x8a.woff2")).headers.get("cache-control")).toBe(
+      CACHE_IMMUTABLE,
+    );
+    expect((await get("/login")).headers.get("cache-control")).toBe(CACHE_REVALIDATE);
+    expect((await get("/og.png")).headers.get("cache-control")).toBe(CACHE_STATIC);
+    const missing = await get("/assets/index-old.js");
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get("cache-control")).toBe(CACHE_NONE);
+    expect(missing.headers.get("content-security-policy")).toContain("default-src 'self'");
   });
 });

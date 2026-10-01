@@ -154,6 +154,8 @@ describe("когда преобразование не удалось", () => {
     expect(calls[1]?.init?.cf).toBeUndefined();
     expect(res.headers.get("content-type")).toBe("image/webp");
     expect(res.headers.get("cache-control")).toBe(CACHE_FALLBACK);
+    // Формат и здесь зависел бы от Accept, когда преобразования вернутся: кэши это учитывают
+    expect(res.headers.get("vary")).toBe("Accept");
   });
 
   it("ошибка в Cf-Resized при статусе 200 — тоже не вариант", async () => {
@@ -176,6 +178,8 @@ describe("когда преобразование не удалось", () => {
       const res = await get(fetcher, `/640/${KEY}`);
       expect(res.status).toBe(404);
       expect(calls).toHaveLength(2);
+      expect(res.headers.get("cache-control")).toBe("public, max-age=60");
+      expect(res.headers.get("vary")).toBe("Accept");
     }
   });
 

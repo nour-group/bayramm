@@ -3,13 +3,7 @@
    значения сразу попадают в карточку; отклонить — только с причиной (её увидит вендор).
    Решает модератор или администратор. */
 
-import type {
-  PriceUnit,
-  RevisionChange,
-  RevisionDetail,
-  RevisionValue,
-  StaffListingPackage,
-} from "@bayramm/shared/api/staff";
+import type { RevisionChange, RevisionDetail, RevisionValue } from "@bayramm/shared/api/staff";
 import {
   type AttributeValue,
   attributeText,
@@ -19,7 +13,7 @@ import {
 import { useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { ru } from "../categories";
-import { formatMoment, formatSum, vendorLabel } from "../format";
+import { formatMoment, vendorLabel } from "../format";
 import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
@@ -41,9 +35,6 @@ export function RevisionPage({ id }: { id: string }) {
     </LoadedView>
   );
 }
-
-const isPackages = (value: RevisionValue): value is readonly StaffListingPackage[] =>
-  Array.isArray(value) && value.every((item) => typeof item === "object" && item !== null);
 
 const isRecord = (value: RevisionValue): value is Readonly<Record<string, AttributeValue | null>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -98,25 +89,9 @@ function Value({
       </ul>
     );
   }
-  if (isPackages(value)) {
-    return (
-      <ul className="plain">
-        {value.map((pkg) => (
-          <li key={`${pkg.kind}-${pkg.nameRu}`}>
-            {t.packageKinds[pkg.kind]}: {pkg.nameRu} / {pkg.nameUz} — {formatSum(pkg.priceUzs)}{" "}
-            {t.priceUnits[pkg.priceUnit]}
-          </li>
-        ))}
-      </ul>
-    );
-  }
-  if (field === "priceFromUzs" && typeof value === "number") return <>{formatSum(value)}</>;
-  // Ссылки на видео и поля витрины — как есть, пока у панели нет своего вида для них
+  // Значение, которое не прошло проверку категории, — как есть
   if (Array.isArray(value)) return <span className="reason">{value.join(", ")}</span>;
   if (typeof value === "object") return <span className="reason">{JSON.stringify(value)}</span>;
-  if (field === "priceUnit" && typeof value === "string" && value in t.priceUnits) {
-    return <>{t.priceUnits[value as PriceUnit]}</>;
-  }
   return <span className="reason">{String(value)}</span>;
 }
 

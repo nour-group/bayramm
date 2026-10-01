@@ -76,7 +76,7 @@ const limitBody = bodyLimit({
   maxSize: 4 * 1024,
   onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),
 });
-// Кроме правки карточки: два описания по 4000 символов и пакеты — как в панели
+// Кроме правки карточки: два описания по 4000 символов и поля витрины — как в панели
 const limitRevision = bodyLimit({
   maxSize: 64 * 1024,
   onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),

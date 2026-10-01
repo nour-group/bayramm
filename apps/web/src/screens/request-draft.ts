@@ -8,15 +8,7 @@ import {
   type RequestField,
   validateRequestDetails,
 } from "@bayramm/shared/categories";
-import {
-  addDays,
-  formatDayMonth,
-  formatQty,
-  isIsoDate,
-  isPhoneDigits,
-  PHONE_PREFIX,
-  phoneDigits,
-} from "../format";
+import { addDays, formatQty, isIsoDate, isPhoneDigits, PHONE_PREFIX, phoneDigits } from "../format";
 import { sessionGetJson, sessionRemove, sessionRemovePrefix, sessionSetJson } from "../storage";
 import { parseGuests } from "./catalog-feed";
 import { hasQty } from "./request-estimate";
@@ -401,6 +393,3 @@ export function toCreateRequest(
     ...(consents.notify ? { notifyConsentId: consents.notify.id } : {}),
   };
 }
-
-/** Дата для подсказок: «15 окт» */
-export const shortDate = (iso: string, t: Dict) => formatDayMonth(iso, t);

@@ -171,9 +171,14 @@ describe("тексты уведомлений", () => {
     const text = opsRevisionSubmitted({
       listing: "Test Hall",
       vendorCode: "V101",
-      fields: ["price_from_uzs", "packages", "unknown_key"],
+      fields: ["name", "attributes", "video_links", "unknown_key"],
     });
-    for (const part of ["Test Hall", "V101", "цена, пакеты, unknown_key", "«Модерация»"])
+    for (const part of [
+      "Test Hall",
+      "V101",
+      "название, поля витрины, ссылки на видео, unknown_key",
+      "«Модерация»",
+    ])
       expect(text).toContain(part);
   });
 

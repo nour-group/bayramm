@@ -227,7 +227,7 @@ describe("seed", () => {
     expect(detail.services[0]?.options.map((o) => o.code)).toEqual(["flower_decor", "extra_hour"]);
     expect(detail.attributes).toMatchObject({ decoration: true, service_area: "tashkent" });
     expect(detail.busyParts.length + detail.busyDates.length).toBeGreaterThan(0);
-    expect(detail.packages).toEqual([]);
+    expect(detail).not.toHaveProperty("packages");
   });
 
   it("клиент видит демо-зал: название с «Демо», телефон до заявки, фото и занятые дни", async () => {

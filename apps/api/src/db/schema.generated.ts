@@ -31,8 +31,6 @@ export type AppNotifyChannel = "sms" | "telegram";
 
 export type AppOutboxStatus = "dead" | "failed" | "pending" | "sending" | "sent";
 
-export type AppPackageKind = "custom" | "weekday" | "weekend";
-
 export type AppPhotoPolicy = "no_people" | "portfolio";
 
 export type AppPhotoStatus = "failed" | "processing" | "ready" | "uploading";
@@ -264,19 +262,6 @@ export interface AppLegalEntities {
   stir: string | null;
 }
 
-export interface AppListingPackages {
-  created_at: Generated<Timestamp>;
-  id: Generated<string>;
-  kind: AppPackageKind;
-  listing_id: string;
-  name_ru: string;
-  name_uz: string;
-  price_unit: Generated<AppPriceUnit>;
-  price_uzs: Int8;
-  sort: Generated<number>;
-  updated_at: Generated<Timestamp>;
-}
-
 export interface AppListingRevisions {
   base_version: number;
   decided_at: Timestamp | null;
@@ -344,7 +329,6 @@ export interface AppListingServices {
   name_ru: string | null;
   name_uz: string | null;
   options: Generated<Json>;
-  package_id: string | null;
   price_unit: AppPriceUnit;
   price_uzs: Int8;
   proposal: Json | null;
@@ -463,6 +447,7 @@ export interface AppRequestMetricFacts {
   agreed: boolean | null;
   answered_in_time: boolean | null;
   breached: boolean | null;
+  category_code: string | null;
   client_id: string | null;
   closed_at: Timestamp | null;
   created_at: Timestamp | null;
@@ -730,7 +715,6 @@ export interface DB {
   "app.favorites": AppFavorites;
   "app.hub_codes": AppHubCodes;
   "app.legal_entities": AppLegalEntities;
-  "app.listing_packages": AppListingPackages;
   "app.listing_revisions": AppListingRevisions;
   "app.listing_services": AppListingServices;
   "app.listing_status_log": AppListingStatusLog;

@@ -3,7 +3,7 @@
 -- менеджером — только правкой, чистка строк удалённых фото
 begin;
 \ir _fixtures.psql
-select plan(58);
+select plan(59);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Права
@@ -44,7 +44,7 @@ select ok(app.owns_listing('aaaaaaaa-0000-0000-0000-000000000101')
   'свою площадку сотрудник видит, но не меняет');
 select throws_ok(
   $$insert into app.listing_revisions (listing_id, payload, base_version)
-    values ('aaaaaaaa-0000-0000-0000-000000000101', '{"price_from_uzs": 170000}', 1)$$,
+    values ('aaaaaaaa-0000-0000-0000-000000000101', '{"name": "Новое имя"}', 1)$$,
   '42501', null, 'сотрудник площадки не предлагает правку карточки');
 select throws_ok(
   $$insert into app.photos (listing_id, storage_key, no_faces_ack)
@@ -54,9 +54,9 @@ select throws_ok(
 update app.photos set sort = 42 where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101';
 update app.listings set address_ru = 'Другой адрес' where id = 'aaaaaaaa-0000-0000-0000-000000000102';
 select throws_ok(
-  $$insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs)
-    values ('aaaaaaaa-0000-0000-0000-000000000102', 'weekday', 'Будни', 'Ish kuni', 1000)$$,
-  '42501', null, 'пакеты черновика сотрудник площадки не меняет');
+  $$insert into app.listing_services (listing_id, category_code, service_type, status, price_uzs, price_unit)
+    values ('aaaaaaaa-0000-0000-0000-000000000102', 'hall', 'banquet_weekday', 'draft', 1000, 'per_guest')$$,
+  '42501', null, 'услуги черновика сотрудник площадки не меняет');
 select lives_ok(
   $$insert into app.availability (listing_id, day) values ('aaaaaaaa-0000-0000-0000-000000000101', current_date + 40)$$,
   'календарь сотрудник площадки ведёт');
@@ -140,17 +140,21 @@ select throws_ok(
   $$update app.listings set description_uz = 'Boshqa' where id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
   'BR005', 'moderated_field_requires_revision', 'и описание');
 select throws_ok(
-  $$update app.listing_packages set price_uzs = 1 where listing_id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
-  'BR005', 'moderated_field_requires_revision', 'и пакеты');
+  $$update app.listing_services set options = '[]', min_qty = 10 where listing_id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
+  'BR005', 'moderated_field_requires_revision', 'и остальное в услугах');
 select lives_ok(
   $$update app.listings set cap_max = 260, address_ru = 'Новый адрес' where id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
   'адрес и вместимость — сразу');
 select lives_ok(
-  $$update app.listings set price_from_uzs = 777000 where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$,
+  $$update app.listings set name = 'Черновик менеджера' where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$,
   'черновик менеджер правит сразу');
+select throws_ok(
+  $$update app.listings set price_from_uzs = 777000 where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$,
+  '42501', null, 'цену «от» роль API не пишет: её считает база из услуг');
 select lives_ok(
   $$insert into app.listing_revisions (listing_id, payload, base_version)
-    select id, '{"price_from_uzs": 130000}', version from app.listings where id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
+    select id, '{"description_ru": "Описание от менеджера"}', version
+    from app.listings where id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
   'правку опубликованной карточки менеджер предлагает');
 reset role;
 select results_eq(
@@ -168,16 +172,16 @@ select throws_ok(
 
 select pg_temp.as_actor('staff', '00000000-0000-0000-0000-00000000a003');
 select lives_ok(
-  $$update app.listings set price_from_uzs = 130000 where id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
-  'модератор применяет цену сразу');
+  $$update app.listings set description_ru = 'Описание от менеджера' where id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
+  'модератор применяет описание сразу');
 select lives_ok(
   $$update app.listing_revisions set status = 'approved' where listing_id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
   'и одобряет правку');
 select pg_temp.as_actor('staff', '00000000-0000-0000-0000-00000000a001');
 select lives_ok(
-  $$update app.listing_packages set price_uzs = 190000
-     where listing_id = 'bbbbbbbb-0000-0000-0000-000000000101' and kind = 'weekend'$$,
-  'администратор меняет пакеты опубликованной карточки сразу');
+  $$update app.listing_services set price_uzs = 190000
+     where listing_id = 'bbbbbbbb-0000-0000-0000-000000000101' and service_type = 'banquet_weekend'$$,
+  'администратор меняет цены услуг опубликованной карточки сразу');
 
 -- Партнёр отзывает свою правку, как раньше
 select pg_temp.as_actor('vendor_user', 'aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000001');

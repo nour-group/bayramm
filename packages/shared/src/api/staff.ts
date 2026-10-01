@@ -292,14 +292,6 @@ export interface ListingList {
   readonly counts: Readonly<Record<ListingStatus, number>>;
 }
 
-export interface StaffListingPackage {
-  readonly kind: "weekday" | "weekend" | "custom";
-  readonly nameRu: string;
-  readonly nameUz: string;
-  readonly priceUzs: number;
-  readonly priceUnit: PriceUnit;
-}
-
 export type PhotoModeration = "pending" | "approved" | "declined";
 
 /** Фото карточки: адреса вариантов — mediaUrl / mediaSrcSet из @bayramm/media по key */
@@ -362,8 +354,6 @@ export interface ListingDetail {
   readonly updatedAt: string;
   /** Телефон для заявок вписан (сам номер — только через «показать») */
   readonly hasPhone: boolean;
-  /** Пакеты v0.1 — только у залов, из услуг (banquet_weekday → weekday, …, other → custom) */
-  readonly packages: readonly StaffListingPackage[];
   readonly photos: readonly StaffPhoto[];
   /** Чего не хватает: для отправки на проверку и для публикации */
   readonly blockers: {
@@ -387,11 +377,10 @@ export interface PendingRevision {
 /**
  * PATCH /staff/listings/:id → 200. У опубликованной карточки название и описания сотрудник
  * без права модерации (менеджер) не меняет сразу: изменённые поля уходят правкой на модерацию
- * (app.listing_revisions, решает модератор или администратор), пакеты зала — предложениями
- * правки услуг (очередь GET /staff/services), а остальные поля сохраняются. Цена «от» —
- * из услуг: priceFromUzs и priceUnit принимаются для старых экранов и не меняют ничего.
- * sentForModeration — какие поля ушли правкой (пусто — всё
- * сохранено). Открытая правка уже есть — 409 revision_pending: сначала решение по ней
+ * (app.listing_revisions, решает модератор или администратор), а остальные поля сохраняются.
+ * Цены — только в услугах (/staff/listings/:id/services), цену «от» считает база.
+ * sentForModeration — какие поля ушли правкой (пусто — всё сохранено). Открытая правка уже
+ * есть — 409 revision_pending: сначала решение по ней
  */
 export interface ListingSaveResult extends ListingDetail {
   readonly sentForModeration: readonly RevisionField[];
@@ -400,13 +389,11 @@ export interface ListingSaveResult extends ListingDetail {
 /**
  * POST /staff/listings (vendorId и name обязательны; status — lead или draft, по
  * умолчанию draft; slug — из названия, если не задан) и PATCH /staff/listings/:id
- * (version обязателен). packages заменяет набор целиком. phone: строка — записать,
- * null — убрать. 409 version_conflict — карточку изменили, перечитать; 409 slug_taken.
+ * (version обязателен). phone: строка — записать, null — убрать. 409 version_conflict —
+ * карточку изменили, перечитать; 409 slug_taken.
  * attributes — правка полей витрины: { ключ: значение | null } (null — убрать), проверка —
  * по конфигурации категории (422 invalid_input, details — attributes.<ключ>…); videoLinks —
- * целиком; parallelCapacity — 1–50 (растёт версия календаря).
- * priceFromUzs и priceUnit больше ничего не меняют — цена «от» считается из услуг; packages
- * (только зал) переводятся в его банкеты и «другие услуги».
+ * целиком; parallelCapacity — 1–50 (растёт версия календаря). Цен здесь нет — они в услугах.
  * Категорию витрины меняет POST /staff/listings/:id/category (не PATCH)
  */
 export interface ListingInput {
@@ -421,11 +408,8 @@ export interface ListingInput {
   readonly addressUz?: string | null;
   readonly descriptionRu?: string | null;
   readonly descriptionUz?: string | null;
-  readonly priceFromUzs?: number | null;
-  readonly priceUnit?: PriceUnit;
   readonly capMin?: number | null;
   readonly capMax?: number | null;
-  readonly packages?: readonly StaffListingPackage[];
   readonly phone?: string | null;
   readonly attributes?: Readonly<Record<string, AttributeValue | null>>;
   readonly videoLinks?: readonly string[];
@@ -1004,22 +988,13 @@ export type TeamInviteInput = {
 // RevisionStatus и ListingRevisionPayload — в контракте кабинета (@bayramm/shared/api/vendor):
 // правку подаёт партнёр
 
-export type RevisionField =
-  | "name"
-  | "priceFromUzs"
-  | "priceUnit"
-  | "descriptionRu"
-  | "descriptionUz"
-  | "packages"
-  | "attributes"
-  | "videoLinks";
+export type RevisionField = "name" | "descriptionRu" | "descriptionUz" | "attributes" | "videoLinks";
 
 /** attributes — изменённые поля витрины { ключ: значение | null }, videoLinks — ссылки целиком */
 export type RevisionValue =
   | string
   | number
   | null
-  | readonly StaffListingPackage[]
   | readonly string[]
   | Readonly<Record<string, AttributeValue | null>>;
 
@@ -1101,7 +1076,9 @@ export interface RequestVendorPhones extends VendorPhones {
 //     срока без ответа — не в расчёте. answeredRate = answeredInTime / measurable;
 //   · время ответа — от создания до ответа площадки (медиана, 90-й перцентиль — по
 //     заявкам с ответом); agreedRate — сейчас в статусе «договорились» / все заявки;
-//   · неделя — ISO, с понедельника по Ташкенту; заявка — в периоде своего создания.
+//   · неделя — ISO, с понедельника по Ташкенту; заявка — в периоде своего создания;
+//   · категория заявки — категория витрины (её не сменить, пока у витрины есть заявки);
+//     фильтр category — код из @bayramm/shared/categories, неизвестный — 422 ["category"].
 // Доли — проценты с одним знаком (50.5); null — не из чего считать.
 
 /** Метрики заявок за период */
@@ -1147,12 +1124,39 @@ export interface OpsQueues {
   readonly photosPending: number;
 }
 
-/** GET /staff/metrics?weeks=8 (1–52): по неделям, текущая — первой; 422 invalid_input ["weeks"] */
+/**
+ * GET /staff/metrics?weeks=8&category= (1–52): по неделям, текущая — первой; category — только
+ * заявки витрин этой категории (и недоставленные уведомления по ним). Очереди — всегда все.
+ * 422 invalid_input ["weeks"] | ["category"]
+ */
 export interface MetricsOverview {
   /** Срок ответа для новых заявок (sla_hours), часов */
   readonly slaHours: number;
+  /** Фильтр категории; null — все */
+  readonly category: string | null;
   readonly weeks: readonly WeeklyMetrics[];
   readonly queues: OpsQueues;
+}
+
+/** Сводка категории за последние N дней */
+export interface CategoryMetrics extends ResponseStats {
+  readonly categoryCode: string;
+  /** Опубликованные витрины категории сейчас */
+  readonly activeListings: number;
+  /** Вендоры с опубликованной витриной в категории сейчас */
+  readonly activeVendors: number;
+  readonly clients: number;
+  readonly p90ResponseMinutes: number | null;
+  readonly agreedRate: number | null;
+}
+
+/**
+ * GET /staff/metrics/categories?days=30 (1–366): включённые категории и те, где были заявки,
+ * по порядку категорий; 422 invalid_input ["days"]
+ */
+export interface CategoryMetricsList {
+  readonly days: number;
+  readonly items: readonly CategoryMetrics[];
 }
 
 /** Ответы площадки за последние N дней */
@@ -1170,20 +1174,34 @@ export interface ResponseStats {
 
 export interface VendorMetrics extends ResponseStats {
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
+  /** Опубликованные витрины (с фильтром — этой категории) */
   readonly activeListings: number;
+  /**
+   * Категории витрин вендора — опубликованных, приостановленных и с заявками за период, по
+   * порядку категорий
+   */
+  readonly categories: readonly string[];
 }
 
 /**
- * GET /staff/metrics/vendors?days=30 (1–366): вендоры с заявками за период или с опубликованной
- * площадкой; 422 invalid_input ["days"]
+ * GET /staff/metrics/vendors?days=30&category= (1–366): вендоры с заявками за период или с
+ * опубликованной площадкой; category — только заявки и витрины этой категории.
+ * 422 invalid_input ["days"] | ["category"]
  */
 export interface VendorMetricsList {
   readonly days: number;
+  /** Фильтр категории; null — все */
+  readonly category: string | null;
   readonly items: readonly VendorMetrics[];
 }
 
 export interface ListingMetrics extends ResponseStats {
-  readonly listing: { readonly id: string; readonly name: string; readonly status: ListingStatus };
+  readonly listing: {
+    readonly id: string;
+    readonly name: string;
+    readonly status: ListingStatus;
+    readonly categoryCode: string;
+  };
 }
 
 /** GET /staff/metrics/vendors/:id?days=30 — вендор и его площадки; 404 — нет такого вендора */

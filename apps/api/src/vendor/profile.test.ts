@@ -133,14 +133,6 @@ describe("getListing", () => {
       status: "draft",
       priceFromUzs: 150_000,
       address: { ru: "Адрес", uz: "" },
-      packages: [
-        {
-          kind: "weekday",
-          name: { ru: "Банкет — будни", uz: "Banket — ish kunlari" },
-          priceUzs: 150_000,
-          priceUnit: "per_guest",
-        },
-      ],
       // Поля витрины — только прошедшие проверку конфигурации
       attributes: { kitchen: "own" },
       missingAttributes: [],
@@ -151,6 +143,7 @@ describe("getListing", () => {
       blockers: ["photos", "contract"],
       photoLimits: { min: 3, max: 10 },
     });
+    expect(result).not.toHaveProperty("packages");
     expect(result.photos).toEqual([
       {
         id: "p1",
@@ -169,7 +162,7 @@ describe("getListing", () => {
     expect(photos?.sql).toContain('"deleted_at" is null');
   });
 
-  it("чужая — 404, фото и пакеты не читаются", async () => {
+  it("чужая — 404, фото и услуги не читаются", async () => {
     const fake = fakeDb(() => []);
     expect((await rejection(() => getListing(fake.db, ACTOR, LISTING_ID, "production"))).status).toBe(404);
     expect(fake.queries.some((q) => q.sql.includes('"app"."photos"'))).toBe(false);
