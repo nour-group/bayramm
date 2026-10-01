@@ -2633,9 +2633,12 @@ textarea.field-input {
     background: var(--white);
   }
 
-  /* Одна дата (категории без гостей и района) — поле обычной ширины, не во всю строку */
+  /* Одна дата (категории без гостей и района) — поле обычной ширины без панели вокруг */
   .catalog .filters.solo {
     grid-template-columns: minmax(0, 320px);
+    padding: 0;
+    border: 0;
+    background: none;
   }
 
   .cards {
