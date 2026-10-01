@@ -24,9 +24,9 @@ export type Staff = StaffMe;
 
 /**
  * Почему не вошли: вход не завершился или ссылка устарела · нет роли сотрудника ·
- * вход был давно (больше 12 часов) · API не ответило
+ * вход был давно (больше 12 часов) · API не ответило · сессия кончилась посреди работы
  */
-export type SignInError = "invalid" | "denied" | "reauth" | "unavailable";
+export type SignInError = "invalid" | "denied" | "reauth" | "unavailable" | "expired";
 
 const TOKEN_KEY = "bayramm.admin.session";
 const PENDING_KEY = "bayramm.admin.hub";

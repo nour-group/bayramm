@@ -76,7 +76,12 @@ export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | 
     setState({ tab, filters });
     setOffset(0);
     const query = queryOf(tab, filters).toString();
-    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    // Запись истории — та же (её номер нужен «назад» панели), меняется только адрес
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${query ? `?${query}` : ""}`,
+    );
   };
 
   const params = queryOf(state.tab, state.filters, offset);

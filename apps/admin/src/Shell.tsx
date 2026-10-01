@@ -60,6 +60,7 @@ import { fetchAccount, fetchMethods, SIGNIN_PARAM, type Staff } from "./session"
 import { hasNativeBack, useBackButton } from "./telegram";
 import { t } from "./texts";
 import { ActionSlotContext, Link, NavigateContext, SheetClose, Skeleton, TitleContext } from "./ui";
+import { UnsavedContext, useUnsavedGuard } from "./unsaved";
 
 /** Заголовок экрана: раздел — его название, страница объекта — вид объекта */
 export function titleOf(view: View | null): string {
@@ -97,9 +98,11 @@ interface PageProps {
   title: string;
   headingRef: RefObject<HTMLHeadingElement | null>;
   dictionaries: StaffDictionaries | null;
+  /** Разделы роли: чужой раздел (старая ссылка, ссылка из бота) — «нет доступа», а не 403 */
+  sections: readonly Section[];
 }
 
-function Page({ view, title, headingRef, dictionaries }: PageProps) {
+function Page({ view, title, headingRef, dictionaries, sections }: PageProps) {
   // Место под панель действий — последним в странице (ActionBar на телефоне)
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const heading = (
@@ -117,6 +120,19 @@ function Page({ view, title, headingRef, dictionaries }: PageProps) {
         </Link>
       </section>
     );
+  if (!sections.includes(sectionOf(view))) {
+    // Раздела у роли нет: сервер всё равно ответит 403 — не грузим и не предлагаем «Повторить»
+    const home = sections[0] ?? HOME;
+    return (
+      <section className="page" aria-labelledby="page-title">
+        {heading}
+        <p className="lead">{t.noAccess}</p>
+        <Link to={{ name: home }} className="action">
+          {t.toSection(t[home])}
+        </Link>
+      </section>
+    );
+  }
 
   let content: ReactNode;
   switch (view.name) {
@@ -487,10 +503,8 @@ function TabBar({ sections, current, badges, moreRef, moreOpen, onMore }: TabBar
               <Icon name={on ? SECTION_ICON[section].active : SECTION_ICON[section].icon} size={24} />
               <Badge section={section} count={badges[section]} />
             </span>
-            <span className="tab-label" aria-hidden="true">
-              {t.tabLabels[section] ?? t[section]}
-            </span>
-            <span className="visually-hidden">{t[section]}</span>
+            {/* Название раздела целиком: в панели только разделы с короткими названиями */}
+            <span className="tab-label">{t[section]}</span>
           </Link>
         );
       })}
@@ -527,14 +541,16 @@ interface ShellProps {
 
 /** Панель вошедшего сотрудника: навигация по разделам роли, аккаунт, содержимое экрана */
 export function Shell({ staff, token, onSignOut }: ShellProps) {
-  const [view, navigate] = useRoute();
+  const webApp = getWebApp();
+  // Несохранённые правки на экране: уход — по ссылке, «назад», выход — с вопросом
+  const unsaved = useUnsavedGuard(webApp);
+  const [view, navigate] = useRoute(unsaved.guard);
   const layout: Layout = useLayout();
   const compact = layout !== "desktop";
   const apps = useOtherApps(token);
   const heading = useRef<HTMLHeadingElement>(null);
   const shownPath = useRef(view ? pathOf(view) : null);
   const path = view ? pathOf(view) : null;
-  const webApp = getWebApp();
   const nested = isNested(view);
   // Справочники — один раз на сессию: районы, сотрудники, настройки
   const { loaded: dict } = useLoad<StaffDictionaries>("/staff/dictionaries");
@@ -588,6 +604,11 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
   }, [layout, sections]);
 
   const closeSheet = useCallback(() => setSheet(null), []);
+  const { confirmLeave } = unsaved;
+  const signOut = useCallback(() => {
+    setSheet(null);
+    confirmLeave(onSignOut);
+  }, [confirmLeave, onSignOut]);
 
   return (
     <NavigateContext.Provider value={navigate}>
@@ -631,7 +652,7 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
                 <span className="who-role">{t.roles[staff.role]}</span>
               </p>
               <OtherAppLinks apps={apps} className="action" />
-              <button type="button" className="action" onClick={onSignOut}>
+              <button type="button" className="action" onClick={signOut}>
                 {t.signOut}
               </button>
             </div>
@@ -639,9 +660,17 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
         )}
         {layout === "tablet" ? <Rail sections={sections} current={current} badges={badges} /> : null}
         <main id="main" className="main" tabIndex={-1}>
-          <TitleContext.Provider value={setTitle}>
-            <Page view={view} title={title} headingRef={heading} dictionaries={dictionaries} />
-          </TitleContext.Provider>
+          <UnsavedContext.Provider value={unsaved.registry}>
+            <TitleContext.Provider value={setTitle}>
+              <Page
+                view={view}
+                title={title}
+                headingRef={heading}
+                dictionaries={dictionaries}
+                sections={sections}
+              />
+            </TitleContext.Provider>
+          </UnsavedContext.Provider>
         </main>
         {layout === "phone" ? (
           <TabBar
@@ -706,13 +735,14 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
               </li>
             ) : null}
             <li>
-              <button type="button" className="menu-item menu-danger" onClick={onSignOut}>
+              <button type="button" className="menu-item menu-danger" onClick={signOut}>
                 <Icon name="signOut" size={20} />
                 <span>{t.signOut}</span>
               </button>
             </li>
           </ul>
         </Dialog>
+        {unsaved.sheet}
       </div>
     </NavigateContext.Provider>
   );

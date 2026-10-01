@@ -22,6 +22,7 @@ import {
   Pill,
   useRevealErrors,
 } from "../ui";
+import { useUnsaved } from "../unsaved";
 
 const ROLES: readonly StaffRole[] = ["admin", "manager", "moderator"];
 const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: t.roles[role] }));
@@ -67,6 +68,8 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
   });
   const contact = by === "phone" ? phone : username;
   const form = useRevealErrors(failure);
+  // Вписанное и не отправленное приглашение — несохранённое
+  useUnsaved(displayName.trim() !== "" || contact.trim() !== "");
 
   const choose = (next: InviteBy) => {
     setBy(next);
@@ -240,6 +243,8 @@ function useMember(member: TeamMember, onChange: (list: TeamList) => void) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  // Новая роль выбрана, но не применена — несохранённое
+  useUnsaved(member.active && !member.self && role !== member.role);
 
   const changeRole = async () => {
     setBusy(true);
@@ -295,6 +300,9 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
         </p>
       ) : (
         <div className="rcard-actions role-edit">
+          <label className="role-label" htmlFor={roleId}>
+            {t.colRole}
+          </label>
           <Select
             id={roleId}
             className="input"
@@ -330,7 +338,7 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
         returnFocus={toggleButton}
       >
         <ConfirmForm
-          hint={member.active ? t.deactivateHint : t.activate}
+          hint={member.active ? t.deactivateHint : t.activateHint}
           submitLabel={member.active ? t.deactivate : t.activate}
           danger={member.active}
           onSubmit={toggle}
@@ -391,7 +399,7 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
         {!member.self &&
           (confirming ? (
             <ConfirmForm
-              hint={member.active ? t.deactivateHint : t.activate}
+              hint={member.active ? t.deactivateHint : t.activateHint}
               submitLabel={member.active ? t.deactivate : t.activate}
               danger={member.active}
               onSubmit={toggle}

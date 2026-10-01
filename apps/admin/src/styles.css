@@ -1302,6 +1302,11 @@ textarea.input {
   font-weight: 700;
 }
 
+/* Строки формы подтверждения — с отступами gap, без своих полей абзаца */
+.confirm > p {
+  margin: 0;
+}
+
 .history {
   display: flex;
   flex-direction: column;
@@ -1343,13 +1348,16 @@ textarea.input {
   font-weight: 700;
 }
 
+/* Дорожки без зазора: вся ширина дорожки — зона нажатия дня. Видимый зазор между днями —
+   прозрачная рамка клетки (фон закрашивает только её середину), линия клетки — внутренней
+   тенью. Так семь дней по 44px влезают в 308px — ширину самого узкого телефона */
 .cal {
   display: grid;
-  grid-template-columns: repeat(7, minmax(44px, 1fr));
-  gap: var(--gap-3);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .cal-wd {
+  padding-bottom: 3px;
   color: var(--muted-lt);
   font-size: var(--fs-12-5);
   font-weight: 700;
@@ -1357,26 +1365,19 @@ textarea.input {
 }
 
 .cal-day {
-  position: relative;
+  min-width: 0;
   min-height: var(--hit-min);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-8);
-  background: var(--cell);
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--r-11);
+  background-color: var(--cell);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--rule);
   color: var(--ink);
   font-family: inherit;
   font-size: var(--fs-14);
   font-weight: 700;
   cursor: pointer;
-}
-
-/* Зазор между днями — тоже зона нажатия: на узком телефоне клетка чуть уже 44px */
-.cal-day::after {
-  content: "";
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  bottom: -2px;
-  left: -2px;
 }
 
 .cal-day:disabled {
@@ -1385,14 +1386,14 @@ textarea.input {
 }
 
 .cal-today {
-  border: 2px solid var(--coral);
+  box-shadow: inset 0 0 0 2px var(--coral);
 }
 
 /* Занятый день — после прошедших и сегодняшнего: отметка видна всегда (ловушка №7) */
 .cal-busy,
 .cal-busy:disabled {
-  border-color: var(--plum);
-  background: var(--plum);
+  background-color: var(--plum);
+  box-shadow: inset 0 0 0 1px var(--plum);
   color: var(--sel-ink);
 }
 
@@ -1639,7 +1640,11 @@ textarea.input {
   .fields-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
+/* Пакет в одну строку — только когда колонке формы хватает ширины: на 1024px «за гостя»
+   обрезалось до «за г…». Уже — по два поля в строку, вид пакета — заголовком */
+@media (max-width: 1279px) {
   .package-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1791,6 +1796,13 @@ textarea.input {
   flex: 1 1 160px;
 }
 
+/* Подпись списка роли в карточке сотрудника — строкой над ним */
+.role-label {
+  flex-basis: 100%;
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
 /* Правка карточки на телефоне: «сейчас» и «предлагает» — друг под другом */
 .change {
   display: flex;
@@ -1936,8 +1948,8 @@ textarea.input {
 /* Выбор нескольких дней — после занятых (ловушка №7): занятый день остаётся сливовым,
    выбор — коралловым кольцом */
 .cal-chosen:not(.cal-busy) {
-  border-color: var(--coral);
-  background: var(--coral-soft);
+  background-color: var(--coral-soft);
+  box-shadow: inset 0 0 0 1px var(--coral);
   color: var(--coral-deep);
 }
 
@@ -2188,10 +2200,45 @@ textarea.input {
   }
 }
 
-/* Совсем узкий телефон (320px): месяц выходит за поля страницы, клетка остаётся 44px */
+/* Планшет — тоже палец: ссылки в тексте и в таблицах (заголовок строки, объект журнала) —
+   зона нажатия 44px невидимым слоем, рисунок тот же; ячейке — запас под этот слой, иначе
+   рамка таблицы срежет его у последней строки. Раскладку выбирает класс оболочки */
+.app-tablet .table td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.app-tablet .main a:not([class]),
+.app-tablet .main .row-link {
+  position: relative;
+}
+
+.app-tablet .main a:not([class])::after,
+.app-tablet .main .row-link::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, var(--hit-min));
+  height: max(100%, var(--hit-min));
+  transform: translate(-50%, -50%);
+}
+
+/* Совсем узкий телефон (320px): месяц выходит на 10px за поля страницы — 308px, семь дорожек
+   по 44px; нижняя панель — уже́ поля и кегль 10, чтобы «Модерация» влезла в пятую часть экрана */
 @media (max-width: 359px) {
   .cal {
     margin: 0 -10px;
+  }
+
+  .tabbar {
+    padding-right: calc(var(--sa-r) + 2px);
+    padding-left: calc(var(--sa-l) + 2px);
+  }
+
+  .tab {
+    padding: 2px 0;
+    font-size: var(--fs-10);
   }
 }
 

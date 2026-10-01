@@ -18,8 +18,10 @@ import type {
   RevisionList,
   StaffDictionaries,
   StaffMe,
+  StaffPermission,
   StaffRequestDetail,
   StaffRequestList,
+  StaffRole,
   StaffSettings,
   TeamList,
   VendorDetail,
@@ -51,36 +53,50 @@ export const PHOTO_QUEUE_LISTING_ID = "00000000-0000-4000-8100-000000000010";
 export const REQUEST_ID = "00000000-0000-4000-8300-000000000001";
 const iso = NOW.toISOString();
 
-export const STAFF: StaffMe = {
+/* Права ролей — как в apps/api/src/staff/access.ts (единственная таблица там; здесь — её
+   копия для подмены GET /staff/me): менеджер ведёт вендоров, карточки и заявки, но не
+   публикует; модератор проверяет и публикует, заявок и клиентов не видит */
+const ALL_ROLES: readonly StaffRole[] = ["admin", "manager", "moderator"];
+const ADMIN_MANAGER: readonly StaffRole[] = ["admin", "manager"];
+const ADMIN_MODERATOR: readonly StaffRole[] = ["admin", "moderator"];
+const PERMISSION_ROLES: Readonly<Record<StaffPermission, readonly StaffRole[]>> = {
+  "catalog.read": ALL_ROLES,
+  "vendors.write": ADMIN_MANAGER,
+  "vendor_users.write": ADMIN_MANAGER,
+  "listings.write": ADMIN_MANAGER,
+  "listings.submit": ADMIN_MANAGER,
+  "listings.publish": ADMIN_MODERATOR,
+  "listings.moderate": ADMIN_MODERATOR,
+  "listings.draft": ALL_ROLES,
+  "photos.moderate": ADMIN_MODERATOR,
+  "vendor_phones.read": ALL_ROLES,
+  "requests.read": ADMIN_MANAGER,
+  "requests.write": ADMIN_MANAGER,
+  "client_phones.read": ["admin"],
+  "clients.read": ADMIN_MANAGER,
+  "clients.block": ADMIN_MANAGER,
+  "outbox.read": ADMIN_MANAGER,
+  "outbox.retry": ["admin"],
+  "audit.read": ["admin"],
+  "settings.write": ["admin"],
+  "team.manage": ["admin"],
+  "revisions.moderate": ADMIN_MODERATOR,
+  "metrics.read": ALL_ROLES,
+};
+
+export const permissionsOf = (role: StaffRole): StaffPermission[] =>
+  (Object.keys(PERMISSION_ROLES) as StaffPermission[]).filter((p) => PERMISSION_ROLES[p].includes(role));
+
+/** Вошедший сотрудник с этой ролью */
+export const staffOf = (role: StaffRole): StaffMe => ({
   id: "00000000-0000-4000-8600-000000000001",
-  role: "admin",
+  role,
   displayName: "Дильноза Операторова",
   username: "dilnoza_ops",
-  permissions: [
-    "catalog.read",
-    "vendors.write",
-    "vendor_users.write",
-    "listings.write",
-    "listings.submit",
-    "listings.publish",
-    "listings.moderate",
-    "listings.draft",
-    "photos.moderate",
-    "vendor_phones.read",
-    "requests.read",
-    "requests.write",
-    "client_phones.read",
-    "clients.read",
-    "clients.block",
-    "outbox.read",
-    "outbox.retry",
-    "audit.read",
-    "settings.write",
-    "team.manage",
-    "revisions.moderate",
-    "metrics.read",
-  ],
-};
+  permissions: permissionsOf(role),
+});
+
+export const STAFF: StaffMe = staffOf("admin");
 
 const DICTIONARIES: StaffDictionaries = {
   categories: [{ code: "hall", nameRu: "Площадка / Тойхона", nameUz: "Maydon / Toʻyxona", enabled: true }],
@@ -500,11 +516,13 @@ export interface StaffApiOptions {
   readonly hub?: HubWatch;
   /** Какие запросы перехватывать: по умолчанию /api любого localhost */
   readonly match?: (url: URL) => boolean;
+  /** Роль вошедшего сотрудника: по умолчанию администратор */
+  readonly role?: StaffRole;
 }
 
 export async function mockStaffApi(
   page: Page,
-  { signedIn = true, methodsDown = false, hub, match = isApi }: StaffApiOptions = {},
+  { signedIn = true, methodsDown = false, hub, match = isApi, role = "admin" }: StaffApiOptions = {},
 ) {
   let elevated = 0;
   const state: StaffApi = {
@@ -581,7 +599,7 @@ export async function mockStaffApi(
         200,
         accountMe({ vendors: [VENDOR_MEMBERSHIP], staff: true }, { kind: "staff", app: "admin" }),
       );
-    if (key === "GET /staff/me") return json(route, 200, STAFF);
+    if (key === "GET /staff/me") return json(route, 200, staffOf(role));
     if (key === "GET /staff/dictionaries") return json(route, 200, DICTIONARIES);
     if (key === "GET /staff/vendors") {
       const detail = vendorDetail(listings);

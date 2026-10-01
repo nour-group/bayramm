@@ -337,7 +337,7 @@ function Blocking({ client, onChange }: { client: ClientDetail; onChange: (c: Cl
       )}
       <PhoneSheet open={open} title={label} onClose={() => setOpen(false)} returnFocus={toggle}>
         <ConfirmForm
-          hint={client.blockedInfo ? t.unblock : t.blockHint}
+          hint={client.blockedInfo ? t.unblockHint : t.blockHint}
           submitLabel={label}
           {...(client.blockedInfo ? {} : { label: t.reason, required: true, maxLength: 500 })}
           danger={!client.blockedInfo}

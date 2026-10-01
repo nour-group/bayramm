@@ -30,6 +30,7 @@ import {
   useNavigate,
   useRevealErrors,
 } from "../ui";
+import { useUnsaved } from "../unsaved";
 import { VendorResponsePanel } from "./Metrics";
 import { VendorForm } from "./VendorForm";
 
@@ -42,7 +43,8 @@ export function VendorNewPage({ dictionaries }: { dictionaries: StaffDictionarie
     async (body: VendorInput): Promise<Failure | null> => {
       const result = await api.post<VendorDetail>("/staff/vendors", body);
       if (!result.ok) return result;
-      navigate({ name: "vendor", id: result.data.id });
+      // Вендор создан — форма сохранена: переход без вопроса о несохранённом
+      navigate({ name: "vendor", id: result.data.id }, { force: true });
       return null;
     },
     [api, navigate],
@@ -234,6 +236,8 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
   const [confirmFailure, setConfirmFailure] = useState<Failure | null>(null);
   const errors = fieldErrors(failure, { phone: t.fieldErrors.phone ?? "" });
   const form = useRevealErrors(failure);
+  // Вписанный, но не добавленный пользователь — несохранённое
+  useUnsaved(phone.trim() !== "" || fullName.trim() !== "");
 
   const replace = (user: VendorUser, exists: boolean) =>
     onChange({

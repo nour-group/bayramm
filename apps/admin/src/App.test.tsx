@@ -314,14 +314,43 @@ describe("сессия сотрудника", () => {
     expect(calls.filter((c) => c.url.startsWith("/api/staff/requests")).length).toBeGreaterThan(before);
   });
 
-  it("токен больше не действует — стирается, страница входа без ошибки", async () => {
+  it("токен больше не действует (12 часов прошло) — стирается; вход объясняет и вернёт на тот же экран", async () => {
     window.sessionStorage.setItem(TOKEN_KEY, TOKEN);
     mockApi({ ...BOT_INFO, "GET /api/staff/me": json({ error: { code: "unauthorized" } }, 401) });
-    await mount("/vendors");
+    await mount(`/requests/${"0".repeat(8)}-0000-4000-8000-${"0".repeat(12)}`);
     expect(heading()).toBe(t.login);
-    expect(alertText()).toBeUndefined();
-    expect(button(t.loginHub)).toBeDefined();
+    expect(alertText()).toBe(t.errors.expired);
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+    await act(async () => button(t.loginHub).click());
+    await redirected();
+    // В хаб — с тем экраном, где были: после входа панель откроет его
+    const pending = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) ?? "{}") as { back?: string };
+    expect(pending.back).toBe(`/requests/${"0".repeat(8)}-0000-4000-8000-${"0".repeat(12)}`);
+  });
+
+  it("сессия кончилась посреди работы (401) — вход с объяснением, потом — тот же экран", async () => {
+    window.sessionStorage.setItem(TOKEN_KEY, TOKEN);
+    // Очередь модерации отвечает 401: сессию отозвали или прошло 12 часов
+    const expired = json({ error: { code: "unauthorized" } }, 401);
+    mockApi({
+      ...BOT_INFO,
+      "GET /api/staff/me": json(STAFF),
+      "GET /api/staff/listings?status=review&limit=100": expired,
+      "GET /api/staff/revisions?status=pending&limit=100": expired,
+      "GET /api/staff/listings?photos=pending&limit=100": expired,
+    });
+    await mount("/vendors");
+    expect(heading()).toBe(t.vendors);
+    await act(async () => link(t.moderation).click());
+    await settle();
+    expect(heading()).toBe(t.login);
+    expect(alertText()).toBe(t.errors.expired);
+    expect(window.location.pathname).toBe("/login");
+    expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+    await act(async () => button(t.loginHub).click());
+    await redirected();
+    const pending = JSON.parse(window.sessionStorage.getItem(PENDING_KEY) ?? "{}") as { back?: string };
+    expect(pending.back).toBe("/moderation");
   });
 
   it("выход: сессия отзывается на сервере, токен стирается", async () => {

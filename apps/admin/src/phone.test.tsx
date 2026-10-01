@@ -209,11 +209,24 @@ describe("телефон: оболочка", () => {
     expect(tabs()[0]?.getAttribute("aria-current")).toBe("page");
   });
 
-  it("разделов у роли пять и меньше — все в панели, без «Ещё»", async () => {
-    mockApi(MANAGER);
+  it("пять ежедневных разделов — все в панели, без «Ещё»", async () => {
+    mockApi({
+      ...MANAGER,
+      permissions: ["catalog.read", "requests.read", "metrics.read", "clients.read"],
+    });
     await mount("/requests");
     expect(tabs().map((tab) => tab.tagName)).toEqual(["A", "A", "A", "A", "A"]);
     expect(container.querySelector("nav.tabbar button")).toBeNull();
+  });
+
+  it("пять разделов, среди них уведомления: четыре кнопки и «Ещё»; подписи — названия целиком", async () => {
+    // Раньше «Уведомления» вставали пятой кнопкой подписью «Уведомл.»
+    mockApi(MANAGER);
+    await mount("/requests");
+    const labels = tabs().map((tab) => tab.querySelector(".tab-label")?.textContent);
+    expect(labels).toEqual([t.requests, t.moderation, t.vendors, t.clients, t.more]);
+    for (const label of labels) expect(label).not.toMatch(/\.$/);
+    expect(container.querySelector("nav.tabbar button")?.textContent).toContain(t.more);
   });
 
   it("счётчики — из очередей метрик, одним лёгким запросом; для диктора — словами", async () => {

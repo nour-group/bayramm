@@ -97,6 +97,9 @@ export interface TelegramWebApp {
   setBottomBarColor?(color: string): void;
   /** Свайп вниз не сворачивает приложение (с версии 7.7) */
   disableVerticalSwipes?(): void;
+  /** Закрыть приложение — только после подтверждения: есть несохранённое (с версии 6.2) */
+  enableClosingConfirmation?(): void;
+  disableClosingConfirmation?(): void;
   /** Ссылка t.me внутри Telegram, без выхода в браузер */
   openTelegramLink?(url: string): void;
   /** Спросить разрешение боту писать пользователю первым (с версии 6.9) */

@@ -23,6 +23,7 @@ import { Icon, type IconName } from "./icons";
 import { usePhone } from "./layout";
 import { type Navigate, pathOf, type View } from "./router";
 import { apiErrorText, t } from "./texts";
+import { useUnsaved } from "./unsaved";
 
 // ── переходы ───────────────────────────────────────────────────────────────
 
@@ -99,12 +100,37 @@ export function StatusPill({ status }: { status: ListingStatus }) {
 
 // ── состояния загрузки и ошибки ────────────────────────────────────────────
 
-export function ErrorText({ failure }: { failure: Pick<Failure, "code"> }) {
+/**
+ * Ошибка API словами. Не хватает данных для проверки или публикации (publish_blocked) — и
+ * пункты, которых не хватает, из ответа сервера: он знает о карточке больше, чем экран
+ */
+export function ErrorText({
+  failure,
+}: {
+  failure: Pick<Failure, "code"> & { readonly details?: readonly string[] };
+}) {
+  const missing = failure.code === "publish_blocked" ? (failure.details ?? []) : [];
+  if (missing.length === 0)
+    return (
+      <p className="notice notice-error" role="alert">
+        {apiErrorText(failure.code)}
+      </p>
+    );
   return (
-    <p className="notice notice-error" role="alert">
-      {apiErrorText(failure.code)}
-    </p>
+    <div className="notice notice-error" role="alert">
+      <p className="notice-title">{apiErrorText(failure.code)}</p>
+      <ul className="blockers">
+        {missing.map((code) => (
+          <li key={code}>{t.blockers[code] ?? code}</li>
+        ))}
+      </ul>
+    </div>
   );
+}
+
+/** Повтор может помочь: нет связи, сбой сервера, лимит частоты. 403 и 404 повтор не исправит */
+export function isRetryable(failure: Pick<Failure, "status">): boolean {
+  return failure.status === 0 || failure.status === 429 || failure.status >= 500;
 }
 
 export type SkeletonKind = "list" | "detail" | "stats" | "block";
@@ -145,18 +171,23 @@ interface LoadedViewProps<T> {
   skeleton?: SkeletonKind;
 }
 
-/** Пока грузится — заготовка, ошибка — текст и «Повторить», данные — children */
+/**
+ * Пока грузится — заготовка, ошибка — текст и «Повторить» (только где повтор поможет: без
+ * мёртвой кнопки на «нет прав» и «не найдено»), данные — children
+ */
 export function LoadedView<T>({ loaded, onRetry, children, skeleton }: LoadedViewProps<T>) {
   if (loaded.state === "loading") return <Skeleton kind={skeleton} />;
   if (loaded.state === "error")
     return (
       <div className="stack">
         <ErrorText failure={loaded.failure} />
-        <div>
-          <button type="button" className="btn" onClick={onRetry}>
-            {t.retry}
-          </button>
-        </div>
+        {isRetryable(loaded.failure) ? (
+          <div>
+            <button type="button" className="btn" onClick={onRetry}>
+              {t.retry}
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   return <>{children(loaded.data)}</>;
@@ -264,6 +295,8 @@ export function ConfirmForm({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  // Вписанная причина или комментарий — несохранённое: уход со страницы переспросит
+  useUnsaved(text.trim() !== "");
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -372,7 +405,9 @@ export function ReasonPhoneReveal({ label, hint, reasonLabel, load }: ReasonPhon
     );
 
   return (
-    <form className="confirm" onSubmit={reveal} noValidate>
+    <form className="confirm" onSubmit={reveal} noValidate aria-label={label}>
+      {/* Чей номер — словами и до показа: иначе форма причины висит без объяснения */}
+      <p className="phone-label">{label}</p>
       <p className="muted small">{hint}</p>
       <label htmlFor={reasonId}>{reasonLabel}</label>
       <input
