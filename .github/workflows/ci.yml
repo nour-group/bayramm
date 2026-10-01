@@ -60,7 +60,7 @@ jobs:
     name: E2E & accessibility (Playwright)
     runs-on: ubuntu-latest
     # Проверки категорий (каталог, витрина, заявка каждой) добавили к прогону минуты
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
