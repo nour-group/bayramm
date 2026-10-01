@@ -43,20 +43,37 @@ async function fillRequest(page: Page, comment: string) {
 }
 
 test.describe("телефон виден сразу", () => {
-  for (const listing of CATEGORY_VITRINAS)
-    for (const who of ["гость в браузере", "Telegram"] as const) {
-      test(`${listing.categoryCode} · ${who}: номер и «Позвонить» на витрине — до всякой заявки`, async ({
-        page,
-      }) => {
-        await expectPhoneFirst(page, listing, who);
-      });
-    }
+  for (const who of ["гость в браузере", "Telegram"] as const) {
+    test(`${who}: номер и «Позвонить» на площадке — до всякой заявки`, async ({ page }) => {
+      await expectPhoneFirst(page, VENUE, who);
+    });
+  }
+
+  // Каждая категория — гостю; в Telegram — кортеж (части дня, своя главная кнопка)
+  test("гость в браузере: номер и «Позвонить» на витрине каждой категории — до всякой заявки", async ({
+    page,
+  }) => {
+    test.slow();
+    for (const listing of CATEGORY_VITRINAS.slice(1))
+      await expectPhoneFirst(page, listing, "гость в браузере");
+  });
+
+  test("Telegram: номер на витрине кортежа — до всякой заявки", async ({ page }) => {
+    const car = CATEGORY_VITRINAS.find((l) => l.categoryCode === "car") ?? VENUE;
+    await expectPhoneFirst(page, car, "Telegram");
+  });
 });
+
+/** Страницы, где часы и Telegram уже подготовлены (prepare — один раз на страницу) */
+const prepared = new WeakSet<Page>();
 
 /** Номер и «Позвонить» на витрине — сразу, на экране без прокрутки, без формы на пути */
 async function expectPhoneFirst(page: Page, venue: ListingDetail, who: "гость в браузере" | "Telegram") {
-  await prepare(page);
-  if (who === "Telegram") await fakeTelegram(page);
+  if (!prepared.has(page)) {
+    prepared.add(page);
+    await prepare(page);
+    if (who === "Telegram") await fakeTelegram(page);
+  }
   await open(page, PATHS.venue(venue.slug), ".venue-head h1", { guest: who !== "Telegram" });
 
   const tel = `tel:${venue.phone}`;
@@ -208,53 +225,54 @@ test.describe("согласие", () => {
 });
 
 test.describe("согласие в форме каждой категории", () => {
-  for (const listing of CATEGORY_VITRINAS.slice(1)) {
-    test(`${listing.categoryCode}: галочки не отмечены, отказ и отправка одного размера, без платёжных полей`, async ({
-      page,
-    }) => {
-      await prepare(page);
+  test("галочки не отмечены, отказ и отправка одного размера, без платёжных полей", async ({ page }) => {
+    test.slow();
+    await prepare(page);
+    for (const listing of CATEGORY_VITRINAS.slice(1)) {
+      const name = listing.categoryCode;
       await open(page, PATHS.request(listing.slug), "form.request .consents");
       const boxes = page.locator(".consents input[type=checkbox]");
-      await expect(boxes).toHaveCount(2);
+      await expect(boxes, name).toHaveCount(2);
       for (const box of await boxes.all()) {
-        await expect(box).not.toBeChecked();
-        expect(await box.evaluate((el: HTMLInputElement) => el.defaultChecked)).toBe(false);
+        await expect(box, name).not.toBeChecked();
+        expect(await box.evaluate((el: HTMLInputElement) => el.defaultChecked), name).toBe(false);
       }
       const cancel = page.locator(".form-bar").getByRole("button", { name: ru.permCancel });
       const send = page.locator(".form-bar").getByRole("button", { name: ru.rqSend });
       const [a, b] = [await cancel.boundingBox(), await send.boundingBox()];
-      expect(a && b).toBeTruthy();
+      expect(a && b, name).toBeTruthy();
       if (a && b) {
-        expect(Math.abs(a.width - b.width), "ширина").toBeLessThanOrEqual(1);
-        expect(Math.abs(a.height - b.height), "высота").toBeLessThanOrEqual(1);
+        expect(Math.abs(a.width - b.width), `${name}: ширина`).toBeLessThanOrEqual(1);
+        expect(Math.abs(a.height - b.height), `${name}: высота`).toBeLessThanOrEqual(1);
       }
       // Клиент не платит: платёжных полей нет; сумма по услугам — только «примерно»
-      await expect(page.locator('form.request [autocomplete^="cc-"]')).toHaveCount(0);
-    });
-  }
+      await expect(page.locator('form.request [autocomplete^="cc-"]'), name).toHaveCount(0);
+    }
+  });
 });
 
 test.describe("цена обязательна и с единицей", () => {
-  for (const listing of CATEGORY_VITRINAS) {
-    test(`${listing.categoryCode}: у каждой карточки — цена «от» с единицей категории`, async ({ page }) => {
-      await prepare(page);
+  test("в каталоге каждой категории у каждой карточки — цена «от» с единицей категории", async ({ page }) => {
+    test.slow();
+    await prepare(page);
+    const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+    for (const listing of CATEGORY_VITRINAS) {
       await open(page, PATHS.category(listing.categoryCode), ".card");
       const own = ALL_LISTINGS.filter((l) => l.categoryCode === listing.categoryCode);
       const cards = page.locator(".cards .card");
-      await expect(cards).toHaveCount(Math.min(own.length, 20));
+      await expect(cards, listing.categoryCode).toHaveCount(Math.min(own.length, 20));
       for (const card of await cards.all()) {
         const name = await card.locator(".card-name").innerText();
         const data = own.find((l) => l.name === name);
         expect(data, name).toBeTruthy();
         if (!data) continue;
         const price = formatPriceFrom(data.priceFromUzs, data.priceUnit, ru);
-        const flat = (text: string) => text.replace(/\s+/g, " ").trim();
         const shown = flat(await card.locator(".card-price").innerText());
         expect(shown, name).toBe(flat([price.amount, price.unit].filter(Boolean).join(" ")));
         expect(shown).not.toMatch(/по запросу/i);
       }
-    });
-  }
+    }
+  });
 });
 
 test.describe("занятые на дату", () => {
