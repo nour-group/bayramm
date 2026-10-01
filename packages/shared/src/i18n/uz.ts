@@ -543,7 +543,7 @@ export const uz: Dict = {
   lnSearchLabel: "Tanlash",
   lnSearch: "Koʻrsatish",
   lnVenuesH: "Hozir katalogda",
-  lnVenuesP: "Turli boʻlimlardan bittadan hamkor — narxlarni ularning oʻzi koʻrsatadi, ustamasiz.",
+  lnVenuesP: "Katalogdagi haqiqiy hamkorlar — narxlarni ularning oʻzi koʻrsatadi, ustamasiz.",
   lnHowH: "Qanday ishlaydi",
   lnStepH: [
     "Kerakli narsa va sanani tanlang",

@@ -19,17 +19,7 @@ const TAG_ATTRS: Readonly<Record<string, string>> = {
   "data-uz": "/assets/uz.js /assets/rich.js",
   "data-landing": "/assets/Landing.js /assets/Calendar.js",
   "data-catalog": "/assets/Catalog.js /assets/Calendar.js",
-  "data-font-ru": "/assets/unbounded-cyrillic.woff2 /assets/unbounded-latin.woff2",
-  "data-font-uz": "/assets/unbounded-latin.woff2",
 };
-
-/** Шрифты, которые boot.js попросил заранее */
-const fontPreloads = () =>
-  [...document.head.querySelectorAll<HTMLLinkElement>('link[rel="preload"][as="font"]')].map((link) => [
-    link.getAttribute("href"),
-    link.getAttribute("type"),
-    link.hasAttribute("crossorigin"),
-  ]);
 
 interface Case {
   readonly name: string;
@@ -236,14 +226,6 @@ describe("public/boot.js", () => {
       const screen = expected.screen ? (TAG_ATTRS[`data-${expected.screen}`] ?? "").split(" ") : [];
       expect(preloads).toEqual(
         c.bare ? [] : [...(TAG_ATTRS[`data-${expected.lang}`] ?? "").split(" "), ...screen],
-      );
-      // Шрифты заголовков — своего языка (LCP первого экрана), с crossorigin, как у @font-face
-      expect(fontPreloads()).toEqual(
-        c.bare
-          ? []
-          : (TAG_ATTRS[`data-font-${expected.lang}`] ?? "")
-              .split(" ")
-              .map((href) => [href, "font/woff2", true]),
       );
 
       // Те же решения у приложения

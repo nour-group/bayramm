@@ -8,9 +8,8 @@ import { createServer, type IndexHtmlTransformContext, type Plugin, type Rollup 
       вставляет вариант языка страницы в #root (worker/prerender.ts). В разработке —
       так же, только рендер на каждый запрос (правки видны сразу).
    2. Атрибуты <script src="/boot.js">: адреса кусков сборки — словари языков и экраны
-      первого показа с их зависимостями, шрифты заголовков по языку. boot.js просит заранее
-      (modulepreload, preload) только нужные: словарь и шрифты своего языка и экран своего
-      маршрута. В разработке их нет.
+      первого показа с их зависимостями. boot.js просит заранее (modulepreload) только
+      нужные: словарь своего языка и экран своего маршрута. В разработке их нет.
 
    public/boot.js — обычный скрипт в <head> (модуль отложен до конца разбора — поздно;
    встроенный CSP не пускает), отдаётся как есть, поэтому коротко и почти без комментариев.
@@ -26,16 +25,6 @@ type PrerenderModule = typeof import("./src/prerender");
 
 const PRERENDER_ENTRY = "/src/prerender.tsx";
 const BOOT_TAG = '<script src="/boot.js"></script>';
-
-/**
- * Шрифты первого экрана по языку — boot.js просит их заранее (preload), до разбора стилей:
- * заголовки (Unbounded) — самый крупный текст экрана (LCP). Русскому нужна и латиница:
- * пробелы, запятые и тире — в latin-подмножестве. Manrope latin предзагружает index.html
- */
-const FONTS = {
-  "data-font-ru": ["unbounded-cyrillic", "unbounded-latin", "manrope-cyrillic"],
-  "data-font-uz": ["unbounded-latin"],
-} as const;
 
 /** Куски сборки для boot.js: атрибут → модуль, с которого кусок начинается */
 const PRELOADS = {
@@ -92,15 +81,6 @@ function preloadAttrs(ctx: IndexHtmlTransformContext, base: string): string {
     );
     if (!chunk) throw new Error(`prerender: нет куска сборки для ${module}`);
     const urls = closure(bundle, chunk.fileName, entryFiles).map((file) => `${base}${file}`);
-    attrs.push(`${attr}="${urls.join(" ")}"`);
-  }
-  const files = Object.values(bundle).map((item) => item.fileName);
-  for (const [attr, fonts] of Object.entries(FONTS)) {
-    const urls = fonts.map((font) => {
-      const file = files.find((name) => new RegExp(`(^|/)${font}-[\\w-]+\\.woff2$`).test(name));
-      if (!file) throw new Error(`prerender: нет шрифта ${font} в сборке`);
-      return `${base}${file}`;
-    });
     attrs.push(`${attr}="${urls.join(" ")}"`);
   }
   return attrs.join(" ");

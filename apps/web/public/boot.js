@@ -80,23 +80,15 @@
 
   const tag = d.currentScript;
   if (!tag?.getAttribute) return;
-  const list = (...names) =>
-    names
-      .map((name) => (name ? tag.getAttribute(name) : null))
-      .join(" ")
-      .split(" ")
-      .filter(Boolean);
-  const preload = (url, rel, as) => {
+  const urls = [tag.getAttribute(`data-${lang}`), screen ? tag.getAttribute(`data-${screen}`) : null]
+    .join(" ")
+    .split(" ")
+    .filter(Boolean);
+  for (const url of urls) {
     const link = d.createElement("link");
-    link.rel = rel;
-    if (as) {
-      link.setAttribute("as", as);
-      link.setAttribute("type", "font/woff2");
-    }
+    link.rel = "modulepreload";
     link.href = url;
     link.crossOrigin = "";
     d.head.appendChild(link);
-  };
-  for (const url of list(`data-${lang}`, screen ? `data-${screen}` : null)) preload(url, "modulepreload");
-  for (const url of list(`data-font-${lang}`)) preload(url, "preload", "font");
+  }
 })(window);
