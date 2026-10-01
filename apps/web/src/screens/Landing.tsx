@@ -198,7 +198,8 @@ function Featured() {
                 guests={null}
                 headingLevel={3}
                 sizes={FEATURED_SIZES}
-                showCategory
+                // Раздел подписан, когда они разные (один раздел — подпись лишняя)
+                showCategory={(plan?.codes.length ?? 0) > 1}
               />
             </li>
           ))}
