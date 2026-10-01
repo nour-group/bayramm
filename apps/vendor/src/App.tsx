@@ -16,6 +16,7 @@ import { CALLBACK_PATH, chooseVendor, finishHub, SIGNIN_PARAM, startHub } from "
 import { Inbox } from "./Inbox";
 import { fill, LANG_NAMES, type VendorDict, vendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
+import { VitrinaSwitch } from "./ListingPicker";
 import { initialLang, saveLang } from "./lang";
 import { type Layout, useLayout } from "./layout";
 import {
@@ -35,12 +36,17 @@ import { Heading } from "./ui";
 import { Welcome } from "./Welcome";
 
 /* Оболочка кабинета: вход, раскладка и разделы.
-     · телефон (Mini App) — шапка с языком, нижняя панель из четырёх разделов;
+     · телефон (Mini App) — шапка с языком, нижняя панель из пяти разделов;
      · планшет — шапка и узкая колонка разделов слева;
-     · компьютер — боковая панель: название, разделы, кабинет (площадка и код), язык.
+     · компьютер — боковая панель: название, разделы, витрины, кабинет (код), язык.
    Раскладку выбирает layout.ts; те же границы — в @media styles.css. Заявки на компьютере —
-   списком и карточкой рядом (Inbox.tsx). Календарь, площадка и аккаунт — свои части сборки
-   (screens.tsx): после входа они подгружаются заранее. */
+   списком и карточкой рядом (Inbox.tsx). Календарь, площадка, услуги и аккаунт — свои части
+   сборки (screens.tsx): после входа они подгружаются заранее.
+
+   Витрина (карточка в одной категории; у вендора их бывает несколько) выбрана одна на весь
+   кабинет — listingId: её показывают календарь, площадка и услуги. Выбор — в боковой панели
+   компьютера, на телефоне и планшете — вверху этих экранов. Заявки — все витрины сразу или
+   одна (scope): выбор одной витрины во входящих делает её выбранной и в остальных разделах. */
 
 type Auth =
   | { readonly kind: GateKind; readonly back?: string }
@@ -51,6 +57,7 @@ const NAV_ICON: Readonly<Record<Section, IconName>> = {
   requests: "requests",
   calendar: "calendar",
   card: "hall",
+  services: "services",
   account: "user",
 };
 
@@ -232,6 +239,8 @@ function Cabinet() {
   const [attempt, setAttempt] = useState(0);
   const [inboxTab, setInboxTab] = useState<RequestTab>("new");
   const [listingId, setListingId] = useState<string | null>(null);
+  // Входящие: все витрины или только выбранная
+  const [scope, setScope] = useState<"all" | "listing">("all");
   const [fresh, setFresh] = useState<number | null>(null);
   const t = vendorDict[lang];
   const ready = auth.kind === "ready" ? auth : null;
@@ -254,7 +263,12 @@ function Cabinet() {
         // После входа язык — из профиля вендора (его же видит бот)
         setLang(result.me.user.locale);
         saveLang(result.me.user.locale);
-        setListingId((current) => current ?? result.me.listings[0]?.id ?? null);
+        // Выбранная витрина остаётся, если она есть у этого кабинета (сменили кабинет — первая)
+        setListingId((current) =>
+          current !== null && result.me.listings.some((listing) => listing.id === current)
+            ? current
+            : (result.me.listings[0]?.id ?? null),
+        );
       }
     });
     return () => {
@@ -331,6 +345,16 @@ function Cabinet() {
   const uiTexts = useMemo(() => ({ close: t.close, clear: t.clear }), [t]);
   const screenProps = { t, lang, headingRef } as const;
   const onCounts = useCallback((counts: Readonly<Record<RequestTab, number>>) => setFresh(counts.new), []);
+  // Заявки одной витрины — только когда витрин несколько и выбрана одна
+  const listings = ready?.me.listings ?? [];
+  const inboxFilter = scope === "listing" && listings.length > 1 ? listingId : null;
+  const filterInbox = useCallback((id: string | null) => {
+    if (id === null) setScope("all");
+    else {
+      setListingId(id);
+      setScope("listing");
+    }
+  }, []);
 
   const signInHub = useCallback(() => {
     // Токен этого аккаунта не подошёл (не партнёр) — войти другим: старый забыть
@@ -368,11 +392,12 @@ function Cabinet() {
       <Lazy part={SCREENS.calendar} t={t}>
         {({ Calendar }) => (
           <Calendar
-            t={t}
-            headingRef={headingRef}
+            {...screenProps}
             listings={auth.me.listings}
             listingId={listingId}
             onListing={setListingId}
+            inSidebar={layout === "desktop"}
+            navigate={navigate}
           />
         )}
       </Lazy>
@@ -388,6 +413,23 @@ function Cabinet() {
             onListing={setListingId}
             vendorCode={auth.me.vendor.code}
             role={auth.me.user.role}
+            inSidebar={layout === "desktop"}
+            navigate={navigate}
+          />
+        )}
+      </Lazy>
+    );
+  } else if (location.route === "services") {
+    screen = (
+      <Lazy part={SCREENS.services} t={t}>
+        {({ Services }) => (
+          <Services
+            {...screenProps}
+            listings={auth.me.listings}
+            listingId={listingId}
+            onListing={setListingId}
+            role={auth.me.user.role}
+            inSidebar={layout === "desktop"}
           />
         )}
       </Lazy>
@@ -409,8 +451,11 @@ function Cabinet() {
         tab={inboxTab}
         onTab={setInboxTab}
         navigate={navigate}
-        listingCount={auth.me.listings.length}
-        onCounts={onCounts}
+        listings={auth.me.listings}
+        filter={inboxFilter}
+        onFilter={filterInbox}
+        // Значок у раздела — новые всех витрин: счётчики одной витрины его не меняют
+        onCounts={inboxFilter === null ? onCounts : undefined}
       />
     );
   }
@@ -433,6 +478,13 @@ function Cabinet() {
               fresh={fresh}
               className="side-nav"
               linkClass="side-link"
+            />
+            <VitrinaSwitch
+              listings={ready.me.listings}
+              value={listingId}
+              onChange={setListingId}
+              t={t}
+              lang={lang}
             />
             <div className="side-foot">
               <p className="side-vendor">

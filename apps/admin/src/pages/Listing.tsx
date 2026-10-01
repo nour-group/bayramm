@@ -1,7 +1,10 @@
-/* Карточка: статус и действия, чего не хватает, фото, занятые дни, поля, история.
-   Любая правка и действие несут version — если карточку успели изменить, сервер
-   отвечает version_conflict, и форма просит обновить страницу. Правка, которая ждёт
-   решения модератора (от вендора или менеджера), — отметкой вверху со ссылкой на неё. */
+/* Карточка (витрина): категория, статус и действия, чего не хватает, фото, услуги,
+   занятость по режиму категории, поля, история. Любая правка и действие несут version —
+   если карточку успели изменить, сервер отвечает version_conflict, и форма просит обновить
+   страницу. Правка, которая ждёт решения модератора (от вендора или менеджера), — отметкой
+   вверху со ссылкой на неё. Новая витрина вендору — короткая форма: категория и название,
+   остальное — на странице витрины. Что спрашивать, решает категория
+   (@bayramm/shared/categories). */
 
 import type {
   ListingAction,
@@ -10,18 +13,29 @@ import type {
   ListingSaveResult,
   ListingStatus,
   PendingRevision,
+  PublishBlocker,
   RevealedPhone,
   StaffDictionaries,
+  VendorDetail,
 } from "@bayramm/shared/api/staff";
+import {
+  attributeLabel,
+  type CategoryConfig,
+  categoryConfig,
+  serviceTypeLabel,
+} from "@bayramm/shared/categories";
+import { Select } from "@bayramm/ui/react";
 import { type FormEvent, useCallback, useId, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
+import { categoryName, categoryOptions } from "../categories";
 import { formatMoment, vendorLabel } from "../format";
 import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
   ActionBar,
-  Blockers,
+  CategoryChip,
   ErrorText,
+  Field,
   Link,
   LoadedView,
   OverflowMenu,
@@ -33,9 +47,10 @@ import {
   useNavigate,
 } from "../ui";
 import { useUnsaved } from "../unsaved";
-import { Calendar } from "./Calendar";
+import { Calendar, LeadTime } from "./Calendar";
 import { ListingForm } from "./ListingForm";
 import { Photos } from "./Photos";
+import { Services } from "./Services";
 
 // Какие действия доступны из статуса — те же переходы, что в базе
 const ACTIONS_FROM: Record<ListingStatus, readonly ListingAction[]> = {
@@ -57,25 +72,8 @@ const PERMISSION = {
 
 const REASON_REQUIRED: ReadonlySet<ListingAction> = new Set(["suspend", "reject"]);
 
-export function ListingNewPage({
-  vendorId,
-  dictionaries,
-}: {
-  vendorId: string;
-  dictionaries: StaffDictionaries | null;
-}) {
-  const { api } = useSession();
-  const navigate = useNavigate();
-  const create = useCallback(
-    async (body: ListingInput): Promise<Failure | null> => {
-      const result = await api.post<ListingDetail>("/staff/listings", { ...body, vendorId });
-      if (!result.ok) return result;
-      // Карточка создана — форма сохранена: переход без вопроса о несохранённом
-      navigate({ name: "listing", id: result.data.id }, { force: true });
-      return null;
-    },
-    [api, navigate, vendorId],
-  );
+export function ListingNewPage({ vendorId }: { vendorId: string }) {
+  const { loaded, reload } = useLoad<VendorDetail>(`/staff/vendors/${vendorId}`);
   return (
     <div className="stack">
       <p>
@@ -83,13 +81,99 @@ export function ListingNewPage({
           ← {t.openVendor}
         </Link>
       </p>
-      <ListingForm
-        listing={null}
-        dictionaries={dictionaries}
-        onSubmit={create}
-        submitLabel={t.createListing}
-      />
+      <LoadedView loaded={loaded} onRetry={reload}>
+        {(vendor) => <NewVitrinaForm vendor={vendor} />}
+      </LoadedView>
     </div>
+  );
+}
+
+/** Новая витрина вендору: категория (обязательно) и название; дальше — страница витрины */
+function NewVitrinaForm({ vendor }: { vendor: VendorDetail }) {
+  const { api } = useSession();
+  const navigate = useNavigate();
+  const [categoryCode, setCategoryCode] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [busy, setBusy] = useState(false);
+  useUnsaved(categoryCode !== null || name.trim() !== "");
+  const bad = failure?.code === "invalid_input" ? failure.details : [];
+  const existing = vendor.listings.map((l) => `${l.name} (${categoryName(l.categoryCode)})`).join(", ");
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (categoryCode === null) {
+      setFailure({ ok: false, status: 422, code: "invalid_input", details: ["categoryCode"] });
+      return;
+    }
+    setBusy(true);
+    const result = await api.post<ListingDetail>(`/staff/vendors/${vendor.id}/listings`, {
+      categoryCode,
+      ...(name.trim() ? { name: name.trim() } : {}),
+    });
+    setBusy(false);
+    if (!result.ok) {
+      setFailure(result);
+      return;
+    }
+    // Витрина создана — форма сохранена: переход без вопроса о несохранённом
+    navigate({ name: "listing", id: result.data.id }, { force: true });
+  };
+
+  return (
+    <form className="form" onSubmit={submit} noValidate>
+      <section className="fs">
+        <div className="fs-head">
+          <h2>{vendorLabel(vendor)}</h2>
+          <p>{t.addVitrinaLead}</p>
+          {existing ? <p>{t.vitrinaHas(existing)}</p> : null}
+        </div>
+        <div className="fields">
+          <Field
+            label={t.categoryFirst}
+            error={bad.includes("categoryCode") ? t.categoryRequired : undefined}
+          >
+            {(props) => (
+              <Select
+                {...props}
+                className="input"
+                label={t.categoryFirst}
+                placeholder={t.categoryRequired}
+                value={categoryCode}
+                onChange={(code) => {
+                  setCategoryCode(code);
+                  setFailure(null);
+                }}
+                options={categoryOptions()}
+              />
+            )}
+          </Field>
+          <Field
+            label={t.vitrinaName}
+            hint={t.vitrinaNameHint}
+            error={bad.includes("name") ? (t.listingFieldErrors.name ?? "") : undefined}
+          >
+            {(props) => (
+              <input
+                {...props}
+                className="input"
+                value={name}
+                maxLength={80}
+                autoComplete="off"
+                placeholder={vendor.name ?? ""}
+                onChange={(event) => setName(event.target.value)}
+              />
+            )}
+          </Field>
+        </div>
+      </section>
+      {failure && <ErrorText failure={failure} />}
+      <div className="acts">
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? t.saving : t.createVitrina}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -112,6 +196,26 @@ interface ListingViewProps {
 }
 
 function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewProps) {
+  const category = categoryConfig(listing.categoryCode);
+  if (category === undefined) return <p className="notice notice-error">{t.api.not_found}</p>;
+  return (
+    <CategoryListing
+      listing={listing}
+      category={category}
+      dictionaries={dictionaries}
+      onChange={onChange}
+      onReload={onReload}
+    />
+  );
+}
+
+function CategoryListing({
+  listing,
+  category,
+  dictionaries,
+  onChange,
+  onReload,
+}: ListingViewProps & { category: CategoryConfig }) {
   const { api } = useSession();
   const can = useCan();
   // Правка формы не сохранена — на телефоне внизу «Сохранить», а не смена статуса
@@ -141,7 +245,8 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
   }, [api, listing.id]);
 
   const showReview = listing.status === "lead" || listing.status === "draft" || listing.status === "rejected";
-  const minPhotos = dictionaries?.settings.minPhotos ?? 3;
+  // Минимум фото — у категории (не меньше трёх) и в настройках платформы: больший из двух
+  const minPhotos = Math.max(dictionaries?.settings.minPhotos ?? 3, category.minPhotos);
   const approvable = listing.photos.filter((photo) => photo.moderation !== "declined").length;
   const activeBlockers = publishBlockers(listing.blockers.active, approvable, minPhotos);
   // Сотрудник без права решать по правкам меняет опубликованную карточку через модерацию
@@ -155,7 +260,7 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
           {" · "}/{listing.slug}
         </p>
         <p>
-          <StatusPill status={listing.status} />
+          <CategoryChip code={listing.categoryCode} /> <StatusPill status={listing.status} />
           {listing.statusReason && (
             <span className="reason">
               {" "}
@@ -169,9 +274,20 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
 
       <StatusActions listing={listing} onChange={onChange} hidden={dirty} />
 
-      {showReview && <Blockers title={t.blockersReview} codes={listing.blockers.review} />}
+      {showReview && (
+        <ListingBlockers
+          title={t.blockersReview}
+          codes={listing.blockers.review}
+          listing={listing}
+          category={category}
+          photos={{ count: approvable, min: minPhotos }}
+        />
+      )}
       {listing.status !== "active" && (
-        <Blockers
+        <ListingBlockers
+          listing={listing}
+          category={category}
+          photos={{ count: approvable, min: minPhotos }}
           title={t.blockersActive}
           // До проверки — только то, чего не хватит сверх уже перечисленного
           codes={
@@ -189,6 +305,7 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
         <div className="stack">
           <Photos
             listingId={listing.id}
+            photoPolicy={category.photoPolicy}
             photos={listing.photos}
             minPhotos={minPhotos}
             maxPhotos={dictionaries?.settings.maxPhotos ?? 10}
@@ -202,21 +319,173 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
               <p className="muted">{t.phoneMissing}</p>
             )}
           </section>
-          <Calendar listingId={listing.id} />
+          <Services listing={listing} category={category} onChanged={onReload} />
+          {category.availability === "lead" ? (
+            <LeadTime listing={listing} category={category} />
+          ) : (
+            <Calendar key={category.code} listingId={listing.id} category={category} />
+          )}
+          <CategoryPanel listing={listing} onChange={onChange} />
           <History listing={listing} />
         </div>
         <ListingForm
-          key={listing.id}
+          key={`${listing.id}:${listing.categoryCode}`}
           listing={listing}
+          category={category}
           dictionaries={dictionaries}
           onSubmit={save}
-          submitLabel={t.save}
           readOnly={!can("listings.write")}
           moderated={moderated}
           onDirtyChange={setDirty}
         />
       </div>
     </div>
+  );
+}
+
+// ── чего не хватает ────────────────────────────────────────────────────────
+
+/**
+ * Чего не хватает для проверки или публикации — словами, с подробностями по категории: какие
+ * данные витрины не заполнены, каких обязательных услуг нет
+ */
+function ListingBlockers({
+  title,
+  codes,
+  listing,
+  category,
+  photos,
+}: {
+  title: string;
+  codes: readonly PublishBlocker[];
+  listing: ListingDetail;
+  category: CategoryConfig;
+  /** Фото, которые можно одобрить, и минимум категории */
+  photos: { readonly count: number; readonly min: number };
+}) {
+  if (codes.length === 0) return null;
+  const present = new Set(
+    listing.services.filter((s) => s.status === "active" || s.status === "review").map((s) => s.type),
+  );
+  const missingServices = category.requiredServices.filter((code) => !present.has(code));
+  const detail = (code: PublishBlocker): string | null => {
+    if (code === "attributes" && listing.missingAttributes.length > 0)
+      return t.readinessAttributes(
+        listing.missingAttributes.map((key) => attributeLabel("ru", category, key)).join(", "),
+      );
+    if (code === "packages" && missingServices.length > 0)
+      return t.readinessServices(missingServices.map((s) => serviceTypeLabel("ru", category, s)).join(", "));
+    if (code === "photos") return t.readinessPhotos(photos.count, photos.min);
+    return null;
+  };
+  return (
+    <div className="notice notice-warn">
+      <p className="notice-title">{title}</p>
+      <ul className="blockers">
+        {codes.map((code) => {
+          const more = detail(code);
+          return (
+            <li key={code}>
+              {t.blockers[code] ?? code}
+              {more ? <span className="sub">{more}</span> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+// ── категория витрины ──────────────────────────────────────────────────────
+
+/**
+ * Сменить категорию — только сотрудник и только пока у витрины нет заявок и услуг (иначе
+ * сервер ответит category_locked: новая витрина). Данные витрины при смене очищаются
+ */
+function CategoryPanel({
+  listing,
+  onChange,
+}: {
+  listing: ListingDetail;
+  onChange: (l: ListingDetail) => void;
+}) {
+  const { api } = useSession();
+  const can = useCan();
+  const button = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [busy, setBusy] = useState(false);
+  useUnsaved(open && code !== null);
+  if (!can("listings.write")) return null;
+  const locked = listing.services.length > 0;
+
+  const close = () => {
+    setOpen(false);
+    setCode(null);
+    setFailure(null);
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (code === null) return;
+    setBusy(true);
+    const result = await api.post<ListingDetail>(`/staff/listings/${listing.id}/category`, {
+      categoryCode: code,
+      version: listing.version,
+    });
+    setBusy(false);
+    setFailure(result.ok ? null : result);
+    if (result.ok) {
+      close();
+      onChange(result.data);
+    }
+  };
+
+  return (
+    <section className="panel" aria-labelledby="category-title">
+      <h2 id="category-title">{t.category}</h2>
+      <p>
+        <CategoryChip code={listing.categoryCode} />
+      </p>
+      <p className="muted small">{locked ? t.categoryChangeLocked : t.categoryChangeHint}</p>
+      {locked ? null : (
+        <button
+          ref={button}
+          type="button"
+          className="btn btn-sm"
+          aria-expanded={open}
+          onClick={() => (open ? close() : setOpen(true))}
+        >
+          {t.categoryChange}
+        </button>
+      )}
+      <PhoneSheet open={open} title={t.categoryChange} onClose={close} returnFocus={button}>
+        <form className="confirm" onSubmit={submit} noValidate>
+          <Field label={t.categoryNew}>
+            {(props) => (
+              <Select
+                {...props}
+                className="input"
+                label={t.categoryNew}
+                placeholder={t.categoryRequired}
+                value={code}
+                onChange={setCode}
+                options={categoryOptions().filter((option) => option.value !== listing.categoryCode)}
+              />
+            )}
+          </Field>
+          <div className="acts">
+            <button type="submit" className="btn btn-primary" disabled={busy || code === null}>
+              {t.categoryChange}
+            </button>
+            <button type="button" className="btn" onClick={close}>
+              {t.cancel}
+            </button>
+          </div>
+          {failure && <ErrorText failure={failure} />}
+        </form>
+      </PhoneSheet>
+    </section>
   );
 }
 

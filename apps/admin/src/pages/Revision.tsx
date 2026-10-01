@@ -10,8 +10,15 @@ import type {
   RevisionValue,
   StaffListingPackage,
 } from "@bayramm/shared/api/staff";
+import {
+  type AttributeValue,
+  attributeText,
+  type CategoryConfig,
+  categoryConfig,
+} from "@bayramm/shared/categories";
 import { useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
+import { ru } from "../categories";
 import { formatMoment, formatSum, vendorLabel } from "../format";
 import { usePhone } from "../layout";
 import { t } from "../texts";
@@ -38,8 +45,59 @@ export function RevisionPage({ id }: { id: string }) {
 const isPackages = (value: RevisionValue): value is readonly StaffListingPackage[] =>
   Array.isArray(value) && value.every((item) => typeof item === "object" && item !== null);
 
-function Value({ field, value }: { field: RevisionChange["field"]; value: RevisionValue }) {
+const isRecord = (value: RevisionValue): value is Readonly<Record<string, AttributeValue | null>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** Данные витрины в правке: подпись поля и значение словами (пусто — «убрать») */
+function AttributesValue({
+  category,
+  value,
+}: {
+  category: CategoryConfig;
+  value: Readonly<Record<string, unknown>>;
+}) {
+  return (
+    <ul className="plain">
+      {Object.entries(value).map(([key, item]) => {
+        const field = category.attributes.find((a) => a.key === key);
+        const label = field ? ru(field.label) : key;
+        const text = field ? attributeText("ru", field, item, t.yes) : item === null ? null : String(item);
+        return (
+          <li key={key}>
+            {label}: {text ?? t.none}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function Value({
+  field,
+  value,
+  category,
+}: {
+  field: RevisionChange["field"];
+  value: RevisionValue;
+  category: CategoryConfig | undefined;
+}) {
   if (value === null) return <span className="muted">{t.none}</span>;
+  if (field === "attributes" && isRecord(value) && category) {
+    return <AttributesValue category={category} value={value} />;
+  }
+  if (field === "videoLinks" && Array.isArray(value)) {
+    return value.length === 0 ? (
+      <span className="muted">{t.none}</span>
+    ) : (
+      <ul className="plain">
+        {(value as readonly string[]).map((link) => (
+          <li key={link} className="reason">
+            {link}
+          </li>
+        ))}
+      </ul>
+    );
+  }
   if (isPackages(value)) {
     return (
       <ul className="plain">
@@ -70,6 +128,7 @@ function RevisionView({
   onChange: (r: RevisionDetail) => void;
 }) {
   useEntityTitle(`${t.views.revision}: ${revision.listing.name}`);
+  const category = categoryConfig(revision.listing.categoryCode);
   const { api } = useSession();
   const can = useCan();
   const phone = usePhone();
@@ -134,13 +193,13 @@ function RevisionView({
               <div className="change">
                 <p className="change-label">{t.revisionNow}</p>
                 <div className="change-value">
-                  <Value field={change.field} value={change.before} />
+                  <Value field={change.field} value={change.before} category={category} />
                 </div>
               </div>
               <div className="change change-new">
                 <p className="change-label">{t.revisionProposed[revision.proposedBy.kind]}</p>
                 <div className="change-value">
-                  <Value field={change.field} value={change.after} />
+                  <Value field={change.field} value={change.after} category={category} />
                 </div>
               </div>
             </li>
@@ -161,10 +220,10 @@ function RevisionView({
                 <tr key={change.field}>
                   <th scope="row">{t.revisionFields[change.field] ?? change.field}</th>
                   <td>
-                    <Value field={change.field} value={change.before} />
+                    <Value field={change.field} value={change.before} category={category} />
                   </td>
                   <td>
-                    <Value field={change.field} value={change.after} />
+                    <Value field={change.field} value={change.after} category={category} />
                   </td>
                 </tr>
               ))}

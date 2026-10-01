@@ -1,6 +1,9 @@
 /* Фото карточки: загрузка (сжатие в браузере, без метаданных), порядок, обложка,
-   решение модератора, удаление (через подтверждение). На фото не должно быть лиц —
-   предупреждение всегда на виду, без подтверждения файлы не выбрать. Выбор файлов —
+   решение модератора, удаление (через подтверждение). Подтверждение — по правилу фото
+   категории: «без людей» (площадка, кортеж, цветы, торты, подарки, декор) — на фото нет лиц
+   (X-No-Faces); портфолио (фото и видео, студия) — люди на фото согласны на публикацию
+   (X-Photo-Consent) или лиц нет. Предупреждение всегда на виду, без подтверждения файлы не
+   выбрать; ничего не отмечено заранее. Выбор файлов —
    FileDrop: на телефоне — камера или галерея, на компьютере — ещё и перетаскивание.
    Порядок — кнопками «раньше / позже», не перетаскиванием: так и пальцем, и с клавиатуры.
    На телефоне — две колонки; у фото «раньше», «позже» и «Ещё» (обложка, решение, удаление). */
@@ -8,7 +11,9 @@
 import { isImageError } from "@bayramm/media";
 import { compressForUpload } from "@bayramm/media/browser";
 import type { StaffPhoto } from "@bayramm/shared/api/staff";
-import { Checkbox, ConfirmSheet, FileDrop } from "@bayramm/ui/react";
+import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
+import type { PhotoPolicy } from "@bayramm/shared/categories";
+import { Checkbox, ConfirmSheet, FileDrop, RadioGroup } from "@bayramm/ui/react";
 import { useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
 import { photoSrc, photoSrcSet } from "../format";
@@ -21,8 +26,13 @@ import { ErrorText, type MenuAction, OverflowMenu, Pill } from "../ui";
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
 const ACCEPT_PHONE = "image/*,.heic,.heif";
 
+/** Что подтвердил сотрудник о выбранных фото (портфолио) */
+type PhotoAck = "consent" | "no_faces";
+
 interface PhotosProps {
   listingId: string;
+  /** Правило фото категории витрины */
+  photoPolicy: PhotoPolicy;
   photos: readonly StaffPhoto[];
   minPhotos: number;
   maxPhotos: number;
@@ -30,10 +40,16 @@ interface PhotosProps {
   onChanged: () => void;
 }
 
-export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: PhotosProps) {
+export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, onChanged }: PhotosProps) {
   const { api } = useSession();
   const can = useCan();
+  const portfolio = photoPolicy === "portfolio";
   const [ack, setAck] = useState(false);
+  const [portfolioAck, setPortfolioAck] = useState<PhotoAck | null>(null);
+  const acknowledged = portfolio ? portfolioAck !== null : ack;
+  // Заголовок подтверждения: согласие людей на фото или «лиц нет»
+  const ackHeader: Record<string, string> =
+    portfolio && portfolioAck === "consent" ? { [PHOTO_CONSENT_HEADER]: "1" } : { [NO_FACES_HEADER]: "1" };
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [problems, setProblems] = useState<string[]>([]);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -58,7 +74,7 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
       try {
         // Перекодирование всегда: так EXIF и геопозиция не уходят дальше браузера
         const photo = await compressForUpload(file);
-        const result = await api.upload<StaffPhoto>(base, photo.blob, { "X-No-Faces": "1" });
+        const result = await api.upload<StaffPhoto>(base, photo.blob, ackHeader);
         if (!result.ok) {
           const why =
             result.code === "invalid_image"
@@ -138,7 +154,7 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
         {t.photos} <span className="count">{photos.length}</span>
       </h2>
       <p className="muted small">{t.photosHint(minPhotos, maxPhotos)}</p>
-      <p className="notice notice-warn">{t.noFacesWarning}</p>
+      <p className="notice notice-warn">{portfolio ? t.portfolioWarning : t.noFacesWarning}</p>
 
       {photos.length === 0 ? (
         <p className="muted">{t.photosEmpty}</p>
@@ -275,15 +291,28 @@ export function Photos({ listingId, photos, minPhotos, maxPhotos, onChanged }: P
 
       {editable && photos.length < maxPhotos && (
         <div className="upload">
-          <Checkbox checked={ack} onChange={setAck}>
-            {t.noFacesAck}
-          </Checkbox>
+          {portfolio ? (
+            <RadioGroup<PhotoAck>
+              variant="row"
+              label={t.photoAckLabel}
+              value={portfolioAck}
+              onChange={setPortfolioAck}
+              options={[
+                { value: "consent", label: t.photoAckConsent },
+                { value: "no_faces", label: t.photoAckNoFaces },
+              ]}
+            />
+          ) : (
+            <Checkbox checked={ack} onChange={setAck}>
+              {t.noFacesAck}
+            </Checkbox>
+          )}
           <FileDrop
             title={phone ? t.addPhotosPhone : t.addPhotos}
             hint={phone ? t.photosPick : t.photosDrop}
             accept={phone ? ACCEPT_PHONE : ACCEPT}
             multiple
-            disabled={!ack || progress !== null}
+            disabled={!acknowledged || progress !== null}
             onFiles={(files) => void upload(files)}
           />
           {progress && (

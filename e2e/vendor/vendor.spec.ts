@@ -4,11 +4,25 @@ import { fill, vendorDict } from "../../apps/vendor/src/i18n";
 import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
 import { expect, test } from "../support/offline";
 import { clickBackButton, fakeTelegram } from "../support/telegram";
-import { mockVendorApi, NOW, REQUEST_LATE, REQUEST_NEW, type SignIn } from "../support/vendor-api";
+import {
+  CAKE_ID,
+  CAR_ID,
+  mockVendorApi,
+  NOW,
+  PHOTO_ID,
+  REQUEST_CAR,
+  REQUEST_LATE,
+  REQUEST_NEW,
+  SERVICE_CAR,
+  type SignIn,
+} from "../support/vendor-api";
 
 /* Кабинет партнёра: экраны до входа (вне Telegram и отказы API), входящие, карточка
-   заявки, календарь, площадка, аккаунт — на перехваченном /api. Роли: владелец кабинета
-   меняет карточку (фото, правки), сотрудник площадки — только заявки и календарь.
+   заявки, календарь, площадка, услуги, аккаунт — на перехваченном /api. Роли: владелец
+   кабинета меняет карточку (фото, правки, услуги), сотрудник площадки — только заявки и
+   календарь. Витрины в разных категориях (listings: "many") — в конце: выбор витрины,
+   входящие по витрине, поля заявки, услуги, поля витрины и видео, фото с согласием людей,
+   части дня и срок заказа вместо календаря.
 
    Два проекта: vendor-phone (Mini App на телефоне, нижняя панель) и vendor-desktop (сайт,
    1280px: боковая панель, заявки списком и карточкой рядом). Проверки раскладки —
@@ -30,14 +44,22 @@ const CONTROLS = [
   "label.ui-radio",
   "label.ui-check",
   ".ui-drop-face",
+  ".side-vitrina",
+  ".ui-select",
+  ".ui-icon-btn",
 ].join(", ");
 
 async function start(
   page: Page,
-  { telegram = true, signIn = "ok" as SignIn, role = "owner" as VendorRole } = {},
+  {
+    telegram = true,
+    signIn = "ok" as SignIn,
+    role = "owner" as VendorRole,
+    listings = "one" as "one" | "many",
+  } = {},
 ) {
   await page.clock.setFixedTime(NOW);
-  const api = await mockVendorApi(page, { signIn, role });
+  const api = await mockVendorApi(page, { signIn, role, listings });
   if (telegram) await fakeTelegram(page);
   return api;
 }
@@ -387,13 +409,19 @@ test.describe("кабинет", () => {
     await page.getByRole("button", { name: t.proposalStart }).click();
     const form = page.locator("form.proposal-form");
     await expect(form).toBeVisible();
+    // Цены в правке нет: она — из услуг; поля витрины зала — из конфигурации категории
+    await expect(form.getByLabel("Цена от, сум")).toHaveCount(0);
+    await expect(form.getByLabel("Мест на парковке", { exact: true })).toHaveValue("80");
     await expectNoAxeViolations(page, "изменения карточки: форма");
     await expectHitAreas(page, "изменения карточки: форма", CONTROLS);
 
-    await form.getByLabel(t.priceFromLabel).fill("27 000 000");
+    await form.getByLabel(t.nameLabel, { exact: true }).fill("Lola zali Grand");
+    await form.getByLabel("Мест на парковке", { exact: true }).fill("120");
     await form.getByRole("button", { name: t.proposalSubmit }).click();
     await expect(page.getByText(t.proposalSent)).toBeVisible();
-    expect(api.revisions.map((r) => r.payload)).toEqual([{ price_from_uzs: 27_000_000 }]);
+    expect(api.revisions.map((r) => r.payload)).toEqual([
+      { name: "Lola zali Grand", attributes: { parking_spaces: 120 } },
+    ]);
     await expectNoAxeViolations(page, "изменения карточки: на проверке");
 
     await page.getByRole("button", { name: t.proposalWithdraw }).click();
@@ -426,7 +454,7 @@ test.describe("кабинет", () => {
     await start(page);
     await page.goto("/requests");
     const nav = sections(page);
-    await expect(nav.getByRole("link")).toHaveCount(4);
+    await expect(nav.getByRole("link")).toHaveCount(5);
     await expect(nav.getByRole("link", { name: new RegExp(t.requests) })).toHaveAttribute(
       "aria-current",
       "page",
@@ -435,6 +463,7 @@ test.describe("кабинет", () => {
     for (const [name, title] of [
       [t.calendar, t.calendar],
       [t.card, t.card],
+      [t.services, t.services],
       [t.account, t.account],
     ] as const) {
       await nav.getByRole("link", { name }).click();
@@ -484,7 +513,14 @@ test.describe("кабинет", () => {
 
   test("экраны без горизонтальной прокрутки", async ({ page }) => {
     await start(page);
-    for (const path of ["/requests", `/requests/${REQUEST_NEW}`, "/calendar", "/card", "/account"]) {
+    for (const path of [
+      "/requests",
+      `/requests/${REQUEST_NEW}`,
+      "/calendar",
+      "/card",
+      "/services",
+      "/account",
+    ]) {
       await page.goto(path);
       await heading(page).waitFor();
       await expectNoOverflow(page, path);
@@ -497,7 +533,7 @@ test.describe("кабинет", () => {
     test.skip(!isDesktop(page), "ширины перебирает один проект");
     test.setTimeout(120_000);
     await start(page);
-    const screens = ["/requests", `/requests/${REQUEST_NEW}`, "/calendar", "/card", "/account"];
+    const screens = ["/requests", `/requests/${REQUEST_NEW}`, "/calendar", "/card", "/services", "/account"];
     for (const width of WIDTHS) {
       await page.setViewportSize({ width, height: 900 });
       for (const path of screens) {
@@ -508,6 +544,303 @@ test.describe("кабинет", () => {
         await expectHitAreas(page, `${width}px ${path}`, CONTROLS);
         // Разделы видны на любой ширине: панель снизу, колонка или боковая панель
         await expect(sections(page)).toBeVisible();
+      }
+    }
+  });
+});
+
+test.describe("витрины в разных категориях", () => {
+  /** Выбрать витрину: на компьютере — в боковой панели, на телефоне — пилюли вверху экрана */
+  async function chooseVitrina(page: Page, name: string) {
+    const scope = isDesktop(page) ? page.locator(".side-vitrinas") : page.locator("main .vitrina-pills");
+    await scope.getByRole("button", { name }).click();
+  }
+
+  test("входящие: все витрины или одна; заявка — категория, часть дня, поля категории и услуги", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/requests");
+    await expect(heading(page)).toHaveText(t.requests);
+    const filter = page.getByRole("group", { name: t.inboxFilter });
+    await expect(filter.getByRole("button", { name: t.allListings })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".rq-list .rq")).toHaveCount(2);
+    const car = page.locator(".rq-list .rq").filter({ hasText: "Дильноза" });
+    await expect(car.locator(".chip-cat")).toHaveText("Кортеж");
+    await expect(car.locator(".rq-meta")).toContainText(t.part_evening.toLowerCase());
+    await expect(car.locator(".rq-details")).toContainText("Сколько машин: 3");
+    await expectNoAxeViolations(page, "входящие: витрины");
+    await expectHitAreas(page, "входящие: витрины", CONTROLS);
+    await expectNoOverflow(page, "входящие: витрины");
+
+    await filter.getByRole("button", { name: /Kortej Premium/ }).click();
+    await expect(page.locator(".rq-list .rq")).toHaveCount(1);
+    await expect.poll(() => api.inboxQueries.at(-1)).toEqual({ tab: "new", listingId: CAR_ID });
+    // Значок у раздела — новые всех витрин
+    await expect(sections(page).locator(".nav-count")).toHaveText("2");
+
+    await car.click();
+    await expect(requestTitle(page)).toContainText("1060");
+    await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
+    const details = page.locator(".request-details");
+    await expect(page.locator(".request .facts")).toContainText(`${t.part_evening} 17:00–24:00`);
+    await expect(details.locator(".detail-rows")).toContainText("Класс машины");
+    await expect(details.locator(".detail-rows")).toContainText("Премиум");
+    await expect(details.locator(".chosen-list")).toContainText("Машина для молодожёнов × 5");
+    await expect(details.locator(".chosen-list")).toContainText("+ Украшение живыми цветами");
+    await expectNoAxeViolations(page, "заявка на кортеж");
+    await expectHitAreas(page, "заявка на кортеж", CONTROLS);
+    await expectNoOverflow(page, "заявка на кортеж");
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("услуги: новая из каталога, правка услуги на витрине — предложением, отзыв — через подтверждение", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/services");
+    await expect(heading(page)).toHaveText(t.services);
+    await chooseVitrina(page, "Kortej Premium");
+    const card = page.locator(".svc").filter({ hasText: "Машина для молодожёнов" });
+    await expect(card.locator(".chip")).toHaveText(t.svcSt_active);
+    await expectNoAxeViolations(page, "услуги");
+    await expectHitAreas(page, "услуги", CONTROLS);
+    await expectNoOverflow(page, "услуги");
+
+    // Новая: тип — из каталога категории, дополнение — из шаблона
+    await page.getByRole("button", { name: t.serviceAdd }).click();
+    const editor = page.locator(".svc-editor");
+    await expect(editor.getByRole("heading", { name: t.serviceNew })).toBeFocused();
+    await editor.getByRole("button", { name: new RegExp(t.serviceType) }).click();
+    await page.getByRole("option", { name: /Лимузин/ }).click();
+    await editor.getByLabel(t.packagePrice, { exact: true }).fill("1 200 000");
+    await editor.getByRole("button", { name: "Добавить: Остановки для фотосессии" }).click();
+    await editor.locator(".package-row").getByLabel(t.packagePrice, { exact: true }).fill("200000");
+    await expectNoAxeViolations(page, "услуги: новая");
+    await expectHitAreas(page, "услуги: новая", CONTROLS);
+    await expectNoOverflow(page, "услуги: новая");
+    await editor.getByRole("button", { name: t.proposalSubmit }).click();
+    await expect(editor).toHaveCount(0);
+    const limo = page.locator(".svc").filter({ hasText: "Лимузин" });
+    await expect(limo.locator(".chip")).toHaveText(t.svcSt_review);
+    expect(api.serviceWrites[0]?.body).toMatchObject({
+      type: "limousine",
+      priceUzs: 1_200_000,
+      priceUnit: "per_hour",
+      options: [{ code: "photo_stops", priceUzs: 200_000, priceUnit: "per_event" }],
+    });
+
+    // Правка услуги на витрине опубликованной карточки — предложение: было → предложено
+    await card.getByRole("button", { name: t.svcEdit }).click();
+    await expect(page.getByText(t.serviceProposalNote)).toBeVisible();
+    await editor.getByLabel(t.packagePrice, { exact: true }).first().fill("350000");
+    await editor.getByRole("button", { name: t.proposalStart }).click();
+    await expect(card.locator(".svc-proposal")).toContainText(t.svcProposal);
+    await expect(card.locator(".changes")).toContainText("350");
+    expect(api.services.get(CAR_ID)?.find((s) => s.id === SERVICE_CAR)?.proposal?.changes).toEqual({
+      priceUzs: 350_000,
+    });
+    await expectNoAxeViolations(page, "услуги: предложение");
+
+    // Отозвать изменения — через подтверждение
+    await card.getByRole("button", { name: t.svcWithdrawProposal }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText(t.proposalWithdrawQ);
+    await expectNoAxeViolations(page, "услуги: подтверждение");
+    await dialog.getByRole("button", { name: t.svcWithdrawProposal }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(card.locator(".svc-proposal")).toHaveCount(0);
+    expect(api.unexpected).toEqual([]);
+    expect(api.ownerOnly).toEqual([]);
+  });
+
+  test("сотрудник площадки услуги только смотрит", async ({ page }) => {
+    const api = await start(page, { listings: "many", role: "member" });
+    await page.goto("/services");
+    await chooseVitrina(page, "Kortej Premium");
+    await expect(page.locator(".svc")).toHaveCount(1);
+    await expect(page.getByText(t.servicesMember)).toBeVisible();
+    await expect(page.getByRole("button", { name: t.serviceAdd })).toHaveCount(0);
+    await expect(page.locator(".svc-actions")).toHaveCount(0);
+    await expectNoAxeViolations(page, "услуги: сотрудник");
+    expect(api.serviceWrites).toEqual([]);
+  });
+
+  test("кортеж: автопарк в правке карточки — записи списка, уходят только изменённые поля", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/card");
+    await chooseVitrina(page, "Kortej Premium");
+    await expect(page.locator(".venue-name")).toHaveText("Kortej Premium");
+    await page.getByRole("button", { name: t.proposalStart }).click();
+    const form = page.locator("form.proposal-form");
+    await form.getByRole("button", { name: `${t.listAdd}: Автопарк` }).click();
+    const rows = form.locator(".attr-list .package-row");
+    await expect(rows).toHaveCount(2);
+    await rows.nth(1).locator("input.field").first().fill("Lincoln Town Car");
+    await rows.nth(1).getByRole("button", { name: /Класс/ }).click();
+    await page.getByRole("option", { name: "Лимузин" }).click();
+    await expectNoAxeViolations(page, "кортеж: правка");
+    await expectHitAreas(page, "кортеж: правка", CONTROLS);
+    await expectNoOverflow(page, "кортеж: правка");
+    await form.getByRole("button", { name: t.proposalSubmit }).click();
+    await expect(page.getByText(t.proposalSent)).toBeVisible();
+    expect(api.revisionsOf.get(CAR_ID)?.map((r) => r.payload)).toEqual([
+      {
+        attributes: {
+          fleet: [
+            { model: "Chevrolet Malibu", class: "sedan", color: "white", seats: 4 },
+            { model: "Lincoln Town Car", class: "limousine" },
+          ],
+        },
+      },
+    ]);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("фото и видео: чего не хватает; фото людей — с их согласием; ссылки на видео в правке", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/card");
+    await chooseVitrina(page, "Kadr Studio");
+    await expect(page.locator(".venue-name")).toHaveText("Kadr Studio");
+    await expect(page.locator(".readiness")).toContainText("Команда");
+    const section = page.locator("section[aria-labelledby='photos-title']");
+    await expect(section.getByText(t.portfolioWarning)).toBeVisible();
+    const consent = section.getByRole("checkbox", { name: t.consentAck });
+    const noFaces = section.getByRole("checkbox", { name: t.noFacesAck });
+    await expect(consent).not.toBeChecked();
+    await expect(noFaces).not.toBeChecked();
+    const input = section.locator('input[type="file"]');
+    await expect(input).toBeDisabled();
+    await expectNoAxeViolations(page, "фото и видео: карточка");
+    await expectHitAreas(page, "фото и видео: карточка", CONTROLS);
+    await consent.check();
+    await input.setInputFiles({
+      name: "kadr.png",
+      mimeType: "image/png",
+      buffer: await pngFromCanvas(page, 800, 600),
+    });
+    await expect(section.locator(".photos img")).toHaveCount(1);
+    expect(api.uploads).toEqual([
+      expect.objectContaining({ listingId: PHOTO_ID, consent: "1", noFaces: "" }),
+    ]);
+
+    await page.getByRole("button", { name: t.proposalStart }).click();
+    const form = page.locator("form.proposal-form");
+    await form.getByLabel(fill(t.videoLabel, { n: 1 })).fill("https://vimeo.com/123456");
+    await form.getByRole("button", { name: t.proposalSubmit }).click();
+    await expect(form.getByText(t.videoInvalid)).toBeVisible();
+    await form.getByLabel(fill(t.videoLabel, { n: 1 })).fill("https://youtu.be/dQw4w9WgXcQ");
+    await form.getByRole("checkbox", { name: "Фотограф" }).check();
+    await form.getByRole("spinbutton", { name: /Готовый материал через/ }).fill("14");
+    await expectNoAxeViolations(page, "фото и видео: правка");
+    await expectNoOverflow(page, "фото и видео: правка");
+    await form.getByRole("button", { name: t.proposalSubmit }).click();
+    await expect(page.getByText(t.proposalSent)).toBeVisible();
+    expect(api.revisionsOf.get(PHOTO_ID)?.map((r) => r.payload)).toEqual([
+      {
+        attributes: { team: ["photographer"], delivery_days: 14 },
+        video_links: ["https://youtu.be/dQw4w9WgXcQ"],
+      },
+    ]);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("кортеж: календарь частей дня — часть дня и сколько заказов одновременно, от версии календаря", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/calendar");
+    await chooseVitrina(page, "Kortej Premium");
+    await expect(page.getByText(t.pickDay)).toBeVisible();
+    await dayButton(page, 24).click();
+    await expect(dayButton(page, 24)).toHaveAttribute("aria-pressed", "true");
+    const panel = page.locator(".day-panel");
+    await expect(panel.getByRole("heading", { level: 2 })).toContainText("24");
+    await expect(
+      panel.getByRole("button", { name: new RegExp(`^${t.markFree}: ${t.part_morning}`) }),
+    ).toBeVisible();
+    await expect(panel.locator(".day-part").nth(3)).toContainText(fill(t.partBookings, { n: 1, cap: 2 }));
+    await expectNoAxeViolations(page, "календарь частей дня");
+    await expectHitAreas(page, "календарь частей дня", CONTROLS);
+    await expectNoOverflow(page, "календарь частей дня");
+
+    await panel.getByRole("button", { name: new RegExp(`^${t.markBusy}: ${t.part_evening}`) }).click();
+    await expect(
+      panel.getByRole("button", { name: new RegExp(`^${t.markFree}: ${t.part_evening}`) }),
+    ).toBeVisible();
+    await expect.poll(() => api.calendarWrites).toEqual(["PUT 2026-10-24?part=evening If-Match: 1"]);
+
+    await page.getByRole("button", { name: `${t.capacityTitle}: ${t.capacityMore}` }).click();
+    await page.locator(".capacity").getByRole("button", { name: t.serviceSave }).click();
+    await expect.poll(() => api.calendars.get(CAR_ID)?.capacity).toBe(3);
+    expect(api.calendarWrites).toEqual([
+      "PUT 2026-10-24?part=evening If-Match: 1",
+      "PUT capacity If-Match: 2",
+    ]);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("торты: календаря нет — срок заказа витрины и услуг", async ({ page }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/calendar");
+    await chooseVitrina(page, "Shirin Tort");
+    await expect(page.locator(".lead-days")).toHaveText(fill(t.leadText, { n: 3 }));
+    await expect(page.locator(".lead-panel")).toContainText("Свадебный торт");
+    await expect(page.locator(".cal-grid")).toHaveCount(0);
+    await expectNoAxeViolations(page, "торты: срок заказа");
+    await expectHitAreas(page, "торты: срок заказа", CONTROLS);
+    await page.locator(".lead-panel").getByRole("link", { name: t.toServices }).click();
+    await expect(heading(page)).toHaveText(t.services);
+    // Календарь торта не запрашивался (иначе запрос был бы в unexpected)
+    expect(api.unexpected).toEqual([]);
+    expect(api.calendars.get(CAKE_ID)?.version).toBe(1);
+  });
+
+  test("телефон: пять разделов внизу — подписи целиком и на 320px, на обоих языках", async ({ page }) => {
+    test.skip(isDesktop(page), "нижняя панель — телефон");
+    await start(page, { listings: "many" });
+    for (const width of [320, 360, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const lang of ["ru", "uz"] as const) {
+        await page.goto("/account");
+        await expect(heading(page)).toBeVisible();
+        await page.locator(".top .lang button", { hasText: lang.toUpperCase() }).click();
+        await expect(heading(page)).toHaveText(vendorDict[lang].account);
+        const clipped = await page.$$eval(".tabbar .nav-label", (labels) =>
+          labels.filter((el) => el.scrollWidth > el.clientWidth + 0.5).map((el) => el.textContent),
+        );
+        expect(clipped, `${width}px ${lang}`).toEqual([]);
+        await expectNoOverflow(page, `${width}px ${lang} разделы`);
+      }
+    }
+  });
+
+  test("новые экраны на 320–1440px: без прокрутки вбок, всё нажимаемое — от 44px", async ({ page }) => {
+    test.skip(!isDesktop(page), "ширины перебирает один проект");
+    test.setTimeout(120_000);
+    await start(page, { listings: "many" });
+    for (const width of [320, 390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const [path, vitrina] of [
+        ["/services", "Kortej Premium"],
+        ["/calendar", "Kortej Premium"],
+        ["/calendar", "Shirin Tort"],
+        ["/card", "Kadr Studio"],
+        [`/requests/${REQUEST_CAR}`, null],
+      ] as const) {
+        await page.goto(path);
+        await heading(page).waitFor();
+        if (vitrina) {
+          const scope = width >= 1024 ? page.locator(".side-vitrinas") : page.locator("main .vitrina-pills");
+          await scope.getByRole("button", { name: vitrina }).click();
+        }
+        await expect(page.locator(".status-line")).toHaveCount(0);
+        await expectNoOverflow(page, `${width}px ${path} ${vitrina ?? ""}`);
+        await expectHitAreas(page, `${width}px ${path} ${vitrina ?? ""}`, CONTROLS);
       }
     }
   });

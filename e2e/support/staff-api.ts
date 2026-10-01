@@ -2,7 +2,6 @@ import type {
   AuditList,
   Availability,
   AvailabilityInput,
-  BusyDay,
   ClientDetail,
   ClientList,
   ClientListItem,
@@ -30,9 +29,36 @@ import type {
   VendorMetricsList,
   VendorResponseStats,
 } from "@bayramm/shared/api/staff";
+import { categoryConfig } from "@bayramm/shared/categories";
 import type { Page, Route } from "@playwright/test";
 import { accountMe, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
+import {
+  applyAvailability,
+  availabilityOf,
+  CAR_REQUEST_ID,
+  type Calendar,
+  carRequest,
+  createService,
+  decide,
+  emptyListing,
+  newCalendar,
+  patchCategoryFields,
+  refresh,
+  seededListings,
+  serviceQueue,
+  updateService,
+} from "./staff-catalog";
 import { isApi } from "./vendor-api";
+
+export {
+  BOOKED_DAY,
+  BRIDE_CAR_ID,
+  CAKE_LISTING_ID,
+  CAR_LISTING_ID,
+  CAR_REQUEST_ID,
+  LIMOUSINE_ID,
+  PHOTO_LISTING_ID,
+} from "./staff-catalog";
 
 /* API панели оператора в памяти теста: page.route перехватывает /api/* до сети.
    Контракт — @bayramm/shared/api/staff. Сессия сотрудника — токен в sessionStorage
@@ -99,7 +125,10 @@ export const staffOf = (role: StaffRole): StaffMe => ({
 export const STAFF: StaffMe = staffOf("admin");
 
 const DICTIONARIES: StaffDictionaries = {
-  categories: [{ code: "hall", nameRu: "Площадка / Тойхона", nameUz: "Maydon / Toʻyxona", enabled: true }],
+  categories: [
+    { code: "hall", nameRu: "Площадка / Тойхона", nameUz: "Maydon / Toʻyxona", enabled: true },
+    { code: "car", nameRu: "Кортеж", nameUz: "Kortej", enabled: true },
+  ],
   districts: [
     { code: "yunusobod", nameRu: "Юнусабад", nameUz: "Yunusobod" },
     { code: "chilonzor", nameRu: "Чиланзар", nameUz: "Chilonzor" },
@@ -111,11 +140,11 @@ const DICTIONARIES: StaffDictionaries = {
 
 const CHECKLIST_OPEN = { done: false, at: null, by: null } as const;
 
-function vendorDetail(listings: readonly ListingDetail[]): VendorDetail {
+function vendorDetail(listings: readonly ListingDetail[], name = "Lola"): VendorDetail {
   return {
     id: VENDOR_ID,
     code: "V101",
-    name: "Lola",
+    name,
     legalForm: "ooo",
     contractNo: null,
     manager: null,
@@ -484,7 +513,7 @@ const REVISION: RevisionDetail = {
   status: "pending",
   submittedAt: iso,
   decidedAt: null,
-  listing: { id: LISTING_ID, name: "Lola zali", status: "active" },
+  listing: { id: LISTING_ID, name: "Lola zali", status: "active", categoryCode: "hall" },
   vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
   proposedBy: { kind: "partner", name: null },
   fields: ["name", "priceFromUzs"],
@@ -500,7 +529,20 @@ const REVISION: RevisionDetail = {
 
 export interface StaffApi {
   readonly unexpected: string[];
+  /** POST /staff/listings — прежний путь создания карточки (панель им больше не ходит) */
   readonly created: ListingInput[];
+  /** POST /staff/vendors — тела создания вендора (с категорией первой витрины) */
+  readonly vendorsCreated: Record<string, unknown>[];
+  /** POST /staff/vendors/:id/listings — новые витрины вендора */
+  readonly vitrinas: Record<string, unknown>[];
+  /** PATCH /staff/listings/:id — тела правок витрин */
+  readonly patches: Record<string, unknown>[];
+  /** Услуги: «МЕТОД путь» и тело (если есть) по порядку */
+  readonly services: { readonly key: string; readonly body: unknown }[];
+  /** Смены категории витрины */
+  readonly categoryChanges: Record<string, unknown>[];
+  /** Строки запроса GET /staff/requests и GET /staff/vendors */
+  readonly queries: string[];
   readonly actions: string[];
   /** Правки занятых дней: тело PUT …/availability (с версией календаря) */
   readonly calendar: AvailabilityInput[];
@@ -532,6 +574,11 @@ export interface StaffApiOptions {
    * так тест видит, что панель говорит словами на 409/422/429
    */
   readonly fail?: Readonly<Record<string, readonly [number, string]>>;
+  /**
+   * У вендора сразу есть витрины в других категориях (кортеж — опубликован, с услугами и
+   * очередью модерации; фото и видео; торты) и заявка на кортеж
+   */
+  readonly seeded?: boolean;
 }
 
 export async function mockStaffApi(
@@ -543,12 +590,19 @@ export async function mockStaffApi(
     match = isApi,
     role = "admin",
     fail: failures = {},
+    seeded = false,
   }: StaffApiOptions = {},
 ) {
   let elevated = 0;
   const state: StaffApi = {
     unexpected: [],
     created: [],
+    vendorsCreated: [],
+    vitrinas: [],
+    patches: [],
+    services: [],
+    categoryChanges: [],
+    queries: [],
     actions: [],
     calendar: [],
     webapp: [],
@@ -557,10 +611,22 @@ export async function mockStaffApi(
     },
     loggedOut: [],
   };
-  const listings: ListingDetail[] = [];
-  // Занятые дни карточки и версия её календаря (растёт с каждой правкой)
-  const busyDays = new Map<string, BusyDay>();
-  let calendarVersion = 0;
+  const listings: ListingDetail[] = seeded ? seededListings() : [];
+  let vendorName = "Lola";
+  // Занятость каждой витрины и версия её календаря (растёт с каждой правкой)
+  const calendars = new Map<string, Calendar>();
+  const calendarOf = (id: string) => {
+    const found = calendars.get(id) ?? newCalendar(id);
+    calendars.set(id, found);
+    return found;
+  };
+  const replace = (listing: ListingDetail) => {
+    const next = refresh(listing);
+    const index = listings.findIndex((l) => l.id === listing.id);
+    if (index >= 0) listings.splice(index, 1, next);
+    return next;
+  };
+  const requests = seeded ? [REQUEST, carRequest(REQUEST)] : [REQUEST];
   if (signedIn)
     await page.addInitScript(
       ({ key, token }) => {
@@ -625,7 +691,9 @@ export async function mockStaffApi(
     if (key === "GET /staff/me") return json(route, 200, staffOf(role));
     if (key === "GET /staff/dictionaries") return json(route, 200, DICTIONARIES);
     if (key === "GET /staff/vendors") {
-      const detail = vendorDetail(listings);
+      state.queries.push(`vendors?${url.searchParams}`);
+      const detail = vendorDetail(listings, vendorName);
+      const category = url.searchParams.get("category");
       const list: VendorList = {
         total: 1,
         items: [
@@ -639,15 +707,70 @@ export async function mockStaffApi(
             managerName: null,
             createdAt: iso,
             checklist: { contract: false, stir: false, contacts: false, pdConsent: false },
-            listings: listings.map((l) => ({ id: l.id, name: l.name, status: l.status })),
+            listings: listings.map((l) => ({
+              id: l.id,
+              name: l.name,
+              status: l.status,
+              categoryCode: l.categoryCode,
+            })),
             users: 0,
             linkedUsers: 0,
           },
         ],
       };
+      if (category && !listings.some((l) => l.categoryCode === category))
+        return json(route, 200, { total: 0, items: [] });
       return json(route, 200, list);
     }
-    if (key === `GET /staff/vendors/${VENDOR_ID}`) return json(route, 200, vendorDetail(listings));
+    if (key === `GET /staff/vendors/${VENDOR_ID}`)
+      return json(route, 200, vendorDetail(listings, vendorName));
+    if (key === "POST /staff/vendors") {
+      // Один вендор на подмену: «новый» — тот же V101 с новым названием и первой витриной
+      const input = request.postDataJSON() as Record<string, unknown>;
+      state.vendorsCreated.push(input);
+      if (typeof input.name !== "string" || input.name.trim().length < 2)
+        return fail(route, 422, "invalid_input", ["name"]);
+      const code = input.categoryCode;
+      if (code !== undefined && (typeof code !== "string" || !categoryConfig(code)?.enabled))
+        return fail(route, 422, "invalid_input", ["categoryCode"]);
+      vendorName = input.name.trim();
+      listings.splice(0, listings.length);
+      if (typeof code === "string") listings.push(emptyListing(LISTING_ID, code, vendorName, "navruz"));
+      return json(route, 201, vendorDetail(listings, vendorName));
+    }
+    if (key === `POST /staff/vendors/${VENDOR_ID}/listings`) {
+      const input = request.postDataJSON() as Record<string, unknown>;
+      state.vitrinas.push(input);
+      const code = input.categoryCode;
+      if (typeof code !== "string" || !categoryConfig(code)?.enabled)
+        return fail(route, 422, "invalid_input", ["categoryCode"]);
+      const name = typeof input.name === "string" && input.name.trim() ? input.name.trim() : vendorName;
+      // Первая созданная в тесте витрина — LISTING_ID: на неё ведут адреса тестов
+      const id = listings.some((l) => l.id === LISTING_ID)
+        ? `00000000-0000-4000-8100-0000000001${String(listings.length).padStart(2, "0")}`
+        : LISTING_ID;
+      const listing = emptyListing(id, code, name, `vitrina-${listings.length + 1}`);
+      listings.push(listing);
+      return json(route, 201, listing);
+    }
+    if (key === "GET /staff/services") return json(route, 200, serviceQueue(listings));
+    const decision = /^\/staff\/services\/([0-9a-f-]{36})\/(approve|decline)$/.exec(path);
+    if (decision?.[1] && method === "POST") {
+      const body = decision[2] === "decline" ? (request.postDataJSON() as { reason?: unknown }) : null;
+      state.services.push({ key, body });
+      const owner = listings.find((l) => l.services.some((sv) => sv.id === decision[1]));
+      const current = owner?.services.find((sv) => sv.id === decision[1]);
+      if (!owner || !current) return fail(route, 404, "not_found");
+      if (decision[2] === "decline" && (typeof body?.reason !== "string" || body.reason.trim() === ""))
+        return fail(route, 422, "invalid_input", ["reason"]);
+      const next = decide(
+        current,
+        decision[2] === "approve" ? "approved" : "declined",
+        typeof body?.reason === "string" ? body.reason : null,
+      );
+      replace({ ...owner, services: owner.services.map((sv) => (sv.id === next.id ? next : sv)) });
+      return json(route, 200, next);
+    }
     if (key === "GET /staff/listings") {
       // Очередь «Новые фото» — опубликованные карточки с фото на решении; остальное пусто
       const photos = url.searchParams.get("photos") === "pending";
@@ -666,6 +789,40 @@ export async function mockStaffApi(
       listings.splice(0, listings.length, listing);
       return json(route, 201, listing);
     }
+    const servicesMatch =
+      /^\/staff\/listings\/([0-9a-f-]{36})\/services(?:\/([0-9a-f-]{36})(?:\/(pause|resume))?)?$/.exec(path);
+    if (servicesMatch?.[1]) {
+      const listing = listings.find((l) => l.id === servicesMatch[1]);
+      if (!listing) return fail(route, 404, "not_found");
+      const sid = servicesMatch[2];
+      const step = servicesMatch[3];
+      const body = method === "POST" || method === "PATCH" ? request.postDataJSON() : undefined;
+      state.services.push({ key, body });
+      if (!sid && method === "GET") return json(route, 200, { items: listing.services });
+      if (!sid && method === "POST") {
+        const created = createService(listing, (body ?? {}) as Record<string, unknown>, role);
+        if (!created.ok) return fail(route, 422, "invalid_input", created.errors);
+        replace({ ...listing, services: [...listing.services, created.service] });
+        return json(route, 201, created.service);
+      }
+      const current = listing.services.find((sv) => sv.id === sid);
+      if (!current) return fail(route, 404, "not_found");
+      const put = (next: (typeof listing.services)[number]) => {
+        replace({ ...listing, services: listing.services.map((sv) => (sv.id === next.id ? next : sv)) });
+        return json(route, 200, next);
+      };
+      if (!step && method === "PATCH") {
+        const updated = updateService(listing, current, (body ?? {}) as Record<string, unknown>, role);
+        if (!updated.ok) return fail(route, 422, "invalid_input", updated.errors);
+        return put(updated.service);
+      }
+      if (step === "pause") return put({ ...current, status: "paused" });
+      if (step === "resume") return put({ ...current, status: role === "manager" ? "review" : "active" });
+      if (!step && method === "DELETE") {
+        replace({ ...listing, services: listing.services.filter((sv) => sv.id !== sid) });
+        return route.fulfill({ status: 204 });
+      }
+    }
     const listingMatch = /^\/staff\/listings\/([0-9a-f-]{36})(?:\/(\w+))?$/.exec(path);
     if (listingMatch?.[1]) {
       const listing = listings.find((l) => l.id === listingMatch[1]);
@@ -675,55 +832,53 @@ export async function mockStaffApi(
       if (!action && method === "PATCH") {
         // Сотрудник — администратор: решает по правкам сам, на модерацию ничего не уходит
         const input = request.postDataJSON() as ListingInput;
+        state.patches.push(input as unknown as Record<string, unknown>);
         if (input.version !== listing.version) return fail(route, 409, "version_conflict");
+        const fields = patchCategoryFields(listing, input as unknown as Record<string, unknown>);
+        if (!fields.ok) return fail(route, 422, "invalid_input", fields.errors);
         const patch = Object.fromEntries(EDITABLE.filter((k) => k in input).map((k) => [k, input[k]]));
-        const next: ListingDetail = {
-          ...listing,
+        const next = replace({
+          ...fields.listing,
           ...patch,
           hasPhone: listing.hasPhone || typeof input.phone === "string",
           version: listing.version + 1,
-        };
-        listings.splice(listings.indexOf(listing), 1, next);
+        });
         const saved: ListingSaveResult = { ...next, sentForModeration: [] };
         return json(route, 200, saved);
+      }
+      if (action === "category" && method === "POST") {
+        const input = request.postDataJSON() as Record<string, unknown>;
+        state.categoryChanges.push(input);
+        if (input.version !== listing.version) return fail(route, 409, "version_conflict");
+        if (listing.services.length > 0) return fail(route, 409, "category_locked");
+        const code = input.categoryCode;
+        if (typeof code !== "string" || !categoryConfig(code)?.enabled)
+          return fail(route, 422, "invalid_input", ["categoryCode"]);
+        const next = replace({
+          ...listing,
+          categoryCode: code,
+          attributes: {},
+          version: listing.version + 1,
+        });
+        return json(route, 200, next);
       }
       if (action === "availability" && method === "GET") {
         const from = url.searchParams.get("from") ?? "";
         const to = url.searchParams.get("to") ?? "";
-        const availability: Availability = {
-          mode: "day",
-          parallelCapacity: 1,
-          parts: [],
-          bookings: [],
-          from,
-          to,
-          busy: [...busyDays.values()].filter((b) => b.day >= from && b.day <= to),
-          version: calendarVersion,
-        };
+        const availability: Availability = availabilityOf(listing, calendarOf(listing.id), from, to);
         return json(route, 200, availability);
       }
       if (action === "availability" && method === "PUT") {
         // Правка — только от последней версии календаря, как на сервере
         const input = request.postDataJSON() as AvailabilityInput;
         state.calendar.push(input);
-        if (input.version !== calendarVersion) return fail(route, 409, "calendar_conflict");
-        for (const day of input.busy ?? []) busyDays.set(day, { day, source: "staff" });
-        for (const day of input.free ?? []) busyDays.delete(day);
-        calendarVersion++;
-        const days = [...(input.busy ?? []), ...(input.free ?? [])].sort();
-        const from = days[0] ?? "";
-        const to = days.at(-1) ?? from;
-        const availability: Availability = {
-          mode: "day",
-          parallelCapacity: 1,
-          parts: [],
-          bookings: [],
-          from,
-          to,
-          busy: [...busyDays.values()].filter((b) => b.day >= from && b.day <= to),
-          version: calendarVersion,
-        };
-        return json(route, 200, availability);
+        const calendar = calendarOf(listing.id);
+        const applied = applyAvailability(listing, calendar, input);
+        if (!applied.ok)
+          return fail(route, applied.code === "calendar_conflict" ? 409 : 422, applied.code, applied.details);
+        const from = applied.days[0] ?? "";
+        const to = applied.days.at(-1) ?? from;
+        return json(route, 200, availabilityOf(listing, calendar, from, to));
       }
       if (action && method === "POST" && ["submit", "publish"].includes(action)) {
         state.actions.push(action);
@@ -732,9 +887,12 @@ export async function mockStaffApi(
       }
     }
     if (key === "GET /staff/requests") {
+      state.queries.push(`requests?${url.searchParams}`);
+      const category = url.searchParams.get("category");
+      const items = requests.filter((r) => !category || r.listing.categoryCode === category);
       const list: StaffRequestList = {
-        total: 1,
-        items: [REQUEST],
+        total: items.length,
+        items,
         counts: {
           waiting: 0,
           overdue: 1,
@@ -748,6 +906,8 @@ export async function mockStaffApi(
       return json(route, 200, list);
     }
     if (key === `GET /staff/requests/${REQUEST_ID}`) return json(route, 200, REQUEST);
+    const car = requests.find((r) => r.id === CAR_REQUEST_ID);
+    if (car && key === `GET /staff/requests/${CAR_REQUEST_ID}`) return json(route, 200, car);
     if (key === "GET /staff/revisions") {
       const list: RevisionList = { total: 1, items: [REVISION] };
       return json(route, 200, list);

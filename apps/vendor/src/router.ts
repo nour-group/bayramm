@@ -8,13 +8,23 @@ export const ROUTES = {
   request: "/requests/:id",
   calendar: "/calendar",
   card: "/card",
+  services: "/services",
   account: "/account",
 } as const;
 
 export type Route = keyof typeof ROUTES;
 
-/** Разделы в нижней панели (на компьютере — в боковой), по порядку */
-export const NAV = ["requests", "calendar", "card", "account"] as const satisfies readonly Route[];
+/**
+ * Разделы в нижней панели (на компьютере — в боковой), по порядку. Пять: на телефоне уже
+ * 390px подписи — мельче (styles.css, .tabbar), «Календарь» влезает и на 320px без обрезки
+ */
+export const NAV = [
+  "requests",
+  "calendar",
+  "card",
+  "services",
+  "account",
+] as const satisfies readonly Route[];
 export type Section = (typeof NAV)[number];
 
 /** Главный экран: сюда ведёт корень сайта */
@@ -26,6 +36,7 @@ export const SECTION_OF: Readonly<Record<Route, Section>> = {
   request: "requests",
   calendar: "calendar",
   card: "card",
+  services: "services",
   account: "account",
 };
 

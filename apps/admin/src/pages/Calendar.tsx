@@ -1,18 +1,34 @@
-/* Занятые дни карточки: месяц сеткой, неделя с понедельника. Нажатие на день отмечает
-   его занятым или снимает отметку. Прошедшие дни не меняются. «Сегодня» — по Ташкенту.
-   Календарь ведут и вендор, и команда: правка уходит с версией календаря из последнего
-   ответа. Его успели изменить (вендор, другой сотрудник, отказ «занято») — сервер отвечает
-   calendar_conflict: месяц перечитывается, сотрудник отмечает день ещё раз. Правки идут
+/* Занятость витрины — по режиму её категории (@bayramm/shared/categories):
+     · day   — месяц сеткой, неделя с понедельника; нажатие на день отмечает его занятым
+               или снимает отметку (площадка);
+     · parts — день делится на утро, день и вечер (кортеж, фото и видео, декор): нажатие
+               открывает день — отметить его целиком или по частям; у части видно, сколько
+               договорённостей из «заказов одновременно» витрины. Часть занята, когда
+               отмечена или мест не осталось; день — когда занят целиком или все части;
+     · slot  — как day (студия): время и часы съёмки приходят в заявке;
+     · lead  — календаря нет (цветы, торты, подарки): срок заказа — LeadTime.
+   Прошедшие дни не меняются. «Сегодня» — по Ташкенту. Календарь ведут и вендор, и команда:
+   правка уходит с версией календаря из последнего ответа. Его успели изменить — сервер
+   отвечает calendar_conflict: месяц перечитывается, сотрудник отмечает ещё раз. Правки идут
    по одной — дни неактивны, пока не пришёл ответ.
    «Несколько дней»: первое нажатие — начало, второе — конец (пальцем, без перетаскивания,
-   можно и через месяц), затем «Занять» или «Освободить» — одной правкой. Прошедшие дни в
-   выбор не входят. Клетка дня — вся дорожка сетки, не меньше 44px: на 320px месяц выходит
-   на 10px за поля страницы и семь дорожек по 44px помещаются без прокрутки вбок. */
+   можно и через месяц), затем «Занять» или «Освободить» — одной правкой, днями целиком.
+   Клетка дня — вся дорожка сетки, не меньше 44px: на 320px месяц выходит на 10px за поля
+   страницы и семь дорожек по 44px помещаются без прокрутки вбок. */
 
-import type { Availability, AvailabilityInput, BusyDay } from "@bayramm/shared/api/staff";
+import type {
+  Availability,
+  AvailabilityInput,
+  BusyDay,
+  BusyPart,
+  DayPart,
+  ListingDetail,
+} from "@bayramm/shared/api/staff";
+import { type CategoryConfig, DAY_PARTS, readAttributes } from "@bayramm/shared/categories";
 import { Tooltip } from "@bayramm/ui/react";
 import { useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
+import { partWindow } from "../categories";
 import { t } from "../texts";
 import { ErrorText, LoadedView } from "../ui";
 
@@ -47,6 +63,7 @@ export function monthTitle(month: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 const dayTitle = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+const dayName = (day: string) => dayTitle.format(new Date(`${day}T00:00:00Z`));
 
 /** Не больше, чем сервер примет одной правкой */
 const MAX_RANGE = 400;
@@ -66,18 +83,53 @@ export function rangeDays(a: string, b: string, today: string): string[] {
   return days;
 }
 
-/** Вливает ответ правки (занятые дни на его отрезке) в показанный месяц */
+/**
+ * Вливает ответ правки (занятые дни, части дня и договорённости на его отрезке) в показанный
+ * месяц: вне отрезка ответа — как было, на отрезке — как ответил сервер (дни за краем месяца
+ * сетка просто не показывает)
+ */
 export function mergeBusy(current: Availability, result: Availability): Availability {
-  // Вне отрезка ответа — как было; на отрезке — как ответил сервер (дни за краем месяца
-  // сетка просто не показывает)
-  const others = current.busy.filter((b) => b.day < result.from || b.day > result.to);
-  const busy = [...others, ...result.busy].sort((a, b) => a.day.localeCompare(b.day));
-  return { ...current, busy, version: result.version };
+  const outside = (item: { day: string }) => item.day < result.from || item.day > result.to;
+  const byDay = (a: { day: string }, b: { day: string }) => a.day.localeCompare(b.day);
+  return {
+    ...current,
+    busy: [...current.busy.filter(outside), ...result.busy].sort(byDay),
+    parts: [...current.parts.filter(outside), ...result.parts].sort(byDay),
+    bookings: [...current.bookings.filter(outside), ...result.bookings].sort(byDay),
+    parallelCapacity: result.parallelCapacity,
+    version: result.version,
+  };
+}
+
+/** Часть дня глазами календаря: отмечена ли, сколько договорённостей, занята ли */
+export interface PartState {
+  readonly part: DayPart;
+  readonly mark: BusyPart | undefined;
+  readonly count: number;
+  /** Мест не осталось: договорённостей не меньше, чем заказов одновременно */
+  readonly full: boolean;
+  readonly busy: boolean;
+}
+
+export type DayLoad = "free" | "partial" | "busy";
+
+/** Части дня и его загрузка (режим parts) */
+export function dayState(availability: Availability, day: string): { parts: PartState[]; load: DayLoad } {
+  const whole = availability.busy.some((b) => b.day === day);
+  const parts = DAY_PARTS.map((part): PartState => {
+    const mark = availability.parts.find((p) => p.day === day && p.part === part);
+    const count = availability.bookings.find((b) => b.day === day && b.part === part)?.count ?? 0;
+    const full = count >= availability.parallelCapacity;
+    return { part, mark, count, full, busy: whole || mark !== undefined || full };
+  });
+  const busyParts = parts.filter((p) => p.busy).length;
+  const load: DayLoad = whole || busyParts === DAY_PARTS.length ? "busy" : busyParts > 0 ? "partial" : "free";
+  return { parts, load };
 }
 
 type Range = { readonly start: string; readonly end: string | null };
 
-export function Calendar({ listingId }: { listingId: string }) {
+export function Calendar({ listingId, category }: { listingId: string; category: CategoryConfig }) {
   const { api } = useSession();
   const can = useCan();
   const today = tashkentToday();
@@ -95,12 +147,22 @@ export function Calendar({ listingId }: { listingId: string }) {
   // Выбор нескольких дней: null — обычный режим (нажатие отмечает день сразу)
   const [ranging, setRanging] = useState(false);
   const [range, setRange] = useState<Range | null>(null);
+  // Режим parts: открытый день — его части под сеткой
+  const [opened, setOpened] = useState<string | null>(null);
   const editable = can("listings.write");
+  const parts = category.availability === "parts";
   const selected = range ? rangeDays(range.start, range.end ?? range.start, today) : [];
+  const hint =
+    category.availability === "parts"
+      ? t.availabilityHints.parts
+      : category.availability === "slot"
+        ? t.availabilityHints.slot
+        : t.availabilityHints.day;
 
   // Сообщение об ошибке — про месяц, где отмечали: в другом месяце оно только путает
   const goMonth = (delta: number) => {
     setFailure(null);
+    setOpened(null);
     setMonth(shiftMonth(month, delta));
   };
 
@@ -132,6 +194,15 @@ export function Calendar({ listingId }: { listingId: string }) {
       current,
     );
 
+  const togglePart = (day: string, state: PartState, current: Availability) =>
+    void send(
+      `${day}:${state.part}`,
+      state.mark
+        ? { version: current.version, freeParts: [{ day, part: state.part }] }
+        : { version: current.version, busyParts: [{ day, part: state.part }] },
+      current,
+    );
+
   const pick = (day: string) => {
     // Первое нажатие — начало; второе — конец; третье — новый выбор
     if (!range || range.end !== null) setRange({ start: day, end: null });
@@ -150,6 +221,7 @@ export function Calendar({ listingId }: { listingId: string }) {
   const toggleRanging = () => {
     setRanging(!ranging);
     setRange(null);
+    setOpened(null);
     setFailure(null);
   };
 
@@ -157,7 +229,7 @@ export function Calendar({ listingId }: { listingId: string }) {
     <section className="panel cal-panel" aria-labelledby="calendar-title">
       <h2 id="calendar-title">{t.availability}</h2>
       {/* Без права правки дни неактивны — и подсказка не зовёт на них нажимать */}
-      <p className="muted small">{editable ? t.availabilityHint : t.availabilityReadOnly}</p>
+      <p className="muted small">{editable ? hint : t.availabilityReadOnly}</p>
       <div className="cal-head">
         <button type="button" className="btn btn-sm" onClick={() => goMonth(-1)} aria-label={t.prevMonth}>
           ←
@@ -189,8 +261,10 @@ export function Calendar({ listingId }: { listingId: string }) {
         {(availability) => {
           const busyByDay = new Map(availability.busy.map((b) => [b.day, b]));
           const inRange = new Set(selected);
+          const openedState = opened ? dayState(availability, opened) : null;
           return (
             <>
+              {parts ? <p className="cal-capacity">{t.capacityNow(availability.parallelCapacity)}</p> : null}
               <div className="cal">
                 {t.weekdays.map((name) => (
                   <span key={name} className="cal-wd" aria-hidden="true">
@@ -205,7 +279,17 @@ export function Calendar({ listingId }: { listingId: string }) {
                   const busy = busyByDay.get(day);
                   const past = day < today;
                   const chosen = inRange.has(day);
-                  const label = `${dayTitle.format(new Date(`${day}T00:00:00Z`))}${busy ? ` — ${t.busy}, ${t.busySources[busy.source] ?? ""}` : ""}${chosen ? `, ${t.rangeInside}` : ""}`;
+                  const load: DayLoad = parts ? dayState(availability, day).load : busy ? "busy" : "free";
+                  const status = parts
+                    ? load === "free"
+                      ? ""
+                      : ` — ${t.dayLoad[load]}`
+                    : busy
+                      ? ` — ${t.busy}, ${t.busySources[busy.source] ?? ""}`
+                      : "";
+                  const label = `${dayName(day)}${status}${chosen ? `, ${t.rangeInside}` : ""}`;
+                  // Режим parts: день открывается (части — под сеткой); иначе нажатие отмечает день
+                  const open = parts && !ranging;
                   // Подсказка под мышью повторяет aria-label: диктору её не дублируем
                   return (
                     <Tooltip key={day} text={label} describe={false}>
@@ -213,11 +297,17 @@ export function Calendar({ listingId }: { listingId: string }) {
                         <button
                           {...tip}
                           type="button"
-                          className={`cal-day${busy ? " cal-busy" : ""}${day === today ? " cal-today" : ""}${chosen ? " cal-chosen" : ""}`}
-                          aria-pressed={Boolean(busy)}
+                          className={`cal-day${load === "busy" ? " cal-busy" : load === "partial" ? " cal-partial" : ""}${day === today ? " cal-today" : ""}${chosen ? " cal-chosen" : ""}${open && opened === day ? " cal-open" : ""}`}
+                          aria-pressed={open ? opened === day : Boolean(busy)}
                           aria-label={label}
                           disabled={!editable || past || pending !== null}
-                          onClick={() => (ranging ? pick(day) : toggle(day, busy, availability))}
+                          onClick={() =>
+                            ranging
+                              ? pick(day)
+                              : open
+                                ? setOpened(opened === day ? null : day)
+                                : toggle(day, busy, availability)
+                          }
                         >
                           {Number(day.slice(8))}
                         </button>
@@ -231,6 +321,12 @@ export function Calendar({ listingId }: { listingId: string }) {
                   <span className="cal-key cal-key-free" aria-hidden="true" />
                   {t.legendFree}
                 </li>
+                {parts ? (
+                  <li>
+                    <span className="cal-key cal-key-partial" aria-hidden="true" />
+                    {t.legendPartial}
+                  </li>
+                ) : null}
                 <li>
                   <span className="cal-key cal-key-busy" aria-hidden="true" />
                   {t.legendBusy}
@@ -246,6 +342,59 @@ export function Calendar({ listingId }: { listingId: string }) {
                   </li>
                 )}
               </ul>
+              {opened && openedState ? (
+                <section className="day-parts" aria-label={t.pickedDay(dayName(opened))}>
+                  <p className="day-parts-title">{t.pickedDay(dayName(opened))}</p>
+                  <div className="day-part-row">
+                    <span className="day-part-name">
+                      {t.wholeDay}
+                      <span className="sub">
+                        {busyByDay.has(opened) ? t.partState.busy : t.partState.free}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      aria-pressed={busyByDay.has(opened)}
+                      disabled={pending !== null}
+                      onClick={() => toggle(opened, busyByDay.get(opened), availability)}
+                    >
+                      {busyByDay.has(opened) ? t.rangeFree : t.markBusy}
+                      <span className="visually-hidden">: {t.wholeDay}</span>
+                    </button>
+                  </div>
+                  {openedState.parts.map((state) => {
+                    const name = t.dayParts[state.part] ?? state.part;
+                    const whole = busyByDay.has(opened);
+                    const word =
+                      state.mark || whole
+                        ? t.partState.busy
+                        : state.full
+                          ? t.partState.full
+                          : t.partState.free;
+                    return (
+                      <div key={state.part} className="day-part-row">
+                        <span className="day-part-name">
+                          {name} <span className="sub">{partWindow(category, state.part)}</span>
+                          <span className="sub">
+                            {word} · {t.partBookings(state.count, availability.parallelCapacity)}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          aria-pressed={state.mark !== undefined}
+                          disabled={pending !== null || whole || (state.full && !state.mark)}
+                          onClick={() => togglePart(opened, state, availability)}
+                        >
+                          {state.mark ? t.rangeFree : t.markBusy}
+                          <span className="visually-hidden">: {name}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </section>
+              ) : null}
               {ranging && selected.length > 0 && range?.end !== null && (
                 <div className="acts cal-range-acts">
                   <button
@@ -274,6 +423,27 @@ export function Calendar({ listingId }: { listingId: string }) {
         }}
       </LoadedView>
       {failure && <ErrorText failure={failure} />}
+    </section>
+  );
+}
+
+/** Режим lead (цветы, торты, подарки): календаря нет — срок заказа витрины и услуг */
+export function LeadTime({ listing, category }: { listing: ListingDetail; category: CategoryConfig }) {
+  const attributes = readAttributes(category, listing.attributes);
+  const days = typeof attributes.lead_days === "number" ? attributes.lead_days : null;
+  const services = listing.services.filter((s) => s.leadDays !== null && s.status !== "rejected");
+  return (
+    <section className="panel" aria-labelledby="lead-title">
+      <h2 id="lead-title">{t.leadTitle}</h2>
+      <p className="muted small">{t.leadHint}</p>
+      <p className={days === null ? "notice notice-warn" : "lead-days"}>
+        {days === null ? t.leadNotSet : t.leadDaysValue(days)}
+      </p>
+      {services.length > 0 ? (
+        <p className="sub">
+          {t.leadServices(services.map((s) => `${s.name.ru} — ${s.leadDays} дн.`).join("; "))}
+        </p>
+      ) : null}
     </section>
   );
 }

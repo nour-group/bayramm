@@ -230,7 +230,7 @@ describe("вендоры", () => {
         managerName: null,
         createdAt: "2026-09-29T06:00:00.000Z",
         checklist: { contract: true, stir: true, contacts: false, pdConsent: false },
-        listings: [{ id: LISTING_ID, name: "Oqsaroy Hall", status: "review" }],
+        listings: [{ id: LISTING_ID, name: "Oqsaroy Hall", status: "review", categoryCode: "hall" }],
         users: 1,
         linkedUsers: 0,
       },
@@ -274,6 +274,78 @@ describe("вендоры", () => {
       false,
       false,
     ]);
+  });
+
+  it("новый вендор: без категории запроса нет; с ней — категория первой витрины в теле", async () => {
+    mockApi(staff("manager", ["catalog.read", "vendors.write", "listings.write"]), {
+      "POST /api/staff/vendors": json({ ...VENDOR, listings: [] }, 201),
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+    });
+    await mount("/vendors/new");
+    const name = [...container.querySelectorAll<HTMLInputElement>("input")].find(
+      (input) => input.labels?.[0]?.textContent === t.fields.name,
+    );
+    if (!name) throw new Error("нет поля названия");
+    await type(name, "Navruz");
+    await act(async () => button(t.createVendor)?.click());
+    await settle();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    expect(text()).toContain(t.categoryRequired);
+
+    await act(async () => container.querySelector<HTMLElement>("button[aria-haspopup=listbox]")?.click());
+    await settle();
+    const torts = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (o) => o.textContent === "Торты и сладости",
+    );
+    await act(async () => torts?.click());
+    await settle();
+    await act(async () => button(t.createVendor)?.click());
+    await settle();
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({ name: "Navruz", categoryCode: "cake" });
+    expect(window.location.pathname).toBe(`/vendors/${VENDOR_ID}`);
+  });
+
+  it("витрины вендора — с категорией; новую добавляет тот, кто ведёт карточки", async () => {
+    mockApi(staff("manager", ["catalog.read", "vendors.write", "listings.write"]), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json({
+        ...VENDOR,
+        listings: [
+          {
+            id: LISTING_ID,
+            name: "Oqsaroy Hall",
+            status: "draft",
+            categoryCode: "hall",
+            slug: "oqsaroy",
+            districtCode: null,
+            priceFromUzs: null,
+            priceUnit: "per_guest",
+            capMax: null,
+            updatedAt: "2026-09-29T06:00:00.000Z",
+            blockers: [],
+          },
+          {
+            id: "bbbbbbbb-0000-0000-0000-000000000002",
+            name: "Oqsaroy Kortej",
+            status: "draft",
+            categoryCode: "car",
+            slug: "oqsaroy-kortej",
+            districtCode: null,
+            priceFromUzs: 300000,
+            priceUnit: "per_hour",
+            capMax: null,
+            updatedAt: "2026-09-29T06:00:00.000Z",
+            blockers: [],
+          },
+        ],
+      }),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    expect([...container.querySelectorAll(".cat-chip")].map((chip) => chip.textContent)).toEqual([
+      "Площадка / Тойхона",
+      "Кортеж",
+    ]);
+    expect(text()).toMatch(/300\s000\sсум за час/);
+    expect([...container.querySelectorAll("a")].some((a) => a.textContent === t.addVitrina)).toBe(true);
   });
 
   it("телефон контакта скрыт, пока не нажали «Показать»", async () => {
@@ -366,6 +438,9 @@ describe("карточка", () => {
   });
 });
 
+/** Занятость витрины с режимом «день целиком» (зал): частей дня и договорённостей нет */
+const DAY_MODE = { mode: "day", parallelCapacity: 1, parts: [], bookings: [] } as const;
+
 describe("карточка: занятые дни", () => {
   const MANAGER: StaffMe["permissions"] = ["catalog.read", "listings.write", "listings.submit"];
   const AVAILABILITY = `/api/staff/listings/${LISTING_ID}/availability`;
@@ -375,11 +450,18 @@ describe("карточка: занятые дни", () => {
   it("отметка уходит с версией календаря; следующая — с версией из ответа", async () => {
     mockApi(staff("manager", MANAGER), {
       [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
-      [`GET ${AVAILABILITY}`]: json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 4 }),
+      [`GET ${AVAILABILITY}`]: json({
+        ...DAY_MODE,
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 4,
+      }),
       [`PUT ${AVAILABILITY}`]: (body) => {
         const input = body as { busy?: string[]; free?: string[]; version: number };
         const day = input.busy?.[0] ?? input.free?.[0];
         return json({
+          ...DAY_MODE,
           from: day,
           to: day,
           busy: input.busy ? [{ day, source: "staff" }] : [],
@@ -406,10 +488,17 @@ describe("карточка: занятые дни", () => {
   it("несколько дней: начало и конец нажатием, «Занять» — одной правкой с версией", async () => {
     mockApi(staff("manager", MANAGER), {
       [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
-      [`GET ${AVAILABILITY}`]: json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 4 }),
+      [`GET ${AVAILABILITY}`]: json({
+        ...DAY_MODE,
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 4,
+      }),
       [`PUT ${AVAILABILITY}`]: (body) => {
         const input = body as { busy: string[]; version: number };
         return json({
+          ...DAY_MODE,
           from: input.busy[0],
           to: input.busy.at(-1),
           busy: input.busy.map((day) => ({ day, source: "staff" })),
@@ -445,6 +534,7 @@ describe("карточка: занятые дни", () => {
       [`GET ${AVAILABILITY}`]: () => {
         reads++;
         return json({
+          ...DAY_MODE,
           from: "2026-09-01",
           to: "2026-09-30",
           busy: reads > 1 ? [{ day: tashkentToday(), source: "vendor" }] : [],

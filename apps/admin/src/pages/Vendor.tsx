@@ -1,5 +1,6 @@
 /* Вендор: данные и реквизиты, чек-лист проверки, телефоны контакта, пользователи
-   кабинета, карточки. Новый вендор — та же форма без остального. */
+   кабинета, витрины (по одной на категорию, бывает и несколько). Новый вендор — та же форма
+   без остального, с выбором категории первой витрины. */
 
 import type {
   ChecklistItem,
@@ -18,6 +19,7 @@ import { formatMoment, formatPrice } from "../format";
 import { apiErrorText, t } from "../texts";
 import {
   Blockers,
+  CategoryChip,
   ErrorText,
   Field,
   fieldErrors,
@@ -184,20 +186,16 @@ function ContactPhones({ vendorId }: { vendorId: string }) {
   );
 }
 
-// ── карточки ───────────────────────────────────────────────────────────────
+// ── витрины ────────────────────────────────────────────────────────────────
 
 function Listings({ vendor }: { vendor: VendorDetail }) {
   const can = useCan();
   return (
     <section className="panel" aria-labelledby="listings-title">
-      <div className="panel-head">
-        <h2 id="listings-title">{t.listings}</h2>
-        {can("listings.write") && (
-          <Link to={{ name: "listingNew", vendorId: vendor.id }} className="btn btn-sm">
-            {t.newListing}
-          </Link>
-        )}
-      </div>
+      <h2 id="listings-title">
+        {t.listings} <span className="count">{vendor.listings.length}</span>
+      </h2>
+      <p className="muted small">{t.vitrinasHint}</p>
       {vendor.listings.length === 0 ? (
         <p className="muted">{t.listingsEmpty}</p>
       ) : (
@@ -211,6 +209,7 @@ function Listings({ vendor }: { vendor: VendorDetail }) {
                 <StatusPill status={listing.status} />
               </div>
               <span className="sub">
+                <CategoryChip code={listing.categoryCode} />{" "}
                 {formatPrice(listing.priceFromUzs, listing.priceUnit)}
                 {listing.capMax ? ` · до ${listing.capMax}` : ""}
               </span>
@@ -218,6 +217,13 @@ function Listings({ vendor }: { vendor: VendorDetail }) {
             </li>
           ))}
         </ul>
+      )}
+      {can("listings.write") && (
+        <p className="panel-foot">
+          <Link to={{ name: "listingNew", vendorId: vendor.id }} className="btn btn-sm">
+            {t.addVitrina}
+          </Link>
+        </p>
       )}
     </section>
   );

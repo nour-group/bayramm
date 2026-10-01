@@ -616,6 +616,7 @@ describe("правки карточек (ревизии)", () => {
       status: "pending",
       fields: ["name", "priceFromUzs", "packages"],
       stale: false,
+      listing: { categoryCode: "hall" },
     });
     const detail = await ok<RevisionDetail>(api("moderator", "GET", `/staff/revisions/${revisionId}`));
     expect(detail.valid).toBe(true);

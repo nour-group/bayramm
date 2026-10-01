@@ -684,28 +684,33 @@ describe("изменения карточки", () => {
     routes[`GET ${revisionsPath}`] = () => ({ body: { items: [] } });
   });
 
-  it("предложение уходит только с изменённым полем и ждёт проверки; клиент видит прежнюю карточку", async () => {
+  it("предложение уходит только с изменёнными полями и ждёт проверки; клиент видит прежнюю карточку", async () => {
     routes[`POST ${revisionsPath}`] = (init) => ({
       status: 201,
       body: revision({ payload: JSON.parse(String(init.body)) }),
     });
     await mount("/card");
     await click(byText("button", "Предложить изменения"));
+    // Цены здесь нет: она — из услуг
+    expect(field("Цена от, сум")).toBeUndefined();
     // Ничего не изменили — без запроса
     await click(byText("button", "Отправить на проверку"));
     expect(posted()).toEqual([]);
     expect(container.textContent).toContain("Вы ничего не изменили.");
 
-    await type(field("Цена от, сум"), "170 000");
+    await type(field("Название"), "New Hall");
+    // Поле витрины категории (зал): в правке — только изменённый ключ
+    await type(field("Мест на парковке"), "120");
     await click(byText("button", "Отправить на проверку"));
-    expect(posted().map((c) => c.body)).toEqual([{ price_from_uzs: 170_000 }]);
+    expect(posted().map((c) => c.body)).toEqual([{ name: "New Hall", attributes: { parking_spaces: 120 } }]);
     expect(container.textContent).toContain("Предложение на проверке");
-    expect(container.textContent).toContain("от 170\u202f000 сум за гостя");
+    const pending = container.querySelector(".proposal-pending")?.textContent ?? "";
+    expect(pending).toContain("New Hall");
+    expect(pending).toContain("Мест на парковке");
+    expect(pending).toContain("120");
     expect(container.textContent).toContain("Отправлено на проверку");
-    // Карточка — прежняя: цена в фактах не изменилась
-    expect(container.querySelector(".venue-side > .facts")?.textContent).toContain(
-      "от 150\u202f000 сум за гостя",
-    );
+    // Карточка — прежняя: название не изменилось
+    expect(container.querySelector(".venue-name")?.textContent).toBe("Test Hall");
   });
 
   it("фокус не теряется: форма — на первое поле, «Отмена» — на «Предложить», отправка — на заголовок", async () => {
@@ -719,19 +724,20 @@ describe("изменения карточки", () => {
     await click(byText(".proposal-form button", "Отмена"));
     expect(document.activeElement?.textContent).toBe("Предложить изменения");
     await click(byText("button", "Предложить изменения"));
-    await type(field("Цена от, сум"), "170 000");
+    await type(field("Название"), "New Hall");
     await click(byText("button", "Отправить на проверку"));
     expect(document.activeElement?.id).toBe("proposal-title");
   });
 
-  it("цена не числом — ошибка у поля без запроса; «по запросу» не бывает", async () => {
+  it("поле витрины вне границ категории — ошибка у поля без запроса", async () => {
     await mount("/card");
     await click(byText("button", "Предложить изменения"));
-    await type(field("Цена от, сум"), "по запросу");
+    // Залов — от 1 до 20 (конфигурация категории)
+    await type(field("Сколько залов"), "50");
     await click(byText("button", "Отправить на проверку"));
     expect(posted()).toEqual([]);
-    expect(field("Цена от, сум")?.getAttribute("aria-invalid")).toBe("true");
-    expect(container.textContent).toContain("Без цены карточку не опубликуют");
+    expect(field("Сколько залов")?.getAttribute("aria-invalid")).toBe("true");
+    expect(container.textContent).toContain("Проверьте выделенные поля.");
   });
 
   it("неверные поля от сервера подсвечиваются", async () => {
@@ -867,7 +873,12 @@ describe("площадка", () => {
   it("карточка как в базе: подсказка про изменения и менеджера, код вендора; текстовых полей нет", async () => {
     await mount("/card");
     expect(heading()).toBe("Площадка");
-    expect(container.textContent).toContain("Название, цену, описание, пакеты и фото вы меняете здесь");
+    expect(container.textContent).toContain(
+      "Название, описание, поля витрины и фото вы меняете здесь, цены — в разделе «Услуги»",
+    );
+    // Цена «от» — из услуг; категория витрины — на виду
+    expect(container.textContent).toContain("Цена «от» считается из услуг.");
+    expect(container.querySelector(".venue .chip-cat")?.textContent).toBe("Площадка / Тойхона");
     expect(container.textContent).toContain("Адрес и вместимость меняет ваш менеджер");
     expect(container.textContent).toContain("V101");
     expect(container.textContent).toContain("от 150 000 сум за гостя");
@@ -995,10 +1006,16 @@ describe("раскладка", () => {
     insideTelegram();
   });
 
-  it("телефон: нижняя панель из четырёх разделов; у «Заявок» — число новых, словами для диктора", async () => {
+  it("телефон: нижняя панель из пяти разделов; у «Заявок» — число новых, словами для диктора", async () => {
     await mount("/requests");
     const tabs = [...container.querySelectorAll("nav.tabbar a")];
-    expect(tabs.map((a) => a.getAttribute("href"))).toEqual(["/requests", "/calendar", "/card", "/account"]);
+    expect(tabs.map((a) => a.getAttribute("href"))).toEqual([
+      "/requests",
+      "/calendar",
+      "/card",
+      "/services",
+      "/account",
+    ]);
     expect(tabs[0]?.getAttribute("aria-current")).toBe("page");
     expect(tabs[0]?.querySelector(".nav-count")?.textContent).toBe("1");
     expect(tabs[0]?.querySelector(".sr-only")?.textContent).toBe("новых: 1");

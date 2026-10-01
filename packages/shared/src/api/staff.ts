@@ -115,6 +115,8 @@ export interface ListingRef {
   readonly id: string;
   readonly name: string;
   readonly status: ListingStatus;
+  /** Категория витрины */
+  readonly categoryCode: string;
 }
 
 /** Строка списка GET /staff/vendors */
@@ -136,9 +138,9 @@ export interface VendorListItem {
 }
 
 /**
- * GET /staff/vendors?q=&listingStatus=&limit=&offset= — поиск по названию, коду,
+ * GET /staff/vendors?q=&listingStatus=&category=&limit=&offset= — поиск по названию, коду,
  * юрназванию, контактному лицу, названию или адресу карточки, СТИР (9 цифр) и
- * телефону пользователя кабинета
+ * телефону пользователя кабинета; category — есть витрина этой категории
  */
 export interface VendorList {
   readonly total: number;
@@ -647,8 +649,9 @@ export interface StaffRequestItem {
 }
 
 /**
- * GET /staff/requests?status=&sla=&q=&limit=&offset= — сначала без ответа: ближайший (или
- * самый давний) срок первым. sla=late — очередь просроченных и нарушенных
+ * GET /staff/requests?status=&sla=&category=&q=&limit=&offset= — сначала без ответа: ближайший
+ * (или самый давний) срок первым. sla=late — очередь просроченных и нарушенных; category —
+ * заявки витрин этой категории
  */
 export interface StaffRequestList {
   readonly total: number;
@@ -1040,7 +1043,13 @@ export interface RevisionListItem {
   readonly status: RevisionStatus;
   readonly submittedAt: string;
   readonly decidedAt: string | null;
-  readonly listing: { readonly id: string; readonly name: string; readonly status: ListingStatus };
+  /** categoryCode — подписи полей витрины в правке */
+  readonly listing: {
+    readonly id: string;
+    readonly name: string;
+    readonly status: ListingStatus;
+    readonly categoryCode: string;
+  };
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
   readonly proposedBy: RevisionAuthor;
   readonly fields: readonly RevisionField[];

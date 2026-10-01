@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectNoAxeViolations } from "../support/a11y";
+import { pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import { LISTING_ID, mockStaffApi, NOW, REQUEST_ID, REVISION_ID, VENDOR_ID } from "../support/staff-api";
 
@@ -20,7 +21,9 @@ const section = (page: Page, name: string) =>
 
 const question = (page: Page) => page.getByRole("alertdialog", { name: t.unsavedTitle });
 
-const nameField = (page: Page) => page.getByLabel(t.listingFields.name ?? "", { exact: true });
+/** Название: на странице новой витрины — её поле, на странице витрины — поле формы */
+const nameField = (page: Page) => page.getByLabel(t.vitrinaName, { exact: true });
+const listingName = (page: Page) => page.getByLabel(t.listingFields.name ?? "", { exact: true });
 
 test("ничего не вписали — переход по разделу без вопроса", async ({ page }) => {
   await start(page);
@@ -31,7 +34,7 @@ test("ничего не вписали — переход по разделу б
   await expect(question(page)).toHaveCount(0);
 });
 
-test("новая карточка: вписали — раздел спрашивает; «Остаться» — вписанное на месте, «Уйти» — раздел", async ({
+test("новая витрина: вписали — раздел спрашивает; «Остаться» — вписанное на месте, «Уйти» — раздел", async ({
   page,
 }) => {
   const api = await start(page);
@@ -54,14 +57,14 @@ test("новая карточка: вписали — раздел спраши�
   await question(page).getByRole("button", { name: t.unsavedLeave }).click();
   await expect(page).toHaveURL("/requests");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(t.requests);
-  expect(api.created).toEqual([]);
+  expect(api.vitrinas).toEqual([]);
   expect(api.unexpected).toEqual([]);
 });
 
 test("«назад» браузера с правками — экран и вписанное остаются; «Уйти» — назад", async ({ page }) => {
   await start(page);
   await page.goto(`/vendors/${VENDOR_ID}`);
-  await page.getByRole("link", { name: t.newListing }).click();
+  await page.getByRole("link", { name: t.addVitrina }).click();
   await expect(page).toHaveURL(`/vendors/${VENDOR_ID}/listings/new`);
   await nameField(page).fill("Navruz zali");
 
@@ -102,14 +105,15 @@ test("перезагрузка с правками — окно браузера
 test("сохранили — уход без вопроса", async ({ page }) => {
   await start(page);
   await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
+  await pick(page, t.categoryFirst, "Площадка / Тойхона");
   await nameField(page).fill("Navruz zali");
-  // «Создать карточку» — форма сохранена: переход на неё без вопроса
-  await page.getByRole("button", { name: t.createListing }).click();
+  // «Создать витрину» — форма сохранена: переход на неё без вопроса
+  await page.getByRole("button", { name: t.createVitrina }).click();
   await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
   await expect(question(page)).toHaveCount(0);
 
-  await nameField(page).fill("Navruz Grand");
-  await nameField(page).blur();
+  await listingName(page).fill("Navruz Grand");
+  await listingName(page).blur();
   await page.getByRole("button", { name: t.save }).click();
   await expect(page.getByText(t.saved, { exact: true })).toBeVisible();
   await section(page, t.requests).click();

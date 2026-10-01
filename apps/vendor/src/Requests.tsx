@@ -3,17 +3,24 @@
    порядок задаёт API. У ждущих ответа — счётчик 12 часов. Телефона в списке нет: он в
    карточке заявки, где его чтение записывается в журнал.
 
+   Витрин несколько — над вкладками выбор: все витрины или одна (запрос с listingId,
+   счётчики вкладок — тоже по ней). У каждой заявки — категория, часть дня (модель parts) и
+   коротко поля заявки категории: часы, машины, кг.
+
    На компьютере список стоит рядом с карточкой (Inbox.tsx): открытая заявка отмечена в
    списке (aria-current), а список перечитывается тихо, когда карточка что-то изменила. */
 
 import {
   REQUEST_TABS,
   type RequestTab,
+  type VendorListingRef,
   type VendorRequestItem,
   type VendorRequestPage,
 } from "@bayramm/shared/api/vendor";
+import { categoryConfig, chosenServices, detailRows } from "@bayramm/shared/categories";
 import { type MouseEvent, useEffect, useState } from "react";
 import { api } from "./api";
+import { categoryName, partName } from "./category";
 import { formatBudget, formatDate, formatDuration, formatGuests, slaView, tashkentTime } from "./format";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
@@ -67,6 +74,16 @@ export function SlaTimer({ item, t, now }: { item: VendorRequestItem; t: VendorD
   );
 }
 
+/** Поля заявки категории одной строкой для списка: «Часы: 5 · Машин: 3 · Услуг: 2» */
+export function detailsLine(item: VendorRequestItem, t: VendorDict, lang: "ru" | "uz"): string {
+  const category = categoryConfig(item.listing.categoryCode);
+  const rows = detailRows(lang, category, item.details, (code) => textOf(t, `dist_${code}`));
+  const parts = rows.map((row) => (row.value === null ? row.label : `${row.label}: ${row.value}`));
+  const services = chosenServices(category, item.details);
+  if (services.length > 0) parts.push(`${t.chosenServices}: ${services.map((s) => s.name[lang]).join(", ")}`);
+  return parts.join(" · ");
+}
+
 interface CardProps {
   readonly item: VendorRequestItem;
   readonly t: VendorDict;
@@ -82,6 +99,7 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
   const location = { route: "request", id: item.id } as const;
   const late = awaitsAnswer(item) && slaView(item.sla, now).kind === "late";
   const budget = formatBudget(item.budgetMinUzs, item.budgetMaxUzs, t, lang);
+  const details = detailsLine(item, t, lang);
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -102,6 +120,11 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
         </span>
         <span className="rq-meta">
           {textOf(t, `occ_${item.occasionCode}`)} · {formatDate(item.eventDate, t, true)}
+          {item.dayPart ? ` · ${partName(t, item.dayPart).toLowerCase()}` : ""}
+        </span>
+        <span className="rq-vitrina">
+          <span className="chip chip-cat">{categoryName(lang, item.listing.categoryCode)}</span>
+          {showListing ? <span className="rq-vitrina-name">{item.listing.name}</span> : null}
         </span>
         <span className="rq-facts">
           {item.guests === null ? null : (
@@ -114,13 +137,8 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
             <Icon name="wallet" size={14} />
             {budget ?? t.budgetNone}
           </span>
-          {showListing ? (
-            <span>
-              <Icon name="hall" size={14} />
-              {item.listing.name}
-            </span>
-          ) : null}
         </span>
+        {details ? <span className="rq-details">{details}</span> : null}
         {awaitsAnswer(item) ? <SlaTimer item={item} t={t} now={now} /> : null}
       </a>
     </li>
@@ -133,7 +151,10 @@ interface RequestsProps extends Omit<ScreenProps, "headingRef"> {
   readonly tab: RequestTab;
   readonly onTab: (tab: RequestTab) => void;
   readonly navigate: Navigate;
-  readonly listingCount: number;
+  readonly listings: readonly VendorListingRef[];
+  /** Заявки одной витрины; null — всех */
+  readonly filter: string | null;
+  readonly onFilter: (listingId: string | null) => void;
   /** Открытая рядом заявка (компьютер) */
   readonly selectedId?: string;
   /** Растёт, когда карточка рядом что-то изменила: список перечитывается тихо */
@@ -149,13 +170,19 @@ export function Requests({
   tab,
   onTab,
   navigate,
-  listingCount,
+  listings,
+  filter,
+  onFilter,
   selectedId,
   version = 0,
   onCounts,
 }: RequestsProps) {
   const now = useNow();
-  const [page, reload, setPage, refresh] = useLoad<VendorRequestPage>(tab, (key) => api.requests(key));
+  // Ключ — вкладка и витрина: смена любой из них — новая загрузка, ответ на старую отброшен
+  const [page, reload, setPage, refresh] = useLoad<VendorRequestPage>(`${tab}/${filter ?? ""}`, (key) => {
+    const [askedTab = "new", listingId = ""] = key.split("/");
+    return api.requests(askedTab, null, listingId || null);
+  });
   const [more, setMore] = useState<"idle" | "loading" | "failed">("idle");
 
   // Карточка рядом изменила заявку — список и счётчики тоже (без «Загрузка…» и потери фокуса)
@@ -171,7 +198,7 @@ export function Requests({
   const loadMore = async (cursor: string) => {
     setMore("loading");
     try {
-      const next = await api.requests(tab, cursor);
+      const next = await api.requests(tab, cursor, filter);
       setPage((current) => ({ ...next, items: [...current.items, ...next.items] }));
       setMore("idle");
     } catch {
@@ -190,6 +217,32 @@ export function Requests({
         <Icon name={hasLate ? "warning" : "clock"} size={17} />
         <span>{t.inboxPromise}</span>
       </p>
+
+      {listings.length > 1 ? (
+        // biome-ignore lint/a11y/useSemanticElements: выбор витрины — группа кнопок, не форма
+        <div className="pills vitrina-pills" role="group" aria-label={t.inboxFilter}>
+          <button
+            type="button"
+            className="pill"
+            aria-pressed={filter === null}
+            onClick={() => onFilter(null)}
+          >
+            {t.allListings}
+          </button>
+          {listings.map((listing) => (
+            <button
+              key={listing.id}
+              type="button"
+              className="pill vitrina-pill"
+              aria-pressed={filter === listing.id}
+              onClick={() => onFilter(listing.id)}
+            >
+              <span className="vitrina-name">{listing.name}</span>
+              <span className="vitrina-cat">{categoryName(lang, listing.categoryCode)}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {/* biome-ignore lint/a11y/useSemanticElements: переключатель вкладок — группа кнопок, не форма */}
       <div className="pills pills-fill" role="group" aria-label={t.requests}>
@@ -222,7 +275,7 @@ export function Requests({
                 t={t}
                 lang={lang}
                 now={now}
-                showListing={listingCount > 1}
+                showListing={listings.length > 1}
                 navigate={navigate}
                 selected={item.id === selectedId}
               />

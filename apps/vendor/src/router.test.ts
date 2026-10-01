@@ -12,6 +12,7 @@ describe("маршруты кабинета вендора", () => {
     [`/requests/${ID.toUpperCase()}`, { route: "request", id: ID }],
     ["/calendar", { route: "calendar" }],
     ["/card", { route: "card" }],
+    ["/services", { route: "services" }],
     ["/account", { route: "account" }],
   ])("%s → %j", (path, location) => {
     expect(matchRoute(path)).toEqual(location);
@@ -29,16 +30,17 @@ describe("маршруты кабинета вендора", () => {
       { route: "requests" },
       { route: "request", id: ID },
       { route: "card" },
+      { route: "services" },
       { route: "account" },
     ] as const) {
       expect(matchRoute(pathOf(location))).toEqual(location);
     }
   });
 
-  it("пути не повторяются; в панели заявки, календарь, площадка, аккаунт; карточка заявки — раздел заявок", () => {
+  it("пути не повторяются; в панели заявки, календарь, площадка, услуги, аккаунт; карточка заявки — раздел заявок", () => {
     const paths = Object.values(ROUTES);
     expect(new Set(paths).size).toBe(paths.length);
-    expect(NAV).toEqual(["requests", "calendar", "card", "account"]);
+    expect(NAV).toEqual(["requests", "calendar", "card", "services", "account"]);
     expect(SECTION_OF.request).toBe("requests");
   });
 });
