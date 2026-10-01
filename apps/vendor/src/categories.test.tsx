@@ -377,7 +377,9 @@ describe("витрины", () => {
     expect(container.querySelector(".venue-name")).toBeNull();
     await click(pills[1]);
     expect(pills[1]?.getAttribute("aria-pressed")).toBe("true");
-    expect(container.querySelector(".venue .chip-cat")?.textContent).toBe("Кортеж");
+    // Категорию называет пилюля — чипа категории в карточке нет, только статус
+    expect(container.querySelector(".venue .chip-cat")).toBeNull();
+    expect(container.querySelector(".venue .venue-chips")?.textContent).toBe("Опубликована");
   });
 });
 
@@ -403,8 +405,10 @@ describe("входящие по витринам", () => {
 
     // Выбранная во входящих витрина — выбранная и в других разделах
     await click(byText("nav.tabbar a", "Витрина"));
-    expect(container.querySelector(".vitrina-select button")?.textContent).toContain("Kortej Premium");
-    expect(container.querySelector(".venue .chip-cat")?.textContent).toBe("Кортеж");
+    expect(container.querySelector(".vitrina-select button")?.textContent).toContain(
+      "Kortej Premium · Кортеж",
+    );
+    expect(container.querySelector(".venue .chip-cat")).toBeNull();
   });
 
   it("компьютер: выбор витрины на входящих — в боковой панели, с «Все витрины»; над списком второго нет", async () => {

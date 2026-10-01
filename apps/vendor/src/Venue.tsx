@@ -556,7 +556,10 @@ function VenueCard({ listing, t, lang, owner, showName, vendorCode, navigate, on
       <div className="detail-top">
         {showName ? <h2 className="venue-name">{listing.name}</h2> : null}
         <span className="venue-chips">
-          <span className="chip chip-cat">{categoryName(lang, listing.categoryCode)}</span>
+          {/* Имя и категорию уже называет выбор витрины на экране — здесь только статус */}
+          {showName ? (
+            <span className="chip chip-cat">{categoryName(lang, listing.categoryCode)}</span>
+          ) : null}
           <span className={`chip chip-${listing.status === "active" ? "done" : "wait"}`}>
             {textOf(t, `ls_${listing.status}`)}
           </span>

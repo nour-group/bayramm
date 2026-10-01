@@ -739,7 +739,9 @@ test.describe("витрины в разных категориях", () => {
     const api = await start(page, { listings: "many" });
     await page.goto("/card");
     await chooseVitrina(page, "Kortej Premium");
-    await expect(page.locator(".venue .chip-cat")).toHaveText("Кортеж");
+    // Какая витрина — называет выбор (телефон) или заголовок с категорией (компьютер)
+    if (isDesktop(page)) await expect(page.locator(".venue .chip-cat")).toHaveText("Кортеж");
+    else await expect(page.locator("main .vitrina-select")).toContainText("Kortej Premium · Кортеж");
     await page.getByRole("button", { name: t.proposalStart, exact: true }).click();
     const form = page.locator("form.proposal-form");
     await form.getByRole("button", { name: `${t.listAdd}: Автопарк` }).click();
