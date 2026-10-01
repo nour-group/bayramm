@@ -8,7 +8,11 @@ import type { Page } from "@playwright/test";
    подмены сверяют обмен с тем, что видел браузер: запрос хаба (app, state, challenge) и
    адрес возврата (code, state) — из навигаций страницы. */
 
-export const PORTS = { web: 4310, vendor: 4311, admin: 4312 } as const;
+// E2E_PORT_BASE — свои порты на прогон: несколько рабочих копий гоняют e2e одновременно, и
+// без этого прогон молча переиспользовал бы чужой сервер разработки (reuseExistingServer)
+const BASE = Number(process.env.E2E_PORT_BASE ?? 4310);
+if (!Number.isInteger(BASE) || BASE < 1024 || BASE > 65000) throw new Error(`E2E_PORT_BASE: ${BASE}`);
+export const PORTS = { web: BASE, vendor: BASE + 1, admin: BASE + 2 } as const;
 export const APPS = {
   web: `http://localhost:${PORTS.web}`,
   vendor: `http://localhost:${PORTS.vendor}`,
