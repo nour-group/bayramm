@@ -256,6 +256,10 @@ test("модерация услуг: правка — сейчас → пред�
 
   const limo = queue.getByRole("listitem").filter({ hasText: "Лимузин" });
   await expect(limo).toContainText(t.serviceQueueKinds.review ?? "");
+  // Решили — фокус на следующей услуге очереди: разбор подряд, без поиска глазами и пальцем
+  await expect(act(limo, t.serviceApprove, "Лимузин")).toBeFocused();
+  // Сводка вверху и число у заголовка очереди — уже без решённой
+  await expect(queue.getByRole("heading", { level: 2 })).toHaveText(`${t.serviceQueue} 1`);
   await act(limo, t.serviceDecline, "Лимузин").click();
   const reasonForm = page.locator("form.confirm");
   await reasonForm.getByLabel(t.reason).fill("Нужно фото лимузина");

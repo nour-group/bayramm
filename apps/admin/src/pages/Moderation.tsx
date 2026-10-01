@@ -262,7 +262,7 @@ function ServiceQueueList({ onCount }: { onCount: (n: number | null) => void }) 
   );
   return (
     <>
-      <p className="visually-hidden" role="status">
+      <p className="visually-hidden" aria-live="polite">
         {said}
       </p>
       <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
