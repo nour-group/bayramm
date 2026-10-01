@@ -22,6 +22,7 @@ import { type Client, Client as PgClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { initDataFor, type TestTelegramUser } from "../../src/testing/init-data";
 import {
+  addHallBanquets,
   adminClient,
   apiDatabaseUrl,
   BOT_TOKEN,
@@ -106,11 +107,7 @@ async function createActiveListing(vendorId: string, name: string): Promise<stri
     "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000999')",
     [id],
   );
-  await admin.query(
-    `insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
-       ($1, 'weekday', 'Будни', 'Ish kuni', 150000), ($1, 'weekend', 'Выходные', 'Dam olish', 180000)`,
-    [id],
-  );
+  await addHallBanquets(admin, id, 150_000, 180_000);
   for (let n = 0; n < 3; n++) {
     await admin.query(
       `insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
@@ -284,7 +281,6 @@ afterAll(async () => {
     await admin.query("delete from app.consents where subject_id = any($1::uuid[])", [clients]);
     await admin.query("delete from app.clients where id = any($1::uuid[])", [clients]);
     await admin.query("delete from app.photos where listing_id = any($1::uuid[])", [listings]);
-    await admin.query("delete from app.listing_packages where listing_id = any($1::uuid[])", [listings]);
     // Услуги и части дня — в режиме реплики каскад не срабатывает
     await admin.query("delete from app.listing_services where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.availability_parts where listing_id = any($1::uuid[])", [listings]);
@@ -784,7 +780,7 @@ describe("календарь вендора A", () => {
 });
 
 describe("площадка вендора A", () => {
-  it("карточка как есть: цена, пакеты, фото с воркера media, телефон", async () => {
+  it("карточка как есть: цена «от» из услуг, фото с воркера media, телефон", async () => {
     const res = await call(`/vendor/listings/${A.listingId}`, bearer(A.token));
     expect(res.status).toBe(200);
     const listing = (await res.json()) as VendorListing;
@@ -799,9 +795,10 @@ describe("площадка вендора A", () => {
       phone: "+998000000999",
       blockers: [],
     });
-    expect(listing.packages.map((p) => [p.kind, p.priceUzs])).toEqual([
-      ["weekday", 150_000],
-      ["weekend", 180_000],
+    expect(listing).not.toHaveProperty("packages");
+    expect(listing.services.map((s) => [s.type, s.priceUzs])).toEqual([
+      ["banquet_weekday", 150_000],
+      ["banquet_weekend", 180_000],
     ]);
     expect(listing.photos).toHaveLength(3);
     expect(listing.photos[0]?.isCover).toBe(true);
@@ -837,28 +834,27 @@ describe("правки карточки из кабинета", () => {
   });
 
   it("ничего не изменилось — 422 no_changes; неверные поля и чужие ключи — 422 со списком", async () => {
-    const same = await call(
-      revisionsUrl(A.listingId),
-      post(A.token, { name: "Test Hall A", price_from_uzs: 150_000 }),
-    );
+    const same = await call(revisionsUrl(A.listingId), post(A.token, { name: "Test Hall A" }));
     expect(await errorOf(same)).toMatchObject({ status: 422, code: "no_changes" });
-    const bad = await call(
-      revisionsUrl(A.listingId),
-      post(A.token, { price_from_uzs: "по запросу", address_ru: "x" }),
-    );
+    const bad = await call(revisionsUrl(A.listingId), post(A.token, { name: "x", address_ru: "x" }));
     expect(await errorOf(bad)).toMatchObject({
       status: 422,
       code: "invalid_input",
-      details: expect.arrayContaining(["price_from_uzs", "address_ru"]),
+      details: expect.arrayContaining(["name", "address_ru"]),
     });
-    // У зала будни и выходные обязательны
-    const noWeekend = await call(
+    // Цены и пакеты v0.1 правкой карточки больше не меняются — они в услугах
+    const legacy = await call(
       revisionsUrl(A.listingId),
       post(A.token, {
+        price_from_uzs: 160_000,
         packages: [{ kind: "weekday", name_ru: "Будни", name_uz: "Ish kuni", price_uzs: 160_000 }],
       }),
     );
-    expect(await errorOf(noWeekend)).toMatchObject({ status: 422, details: ["packages"] });
+    expect(await errorOf(legacy)).toMatchObject({
+      status: 422,
+      code: "invalid_input",
+      details: expect.arrayContaining(["price_from_uzs", "packages"]),
+    });
   });
 
   it("предложение: только изменённые поля, от текущей версии карточки; карточка — прежняя", async () => {
@@ -866,18 +862,8 @@ describe("правки карточки из кабинета", () => {
       revisionsUrl(A.listingId),
       post(A.token, {
         name: "Test Hall A",
-        price_from_uzs: 170_000,
         description_uz: "Yangi tavsif",
-        packages: [
-          {
-            kind: "weekday",
-            name_ru: "Будни",
-            name_uz: "Ish kuni",
-            price_uzs: 170_000,
-            price_unit: "per_guest",
-          },
-          { kind: "weekend", name_ru: "Выходные", name_uz: "Dam olish", price_uzs: 180_000 },
-        ],
+        attributes: { halls_count: 2, stage: true },
       }),
     );
     expect(res.status).toBe(201);
@@ -886,16 +872,9 @@ describe("правки карточки из кабинета", () => {
       status: "pending",
       decidedAt: null,
       decisionReason: null,
-      payload: {
-        price_from_uzs: 170_000,
-        description_uz: "Yangi tavsif",
-        packages: [
-          { kind: "weekday", price_uzs: 170_000, price_unit: "per_guest" },
-          { kind: "weekend", price_uzs: 180_000, price_unit: "per_guest" },
-        ],
-      },
+      payload: { description_uz: "Yangi tavsif", attributes: { halls_count: 2, stage: true } },
     });
-    expect(Object.keys(pending.payload)).toEqual(["price_from_uzs", "description_uz", "packages"]);
+    expect(Object.keys(pending.payload)).toEqual(["description_uz", "attributes"]);
 
     const { rows } = await admin.query<{ submitted_by: string; same_version: boolean }>(
       `select r.submitted_by, r.base_version = l.version as same_version
@@ -907,7 +886,7 @@ describe("правки карточки из кабинета", () => {
     const listing = (await (
       await call(`/vendor/listings/${A.listingId}`, bearer(A.token))
     ).json()) as VendorListing;
-    expect(listing.priceFromUzs).toBe(150_000);
+    expect(listing).toMatchObject({ priceFromUzs: 150_000, description: { uz: "Tavsif" }, attributes: {} });
     // Команде — оповещение: в outbox только id правки
     const outbox = await admin.query<{ payload: unknown }>(
       "select payload from app.outbox where kind = 'ops.revision_submitted' and payload ->> 'revision_id' = $1",
@@ -1131,7 +1110,7 @@ describe("правка, предложенная командой", () => {
     // Как правка менеджера из панели: submitted_by — не пользователь вендора
     const { rows } = await admin.query<{ id: string }>(
       `insert into app.listing_revisions (listing_id, payload, base_version)
-       select id, '{"price_from_uzs": 160000}', version from app.listings where id = $1 returning id`,
+       select id, '{"description_ru": "Новое описание"}', version from app.listings where id = $1 returning id`,
       [B.listingId],
     );
     const id = rows[0]?.id;

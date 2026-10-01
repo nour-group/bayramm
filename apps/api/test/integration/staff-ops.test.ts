@@ -25,6 +25,7 @@ import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import app from "../../src/index";
 import {
+  addHallBanquets,
   adminClient,
   bearer,
   call,
@@ -132,11 +133,7 @@ async function createVendor(label: string, linked: boolean) {
     "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000999')",
     [listingId],
   );
-  await admin.query(
-    `insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
-       ($1, 'weekday', 'Будни', 'Ish kuni', 150000), ($1, 'weekend', 'Выходные', 'Dam olish', 180000)`,
-    [listingId],
-  );
+  await addHallBanquets(admin, listingId, 150_000, 180_000);
   for (let n = 0; n < 3; n++) {
     await admin.query(
       `insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
@@ -268,7 +265,6 @@ afterAll(async () => {
     await admin.query("delete from app.listing_revisions where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.listing_status_log where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.photos where listing_id = any($1::uuid[])", [listings]);
-    await admin.query("delete from app.listing_packages where listing_id = any($1::uuid[])", [listings]);
     // Услуги и части дня — в режиме реплики каскад не срабатывает
     await admin.query("delete from app.listing_services where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.availability_parts where listing_id = any($1::uuid[])", [listings]);
@@ -598,11 +594,8 @@ describe("правки карточек (ревизии)", () => {
         A.listingId,
         JSON.stringify({
           name: `Ops Hall A Grand ${tag}`,
-          price_from_uzs: 200000,
-          packages: [
-            { kind: "weekday", name_ru: "Будни", name_uz: "Ish kunlari", price_uzs: 200000 },
-            { kind: "weekend", name_ru: "Выходные", name_uz: "Dam olish kunlari", price_uzs: 240000 },
-          ],
+          description_uz: "Yangi tavsif",
+          attributes: { halls_count: 3 },
         }),
       ],
     );
@@ -614,7 +607,7 @@ describe("правки карточек (ревизии)", () => {
     const item = list.items.find((r) => r.id === revisionId);
     expect(item).toMatchObject({
       status: "pending",
-      fields: ["name", "priceFromUzs", "packages"],
+      fields: ["name", "descriptionUz", "attributes"],
       stale: false,
       listing: { categoryCode: "hall" },
     });
@@ -625,7 +618,12 @@ describe("правки карточек (ревизии)", () => {
       before: `Ops Hall A ${tag}`,
       after: `Ops Hall A Grand ${tag}`,
     });
-    expect(detail.changes[1]).toEqual({ field: "priceFromUzs", before: 150000, after: 200000 });
+    expect(detail.changes[1]).toEqual({ field: "descriptionUz", before: "Tavsif", after: "Yangi tavsif" });
+    expect(detail.changes[2]).toEqual({
+      field: "attributes",
+      before: { halls_count: null },
+      after: { halls_count: 3 },
+    });
   });
 
   it("одобрить: менеджер — 403; модератор — правка применяется к карточке; повтор — 409", async () => {
@@ -635,12 +633,14 @@ describe("правки карточек (ревизии)", () => {
     );
     expect(approved).toMatchObject({ status: "approved", decidedBy: `Ops moderator ${tag}` });
     const listing = await ok<ListingDetail>(api("moderator", "GET", `/staff/listings/${A.listingId}`));
+    // Цена «от» — из услуг, правка её не трогает
     expect(listing).toMatchObject({
       name: `Ops Hall A Grand ${tag}`,
-      priceFromUzs: 200000,
+      descriptionUz: "Yangi tavsif",
+      attributes: { halls_count: 3 },
+      priceFromUzs: 150000,
       status: "active",
     });
-    expect(listing.packages.map((p) => p.priceUzs)).toEqual([200000, 240000]);
     expect(await error(api("moderator", "POST", `/staff/revisions/${revisionId}/approve`))).toMatchObject({
       status: 409,
       code: "illegal_transition",
@@ -650,13 +650,13 @@ describe("правки карточек (ревизии)", () => {
   it("правка с неверным значением: одобрить нельзя (422), отклонить — только с причиной", async () => {
     const { rows } = await admin.query<{ id: string }>(
       `insert into app.listing_revisions (listing_id, payload, base_version)
-       select id, '{"price_from_uzs": "по запросу"}', version - 1 from app.listings where id = $1 returning id`,
+       select id, '{"name": "x"}', version - 1 from app.listings where id = $1 returning id`,
       [A.listingId],
     );
     const id = rows[0]?.id ?? "";
     const detail = await ok<RevisionDetail>(api("moderator", "GET", `/staff/revisions/${id}`));
     expect(detail).toMatchObject({ valid: false, stale: true });
-    expect(detail.changes).toEqual([{ field: "priceFromUzs", before: 200000, after: "по запросу" }]);
+    expect(detail.changes).toEqual([{ field: "name", before: `Ops Hall A Grand ${tag}`, after: "x" }]);
     expect(await error(api("moderator", "POST", `/staff/revisions/${id}/approve`))).toMatchObject({
       status: 422,
       code: "revision_invalid",
@@ -666,9 +666,9 @@ describe("правки карточек (ревизии)", () => {
       details: ["reason"],
     });
     const declined = await ok<RevisionDetail>(
-      api("moderator", "POST", `/staff/revisions/${id}/decline`, { reason: "Цена обязательна числом" }),
+      api("moderator", "POST", `/staff/revisions/${id}/decline`, { reason: "Название — от двух букв" }),
     );
-    expect(declined).toMatchObject({ status: "declined", decisionReason: "Цена обязательна числом" });
+    expect(declined).toMatchObject({ status: "declined", decisionReason: "Название — от двух букв" });
   });
 });
 

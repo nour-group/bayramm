@@ -14,16 +14,14 @@
 // Оптимистичная блокировка — по version: правка и действие проходят, только если
 // карточку с тех пор не меняли (триггер увеличивает version на каждом UPDATE).
 //
-// Кто заполняет карточку, тот её не публикует: у опубликованной карточки название,
-// описания и пакеты зала сотрудник без права модерации (менеджер) меняет только
-// правкой на модерацию (app.listing_revisions) — как партнёр. Остальные поля
+// Кто заполняет карточку, тот её не публикует: у опубликованной карточки название и
+// описания сотрудник без права модерации (менеджер) меняет только правкой на
+// модерацию (app.listing_revisions) — как партнёр. Остальные поля
 // (адрес, район, вместимость, поля витрины, ссылки на видео, телефон, адрес страницы,
 // сколько заказов одновременно) сохраняются сразу. Так же решает база
 // (listings_before_update, listing_services_guard → BR005).
 //
-// Цена «от» считается из услуг (staff/services.ts): priceFromUzs и priceUnit из тела
-// ничего не меняют — их шлёт панель v0.1. Пакеты v0.1 (только зал) переводятся в его
-// услуги: банкеты будни и выходные, «другие услуги» (listing-services/store.ts). Поля
+// Цены — только в услугах (staff/services.ts), цену «от» карточки считает база. Поля
 // витрины проверяются по конфигурации категории (@bayramm/shared/categories).
 
 import type {
@@ -33,9 +31,7 @@ import type {
   ListingSaveResult,
   ListingStatus,
   PendingRevision,
-  PriceUnit,
   RevisionField,
-  StaffListingPackage,
   StaffPermission,
   StaffPhoto,
 } from "@bayramm/shared/api/staff";
@@ -57,27 +53,15 @@ import { hasListingPhone, readListingPhone, saveListingPhone, staffName } from "
 import type { Json } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound, versionConflict } from "../errors";
-import {
-  approveReviewServices,
-  hallPackages,
-  listServices,
-  replaceHallPackages,
-  type ServiceActor,
-} from "../listing-services/store";
+import { approveReviewServices, listServices, type ServiceActor } from "../listing-services/store";
 import { can, requirePermission } from "./access";
 import { Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
-import { changedOnly, currentPackages, revisionFields } from "./revision-diff";
+import { changedOnly, revisionFields } from "./revision-diff";
 import { blockers, iso, LISTING_STATUSES, num, pathId } from "./shared";
 import { pickSlug, SLUG_RE } from "./slug";
 import { definedOnly, readReason } from "./vendors";
 
 export const listings = new Hono<AppEnv>();
-
-/** Единицы цены пакетов зала v0.1 */
-export const PRICE_UNITS = ["per_guest", "per_event"] as const satisfies readonly PriceUnit[];
-export const PACKAGE_KINDS = ["weekday", "weekend", "custom"] as const;
-export const MAX_PRICE = 99_999_999_999;
-export const MAX_PACKAGES = 10;
 
 // ── чтение ──────────────────────────────────────────────────────────────────
 
@@ -144,7 +128,6 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
     .executeTakeFirst();
   if (row === undefined) throw notFound();
 
-  const packages = row.category_code === "hall" ? await hallPackages(trx, id) : [];
   const category = categoryConfig(row.category_code);
   const attributes = category === undefined ? {} : readAttributes(category, row.attributes);
 
@@ -207,7 +190,6 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     hasPhone: row.has_phone,
-    packages: packages.map((p) => ({ ...p })),
     photos: await loadPhotos(trx, id),
     blockers: { review: row.blockers_review, active: row.blockers_active },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
@@ -381,7 +363,6 @@ interface ListingFields {
 
 interface ParsedListing {
   fields: ListingFields;
-  packages: StaffListingPackage[] | undefined;
   phone: string | null | undefined;
   /** Правка полей витрины как пришла — проверяется по категории (categoryFields) */
   attributes: unknown;
@@ -389,32 +370,14 @@ interface ParsedListing {
   videoLinks: unknown;
 }
 
-function parsePackage(item: Input): StaffListingPackage | undefined {
-  const kind = item.oneOf("kind", PACKAGE_KINDS, true);
-  const nameRu = item.text("nameRu", { max: 80, required: true });
-  const nameUz = item.text("nameUz", { max: 80, required: true });
-  const priceUzs = item.int("priceUzs", { min: 1, max: MAX_PRICE, required: true });
-  const priceUnit = item.oneOf("priceUnit", PRICE_UNITS) ?? "per_guest";
-  if (!kind || !nameRu || !nameUz || typeof priceUzs !== "number") return undefined;
-  return { kind, nameRu, nameUz, priceUzs, priceUnit };
-}
-
 function parseListing(input: Input, creating: boolean): ParsedListing {
   const name = input.text("name", { min: 2, max: 80, required: creating });
   if (name === null) input.fail("name");
   const slug = input.pattern("slug", SLUG_RE);
   if (slug === null) input.fail("slug");
-  const priceUnit = input.oneOf("priceUnit", PRICE_UNITS);
-  if (priceUnit === null) input.fail("priceUnit");
   const capMin = input.int("capMin", { min: 1, max: 5000 });
   const capMax = input.int("capMax", { min: 1, max: 5000 });
   if (typeof capMin === "number" && typeof capMax === "number" && capMax < capMin) input.fail("capMax");
-  const packages = input.list("packages", MAX_PACKAGES, parsePackage);
-  const dayKinds = (packages ?? []).map((p) => p.kind).filter((kind) => kind !== "custom");
-  if (new Set(dayKinds).size !== dayKinds.length) input.fail("packages");
-
-  // Цена «от» — из услуг: поля панели v0.1 принимаются и ничего не меняют
-  input.int("priceFromUzs", { min: 1, max: MAX_PRICE });
   const parallel = input.int("parallelCapacity", { min: 1, max: 50 });
   if (parallel === null) input.fail("parallelCapacity");
   const fields = definedOnly<ListingFields>({
@@ -431,7 +394,6 @@ function parseListing(input: Input, creating: boolean): ParsedListing {
   });
   return {
     fields,
-    packages,
     phone: input.phone("phone"),
     attributes: input.peek("attributes"),
     videoLinks: input.peek("videoLinks"),
@@ -493,20 +455,8 @@ export function staffServiceActor(role: StaffActorRole, listingStatus: ListingSt
 
 type StaffActorRole = ReturnType<typeof staffOf>["role"];
 
-async function saveExtras(
-  trx: Tx,
-  listingId: string,
-  parsed: ParsedListing,
-  actor: ServiceActor,
-): Promise<void> {
-  if (parsed.packages !== undefined) {
-    const listing = await trx
-      .selectFrom("app.listings")
-      .select(["id", "category_code", "status"])
-      .where("id", "=", listingId)
-      .executeTakeFirstOrThrow();
-    await replaceHallPackages(trx, listing, parsed.packages, actor);
-  }
+/** Телефон для заявок — не столбец карточки: пишет saveListingPhone */
+async function savePhone(trx: Tx, listingId: string, parsed: ParsedListing): Promise<void> {
   if (parsed.phone !== undefined) await saveListingPhone(trx, listingId, parsed.phone);
 }
 
@@ -555,7 +505,7 @@ listings.post("/", requirePermission("listings.write"), limitJson, async (c) => 
       })
       .returning("id")
       .executeTakeFirstOrThrow();
-    await saveExtras(trx, created.id, parsed, staffServiceActor(actor.role, status));
+    await savePhone(trx, created.id, parsed);
     return loadListing(trx, created.id);
   });
   return c.json(listing, 201);
@@ -607,8 +557,7 @@ const MODERATED_INPUT: Readonly<Record<(typeof MODERATED)[number], string>> = {
 
 /**
  * Правка опубликованной карточки сотрудником без права модерации: изменённые
- * модерируемые поля и пакеты — в правку на модерацию (как у партнёра), остальное —
- * сразу. Не опубликована — всё сразу. Возвращает то, что сохраняется сразу, и поля,
+ * модерируемые поля — в правку на модерацию (как у партнёра), остальное — сразу. Не опубликована — всё сразу. Возвращает то, что сохраняется сразу, и поля,
  * ушедшие правкой. Открытая правка уже есть — 409 revision_pending (индекс базы)
  */
 async function proposeModerated(
@@ -619,16 +568,7 @@ async function proposeModerated(
 ): Promise<{ direct: ParsedListing; sent: RevisionField[] }> {
   const current = await trx
     .selectFrom("app.listings")
-    .select([
-      "status",
-      "version",
-      "category_code",
-      "name",
-      "price_from_uzs",
-      "price_unit",
-      "description_ru",
-      "description_uz",
-    ])
+    .select(["status", "version", "name", "description_ru", "description_uz"])
     .where("id", "=", id)
     .forUpdate()
     .executeTakeFirst();
@@ -640,11 +580,6 @@ async function proposeModerated(
   // Очистить модерируемое поле опубликованной карточки нельзя: без него она не готова
   const cleared = MODERATED.filter((key) => fields[key] === null).map((key) => MODERATED_INPUT[key]);
   if (cleared.length > 0) throw invalidInput(cleared);
-  const packages = parsed.packages;
-  if (current.category_code === "hall" && packages !== undefined) {
-    const kinds = new Set(packages.map((p) => p.kind));
-    if (!kinds.has("weekday") || !kinds.has("weekend")) throw invalidInput(["packages"]);
-  }
 
   const proposed = {
     fields: {
@@ -652,9 +587,8 @@ async function proposeModerated(
       ...(typeof fields.description_ru === "string" ? { description_ru: fields.description_ru } : {}),
       ...(typeof fields.description_uz === "string" ? { description_uz: fields.description_uz } : {}),
     },
-    packages,
   };
-  const payload = changedOnly(proposed, current, await currentPackages(trx, id));
+  const payload = changedOnly(proposed, current);
   const sent = revisionFields(Object.keys(payload));
   if (sent.length > 0) {
     await trx
@@ -677,7 +611,6 @@ async function proposeModerated(
   return {
     direct: {
       fields: definedOnly(direct),
-      packages: undefined,
       phone: parsed.phone,
       attributes: parsed.attributes,
       videoLinks: parsed.videoLinks,
@@ -709,7 +642,7 @@ listings.patch("/:id", requirePermission("listings.write"), limitJson, async (c)
       : await proposeModerated(trx, id, version, parsed);
     const extra = categoryFields(categoryConfig(current.category_code), direct, current.attributes);
     await updateListing(trx, id, version, { ...direct.fields, ...extra });
-    await saveExtras(trx, id, direct, staffServiceActor(actor.role, current.status));
+    await savePhone(trx, id, direct);
     return { ...(await loadListing(trx, id)), sentForModeration: sent };
   });
   return c.json(listing);

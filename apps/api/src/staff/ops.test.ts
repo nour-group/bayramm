@@ -115,36 +115,28 @@ describe("фильтры журнала", () => {
 });
 
 describe("правка карточки (ревизия)", () => {
-  const weekday = { kind: "weekday", name_ru: "Будни", name_uz: "Ish kunlari", price_uzs: 150000 };
-
   it("ключи как столбцы базы → поля карточки", () => {
     expect(
       parseRevision(
         {
           name: "  Oqsaroy Grand ",
-          price_from_uzs: 180000,
           description_ru: "Зал\r\nна 300 гостей",
-          packages: [weekday],
+          attributes: { halls_count: 3 },
         },
         "hall",
       ),
     ).toEqual({
-      fields: { name: "Oqsaroy Grand", price_from_uzs: 180000, description_ru: "Зал\nна 300 гостей" },
-      packages: [
-        { kind: "weekday", nameRu: "Будни", nameUz: "Ish kunlari", priceUzs: 150000, priceUnit: "per_guest" },
-      ],
+      fields: { name: "Oqsaroy Grand", description_ru: "Зал\nна 300 гостей" },
+      attributes: { halls_count: 3 },
       valid: true,
     });
   });
 
   it.each([
     ["пустое название", { name: " " }],
-    ["цена null", { price_from_uzs: null }],
-    ["цена «по запросу»", { price_from_uzs: "по запросу" }],
-    ["неизвестная единица", { price_unit: "per_hour" }],
-    ["два пакета будней", { packages: [weekday, weekday] }],
-    ["пакет без цены", { packages: [{ ...weekday, price_uzs: 0 }] }],
-    ["пакеты не список", { packages: "weekday" }],
+    ["описание не строка", { description_ru: 1 }],
+    ["поле витрины не из категории", { attributes: { fleet: [] } }],
+    ["ссылка не YouTube и не Instagram", { video_links: ["https://example.com/v"] }],
   ])("%s — не проходит", (_name, payload) => {
     expect(parseRevision(payload, "hall").valid).toBe(false);
   });

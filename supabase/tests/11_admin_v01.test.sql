@@ -89,9 +89,9 @@ select is((select count(*)::int from app.audit_log where object_id = 'aaaaaaaa-0
 
 insert into pii.listing_contacts (listing_id, public_phone)
 values ('aaaaaaaa-0000-0000-0000-000000000103', '+998000000777');
-insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs)
-values ('aaaaaaaa-0000-0000-0000-000000000103', 'weekday', 'Будни', 'Hafta kunlari', 100000);
-delete from app.listing_packages where listing_id = 'aaaaaaaa-0000-0000-0000-000000000103';
+insert into app.listing_services (listing_id, category_code, service_type, status, price_uzs, price_unit)
+values ('aaaaaaaa-0000-0000-0000-000000000103', 'hall', 'banquet_weekday', 'active', 100000, 'per_guest');
+delete from app.listing_services where listing_id = 'aaaaaaaa-0000-0000-0000-000000000103';
 -- день — в будущем: прошедший день календаря не меняется (availability_guard)
 insert into app.availability (listing_id, day, source)
 values ('aaaaaaaa-0000-0000-0000-000000000103', current_date + 90, 'staff');
@@ -101,15 +101,13 @@ select results_eq(
        and action not like 'listing.%' and action not like 'listing\_service.%' order by id$$,
   $$values
       ('listing_contact.create', '{}'::jsonb),
-      ('listing_package.create', '{"kind": "weekday"}'::jsonb),
-      ('listing_package.delete', '{"kind": "weekday"}'::jsonb),
       ('availability.create', jsonb_build_object('day', current_date + 90))$$,
-  'телефон, пакеты, занятость — в журнале объекта «листинг»');
+  'телефон и занятость — в журнале объекта «листинг»');
 select is(
   (select array_agg(action order by id) from app.audit_log
     where object_id = 'aaaaaaaa-0000-0000-0000-000000000103' and action like 'listing\_service.%'),
   array['listing_service.create', 'listing_service.delete'],
-  'пакет v0.1 зеркалится в услугу зала — и это тоже в журнале');
+  'услуги — тоже в журнале объекта «листинг»');
 select is_empty(
   $$select id from app.audit_log where detail::text like '%777%'$$,
   'телефон в журнал не попадает');

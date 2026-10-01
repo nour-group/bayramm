@@ -13,10 +13,10 @@ select ok(not has_table_privilege('bayramm_api', 'app.request_metric_facts', 'SE
 select has_table('app', 'api_error_alerts', 'счётчик ошибок API');
 select ok(not has_table_privilege('bayramm_api', 'app.api_error_alerts', 'SELECT, INSERT, UPDATE, DELETE'),
   'счётчик ошибок API напрямую недоступен');
-select ok(has_function_privilege('bayramm_api', 'app.metrics_period(timestamptz, timestamptz)', 'EXECUTE'),
+select ok(has_function_privilege('bayramm_api', 'app.metrics_period(timestamptz, timestamptz, text)', 'EXECUTE'),
   'API: метрики за период');
-select ok(has_function_privilege('bayramm_api', 'app.metrics_weekly(int)', 'EXECUTE'), 'API: метрики по неделям');
-select ok(has_function_privilege('bayramm_api', 'app.metrics_vendors(int, uuid)', 'EXECUTE'),
+select ok(has_function_privilege('bayramm_api', 'app.metrics_weekly(int, text)', 'EXECUTE'), 'API: метрики по неделям');
+select ok(has_function_privilege('bayramm_api', 'app.metrics_vendors(int, uuid, text)', 'EXECUTE'),
   'API: метрики по вендорам');
 select ok(has_function_privilege('bayramm_api', 'app.metrics_listings(uuid, int)', 'EXECUTE'),
   'API: метрики по площадкам');

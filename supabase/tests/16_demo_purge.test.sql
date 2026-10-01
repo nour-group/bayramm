@@ -58,9 +58,10 @@ begin
           'Демо-зал', 'yunusobod', 'Описание', 'Tavsif', 150000, 'per_guest', 50, 300);
   insert into pii.listing_contacts (listing_id, public_phone)
   values ('00000000-0000-4000-8000-de0000000101', '+998000000001');
-  insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
-    ('00000000-0000-4000-8000-de0000000101', 'weekday', 'Будни', 'Ish kunlari', 150000),
-    ('00000000-0000-4000-8000-de0000000101', 'weekend', 'Выходные', 'Dam olish kunlari', 180000);
+  insert into app.listing_services (listing_id, category_code, service_type, status, price_uzs, price_unit, sort)
+  values
+    ('00000000-0000-4000-8000-de0000000101', 'hall', 'banquet_weekday', 'active', 150000, 'per_guest', 1),
+    ('00000000-0000-4000-8000-de0000000101', 'hall', 'banquet_weekend', 'active', 180000, 'per_guest', 2);
   insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256, sort,
                           no_faces_ack)
   select '00000000-0000-4000-8000-de0000000101', 'ready', 'approved',
@@ -91,7 +92,7 @@ begin
   update app.requests set status = 'declined', decline_reason = 'busy'
   where id = 'eeeeeeee-0000-0000-0000-0000000000d1';
   insert into app.listing_revisions (id, listing_id, payload, base_version)
-  select '99999999-0000-0000-0000-0000000000d1', id, '{"price_from_uzs": 170000}', version
+  select '99999999-0000-0000-0000-0000000000d1', id, '{"name": "Демо-зал Гранд"}', version
   from app.listings where id = '00000000-0000-4000-8000-de0000000101';
 
   perform pg_temp.as_actor(null);

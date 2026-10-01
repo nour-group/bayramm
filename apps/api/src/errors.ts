@@ -66,7 +66,6 @@ const UNIQUE_CONSTRAINTS: Readonly<Record<string, { code: string; message: strin
     code: "phone_taken",
     message: "This phone is already used by this vendor",
   },
-  listing_packages_day_kind: { code: "duplicate_package", message: "Package of this kind already exists" },
   // app.assert_staff_username_free: имя пользователя Telegram у действующего сотрудника
   staff_profiles_telegram_username_active: {
     code: "username_taken",

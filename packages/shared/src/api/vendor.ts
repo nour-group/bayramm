@@ -355,13 +355,6 @@ export const NO_FACES_HEADER = "X-No-Faces";
 /** Подтверждение согласия людей на фото — у категорий с правилом portfolio */
 export const PHOTO_CONSENT_HEADER = "X-Photo-Consent";
 
-export interface VendorPackage {
-  readonly kind: "weekday" | "weekend" | "custom";
-  readonly name: Localized;
-  readonly priceUzs: number;
-  readonly priceUnit: PriceUnit;
-}
-
 /**
  * GET /vendor/listings/:id → 200: витрина как есть в базе — то, что видит клиент (плюс фото
  * и услуги, которые ждут решения или отклонены, — с отметкой статуса).
@@ -395,8 +388,6 @@ export interface VendorListing {
   readonly parallelCapacity: number;
   /** Услуги витрины по порядку — все статусы */
   readonly services: readonly ListingService[];
-  /** Пакеты v0.1 — только у залов, из услуг (ListingPackage в @bayramm/shared/api) */
-  readonly packages: readonly VendorPackage[];
   readonly photos: readonly VendorPhoto[];
   /** Телефон для заявок, который клиент видит сразу */
   readonly phone: string | null;
@@ -431,34 +422,16 @@ export interface VendorListing {
 
 export type RevisionStatus = "pending" | "approved" | "declined" | "withdrawn";
 
-/** Пакет в правке: ключи — как столбцы app.listing_packages */
-export interface RevisionPackage {
-  readonly kind: "weekday" | "weekend" | "custom";
-  readonly name_ru: string;
-  readonly name_uz: string;
-  readonly price_uzs: number;
-  readonly price_unit?: PriceUnit;
-}
-
 /**
  * Правка карточки от партнёра (app.listing_revisions.payload): только эти ключи, как
- * столбцы базы; нет ключа — поле не меняется.
+ * столбцы базы; нет ключа — поле не меняется. Цен в правке нет — они в услугах.
  *   · attributes — изменённые поля витрины: { ключ: значение | null } (null — убрать);
- *   · video_links — ссылки на видео целиком (YouTube, Instagram; не больше maxVideoLinks);
- *   · price_from_uzs, price_unit и packages — от кабинета v0.1: цена «от» теперь из услуг
- *     (меняется правкой услуг), пакеты зала заменяют его банкеты и «другие услуги».
- * packages заменяет набор целиком
+ *   · video_links — ссылки на видео целиком (YouTube, Instagram; не больше maxVideoLinks).
  */
 export interface ListingRevisionPayload {
   readonly name?: string;
-  /** @deprecated v0.1: цена «от» считается из услуг — правка её не меняет */
-  readonly price_from_uzs?: number;
-  /** @deprecated v0.1: как price_from_uzs */
-  readonly price_unit?: PriceUnit;
   readonly description_ru?: string;
   readonly description_uz?: string;
-  /** @deprecated v0.1: пакеты зала; новые кабинеты правят услуги */
-  readonly packages?: readonly RevisionPackage[];
   readonly attributes?: Readonly<Record<string, AttributeValue | null>>;
   readonly video_links?: readonly string[];
 }
@@ -466,11 +439,8 @@ export interface ListingRevisionPayload {
 /** Ключи правки в порядке показа */
 export const REVISION_KEYS = [
   "name",
-  "price_from_uzs",
-  "price_unit",
   "description_ru",
   "description_uz",
-  "packages",
   "attributes",
   "video_links",
 ] as const satisfies readonly (keyof ListingRevisionPayload)[];
@@ -495,7 +465,7 @@ export interface VendorRevision {
  * POST /vendor/listings/:id/revisions ListingRevisionPayload → 201 VendorRevision.
  *   В правку попадают только поля, которые отличаются от карточки; ничего не
  *   изменилось — 422 no_changes; неверные поля — 422 invalid_input (details — ключи,
- *   у пакетов — packages.<номер>.<поле>). Открытое предложение уже есть — 409
+ *   у полей витрины — attributes.<поле>…). Открытое предложение уже есть — 409
  *   revision_pending: одно на площадку, его можно отозвать.
  * POST /vendor/listings/:id/revisions/:revisionId/withdraw → 200 VendorRevision;
  *   по предложению уже решили — 409 illegal_transition; его предложила команда — 403

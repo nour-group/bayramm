@@ -1,7 +1,12 @@
 // Метрики в панели без базы: разбор параметров, перевод строк функций app.metrics_* в контракт
 // (numeric из pg — строка, даты — Date), 404 на чужого вендора. Сами определения — pgTAP
-// (supabase/tests/17_launch_metrics.test.sql)
-import type { MetricsOverview, VendorMetricsList, VendorResponseStats } from "@bayramm/shared/api/staff";
+// (supabase/tests/17_launch_metrics.test.sql, категории — 21_services_only_category_metrics.test.sql)
+import type {
+  CategoryMetricsList,
+  MetricsOverview,
+  VendorMetricsList,
+  VendorResponseStats,
+} from "@bayramm/shared/api/staff";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { authenticate, requireStaff } from "../auth/session";
@@ -11,7 +16,7 @@ import { handleError } from "../errors";
 import { sections } from "../routes/staff";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
 import { makeEnv } from "../testing/worker";
-import { intParam } from "./metrics";
+import { categoryParam, intParam } from "./metrics";
 
 const VENDOR_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 const LISTING_ID = "bbbbbbbb-0000-4000-8000-000000000001";
@@ -93,13 +98,32 @@ function appAs(role: StaffRole, vendorFound = true) {
               vendor_code: "V101",
               vendor_name: null,
               active_listings: 1,
+              categories: ["hall", "car"],
               ...RESPONSE_ROW,
             },
           ]
         : [];
     if (q.sql.includes("app.metrics_listings"))
       return [
-        { listing_id: LISTING_ID, listing_name: "Test Hall", listing_status: "active", ...RESPONSE_ROW },
+        {
+          listing_id: LISTING_ID,
+          listing_name: "Test Hall",
+          listing_status: "active",
+          category_code: "hall",
+          ...RESPONSE_ROW,
+        },
+      ];
+    if (q.sql.includes("app.metrics_categories"))
+      return [
+        {
+          category_code: "hall",
+          active_listings: 4,
+          active_vendors: 3,
+          clients: 6,
+          p90_response_minutes: 700,
+          agreed_rate: "14.3",
+          ...RESPONSE_ROW,
+        },
       ];
     return [];
   });
@@ -132,6 +156,19 @@ describe("intParam", () => {
   });
 });
 
+describe("categoryParam", () => {
+  it("нет — все категории; код из конфигурации; иначе 422 category", () => {
+    expect(categoryParam(undefined)).toBeNull();
+    expect(categoryParam("")).toBeNull();
+    expect(categoryParam("car")).toBe("car");
+    for (const raw of ["nope", "HALL", "hall;drop"]) {
+      expect(() => categoryParam(raw), raw).toThrowError(
+        expect.objectContaining({ status: 422, code: "invalid_input", details: ["category"] }),
+      );
+    }
+  });
+});
+
 describe("GET /metrics", () => {
   it("модератор видит недели и очереди; доли — числа, пусто — null", async () => {
     const { app, fake } = appAs("moderator");
@@ -139,6 +176,7 @@ describe("GET /metrics", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as MetricsOverview;
     expect(body.slaHours).toBe(12);
+    expect(body.category).toBeNull();
     expect(body.weeks[0]).toMatchObject({ weekLabel: "2026-W40", partial: true, answeredRate: null });
     expect(body.weeks[1]).toMatchObject({
       weekStart: "2026-09-21",
@@ -157,16 +195,53 @@ describe("GET /metrics", () => {
       revisionsPending: 0,
       photosPending: 1,
     });
-    expect(fake.queries.find((q) => q.sql.includes("app.metrics_weekly"))?.parameters).toEqual([2]);
+    expect(fake.queries.find((q) => q.sql.includes("app.metrics_weekly"))?.parameters).toEqual([2, null]);
     // под актором сотрудника, не системы
     expect(fake.queries.some((q) => q.parameters[0] === "staff")).toBe(true);
   });
 
-  it("неверный weeks — 422 до базы", async () => {
+  it("категория — фильтр недель, очереди — все", async () => {
+    const { app, fake } = appAs("moderator");
+    const body = (await (await get(app, "/metrics?category=car")).json()) as MetricsOverview;
+    expect(body.category).toBe("car");
+    expect(fake.queries.find((q) => q.sql.includes("app.metrics_weekly"))?.parameters).toEqual([8, "car"]);
+    expect(fake.queries.find((q) => q.sql.includes("app.metrics_ops_now"))?.parameters).toEqual([]);
+  });
+
+  it("неверный weeks или category — 422 до базы", async () => {
     const { app, fake } = appAs("admin");
-    const res = await get(app, "/metrics?weeks=100");
-    expect(res.status).toBe(422);
+    expect((await get(app, "/metrics?weeks=100")).status).toBe(422);
+    expect((await get(app, "/metrics?category=nope")).status).toBe(422);
     expect(fake.queries.some((q) => q.sql.includes("app.metrics_"))).toBe(false);
+  });
+});
+
+describe("GET /metrics/categories", () => {
+  it("сводка по категориям за 30 дней по умолчанию", async () => {
+    const { app, fake } = appAs("manager");
+    const body = (await (await get(app, "/metrics/categories")).json()) as CategoryMetricsList;
+    expect(body.days).toBe(30);
+    expect(body.items).toEqual([
+      {
+        categoryCode: "hall",
+        activeListings: 4,
+        activeVendors: 3,
+        clients: 6,
+        p90ResponseMinutes: 700,
+        agreedRate: 14.3,
+        requests: 7,
+        measurable: 5,
+        answeredInTime: 3,
+        answeredRate: 60,
+        responded: 4,
+        medianResponseMinutes: 210,
+        slaBreaches: 1,
+        agreed: 1,
+        lastRequestAt: "2026-09-30T05:00:00.000Z",
+      },
+    ]);
+    expect(fake.queries.find((q) => q.sql.includes("app.metrics_categories"))?.parameters).toEqual([30]);
+    expect((await get(app, "/metrics/categories?days=0")).status).toBe(422);
   });
 });
 
@@ -175,9 +250,11 @@ describe("GET /metrics/vendors", () => {
     const { app, fake } = appAs("manager");
     const body = (await (await get(app, "/metrics/vendors")).json()) as VendorMetricsList;
     expect(body.days).toBe(30);
+    expect(body.category).toBeNull();
     expect(body.items[0]).toEqual({
       vendor: { id: VENDOR_ID, code: "V101", name: null },
       activeListings: 1,
+      categories: ["hall", "car"],
       requests: 7,
       measurable: 5,
       answeredInTime: 3,
@@ -188,7 +265,22 @@ describe("GET /metrics/vendors", () => {
       agreed: 1,
       lastRequestAt: "2026-09-30T05:00:00.000Z",
     });
-    expect(fake.queries.find((q) => q.sql.includes("app.metrics_vendors"))?.parameters).toEqual([30, null]);
+    expect(fake.queries.find((q) => q.sql.includes("app.metrics_vendors"))?.parameters).toEqual([
+      30,
+      null,
+      null,
+    ]);
+  });
+
+  it("с категорией — только её заявки и витрины", async () => {
+    const { app, fake } = appAs("manager");
+    const body = (await (await get(app, "/metrics/vendors?days=7&category=hall")).json()) as VendorMetricsList;
+    expect(body.category).toBe("hall");
+    expect(fake.queries.find((q) => q.sql.includes("app.metrics_vendors"))?.parameters).toEqual([
+      7,
+      null,
+      "hall",
+    ]);
   });
 
   it("вендор и его площадки; нет вендора — 404", async () => {
@@ -200,13 +292,14 @@ describe("GET /metrics/vendors", () => {
     expect(body.vendor.vendor.id).toBe(VENDOR_ID);
     expect(body.listings).toEqual([
       expect.objectContaining({
-        listing: { id: LISTING_ID, name: "Test Hall", status: "active" },
+        listing: { id: LISTING_ID, name: "Test Hall", status: "active", categoryCode: "hall" },
         requests: 7,
       }),
     ]);
     expect(found.fake.queries.find((q) => q.sql.includes("app.metrics_vendors"))?.parameters).toEqual([
       7,
       VENDOR_ID,
+      null,
     ]);
     const missing = appAs("admin", false);
     expect((await get(missing.app, `/metrics/vendors/${VENDOR_ID}`)).status).toBe(404);
