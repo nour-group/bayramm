@@ -111,7 +111,7 @@ export function slaView(sla: RequestSla, now: number = Date.now()): SlaView {
   return { kind: "left", ms: left, share: Math.min(1, left / SLA_MS), warn: left <= WARN_MS };
 }
 
-/** +998901234567 → +998 90 123 45 67; другой вид — как есть */
+/** +998001234567 → +998 00 123 45 67; другой вид — как есть */
 export function formatPhone(phone: string): string {
   const match = /^\+998(\d{2})(\d{3})(\d{2})(\d{2})$/.exec(phone);
   return match ? `+998 ${match[1]} ${match[2]} ${match[3]} ${match[4]}` : phone;

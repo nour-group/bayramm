@@ -274,14 +274,14 @@ describe("вендоры", () => {
   it("телефон контакта скрыт, пока не нажали «Показать»", async () => {
     mockApi(staff("moderator", ["catalog.read", "vendor_phones.read"]), {
       [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
-      [`POST /api/staff/vendors/${VENDOR_ID}/phones`]: json({ phone: "+998901234567", phoneAlt: null }),
+      [`POST /api/staff/vendors/${VENDOR_ID}/phones`]: json({ phone: "+998001234567", phoneAlt: null }),
     });
     await mount(`/vendors/${VENDOR_ID}`);
     expect(text()).not.toContain("123 45 67");
     expect(calls.some((c) => c.url.endsWith("/phones"))).toBe(false);
     await act(async () => button(t.show)?.click());
     await settle();
-    expect(text()).toContain("+998 90 123 45 67");
+    expect(text()).toContain("+998 00 123 45 67");
   });
 });
 
@@ -618,7 +618,7 @@ describe("заявки", () => {
   it("телефон клиента: администратор — только с причиной", async () => {
     mockApi(staff("admin", ALL_PERMISSIONS), {
       [`GET /api/staff/requests/${REQUEST_ID}`]: json(DETAIL),
-      [`POST /api/staff/requests/${REQUEST_ID}/client-phone`]: json({ phone: "+998901112233" }),
+      [`POST /api/staff/requests/${REQUEST_ID}/client-phone`]: json({ phone: "+998001112233" }),
     });
     await mount(`/requests/${REQUEST_ID}`);
     expect(container.querySelector("h1")?.textContent).toContain("1001");
@@ -632,7 +632,7 @@ describe("заявки", () => {
     expect(calls.find((c) => c.url.endsWith("/client-phone"))?.body).toEqual({
       reason: "Клиент просит перезвонить",
     });
-    expect(text()).toContain("+998 90 111 22 33");
+    expect(text()).toContain("+998 00 111 22 33");
   });
 
   it("менеджер телефона клиента не видит — формы нет", async () => {

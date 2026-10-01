@@ -41,6 +41,10 @@ describe("styles.css клиента", () => {
     expect(depth).toBe(0);
   });
 
+  it("фрейм виджета Telegram — в его же color-scheme: в тёмной теме без чёрного фона", () => {
+    expect(css).toMatch(/\.tg-login iframe \{\s*color-scheme: light dark;\s*\}/);
+  });
+
   it("все переменные — из токенов @bayramm/ui; --tg-* ставит SDK Telegram", () => {
     const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map(([, name]) => name));
     const missing = [...used].filter((name) => !name?.startsWith("--tg-") && !tokens.includes(`${name}:`));

@@ -17,7 +17,7 @@ const CONFIG: BotConfig = {
   adminAppUrl: "https://admin.example",
 };
 const USER_ID = 5001;
-const PHONE = "+998901234567";
+const PHONE = "+998001234567";
 
 const hmac = (message: string) => createHmac("sha256", KEY).update(message).digest();
 
@@ -58,7 +58,7 @@ const start = (payload: string | null = null, languageCode = "uz"): BotUpdate =>
 });
 
 const contact = (
-  phone = "998901234567",
+  phone = "998001234567",
   userId: number | null = USER_ID,
   languageCode = "ru",
 ): BotUpdate => ({
@@ -345,7 +345,7 @@ describe("handleUpdate: контакт вендора", () => {
   it("чужой контакт (или без user_id) — отказ без запроса к привязке, клавиатура снова", async () => {
     for (const userId of [5002, null]) {
       const fake = db({ claim: "claimed" });
-      const replies = await handleUpdate(fake.db, CONFIG, contact("998901234567", userId));
+      const replies = await handleUpdate(fake.db, CONFIG, contact("998001234567", userId));
       expect(replies).toEqual([
         {
           chat_id: USER_ID,
@@ -377,8 +377,8 @@ describe("handleUpdate: контакт вендора", () => {
     for (const claim of ["claimed", "not_found", "linked_elsewhere"] as const) {
       await handleUpdate(db({ claim }).db, CONFIG, contact());
     }
-    await handleUpdate(db().db, CONFIG, contact("998901234567", 5002));
+    await handleUpdate(db().db, CONFIG, contact("998001234567", 5002));
     const log = logged();
-    for (const secret of ["901234567", String(USER_ID)]) expect(log).not.toContain(secret);
+    for (const secret of ["001234567", String(USER_ID)]) expect(log).not.toContain(secret);
   });
 });

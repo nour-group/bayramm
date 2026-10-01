@@ -555,7 +555,7 @@ export function ListingForm({
                   type="tel"
                   inputMode="tel"
                   autoComplete="off"
-                  placeholder="+998 90 123 45 67"
+                  placeholder="+998 XX XXX XX XX"
                   value={values.phone}
                   onChange={set("phone")}
                   maxLength={24}

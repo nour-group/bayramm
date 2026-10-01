@@ -97,8 +97,8 @@ test("хаб: код на телефон — после проверки «не 
   await expect(check.locator(".e2e-turnstile")).toBeVisible();
   await expectNoAxeViolations(page, "хаб с проверкой");
 
-  await page.getByLabel(ru.authPhoneLabel).first().fill("90 123 45 67");
+  await page.getByLabel(ru.authPhoneLabel).first().fill("00 123 45 67");
   await page.getByRole("button", { name: ru.authSendCode }).click();
   // Демо-API без токена ответило бы turnstile_required: код отправлен — значит, токен ушёл
-  await expect(page.getByText(ru.authCodeSent("+998 90 123 45 67"))).toBeVisible();
+  await expect(page.getByText(ru.authCodeSent("+998 00 123 45 67"))).toBeVisible();
 });

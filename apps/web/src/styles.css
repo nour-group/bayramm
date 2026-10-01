@@ -1779,6 +1779,12 @@ textarea.field-input {
 .tg-login {
   min-height: 44px;
 }
+/* Фрейм виджета Telegram объявляет color-scheme: light dark, а сайт — light. В тёмной теме
+   телефона схемы расходятся, и браузер заливает фрейм непрозрачным тёмным фоном — за
+   скруглённой кнопкой видны чёрные углы. Та же схема у самого iframe — фон снова прозрачный */
+.tg-login iframe {
+  color-scheme: light dark;
+}
 /* Проверка «не робот»: фрейм Cloudflare в рамке поля набора */
 .human-check {
   display: grid;

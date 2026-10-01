@@ -116,10 +116,10 @@ describe("хаб входа /auth", () => {
     expect(document.querySelector(".tg-login")).toBeNull();
     expect(text()).toContain("пока не включена");
 
-    await type(field("Номер телефона"), "90 123 45 67");
+    await type(field("Номер телефона"), "00 123 45 67");
     await click(byText("button", "Получить код"));
-    expect(mock.codesSent).toEqual(["+998901234567"]);
-    expect(text()).toContain("Код отправлен на номер +998 90 123 45 67");
+    expect(mock.codesSent).toEqual(["+998001234567"]);
+    expect(text()).toContain("Код отправлен на номер +998 00 123 45 67");
 
     await type(field("Код из сообщения"), "000000");
     await click(byText("button", "Войти"));
@@ -238,7 +238,7 @@ describe("профиль: аккаунт", () => {
     await mount({ path: "/profile", api: mock });
     await waitFor(() => byText("button", "Добавить телефон"), "кнопка");
     await click(byText("button", "Добавить телефон"));
-    await type(field("Номер телефона"), "901234567");
+    await type(field("Номер телефона"), "001234567");
     await click(byText("button", "Получить код"));
     await type(field("Код из сообщения"), DEMO_OTP_CODE);
     await click(byText("button", "Добавить телефон"));
@@ -303,7 +303,7 @@ describe("проверка «не робот» (Turnstile) у кода на те
       "Проверка, что вы не робот",
     );
 
-    await type(field("Номер телефона"), "901234567");
+    await type(field("Номер телефона"), "001234567");
     await click(byText("button", "Получить код"));
     expect(mock.codesSent).toEqual([]);
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("Дождитесь проверки");
@@ -339,7 +339,7 @@ describe("проверка «не робот» (Turnstile) у кода на те
     const mock = api({ turnstileSiteKey: SITE_KEY });
     await mount({ path: "/profile", identity: "telegram", webApp, api: mock });
     await click(await waitFor(() => byText("button", "Добавить телефон"), "кнопка"));
-    await type(field("Номер телефона"), "901234567");
+    await type(field("Номер телефона"), "001234567");
     await click(byText("button", "Получить код"));
     expect(mock.phoneProofs).toEqual([{ initData: webApp.initData }]);
     expect(turnstile.widgets).toEqual([]);
@@ -359,7 +359,7 @@ describe("проверка «не робот» (Turnstile) у кода на те
     expect(document.querySelector(".tg-login")).toBeNull();
     await waitFor(() => turnstile.widgets.length === 1, "виджет");
     await turnstile.solve(0, "token-1");
-    await type(field("Номер телефона"), "901234567");
+    await type(field("Номер телефона"), "001234567");
     await click(byText("button", "Получить код"));
     await type(field("Код из сообщения"), DEMO_OTP_CODE);
     await click(byText("button", "Добавить телефон"));
