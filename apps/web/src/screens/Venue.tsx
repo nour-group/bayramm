@@ -108,9 +108,11 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
   const phone = formatPhone(listing.phone);
   const district = districtName(listing.districtCode);
   const capacity =
-    listing.capMin !== null && listing.capMin > 0
-      ? t.capRange(listing.capMin, listing.capMax)
-      : t.people(listing.capMax);
+    listing.capMax === null
+      ? null
+      : listing.capMin !== null && listing.capMin > 0
+        ? t.capRange(listing.capMin, listing.capMax)
+        : t.people(listing.capMax);
   const address = pick(listing.address, lang);
   const description = pick(listing.description, lang);
 
@@ -191,10 +193,12 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
               <dd>{address}</dd>
             </div>
           ) : null}
-          <div>
-            <dt>{t.capacity}</dt>
-            <dd>{capacity}</dd>
-          </div>
+          {capacity === null ? null : (
+            <div>
+              <dt>{t.capacity}</dt>
+              <dd>{capacity}</dd>
+            </div>
+          )}
         </dl>
       </section>
 

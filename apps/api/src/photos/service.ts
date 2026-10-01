@@ -16,6 +16,12 @@
 //
 // Удаление: отметка deleted_at под актором (опубликованный листинг не
 // останется меньше чем с 3 фото — триггер), затем удаление объекта.
+//
+// Правило фото категории (@bayramm/shared/categories): no_people — загрузивший
+// подтверждает, что лиц на фото нет (no_faces); portfolio (фото и видео, студия) — или
+// это же, или согласие людей на снимке на публикацию (people_consent). Без подтверждения
+// — 422 no_faces_ack_required | photo_consent_required (по правилу категории); то же
+// проверяет база (photos_policy_guard, BR028).
 
 import { assertUploadable, ImageError, type ImageInfo, listingPhotoKey } from "@bayramm/media";
 import { sql } from "kysely";
@@ -44,10 +50,28 @@ export interface ListingPhoto {
   readonly moderation: AppModerationStatus;
 }
 
+/** Подтверждение загрузившего: на фото нет лиц или люди на фото согласны на публикацию */
+export type PhotoAck = "no_faces" | "people_consent";
+
 export interface AddPhotoOptions {
-  /** Загрузивший подтвердил: на фото нет лиц (правило продукта, столбец no_faces_ack) */
-  readonly noFacesAck: true;
+  /** null — подтверждения нет: ответ зависит от правила фото категории */
+  readonly ack: PhotoAck | null;
 }
+
+/** Подтверждение из заголовков X-No-Faces: 1 и X-Photo-Consent: 1; «лиц нет» — главнее */
+export function photoAckFromHeaders(
+  noFaces: string | undefined,
+  consent: string | undefined,
+): PhotoAck | null {
+  if (noFaces === "1") return "no_faces";
+  if (consent === "1") return "people_consent";
+  return null;
+}
+
+const noFacesRequired = () =>
+  new ApiError(422, "no_faces_ack_required", "Confirm that the photo shows no faces");
+const consentRequired = () =>
+  new ApiError(422, "photo_consent_required", "Confirm that people in the photo agreed to publication");
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -94,9 +118,6 @@ export async function addListingPhoto(
 ): Promise<ListingPhoto> {
   assertUploader(actor);
   if (!UUID_RE.test(listingId)) throw notFound();
-  if (options.noFacesAck !== true) {
-    throw new ApiError(422, "invalid_input", "Confirmation that the photo has no faces is required");
-  }
   const listing = listingId.toLowerCase();
   const info = inspect(bytes);
   const digest = await sha256(bytes);
@@ -114,12 +135,18 @@ export async function addListingPhoto(
           "duplicate",
         ),
         sql<number | null>`app.setting_int('max_photos')`.as("max_photos"),
+        sql<string>`(select c.photo_policy::text from app.categories c where c.code = l.category_code)`.as(
+          "photo_policy",
+        ),
       ])
       .where("l.id", "=", listing)
       .where(sql<boolean>`app.is_privileged() or app.owns_listing(l.id)`)
       .executeTakeFirst(),
   );
   if (state === undefined) throw notFound();
+  const portfolio = state.photo_policy === "portfolio";
+  if (options.ack === null) throw portfolio ? consentRequired() : noFacesRequired();
+  if (options.ack === "people_consent" && !portfolio) throw noFacesRequired();
   if (state.photos >= (state.max_photos ?? 10)) {
     throw new ApiError(409, "too_many_photos", "Photo limit reached");
   }
@@ -146,7 +173,8 @@ export async function addListingPhoto(
           width: info.width,
           height: info.height,
           sha256: digest,
-          no_faces_ack: true,
+          no_faces_ack: options.ack === "no_faces",
+          people_consent_ack: options.ack === "people_consent",
           // В конец списка листинга
           sort: sql<number>`(select coalesce(max(p.sort) + 1, 0) from app.photos p
                              where p.listing_id = ${listing} and p.deleted_at is null)`,

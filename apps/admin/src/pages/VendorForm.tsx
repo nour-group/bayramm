@@ -9,7 +9,8 @@ import { t } from "../texts";
 import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
 import { useUnsaved } from "../unsaved";
 
-type Values = Record<keyof VendorInput, string>;
+// Категория — у витрины: при создании вендора панель её пока не спрашивает
+type Values = Record<Exclude<keyof VendorInput, "categoryCode">, string>;
 
 const TEXT_KEYS = [
   "name",

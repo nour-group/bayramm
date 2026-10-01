@@ -16,6 +16,7 @@ const STAFF_MODULES = [
     .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
     .map((name) => `staff/${name}`),
   "photos/service.ts",
+  "listing-services/store.ts",
   "calendar/version.ts",
   "auth/session.ts",
   "routes/staff.ts",

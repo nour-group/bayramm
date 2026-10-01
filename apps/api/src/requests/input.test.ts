@@ -35,6 +35,7 @@ describe("parseCreateRequest", () => {
       occasionCode: "toy",
       eventDate: "2026-10-03",
       guests: 200,
+      details: null,
       budgetMinUzs: null,
       budgetMaxUzs: null,
       contactName: "Азиз",
@@ -43,6 +44,13 @@ describe("parseCreateRequest", () => {
       requestTransferConsentId: TRANSFER,
       notifyConsentId: null,
     });
+  });
+
+  it("число гостей можно не указывать (нужно ли — решает форма категории); details — как пришли", () => {
+    const { guests: _guests, ...withoutGuests } = valid;
+    const input = parseCreateRequest({ ...withoutGuests, details: { hours: 3 } }, TODAY);
+    expect(input.guests).toBeNull();
+    expect(input.details).toEqual({ hours: 3 });
   });
 
   it("полное тело: телефон без пробелов и скобок, текст обрезан по краям", () => {
@@ -107,6 +115,7 @@ describe("parseCreateRequest", () => {
     ["согласие не uuid", { requestTransferConsentId: "yes" }, ["requestTransferConsentId"]],
     ["уведомления не uuid", { notifyConsentId: true }, ["notifyConsentId"]],
     ["несколько полей", { guests: -1, contactPhone: "" }, ["guests", "contactPhone"]],
+    ["поля категории — не объект", { details: ["x"] }, ["details"]],
   ])("%s — 400 с именем поля", (_, patch, details) => {
     const err = rejection({ ...valid, ...patch });
     expect(err).toMatchObject({ status: 400, code: "invalid_request", details });

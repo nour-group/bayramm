@@ -240,6 +240,9 @@ afterAll(async () => {
     await admin.query("delete from app.listing_status_log where listing_id = $1", [listingId]);
     await admin.query("delete from app.photos where listing_id = $1", [listingId]);
     await admin.query("delete from app.listing_packages where listing_id = $1", [listingId]);
+    // Услуги и части дня — в режиме реплики каскад не срабатывает
+    await admin.query("delete from app.listing_services where listing_id = $1", [listingId]);
+    await admin.query("delete from app.availability_parts where listing_id = $1", [listingId]);
     await admin.query("delete from pii.listing_contacts where listing_id = $1", [listingId]);
     await admin.query("delete from app.listings where id = $1", [listingId]);
     await admin.query("delete from pii.vendor_user_profiles where vendor_user_id = $1", [vendorUserId]);

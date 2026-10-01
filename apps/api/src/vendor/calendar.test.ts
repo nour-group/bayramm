@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { VendorActor } from "../db/actor";
 import { ApiError } from "../errors";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
-import { getCalendar, markBusy, markFree, parseDay } from "./calendar";
+import { getCalendar, markBusy, markFree, parseDay, parsePart } from "./calendar";
 import { addDays, isIsoDate, monthRange, tashkentToday } from "./dates";
 
 const ACTOR: VendorActor = {
@@ -35,7 +35,11 @@ async function rejection(run: () => Promise<unknown>): Promise<ApiError> {
   throw new Error("ожидался отказ");
 }
 
-const isListingCheck = (q: RecordedQuery) => q.sql.startsWith('select "id" from "app"."listings"');
+const isListingCheck = (q: RecordedQuery) => q.sql.startsWith('select "l"."id", "l"."parallel_capacity"');
+/** Своя витрина: режим занятости категории и сколько заказов одновременно */
+const own = (mode = "day", capacity = 1) => [
+  { id: LISTING_ID, parallel_capacity: capacity, availability_mode: mode },
+];
 const isVersion = (q: RecordedQuery) => q.sql.includes('"app"."availability_versions"');
 const isLock = (q: RecordedQuery) => q.sql.includes("app.availability_lock");
 
@@ -88,14 +92,14 @@ describe("getCalendar", () => {
     const err = await rejection(() => getCalendar(fake.db, ACTOR, LISTING_ID, "2026-10", NOW));
     expect(err.status).toBe(404);
     const check = fake.queries.find(isListingCheck);
-    expect(check?.sql).toBe('select "id" from "app"."listings" where "id" = $1 and "vendor_id" = $2');
+    expect(check?.sql).toContain('where "l"."id" = $1 and "l"."vendor_id" = $2');
     expect(check?.parameters).toEqual([LISTING_ID, ACTOR.vendorId]);
-    expect(fake.queries.some((q) => q.sql.includes("availability"))).toBe(false);
+    expect(fake.queries.some((q) => q.sql.includes('"app"."availability'))).toBe(false);
   });
 
   it("месяц по умолчанию — текущий по Ташкенту; занятые дни и дни открытых заявок", async () => {
     const fake = fakeDb((q) => {
-      if (isListingCheck(q)) return [{ id: LISTING_ID }];
+      if (isListingCheck(q)) return own();
       if (isVersion(q)) return [{ version: 7 }];
       if (q.sql.includes('"app"."availability"'))
         return [
@@ -112,6 +116,10 @@ describe("getCalendar", () => {
     const calendar = await getCalendar(fake.db, ACTOR, LISTING_ID, undefined, NOW);
     expect(calendar).toEqual({
       listingId: LISTING_ID,
+      mode: "day",
+      parallelCapacity: 1,
+      parts: [],
+      bookings: [],
       month: "2026-10",
       today: "2026-10-01",
       maxDay: "2028-09-30",
@@ -129,6 +137,30 @@ describe("getCalendar", () => {
       expect.arrayContaining(["new", "viewed", "contacted", "deal", "2026-10-01", "2026-10-31"]),
     );
     expect(requests?.parameters).not.toContain("declined");
+    // У режима day частей дня нет — их и не читает
+    expect(fake.queries.some((q) => q.sql.includes("availability_parts"))).toBe(false);
+  });
+
+  it("режим parts: занятые части дня и договорённости по ним, сколько заказов одновременно", async () => {
+    const fake = fakeDb((q) => {
+      if (isListingCheck(q)) return own("parts", 2);
+      if (isVersion(q)) return [{ version: 3 }];
+      if (q.sql.includes('"app"."availability_parts"'))
+        return [{ day: "2026-10-05", part: "morning", source: "vendor", request_id: null }];
+      if (q.sql.includes('"day_part"')) return [{ event_date: "2026-10-05", day_part: "evening", count: 2 }];
+      return [];
+    });
+    const calendar = await getCalendar(fake.db, ACTOR, LISTING_ID, "2026-10", NOW);
+    expect(calendar).toMatchObject({
+      mode: "parts",
+      parallelCapacity: 2,
+      parts: [{ day: "2026-10-05", part: "morning", source: "vendor", requestId: null }],
+      bookings: [{ day: "2026-10-05", part: "evening", count: 2 }],
+    });
+    const deals = fake.queries.find((q) => q.sql.includes('"day_part"'));
+    expect(deals?.parameters).toEqual(
+      expect.arrayContaining([LISTING_ID, "deal", "2026-10-01", "2026-10-31"]),
+    );
   });
 
   it("кривой месяц — 422 без запроса к базе", async () => {
@@ -142,7 +174,7 @@ describe("getCalendar", () => {
 describe("markBusy / markFree", () => {
   it("занять: source vendor, повтор не трогает уже занятый день; сначала — сверка версии", async () => {
     const fake = fakeDb((q) => {
-      if (isListingCheck(q)) return [{ id: LISTING_ID }];
+      if (isListingCheck(q)) return own();
       if (isVersion(q)) return [{ version: 4 }];
       if (q.sql.startsWith('select "day"')) return [{ day: "2026-10-05", source: "staff", request_id: null }];
       return [];
@@ -150,6 +182,7 @@ describe("markBusy / markFree", () => {
     const change = await markBusy(fake.db, ACTOR, LISTING_ID, "2026-10-05", 3);
     expect(change).toEqual({
       day: "2026-10-05",
+      part: null,
       busy: { day: "2026-10-05", source: "staff", requestId: null },
       version: 4,
     });
@@ -163,18 +196,17 @@ describe("markBusy / markFree", () => {
   });
 
   it("освободить: удаление по листингу и дню; чужой листинг — 404 без удаления", async () => {
-    const own = fakeDb((q) =>
-      isListingCheck(q) ? [{ id: LISTING_ID }] : isVersion(q) ? [{ version: 9 }] : [],
-    );
-    expect(await markFree(own.db, ACTOR, LISTING_ID, "2026-10-05", 8)).toEqual({
+    const mine = fakeDb((q) => (isListingCheck(q) ? own() : isVersion(q) ? [{ version: 9 }] : []));
+    expect(await markFree(mine.db, ACTOR, LISTING_ID, "2026-10-05", 8)).toEqual({
       day: "2026-10-05",
+      part: null,
       busy: null,
       version: 9,
     });
-    const del = own.queries.find((q) => q.sql.startsWith("delete"));
+    const del = mine.queries.find((q) => q.sql.startsWith("delete"));
     expect(del?.sql).toBe('delete from "app"."availability" where "listing_id" = $1 and "day" = $2');
-    expect(own.queries.findIndex(isLock)).toBeLessThan(
-      own.queries.findIndex((q) => q.sql.startsWith("delete")),
+    expect(mine.queries.findIndex(isLock)).toBeLessThan(
+      mine.queries.findIndex((q) => q.sql.startsWith("delete")),
     );
 
     const foreign = fakeDb(() => []);
@@ -182,5 +214,36 @@ describe("markBusy / markFree", () => {
       404,
     );
     expect(foreign.queries.some((q) => q.sql.startsWith("delete") || isLock(q))).toBe(false);
+  });
+
+  it("часть дня: только у режима parts — отметка в availability_parts; у залов — 422 [part]", async () => {
+    const parts = fakeDb((q) => {
+      if (isListingCheck(q)) return own("parts", 2);
+      if (isVersion(q)) return [{ version: 5 }];
+      if (q.sql.startsWith('select "day", "part"'))
+        return [{ day: "2026-10-05", part: "evening", source: "vendor", request_id: null }];
+      return [];
+    });
+    expect(await markBusy(parts.db, ACTOR, LISTING_ID, "2026-10-05", 4, "evening")).toEqual({
+      day: "2026-10-05",
+      part: "evening",
+      busy: { day: "2026-10-05", part: "evening", source: "vendor", requestId: null },
+      version: 5,
+    });
+    const insert = parts.queries.find((q) => q.sql.startsWith("insert"));
+    expect(insert?.sql).toContain('insert into "app"."availability_parts"');
+    expect(insert?.sql).toContain('on conflict ("listing_id", "day", "part") do nothing');
+
+    const hall = fakeDb((q) => (isListingCheck(q) ? own("day") : []));
+    const err = await rejection(() => markBusy(hall.db, ACTOR, LISTING_ID, "2026-10-05", 4, "evening"));
+    expect([err.status, err.code, err.details]).toEqual([422, "invalid_input", ["part"]]);
+    expect(hall.queries.some((q) => isLock(q) || q.sql.startsWith("insert"))).toBe(false);
+  });
+
+  it("часть дня из адреса: утро, день, вечер; другое — 422 [part]", () => {
+    expect(parsePart(undefined)).toBeNull();
+    expect(parsePart("")).toBeNull();
+    expect(parsePart("day")).toBe("day");
+    expect(catching(() => parsePart("night"))).toMatchObject({ status: 422, details: ["part"] });
   });
 });

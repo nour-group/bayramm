@@ -269,6 +269,9 @@ afterAll(async () => {
     await admin.query("delete from app.listing_status_log where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.photos where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.listing_packages where listing_id = any($1::uuid[])", [listings]);
+    // Услуги и части дня — в режиме реплики каскад не срабатывает
+    await admin.query("delete from app.listing_services where listing_id = any($1::uuid[])", [listings]);
+    await admin.query("delete from app.availability_parts where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from pii.listing_contacts where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.listings where id = any($1::uuid[])", [listings]);
     await admin.query(

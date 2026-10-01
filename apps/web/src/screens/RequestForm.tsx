@@ -246,7 +246,7 @@ function initialDraft(
   return {
     ...EMPTY_DRAFT,
     date: isIsoDate(date) && date > today && !listing.busyDates.includes(date) ? date : null,
-    guests: guests === null ? "" : String(Math.min(guests, listing.capMax)),
+    guests: guests === null ? "" : String(Math.min(guests, listing.capMax ?? MAX_GUESTS)),
     name: telegramName,
   };
 }
@@ -321,7 +321,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
         navigate(hrefFor({ name: "requests" }, { open: error.existingId, dup: 1 }));
         return;
       }
-      setSendError(sendErrorText(error, t, listing.capMax));
+      setSendError(sendErrorText(error, t, listing.capMax ?? MAX_GUESTS));
       // Текст согласия сменился на сервере: перечитываем, галочки ставятся заново
       if (isApiError(error) && error.code === "consent_text_not_current") onConsentsOutdated();
     } finally {
@@ -342,7 +342,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
           <b>{listing.name}</b>
           <span className="muted small">
             {price.amount}
-            {price.unit ? ` ${price.unit}` : ""} · {t.people(listing.capMax)}
+            {price.unit ? ` ${price.unit}` : ""} · {t.people(listing.capMax ?? MAX_GUESTS)}
           </span>
         </p>
       </div>
@@ -380,15 +380,18 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
         required
         error={errors.guests}
         hint={
-          guests !== null && listing.capMin !== null && guests < listing.capMin && guests <= listing.capMax
+          guests !== null &&
+          listing.capMin !== null &&
+          guests < listing.capMin &&
+          guests <= (listing.capMax ?? MAX_GUESTS)
             ? t.guestsBelowMin(listing.capMin)
-            : t.people(listing.capMax)
+            : t.people(listing.capMax ?? MAX_GUESTS)
         }
       >
         <NumberStepper
           id={fieldId("guests")}
           min={1}
-          max={Math.min(MAX_GUESTS, listing.capMax)}
+          max={Math.min(MAX_GUESTS, listing.capMax ?? MAX_GUESTS)}
           step={GUESTS_STEP}
           decrementLabel={`${t.rqG} −${GUESTS_STEP}`}
           incrementLabel={`${t.rqG} +${GUESTS_STEP}`}

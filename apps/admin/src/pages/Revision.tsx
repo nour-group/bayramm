@@ -35,7 +35,8 @@ export function RevisionPage({ id }: { id: string }) {
   );
 }
 
-const isPackages = (value: RevisionValue): value is readonly StaffListingPackage[] => Array.isArray(value);
+const isPackages = (value: RevisionValue): value is readonly StaffListingPackage[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "object" && item !== null);
 
 function Value({ field, value }: { field: RevisionChange["field"]; value: RevisionValue }) {
   if (value === null) return <span className="muted">{t.none}</span>;
@@ -52,6 +53,9 @@ function Value({ field, value }: { field: RevisionChange["field"]; value: Revisi
     );
   }
   if (field === "priceFromUzs" && typeof value === "number") return <>{formatSum(value)}</>;
+  // Ссылки на видео и поля витрины — как есть, пока у панели нет своего вида для них
+  if (Array.isArray(value)) return <span className="reason">{value.join(", ")}</span>;
+  if (typeof value === "object") return <span className="reason">{JSON.stringify(value)}</span>;
   if (field === "priceUnit" && typeof value === "string" && value in t.priceUnits) {
     return <>{t.priceUnits[value as PriceUnit]}</>;
   }

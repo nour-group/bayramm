@@ -235,10 +235,12 @@ export function RequestDetail({
           <dt>{t.eventDate}</dt>
           <dd>{formatDate(request.eventDate, t, true)}</dd>
         </div>
-        <div>
-          <dt>{t.guestsLabel}</dt>
-          <dd>{formatGuests(request.guests, t)}</dd>
-        </div>
+        {request.guests === null ? null : (
+          <div>
+            <dt>{t.guestsLabel}</dt>
+            <dd>{formatGuests(request.guests, t)}</dd>
+          </div>
+        )}
         <div>
           <dt>{t.budgetLabel}</dt>
           <dd>{budget ?? t.budgetNone}</dd>

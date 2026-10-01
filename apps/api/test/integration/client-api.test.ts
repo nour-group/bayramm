@@ -79,10 +79,11 @@ async function createListing(l: TestListing): Promise<void> {
     "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000777')",
     [l.id],
   );
+  // Пакеты v0.1 — их зеркалит в услуги зала триггер базы: цена «от» — из банкетов
   await admin.query(
-    `insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs, sort) values
-       ($1, 'weekend', 'Выходные', 'Dam olish', $2, 2), ($1, 'weekday', 'Будни', 'Ish kuni', $3, 1)`,
-    [l.id, l.price + 20_000, l.price],
+    `insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs, price_unit, sort) values
+       ($1, 'weekend', 'Выходные', 'Dam olish', $2, $4, 2), ($1, 'weekday', 'Будни', 'Ish kuni', $3, $4, 1)`,
+    [l.id, l.price + 20_000, l.price, l.unit],
   );
   // Три готовых одобренных фото; обложка — второе по sort
   for (const n of [1, 2, 3]) {
@@ -187,9 +188,20 @@ describe("GET /dictionaries", () => {
   it("включённые категории, 12 районов и 5 поводов на двух языках; ETag и кэш", async () => {
     const res = await call("/dictionaries");
     const body = await json<Dictionaries>(res, 200);
-    expect(body.categories).toEqual([
-      { code: "hall", name: { ru: "Площадка / Тойхона", uz: "Maydon / Toʻyxona" } },
+    expect(body.categories.map((c) => c.code)).toEqual([
+      "hall",
+      "car",
+      "studio",
+      "flowers",
+      "photo",
+      "cake",
+      "gifts",
+      "decor",
     ]);
+    expect(body.categories[0]).toEqual({
+      code: "hall",
+      name: { ru: "Площадка / Тойхона", uz: "Maydon / Toʻyxona" },
+    });
     expect(body.districts).toHaveLength(12);
     expect(body.districts[0]).toEqual({ code: "yunusobod", name: { ru: "Юнусабад", uz: "Yunusobod" } });
     expect(body.occasions.map((o) => o.code)).toEqual(["toy", "beshik", "bd", "corp", "small"]);
@@ -391,14 +403,24 @@ describe("GET /catalog/listings/:slug", () => {
       busyOnDate: null,
       photoCount: 3,
     });
+    // Пакеты v0.1 — из услуг зала: названия — из каталога услуг
     expect(body.packages).toEqual([
-      { kind: "weekday", name: { ru: "Будни", uz: "Ish kuni" }, priceUzs: 100_000, priceUnit: "per_guest" },
+      {
+        kind: "weekday",
+        name: { ru: "Банкет — будни", uz: "Banket — ish kunlari" },
+        priceUzs: 100_000,
+        priceUnit: "per_guest",
+      },
       {
         kind: "weekend",
-        name: { ru: "Выходные", uz: "Dam olish" },
+        name: { ru: "Банкет — выходные", uz: "Banket — dam olish kunlari" },
         priceUzs: 120_000,
         priceUnit: "per_guest",
       },
+    ]);
+    expect(body.services.map((s) => [s.type, s.priceUzs])).toEqual([
+      ["banquet_weekday", 100_000],
+      ["banquet_weekend", 120_000],
     ]);
     expect(body.photos.map((p) => p.width)).toEqual([1002, 1001, 1003]);
     expect(body.cover).toEqual(body.photos[0]);

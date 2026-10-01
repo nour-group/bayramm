@@ -26,6 +26,7 @@ import {
   type VendorRequestPatch,
   type VendorTargetStatus,
 } from "@bayramm/shared/api/vendor";
+import type { RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
 import { roleActorKind, type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
@@ -62,6 +63,8 @@ export type InboxCursor =
 
 export interface ListQuery {
   tab: RequestTab;
+  /** Только заявки этой витрины (переключатель витрин кабинета); null — все */
+  listingId: string | null;
   /** После какой заявки продолжать; null — первая страница */
   after: InboxCursor | null;
   limit: number;
@@ -99,13 +102,19 @@ export function parseListQuery(query: Record<string, string | undefined>): ListQ
     if (after === null) throw invalid("cursor");
   }
 
+  let listingId: string | null = null;
+  if (query.listingId !== undefined && query.listingId !== "") {
+    if (!UUID_RE.test(query.listingId)) throw invalid("listingId");
+    listingId = query.listingId.toLowerCase();
+  }
+
   let limit = PAGE_LIMIT_DEFAULT;
   if (query.limit !== undefined) {
     if (!/^[0-9]{1,3}$/.test(query.limit)) throw invalid("limit");
     limit = Number(query.limit);
     if (limit < 1 || limit > PAGE_LIMIT_MAX) throw invalid("limit");
   }
-  return { tab: tab as RequestTab, after, limit };
+  return { tab: tab as RequestTab, listingId, after, limit };
 }
 
 export function parsePatch(body: unknown): VendorRequestPatch {
@@ -153,9 +162,12 @@ function requestsOf(trx: Tx, actor: VendorActor) {
       "r.decline_reason",
       "r.listing_id",
       "l.name as listing_name",
+      "l.category_code",
       "r.occasion_code",
       "r.event_date",
       "r.guests",
+      "r.day_part",
+      "r.details",
       "r.budget_min_uzs",
       "r.budget_max_uzs",
       "r.created_at",
@@ -181,10 +193,12 @@ function toItem(row: ItemRow): VendorRequestItem {
     publicNo: Number(row.public_no),
     status: row.status,
     declineReason: row.decline_reason,
-    listing: { id: row.listing_id, name: row.listing_name },
+    listing: { id: row.listing_id, name: row.listing_name, categoryCode: row.category_code },
     occasionCode: row.occasion_code,
     eventDate: row.event_date,
     guests: row.guests,
+    dayPart: row.day_part,
+    details: row.details as RequestDetails,
     budgetMinUzs: money(row.budget_min_uzs),
     budgetMaxUzs: money(row.budget_max_uzs),
     createdAt: row.created_at.toISOString(),
@@ -214,7 +228,10 @@ export async function listRequests(db: Db, actor: VendorActor, query: ListQuery)
   return withActor(db, actor, async (trx) => {
     const base = requestsOf(trx, actor)
       .select([ANSWERED.as("answered"), DUE_US.as("due_us")])
-      .where("r.status", "in", [...TAB_STATUSES[query.tab]]);
+      .where("r.status", "in", [...TAB_STATUSES[query.tab]])
+      .$if(typeof query.listingId === "string", (qb) =>
+        qb.where("r.listing_id", "=", query.listingId as string),
+      );
     const { after } = query;
     const rows =
       query.tab === "closed"
@@ -240,6 +257,9 @@ export async function listRequests(db: Db, actor: VendorActor, query: ListQuery)
       .selectFrom("app.requests")
       .select(["status", sql<number>`count(*)::int`.as("n")])
       .where("vendor_id", "=", actor.vendorId)
+      .$if(typeof query.listingId === "string", (qb) =>
+        qb.where("listing_id", "=", query.listingId as string),
+      )
       .groupBy("status")
       .execute();
 

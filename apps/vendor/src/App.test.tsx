@@ -31,7 +31,7 @@ const HOUR = 3600 * 1000;
 const me = (locale: "ru" | "uz" = "ru", role: VendorRole = "owner"): VendorMe => ({
   user: { id: "aaaaaaaa-0000-0000-0000-000000000011", locale, fullName: "Manager", role },
   vendor: { id: "aaaaaaaa-0000-0000-0000-000000000001", code: "V101", name: "Test LLC" },
-  listings: [{ id: LISTING_ID, name: "Test Hall", status: "active" }],
+  listings: [{ id: LISTING_ID, name: "Test Hall", status: "active", categoryCode: "hall" }],
 });
 
 function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
@@ -41,10 +41,12 @@ function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
     publicNo: 1001,
     status: "new",
     declineReason: null,
-    listing: { id: LISTING_ID, name: "Test Hall" },
+    listing: { id: LISTING_ID, name: "Test Hall", categoryCode: "hall" },
     occasionCode: "toy",
     eventDate: "2026-11-14",
     guests: 200,
+    dayPart: null,
+    details: {},
     budgetMinUzs: 40_000_000,
     budgetMaxUzs: 60_000_000,
     createdAt: new Date(created).toISOString(),
@@ -483,6 +485,10 @@ describe("календарь", () => {
     busy: [],
     requestDays: [],
     version: 7,
+    mode: "day",
+    parallelCapacity: 1,
+    parts: [],
+    bookings: [],
   });
   const calendarPath = `/api/vendor/listings/${LISTING_ID}/calendar`;
   const writes = () =>
@@ -512,6 +518,7 @@ describe("календарь", () => {
           else server.busy.delete(day);
           const change: VendorCalendarChange = {
             day,
+            part: null,
             busy: server.busy.get(day) ?? null,
             version: server.version,
           };
@@ -636,6 +643,11 @@ const LISTING: VendorListing = {
   phone: "+998000000999",
   blockers: [],
   photoLimits: { min: 3, max: 10 },
+  attributes: {},
+  missingAttributes: [],
+  videoLinks: [],
+  parallelCapacity: 1,
+  services: [],
 };
 
 const REVISION_ID = "cccccccc-0000-0000-0000-0000000000f1";
@@ -1083,6 +1095,10 @@ describe("календарь: подписи дней", () => {
         ],
         requestDays: [other],
         version: 1,
+        mode: "day",
+        parallelCapacity: 1,
+        parts: [],
+        bookings: [],
       } satisfies VendorCalendar,
     });
     await mount("/calendar");

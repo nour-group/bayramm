@@ -12,14 +12,17 @@
     "./api": "./src/api/client.ts",
     "./api/account": "./src/api/account.ts",
     "./api/me": "./src/api/me.ts",
+    "./api/services": "./src/api/services.ts",
     "./api/staff": "./src/api/staff.ts",
     "./api/vendor": "./src/api/vendor.ts",
+    "./categories": "./src/categories/index.ts",
     "./pkce": "./src/pkce.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "extract:dict": "node scripts/extract-client-dict.mjs && biome check --write src/i18n/ru.ts src/i18n/uz.ts"
+    "extract:dict": "node scripts/extract-client-dict.mjs && biome check --write src/i18n/ru.ts src/i18n/uz.ts",
+    "categories:sql": "node --import ./scripts/ts-resolve.mjs scripts/categories-sql.ts"
   },
   "devDependencies": {
     "typescript": "^6.0.2",

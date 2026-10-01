@@ -2,6 +2,8 @@
 // как CHECK в app.listings. Кириллица — по узбекской латинице (х → x, қ → q):
 // названия тойхон узнаваемее так, чем по русской транслитерации.
 
+import type { Tx } from "../db/actor";
+
 const CYRILLIC: Readonly<Record<string, string>> = {
   а: "a",
   б: "b",
@@ -71,4 +73,15 @@ export function freeSlug(base: string, taken: ReadonlySet<string>): string {
     if (!taken.has(candidate)) return candidate;
   }
   return `${base.slice(0, MAX_SLUG - 9)}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+/** Свободный адрес карточки по названию — под актором транзакции (сотрудник видит все) */
+export async function pickSlug(trx: Tx, name: string): Promise<string> {
+  const base = slugify(name);
+  const taken = await trx
+    .selectFrom("app.listings")
+    .select("slug")
+    .where("slug", "like", `${base}%`)
+    .execute();
+  return freeSlug(base, new Set(taken.map((row) => row.slug)));
 }

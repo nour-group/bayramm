@@ -9,10 +9,24 @@
    Телефоны в ответах не отдаются: только отдельным запросом «показать», который
    база пишет в журнал доступа к ПДн. */
 
-import type { DeclineReason, PriceUnit, RequestStatus } from "./client";
+import type { AvailabilityMode, DayPart } from "../categories/types";
+import type { AttributeValue } from "../categories/validate";
+import type { DeclineReason, ListingAttributes, PriceUnit, RequestDetails, RequestStatus } from "./client";
+import type { ListingService } from "./services";
 import type { ListingRevisionPayload, RevisionStatus } from "./vendor";
 
-export type { DeclineReason, ListingRevisionPayload, PriceUnit, RequestStatus, RevisionStatus };
+export * from "./services";
+export type {
+  AvailabilityMode,
+  DayPart,
+  DeclineReason,
+  ListingAttributes,
+  ListingRevisionPayload,
+  PriceUnit,
+  RequestDetails,
+  RequestStatus,
+  RevisionStatus,
+};
 
 export type StaffRole = "admin" | "manager" | "moderator";
 
@@ -74,7 +88,15 @@ export type LegalForm = "ooo" | "yatt" | "self_employed";
 export type ListingStatus = "lead" | "draft" | "review" | "active" | "suspended" | "rejected";
 export type ChecklistItem = "contract" | "stir" | "contacts" | "pdConsent";
 
-/** Коды из app.listing_publish_blockers: чего не хватает для проверки или публикации */
+/**
+ * Коды из app.listing_publish_blockers: чего не хватает для проверки или публикации.
+ *   price      — нет услуги с ценой (для проверки — хоть одной отправленной, для публикации —
+ *                одобренной);
+ *   capacity, district — вместимость в гостях и район, если их требует категория (зал);
+ *   packages   — нет обязательных услуг категории (у зала — банкеты будни и выходные);
+ *   attributes — не заполнены обязательные поля витрины (какие — missingAttributes);
+ *   photos     — меньше минимума фото категории (не меньше 3)
+ */
 export type PublishBlocker =
   | "price"
   | "capacity"
@@ -82,6 +104,7 @@ export type PublishBlocker =
   | "descriptions"
   | "phone"
   | "packages"
+  | "attributes"
   | "photos"
   | "contract"
   | "stir"
@@ -144,8 +167,9 @@ export interface VendorUser {
   readonly createdAt: string;
 }
 
-/** Карточка в составе вендора */
+/** Карточка (витрина) в составе вендора. У вендора бывают витрины в нескольких категориях */
 export interface ListingBrief extends ListingRef {
+  readonly categoryCode: string;
   readonly slug: string;
   readonly districtCode: string | null;
   readonly priceFromUzs: number | null;
@@ -182,9 +206,13 @@ export interface VendorDetail {
 /**
  * POST /staff/vendors (name обязателен) и PATCH /staff/vendors/:id.
  * Нет поля — не менять, null или "" — очистить. Телефоны только пишутся.
+ * categoryCode — только при создании: заодно заводится первая витрина вендора в этой
+ * категории (черновик с названием вендора). Витрина в другой категории — POST
+ * /staff/vendors/:id/listings
  */
 export interface VendorInput {
   readonly name?: string;
+  readonly categoryCode?: string;
   readonly legalForm?: LegalForm | null;
   readonly contractNo?: string | null;
   readonly managerId?: string | null;
@@ -250,9 +278,10 @@ export interface ListingListItem extends ListingBrief {
 }
 
 /**
- * GET /staff/listings?status=&q=&vendorId=&photos=pending&limit=&offset=
+ * GET /staff/listings?status=&q=&vendorId=&category=&photos=pending&limit=&offset=
  * photos=pending — только опубликованные карточки с фото, которые ждут решения (очередь
- * «Новые фото» в модерации: их загрузил партнёр или менеджер), старые загрузки первыми
+ * «Новые фото» в модерации: их загрузил партнёр или менеджер), старые загрузки первыми.
+ * category — только витрины этой категории
  */
 export interface ListingList {
   readonly total: number;
@@ -308,10 +337,21 @@ export interface ListingDetail {
   readonly addressUz: string | null;
   readonly descriptionRu: string | null;
   readonly descriptionUz: string | null;
+  /** Цена «от» — из услуг (до публикации — и из отправленных на проверку); пишет только база */
   readonly priceFromUzs: number | null;
   readonly priceUnit: PriceUnit;
   readonly capMin: number | null;
   readonly capMax: number | null;
+  /** Поля витрины категории */
+  readonly attributes: ListingAttributes;
+  /** Обязательные поля витрины без значения (для подсветки формы) */
+  readonly missingAttributes: readonly string[];
+  /** Ссылки на видео (YouTube, Instagram) */
+  readonly videoLinks: readonly string[];
+  /** Сколько заказов витрина берёт одновременно (режим parts) */
+  readonly parallelCapacity: number;
+  /** Услуги витрины по порядку — все статусы */
+  readonly services: readonly ListingService[];
   readonly submittedAt: string | null;
   readonly publishedAt: string | null;
   /** Оптимистичная блокировка: передаётся обратно в каждой правке и смене статуса */
@@ -320,6 +360,7 @@ export interface ListingDetail {
   readonly updatedAt: string;
   /** Телефон для заявок вписан (сам номер — только через «показать») */
   readonly hasPhone: boolean;
+  /** Пакеты v0.1 — только у залов, из услуг (banquet_weekday → weekday, …, other → custom) */
   readonly packages: readonly StaffListingPackage[];
   readonly photos: readonly StaffPhoto[];
   /** Чего не хватает: для отправки на проверку и для публикации */
@@ -356,7 +397,13 @@ export interface ListingSaveResult extends ListingDetail {
  * POST /staff/listings (vendorId и name обязательны; status — lead или draft, по
  * умолчанию draft; slug — из названия, если не задан) и PATCH /staff/listings/:id
  * (version обязателен). packages заменяет набор целиком. phone: строка — записать,
- * null — убрать. 409 version_conflict — карточку изменили, перечитать; 409 slug_taken
+ * null — убрать. 409 version_conflict — карточку изменили, перечитать; 409 slug_taken.
+ * attributes — правка полей витрины: { ключ: значение | null } (null — убрать), проверка —
+ * по конфигурации категории (422 invalid_input, details — attributes.<ключ>…); videoLinks —
+ * целиком; parallelCapacity — 1–50 (растёт версия календаря).
+ * priceFromUzs и priceUnit больше ничего не меняют — цена «от» считается из услуг; packages
+ * (только зал) переводятся в его банкеты и «другие услуги».
+ * Категорию витрины меняет POST /staff/listings/:id/category (не PATCH)
  */
 export interface ListingInput {
   readonly vendorId?: string;
@@ -376,6 +423,33 @@ export interface ListingInput {
   readonly capMax?: number | null;
   readonly packages?: readonly StaffListingPackage[];
   readonly phone?: string | null;
+  readonly attributes?: Readonly<Record<string, AttributeValue | null>>;
+  readonly videoLinks?: readonly string[];
+  readonly parallelCapacity?: number;
+}
+
+/**
+ * POST /staff/vendors/:id/listings { categoryCode, name?, slug? } → 201 ListingDetail:
+ * новая витрина существующему вендору — в другой (или той же) категории, черновиком; name —
+ * по умолчанию название вендора. Право listings.write; запись в журнал (vendor.listing_add).
+ * Пользователи, контакты, согласия и чек-лист — у вендора общие; у витрины — свои поля,
+ * услуги, фото, занятость и заявки. 422 invalid_input ["categoryCode"] — категория выключена
+ */
+export interface VendorListingInput {
+  readonly categoryCode: string;
+  readonly name?: string;
+  readonly slug?: string;
+}
+
+/**
+ * POST /staff/listings/:id/category { categoryCode, version } → ListingDetail. Только пока по
+ * витрине нет заявок (иначе 409 category_locked — заведите новую витрину). Услуги прежней
+ * категории удаляются (у опубликованной — нельзя: 422 publish_blocked, сначала приостановить),
+ * поля витрины очищаются; фото с людьми в категорию «без людей» — 409 photo_ack_required
+ */
+export interface ListingCategoryInput {
+  readonly categoryCode: string;
+  readonly version: number;
 }
 
 /** Действия со статусом: POST /staff/listings/:id/<действие> → ListingDetail */
@@ -384,7 +458,7 @@ export type ListingAction = "submit" | "publish" | "suspend" | "reject" | "draft
 /**
  * Тело действия. reason обязателен для suspend и reject; для остальных — комментарий в
  * историю. 422 publish_blocked (details — PublishBlocker[]), 409 illegal_transition.
- * publish одобряет готовые фото карточки, ещё ждущие решения
+ * publish одобряет готовые фото и услуги карточки, ещё ждущие решения
  */
 export interface ListingActionInput {
   readonly version: number;
@@ -395,7 +469,9 @@ export interface ListingActionInput {
 
 /**
  * POST /staff/listings/:id/photos — тело: файл (image/webp|jpeg|png, ≤ 10 МБ) после
- * compressForUpload; заголовок X-No-Faces: 1 — сотрудник подтвердил, что лиц на фото нет.
+ * compressForUpload; заголовок X-No-Faces: 1 — сотрудник подтвердил, что лиц на фото нет, или
+ * (только у категорий с правилом portfolio) X-Photo-Consent: 1 — люди на фото согласны на
+ * публикацию (без подтверждения — 422 no_faces_ack_required | photo_consent_required).
  * → 201 StaffPhoto. 409 too_many_photos, duplicate_photo; 413; 422 invalid_image (details — код)
  *
  * PUT    /staff/listings/:id/photos/order { ids }          → StaffPhoto[]
@@ -419,17 +495,43 @@ export interface BusyDay {
   readonly source: "vendor" | "staff" | "request_decline";
 }
 
+/** Занятая часть дня (режим parts) */
+export interface BusyPart extends BusyDay {
+  readonly part: DayPart;
+}
+
+/** Договорённости (заявки deal) на часть дня */
+export interface PartBookings {
+  readonly day: string;
+  readonly part: DayPart;
+  readonly count: number;
+}
+
+/** День и часть дня — для правки занятости по частям */
+export interface DayPartRef {
+  readonly day: string;
+  readonly part: DayPart;
+}
+
 /**
  * GET /staff/listings/:id/availability?from=YYYY-MM-DD&to=YYYY-MM-DD (не больше 400 дней)
- * PUT /staff/listings/:id/availability { version, busy: [дни], free: [дни] } — отметить и
- * снять; ответ — изменённые дни и новая версия. version — из последнего ответа: календарь
- * с тех пор изменили (партнёр, другой сотрудник, отказ «занято») — 409 calendar_conflict,
- * перечитать. Прошедший день по Ташкенту — 422 date_out_of_range (details — busy/free)
+ * PUT /staff/listings/:id/availability { version, busy: [дни], free: [дни], busyParts, freeParts }
+ * — отметить и снять (весь день или часть дня — только у режима parts, иначе 422 invalid_input
+ * ["busyParts"]); ответ — изменённые дни и новая версия. version — из последнего ответа:
+ * календарь с тех пор изменили (партнёр, другой сотрудник, отказ «занято») — 409
+ * calendar_conflict, перечитать. Прошедший день по Ташкенту — 422 date_out_of_range
+ * (details — busy/free/busyParts/freeParts)
  */
 export interface Availability {
   readonly from: string;
   readonly to: string;
+  readonly mode: AvailabilityMode;
+  readonly parallelCapacity: number;
   readonly busy: readonly BusyDay[];
+  /** Занятые части дня (режим parts) */
+  readonly parts: readonly BusyPart[];
+  /** Договорённости по частям дня (режим parts) */
+  readonly bookings: readonly PartBookings[];
   /** Версия календаря карточки (всех дней) — для следующей правки */
   readonly version: number;
 }
@@ -438,6 +540,63 @@ export interface AvailabilityInput {
   readonly version: number;
   readonly busy?: readonly string[];
   readonly free?: readonly string[];
+  readonly busyParts?: readonly DayPartRef[];
+  readonly freeParts?: readonly DayPartRef[];
+}
+
+// ── услуги витрин ──────────────────────────────────────────────────────────
+
+/*
+ * Услуги витрины в панели (поля — ServiceInput, ответ — ListingService, @bayramm/shared/api/services):
+ *
+ * GET    /staff/listings/:id/services                       → ListingServices (catalog.read)
+ * POST   /staff/listings/:id/services      ServiceInput     → 201 ListingService (listings.write).
+ *        Модератор и администратор заводят услугу сразу одобренной; менеджер — на проверку
+ *        (у неопубликованной витрины её одобрит публикация).
+ * PATCH  /staff/listings/:id/services/:sid ServiceInput     → ListingService (listings.write).
+ *        Менеджер у активной услуги опубликованной витрины — предложением (proposal), как партнёр.
+ * POST   /staff/listings/:id/services/:sid/pause            → снять с витрины (listings.write)
+ * POST   /staff/listings/:id/services/:sid/resume           → вернуть: модератор — сразу, менеджер —
+ *        на проверку
+ * DELETE /staff/listings/:id/services/:sid                  → 204 (listings.write; активную
+ *        опубликованной витрины менеджер не удаляет — 409 moderated_field_requires_revision)
+ * Последнюю услугу с ценой опубликованной витрины не снять и не удалить — 422 publish_blocked.
+ *
+ * Модерация (право revisions.moderate — администратор, модератор):
+ * GET    /staff/services?status=pending|review|proposal&limit=&offset= → ServiceQueue: новые услуги
+ *        на проверке и предложения правок у опубликованных витрин, старые первыми
+ * POST   /staff/services/:sid/approve                       → ListingService: одобрить услугу или
+ *        применить предложение (422 service_invalid — не проходит проверку полей)
+ * POST   /staff/services/:sid/decline { reason }            → ListingService: отклонить услугу или
+ *        предложение; причину увидит партнёр
+ * Решение по услуге опубликованной витрины — уведомление владельцам кабинета (vendor.service_decided)
+ */
+
+/** Что ждёт решения: новая услуга (review) или предложение правки активной (proposal) */
+export type ServiceQueueKind = "review" | "proposal";
+
+export interface ServiceQueueItem {
+  readonly kind: ServiceQueueKind;
+  readonly service: ListingService;
+  readonly listing: {
+    readonly id: string;
+    readonly name: string;
+    readonly status: ListingStatus;
+    readonly categoryCode: string;
+  };
+  readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
+  /** Кто отправил: партнёр из кабинета или сотрудник (менеджер) из панели */
+  readonly proposedBy: RevisionAuthor;
+  readonly submittedAt: string;
+}
+
+export interface ServiceQueue {
+  readonly total: number;
+  readonly items: readonly ServiceQueueItem[];
+}
+
+export interface ServiceDeclineInput {
+  readonly reason: string;
 }
 
 // ── заявки ─────────────────────────────────────────────────────────────────
@@ -474,9 +633,12 @@ export interface StaffRequestItem {
   readonly firstResponseBy: "vendor_user" | "staff" | "system" | "client" | null;
   readonly occasionCode: string;
   readonly eventDate: string;
-  readonly guests: number;
+  /** Число гостей; null — категория его не спрашивает или клиент не указал */
+  readonly guests: number | null;
+  /** Часть дня (режим parts); null — у категории её нет */
+  readonly dayPart: DayPart | null;
   readonly createdAt: string;
-  readonly listing: { readonly id: string; readonly name: string };
+  readonly listing: { readonly id: string; readonly name: string; readonly categoryCode: string };
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
   /** Сколько раз вендору напоминали (автоматически и сотрудники) */
   readonly reminders: number;
@@ -515,6 +677,8 @@ export interface StaffRequestDetail extends StaffRequestItem {
   readonly contactName: string | null;
   readonly comment: string | null;
   readonly contactPurged: boolean;
+  /** Поля заявки категории (выбранные услуги — как были при подаче) */
+  readonly details: RequestDetails;
   readonly history: readonly RequestHistoryEntry[];
   /** Срок ответа по порядку: создана, просмотрена, напоминания, срок, нарушение, первый ответ */
   readonly timeline: readonly SlaEvent[];
@@ -841,9 +1005,18 @@ export type RevisionField =
   | "priceUnit"
   | "descriptionRu"
   | "descriptionUz"
-  | "packages";
+  | "packages"
+  | "attributes"
+  | "videoLinks";
 
-export type RevisionValue = string | number | null | readonly StaffListingPackage[];
+/** attributes — изменённые поля витрины { ключ: значение | null }, videoLinks — ссылки целиком */
+export type RevisionValue =
+  | string
+  | number
+  | null
+  | readonly StaffListingPackage[]
+  | readonly string[]
+  | Readonly<Record<string, AttributeValue | null>>;
 
 export interface RevisionChange {
   readonly field: RevisionField;

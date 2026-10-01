@@ -12,9 +12,31 @@
    комментарий — пока согласие действует и заявка не отозвана. Телефон клиента
    отдаётся только в карточке заявки, и каждое такое чтение записывается в журнал. */
 
-import type { DeclineReason, Locale, Localized, PriceUnit, RequestStatus } from "./client";
+import type { AvailabilityMode, DayPart } from "../categories/types";
+import type { AttributeValue } from "../categories/validate";
+import type {
+  DeclineReason,
+  ListingAttributes,
+  Locale,
+  Localized,
+  PriceUnit,
+  RequestDetails,
+  RequestStatus,
+} from "./client";
+import type { ListingService } from "./services";
 
-export type { DeclineReason, Locale, Localized, PriceUnit, RequestStatus };
+export * from "./services";
+export type {
+  AvailabilityMode,
+  DayPart,
+  DeclineReason,
+  ListingAttributes,
+  Locale,
+  Localized,
+  PriceUnit,
+  RequestDetails,
+  RequestStatus,
+};
 
 // ── вход ───────────────────────────────────────────────────────────────────
 
@@ -55,10 +77,16 @@ export type ListingStatus = "lead" | "draft" | "review" | "active" | "suspended"
  */
 export type VendorRole = "owner" | "member";
 
+/**
+ * Витрина вендора. У одного вендора бывают витрины в нескольких категориях (студия и
+ * фото-видео, торты и подарки): у каждой — свои поля, услуги, фото, занятость и заявки.
+ * Категорию витрины выбирает команда; партнёр её не меняет
+ */
 export interface VendorListingRef {
   readonly id: string;
   readonly name: string;
   readonly status: ListingStatus;
+  readonly categoryCode: string;
 }
 
 /** GET /vendor/me → 200; PATCH /vendor/me { locale } → 200 VendorMe */
@@ -75,7 +103,7 @@ export interface VendorMe {
     readonly code: string;
     readonly name: string | null;
   };
-  /** Листинги вендора, старые первыми */
+  /** Витрины вендора, старые первыми — для переключателя витрин в кабинете */
   readonly listings: readonly VendorListingRef[];
 }
 
@@ -110,10 +138,18 @@ export interface VendorRequestItem {
   readonly publicNo: number;
   readonly status: RequestStatus;
   readonly declineReason: DeclineReason | null;
-  readonly listing: { readonly id: string; readonly name: string };
+  readonly listing: { readonly id: string; readonly name: string; readonly categoryCode: string };
   readonly occasionCode: string;
   readonly eventDate: string;
-  readonly guests: number;
+  /** Число гостей; null — категория его не спрашивает или клиент не указал */
+  readonly guests: number | null;
+  /** Часть дня (режим parts); null — у категории её нет */
+  readonly dayPart: DayPart | null;
+  /**
+   * Поля заявки категории: часы, машины, кг, выбранные услуги и опции (как были при подаче).
+   * Без персональных данных; краткая запись строками — detailsSummary из @bayramm/shared/categories
+   */
+  readonly details: RequestDetails;
   readonly budgetMinUzs: number | null;
   readonly budgetMaxUzs: number | null;
   readonly createdAt: string;
@@ -123,7 +159,8 @@ export interface VendorRequestItem {
 }
 
 /**
- * GET /vendor/requests?tab=new&cursor=…&limit=… → 200.
+ * GET /vendor/requests?tab=new&cursor=…&limit=…&listingId=… → 200. listingId — только заявки
+ * этой витрины (чужая или несуществующая — пустой список).
  * Порядок: «Новые» и «В работе» — сначала ждущие ответа, по сроку ответа (ближайший и
  * просроченный сверху), затем ответившие; «Закрытые» — новые сверху.
  * cursor — непрозрачная строка из nextCursor той же вкладки.
@@ -196,12 +233,36 @@ export interface BusyDay {
   readonly requestId: string | null;
 }
 
+/** Отметка «часть дня занята» (режим parts) */
+export interface BusyPart {
+  readonly day: string;
+  readonly part: DayPart;
+  readonly source: BusySource;
+  readonly requestId: string | null;
+}
+
+/** Договорённости (заявки deal) на часть дня — сколько мест из parallelCapacity занято */
+export interface PartBookings {
+  readonly day: string;
+  readonly part: DayPart;
+  readonly count: number;
+}
+
 /**
  * GET /vendor/listings/:id/calendar?month=YYYY-MM → 200 (по умолчанию — текущий месяц).
  * requestDays — даты событий открытых заявок и сделок этого листинга в месяце.
+ * Режим parts (фото и видео, кортеж, декор): день — утро, день, вечер. Часть занята, если
+ * она в parts или договорённостей на неё (bookings) не меньше parallelCapacity; день занят,
+ * если он в busy (весь день) или заняты все три части. У остальных режимов parts и bookings
+ * пустые; у режима lead (цветы, торты, подарки) календарь клиенту не показывается.
  */
 export interface VendorCalendar {
   readonly listingId: string;
+  readonly mode: AvailabilityMode;
+  /** Сколько заказов витрина берёт одновременно (экипажи, машины) */
+  readonly parallelCapacity: number;
+  readonly parts: readonly BusyPart[];
+  readonly bookings: readonly PartBookings[];
   readonly month: string;
   /** Сегодня по Ташкенту: прошедшие дни не меняются */
   readonly today: string;
@@ -220,8 +281,10 @@ export interface VendorCalendar {
 export const CALENDAR_VERSION_HEADER = "If-Match";
 
 /**
- * PUT    /vendor/listings/:id/calendar/:day → 200: день занят (уже занятый — как есть).
- * DELETE /vendor/listings/:id/calendar/:day → 200: день свободен (busy — null).
+ * PUT    /vendor/listings/:id/calendar/:day[?part=morning|day|evening] → 200: день (или часть
+ *        дня) занят (уже занятый — как есть).
+ * DELETE /vendor/listings/:id/calendar/:day[?part=…] → 200: свободен (busy — null).
+ * part — только у режима parts (иначе 422 invalid_input ["part"]); без part — весь день.
  * Обе — с заголовком If-Match: <version> из календаря или прошлой правки; без него —
  * 428 version_required. Календарь с тех пор изменили — 409 calendar_conflict: перечитать
  * и показать человеку, что изменилось. День, закрытый сотрудником, — 403
@@ -229,8 +292,25 @@ export const CALENDAR_VERSION_HEADER = "If-Match";
  */
 export interface VendorCalendarChange {
   readonly day: string;
-  readonly busy: BusyDay | null;
+  /** Часть дня правки; null — весь день */
+  readonly part: DayPart | null;
+  /** Отметка после правки: BusyDay (весь день) или BusyPart; null — свободно */
+  readonly busy: BusyDay | BusyPart | null;
   /** Новая версия календаря — для следующей правки */
+  readonly version: number;
+}
+
+/**
+ * PUT /vendor/listings/:id/calendar/capacity { parallelCapacity } (1–50), If-Match: <version>
+ * → 200 VendorCapacityChange. Сколько заказов витрина берёт одновременно — часть календаря:
+ * менять может любой пользователь вендора, версия календаря растёт
+ */
+export interface VendorCapacityInput {
+  readonly parallelCapacity: number;
+}
+
+export interface VendorCapacityChange {
+  readonly parallelCapacity: number;
   readonly version: number;
 }
 
@@ -257,8 +337,12 @@ export interface VendorPhoto {
  *
  * POST   /vendor/listings/:id/photos — тело: файл (image/webp|jpeg|png, ≤ 10 МБ) после
  *        compressForUpload (@bayramm/media/browser: перекодирование, без EXIF и GPS);
- *        заголовок X-No-Faces: 1 — партнёр подтвердил, что лиц на фото нет (без него —
- *        422 no_faces_ack_required). → 201 VendorPhoto (moderation: pending).
+ *        подтверждение по правилу фото категории (photoPolicy в @bayramm/shared/categories):
+ *          · no_people — заголовок X-No-Faces: 1: лиц на фото нет (без него — 422
+ *            no_faces_ack_required);
+ *          · portfolio (фото и видео, студия) — X-Photo-Consent: 1: люди на фото согласны на
+ *            публикацию, или X-No-Faces: 1 (без обоих — 422 photo_consent_required).
+ *        → 201 VendorPhoto (moderation: pending).
  *        409 too_many_photos, duplicate_photo; 413 payload_too_large; 422 invalid_image
  *        (details — код проверки файла); 503 storage_unavailable.
  * DELETE /vendor/listings/:id/photos/:photoId → 204. Опубликованная площадка не останется
@@ -268,6 +352,9 @@ export interface VendorPhoto {
  */
 export const NO_FACES_HEADER = "X-No-Faces";
 
+/** Подтверждение согласия людей на фото — у категорий с правилом portfolio */
+export const PHOTO_CONSENT_HEADER = "X-Photo-Consent";
+
 export interface VendorPackage {
   readonly kind: "weekday" | "weekend" | "custom";
   readonly name: Localized;
@@ -276,11 +363,13 @@ export interface VendorPackage {
 }
 
 /**
- * GET /vendor/listings/:id → 200: карточка площадки как есть в базе — то, что видит клиент
- * (плюс фото, которые ждут решения или отклонены, — с отметкой moderation).
- * Название, цену, описания и пакеты партнёр меняет предложением правки (ниже), фото —
- * загрузкой (выше): их проверяет команда. Адрес, вместимость и телефон меняет менеджер.
- * blockers — чего не хватает для публикации (коды из базы: price, photos, …).
+ * GET /vendor/listings/:id → 200: витрина как есть в базе — то, что видит клиент (плюс фото
+ * и услуги, которые ждут решения или отклонены, — с отметкой статуса).
+ * Название, описания, поля витрины и ссылки на видео партнёр меняет предложением правки
+ * (ниже), услуги — своими маршрутами (ниже), фото — загрузкой (выше): их проверяет команда.
+ * Цена «от» — из одобренных услуг (до публикации — и из отправленных на проверку). Адрес,
+ * вместимость и телефон меняет менеджер. blockers — чего не хватает для публикации (коды из
+ * базы: price, attributes, photos, …), missingAttributes — какие поля витрины не заполнены.
  */
 export interface VendorListing {
   readonly id: string;
@@ -296,14 +385,47 @@ export interface VendorListing {
   readonly priceUnit: PriceUnit;
   readonly capMin: number | null;
   readonly capMax: number | null;
+  /** Поля витрины категории */
+  readonly attributes: ListingAttributes;
+  /** Обязательные поля витрины без значения */
+  readonly missingAttributes: readonly string[];
+  /** Ссылки на видео (YouTube, Instagram) */
+  readonly videoLinks: readonly string[];
+  /** Сколько заказов витрина берёт одновременно (режим parts) */
+  readonly parallelCapacity: number;
+  /** Услуги витрины по порядку — все статусы */
+  readonly services: readonly ListingService[];
+  /** Пакеты v0.1 — только у залов, из услуг (ListingPackage в @bayramm/shared/api) */
   readonly packages: readonly VendorPackage[];
   readonly photos: readonly VendorPhoto[];
   /** Телефон для заявок, который клиент видит сразу */
   readonly phone: string | null;
   readonly blockers: readonly string[];
-  /** Сколько фото нужно для публикации и сколько можно загрузить всего (настройки платформы) */
+  /** Сколько фото нужно для публикации (по категории) и сколько можно загрузить всего */
   readonly photoLimits: { readonly min: number; readonly max: number };
 }
+
+/*
+ * Услуги витрины — только владелец кабинета (403 vendor_owner_required). Контракт полей —
+ * ServiceInput, ответ — ListingService (@bayramm/shared/api/services):
+ *
+ * GET    /vendor/listings/:id/services                        → 200 ListingServices
+ * POST   /vendor/listings/:id/services       ServiceInput     → 201 ListingService — на проверку
+ *        (review) или черновиком (submit: false). 422 invalid_input — поля; 409 too_many_services.
+ * PATCH  /vendor/listings/:id/services/:sid  ServiceInput     → 200 ListingService:
+ *          · черновик, на проверке, отклонённая — правится сразу (и уходит на проверку, если
+ *            submit не false);
+ *          · активная или снятая у опубликованной витрины — изменённые поля уходят предложением
+ *            (proposal), клиент видит прежнее; ничего не изменилось — 422 no_changes.
+ * POST   /vendor/listings/:id/services/:sid/submit            → 200: черновик, отклонённая или
+ *        снятая — на проверку.
+ * POST   /vendor/listings/:id/services/:sid/withdraw          → 200: на проверке — обратно в
+ *        черновик; с предложением правки — предложение отозвано; активная — снята с витрины
+ *        (последнюю услугу с ценой опубликованной витрины снять нельзя — 422 publish_blocked).
+ * DELETE /vendor/listings/:id/services/:sid                   → 204: только не активная.
+ * Недопустимый шаг — 409 illegal_transition; правка активной не предложением — 409
+ * moderated_field_requires_revision. Чужая витрина или услуга — 404.
+ */
 
 // ── правки карточки ────────────────────────────────────────────────────────
 
@@ -320,15 +442,25 @@ export interface RevisionPackage {
 
 /**
  * Правка карточки от партнёра (app.listing_revisions.payload): только эти ключи, как
- * столбцы базы; нет ключа — поле не меняется. packages заменяет набор целиком
+ * столбцы базы; нет ключа — поле не меняется.
+ *   · attributes — изменённые поля витрины: { ключ: значение | null } (null — убрать);
+ *   · video_links — ссылки на видео целиком (YouTube, Instagram; не больше maxVideoLinks);
+ *   · price_from_uzs, price_unit и packages — от кабинета v0.1: цена «от» теперь из услуг
+ *     (меняется правкой услуг), пакеты зала заменяют его банкеты и «другие услуги».
+ * packages заменяет набор целиком
  */
 export interface ListingRevisionPayload {
   readonly name?: string;
+  /** @deprecated v0.1: цена «от» считается из услуг — правка её не меняет */
   readonly price_from_uzs?: number;
+  /** @deprecated v0.1: как price_from_uzs */
   readonly price_unit?: PriceUnit;
   readonly description_ru?: string;
   readonly description_uz?: string;
+  /** @deprecated v0.1: пакеты зала; новые кабинеты правят услуги */
   readonly packages?: readonly RevisionPackage[];
+  readonly attributes?: Readonly<Record<string, AttributeValue | null>>;
+  readonly video_links?: readonly string[];
 }
 
 /** Ключи правки в порядке показа */
@@ -339,6 +471,8 @@ export const REVISION_KEYS = [
   "description_ru",
   "description_uz",
   "packages",
+  "attributes",
+  "video_links",
 ] as const satisfies readonly (keyof ListingRevisionPayload)[];
 
 /** Предложение правки глазами партнёра */

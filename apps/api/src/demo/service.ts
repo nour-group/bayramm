@@ -1,4 +1,5 @@
-// Демо-залы staging (venues.ts): заполнить и убрать. Всё — под актором system.
+// Демо-витрины staging (venues.ts): три зала и по витрине в каждой приоритетной
+// категории — заполнить и убрать. Всё — под актором system.
 //
 // seed — идемпотентно: чего нет, то заводится, что есть — не трогается; повторный
 // прогон ничего не меняет. Все залы за раз или один (venue — номер зала с 1): workflow
@@ -6,26 +7,28 @@
 // панели оператора, и те же правила базы:
 //   1. вендор (название, форма, договор), реквизиты и контакт, чек-лист проверки —
 //      setChecklistItem, как кнопки панели (согласие ПДн — по действующему тексту);
-//   2. карточка черновиком, пакеты (replacePackages), телефон для заявок, занятые дни
-//      (source vendor — партнёр может снять их в кабинете). Календарь заполняется,
-//      только если у карточки нет ни одного занятого дня с сегодняшнего: правки,
-//      сделанные на показе, повтор не перетирает;
+//   2. витрина черновиком в своей категории, поля витрины, услуги (сразу одобренные:
+//      их заводит система), телефон для заявок, занятые дни и части дня (source vendor —
+//      партнёр может снять их в кабинете). Календарь заполняется, только если у витрины
+//      нет ни одной занятой даты с сегодняшнего: правки, сделанные на показе, повтор не
+//      перетирает;
 //   3. фото — addListingPhoto, как загрузка из панели: проверка байтов, Storage, строка;
 //   4. публикация — applyListingAction: «На проверку», затем «Опубликовать». Готовность
-//      (цена, фото, телефон, пакеты, чек-лист вендора) проверяет триггер базы;
+//      (услуга с ценой, поля витрины, фото, телефон, чек-лист вендора) проверяет триггер базы;
 //   5. в журнал действий — что изменилось по залу (без изменений — ничего).
 //
 // reset — сначала объекты фото в Storage (сбой — 503, база не тронута: повтор reset
 // доделает), затем строки одной функцией базы app.demo_purge(): демо-вендоры целиком,
 // с заявками на их карточки. Запись в журнал делает сама функция.
 
+import { categoryTexts } from "@bayramm/shared/categories";
 import { sql } from "kysely";
 import { SYSTEM, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { saveListingPhone, saveVendorContacts } from "../db/pii";
 import { ApiError, toApiError } from "../errors";
 import { addListingPhoto } from "../photos/service";
-import { applyListingAction, replacePackages } from "../staff/listings";
+import { applyListingAction } from "../staff/listings";
 import { CHECKLIST_ITEMS, setChecklistItem } from "../staff/vendors";
 import { type ObjectStorage, StorageError } from "../storage/supabase";
 import { addDays, tashkentToday } from "../time";
@@ -130,7 +133,7 @@ async function ensureVendor(trx: Tx, venue: DemoVenue): Promise<{ created: boole
   return { created: row === undefined, checked };
 }
 
-/** Карточка черновиком с пакетами и телефоном. true — заведена сейчас */
+/** Витрина черновиком: поля витрины, услуги и телефон. true — заведена сейчас */
 async function ensureListing(trx: Tx, venue: DemoVenue): Promise<boolean> {
   const row = await trx
     .selectFrom("app.listings")
@@ -144,7 +147,7 @@ async function ensureListing(trx: Tx, venue: DemoVenue): Promise<boolean> {
       id: venue.listingId,
       vendor_id: venue.vendorId,
       slug: venue.slug,
-      category_code: "hall",
+      category_code: venue.category,
       status: "draft",
       name: venue.name,
       district_code: venue.districtCode,
@@ -152,24 +155,68 @@ async function ensureListing(trx: Tx, venue: DemoVenue): Promise<boolean> {
       address_uz: venue.addressUz,
       description_ru: venue.descriptionRu,
       description_uz: venue.descriptionUz,
-      price_from_uzs: venue.priceFromUzs,
-      price_unit: venue.priceUnit,
       cap_min: venue.capMin,
       cap_max: venue.capMax,
+      parallel_capacity: venue.parallelCapacity,
+      attributes: JSON.stringify(venue.attributes),
     })
     .execute();
-  await replacePackages(trx, venue.listingId, venue.packages);
+  for (const [index, service] of venue.services.entries()) {
+    await trx
+      .insertInto("app.listing_services")
+      .values({
+        listing_id: venue.listingId,
+        category_code: venue.category,
+        service_type: service.type,
+        // Систему никто не проверяет: демо-услуги сразу одобрены
+        status: "active",
+        name_ru: service.name?.ru ?? null,
+        name_uz: service.name?.uz ?? null,
+        price_uzs: service.priceUzs,
+        price_unit: service.priceUnit,
+        min_qty: service.minQty ?? null,
+        lead_days: service.leadDays ?? null,
+        includes_ru: service.includes?.ru ?? null,
+        includes_uz: service.includes?.uz ?? null,
+        options: JSON.stringify(
+          (service.options ?? []).map((o, n) => {
+            const name = categoryTexts(`opt_${o.code}` as Parameters<typeof categoryTexts>[0]);
+            return {
+              // Опции демо — с постоянными id: повтор seed даёт те же
+              id: `${venue.listingId.slice(0, 24)}${String(index * 10 + n + 1).padStart(12, "0")}`,
+              code: o.code,
+              name_ru: name.ru,
+              name_uz: name.uz,
+              price_uzs: o.priceUzs,
+              price_unit: o.priceUnit,
+            };
+          }),
+        ),
+        sort: index,
+      })
+      .execute();
+  }
   await saveListingPhone(trx, venue.listingId, venue.phone);
   return true;
 }
 
-/** Занятые дни — если с сегодняшнего их нет ни одного. Возвращает, сколько поставлено */
+/**
+ * Занятые дни и части дня — если с сегодняшнего нет ни одной отметки. Возвращает, сколько
+ * поставлено
+ */
 async function ensureBusyDays(trx: Tx, venue: DemoVenue, today: string): Promise<number> {
   const future = await trx
     .selectFrom("app.availability")
     .select("day")
     .where("listing_id", "=", venue.listingId)
     .where("day", ">=", today)
+    .union(
+      trx
+        .selectFrom("app.availability_parts")
+        .select("day")
+        .where("listing_id", "=", venue.listingId)
+        .where("day", ">=", today),
+    )
     .limit(1)
     .executeTakeFirst();
   if (future !== undefined) return 0;
@@ -178,12 +225,27 @@ async function ensureBusyDays(trx: Tx, venue: DemoVenue, today: string): Promise
     day: addDays(today, offset),
     source: "vendor",
   }));
-  await trx
-    .insertInto("app.availability")
-    .values(rows)
-    .onConflict((oc) => oc.columns(["listing_id", "day"]).doNothing())
-    .execute();
-  return rows.length;
+  if (rows.length > 0) {
+    await trx
+      .insertInto("app.availability")
+      .values(rows)
+      .onConflict((oc) => oc.columns(["listing_id", "day"]).doNothing())
+      .execute();
+  }
+  const parts = venue.busyParts.map((p) => ({
+    listing_id: venue.listingId,
+    day: addDays(today, p.offset),
+    part: p.part,
+    source: "vendor",
+  }));
+  if (parts.length > 0) {
+    await trx
+      .insertInto("app.availability_parts")
+      .values(parts)
+      .onConflict((oc) => oc.columns(["listing_id", "day", "part"]).doNothing())
+      .execute();
+  }
+  return rows.length + parts.length;
 }
 
 /** Загружает недостающие фото зала из переданных. Возвращает, сколько загружено */
@@ -198,7 +260,7 @@ async function ensurePhotos(
   for (const bytes of photos) {
     if (uploaded >= missing) break;
     try {
-      await addListingPhoto(deps, SYSTEM, venue.listingId, bytes, { noFacesAck: true });
+      await addListingPhoto(deps, SYSTEM, venue.listingId, bytes, { ack: "no_faces" });
       uploaded++;
     } catch (err) {
       // Этот файл у зала уже есть (прошлый прогон оборвался после загрузки) — следующий
@@ -206,7 +268,9 @@ async function ensurePhotos(
     }
   }
   if (uploaded < missing) {
-    throw new ApiError(422, "demo_photos_required", "Not enough photos to publish demo venues", [venue.slug]);
+    throw new ApiError(422, "demo_photos_required", "Not enough photos to publish demo listings", [
+      venue.slug,
+    ]);
   }
   return uploaded;
 }

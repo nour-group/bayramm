@@ -1,6 +1,7 @@
-// Правки карточки из кабинета: партнёр предлагает новое название, цену, описания и
-// пакеты — карточку меняет только решение команды (staff/revisions.ts). Клиент видит
-// одобренную версию, пока правка ждёт.
+// Правки карточки из кабинета: партнёр предлагает новое название, описания, поля витрины
+// и ссылки на видео (и, от кабинета v0.1, цену и пакеты) — карточку меняет только решение
+// команды (staff/revisions.ts). Клиент видит одобренную версию, пока правка ждёт. Поля
+// витрины проверяются по конфигурации категории витрины.
 //
 //   · одна открытая правка на площадку (индекс listing_revisions_one_pending): вторая —
 //     409 revision_pending, открытую можно отозвать;
@@ -90,6 +91,8 @@ async function ownListing(trx: Tx, actor: VendorActor, listingId: string) {
       "price_unit",
       "description_ru",
       "description_uz",
+      "attributes",
+      "video_links",
     ])
     .where("id", "=", listingId)
     .where("vendor_id", "=", actor.vendorId)
@@ -125,9 +128,9 @@ export function submitRevision(
     throw new ApiError(400, "invalid_request", "Body must be a JSON object");
   }
   assertVendorCan(actor, "card.propose");
-  const values = revisionFromBody(body as Body);
   return withActor(db, actor, async (trx) => {
     const listing = await ownListing(trx, actor, listingId);
+    const values = revisionFromBody(body as Body, listing.category_code);
     // У зала будни и выходные — всегда: без них опубликованную карточку не одобрить
     if (listing.category_code === "hall" && values.packages !== undefined) {
       const kinds = new Set(values.packages.map((p) => p.kind));

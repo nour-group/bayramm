@@ -104,10 +104,12 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
           {textOf(t, `occ_${item.occasionCode}`)} · {formatDate(item.eventDate, t, true)}
         </span>
         <span className="rq-facts">
-          <span>
-            <Icon name="guests" size={14} />
-            {formatGuests(item.guests, t)}
-          </span>
+          {item.guests === null ? null : (
+            <span>
+              <Icon name="guests" size={14} />
+              {formatGuests(item.guests, t)}
+            </span>
+          )}
           <span>
             <Icon name="wallet" size={14} />
             {budget ?? t.budgetNone}

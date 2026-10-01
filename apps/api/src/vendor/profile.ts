@@ -1,16 +1,20 @@
 // Профиль кабинета и карточка площадки — только чтение (кроме языка).
 //
-// Карточку партнёр меняет предложением правки (vendor/revisions.ts) и загрузкой фото
-// (vendor/photos.ts): это модерируемые данные, решает команда. Адрес, вместимость и
-// телефон меняет менеджер. Кабинет показывает карточку как есть в базе.
+// Карточку партнёр меняет предложением правки (vendor/revisions.ts), услугами
+// (vendor/services.ts) и загрузкой фото (vendor/photos.ts): это модерируемые данные,
+// решает команда. Адрес, вместимость и телефон меняет менеджер. Кабинет показывает
+// карточку как есть в базе. У вендора бывают витрины в нескольких категориях: getMe
+// отдаёт их все с категорией — для переключателя витрин.
 
 import { type MediaEnv, mediaSrcSet, mediaUrl } from "@bayramm/media";
 import type { Locale, VendorListing, VendorMe, VendorPhoto } from "@bayramm/shared/api/vendor";
+import { categoryConfig, missingAttributes, readAttributes } from "@bayramm/shared/categories";
 import { sql } from "kysely";
 import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { listingPhone, vendorContactsAs, vendorUserProfilesAs } from "../db/pii";
 import { ApiError, notFound } from "../errors";
+import { hallPackages, listServices } from "../listing-services/store";
 
 const LOCALES: readonly Locale[] = ["ru", "uz"];
 
@@ -44,7 +48,7 @@ async function readMe(trx: Tx, actor: VendorActor): Promise<VendorMe> {
 
   const listings = await trx
     .selectFrom("app.listings")
-    .select(["id", "name", "status"])
+    .select(["id", "name", "status", "category_code"])
     .where("vendor_id", "=", actor.vendorId)
     .orderBy("created_at")
     .orderBy("id")
@@ -58,7 +62,12 @@ async function readMe(trx: Tx, actor: VendorActor): Promise<VendorMe> {
       role: user.role === "owner" ? "owner" : "member",
     },
     vendor: { id: user.vendor_id, code: user.public_code, name: user.legal_name },
-    listings: listings.map((l) => ({ id: l.id, name: l.name, status: l.status })),
+    listings: listings.map((l) => ({
+      id: l.id,
+      name: l.name,
+      status: l.status,
+      categoryCode: l.category_code,
+    })),
   };
 }
 
@@ -115,7 +124,8 @@ export async function getListing(
       .select([
         sql<string[] | null>`app.listing_publish_blockers(id, 'active')`.as("blockers"),
         listingPhone("id").as("phone"),
-        sql<number>`greatest(3, coalesce(app.setting_int('min_photos'), 3))`.as("min_photos"),
+        sql<number>`greatest(3, coalesce(app.setting_int('min_photos'), 3),
+          (select c.min_photos from app.categories c where c.code = category_code))`.as("min_photos"),
         sql<number>`coalesce(app.setting_int('max_photos'), 10)`.as("max_photos"),
       ])
       .where("id", "=", listingId)
@@ -123,13 +133,10 @@ export async function getListing(
       .executeTakeFirst();
     if (listing === undefined) throw notFound();
 
-    const packages = await trx
-      .selectFrom("app.listing_packages")
-      .select(["kind", "name_ru", "name_uz", "price_uzs", "price_unit"])
-      .where("listing_id", "=", listingId)
-      .orderBy("sort")
-      .orderBy("created_at")
-      .execute();
+    const packages = listing.category_code === "hall" ? await hallPackages(trx, listingId) : [];
+    const services = await listServices(trx, listingId);
+    const category = categoryConfig(listing.category_code);
+    const attributes = category === undefined ? {} : readAttributes(category, listing.attributes);
 
     const photos = await trx
       .selectFrom("app.photos")
@@ -156,11 +163,16 @@ export async function getListing(
       priceUnit: listing.price_unit,
       capMin: listing.cap_min,
       capMax: listing.cap_max,
+      attributes,
+      missingAttributes: category === undefined ? [] : missingAttributes(category, attributes),
+      videoLinks: listing.video_links,
+      parallelCapacity: listing.parallel_capacity,
+      services,
       packages: packages.map((p) => ({
         kind: p.kind,
-        name: { ru: p.name_ru, uz: p.name_uz },
-        priceUzs: Number(p.price_uzs),
-        priceUnit: p.price_unit,
+        name: { ru: p.nameRu, uz: p.nameUz },
+        priceUzs: p.priceUzs,
+        priceUnit: p.priceUnit,
       })),
       photos: photos.flatMap((p) => vendorPhoto(p, media) ?? []),
       phone: listing.phone,

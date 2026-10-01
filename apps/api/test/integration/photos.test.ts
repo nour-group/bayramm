@@ -74,7 +74,7 @@ const userB = randomUUID();
 const listing = randomUUID();
 const A: Actor = { kind: "vendor_user", id: userA, vendorId: vendorA, role: "owner" };
 const B: Actor = { kind: "vendor_user", id: userB, vendorId: vendorB, role: "owner" };
-const ACK = { noFacesAck: true } as const;
+const ACK = { ack: "no_faces" } as const;
 
 beforeAll(async () => {
   admin = await adminClient();

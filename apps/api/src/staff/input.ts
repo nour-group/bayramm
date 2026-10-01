@@ -75,6 +75,11 @@ export class Input {
     return Object.hasOwn(this.body, key);
   }
 
+  /** Значение поля как пришло — для полей, которые проверяет не Input (поля витрины по категории) */
+  peek(key: string): unknown {
+    return this.has(key) ? this.body[key] : undefined;
+  }
+
   fail(key: string): void {
     this.errors.push(key);
   }

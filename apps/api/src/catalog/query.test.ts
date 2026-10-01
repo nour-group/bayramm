@@ -20,9 +20,10 @@ function rejection(run: () => unknown): ApiError {
 }
 
 describe("parseCatalogQuery", () => {
-  it("без параметров — умолчания: price_asc, 20 на страницу, без фильтров", () => {
+  it("без параметров — умолчания: залы, price_asc, 20 на страницу, без фильтров", () => {
     expect(parseCatalogQuery({})).toEqual({
-      category: null,
+      category: "hall",
+      filters: [],
       district: null,
       date: null,
       guests: null,
@@ -46,6 +47,7 @@ describe("parseCatalogQuery", () => {
       ),
     ).toEqual({
       category: "hall",
+      filters: [],
       district: "mirzo_ulugbek",
       date: "2026-10-03",
       guests: 250,
@@ -79,11 +81,52 @@ describe("parseCatalogQuery", () => {
     ["код района с SQL", { district: "x' or 1=1" }, ["district"]],
     ["параметр повторён", { guests: ["100", "200"] }, ["guests"]],
     ["несколько сразу", { guests: "x", sort: "y", date: "z" }, ["date", "guests", "sort"]],
+    ["фильтр не из категории", { category: "car", "a.parking_spaces": "10" }, ["a.parking_spaces"]],
+    ["фильтр по полю без фильтра", { category: "car", "a.fleet.model": "x" }, ["a.fleet.model"]],
+    ["код не из вариантов", { category: "car", "a.fleet.class": "rocket" }, ["a.fleet.class"]],
+    ["число вне границ", { category: "studio", "a.area_m2": "5" }, ["a.area_m2"]],
+    ["фильтр у неизвестной категории", { category: "spaceships", "a.x": "1" }, ["a.x"]],
   ])("%s — 400 invalid_request", (_, params, details) => {
     const err = rejection(() => parseCatalogQuery(q(params)));
     expect(err.status).toBe(400);
     expect(err.code).toBe("invalid_request");
     expect(err.details).toEqual(details);
+  });
+});
+
+describe("фильтры по полям витрины", () => {
+  it("из конфигурации категории: да/нет, варианты, числа, поля записей списка", () => {
+    const params = parseCatalogQuery(
+      q({
+        category: "car",
+        "a.decoration": "1",
+        "a.service_area": "tashkent,tashkent_region",
+        "a.fleet.class": "premium",
+        "a.fleet.seats": "6",
+      }),
+    );
+    expect(params.filters).toEqual([
+      { kind: "eq", path: ["decoration"] },
+      { kind: "any", path: ["service_area"], values: ["tashkent", "tashkent_region"], multi: false },
+      { kind: "any", path: ["fleet", "class"], values: ["premium"], multi: false },
+      { kind: "min", path: ["fleet", "seats"], value: 6 },
+    ]);
+  });
+
+  it("«нет» и пустое значение — без фильтра; multi с «все» — all", () => {
+    const params = parseCatalogQuery(
+      q({
+        category: "photo",
+        "a.team": "photographer,drone_operator",
+        "a.styles": "",
+        "a.delivery_days": "30",
+      }),
+    );
+    expect(params.filters).toEqual([
+      { kind: "all", path: ["team"], values: ["photographer", "drone_operator"] },
+      { kind: "max", path: ["delivery_days"], value: 30 },
+    ]);
+    expect(parseCatalogQuery(q({ category: "cake", "a.delivery": "0" })).filters).toEqual([]);
   });
 });
 

@@ -5,10 +5,12 @@
 
 import { type Lang, trimTrailingSlashes } from "@bayramm/shared";
 import { type CatalogLinkFilters, clientCatalogPath, clientRequestPath } from "@bayramm/shared/api";
+import { categoryConfig, detailsSummary, type RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
 import type { Tx } from "../db/actor";
 import { clientProfilesAs, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
 import type { AppActorKind, AppStaffRole, Json } from "../db/schema.generated";
+import { type ServiceRow, selectServices, serviceName } from "../listing-services/store";
 import { can } from "../staff/access";
 import type { ReplyMarkup, SendMessageParams } from "../telegram/client";
 import { isDay, loadDigest, loadWeekReport, REPORT_TEXTS, staffLocale } from "./reports";
@@ -19,8 +21,10 @@ import {
   opsOutboxDead,
   opsPhotosSubmitted,
   opsRevisionSubmitted,
+  opsServicesSubmitted,
   opsSlaBreach,
   type RequestFacts,
+  SERVICE_TEXTS,
 } from "./texts";
 
 /**
@@ -29,7 +33,10 @@ import {
  * ops.revision_submitted — правка карточки от партнёра (20260930200000_revisions_phone_invites.sql);
  * ops.daily_digest, ops.weekly_report, ops.api_error — отчёты и ошибки API администраторам
  * (20260930220000_launch_metrics.sql, тексты — reports.ts);
- * ops.photos_submitted — новые фото опубликованной карточки (20261001010000_cabinet_integrity.sql)
+ * ops.photos_submitted — новые фото опубликованной карточки (20261001010000_cabinet_integrity.sql);
+ * vendor.service_decided — решение по услуге опубликованной витрины владельцам кабинета,
+ * ops.service_submitted — новые услуги и предложения правок команде
+ * (20261001120100_categories_services.sql)
  */
 export const NOTICE_KINDS = [
   "vendor.request_new",
@@ -44,6 +51,8 @@ export const NOTICE_KINDS = [
   "ops.weekly_report",
   "ops.api_error",
   "ops.photos_submitted",
+  "vendor.service_decided",
+  "ops.service_submitted",
 ] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
@@ -55,6 +64,7 @@ export type NoticeKind = (typeof NOTICE_KINDS)[number];
 function staffMayReceive(kind: string, role: AppStaffRole): boolean {
   if (kind === "ops.revision_submitted") return can(role, "revisions.moderate");
   if (kind === "ops.photos_submitted") return can(role, "photos.moderate");
+  if (kind === "ops.service_submitted") return can(role, "revisions.moderate");
   return role === "admin";
 }
 
@@ -176,7 +186,7 @@ async function recipientOf(trx: Tx, row: OutboxRow): Promise<Recipient | string>
 
 interface RequestRow {
   readonly facts: Readonly<Record<Lang, RequestFacts>>;
-  /** Фильтры «похожих»: дата события, гости, район площадки */
+  /** Фильтры «похожих»: категория, дата события, гости, район площадки */
   readonly similar: CatalogLinkFilters;
   readonly clientId: string;
   readonly vendorId: string;
@@ -203,9 +213,13 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
       "r.first_response_by",
       "l.name as listing",
       "l.district_code",
+      "l.category_code",
+      "r.details",
       "o.name_ru",
       "o.name_uz",
       "v.public_code",
+      sql<string>`(select c.name_ru from app.categories c where c.code = l.category_code)`.as("category_ru"),
+      sql<string>`(select c.name_uz from app.categories c where c.code = l.category_code)`.as("category_uz"),
     ])
     .where("r.id", "=", requestId)
     .executeTakeFirst();
@@ -217,9 +231,31 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
     guests: row.guests,
     slaHours: Math.max(1, Math.round((row.sla_due_at.getTime() - row.created_at.getTime()) / 3_600_000)),
   };
+  const category = categoryConfig(row.category_code);
+  const details = row.details as RequestDetails;
+  const districts =
+    category?.requestForm.fields.some((f) => f.type === "district" && typeof details[f.key] === "string") ===
+    true
+      ? await trx.selectFrom("app.districts").select(["code", "name_ru", "name_uz"]).execute()
+      : [];
+  const summary = (lang: Lang) =>
+    category === undefined
+      ? []
+      : detailsSummary(lang, category, details, (code) => {
+          const d = districts.find((x) => x.code === code);
+          return d === undefined ? undefined : lang === "ru" ? d.name_ru : d.name_uz;
+        });
   return {
-    facts: { ru: { ...base, occasion: row.name_ru }, uz: { ...base, occasion: row.name_uz } },
-    similar: { date: row.event_date, guests: row.guests, district: row.district_code },
+    facts: {
+      ru: { ...base, occasion: row.name_ru, category: row.category_ru, details: summary("ru") },
+      uz: { ...base, occasion: row.name_uz, category: row.category_uz, details: summary("uz") },
+    },
+    similar: {
+      category: row.category_code,
+      date: row.event_date,
+      guests: row.guests,
+      district: row.district_code,
+    },
     clientId: row.client_id,
     vendorId: row.vendor_id,
     vendorCode: row.public_code,
@@ -326,6 +362,63 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
       typeof payload === "object" && payload !== null && !Array.isArray(payload) ? Object.keys(payload) : [];
     return message(
       opsRevisionSubmitted({ listing: revision.name, vendorCode: revision.public_code, fields }),
+    );
+  }
+
+  if (kind === "ops.service_submitted") {
+    const listingId = field(row.payload, "listing_id");
+    if (listingId === null) return skip("bad_payload");
+    const listing = await trx
+      .selectFrom("app.listings as l")
+      .innerJoin("app.vendor_accounts as v", "v.id", "l.vendor_id")
+      .innerJoin("app.categories as c", "c.code", "l.category_code")
+      .select([
+        "l.name",
+        "v.public_code",
+        "c.name_ru as category",
+        sql<number>`(select count(*)::int from app.listing_services s
+                     where s.listing_id = l.id and (s.status = 'review' or s.proposal is not null))`.as(
+          "pending",
+        ),
+      ])
+      .where("l.id", "=", listingId)
+      .executeTakeFirst();
+    if (listing === undefined) return skip("not_found");
+    // Уже решили — оповещать не о чем
+    if (listing.pending === 0) return skip("services_decided");
+    return message(
+      opsServicesSubmitted({
+        listing: listing.name,
+        vendorCode: listing.public_code,
+        category: listing.category,
+        pending: listing.pending,
+      }),
+    );
+  }
+
+  if (kind === "vendor.service_decided") {
+    const serviceId = field(row.payload, "service_id");
+    if (serviceId === null) return skip("bad_payload");
+    const service = await selectServices(trx)
+      .innerJoin("app.listings as l", "l.id", "s.listing_id")
+      .select(["l.name as listing_name", "l.vendor_id"])
+      .where("s.id", "=", serviceId)
+      .executeTakeFirst();
+    if (service === undefined) return skip("not_found");
+    // Владельцу кабинета — только о своих витринах
+    if (recipient.vendorId !== service.vendor_id) return skip("recipient_mismatch");
+    const decision = field(row.payload, "decision");
+    if (decision !== "approved" && decision !== "declined") return skip("bad_payload");
+    const t = SERVICE_TEXTS[recipient.lang];
+    return message(
+      t.decided({
+        service: serviceName(service as unknown as ServiceRow)[recipient.lang],
+        listing: service.listing_name,
+        outcome: decision,
+        proposal: decision === "declined" && service.status !== "rejected",
+        reason: decision === "declined" ? service.decision_reason : null,
+      }),
+      button(t.button, `${trimTrailingSlashes(urls.vendorAppUrl)}/card`),
     );
   }
 

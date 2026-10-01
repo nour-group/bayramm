@@ -28,6 +28,10 @@ describe("несколько дней календаря", () => {
 
   it("ответ правки вливается в месяц: на его отрезке — как у сервера, вне — как было", () => {
     const month: Availability = {
+      mode: "day",
+      parallelCapacity: 1,
+      parts: [],
+      bookings: [],
       from: "2026-10-01",
       to: "2026-10-31",
       version: 3,
@@ -38,6 +42,10 @@ describe("несколько дней календаря", () => {
       ],
     };
     const result: Availability = {
+      mode: "day",
+      parallelCapacity: 1,
+      parts: [],
+      bookings: [],
       from: "2026-10-09",
       to: "2026-10-12",
       version: 4,

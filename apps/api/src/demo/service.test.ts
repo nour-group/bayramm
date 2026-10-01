@@ -56,9 +56,9 @@ describe("seedDemo", () => {
 
     expect(summary).toEqual({
       mode: "seed",
-      venues: 3,
-      seeded: 3,
-      active: 3,
+      venues: DEMO_VENUES.length,
+      seeded: DEMO_VENUES.length,
+      active: DEMO_VENUES.length,
       created: { vendors: 0, listings: 0, photos: 0, busyDays: 0 },
       published: 0,
     });
@@ -71,13 +71,13 @@ describe("seedDemo", () => {
     }
   });
 
-  it("один зал (venue): только его вендор и карточка, в итоге — один зал", async () => {
+  it("одна витрина (venue): только её вендор и карточка, в итоге — одна витрина", async () => {
     const { db, queries } = seededDb({ status: "active", version: 5, photos: 3 });
     const [first, second] = DEMO_VENUES;
 
     const summary = await seedDemo({ db, storage: spyStorage(), today: TODAY }, [], 2);
 
-    expect(summary).toMatchObject({ venues: 3, seeded: 1, active: 1, published: 0 });
+    expect(summary).toMatchObject({ venues: DEMO_VENUES.length, seeded: 1, active: 1, published: 0 });
     const ids = queries.flatMap((q) => q.parameters);
     expect(ids).toContain(second?.vendorId);
     expect(ids).toContain(second?.listingId);

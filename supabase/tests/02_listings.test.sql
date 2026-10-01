@@ -12,14 +12,11 @@ select is(
   'price,capacity,district,descriptions,phone,packages,photos',
   'блокеры перечислены кодами');
 
--- всё, кроме цены, и три фото
+-- всё, кроме цены (услуг), и три фото
 update app.listings
    set district_code = 'sergeli', description_ru = 'Описание', description_uz = 'Tavsif', cap_min = 20, cap_max = 120
  where id = 'aaaaaaaa-0000-0000-0000-000000000102';
 insert into pii.listing_contacts (listing_id, public_phone) values ('aaaaaaaa-0000-0000-0000-000000000102', '+998000000998');
-insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
-  ('aaaaaaaa-0000-0000-0000-000000000102', 'weekday', 'Будни', 'Ish kuni', 90000),
-  ('aaaaaaaa-0000-0000-0000-000000000102', 'weekend', 'Выходные', 'Dam olish', 110000);
 insert into app.photos (id, listing_id, status, storage_key, mime, bytes, width, height, sha256, no_faces_ack)
 select ('aaaaaaaa-0000-0000-0000-00000000f00' || n)::uuid, 'aaaaaaaa-0000-0000-0000-000000000102',
        'ready', pg_temp.photo_key('aaaaaaaa-0000-0000-0000-000000000102'), 'image/webp', 1000, 1600, 1200,
@@ -28,7 +25,11 @@ from generate_series(1, 3) n;
 
 select is(
   pg_temp.error_detail($$update app.listings set status = 'review' where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$),
-  'price', 'без цены — не на проверку');
+  'price,packages', 'без услуг с ценой (у зала — банкеты будни и выходные) — не на проверку');
+-- пакеты v0.1 зеркалятся в услуги зала: цена «от» — из них
+insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
+  ('aaaaaaaa-0000-0000-0000-000000000102', 'weekday', 'Будни', 'Ish kuni', 90000),
+  ('aaaaaaaa-0000-0000-0000-000000000102', 'weekend', 'Выходные', 'Dam olish', 110000);
 select throws_ok(
   $$update app.listings set cap_max = 10 where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$,
   '23514', null, 'cap_max не меньше cap_min');
@@ -65,8 +66,8 @@ select throws_ok(
      where id = (select id from app.photos where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101' limit 1)$$,
   'BR004', 'publish_blocked', 'нельзя удалить фото, если их станет меньше 3');
 select throws_ok(
-  $$update app.listings set price_from_uzs = null where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
-  'BR004', 'publish_blocked', 'у опубликованного листинга нельзя убрать цену');
+  $$update app.listing_services set status = 'paused' where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
+  'BR004', 'publish_blocked', 'у опубликованного листинга нельзя убрать все услуги с ценой');
 select throws_ok(
   $$delete from app.listing_packages where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101' and kind = 'weekend'$$,
   'BR004', 'publish_blocked', 'у опубликованного зала нельзя убрать цену выходных');
@@ -107,8 +108,8 @@ set local role bayramm_api;
 select pg_temp.as_actor('vendor_user', 'aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000001');
 
 select throws_ok(
-  $$update app.listings set price_from_uzs = 1000 where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
-  'BR005', 'moderated_field_requires_revision', 'цену опубликованного листинга вендор меняет только через ревизию');
+  $$update app.listings set name = 'Новое имя' where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
+  'BR005', 'moderated_field_requires_revision', 'название опубликованного листинга вендор меняет только через ревизию');
 select lives_ok(
   $$update app.listings set cap_min = 60 where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
   'немодерируемое поле вендор меняет сам');

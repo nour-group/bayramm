@@ -107,7 +107,8 @@ export function validate(
     errors.date = t.errDate;
   const guests = parseGuests(draft.guests);
   if (guests === null) errors.guests = t.errGuests;
-  else if (guests > context.listing.capMax) errors.guests = t.errGuestsMax(context.listing.capMax);
+  else if (context.listing.capMax !== null && guests > context.listing.capMax)
+    errors.guests = t.errGuestsMax(context.listing.capMax);
   if (draft.name.trim().length === 0) errors.name = t.errRequired;
   if (!isPhoneDigits(phoneDigits(draft.phone))) errors.phone = t.errPhone;
   if (!context.transferChecked) errors.consent = t.errConsent;

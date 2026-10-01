@@ -148,6 +148,22 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
     code: "calendar_conflict",
     message: "Calendar was changed by someone else — reload it",
   },
+  // 20261001120100_categories_services.sql
+  BR026: {
+    status: 409,
+    code: "category_locked",
+    message: "Listing category cannot change once it has requests — create a new listing",
+  },
+  BR027: {
+    status: 403,
+    code: "service_not_allowed",
+    message: "Service type is not available for this vendor",
+  },
+  BR028: {
+    status: 422,
+    code: "photo_ack_required",
+    message: "Photo confirmation does not match the category photo policy",
+  },
 };
 
 // У publish_blocked в DETAIL — коды недостающих пунктов через запятую

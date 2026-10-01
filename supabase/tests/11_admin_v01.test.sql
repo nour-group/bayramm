@@ -2,7 +2,7 @@
 -- действий сотрудников (пишет база, без ПДн)
 begin;
 \ir _fixtures.psql
-select plan(32);
+select plan(33);
 
 -- ── структура и права ───────────────────────────────────────────────────────
 select has_column('app', 'vendor_accounts', 'name', 'у вендора есть название для панели');
@@ -98,13 +98,18 @@ values ('aaaaaaaa-0000-0000-0000-000000000103', current_date + 90, 'staff');
 select results_eq(
   $$select action, detail
       from app.audit_log where object_id = 'aaaaaaaa-0000-0000-0000-000000000103'
-       and action not like 'listing.%' order by id$$,
+       and action not like 'listing.%' and action not like 'listing\_service.%' order by id$$,
   $$values
       ('listing_contact.create', '{}'::jsonb),
       ('listing_package.create', '{"kind": "weekday"}'::jsonb),
       ('listing_package.delete', '{"kind": "weekday"}'::jsonb),
       ('availability.create', jsonb_build_object('day', current_date + 90))$$,
   'телефон, пакеты, занятость — в журнале объекта «листинг»');
+select is(
+  (select array_agg(action order by id) from app.audit_log
+    where object_id = 'aaaaaaaa-0000-0000-0000-000000000103' and action like 'listing\_service.%'),
+  array['listing_service.create', 'listing_service.delete'],
+  'пакет v0.1 зеркалится в услугу зала — и это тоже в журнале');
 select is_empty(
   $$select id from app.audit_log where detail::text like '%777%'$$,
   'телефон в журнал не попадает');
@@ -145,8 +150,8 @@ update app.listings set name = 'Vendor rename' where id = 'aaaaaaaa-0000-0000-00
 select pg_temp.as_actor('system');
 update app.listings set name = 'System rename' where id = 'aaaaaaaa-0000-0000-0000-000000000103';
 select is((select count(*)::int from app.audit_log where object_id = 'aaaaaaaa-0000-0000-0000-000000000103'
-             and action = 'listing.update'),
-  1, 'правки вендора и системы в журнал сотрудников не попадают');
+             and action = 'listing.update' and detail -> 'fields' ? 'name'),
+  1, 'правки вендора и системы в журнал сотрудников не попадают (одна — переименование сотрудником выше)');
 
 -- ── кто видит историю статусов ──────────────────────────────────────────────
 select pg_temp.as_actor('vendor_user', 'aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000001');

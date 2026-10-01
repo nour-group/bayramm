@@ -179,7 +179,7 @@ test.describe("занятые на дату", () => {
   const ORDERS = {
     price_asc: (a: ListingDetail, b: ListingDetail) => price(a) - price(b),
     price_desc: (a: ListingDetail, b: ListingDetail) => price(b) - price(a),
-    capacity_desc: (a: ListingDetail, b: ListingDetail) => b.capMax - a.capMax,
+    capacity_desc: (a: ListingDetail, b: ListingDetail) => (b.capMax ?? 0) - (a.capMax ?? 0),
   } as const;
 
   /** Долистать выдачу до конца: подгрузка по прокрутке или «Показать ещё» */

@@ -112,7 +112,7 @@ function RequestItem({
             {[
               occasionName(request.occasionCode),
               formatDayMonth(request.eventDate, t),
-              t.guestsShort(request.guests),
+              request.guests === null ? null : t.guestsShort(request.guests),
               t.requestNo(request.publicNo),
             ]
               .filter(Boolean)

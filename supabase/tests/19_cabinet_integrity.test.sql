@@ -134,7 +134,7 @@ select is(
 set local role bayramm_api;
 select pg_temp.as_actor('staff', '00000000-0000-0000-0000-00000000a002');
 select throws_ok(
-  $$update app.listings set price_from_uzs = 999000 where id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
+  $$update app.listing_services set price_uzs = 999000 where listing_id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
   'BR005', 'moderated_field_requires_revision', 'менеджер не меняет цену опубликованной карточки сразу');
 select throws_ok(
   $$update app.listings set description_uz = 'Boshqa' where id = 'bbbbbbbb-0000-0000-0000-000000000101'$$,
