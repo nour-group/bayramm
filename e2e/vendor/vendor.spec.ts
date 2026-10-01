@@ -456,10 +456,7 @@ test.describe("кабинет", () => {
     await page.goto("/requests");
     const nav = sections(page);
     await expect(nav.getByRole("link")).toHaveCount(5);
-    await expect(nav.getByRole("link", { name: new RegExp(t.requests) })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    await expect(nav.getByRole("link", { name: t.requests })).toHaveAttribute("aria-current", "page");
     await expect(nav.locator(".nav-count")).toHaveText("1");
     for (const [name, title] of [
       [t.calendar, t.calendar],
@@ -620,7 +617,7 @@ test.describe("витрины в разных категориях", () => {
     const tabs = await page.getByRole("group", { name: t.requests, exact: true }).boundingBox();
     expect(tabs?.height ?? 0).toBeGreaterThanOrEqual(44);
     await expectNoAxeViolations(page, "входящие: витрина не на сайте");
-    await notLive.getByRole("button", { name: new RegExp(`^${t.whatIsLeft}`) }).click();
+    await notLive.getByRole("button", { name: t.whatIsLeft }).click();
     await expect(heading(page)).toHaveText(t.card);
     const ready = page.locator(".readiness");
     await expect(ready.getByRole("heading", { name: t.blockersTitle })).toBeVisible();
@@ -629,13 +626,10 @@ test.describe("витрины в разных категориях", () => {
     await expectHitAreas(page, "витрина: чек-лист готовности", CONTROLS);
     await expectNoOverflow(page, "витрина: чек-лист готовности");
     // «Данные витрины» — форма предложения открывается, фокус — в первом поле
-    await ready
-      .getByRole("button", { name: new RegExp(`^${t.proposalStart}`) })
-      .first()
-      .click();
+    await ready.getByRole("button", { name: t.proposalStart }).first().click();
     await expect(page.locator("form.proposal-form input").first()).toBeFocused();
     // «Добавьте услугу с ценой» — в «Услуги» той же витрины
-    await ready.getByRole("button", { name: new RegExp(`^${t.toServices}`) }).click();
+    await ready.getByRole("button", { name: t.toServices }).click();
     await expect(heading(page)).toHaveText(t.services);
     await expect(page.locator(".svc-head")).toBeVisible();
     expect(api.unexpected).toEqual([]);
@@ -658,7 +652,7 @@ test.describe("витрины в разных категориях", () => {
     await page.getByRole("button", { name: t.serviceAdd }).click();
     const editor = page.locator(".svc-editor");
     await expect(editor.getByRole("heading", { name: t.serviceNew })).toBeFocused();
-    await editor.getByRole("button", { name: new RegExp(t.serviceType) }).click();
+    await editor.getByRole("button", { name: t.serviceType }).click();
     await page.getByRole("option", { name: /Лимузин/ }).click();
     await editor.getByLabel(t.packagePrice, { exact: true }).fill("1 200 000");
     await editor.getByRole("button", { name: "Добавить: Остановки для фотосессии" }).click();
@@ -838,8 +832,8 @@ test.describe("витрины в разных категориях", () => {
     // Части выбранного дня — на экране, даже если месяц занял его целиком (телефон)
     await expect(panel).toBeInViewport();
     // Часть дня — строка с переключателем «занято»: утро занято, вечер свободен (1 из 2 мест)
-    const morning = panel.getByRole("switch", { name: new RegExp(`^${t.part_morning}`) });
-    const evening = panel.getByRole("switch", { name: new RegExp(`^${t.part_evening}`) });
+    const morning = panel.getByRole("switch", { name: t.part_morning });
+    const evening = panel.getByRole("switch", { name: t.part_evening });
     await expect(morning).toBeChecked();
     await expect(evening).not.toBeChecked();
     await expect(panel.locator(".day-part").nth(3)).toContainText(fill(t.partBookings, { n: 1, cap: 2 }));
