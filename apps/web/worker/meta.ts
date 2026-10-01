@@ -15,6 +15,10 @@ import { hrefFor, isIndexable, type Match, matchRoute } from "../src/routes";
 
 export const PRODUCTION_HOST = "bayramm.uz";
 
+/** Пускать ли поисковики: только боевой домен и только с SEARCH_INDEXING=on (wrangler.jsonc) */
+export const indexingAllowed = (url: URL, flag: string | undefined): boolean =>
+  url.hostname === PRODUCTION_HOST && flag === "on";
+
 /** Картинка превью ссылки по умолчанию (public/og.png): 1200×630 */
 export const OG_IMAGE = { path: "/og.png", width: 1200, height: 630 } as const;
 
@@ -107,7 +111,7 @@ function venueImage(venue: VenueLookup, hostname: string) {
 }
 
 /** Разметка страницы по адресу; для площадки — с её данными */
-export function pageMeta(url: URL, venue: VenueLookup = null): PageMeta {
+export function pageMeta(url: URL, venue: VenueLookup = null, indexing = false): PageMeta {
   const match = matchRoute(url.pathname);
   const { lang, explicit } = pageLang(url);
   const t = dictionaries[lang];
@@ -115,7 +119,7 @@ export function pageMeta(url: URL, venue: VenueLookup = null): PageMeta {
     match === null || ((match.name === "venue" || match.name === "request") && venue === "missing");
   const status = missing ? 404 : 200;
   const { title, description } = texts(match, t, lang, venue);
-  const index = url.hostname === PRODUCTION_HOST && status === 200 && isIndexable(match);
+  const index = indexing && url.hostname === PRODUCTION_HOST && status === 200 && isIndexable(match);
   const base = match && !missing ? `${url.origin}${hrefFor(match)}` : null;
   const withLang = (code: Lang) => `${base}?lang=${code}`;
   return {
