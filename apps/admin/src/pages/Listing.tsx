@@ -280,12 +280,14 @@ function CategoryListing({
           codes={listing.blockers.review}
           listing={listing}
           category={category}
+          photos={{ count: approvable, min: minPhotos }}
         />
       )}
       {listing.status !== "active" && (
         <ListingBlockers
           listing={listing}
           category={category}
+          photos={{ count: approvable, min: minPhotos }}
           title={t.blockersActive}
           // До проверки — только то, чего не хватит сверх уже перечисленного
           codes={
@@ -352,11 +354,14 @@ function ListingBlockers({
   codes,
   listing,
   category,
+  photos,
 }: {
   title: string;
   codes: readonly PublishBlocker[];
   listing: ListingDetail;
   category: CategoryConfig;
+  /** Фото, которые можно одобрить, и минимум категории */
+  photos: { readonly count: number; readonly min: number };
 }) {
   if (codes.length === 0) return null;
   const present = new Set(
@@ -370,6 +375,7 @@ function ListingBlockers({
       );
     if (code === "packages" && missingServices.length > 0)
       return t.readinessServices(missingServices.map((s) => serviceTypeLabel("ru", category, s)).join(", "));
+    if (code === "photos") return t.readinessPhotos(photos.count, photos.min);
     return null;
   };
   return (
