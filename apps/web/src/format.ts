@@ -151,6 +151,25 @@ export function formatPrice(uzs: number, unit: PriceUnit, t: Dict): string {
   return unit === "per_event" ? money : `${money} ${unitText(unit, t)}`;
 }
 
+/** Подпись поля количества услуги: «Сколько часов», «Сколько кг»…; у цены за гостя и за
+ * мероприятие количества нет — null */
+export function qtyQuestion(unit: PriceUnit, t: Dict): string | null {
+  switch (unit) {
+    case "per_hour":
+      return t.qtyAskHour;
+    case "per_kg":
+      return t.qtyAskKg;
+    case "per_item":
+      return t.qtyAskItem;
+    case "per_set":
+      return t.qtyAskSet;
+    case "per_table":
+      return t.qtyAskTable;
+    default:
+      return null;
+  }
+}
+
 /**
  * Количество в единице цены: «3 ч», «5 кг», «50 шт.», «200 гостей»; у цены за мероприятие
  * количества нет — null

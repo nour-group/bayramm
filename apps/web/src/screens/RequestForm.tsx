@@ -34,9 +34,9 @@ import {
   isIsoDate,
   PHONE_PREFIX,
   phoneDigits,
+  qtyQuestion,
   tashkentToday,
   telHref,
-  unitText,
   weekdayMon,
 } from "../format";
 import { useAsync, useDocumentTitle } from "../hooks";
@@ -311,6 +311,8 @@ function DetailInput({
             id={id}
             min={field.min}
             max={field.max}
+            decrementLabel={`${label} −1`}
+            incrementLabel={`${label} +1`}
             maxLength={String(field.max).length}
             value={typeof value === "string" ? value : ""}
             onChange={onChange}
@@ -450,12 +452,15 @@ function ServicePick({
           {hasQty(service.priceUnit) ? (
             <div className="field svc-qty">
               <label className="field-label" htmlFor={qtyId}>
-                {t.qtyLabel(unitText(service.priceUnit, t))}
+                {qtyQuestion(service.priceUnit, t)}
+                <span className="sr-only">: {name}</span>
               </label>
               <NumberStepper
                 id={qtyId}
                 min={service.minQty ?? 1}
                 max={100_000}
+                decrementLabel={`${qtyQuestion(service.priceUnit, t)} −1`}
+                incrementLabel={`${qtyQuestion(service.priceUnit, t)} +1`}
                 value={chosen.qty}
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? `${qtyId}-error` : undefined}

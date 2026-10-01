@@ -153,7 +153,10 @@ export function Catalog() {
     <div className="screen catalog">
       <CategorySwitch current={category.code} date={filters.date} />
 
-      <section className="filters" aria-label={t.cats}>
+      <section
+        className={hasCapacity(category) || hasDistrict(category) ? "filters" : "filters solo"}
+        aria-label={t.cats}
+      >
         <div className="field">
           <label className="field-label" htmlFor={dateId}>
             {t.fDate}

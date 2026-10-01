@@ -2,7 +2,7 @@ import type { DayPart, ListingDetail, PublicService } from "@bayramm/shared/api"
 import { type CategoryConfig, categoryConfig, hasDayParts } from "@bayramm/shared/categories";
 import { type UIEvent, useMemo, useRef, useState } from "react";
 import { isNotFound } from "../api/errors";
-import { categoryName, clientCategory, DAY_PART_ORDER, hasCalendar } from "../categories";
+import { categoryIcon, categoryName, clientCategory, DAY_PART_ORDER, hasCalendar } from "../categories";
 import { Calendar } from "../components/Calendar";
 import { FavoriteButton } from "../components/FavoriteButton";
 import { Link } from "../components/Link";
@@ -325,7 +325,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
           <FavoriteButton listing={listing} className="fav-btn fav-inline" />
         </div>
         <p className="venue-meta">
-          <Icon name="pin" size={14} />
+          <Icon name={listing.districtCode ? "pin" : categoryIcon(listing.categoryCode)} size={14} />
           <span>
             {[categoryName(listing.categoryCode, lang), district, capacity].filter(Boolean).join(" · ")}
           </span>

@@ -81,6 +81,32 @@ describe("HTTP-клиент API", () => {
     expect(seen[0]?.headers.authorization).toBeUndefined();
   });
 
+  it("каталог категории: category и фильтры полей витрины (a.*); категории — GET /catalog/categories", async () => {
+    const { api, seen } = setup({
+      "GET /api/catalog/listings": [json(200, { items: [], nextCursor: null })],
+      "GET /api/catalog/categories": [json(200, { items: [] })],
+    });
+    await api.catalog({ category: "car", filters: { "a.fleet.class": "premium,suv", "a.decoration": "1" } });
+    expect(seen[0]?.url).toBe(
+      "/api/catalog/listings?a.fleet.class=premium%2Csuv&a.decoration=1&category=car",
+    );
+    await api.catalogCategories();
+    expect(seen[1]?.url).toBe("/api/catalog/categories");
+  });
+
+  it("400 invalid_request: имена неверных полей — в details ошибки", async () => {
+    const { api } = setup({
+      "GET /api/catalog/listings": [
+        json(400, { error: { code: "invalid_request", message: "", details: ["a.parking_spaces"] } }),
+      ],
+    });
+    await expect(api.catalog({ category: "car" })).rejects.toMatchObject({
+      status: 400,
+      code: "invalid_request",
+      details: ["a.parking_spaces"],
+    });
+  });
+
   it("площадка и согласия: адреса по контракту", async () => {
     const { api, seen } = setup({
       "GET /api/catalog/listings/lola-zali": [json(200, { slug: "lola-zali" })],
