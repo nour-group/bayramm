@@ -1,6 +1,6 @@
 import type { DayPart, ListingDetail, PublicService } from "@bayramm/shared/api";
 import { type CategoryConfig, categoryConfig, hasDayParts } from "@bayramm/shared/categories";
-import { type UIEvent, useMemo, useRef, useState } from "react";
+import { type UIEvent, useEffect, useMemo, useRef, useState } from "react";
 import { isNotFound } from "../api/errors";
 import { categoryIcon, categoryName, clientCategory, DAY_PART_ORDER, hasCalendar } from "../categories";
 import { Calendar } from "../components/Calendar";
@@ -11,7 +11,7 @@ import { NewBadge } from "../components/NewBadge";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
 import { EmptyState, ErrorState, Loading } from "../components/States";
-import { pick, useDictionaries, useLang, useServices } from "../context";
+import { canSignIn, pick, useDictionaries, useLang, useServices } from "../context";
 import {
   addDays,
   formatDayMonth,
@@ -20,12 +20,14 @@ import {
   formatPriceFrom,
   formatQty,
   isIsoDate,
+  metaLine,
   tashkentToday,
   telHref,
 } from "../format";
 import { useAsync, useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
+import { preloadScreens } from "../screens";
 import { useMainButton } from "../telegram";
 import { DATE_HORIZON_DAYS, parseGuests } from "./catalog-feed";
 import { draftServiceIds, loadDraft, toggleDraftService } from "./request-draft";
@@ -72,6 +74,7 @@ function Gallery({ listing }: { listing: ListingDetail }) {
               alt={t.photoOf(listing.name, i + 1, total)}
               sizes={GALLERY_SIZES}
               eager={i === 0}
+              priority={i === 0}
             />
           </li>
         ))}
@@ -258,7 +261,7 @@ function Availability({
         <span>
           {parts ? `${t.partsNote} ` : ""}
           {category.availability === "slot" ? `${t.slotNote} ` : ""}
-          {t.pfCalNote}
+          {t.calByVendor}
         </span>
       </p>
     </section>
@@ -266,7 +269,7 @@ function Availability({
 }
 
 function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHref: string }) {
-  const { webApp, now } = useServices();
+  const { api, identity, webApp, now } = useServices();
   const { t, lang } = useLang();
   const { districtName } = useDictionaries();
   const { query, navigate } = useNav();
@@ -312,6 +315,15 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
     onClick: () => navigate(requestHref),
   });
 
+  // Форма заявки — следующий экран: её кусок сборки (и тексты согласий — у вошедшего, в кэш
+  // вкладки) просим, как только витрина на экране — после главного фото, оно уже запрошено
+  // (эффект — после отрисовки), — и ещё раз, когда потянулись к кнопке
+  const preloadRequest = () => preloadScreens(["request"]);
+  useEffect(() => {
+    preloadScreens(["request"]);
+    if (api.peek && canSignIn(identity)) void api.consentTexts(lang).catch(() => {});
+  }, [api, identity, lang]);
+
   return (
     <article className="screen venue">
       <Gallery listing={listing} />
@@ -326,9 +338,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         </div>
         <p className="venue-meta">
           <Icon name={listing.districtCode ? "pin" : categoryIcon(listing.categoryCode)} size={14} />
-          <span>
-            {[categoryName(listing.categoryCode, lang), district, capacity].filter(Boolean).join(" · ")}
-          </span>
+          <span>{metaLine([categoryName(listing.categoryCode, t, lang), district, capacity])}</span>
         </p>
         {chip ? <p className={chip.tone}>{chip.text}</p> : null}
       </div>
@@ -450,8 +460,11 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
       <Availability listing={listing} category={category} filterDate={filterDate} today={today} />
 
       {/* Цена, телефон и заявка: на телефоне — панель внизу экрана, на компьютере — карточка
-          справа, прилипает при прокрутке. Номер в ней виден сразу — правило продукта */}
+          справа, прилипает при прокрутке. Номер в ней виден сразу — правило продукта. Пометка
+          о заявке — над панелью (на телефоне она прилипает к низу, пометка — в конце страницы),
+          в карточке справа — под кнопками */}
       <div className="venue-side">
+        <p className="bar-note">{t.requestNote}</p>
         <div className="action-bar venue-bar">
           <div className="bar-price">
             <b>{price.amount}</b>
@@ -468,12 +481,17 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
             </span>
           </a>
           {nativeMain ? null : (
-            <Link className="btn btn-primary" href={requestHref}>
+            <Link
+              className="btn btn-primary"
+              href={requestHref}
+              onPointerEnter={preloadRequest}
+              onTouchStart={preloadRequest}
+              onFocus={preloadRequest}
+            >
               {t.pfReq}
             </Link>
           )}
         </div>
-        <p className="bar-note">{t.pfBarNote}</p>
       </div>
     </article>
   );
@@ -483,10 +501,14 @@ export function Venue({ slug }: { slug: string }) {
   const { api } = useServices();
   const { t } = useLang();
   const { query } = useNav();
-  const listing = useAsync(`listing:${slug}`, (signal) => api.listing(slug, signal));
+  const listing = useAsync(
+    `listing:${slug}`,
+    (signal) => api.listing(slug, signal),
+    () => api.peek?.listing(slug),
+  );
   useDocumentTitle(listing.status === "ready" ? listing.data.name : "");
 
-  if (listing.status === "loading") return <Loading />;
+  if (listing.status === "loading") return <Loading screen />;
   if (listing.status === "error")
     return isNotFound(listing.error) ? (
       <EmptyState

@@ -43,11 +43,7 @@ export function clientCategory(code: string | null | undefined): CategoryConfig 
   return CLIENT_CATEGORIES.find((c) => c.code === code) ?? DEFAULT;
 }
 
-/** Название категории на языке; неизвестный код — null */
-export function categoryName(code: string | null | undefined, lang: Lang): string | null {
-  const config = code ? categoryConfig(code) : undefined;
-  return config ? categoryText(lang, config.label) : null;
-}
+export { categoryName } from "./category-names";
 
 /** Подпись из словаря категорий (поля, варианты, услуги, опции) */
 export const catText = (lang: Lang, key: CategoryTextKey): string => categoryText(lang, key);

@@ -5,9 +5,14 @@
 
    Экран первого показа можно загрузить до первой отрисовки (loadStartScreen): тогда он
    рисуется сразу, без заглушки Suspense. Так лендинг сменяет свой пререндер из HTML
-   (prerender.tsx) за одну отрисовку — без мигания «загрузки» между ними. */
+   (prerender.tsx) за одну отрисовку — без мигания «загрузки» между ними.
 
-import { type ComponentType, createElement, lazy } from "react";
+   Так же — любой уже загруженный кусок (заранее, по наведению на карточку, раньше на этом
+   экране): React.lazy приостанавливается и на готовом модуле, а React 19 показывает
+   содержимое после заглушки не сразу, а пачкой (~300 мс). Поэтому экран из готового куска
+   рисуется напрямую, без lazy: каталог → витрина → форма — без задержки на переход. */
+
+import { type ComponentType, createElement, lazy, useState } from "react";
 import type { RouteName } from "./routes";
 
 const LOADERS = {
@@ -24,7 +29,11 @@ const LOADERS = {
 
 export type ScreenChunk = keyof typeof LOADERS;
 type ScreenModule<K extends ScreenChunk> = Awaited<ReturnType<(typeof LOADERS)[K]>>;
-const load = <K extends ScreenChunk>(chunk: K) => LOADERS[chunk]() as Promise<ScreenModule<K>>;
+const load = <K extends ScreenChunk>(chunk: K) =>
+  (LOADERS[chunk]() as Promise<ScreenModule<K>>).then((module) => {
+    loaded.set(chunk, module);
+    return module;
+  });
 
 /** Кусок сборки с экраном маршрута (корень — лендинг; в Telegram корень — каталог, screenOf) */
 export const SCREEN_CHUNK = {
@@ -40,9 +49,9 @@ export const SCREEN_CHUNK = {
   authTelegram: "auth",
 } as const satisfies Record<RouteName, ScreenChunk>;
 
-// Экраны, загруженные до первой отрисовки. Заполняется только до неё (loadStartScreen),
-// поэтому каждый экран всё время рисуется одним и тем же компонентом — без перемонтирования
-const started = new Map<ScreenChunk, unknown>();
+// Загруженные куски: экран, который монтируется после загрузки своего куска, рисуется
+// напрямую. Смонтированный экран выбор не меняет (useState) — без перемонтирования
+const loaded = new Map<ScreenChunk, unknown>();
 
 function screen<K extends ScreenChunk, P extends object>(
   chunk: K,
@@ -50,7 +59,7 @@ function screen<K extends ScreenChunk, P extends object>(
 ): ComponentType<P> {
   const Lazy = lazy(() => load(chunk).then((module) => ({ default: pick(module) })));
   function Screen(props: P) {
-    const module = started.get(chunk) as ScreenModule<K> | undefined;
+    const [module] = useState(() => loaded.get(chunk) as ScreenModule<K> | undefined);
     return createElement((module ? pick(module) : Lazy) as ComponentType<P>, props);
   }
   Screen.displayName = `Screen(${chunk})`;
@@ -70,15 +79,15 @@ export const TelegramCallback = screen("auth", (m) => m.TelegramCallback);
 
 /** Экран первого показа — до первой отрисовки (bootstrap, пререндер): рисуется без заглушки */
 export async function loadStartScreen(chunk: ScreenChunk): Promise<void> {
-  started.set(chunk, await LOADERS[chunk]());
+  await load(chunk);
 }
 
 /** Заранее подгрузить экраны: ошибку сети не показываем — экран загрузится при переходе */
 export function preloadScreens(chunks: readonly ScreenChunk[]): void {
-  for (const chunk of chunks) void LOADERS[chunk]().catch(() => {});
+  for (const chunk of chunks) if (!loaded.has(chunk)) void load(chunk).catch(() => {});
 }
 
 /** Все экраны сразу (тесты: переход не ждёт загрузки куска) */
 export function preloadAll(): Promise<unknown> {
-  return Promise.all(Object.values(LOADERS).map((load) => load()));
+  return Promise.all((Object.keys(LOADERS) as ScreenChunk[]).map((chunk) => load(chunk)));
 }

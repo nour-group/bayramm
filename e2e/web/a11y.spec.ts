@@ -60,6 +60,8 @@ const SCREENS: readonly Screen[] = [
     guest: true,
     setup: async (page) => {
       for (const item of await page.locator(".ln-faq summary").all()) await item.click();
+      // Раскрытые вопросы — к началу блока: проверяем их, а не то, что уехало под шапку
+      await page.locator(".ln-faq").evaluate((el) => el.scrollIntoView({ block: "start" }));
     },
   },
   { name: "каталог", path: PATHS.catalog, ready: ".card" },
@@ -95,6 +97,12 @@ const SCREENS: readonly Screen[] = [
         await page.getByRole("dialog").waitFor();
       }
     },
+  },
+  {
+    // Фильтр задан — «Сбросить фильтры» в блоке «Фильтры» (на компьютере — в колонке слева)
+    name: "каталог кортежа с фильтром",
+    path: `/catalog?category=car&date=${BUSY_DAY}&a.fleet.class=premium`,
+    ready: ".filters-reset",
   },
   { name: "витрина кортежа на дату", path: `/venue/oq-kortej?date=${BUSY_DAY}`, ready: ".parts" },
   { name: "витрина фото и видео", path: "/venue/kadr-media", ready: ".videos" },

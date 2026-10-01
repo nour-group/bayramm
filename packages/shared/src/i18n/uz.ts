@@ -324,9 +324,8 @@ export const uz: Dict = {
   notFoundH: "Sahifa topilmadi",
   notFoundP: "Manzilni tekshiring yoki katalogga qayting.",
   toCatalog: "Katalogga",
-  venueGoneH: "Maydon topilmadi",
-  venueGoneP: "Ehtimol, u endi soʻrov qabul qilmaydi.",
-  hallsTitle: "Toshkent toʻyxonalari",
+  venueGoneH: "Hamkor sahifasi topilmadi",
+  venueGoneP: "Ehtimol, hamkor endi soʻrov qabul qilmaydi — katalogdan boshqalarini koʻring.",
   fDistrict: "Tuman",
   anyDistrict: "barcha tumanlar",
   s_capacity: "Avval sigʻimi kattaroq",
@@ -340,7 +339,7 @@ export const uz: Dict = {
   capRange: (min: number, max: number) => `${min}–${max} mehmon`,
   priceFrom: (amount: string) => `${amount}dan`,
   sum: "soʻm",
-  perGuest: "mehmon uchun",
+  perGuest: "mehmon boshiga",
   perEvent: "tadbir uchun",
   dayMonth: (day: number, month: string) => `${day}-${month}`,
   dayBusy: (date: string) => `${date} — band`,
@@ -413,27 +412,25 @@ export const uz: Dict = {
   dr_price: "narx boʻyicha kelishilmadi",
   dr_other: "boshqa sabab",
   declinedBecause: (reason: string) => `Sabab: ${reason}`,
-  slaBreachedNote: "Hamkor 12 soatda javob bermadi. Shu sanaga oʻxshash maydonlarni koʻring.",
+  slaBreachedNote: "Hamkor 12 soatda javob bermadi — shu sanada boʻsh boshqa hamkorlarni koʻring.",
   similar: "Oʻxshashlarini koʻrsatish",
   withdraw: "Qaytarib olish",
   withdrawQ: "Soʻrov qaytarib olinsinmi? Hamkor u endi dolzarb emasligini koʻradi.",
   withdrawKeep: "Qoldirish",
   errWithdraw: "Soʻrovni qaytarib olib boʻlmadi. Qayta urinib koʻring.",
   duplicateNote: "Bu sanaga soʻrov allaqachon yuborilgan — mana u.",
-  cp_client_service: "Akkaunt va arizalarim",
+  cp_client_service: "Hisob va soʻrovlarim",
   cp_request_transfer: "Soʻrovni hamkorga berish",
   cp_bot_notifications: "Telegram-botdagi bildirishnomalar",
   consentVersion: (v: number) => `${v}-versiya`,
   docsEmpty: "Hujjatlar hali eʼlon qilinmagan.",
-  noVenues_h: "Zallar tez orada qoʻshiladi",
-  noVenues: "Toshkentdagi birinchi maydonlarni ulayapmiz. Birozdan keyin qarab koʻring.",
   estimateFor: (amount: string, guests: number) => `${guests} mehmonga taxminan ${amount}`,
   sortHintPerGuest:
     "Tadbir narxini zal sigʻimiga boʻlamiz. Mehmonlar sonini kiriting — summalarni solishtiramiz.",
   sortHintTotal: (guests: number) => `${guests} mehmon uchun taxminiy summa solishtiriladi.`,
   myData: "Mening maʼlumotlarim",
   myDataLead:
-    "Bayramm siz haqingizda nimani saqlaydi: Telegram profili, roziliklar, soʻrovlar va saqlangan maydonlar.",
+    "Bayramm siz haqingizda nimani saqlaydi: Telegram profili, roziliklar, soʻrovlar va saqlanganlar.",
   exportData: "Maʼlumotlarimni yuklab olish",
   exporting: "Fayl tayyorlanmoqda…",
   exportReady: (file: string) =>
@@ -447,7 +444,7 @@ export const uz: Dict = {
   deleteAccount: "Hisobni oʻchirish",
   deleteQ: "Hisob oʻchirilsinmi?",
   deleteWhat: [
-    "Ism, Telegram ID, telefon va saqlangan maydonlar oʻchiriladi.",
+    "Ism, Telegram ID, telefon va saqlanganlar oʻchiriladi.",
     "Roziliklar bekor qilinadi, ochiq soʻrovlar ham: hamkor soʻrov endi dolzarb emasligini koʻradi.",
     "Yuborilgan soʻrovlar hamkorlarda shaxssiz qoladi: sana, mehmonlar va holat — ism, telefon va izohsiz.",
     "Bayrammni qayta ochsangiz, yangi boʻsh hisob boshlanadi.",
@@ -515,7 +512,7 @@ export const uz: Dict = {
   // избранное (подписи к текстам прототипа sv*)
   favToggle: (name: string) => `Saqlash: ${name}`,
   favFull:
-    "Saqlanganlarda allaqachon 100 ta maydon bor. Yangisini qoʻshish uchun keraksizlarini olib tashlang.",
+    "Saqlanganlarda allaqachon 100 ta hamkor bor. Yangisini qoʻshish uchun keraksizlarini olib tashlang.",
   favErr: "Saqlab boʻlmadi. Internetni tekshirib, qayta urinib koʻring.",
   // связь
   offline: "Internet aloqasi yoʻq. Aloqa tiklanganda yangi maʼlumotlarni koʻrsatamiz.",
@@ -536,19 +533,17 @@ export const uz: Dict = {
   metaHomeDesc:
     "Toshkentdagi zallar, kortejlar, foto va video, studiyalar, gullar, tortlar, sovgʻalar va dekor — narxlari va bandlik taqvimi bilan. Hamkor telefoni darhol koʻrinadi, soʻrov bepul, javob — 12 soat ichida.",
   metaCatalogDesc:
-    "Sana, mehmonlar soni va tumanni tanlang: katalog Toshkent zallarini narxlari, boʻsh sanalari va telefonlari bilan koʻrsatadi.",
+    "Toshkent toʻyxonalari: sana, mehmonlar soni va tumanni tanlang — narxlar, boʻsh sanalar va telefonlarni koʻrasiz.",
   metaVenueDesc: (facts: string) => `${facts}. Telefon va bandlik taqvimi — sahifada, soʻrov bepul.`,
   metaDocsDesc: "Bayramm rozilik matnlari va soʻrov qanday ishlashi.",
   lnKicker: "Toshkentda bayram uchun hammasi",
   lnTitle: "Zal, kortej, foto, tort — narxi va telefoni bilan darhol",
   lnLead:
-    "Zallar, kortejlar, foto va video, studiyalar, gullar, tortlar, sovgʻalar va dekor. Kerakli narsani va sanani tanlang — narxlar, boʻsh kunlar va qayerga qoʻngʻiroq qilishni koʻrasiz.",
+    "Kerakli narsani va sanani tanlang — narxlar, boʻsh kunlar va qayerga qoʻngʻiroq qilishni koʻrasiz.",
   lnSearchLabel: "Tanlash",
   lnSearch: "Koʻrsatish",
-  lnBrowse: "Butun katalog",
   lnVenuesH: "Hozir katalogda",
-  lnVenuesP:
-    "Narxlarni hamkorlarning oʻzi koʻrsatadi, ustamasiz. Tartib — narx boʻyicha: toʻlov unga taʼsir qilmaydi.",
+  lnVenuesP: "Katalogdagi haqiqiy hamkorlar — narxlarni ularning oʻzi koʻrsatadi, ustamasiz.",
   lnHowH: "Qanday ishlaydi",
   lnStepH: [
     "Kerakli narsa va sanani tanlang",
@@ -556,9 +551,9 @@ export const uz: Dict = {
     "Toʻgʻridan-toʻgʻri kelishing",
   ],
   lnStepP: [
-    "Katalog hamkorlarni narxlari bilan koʻrsatadi va sizning kuningizda kim boʻshligini belgilaydi.",
-    "Hamkor telefoni darhol koʻrinadi — soʻrovsiz qoʻngʻiroq qilish mumkin. Yoki soʻrov yuboring: sana, tafsilotlar va istaklaringiz hamkorga Telegramda boradi.",
-    "Hamkor 12 soat ichida javob beradi. Shartlar va toʻlovni u bilan kelishasiz — Bayramm hisob-kitobda qatnashmaydi.",
+    "Katalog narxlarni koʻrsatadi va sizning kuningizda kim boʻshligini belgilaydi.",
+    "Sana va tafsilotlar bilan soʻrov hamkorga Telegramda boradi — yoki darhol qoʻngʻiroq qiling.",
+    "Shartlar va toʻlovni hamkor bilan kelishasiz — Bayramm hisob-kitobda qatnashmaydi.",
   ],
   lnPromH: "Vaʼdalarimiz",
   lnPromT: ["Siz uchun bepul", "Narx darhol koʻrinadi", "Soʻrovsiz telefon", "12 soatda javob"],
@@ -574,17 +569,15 @@ export const uz: Dict = {
   lnPartnerNote: "Kabinet — Bayrammga ulangan hamkorlar uchun.",
   lnFaqH: "Koʻp beriladigan savollar",
   lnFaqQ: [
-    "Bu qancha turadi?",
     "Soʻrov sanani biriktiradimi?",
-    "Hamkor javob bermasa-chi?",
     "Soʻrovni qanday yuboraman?",
+    "Bir nechta xizmatni birdan buyurtma qilsa boʻladimi?",
     "Narxlar va taqvim qayerdan?",
   ],
   lnFaqA: [
-    "Siz uchun — hech narsa: na komissiya, na soʻrov uchun toʻlov. Xizmat narxini hamkor bilan toʻgʻridan-toʻgʻri kelishib, toʻlaysiz.",
     "Yoʻq. Soʻrov — hamkorga murojaat: sana va shartlarni u oʻzi tasdiqlaydi. Eng tezi — qoʻngʻiroq qilish: raqam darhol koʻrinadi.",
-    "Hamkorga javob uchun 12 soat beriladi. U javob bermasa, «Mening soʻrovlarim»da shu sanaga oʻxshashlari paydo boʻladi.",
-    "Hamkor sahifasini oching va «Soʻrov qoldirish» tugmasini bosing. Telegram orqali kirish mumkin — parol kerak emas.",
+    "Hamkor sahifasini oching va «Soʻrov qoldirish» tugmasini bosing. Telegram yoki telefon raqami orqali kirasiz — parol kerak emas.",
+    "Ha. Bitta hamkorning kerakli xizmatlarini uning sahifasida belgilang — ular bitta soʻrov boʻlib ketadi. Toʻyxona, kortej va tort — uchta soʻrov: har bir hamkorga alohida.",
     "Ularni hamkorlarning oʻzi yuritadi. Boshlangʻich narx koʻrsatilgan: bayramingiz uchun aniq summani hamkor aytadi.",
   ],
   ftAbout: "Toshkentda bayram uchun hammasi: zallar, kortejlar, foto, tortlar va boshqalar.",
@@ -600,8 +593,8 @@ export const uz: Dict = {
   qtyKg: (n: number) => `${n} kg`,
   qtySet: (n: number) => `${n} toʻplam`,
   qtyTable: (n: number) => `${n} stol`,
-  catSwitch: "Kategoriyalar",
-  catTitle: (name: string) => `${name} — Toshkent`,
+  catSwitch: "Katalog boʻlimlari",
+  catTitle: (name: string) => `Toshkentdagi ${String(name).toLowerCase()}`,
   catSoon: "tez orada",
   catSoonH: (name: string) => `«${name}» — tez orada katalogda`,
   catSoonP:
@@ -615,7 +608,7 @@ export const uz: Dict = {
   sortHintUnits: "Hamkorlarda narx birligi har xil — summa yonidagi yozuvga qarang.",
   emptyHintCat: "Boshqa sanani tanlang yoki filtrlarning bir qismini olib tashlang.",
   leadDateNote:
-    "Bu yerda oldindan buyurtma qilinadi, bandlik taqvimi yoʻq: sana soʻrovga ketadi, muddatni hamkor tasdiqlaydi.",
+    "Bu yerda oldindan buyurtma qilinadi, bandlik taqvimi yoʻq: sanani soʻrovda koʻrsatasiz, muddatni hamkor tasdiqlaydi.",
   dayPartial: (date: string) => `${date} — qisman band`,
   legPartial: "qisman band",
   dayPartName: (part: string) => (part === "morning" ? "ertalab" : part === "day" ? "kunduzi" : "kechqurun"),
@@ -623,11 +616,10 @@ export const uz: Dict = {
   partsOn: (date: string) => `${date} kun qismlari boʻyicha`,
   partsTaken: (parts: string) => `band: ${parts}`,
   partsUpcoming: "Yaqin qisman band kunlar",
-  partsNote:
-    "Hamkor kuniga bir nechta buyurtma oladi — ertalab, kunduzi va kechqurun: qisman band kunni ham tanlash mumkin.",
+  partsNote: "Buyurtmalar ertalab, kunduzi va kechqurunga olinadi: qisman band kunni ham tanlash mumkin.",
   slotNote: "Vaqt va necha soat kerakligini soʻrovda koʻrsatasiz.",
   leadTitle: "Buyurtma muddati",
-  leadNote: (n: number) => `Buyurtma — bayramdan kamida ${n} kun oldin.`,
+  leadNote: (n: number) => `Bayramdan kamida ${n} kun oldin buyurtma qilinadi.`,
   leadNoteAny: "Buyurtma muddatini hamkordan aniqlang.",
   leadNoteSvc: "Ayrim xizmatlarning muddati uzunroq boʻlishi mumkin — u xizmatlar roʻyxatida koʻrsatilgan.",
   svcTitle: "Xizmatlar va narxlar",
@@ -638,8 +630,7 @@ export const uz: Dict = {
   svcPick: "Soʻrovga qoʻshish",
   svcPicked: "Soʻrovda",
   svcChosenN: (n: number) => `Tanlangan xizmatlar: ${n}`,
-  svcNote:
-    "Narxlarni hamkor koʻrsatadi. Belgilangan xizmatlar soʻrov shakliga tushadi — miqdorini u yerda aniqlaysiz.",
+  svcNote: "Kerakli xizmatlarni belgilang — ular soʻrovga tushadi, miqdorini u yerda koʻrsatasiz.",
   featuresLabel: "Xususiyatlar",
   videoTitle: "Video",
   videoN: (n: number) => `${n}-video`,
@@ -654,7 +645,7 @@ export const uz: Dict = {
   qtyAskTable: "Nechta stol",
   estimateH: "Taxminiy summa",
   estimateTotal: (amount: string) => `≈ ${amount}`,
-  estimateNote: "Dastlabki hisob, hamkor narxlari boʻyicha. Aniq summani hamkor aytadi.",
+  estimateNote: "Sahifadagi narxlar boʻyicha moʻljal. Aniq summani hamkor aytadi.",
   estimateNeedsGuests:
     "Mehmonlar sonini kiriting — usiz mehmon boshiga narxli xizmatlarni hisoblab boʻlmaydi.",
   budgetsSmall: ["3 mln gacha", "3–7 mln", "7–15 mln", "15 mln dan ortiq", "hali bilmayman"],
@@ -674,10 +665,29 @@ export const uz: Dict = {
   savedApp: "Saqlandi. Roʻyxat — «Saqlanganlar» boʻlimida.",
   savedGuest: "Saqlandi. Roʻyxat — sahifa tepasidagi «Saqlanganlar» boʻlimida, kirish shart emas.",
   lnCatsH: "Nimalarni topish mumkin",
-  lnCatsP: "Har bir boʻlimning oʻz filtrlari va oʻz soʻrov shakli bor.",
-  lnSeeAll: (name: string) => `Butun boʻlim: ${name}`,
   metaCatDesc: (name: string) =>
     `${name} — Toshkent: boshlangʻich narxlar, boʻsh sanalar va hamkorlar telefonlari. Soʻrov bepul, javob — 12 soat ichida.`,
   // меню сайта для гостя (шторка из шапки на телефоне и планшете)
   menu: "Menyu",
+  // ── глоссарий клиента (glossary.ts): короткие названия разделов каталога, без косых черт.
+  // У кабинета и панели — свои названия из @bayramm/shared/categories (cat_*)
+  catName: {
+    hall: "Toʻyxonalar",
+    car: "Kortejlar",
+    studio: "Fotostudiyalar",
+    flowers: "Gullar",
+    photo: "Foto va video",
+    cake: "Tortlar va shirinliklar",
+    gifts: "Sovgʻalar",
+    decor: "Dekor va bezak",
+  },
+  catalogNote: "Narxlarni hamkorlarning oʻzi koʻrsatadi, ustamasiz.",
+  filtersShowN: (n: number, more: boolean) =>
+    more ? `${n} tadan koʻproq variantni koʻrsatish` : `${n} ta variantni koʻrsatish`,
+  emptyH: "Hech kim topilmadi",
+  requestNote: "Soʻrov bepul va sanani biriktirmaydi: uni hamkor tasdiqlaydi.",
+  sentConfirm: "Sana hali biriktirilmagan. Hamkorga qoʻngʻiroq qilib, uni tasdiqlang — shunisi ishonchli.",
+  calByVendor: "Taqvimni hamkor yuritadi.",
+  leadNoteFrom: (n: number, date: string) =>
+    `Kamida ${n} kun oldin buyurtma qilinadi: eng yaqin sana — ${date}.`,
 };

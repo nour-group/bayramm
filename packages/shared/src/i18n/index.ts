@@ -3,6 +3,7 @@ import { ru } from "./ru";
 import { uz } from "./uz";
 
 export type { Dict, DictKey, Lang } from "./dict";
+export { GLOSSARY_FORBIDDEN, glossaryRu } from "./glossary";
 export { ruPlural } from "./plural";
 export { type Block, type Inline, inlineText, type RichText, richText } from "./rich";
 export { ru } from "./ru";

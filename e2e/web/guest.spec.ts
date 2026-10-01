@@ -148,7 +148,7 @@ test.describe("гость на телефоне", () => {
     await expect(page.locator("html")).toHaveAttribute("lang", "uz");
     await expect(page.getByRole("dialog").locator(".menu-links a").nth(1)).toHaveText(T.uz.svTitle);
     // Страница под шторкой inert (для диктора её нет) — заголовок ищем по разметке
-    await expect(page.locator("main h1")).toHaveText(T.uz.hallsTitle);
+    await expect(page.locator("main h1")).toHaveText(T.uz.catTitle(T.uz.catName.hall));
   });
 });
 

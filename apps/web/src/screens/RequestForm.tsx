@@ -18,6 +18,7 @@ import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useS
 import { isApiError, isNotFound } from "../api/errors";
 import { categoryName, catText, clientCategory } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
+import { categoryHref } from "../components/Categories";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
@@ -32,6 +33,7 @@ import {
   formatPrice,
   formatPriceFrom,
   isIsoDate,
+  metaLine,
   PHONE_PREFIX,
   phoneDigits,
   qtyQuestion,
@@ -257,7 +259,7 @@ function Sent({ listing, created }: { listing: ListingDetail; created: RequestCr
       </p>
       <div className="callout callout-warn">
         <Icon name="warnD" size={20} />
-        <p>{t.sentWarn}</p>
+        <p>{t.sentConfirm}</p>
       </div>
       <a className="btn btn-primary wide" href={telHref(listing.phone)}>
         <Icon name="phone" size={17} />
@@ -271,7 +273,8 @@ function Sent({ listing, created }: { listing: ListingDetail; created: RequestCr
         <Link className="btn btn-secondary" href={hrefFor({ name: "requests" })}>
           {t.toMyRequests}
         </Link>
-        <Link className="btn btn-secondary" href={hrefFor({ name: "catalog" })}>
+        {/* Дальше искать — в том же разделе, откуда пришли (кортеж → кортежи) */}
+        <Link className="btn btn-secondary" href={categoryHref(listing.categoryCode)}>
           {t.sentSearch}
         </Link>
       </div>
@@ -680,7 +683,7 @@ function Form({
   const dateParts = draft.date ? (listing.busyParts.find((p) => p.date === draft.date)?.parts ?? []) : [];
   const dateHint =
     lead > 0
-      ? t.leadNote(lead)
+      ? t.leadNoteFrom(lead, formatDayMonth(minDate, t))
       : hasDayParts(category) && dateParts.length > 0
         ? t.partsTaken(dateParts.map((part) => t.dayPartName(part)).join(", "))
         : undefined;
@@ -703,12 +706,12 @@ function Form({
         <p>
           <b>{listing.name}</b>
           <span className="muted small">
-            {[
+            {metaLine([
               `${price.amount}${price.unit ? ` ${price.unit}` : ""}`,
-              listing.capMax === null ? categoryName(listing.categoryCode, lang) : t.people(listing.capMax),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
+              listing.capMax === null
+                ? categoryName(listing.categoryCode, t, lang)
+                : t.people(listing.capMax),
+            ])}
           </span>
         </p>
       </div>
@@ -929,6 +932,8 @@ function Form({
         </p>
       ) : null}
 
+      {/* Над кнопками: на телефоне панель прилипает к низу, пометка — в конце формы */}
+      <p className="bar-note">{t.requestNote}</p>
       {/* Отказ и отправка — одного размера (правило продукта о согласии) */}
       <div className="action-bar form-bar">
         <button type="button" className="btn btn-secondary" onClick={back}>
@@ -943,7 +948,6 @@ function Form({
           {sending ? t.sending : t.rqSend}
         </button>
       </div>
-      <p className="bar-note">{t.rqNote}</p>
     </form>
   );
 }
@@ -974,14 +978,26 @@ export function RequestForm({ slug }: { slug: string }) {
   const { api, identity } = useServices();
   const { t, lang } = useLang();
   const { state: dicts } = useDictionaries();
-  const listing = useAsync(`listing:${slug}`, (signal) => api.listing(slug, signal));
+  const listing = useAsync(
+    `listing:${slug}`,
+    (signal) => api.listing(slug, signal),
+    () => api.peek?.listing(slug),
+  );
   // Итог — здесь, а не в форме: смена языка перезагружает тексты согласий и форму
   const [created, setCreated] = useState<RequestCreated | null>(null);
   const lastConsents = useRef<readonly ConsentText[] | null>(null);
   const signedIn = canSignIn(identity);
-  const consents = useAsync(`consents:${lang}:${signedIn}`, (signal) =>
-    signedIn ? api.consentTexts(lang, signal) : Promise.resolve({ items: [] }),
+  // Тексты согласий витрина уже попросила заранее (кэш вкладки) — форма без заглушки
+  const consents = useAsync(
+    `consents:${lang}:${signedIn}`,
+    (signal) => (signedIn ? api.consentTexts(lang, signal) : Promise.resolve({ items: [] })),
+    () => (signedIn ? api.peek?.consentTexts(lang) : undefined),
   );
+  // Сервер сказал, что текст сменился: забыть кэш и перечитать — галочки ставятся заново
+  const consentsOutdated = () => {
+    api.peek?.forgetConsentTexts();
+    consents.reload();
+  };
   useDocumentTitle(t.rqTitle);
 
   // Вне Telegram заявку не отправить: объясняем и ведём в бота, телефон площадки — сразу
@@ -1013,7 +1029,8 @@ export function RequestForm({ slug }: { slug: string }) {
   if (consents.status === "error") return <ErrorState message={t.consentMissing} onRetry={consents.reload} />;
   // Пока тексты согласий перечитываются (смена языка, новая версия), форма остаётся на месте
   if (consents.status === "ready") lastConsents.current = consents.data.items;
-  if (listing.status === "loading" || dicts.status === "loading" || !lastConsents.current) return <Loading />;
+  if (listing.status === "loading" || dicts.status === "loading" || !lastConsents.current)
+    return <Loading screen />;
 
   const category = categoryConfig(listing.data.categoryCode) ?? clientCategory(listing.data.categoryCode);
   return (
@@ -1025,7 +1042,7 @@ export function RequestForm({ slug }: { slug: string }) {
       districts={dicts.data.districts}
       consents={lastConsents.current}
       onCreated={setCreated}
-      onConsentsOutdated={consents.reload}
+      onConsentsOutdated={consentsOutdated}
     />
   );
 }

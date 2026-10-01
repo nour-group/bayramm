@@ -1,18 +1,17 @@
 import type { CatalogSort } from "@bayramm/shared/api";
-import { categoryText } from "@bayramm/shared/categories";
 import { DateField, Dialog, NumberStepper, Select } from "@bayramm/ui/react";
 import { useEffect, useId, useRef, useState } from "react";
-import { clientCategory, hasCalendar, hasCapacity, hasDistrict } from "../categories";
+import { categoryName, clientCategory, hasCalendar, hasCapacity, hasDistrict } from "../categories";
 import { AttrFiltersForm } from "../components/AttrFilters";
 import { useCalendarTexts } from "../components/Calendar";
 import { CategorySwitch } from "../components/Categories";
-import { ListingCard } from "../components/ListingCard";
-import { EmptyState, ErrorState, Loading } from "../components/States";
+import { CARD_PHOTO_SIZES, CARD_PHOTO_SIZES_SIDE, ListingCard } from "../components/ListingCard";
+import { CardsLoading, EmptyState, ErrorState, Loading } from "../components/States";
 import { pick, useDictionaries, useLang, useServices } from "../context";
 import { addDays, formatDayMonth, tashkentToday } from "../format";
 import { useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
-import { DEFAULT_CATEGORY, hrefFor, useNav } from "../router";
+import { hrefFor, useNav } from "../router";
 import {
   busyLast,
   type CatalogFilters,
@@ -29,9 +28,10 @@ import {
 } from "./catalog-feed";
 import { attrFilterCount, filterSpecs } from "./catalog-filters";
 
-/* Каталог категории (/catalog?category=…): переключатель категорий, общие фильтры (дата;
-   гости и район — где они есть), фильтры по полям витрины (колонка слева на компьютере,
-   шторка «Фильтры» на телефоне и планшете), порядок и сетка карточек. Всё — в адресе. */
+/* Каталог раздела (/catalog?category=…): заголовок, переключатель разделов, фильтры, порядок и
+   сетка карточек. Всё — в адресе. Фильтры — одним блоком «Фильтры»: на телефоне и планшете
+   дата (гости и район — где они есть) над выдачей, поля витрины — в шторке «Фильтры»; на
+   компьютере весь блок — колонкой слева, прилипает при прокрутке. */
 
 const SORT_LABEL = {
   price_asc: "s_cheap",
@@ -41,6 +41,9 @@ const SORT_LABEL = {
 
 // Пока человек печатает число гостей, выдачу не дёргаем на каждую цифру
 const GUESTS_DEBOUNCE_MS = 600;
+
+/** Сколько карточек грузить сразу (первый ряд на любом экране — до четырёх колонок) */
+const EAGER_CARDS = 4;
 
 function GuestsField({
   value,
@@ -99,13 +102,12 @@ export function Catalog() {
   const specs = filterSpecs(category);
   const feed = useCatalogFeed(api, filters);
   const calendarTexts = useCalendarTexts();
-  const dateId = useId();
-  const districtId = useId();
+  const ids = useId();
   const sentinel = useRef<HTMLDivElement>(null);
   const filtersButton = useRef<HTMLButtonElement>(null);
   const [sheet, setSheet] = useState(false);
-  const name = categoryText(lang, category.label);
-  const title = category.code === DEFAULT_CATEGORY ? t.hallsTitle : t.catTitle(name);
+  const name = categoryName(category.code, t, lang) ?? category.code;
+  const title = t.catTitle(name);
   useDocumentTitle(title);
 
   const setFilters = (patch: Partial<CatalogFilters>) =>
@@ -129,6 +131,8 @@ export function Catalog() {
   const items = busyLast(feed.items);
   const sorts = sortsOf(category.code);
   const extra = attrFilterCount(filters.attrs);
+  const side = specs.length > 0;
+  const filtered = hasFilters(filters);
   // Цены за гостя и за мероприятие вперемешку — объясняем, как их сравнили; у остальных
   // категорий единицы разные (за час и за мероприятие) — просим смотреть на подпись
   const priceSort = filters.sort !== "capacity_desc";
@@ -143,121 +147,127 @@ export function Catalog() {
       : units.size > 1
         ? t.sortHintUnits
         : null;
-  const empty = hasFilters(filters)
-    ? { title: t.empty_h, text: hasCapacity(category) ? t.emptyHint : t.emptyHintCat }
-    : category.code === DEFAULT_CATEGORY
-      ? { title: t.noVenues_h, text: t.noVenues }
-      : { title: t.catSoonH(name), text: t.catSoonP };
+  // Пусто с фильтрами — «никого не нашли» и сброс; без фильтров — в разделе ещё никого: «скоро»
+  const empty = filtered
+    ? { title: t.emptyH, text: hasCapacity(category) ? t.emptyHint : t.emptyHintCat }
+    : { title: t.catSoonH(name), text: t.catSoonP };
+  const loaded = feed.status !== "loading" && feed.status !== "error";
+  // Кнопка шторки показывает, сколько нашлось (пока выдача грузится — просто «Показать»)
+  const apply = loaded ? t.filtersShowN(items.length, feed.hasMore) : t.filtersApply;
 
   return (
     <div className="screen catalog">
+      <div className="catalog-head">
+        <h1 className="screen-title" tabIndex={-1}>
+          {title}
+        </h1>
+        <p className="muted small">{t.catalogNote}</p>
+      </div>
+
       <CategorySwitch current={category.code} date={filters.date} />
 
-      <section
-        className={hasCapacity(category) || hasDistrict(category) ? "filters" : "filters solo"}
-        aria-label={t.cats}
-      >
-        <div className="field">
-          <label className="field-label" htmlFor={dateId}>
-            {t.fDate}
-          </label>
-          <DateField
-            id={dateId}
-            label={t.fDate}
-            placeholder={t.anyDateV}
-            value={filters.date}
-            min={today}
-            max={addDays(today, DATE_HORIZON_DAYS)}
-            format={(date) => formatDayMonth(date, t)}
-            texts={calendarTexts}
-            clearLabel={t.anyDate}
-            onChange={(date) => setFilters({ date })}
-          />
-        </div>
-        {hasCapacity(category) ? (
-          <GuestsField value={filters.guests} onCommit={(guests) => setFilters({ guests })} />
-        ) : null}
-        {hasDistrict(category) ? (
-          <div className="field">
-            <label className="field-label" htmlFor={districtId}>
-              {t.fDistrict}
-            </label>
-            <Select
-              id={districtId}
-              label={t.fDistrict}
-              value={filters.district ?? ""}
-              options={[
-                { value: "", label: t.anyDistrict },
-                ...districts.map((district) => ({ value: district.code, label: pick(district.name, lang) })),
-              ]}
-              onChange={(district) => setFilters({ district: district || null })}
-            />
-          </div>
-        ) : null}
-      </section>
-      {/* Без календаря (цветы, торты, подарки) дата не отсекает — она уйдёт в заявку */}
-      {filters.date && !hasCalendar(category) ? (
-        <p className="muted small date-note">{t.leadDateNote}</p>
-      ) : null}
-
-      <div className={specs.length > 0 ? "catalog-body has-side" : "catalog-body"}>
-        {specs.length > 0 ? (
-          // Подпись колонки — не заголовок: колонка стоит раньше заголовка экрана (h1)
-          <aside className="filters-side" aria-labelledby={`${dateId}-side`}>
-            <p className="section-title" id={`${dateId}-side`}>
-              {t.moreFilters}
-            </p>
-            <AttrFiltersForm
-              category={category}
-              attrs={filters.attrs}
-              onChange={(attrs) => setFilters({ attrs })}
-            />
-          </aside>
-        ) : null}
-
-        <div className="catalog-list">
-          <div className="list-head">
-            <div>
-              <h1 className="screen-title" tabIndex={-1}>
-                {title}
-              </h1>
-              <p className="muted small">{t.note}</p>
+      <div className={side ? "catalog-body has-side" : "catalog-body"}>
+        <section className="filters-panel" aria-labelledby={`${ids}-filters`}>
+          {/* Заголовок колонки фильтров — виден только колонкой (компьютер); диктору — всегда */}
+          <h2 className="section-title filters-title" id={`${ids}-filters`}>
+            {t.moreFilters}
+          </h2>
+          <div className={hasCapacity(category) || hasDistrict(category) ? "filters" : "filters solo"}>
+            <div className="field">
+              <label className="field-label" htmlFor={`${ids}-date`}>
+                {t.fDate}
+              </label>
+              <DateField
+                id={`${ids}-date`}
+                label={t.fDate}
+                placeholder={t.anyDateV}
+                value={filters.date}
+                min={today}
+                max={addDays(today, DATE_HORIZON_DAYS)}
+                format={(date) => formatDayMonth(date, t)}
+                texts={calendarTexts}
+                clearLabel={t.anyDate}
+                onChange={(date) => setFilters({ date })}
+              />
             </div>
-            <div className="list-tools">
-              {specs.length > 0 ? (
-                <button
-                  type="button"
-                  className="btn btn-secondary filters-open"
-                  ref={filtersButton}
-                  onClick={() => setSheet(true)}
-                >
-                  <Icon name="sliders" size={14} />
-                  {extra > 0 ? t.moreFiltersN(extra) : t.moreFilters}
-                </button>
-              ) : null}
-              <div className="sort">
+            {hasCapacity(category) ? (
+              <GuestsField value={filters.guests} onCommit={(guests) => setFilters({ guests })} />
+            ) : null}
+            {hasDistrict(category) ? (
+              <div className="field">
+                <label className="field-label" htmlFor={`${ids}-district`}>
+                  {t.fDistrict}
+                </label>
                 <Select
-                  size="compact"
-                  label={t.sortBy}
-                  icon={<Icon name="sliders" size={14} />}
-                  value={filters.sort ?? DEFAULT_SORT}
-                  options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
-                  onChange={(sort) => setFilters({ sort: sort === DEFAULT_SORT ? null : sort })}
+                  id={`${ids}-district`}
+                  label={t.fDistrict}
+                  value={filters.district ?? ""}
+                  options={[
+                    { value: "", label: t.anyDistrict },
+                    ...districts.map((district) => ({
+                      value: district.code,
+                      label: pick(district.name, lang),
+                    })),
+                  ]}
+                  onChange={(district) => setFilters({ district: district || null })}
                 />
               </div>
-            </div>
-            {sortHint ? <p className="muted small sort-hint">{sortHint}</p> : null}
+            ) : null}
           </div>
+          {/* Без календаря (цветы, торты, подарки) дата не отсекает — она уйдёт в заявку */}
+          {filters.date && !hasCalendar(category) ? (
+            <p className="muted small date-note">{t.leadDateNote}</p>
+          ) : null}
+          {side ? (
+            <div className="filters-side">
+              <AttrFiltersForm
+                category={category}
+                attrs={filters.attrs}
+                onChange={(attrs) => setFilters({ attrs })}
+              />
+            </div>
+          ) : null}
+          {filtered ? (
+            <button type="button" className="link-btn filters-reset" onClick={reset}>
+              {t.resetFilters}
+            </button>
+          ) : null}
+        </section>
 
-          {feed.status === "loading" ? <Loading /> : null}
+        <div className="catalog-list">
+          <div className="list-tools">
+            {side ? (
+              <button
+                type="button"
+                className="btn btn-secondary filters-open"
+                ref={filtersButton}
+                onClick={() => setSheet(true)}
+              >
+                <Icon name="sliders" size={14} />
+                {extra > 0 ? t.moreFiltersN(extra) : t.moreFilters}
+              </button>
+            ) : null}
+            <div className="sort">
+              <Select
+                size="compact"
+                label={t.sortBy}
+                icon={<Icon name="sliders" size={14} />}
+                value={filters.sort ?? DEFAULT_SORT}
+                options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
+                onChange={(sort) => setFilters({ sort: sort === DEFAULT_SORT ? null : sort })}
+              />
+            </div>
+          </div>
+          {sortHint && items.length > 0 ? <p className="muted small sort-hint">{sortHint}</p> : null}
+
+          {feed.status === "loading" ? <CardsLoading /> : null}
           {feed.status === "error" ? <ErrorState onRetry={feed.retry} /> : null}
-          {/* Пусто без фильтров — витрин ещё нет: «под эти условия никого» тут было бы неправдой */}
-          {feed.status !== "loading" && feed.status !== "error" && items.length === 0 ? (
+          {loaded && items.length === 0 ? (
             <EmptyState
               title={empty.title}
               text={empty.text}
               action={
-                hasFilters(filters) ? (
+                filtered ? (
                   <button type="button" className="btn btn-secondary" onClick={reset}>
                     {t.resetFilters}
                   </button>
@@ -270,7 +280,14 @@ export function Catalog() {
             <ul className="cards">
               {items.map((card, i) => (
                 <li key={card.id}>
-                  <ListingCard card={card} date={filters.date} guests={filters.guests} eager={i < 2} />
+                  <ListingCard
+                    card={card}
+                    date={filters.date}
+                    guests={filters.guests}
+                    eager={i < EAGER_CARDS}
+                    priority={i === 0}
+                    sizes={side ? CARD_PHOTO_SIZES_SIDE : CARD_PHOTO_SIZES}
+                  />
                 </li>
               ))}
             </ul>
@@ -287,7 +304,7 @@ export function Catalog() {
         </div>
       </div>
 
-      {/* Фильтры на телефоне и планшете — шторкой; выдача за ней меняется сразу */}
+      {/* Поля витрины на телефоне и планшете — шторкой; выдача за ней меняется сразу */}
       <Dialog
         open={sheet}
         onClose={() => setSheet(false)}
@@ -305,7 +322,7 @@ export function Catalog() {
               {t.resetFilters}
             </button>
             <button type="button" className="btn btn-primary" onClick={() => setSheet(false)}>
-              {t.filtersApply}
+              {apply}
             </button>
           </>
         }

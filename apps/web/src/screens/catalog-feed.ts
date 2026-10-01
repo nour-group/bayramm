@@ -115,17 +115,40 @@ export interface Feed {
   readonly loadMore: () => void;
 }
 
-/** Лента каталога: первая страница при смене фильтров, дальше — по курсору */
-export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
-  const [items, setItems] = useState<readonly ListingCard[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [status, setStatus] = useState<FeedStatus>("loading");
-  const [attempt, setAttempt] = useState(0);
-  // Поколение запроса: ответ по старым фильтрам не допишется в новую выдачу
-  const generation = useRef(0);
-  const more = useRef<AbortController | null>(null);
+/* Выдача, уже показанная в этой вкладке, — снимком (вместе с догруженными страницами):
+   «назад» из витрины возвращает тот же список сразу, без заглушки и запроса, и прокрутка
+   встаёт на место (App.tsx). Снимок живёт минуту; только у API с кэшем (api/cache.ts) */
+const SNAPSHOT_TTL_MS = 60_000;
 
-  const query: CatalogQuery = {
+interface Snapshot {
+  readonly at: number;
+  readonly items: readonly ListingCard[];
+  readonly cursor: string | null;
+}
+
+const snapshots = new WeakMap<ClientApi, Map<string, Snapshot>>();
+
+function restoredFeed(api: ClientApi, key: string, query: CatalogQuery): Snapshot | null {
+  if (!api.peek) return null;
+  const snapshot = snapshots.get(api)?.get(key);
+  if (snapshot && Date.now() - snapshot.at <= SNAPSHOT_TTL_MS) return snapshot;
+  const page = api.peek.catalog(query);
+  return page ? { at: Date.now(), items: page.items, cursor: page.nextCursor } : null;
+}
+
+function keepSnapshot(api: ClientApi, key: string, items: readonly ListingCard[], cursor: string | null) {
+  if (!api.peek) return;
+  const byKey = snapshots.get(api) ?? new Map<string, Snapshot>();
+  snapshots.set(api, byKey);
+  byKey.delete(key);
+  byKey.set(key, { at: Date.now(), items, cursor });
+  // Последние десять выдач хватит на «назад»
+  if (byKey.size > 10) byKey.delete(byKey.keys().next().value as string);
+}
+
+/** Запрос выдачи по фильтрам каталога */
+export function catalogQuery(filters: CatalogFilters): CatalogQuery {
+  return {
     category: filters.category === DEFAULT_CATEGORY ? undefined : filters.category,
     filters: Object.keys(filters.attrs).length > 0 ? filters.attrs : undefined,
     date: filters.date ?? undefined,
@@ -134,12 +157,36 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
     sort: filters.sort ?? undefined,
     limit: PAGE_SIZE,
   };
+}
+
+/** Лента каталога: первая страница при смене фильтров, дальше — по курсору */
+export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
+  const query = catalogQuery(filters);
   const key = JSON.stringify(query);
+  const [initial] = useState(() => restoredFeed(api, key, query));
+  const [items, setItems] = useState<readonly ListingCard[]>(initial?.items ?? []);
+  const [cursor, setCursor] = useState<string | null>(initial?.cursor ?? null);
+  const [status, setStatus] = useState<FeedStatus>(initial ? "ready" : "loading");
+  const [attempt, setAttempt] = useState(0);
+  // Поколение запроса: ответ по старым фильтрам не допишется в новую выдачу
+  const generation = useRef(0);
+  const more = useRef<AbortController | null>(null);
+  // Выдача этого ключа уже на экране из снимка — первая страница не нужна
+  const restored = useRef<string | null>(initial ? key : null);
+  // Каким фильтрам принадлежит выдача на экране (пока новая не пришла — старым)
+  const shownKey = useRef<string | null>(initial ? key : null);
   const queryRef = useRef(query);
   queryRef.current = query;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: key и attempt — и есть зависимости запроса
+  // Снимок для «назад»: каждый раз, когда выдача этих фильтров готова
   useEffect(() => {
+    if (status === "ready" && shownKey.current === key) keepSnapshot(api, key, items, cursor);
+  }, [api, key, items, cursor, status]);
+
+  useEffect(() => {
+    if (restored.current === key && attempt === 0) return;
+    restored.current = null;
+    shownKey.current = null;
     const current = ++generation.current;
     const controller = new AbortController();
     more.current?.abort();
@@ -149,6 +196,7 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
     api.catalog(queryRef.current, controller.signal).then(
       (page) => {
         if (current !== generation.current) return;
+        shownKey.current = key;
         setItems(page.items);
         setCursor(page.nextCursor);
         setStatus("ready");

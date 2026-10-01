@@ -1,4 +1,5 @@
 import { loadTelegramWebApp } from "@bayramm/tg/webapp";
+import { withCache } from "./api/cache";
 import { createHttpApi, telegramSignIn } from "./api/http";
 import { createSiteAuth, createTelegramAuth, hasSiteSession } from "./api/session";
 import { initialLang, type Services, takeLangParam } from "./context";
@@ -19,7 +20,10 @@ import { initTelegram } from "./telegram";
    До первой отрисовки — словарь своего языка (второй грузится при переключении) и, у
    лендинга, его экран: лендинг сменяет пререндер из HTML за одну отрисовку, без заглушки.
    Экран другого маршрута только начинает грузиться — показ как раньше, с заглушкой.
-   Оба куска обычно уже в кэше: их заранее просит public/boot.js (modulepreload). */
+   Оба куска обычно уже в кэше: их заранее просит public/boot.js (modulepreload).
+
+   Публичные ответы API (категории, выдача, витрина, бот) идут через кэш вкладки
+   (api/cache.ts) — и у настоящего API, и у демо. */
 export async function bootstrap(): Promise<Services> {
   const webApp = await loadTelegramWebApp();
   if (webApp) initTelegram(webApp);
@@ -59,7 +63,7 @@ export async function bootstrap(): Promise<Services> {
     // Вход в хабе демо-кодом делает гостя «сайтом со входом»
     const guest = params.has("guest");
     const identity = webApp ? "telegram" : hasSiteSession() ? "site" : guest ? "guest" : "demo";
-    return { api, identity, webApp, mediaEnv, now };
+    return { api: withCache(api, now), identity, webApp, mediaEnv, now };
   }
 
   // Вне Telegram — токен сайта из хранилища вкладки; нет его — запросы идут как у гостя.
@@ -74,7 +78,8 @@ export async function bootstrap(): Promise<Services> {
   // Входим сразу, не дожидаясь первой заявки: «Мои заявки» откроются без задержки.
   // Ошибку покажет экран, которому нужна сессия
   if (webApp) auth.token().catch(() => {});
-  const api = createHttpApi({ auth, source: webApp ? "tma" : "web" });
+  // Публичные ответы — через кэш вкладки (api/cache.ts): один запрос на всех и мгновенный «назад»
+  const api = withCache(createHttpApi({ auth, source: webApp ? "tma" : "web" }), now);
   const identity = webApp ? "telegram" : hasSiteSession() ? "site" : "guest";
   return { api, identity, webApp, mediaEnv, now };
 }

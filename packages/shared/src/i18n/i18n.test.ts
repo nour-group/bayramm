@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GLOSSARY_FORBIDDEN, glossaryRu } from "./glossary";
 import { type Dict, dictionaries, LANGS, type Lang, ru, ruPlural, uz } from "./index";
 import { hasNonCanonicalApostrophe, normalizeUz } from "./uz-apostrophe";
 
@@ -91,6 +92,31 @@ describe("словарь: правила продукта", () => {
       const hits = allTexts(lang).filter(({ text }) => /<\/?[a-z][^>]*>|&[a-z#][a-z0-9]*;/i.test(text));
       expect(hits).toEqual([]);
     });
+});
+
+describe("словарь: глоссарий клиента (glossary.ts)", () => {
+  for (const lang of LANGS)
+    it(`${lang}: одно слово на понятие — ни «вендора», ни «ariza»`, () => {
+      const hits = allTexts(lang).filter(({ text }) => GLOSSARY_FORBIDDEN[lang].some((re) => re.test(text)));
+      expect(hits).toEqual([]);
+    });
+
+  it("короткие названия разделов — на обоих языках, без косых черт", () => {
+    expect(Object.keys(uz.catName)).toEqual(Object.keys(ru.catName));
+    for (const lang of LANGS)
+      for (const name of Object.values(dictionaries[lang].catName)) expect(name, lang).not.toMatch(/\//);
+  });
+
+  it("«вендор» → «исполнитель» в том же падеже, «о» перед ним — «об»", () => {
+    expect(glossaryRu("Вендор «Lola» увидит")).toBe("Исполнитель «Lola» увидит");
+    expect(glossaryRu("О вендоре")).toBe("Об исполнителе");
+    expect(glossaryRu("звонок вендору, цены вендоров, с вендором, о вендорах")).toBe(
+      "звонок исполнителю, цены исполнителей, с исполнителем, об исполнителях",
+    );
+    expect(glossaryRu("вендоры и вендорам, вендорами")).toBe("исполнители и исполнителям, исполнителями");
+    // Чужие слова не трогает
+    expect(glossaryRu("Вендорский Код")).toBe("Вендорский Код");
+  });
 });
 
 describe("словарь: узбекский", () => {
@@ -193,7 +219,7 @@ describe("размеченный текст", () => {
     expect(ru.pickDate("12 мая")).toEqual([
       "Дата поиска: ",
       { strong: "12 мая" },
-      ". Проверьте остальных вендоров на этот день.",
+      ". Проверьте остальных исполнителей на этот день.",
     ]);
   });
 

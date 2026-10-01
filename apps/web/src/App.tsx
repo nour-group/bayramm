@@ -42,6 +42,7 @@ import {
   TelegramCallback,
   Venue,
 } from "./screens";
+import { scrollWhenReady } from "./scroll";
 import { hasNativeBack, useBackButton } from "./telegram";
 
 /* Вкладки: подпись и иконки (обычная и активная) — в одной карте с маршрутами (ловушка №9).
@@ -180,8 +181,13 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
 
   // Новый экран: фокус на его заголовок (для диктора) без прокрутки — ловушка №3;
   // scrollTo есть не везде — ловушка №5. Первый показ фокус не трогает. Экран ещё
-  // грузится — фокус на main, а на заголовок — когда он появится (если фокус не увели)
+  // грузится — фокус на main, а на заголовок — когда он появится (если фокус не увели).
+  // Вернулись «назад» (кнопка браузера, «назад» Telegram) — прокрутка туда, где человек был
+  // (router.ts запомнил её у записи истории), иначе — наверх
   const screenKey = match ? JSON.stringify(match) : "none";
+  const { restoreScroll } = router;
+  const restoreRef = useRef(restoreScroll);
+  restoreRef.current = restoreScroll;
   useEffect(() => {
     if (shown.current === null) {
       shown.current = screenKey;
@@ -189,23 +195,29 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
     }
     if (shown.current === screenKey) return;
     shown.current = screenKey;
-    window.scrollTo?.(0, 0);
     const area = main.current;
-    if (!area) return;
+    const restore = restoreRef.current;
+    let stopScroll = () => {};
+    if (restore !== null && area) stopScroll = scrollWhenReady(restore, area);
+    else window.scrollTo?.(0, 0);
+    if (!area) return stopScroll;
     const focusHeading = () => {
       const heading = area.querySelector<HTMLElement>("h1");
       heading?.focus({ preventScroll: true });
       return heading !== null;
     };
-    if (focusHeading()) return;
+    if (focusHeading()) return stopScroll;
     area.focus({ preventScroll: true });
-    if (typeof MutationObserver !== "function") return;
+    if (typeof MutationObserver !== "function") return stopScroll;
     const observer = new MutationObserver(() => {
       if (document.activeElement !== area) observer.disconnect();
       else if (focusHeading()) observer.disconnect();
     });
     observer.observe(area, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      stopScroll();
+    };
   }, [screenKey]);
 
   // Адрес страницы для поисковиков — без фильтров и прочих параметров (у каталога — с

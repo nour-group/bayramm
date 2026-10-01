@@ -8,10 +8,13 @@
   box-sizing: border-box;
 }
 
+/* Фокус с клавиатуры и прокрутка к элементу не прячут его под прилипшей шапкой и нижней
+   панелью (WCAG 2.4.11): запас — их высота с безопасными зонами */
 html {
   color-scheme: light;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  scroll-padding: calc(var(--pad-t) + 72px) 0 calc(var(--pad-b) + 72px);
 }
 
 body {
@@ -590,16 +593,48 @@ textarea.field-input {
 }
 
 .bar-note {
-  margin-top: 8px;
+  margin-top: 16px;
   color: var(--muted);
   font-size: var(--fs-12-5);
   text-align: center;
 }
 
+/* Пометка — над панелью действий: к ней ближе, чем к содержимому выше */
+.bar-note + .action-bar {
+  margin-top: 8px;
+}
+
 /* ---------- каталог ---------- */
 
+/* Заголовок раздела — первым, над переключателем разделов и фильтрами */
+.catalog-head {
+  margin-bottom: 12px;
+}
+
+.catalog-head .muted {
+  margin-top: 4px;
+}
+
+/* Блок «Фильтры»: на телефоне и планшете — дата (гости, район) над выдачей, поля витрины —
+   в шторке; на компьютере — колонка слева (ниже, @media 1024px). Его заголовок виден только
+   колонкой; диктору — всегда */
+.filters-panel {
+  min-width: 0;
+}
+
+.filters-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* Общие фильтры: дата; гости и район — где они есть. Сколько полей, столько колонок; у залов
-   (три поля) на телефоне район — строкой во всю ширину */
+   (три поля) на узком телефоне район — строкой во всю ширину */
 .filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -614,14 +649,18 @@ textarea.field-input {
   margin-top: 8px;
 }
 
+.filters-reset {
+  margin-top: 4px;
+}
+
 /* Категории каталога — чипы-ссылки лентой вбок (обе оси явно, ловушка №2); кольцо фокуса —
-   внутри, снаружи его обрезал бы край ленты */
+   внутри, снаружи его обрезал бы край ленты. У правого края лента гаснет: видно, что дальше
+   есть ещё разделы (с планшета чипы — в несколько строк, ниже) */
 .cat-switch {
   margin: 0 calc(-1 * (var(--sa-r) + 16px)) 12px calc(-1 * (var(--sa-l) + 16px));
 }
 
-.cat-switch ul,
-.ln-pick {
+.cat-switch ul {
   display: flex;
   gap: var(--gap-7);
   margin: 0;
@@ -630,6 +669,8 @@ textarea.field-input {
   overflow-y: hidden;
   list-style: none;
   scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to left, transparent, black 24px);
+  mask-image: linear-gradient(to left, transparent, black 24px);
 }
 
 .cat-switch li {
@@ -660,8 +701,7 @@ textarea.field-input {
   color: var(--coral);
 }
 
-.cat-switch .cat-chip:focus-visible,
-.ln-pick .cat-chip:focus-visible {
+.cat-switch .cat-chip:focus-visible {
   outline-offset: -3px;
 }
 
@@ -671,6 +711,7 @@ textarea.field-input {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-9);
+  margin: 16px 0 12px;
 }
 
 .filters-open {
@@ -702,17 +743,13 @@ textarea.field-input {
   font-size: var(--fs-14);
 }
 
+/* Заголовок «Сохранённого» и число рядом */
 .list-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
+  align-items: center;
   gap: var(--gap-12);
-  margin: 20px 0 12px;
-}
-
-.list-head .muted {
-  margin-top: 4px;
+  margin-bottom: 16px;
 }
 
 .sort {
@@ -722,10 +759,19 @@ textarea.field-input {
   color: var(--coral);
 }
 
-/* Как сравнили цены за гостя и за мероприятие — строкой под заголовком и порядком */
-.list-head .sort-hint {
-  flex-basis: 100%;
-  margin-top: 0;
+/* Как сравнили цены за гостя и за мероприятие — строкой под порядком, над сеткой */
+.sort-hint {
+  margin: -4px 0 12px;
+}
+
+/* Заготовки карточек, пока выдача грузится: не ниже окна — подвал не прыгает */
+.state-cards {
+  min-height: 100vh;
+}
+
+/* Весь экран ещё грузится (витрина, форма, заявки): то же — подвал ниже окна */
+.state-screen {
+  min-height: 100vh;
 }
 
 .cards {
@@ -1182,8 +1228,10 @@ textarea.field-input {
   gap: var(--gap-12);
 }
 
+/* Подпись — до 40% строки (не больше 220px): длинные «Минимальный заказ, часов» не в три строки */
 .facts dt {
-  flex: 0 0 112px;
+  flex: 0 0 40%;
+  max-width: 220px;
   color: var(--muted);
 }
 
@@ -1455,10 +1503,15 @@ textarea.field-input {
   font-weight: 700;
 }
 
-/* Отказ и отправка — одной ширины и высоты */
+/* Отказ и отправка — одной ширины и высоты. Поля кнопок уже обычных: «Отправить заявку» в
+   половине ширины 360–390px — в одну строку */
 .form-bar {
   display: grid;
   grid-template-columns: 1fr 1fr;
+}
+
+.form-bar .btn {
+  padding: 0 12px;
 }
 
 .sent {
@@ -1521,7 +1574,18 @@ textarea.field-input {
   min-width: 0;
 }
 
+/* Название и статус — строкой (статус переносится под название, если не влез); подробности —
+   ниже во всю ширину карточки, а не узкой колонкой между названием и статусом */
+.req-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-5) var(--gap-9);
+}
+
 .req-name {
+  min-width: 0;
   font-size: var(--fs-15);
   font-weight: 800;
   line-height: 1.3;
@@ -1837,10 +1901,6 @@ textarea.field-input {
   grid-column: 1 / -1;
 }
 
-.ln-browse {
-  margin-top: 4px;
-}
-
 /* Совсем узкий (320px): поля подбора — друг под другом, иначе в половину ширины не влезает
    даже «любая». После основного правила .ln-search (ловушка №7) */
 @media (max-width: 359px) {
@@ -1860,7 +1920,8 @@ textarea.field-input {
   background-size: 84px 84px;
 }
 
-/* Категории: значок и название; пустая — с пометкой «скоро» */
+/* Разделы: значок слева, название справа (под ним — «скоро» у пустого). Плитка низкая: все
+   восемь разделов — на одном экране телефона */
 .cat-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1871,13 +1932,15 @@ textarea.field-input {
 }
 
 .cat-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--gap-7);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  column-gap: var(--gap-9);
+  row-gap: var(--gap-3);
   height: 100%;
-  min-height: 112px;
-  padding: 14px;
+  min-height: 64px;
+  padding: 10px;
   border: 1px solid var(--rule);
   border-radius: var(--r-18);
   background: var(--white);
@@ -1885,22 +1948,47 @@ textarea.field-input {
   text-decoration: none;
 }
 
+.cat-soon {
+  justify-self: start;
+}
+
 .cat-tile-ico {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--r-14);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-11);
   background: var(--lilac);
   color: var(--plum);
 }
 
+/* У пустого раздела под названием — «скоро»: значок по центру обеих строк */
+.cat-tile.is-soon .cat-tile-ico {
+  grid-row: span 2;
+}
+
+/* Длинное слово («Fotostudiyalar») переносится, а не вылезает за плитку */
 .cat-tile-name {
   color: var(--plum);
   font-size: var(--fs-15);
   font-weight: 800;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+/* Узкий телефон (до 360px): значок над названием — рядом с ним названию не хватает места.
+   После основных правил плитки (ловушка №7) */
+@media (max-width: 359px) {
+  .cat-tile {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+    row-gap: var(--gap-7);
+  }
+
+  .cat-tile.is-soon .cat-tile-ico {
+    grid-row: auto;
+  }
 }
 
 .cat-soon {
@@ -1910,10 +1998,6 @@ textarea.field-input {
   color: var(--muted);
   font-size: var(--fs-11);
   font-weight: 700;
-}
-
-.ln-pick {
-  margin: 0 calc(-1 * (var(--sa-r) + 16px)) 12px calc(-1 * (var(--sa-l) + 16px));
 }
 
 .ln-hero-badge {
@@ -1948,21 +2032,12 @@ textarea.field-input {
 }
 
 .ln-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--gap-12);
   margin-bottom: 16px;
 }
 
 .ln-head-note {
   max-width: 560px;
   margin-top: 4px;
-}
-
-.ln-cats .ln-head {
-  margin-bottom: 0;
 }
 
 /* Место под карточку, пока залы грузятся: фото 3:2 и подпись той же высоты, что у
@@ -2446,12 +2521,14 @@ textarea.field-input {
 
 /* ---------- шире телефона ---------- */
 
+/* Три поля — в строку. Вес селектора — как у правила «район во всю ширину» выше: иначе
+   оно перебивало это и на компьютере (район растягивался, дата и гости сжимались) */
 @media (min-width: 560px) {
   .filters {
     grid-template-columns: repeat(3, 1fr);
   }
 
-  .filters .field:last-child {
+  .filters .field:nth-child(3):last-child {
     grid-column: auto;
   }
 }
@@ -2526,23 +2603,19 @@ textarea.field-input {
     grid-column: 1 / -1;
   }
 
-  .cat-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  /* Чипы категорий — в несколько строк, без ленты */
-  .cat-switch,
-  .ln-pick {
+  /* Чипы категорий — в несколько строк, без ленты и без угасания у края */
+  .cat-switch {
     margin-right: 0;
     margin-left: 0;
   }
 
-  .cat-switch ul,
-  .ln-pick {
+  .cat-switch ul {
     flex-wrap: wrap;
     padding: 2px 0 6px;
     overflow-x: visible;
     overflow-y: visible;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   .ln-steps {
@@ -2625,7 +2698,8 @@ textarea.field-input {
       max(calc(var(--sa-l) + 32px), calc(50% - 608px));
   }
 
-  /* Каталог: фильтры — панелью над сеткой, карточки — в три колонки (с 1280px — в четыре) */
+  /* Каталог без полей витрины в фильтрах: дата (гости, район) — панелью над сеткой; карточки —
+     в три колонки (с 1280px — в четыре) */
   .catalog .filters {
     padding: 16px;
     border: 1px solid var(--rule);
@@ -2645,20 +2719,18 @@ textarea.field-input {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  /* Каталог с фильтрами по полям витрины: колонка фильтров слева, прилипает под шапкой;
-     кнопка «Фильтры» (шторка) не нужна */
+  /* Каталог с фильтрами по полям витрины: все фильтры — одной колонкой слева (дата, гости,
+     район и поля витрины), она прилипает под шапкой; кнопка «Фильтры» (шторка) не нужна */
   .catalog-body.has-side {
     display: grid;
     grid-template-columns: 248px 24px minmax(0, 1fr);
     align-items: start;
   }
 
-  .has-side .filters-side {
-    display: block;
+  .has-side .filters-panel {
     position: sticky;
     top: calc(var(--pad-t) + 80px);
-    max-height: calc(100vh - 120px);
-    margin-top: 20px;
+    max-height: calc(100vh - 96px);
     padding: 16px;
     overflow-x: hidden;
     overflow-y: auto;
@@ -2667,8 +2739,39 @@ textarea.field-input {
     background: var(--white);
   }
 
+  .has-side .filters-title {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0 0 12px;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+
+  /* В колонке поля — друг под другом и без своей панели: панель — вся колонка */
+  .catalog .has-side .filters,
+  .catalog .has-side .filters.solo {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .has-side .filters-side {
+    display: block;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+
   .has-side .catalog-list {
     grid-column: 3;
+  }
+
+  .has-side .list-tools {
+    justify-content: flex-end;
+    margin-top: 0;
   }
 
   .has-side .filters-open {
@@ -2699,11 +2802,19 @@ textarea.field-input {
   }
 
   .venue > .venue-side {
-    display: block;
+    display: flex;
+    flex-direction: column;
     position: sticky;
     top: calc(var(--pad-t) + 80px);
     grid-column: 3;
     grid-row: 1 / span 10;
+  }
+
+  /* Пометка о заявке — под карточкой с кнопками (на телефоне она над панелью); карточка —
+     вровень с фото, без зазора от пометки над ней в разметке */
+  .venue-side .bar-note {
+    order: 1;
+    margin-top: 8px;
   }
 
   /* Номер — в карточке справа: второй раз в описании он не нужен */
@@ -2720,6 +2831,11 @@ textarea.field-input {
     border: 1px solid var(--rule);
     border-radius: var(--r-22);
     background: var(--white);
+  }
+
+  /* Вес как у «пометка + панель» (зазор под пометкой на телефоне): здесь панель — вровень с фото */
+  .venue-side .venue-bar {
+    margin: 0;
   }
 
   .venue-bar .bar-price b {
@@ -2792,13 +2908,8 @@ textarea.field-input {
     border-radius: var(--r-arch);
   }
 
-  .ln-search,
-  .ln-browse {
+  .ln-search {
     grid-column: 1 / -1;
-  }
-
-  .ln-browse {
-    justify-self: start;
   }
 
   .ln-search {
@@ -2818,6 +2929,12 @@ textarea.field-input {
   }
 
   .ln-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* Разделы — в четыре колонки только здесь: на планшете в четверть ширины не влезают
+     названия рядом со значком («Декор и оформление») */
+  .cat-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 

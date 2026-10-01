@@ -44,9 +44,12 @@ test.describe("лендинг в браузере", () => {
     await open(page, PATHS.home, ".ln-cards .card", { guest: true });
     await expect(page).toHaveTitle(ru.metaHomeTitle);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.lnTitle);
-    // Залы — настоящие опубликованные из API (демо), ряд из четырёх
+    // Витрины — настоящие опубликованные из API (демо), ряд из четырёх, по одной из разных разделов
     await expect(page.locator(".ln-cards .card")).toHaveCount(4);
     expect(await columns(page, ".ln-cards")).toBe(4);
+    // Разделы перечислены один раз — сеткой: ни второго переключателя у витрин, ни «весь раздел»
+    await expect(page.locator(".landing .cat-tile")).toHaveCount(8);
+    await expect(page.locator(".landing .cat-chip, .landing .ln-head-link")).toHaveCount(0);
     for (const title of [ru.lnVenuesH, ru.lnHowH, ru.lnPromH, ru.lnPartnerH, ru.lnFaqH])
       await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();
     await expect(page.locator(".ln-step")).toHaveCount(3);
@@ -77,7 +80,7 @@ test.describe("лендинг в браузере", () => {
     await open(page, PATHS.home, ".ln-search", { guest: true });
     const form = page.locator("form.ln-search");
     // Что ищете — залы по умолчанию
-    await expect(form.locator("button[aria-haspopup=listbox]")).toContainText("Площадка / Тойхона");
+    await expect(form.locator("button[aria-haspopup=listbox]")).toContainText(ru.catName.hall);
     await form.locator("button[aria-haspopup=dialog]").click();
     const day = addDays(TODAY, 19);
     await page
@@ -101,13 +104,13 @@ test.describe("лендинг в браузере", () => {
     // Кортеж: гостей в подборе нет — каталог по ним не отбирает
     await open(page, PATHS.home, ".ln-search", { guest: true });
     await form.locator("button[aria-haspopup=listbox]").click();
-    await page.getByRole("option", { name: "Кортеж" }).click();
+    await page.getByRole("option", { name: ru.catName.car }).click();
     await expect(form.getByRole("spinbutton")).toHaveCount(0);
     await form.getByRole("button", { name: ru.lnSearch }).click();
     await expect(page).toHaveURL(
       (url) => url.pathname === PATHS.catalog && url.search.includes("category=car"),
     );
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catTitle("Кортеж"));
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catTitle(ru.catName.car));
   });
 
   test("старая ссылка на каталог в корне (/?date=…) ведёт в /catalog; ?lang= — язык страницы", async ({
@@ -118,7 +121,7 @@ test.describe("лендинг в браузере", () => {
     await page.goto(`/?date=${date}&guests=200&lang=uz`);
     await expect(page).toHaveURL(`${PATHS.catalog}?date=${date}&guests=200`);
     await expect(page.locator("html")).toHaveAttribute("lang", "uz");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(T.uz.hallsTitle);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(T.uz.catTitle(T.uz.catName.hall));
   });
 
   test("шапка гостя: каталог и сохранённое, «Войти»; логотип — на лендинг", async ({ page }) => {

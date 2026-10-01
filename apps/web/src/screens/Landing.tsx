@@ -1,27 +1,62 @@
-import { categoryText } from "@bayramm/shared/categories";
+import type { ListingCard as Card, CatalogCategory } from "@bayramm/shared/api";
+import type { CategoryConfig } from "@bayramm/shared/categories";
 import { DateField, NumberStepper, Select } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
-import { CLIENT_CATEGORIES, clientCategory, hasCapacity } from "../categories";
+import { CLIENT_CATEGORIES, categoryName, clientCategory, hasCapacity } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
-import { CategoryGrid, categoryHref, listingsIn, useCatalogCategories } from "../components/Categories";
-import { Link } from "../components/Link";
+import { CategoryGrid, listingsIn, useCatalogCategories } from "../components/Categories";
 import { ListingCard } from "../components/ListingCard";
 import { useLang, useServices } from "../context";
 import { addDays, formatDayMonth, tashkentToday } from "../format";
-import { useAsync, useDocumentTitle } from "../hooks";
+import { type AsyncResult, useAsync, useDocumentTitle } from "../hooks";
 import { Icon, type IconName } from "../icons";
 import { DEFAULT_CATEGORY, hrefFor, useNav } from "../router";
 import { DATE_HORIZON_DAYS, filtersQuery, MAX_GUESTS, NO_FILTERS, parseGuests } from "./catalog-feed";
 
 /* Лендинг (/) — для тех, кто открыл сайт в браузере; внутри Telegram корень — каталог.
-   Блоки: первый экран про весь праздник с подбором (что ищете, дата; гости — где они есть →
-   каталог категории с этими фильтрами), сетка категорий (пустая — с пометкой «скоро»),
-   настоящие витрины из API по категориям (нет их — блока нет, заглушек под видом витрин не
-   рисуем), как это работает, обещания клиенту — из правил продукта, вендорам, вопросы.
-   Рейтингов, отзывов и выдуманных цифр нет. */
+   Каждое — один раз: первый экран про весь праздник с подбором (что ищете, дата; гости — где
+   они есть → каталог раздела с этими фильтрами), разделы каталога — одной сеткой (пустой —
+   «скоро»), настоящие исполнители из API — по одному из разных разделов (нет их — блока нет,
+   заглушек под видом витрин не рисуем), как это работает (шаги), обещания клиенту (правила
+   продукта), партнёрам, вопросы — только о том, чего выше нет. Рейтингов, отзывов и
+   выдуманных цифр нет. */
 
 /** Сколько витрин показать на лендинге: ряд на компьютере, лента — на телефоне */
 const FEATURED = 4;
+
+/**
+ * Ширина фото витрин лендинга: на телефоне карточка — 84% ленты, с 640px — две колонки,
+ * с 1024px — четыре (styles.css, .ln-cards)
+ */
+const FEATURED_SIZES = "(min-width: 1280px) 300px, (min-width: 1024px) 23vw, (min-width: 640px) 50vw, 80vw";
+
+/**
+ * Из каких разделов брать витрины: первые FEATURED разделов с витринами (по порядку показа),
+ * и сколько из каждого — чтобы вместе набралось FEATURED. Пока категории не пришли — null;
+ * не пришли вовсе (ошибка) — залы, как каталог по умолчанию
+ */
+export function featuredPlan(
+  categories: AsyncResult<{ readonly items: readonly CatalogCategory[] }>,
+): { readonly codes: readonly string[]; readonly per: number } | null {
+  if (categories.status === "loading") return null;
+  const live: readonly CategoryConfig[] =
+    categories.status === "error"
+      ? [clientCategory(DEFAULT_CATEGORY)]
+      : CLIENT_CATEGORIES.filter((c) => listingsIn(categories, c.code));
+  const codes = live.slice(0, FEATURED).map((c) => c.code);
+  return { codes, per: codes.length === 0 ? 0 : Math.ceil(FEATURED / codes.length) };
+}
+
+/** По очереди из каждого раздела: первый каждого, потом вторые… — не больше FEATURED */
+export function interleave(lists: readonly (readonly Card[])[]): Card[] {
+  const out: Card[] = [];
+  for (let i = 0; out.length < FEATURED && lists.some((list) => i < list.length); i++)
+    for (const list of lists) {
+      const card = list[i];
+      if (card && out.length < FEATURED) out.push(card);
+    }
+  return out;
+}
 
 /** Обещания — по порядку lnPromT/lnPromP; иконки — смысловые (duotone) */
 const PROMISE_ICONS: readonly IconName[] = ["shieldD", "checkFill", "phone", "clockD"];
@@ -63,7 +98,10 @@ function QuickSearch() {
           id={`${id}-what`}
           label={t.cats}
           value={category}
-          options={CLIENT_CATEGORIES.map((c) => ({ value: c.code, label: categoryText(lang, c.label) }))}
+          options={CLIENT_CATEGORIES.map((c) => ({
+            value: c.code,
+            label: categoryName(c.code, t, lang) ?? c.code,
+          }))}
           onChange={setCategory}
         />
       </div>
@@ -108,26 +146,35 @@ function QuickSearch() {
 }
 
 /**
- * Витрины из каталога — по категориям, в том же порядке, что и каталог по умолчанию (по цене;
- * оплата не влияет). Категории — только с витринами; пока список не пришёл — все включённые
+ * Исполнители из каталога — по одному из разных разделов, у каждого подписан раздел. В
+ * разделе — первые по цене (как каталог по умолчанию; оплата на порядок не влияет). Разделы
+ * здесь не перечисляются второй раз: выбор раздела — сетка выше
  */
 function Featured() {
   const { api } = useServices();
-  const { t, lang } = useLang();
+  const { t } = useLang();
   const categories = useCatalogCategories();
-  const live = CLIENT_CATEGORIES.filter((c) => listingsIn(categories, c.code) !== false);
-  const [picked, setPicked] = useState<string | null>(null);
-  const current = live.find((c) => c.code === picked) ?? live[0] ?? null;
-  const code = current?.code ?? DEFAULT_CATEGORY;
-  const venues = useAsync(`landing:featured:${code}`, (signal) =>
-    api.catalog({ category: code === DEFAULT_CATEGORY ? undefined : code, limit: FEATURED }, signal),
+  const plan = featuredPlan(categories);
+  const venues = useAsync(
+    `landing:featured:${plan ? `${plan.codes.join(",")}/${plan.per}` : "?"}`,
+    (signal) =>
+      plan
+        ? Promise.all(
+            plan.codes.map((code) =>
+              api.catalog(
+                { category: code === DEFAULT_CATEGORY ? undefined : code, limit: plan.per },
+                signal,
+              ),
+            ),
+          ).then((pages) => interleave(pages.map((page) => page.items)))
+        : // Категории ещё в пути: ждём их, место под карточки уже держим
+          new Promise<Card[]>(() => {}),
   );
 
-  // Ни в одной категории витрин нет, выдача не загрузилась или пуста — блока нет
-  if (categories.status === "ready" && live.length === 0) return null;
+  // Витрин нет ни в одном разделе, выдача не загрузилась или пуста — блока нет
+  if (plan && plan.codes.length === 0) return null;
   if (venues.status === "error") return null;
-  if (venues.status === "ready" && venues.data.items.length === 0) return null;
-  const name = current ? categoryText(lang, current.label) : "";
+  if (venues.status === "ready" && venues.data.length === 0) return null;
 
   return (
     <section
@@ -136,37 +183,24 @@ function Featured() {
       aria-busy={venues.status === "loading"}
     >
       <div className="ln-head">
-        <div>
-          <h2 className="ln-h2" id="ln-venues">
-            {t.lnVenuesH}
-          </h2>
-          <p className="muted ln-head-note">{t.lnVenuesP}</p>
-        </div>
-        <Link className="btn btn-secondary ln-head-link" href={categoryHref(code)}>
-          {t.lnSeeAll(name)}
-        </Link>
+        <h2 className="ln-h2" id="ln-venues">
+          {t.lnVenuesH}
+        </h2>
+        <p className="muted ln-head-note">{t.lnVenuesP}</p>
       </div>
-      {live.length > 1 ? (
-        // biome-ignore lint/a11y/useSemanticElements: группа кнопок-переключателей с подписью, не поле формы
-        <div className="ln-pick" role="group" aria-label={t.catSwitch}>
-          {live.map((category) => (
-            <button
-              key={category.code}
-              type="button"
-              className="cat-chip"
-              aria-pressed={category.code === code}
-              onClick={() => setPicked(category.code)}
-            >
-              {categoryText(lang, category.label)}
-            </button>
-          ))}
-        </div>
-      ) : null}
       {venues.status === "ready" ? (
         <ul className="cards ln-cards">
-          {venues.data.items.map((card) => (
+          {venues.data.map((card) => (
             <li key={card.id}>
-              <ListingCard card={card} date={null} guests={null} headingLevel={3} />
+              <ListingCard
+                card={card}
+                date={null}
+                guests={null}
+                headingLevel={3}
+                sizes={FEATURED_SIZES}
+                // Раздел подписан, когда они разные (один раздел — подпись лишняя)
+                showCategory={(plan?.codes.length ?? 0) > 1}
+              />
             </li>
           ))}
         </ul>
@@ -240,20 +274,12 @@ export function Landing() {
           ))}
         </div>
         <QuickSearch />
-        <Link className="link-btn ln-browse" href={hrefFor({ name: "catalog" })}>
-          {t.lnBrowse}
-        </Link>
       </section>
 
       <section className="ln-section ln-cats" aria-labelledby="ln-cats">
-        <div className="ln-head">
-          <div>
-            <h2 className="ln-h2" id="ln-cats">
-              {t.lnCatsH}
-            </h2>
-            <p className="muted ln-head-note">{t.lnCatsP}</p>
-          </div>
-        </div>
+        <h2 className="ln-h2" id="ln-cats">
+          {t.lnCatsH}
+        </h2>
         <CategoryGrid />
       </section>
 
