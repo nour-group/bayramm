@@ -95,6 +95,9 @@ export async function prepare(page: Page, { lang }: OpenOptions = {}): Promise<v
 export async function open(page: Page, path: string, ready?: string, { guest }: OpenOptions = {}) {
   const url = guest ? `${path}${path.includes("?") ? "&" : "?"}guest` : path;
   await page.goto(url);
+  // Пререндер лендинга — HTML до приложения, кнопки в нём ещё не работают: ждём, пока
+  // приложение сменит его своей отрисовкой (иначе нажатие уйдёт в пустоту)
+  await page.locator("[data-prerendered]").waitFor({ state: "detached" });
   if (ready) await page.locator(ready).first().waitFor();
 }
 
