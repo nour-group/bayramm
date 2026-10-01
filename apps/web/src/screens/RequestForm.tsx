@@ -33,6 +33,7 @@ import {
   formatPrice,
   formatPriceFrom,
   isIsoDate,
+  metaLine,
   PHONE_PREFIX,
   phoneDigits,
   qtyQuestion,
@@ -705,14 +706,12 @@ function Form({
         <p>
           <b>{listing.name}</b>
           <span className="muted small">
-            {[
+            {metaLine([
               `${price.amount}${price.unit ? ` ${price.unit}` : ""}`,
               listing.capMax === null
                 ? categoryName(listing.categoryCode, t, lang)
                 : t.people(listing.capMax),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
+            ])}
           </span>
         </p>
       </div>

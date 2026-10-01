@@ -316,14 +316,12 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
   });
 
   // Форма заявки — следующий экран: её кусок сборки (и тексты согласий — у вошедшего, в кэш
-  // вкладки) заранее, как только витрина на экране, и сразу — когда потянулись к кнопке
+  // вкладки) просим, как только витрина на экране — после главного фото, оно уже запрошено
+  // (эффект — после отрисовки), — и ещё раз, когда потянулись к кнопке
   const preloadRequest = () => preloadScreens(["request"]);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      preloadScreens(["request"]);
-      if (api.peek && canSignIn(identity)) void api.consentTexts(lang).catch(() => {});
-    }, 300);
-    return () => clearTimeout(timer);
+    preloadScreens(["request"]);
+    if (api.peek && canSignIn(identity)) void api.consentTexts(lang).catch(() => {});
   }, [api, identity, lang]);
 
   return (

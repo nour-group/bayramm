@@ -171,8 +171,7 @@ describe("кэш на экранах", () => {
     const venue = LISTINGS[0];
     await mount({ path: `/venue/${venue?.slug}`, api: withCache(api) });
     await waitFor(() => document.querySelector(".venue-head h1"), "витрина");
-    // Витрина просит их, когда уже на экране (через 300 мс) — не в ущерб своему первому кадру
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    // Витрина просит их, как только она на экране
     await waitFor(() => calls.consentTexts === 1, "тексты согласий заранее");
     await click(document.querySelector(".venue-bar a.btn-primary"));
     const transfer = () =>
