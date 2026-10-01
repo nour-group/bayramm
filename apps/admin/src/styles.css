@@ -933,6 +933,7 @@ textarea.input {
   color: var(--ink);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .ring-done {

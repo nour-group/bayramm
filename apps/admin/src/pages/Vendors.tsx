@@ -160,9 +160,9 @@ export function VendorsPage() {
                         <Link to={{ name: "vendor", id: vendor.id }} className="rcard-link">
                           {vendor.name ?? vendor.legalName ?? vendor.code}
                         </Link>
+                        {/* Что значит «0/4» — словами и на виду: на телефоне заголовка столбца нет */}
                         <span className={`ring${done === 4 ? " ring-done" : ""}`}>
-                          <span className="visually-hidden">{t.colChecklist}: </span>
-                          {done}/4
+                          {t.colChecklist} {done}/4
                         </span>
                       </div>
                       <p className="rcard-meta">
