@@ -276,6 +276,33 @@ export function RequestDetail({
         </div>
       </dl>
 
+      {request.contact ? (
+        <div className="panel client">
+          <p className="panel-title">{t.clientLabel}</p>
+          <p className="client-name">{request.contact.name}</p>
+          {request.contact.phone ? (
+            <a
+              className="btn btn-primary btn-wide btn-phone"
+              href={`tel:${request.contact.phone}`}
+              aria-label={`${t.call} ${formatPhone(request.contact.phone)}`}
+              onClick={() => void api.callAttempt(id).catch(() => {})}
+            >
+              <Icon name="phone" size={20} />
+              {formatPhone(request.contact.phone)}
+            </a>
+          ) : null}
+          {request.contact.comment ? (
+            <div className="comment">
+              <p className="field-label">{t.commentLabel}</p>
+              <p>{request.contact.comment}</p>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="notice">{t.contactHidden}</p>
+      )}
+
+      {/* Сначала клиент и звонок — ответить за 12 часов; что нужно клиенту — следом */}
       {rows.length > 0 || services.length > 0 ? (
         <section className="panel request-details" aria-labelledby={`${titleId}-details`}>
           <Sub className="panel-title" id={`${titleId}-details`}>
@@ -335,32 +362,6 @@ export function RequestDetail({
           ) : null}
         </section>
       ) : null}
-
-      {request.contact ? (
-        <div className="panel client">
-          <p className="panel-title">{t.clientLabel}</p>
-          <p className="client-name">{request.contact.name}</p>
-          {request.contact.phone ? (
-            <a
-              className="btn btn-primary btn-wide btn-phone"
-              href={`tel:${request.contact.phone}`}
-              aria-label={`${t.call} ${formatPhone(request.contact.phone)}`}
-              onClick={() => void api.callAttempt(id).catch(() => {})}
-            >
-              <Icon name="phone" size={20} />
-              {formatPhone(request.contact.phone)}
-            </a>
-          ) : null}
-          {request.contact.comment ? (
-            <div className="comment">
-              <p className="field-label">{t.commentLabel}</p>
-              <p>{request.contact.comment}</p>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <p className="notice">{t.contactHidden}</p>
-      )}
 
       {notice ? (
         <p className="form-error" role="alert">
