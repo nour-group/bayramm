@@ -561,7 +561,7 @@ test.describe("витрины в разных категориях", () => {
       return;
     }
     await page.locator("main .vitrina-select").getByRole("button").click();
-    await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
+    await page.getByRole("option", { name }).click();
   }
 
   test("входящие: все витрины или одна; заявка — категория, часть дня, поля категории и услуги", async ({
@@ -916,7 +916,7 @@ test.describe("витрины в разных категориях", () => {
             await page.locator(".side-vitrinas").getByRole("button", { name: vitrina }).click();
           } else {
             await page.locator("main .vitrina-select").getByRole("button").click();
-            await page.getByRole("option", { name: new RegExp(`^${vitrina}`) }).click();
+            await page.getByRole("option", { name: vitrina }).click();
           }
         }
         await expect(page.locator(".status-line, .skeleton")).toHaveCount(0);

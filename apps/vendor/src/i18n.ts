@@ -106,8 +106,7 @@ const ru = {
   // компьютер: список и карточка рядом, заявка ещё не выбрана
   pickRequest: "Выберите заявку",
   pickRequestText: "Она откроется здесь: телефон клиента, детали и что ответить.",
-  notLiveDraft:
-    "«{name}» ещё не на сайте: клиенты её не видят, заявок не будет. Заполните витрину — команда Bayramm проверит и опубликует её.",
+  notLiveDraft: "«{name}» ещё не на сайте — заявок по ней не будет.",
   notLiveReview: "«{name}» на проверке у команды Bayramm. Клиенты увидят её после одобрения.",
   notLiveSuspended: "«{name}» приостановлена — клиенты её не видят. Причина — на странице витрины.",
   notLiveRejected: "«{name}» отклонена. Что исправить — на странице витрины.",
@@ -646,8 +645,7 @@ const uz: VendorDict = {
   newCount: "yangi: {n}",
   pickRequest: "Soʻrovni tanlang",
   pickRequestText: "U shu yerda ochiladi: mijoz telefoni, tafsilotlar va nima javob berish.",
-  notLiveDraft:
-    "«{name}» hali saytda yoʻq: mijozlar uni koʻrmaydi, soʻrovlar kelmaydi. Vitrinani toʻldiring — Bayramm jamoasi tekshirib, eʼlon qiladi.",
+  notLiveDraft: "«{name}» hali saytda yoʻq — u boʻyicha soʻrovlar kelmaydi.",
   notLiveReview: "«{name}» Bayramm jamoasi tekshiruvida. Mijozlar uni tasdiqlangandan keyin koʻradi.",
   notLiveSuspended: "«{name}» toʻxtatilgan — mijozlar uni koʻrmaydi. Sababi — vitrina sahifasida.",
   notLiveRejected: "«{name}» rad etilgan. Nimani tuzatish kerak — vitrina sahifasida.",

@@ -428,9 +428,7 @@ describe("входящие по витринам", () => {
   it("витрина ещё не на сайте: во входящих — почему и кнопка к её чек-листу готовности", async () => {
     await mount("/requests");
     const notice = container.querySelector(".not-live");
-    expect(notice?.textContent).toContain(
-      "«Kadr Studio» ещё не на сайте: клиенты её не видят, заявок не будет.",
-    );
+    expect(notice?.textContent).toContain("«Kadr Studio» ещё не на сайте — заявок по ней не будет.");
     // Опубликованные витрины не упомянуты
     expect(notice?.textContent).not.toContain("Lola zali");
     await click(byText(".not-live button", "Что осталось"));
