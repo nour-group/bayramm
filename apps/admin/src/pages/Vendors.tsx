@@ -5,10 +5,10 @@ import type { ListingStatus, VendorList } from "@bayramm/shared/api/staff";
 import { Dialog, RadioGroup, SearchField, Select } from "@bayramm/ui/react";
 import { useEffect, useState } from "react";
 import { useCan, useLoad } from "../api";
-import { categoryName, categoryOptions } from "../categories";
+import { CategoryChip, categoryName, categoryOptions } from "../categories";
 import { usePhone } from "../layout";
 import { t } from "../texts";
-import { ActionBar, ActiveFilter, CategoryChip, FilterButton, Link, LoadedView, StatusPill } from "../ui";
+import { ActionBar, ActiveFilter, FilterButton, Link, LoadedView, StatusPill } from "../ui";
 
 const FILTERS: readonly (ListingStatus | null)[] = [
   null,

@@ -15,11 +15,11 @@ import type {
 import { Checkbox, ConfirmSheet } from "@bayramm/ui/react";
 import { type FormEvent, useCallback, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
+import { CategoryChip } from "../categories";
 import { formatMoment, formatPrice } from "../format";
 import { apiErrorText, t } from "../texts";
 import {
   Blockers,
-  CategoryChip,
   ErrorText,
   Field,
   fieldErrors,

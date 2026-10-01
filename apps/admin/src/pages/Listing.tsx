@@ -27,13 +27,12 @@ import {
 import { Select } from "@bayramm/ui/react";
 import { type FormEvent, useCallback, useId, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
-import { categoryName, categoryOptions } from "../categories";
+import { CategoryChip, categoryName, categoryOptions } from "../categories";
 import { formatMoment, vendorLabel } from "../format";
 import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
   ActionBar,
-  CategoryChip,
   ErrorText,
   Field,
   Link,

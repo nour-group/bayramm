@@ -14,19 +14,10 @@ import type {
 } from "@bayramm/shared/api/staff";
 import { useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
+import { CategoryChip } from "../categories";
 import { formatMoment, formatPrice, vendorLabel } from "../format";
 import { t } from "../texts";
-import {
-  Blockers,
-  CategoryChip,
-  ConfirmForm,
-  ErrorText,
-  Link,
-  LoadedView,
-  PhoneSheet,
-  Pill,
-  publishBlockers,
-} from "../ui";
+import { Blockers, ConfirmForm, ErrorText, Link, LoadedView, PhoneSheet, Pill, publishBlockers } from "../ui";
 import { ServiceChanges } from "./Services";
 
 export function ModerationPage({ minPhotos }: { minPhotos: number }) {
