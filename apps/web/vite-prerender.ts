@@ -9,7 +9,17 @@ import { createServer, type IndexHtmlTransformContext, type Plugin, type Rollup 
       так же, только рендер на каждый запрос (правки видны сразу).
    2. Атрибуты <script src="/boot.js">: адреса кусков сборки — словари языков и экраны
       первого показа с их зависимостями. boot.js просит заранее (modulepreload) только
-      нужные: словарь своего языка и экран своего маршрута. В разработке их нет. */
+      нужные: словарь своего языка и экран своего маршрута. В разработке их нет.
+
+   public/boot.js — обычный скрипт в <head> (модуль отложен до конца разбора — поздно;
+   встроенный CSP не пускает), отдаётся как есть, поэтому коротко и почти без комментариев.
+   До разбора body он ставит <html data-boot="show|skip">: skip — приложение покажет не этот
+   пререндер: внутри Telegram корень — каталог, или язык приложения (?lang=, выбор в этой
+   вкладке и в прошлые визиты, язык Telegram, язык браузера) не совпадает с языком страницы.
+   public/boot.css тогда прячет пререндер: лучше пусто до первой отрисовки, чем чужой экран
+   или чужой язык на миг. Его правила — копия getWebApp/launchedFromTelegram
+   (@bayramm/tg/webapp) и takeLangParam/initialLang (src/context.tsx): их сверяет
+   src/boot.test.ts. Упадёт boot.js — пререндер просто виден до приложения. */
 
 type PrerenderModule = typeof import("./src/prerender");
 
@@ -97,13 +107,22 @@ export function prerenderLanding(): Plugin {
       order: "post",
       async handler(html, ctx) {
         if (!html.includes(BOOT_TAG)) throw new Error(`prerender: в index.html нет ${BOOT_TAG}`);
-        const pages = ctx.server
-          ? await ((await ctx.server.ssrLoadModule(PRERENDER_ENTRY)) as PrerenderModule).renderLandings()
-          : await renderForBuild(root);
-        const attrs = ctx.server ? "" : preloadAttrs(ctx, base);
+        const { server } = ctx;
+        if (server) {
+          // Разработка: ошибка в коде лендинга не должна ронять все страницы — без пререндера
+          try {
+            const mod = (await server.ssrLoadModule(PRERENDER_ENTRY)) as PrerenderModule;
+            return withTemplates(html, await mod.renderLandings());
+          } catch (error) {
+            server.config.logger.error(`prerender: ${error instanceof Error ? error.stack : error}`);
+            return html;
+          }
+        }
+        // Сборка: ошибка пререндера — ошибка сборки
+        const attrs = preloadAttrs(ctx, base);
         return withTemplates(
-          html.replace(BOOT_TAG, () => (attrs ? `<script src="/boot.js" ${attrs}></script>` : BOOT_TAG)),
-          pages,
+          html.replace(BOOT_TAG, () => `<script src="/boot.js" ${attrs}></script>`),
+          await renderForBuild(root),
         );
       },
     },

@@ -1,24 +1,10 @@
-/* Bayramm: до первой отрисовки, синхронно из <head>. Внешний файл: встроенные скрипты CSP
-   не пускает. Обычный скрипт, не модуль (модуль отложен до конца разбора — поздно); язык —
-   не новее сборки приложения. Ошибка здесь ничего не ломает: лендинг из HTML просто
-   остаётся видимым до приложения.
-
-   1. <html data-boot="show|skip">. Воркер кладёт в #root главной пререндер лендинга на языке
-      страницы (data-prerendered). skip — приложение покажет другое: внутри Telegram корень —
-      каталог, или язык приложения (выбор, сохранённый в браузере, язык браузера) не совпадает
-      с языком страницы. Стили рядом (public/boot.css) тогда прячут пререндер: лучше пусто,
-      чем чужой экран или чужой язык на миг. Правила те же, что у приложения: getWebApp и
-      launchedFromTelegram (@bayramm/tg/webapp), initialLang и takeLangParam
-      (src/context.tsx) — их сверяет src/boot.test.ts.
-   2. Куски сборки заранее (modulepreload): словарь своего языка и экран первого показа.
-      Адреса — в атрибутах этого тега, их вписывает сборка (vite-prerender.ts); в разработке
-      их нет. */
+/* До первой отрисовки, из <head> (CSP: только внешний файл). Отдаётся как есть — подробности
+   в vite-prerender.ts; правила сверяет src/boot.test.ts. */
 ((w) => {
   const d = w.document;
   const root = d.documentElement;
   const LANGS = ["ru", "uz"];
   const LANG_KEY = "bayramm.web.lang";
-  // Параметры запуска Mini App в адресе и их копия, которую SDK кладёт во вкладку
   const LAUNCH_RE = /[#&?]tgWebApp[A-Za-z]+=/;
   const SDK_KEY = "__telegram__initParams";
   const CATALOG_PARAMS = ["date", "guests", "district", "sort"];
@@ -26,7 +12,6 @@
 
   const isLang = (value) => LANGS.includes(value);
 
-  // Хранилище запрещено (приватный режим, старый вебвью) — как будто пусто
   const stored = (store, key) => {
     try {
       return w[store].getItem(key);
@@ -43,20 +28,18 @@
     }
   };
 
-  // SDK уже в window.Telegram (getWebApp)
   const sdk = () => {
     const app = w.Telegram?.WebApp;
     return typeof app?.initData === "string" && app.initData.length > 0 ? app : null;
   };
 
-  // Внутри Telegram: SDK уже есть или страницу открыл Telegram (launchedFromTelegram)
+  // getWebApp || launchedFromTelegram
   const telegram =
     sdk() !== null ||
     LAUNCH_RE.test(loc.hash) ||
     LAUNCH_RE.test(loc.search) ||
     stored("sessionStorage", SDK_KEY) !== null;
 
-  // Язык Telegram: user.language_code из initData (SDK, адрес или копия SDK во вкладке)
   const telegramLang = () => {
     if (!telegram) return null;
     try {
@@ -72,7 +55,7 @@
     }
   };
 
-  // ?lang= → выбор во вкладке → выбор в прошлые визиты → Telegram → браузер → узбекский
+  // takeLangParam + initialLang
   const appLang = () => {
     const fromUrl = param(loc.search, "lang");
     if (isLang(fromUrl)) return fromUrl;
@@ -90,7 +73,6 @@
   const lang = appLang();
   root.setAttribute("data-boot", telegram || lang !== root.getAttribute("lang") ? "skip" : "show");
 
-  // Экран первого показа: корень — лендинг (в Telegram и со старыми фильтрами — каталог)
   const path = loc.pathname.replace(/\/+$/, "") || "/";
   const legacy = CATALOG_PARAMS.some((name) => param(loc.search, name) !== null);
   const screen =
