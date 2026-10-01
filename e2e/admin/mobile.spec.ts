@@ -1,12 +1,16 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
+import { createVitrina } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
+  CAKE_LISTING_ID,
+  CAR_LISTING_ID,
+  CAR_REQUEST_ID,
   CLIENT_ID,
-  LISTING_ID,
   mockStaffApi,
   NOW,
+  PHOTO_LISTING_ID,
   REQUEST_ID,
   REVISION_ID,
   STAFF,
@@ -34,23 +38,23 @@ const INTERACTIVE = [
 
 async function start(page: Page) {
   await page.clock.setFixedTime(NOW);
-  return mockStaffApi(page);
+  // Витрины в других категориях (кортеж, фото и видео, торты) — сразу у вендора
+  return mockStaffApi(page, { seeded: true });
 }
 
-/** Карточка, которой нет в подмене API, пока её не создали: создать через форму */
-async function openNewListing(page: Page) {
-  await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-  await page.getByLabel(t.listingFields.name ?? "", { exact: true }).fill("Navruz zali");
-  await page.getByRole("button", { name: t.createListing }).click();
-  await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
-}
+/** Витрина, которой нет в подмене API, пока её не создали: создать через форму */
+const openNewListing = (page: Page) => createVitrina(page);
 
 const SCREENS: readonly { name: string; open: (page: Page) => Promise<unknown> }[] = [
   { name: "вендоры", open: (page) => page.goto("/vendors") },
   { name: "вендор", open: (page) => page.goto(`/vendors/${VENDOR_ID}`) },
   { name: "новый вендор", open: (page) => page.goto("/vendors/new") },
-  { name: "новая карточка", open: (page) => page.goto(`/vendors/${VENDOR_ID}/listings/new`) },
+  { name: "новая витрина", open: (page) => page.goto(`/vendors/${VENDOR_ID}/listings/new`) },
   { name: "карточка", open: openNewListing },
+  { name: "витрина: кортеж", open: (page) => page.goto(`/listings/${CAR_LISTING_ID}`) },
+  { name: "витрина: фото и видео", open: (page) => page.goto(`/listings/${PHOTO_LISTING_ID}`) },
+  { name: "витрина: торты", open: (page) => page.goto(`/listings/${CAKE_LISTING_ID}`) },
+  { name: "заявка: кортеж", open: (page) => page.goto(`/requests/${CAR_REQUEST_ID}`) },
   { name: "модерация", open: (page) => page.goto("/moderation") },
   { name: "заявки", open: (page) => page.goto("/requests") },
   { name: "заявка", open: (page) => page.goto(`/requests/${REQUEST_ID}`) },
@@ -193,7 +197,7 @@ test.describe("навигация на телефоне", () => {
   }) => {
     await start(page);
     await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    const name = page.getByLabel(t.listingFields.name ?? "", { exact: true });
+    const name = page.getByLabel(t.vitrinaName, { exact: true });
     await name.fill("Navruz zali");
     await name.blur();
     const more = tabbar(page).getByRole("button", { name: t.more });
@@ -315,7 +319,7 @@ test.describe("Telegram на телефоне", () => {
     await start(page);
     await fakeTelegram(page);
     await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    const name = page.getByLabel(t.listingFields.name ?? "", { exact: true });
+    const name = page.getByLabel(t.vitrinaName, { exact: true });
     await name.fill("Navruz zali");
     await name.blur();
     await expect
