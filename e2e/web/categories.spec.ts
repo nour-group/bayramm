@@ -1,5 +1,5 @@
 import type { Locator, Page } from "@playwright/test";
-import { addDays } from "../../apps/web/src/format";
+import { addDays, formatDayMonth } from "../../apps/web/src/format";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { expect, test } from "../support/offline";
 import { clickMainButton, fakeTelegram, telegramState } from "../support/telegram";
@@ -62,12 +62,8 @@ const fieldOf = (page: Page, label: string) =>
 /** Выбрать день в поле даты формы заявки (календарь — шторка или панель в портале body) */
 async function pickDay(page: Page, date: string) {
   await fieldOf(page, ru.rqDate).locator("button[aria-haspopup=dialog]").click();
-  const day = Number(date.slice(8, 10));
-  await page
-    .locator(".ui-layer button.ui-cal-day:not([aria-disabled])")
-    .filter({ hasText: new RegExp(`^${day}$`) })
-    .first()
-    .click();
+  // День — по имени для диктора: «20 окт, свободно» (первым — число и месяц)
+  await page.locator(`.ui-layer button.ui-cal-day[aria-label^="${formatDayMonth(date, ru)},"]`).click();
 }
 
 /** Выбрать вариант выпадающего списка поля формы */
