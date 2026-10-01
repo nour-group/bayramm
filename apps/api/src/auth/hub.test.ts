@@ -115,13 +115,13 @@ describe("вход по телефону без базы", () => {
     );
 
   it("провайдера нет — 503 phone_unavailable", async () => {
-    const { res } = await send({ phone: "+998901234567" }, makeEnv({ OTP_PROVIDER: "off" as never }));
+    const { res } = await send({ phone: "+998001234567" }, makeEnv({ OTP_PROVIDER: "off" as never }));
     expect(res.status).toBe(503);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("phone_unavailable");
   });
 
   it("не узбекский номер — 400 invalid_phone", async () => {
-    for (const phone of ["+7 900 123 45 67", "12345", 998901234567]) {
+    for (const phone of ["+7 900 123 45 67", "12345", 998001234567]) {
       const { res } = await send({ phone });
       expect(res.status, String(phone)).toBe(400);
       expect(((await res.json()) as { error: { code: string } }).error.code).toBe("invalid_phone");
@@ -132,7 +132,7 @@ describe("вход по телефону без базы", () => {
     const { res } = await call("/auth/phone/verify", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "+998901234567", code: "12" }),
+      body: JSON.stringify({ phone: "+998001234567", code: "12" }),
     });
     expect(res.status).toBe(400);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe("otp_invalid");

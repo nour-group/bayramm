@@ -19,7 +19,7 @@ afterEach(() => vi.restoreAllMocks());
 function appWith(onError = true) {
   const app = new Hono<AppEnv>();
   app.get("/staff/requests/:id", () => {
-    throw new Error("boom 998901234567");
+    throw new Error("boom 998001234567");
   });
   app.get("/fine/:id", (c) => c.json({ ok: true }));
   app.get("/gone/:id", (c) => c.json({ error: "no" }, 404));
@@ -52,7 +52,7 @@ describe("reportApiError", () => {
     const logged = JSON.stringify(warn.mock.calls);
     expect(logged).toContain("api error: not recorded");
     expect(logged).toContain("GET /staff/requests/:id");
-    for (const secret of ["42", "998901234567", BOT_TOKEN, env.ID_HASH_KEY, "nothing"])
+    for (const secret of ["42", "998001234567", BOT_TOKEN, env.ID_HASH_KEY, "nothing"])
       expect(logged).not.toContain(secret);
   });
 

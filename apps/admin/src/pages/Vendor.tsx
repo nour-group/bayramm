@@ -358,7 +358,7 @@ function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: Vendo
                 type="tel"
                 inputMode="tel"
                 autoComplete="off"
-                placeholder="+998 90 123 45 67"
+                placeholder="+998 XX XXX XX XX"
                 value={phone}
                 onChange={(event) => setPhone(event.target.value)}
                 maxLength={24}

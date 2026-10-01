@@ -131,7 +131,7 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           type="tel"
           inputMode="tel"
           autoComplete="off"
-          placeholder={creating ? "+998 90 123 45 67" : t.phoneNew}
+          placeholder={creating ? "+998 XX XXX XX XX" : t.phoneNew}
           value={values[key]}
           onChange={set(key)}
           maxLength={24}

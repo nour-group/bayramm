@@ -43,10 +43,10 @@ describe("Input: три состояния поля правки", () => {
   });
 
   it("телефон приводится к +998XXXXXXXXX", () => {
-    expect(parse({ p: "90 123 45 67" }, (i) => i.phone("p")).value).toBe("+998901234567");
+    expect(parse({ p: "00 123 45 67" }, (i) => i.phone("p")).value).toBe("+998001234567");
     expect(parse({ p: "" }, (i) => i.phone("p")).value).toBeNull();
     expect(parse({ p: "+7 900 000 00 00" }, (i) => i.phone("p")).errors).toEqual(["p"]);
-    expect(parse({ p: 998901234567 }, (i) => i.phone("p")).errors).toEqual(["p"]);
+    expect(parse({ p: 998001234567 }, (i) => i.phone("p")).errors).toEqual(["p"]);
   });
 
   it("список: ошибки вложенных полей — с номером элемента", () => {

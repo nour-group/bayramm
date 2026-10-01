@@ -12,7 +12,7 @@ import {
 } from "./otp";
 
 const KEY = "unit-test-id-hash-key-0123456789abcdef";
-const PHONE = "+998901234567";
+const PHONE = "+998001234567";
 
 describe("generateOtpCode", () => {
   it("6 цифр, каждый раз новый", () => {
@@ -48,7 +48,7 @@ describe("otpCodeHash", () => {
     expect(a).toHaveLength(32);
     expect(await otpCodeHash(KEY, PHONE, "123456")).toEqual(a);
     expect(await otpCodeHash(KEY, PHONE, "123457")).not.toEqual(a);
-    expect(await otpCodeHash(KEY, "+998901234568", "123456")).not.toEqual(a);
+    expect(await otpCodeHash(KEY, "+998001234568", "123456")).not.toEqual(a);
   });
 
   it("короткий ключ — ошибка настройки", async () => {

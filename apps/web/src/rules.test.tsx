@@ -47,7 +47,7 @@ async function fillForm(comment = "Нужен детский стол") {
   await pickDate(field("Дата события"), "15 окт");
   await type(field("Гостей"), "100");
   await type(field("Как к вам обращаться"), "Азиза");
-  await type(field("Телефон"), "90 123 45 67");
+  await type(field("Телефон"), "00 123 45 67");
   await type(field("Комментарий"), comment);
 }
 
@@ -185,7 +185,7 @@ describe("заявка от начала до конца", () => {
       eventDate: "2026-10-15",
       guests: 100,
       contactName: "Азиза",
-      contactPhone: "+998901234567",
+      contactPhone: "+998001234567",
       comment: "Нужен детский стол и сцена",
       requestTransferConsentId: "demo-request_transfer-ru",
     });

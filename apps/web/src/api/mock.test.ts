@@ -88,7 +88,7 @@ describe("демо-API по контракту", () => {
       eventDate: "2026-10-20",
       guests: 100,
       contactName: "A",
-      contactPhone: "+998901234567",
+      contactPhone: "+998001234567",
       requestTransferConsentId: "demo-request_transfer-ru",
     };
     const created = await fresh.createRequest(body);

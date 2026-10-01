@@ -42,7 +42,7 @@ const BODY: CreateRequest = {
   eventDate: "2026-10-15",
   guests: 100,
   contactName: "Азиза",
-  contactPhone: "+998901234567",
+  contactPhone: "+998001234567",
   comment: "детский стол",
   requestTransferConsentId: "c-1",
 };

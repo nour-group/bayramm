@@ -195,7 +195,7 @@ export async function mockVendorApi(
       {
         ...item(REQUEST_NEW, 1051, 3),
         declineNote: null,
-        contact: { name: "Азиза", phone: "+998901234567", comment: "Нужен детский стол" },
+        contact: { name: "Азиза", phone: "+998001234567", comment: "Нужен детский стол" },
         history: [{ status: "new", at: at(3), by: "client" }],
       },
     ],
@@ -204,7 +204,7 @@ export async function mockVendorApi(
       {
         ...item(REQUEST_LATE, 1047, 15, { status: "viewed", eventDate: "2026-11-07", contactName: "Бекзод" }),
         declineNote: null,
-        contact: { name: "Бекзод", phone: "+998907654321", comment: null },
+        contact: { name: "Бекзод", phone: "+998007654321", comment: null },
         history: [
           { status: "new", at: at(15), by: "client" },
           { status: "viewed", at: at(14), by: "vendor_user" },

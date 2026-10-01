@@ -63,7 +63,7 @@ const page = (items: VendorRequestItem[]): VendorRequestPage => ({
 const detail = (patch: Partial<VendorRequestDetail> = {}): VendorRequestDetail => ({
   ...item({ status: "viewed" }),
   declineNote: null,
-  contact: { name: "Dilnoza", phone: "+998901234567", comment: "Вечер, живая музыка" },
+  contact: { name: "Dilnoza", phone: "+998001234567", comment: "Вечер, живая музыка" },
   history: [
     { status: "new", at: new Date(Date.now() - HOUR).toISOString(), by: "system" },
     { status: "viewed", at: new Date().toISOString(), by: "vendor_user" },
@@ -380,9 +380,9 @@ describe("заявки", () => {
     expect(heading()).toBe("Заявка № 1001");
     expect(webApp.WebApp.BackButton.show).toHaveBeenCalled();
 
-    const phone = container.querySelector<HTMLAnchorElement>('a[href="tel:+998901234567"]') ?? undefined;
-    expect(phone?.textContent).toBe("+998 90 123 45 67");
-    expect(phone?.getAttribute("aria-label")).toBe("Позвонить +998 90 123 45 67");
+    const phone = container.querySelector<HTMLAnchorElement>('a[href="tel:+998001234567"]') ?? undefined;
+    expect(phone?.textContent).toBe("+998 00 123 45 67");
+    expect(phone?.getAttribute("aria-label")).toBe("Позвонить +998 00 123 45 67");
     // Кнопка «Назад» — у Telegram, своя ссылка не дублирует её
     expect(byText("a", "Назад")).toBeUndefined();
     expect(container.textContent).toContain("Вечер, живая музыка");

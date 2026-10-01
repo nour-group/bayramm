@@ -60,15 +60,15 @@ describe("parseUpdate", () => {
 
   it("контакт: номер и чей он (user_id)", () => {
     expect(
-      parseUpdate(update({ contact: { phone_number: "998901234567", first_name: "X", user_id: 5001 } }))
+      parseUpdate(update({ contact: { phone_number: "998001234567", first_name: "X", user_id: 5001 } }))
         ?.message,
-    ).toEqual({ kind: "contact", userId: 5001, phone: "998901234567" });
+    ).toEqual({ kind: "contact", userId: 5001, phone: "998001234567" });
     expect(
-      parseUpdate(update({ contact: { phone_number: "998901234567", first_name: "X" } }))?.message,
+      parseUpdate(update({ contact: { phone_number: "998001234567", first_name: "X" } }))?.message,
     ).toEqual({
       kind: "contact",
       userId: null,
-      phone: "998901234567",
+      phone: "998001234567",
     });
   });
 
