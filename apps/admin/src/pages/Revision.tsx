@@ -10,12 +10,17 @@ import type {
   RevisionValue,
   StaffListingPackage,
 } from "@bayramm/shared/api/staff";
-import { type AttributeValue, attributeText, type CategoryConfig, categoryConfig } from "@bayramm/shared/categories";
+import {
+  type AttributeValue,
+  attributeText,
+  type CategoryConfig,
+  categoryConfig,
+} from "@bayramm/shared/categories";
 import { useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
+import { ru } from "../categories";
 import { formatMoment, formatSum, vendorLabel } from "../format";
 import { usePhone } from "../layout";
-import { ru } from "../categories";
 import { t } from "../texts";
 import {
   ActionBar,
@@ -44,7 +49,13 @@ const isRecord = (value: RevisionValue): value is Readonly<Record<string, Attrib
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** Данные витрины в правке: подпись поля и значение словами (пусто — «убрать») */
-function AttributesValue({ category, value }: { category: CategoryConfig; value: Readonly<Record<string, unknown>> }) {
+function AttributesValue({
+  category,
+  value,
+}: {
+  category: CategoryConfig;
+  value: Readonly<Record<string, unknown>>;
+}) {
   return (
     <ul className="plain">
       {Object.entries(value).map(([key, item]) => {
