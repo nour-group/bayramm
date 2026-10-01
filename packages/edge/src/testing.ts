@@ -40,13 +40,16 @@ export function spaAssets(files: Readonly<Record<string, StaticFile>>): Recordin
   });
 }
 
-/** Минимальная сборка SPA: index.html и один скрипт */
+/** Минимальная сборка SPA: index.html, скрипт и шрифт с хэшем, файлы public без хэша */
 export const SPA_FILES: Readonly<Record<string, StaticFile>> = {
   "/index.html": {
     body: '<!doctype html><div id="root"></div><script type="module" src="/assets/index.js"></script>',
     type: "text/html",
   },
   "/assets/index.js": { body: "console.log(1)", type: "text/javascript" },
+  "/assets/manrope-latin-Cq3x8a.woff2": { body: "wOF2", type: "font/woff2" },
+  "/og.png": { body: "PNG", type: "image/png" },
+  "/robots.txt": { body: "User-agent: *", type: "text/plain" },
 };
 
 /** API, которое отвечает JSON с тем, что к нему пришло */
