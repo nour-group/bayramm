@@ -1,6 +1,7 @@
 import type { ImageErrorCode } from "@bayramm/media";
 import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
-import { DECLINE_REASONS } from "@bayramm/shared/api/vendor";
+import { DECLINE_REASONS, SERVICE_STATUSES } from "@bayramm/shared/api/vendor";
+import { DAY_PARTS, type ServiceChangeField } from "@bayramm/shared/categories";
 import { describe, expect, it } from "vitest";
 import { fill, LANG_NAMES, textOf, vendorDict } from "./i18n";
 import { NAV } from "./router";
@@ -29,6 +30,17 @@ const IMAGE_ERRORS = Object.keys({
   encode_failed: 1,
 } satisfies Record<ImageErrorCode, 1>);
 
+// Поля предложения правки услуги: новое поле без подписи здесь не скомпилируется
+const SERVICE_CHANGE_FIELDS = Object.keys({
+  name: 1,
+  priceUzs: 1,
+  priceUnit: 1,
+  minQty: 1,
+  leadDays: 1,
+  includes: 1,
+  options: 1,
+} satisfies Record<ServiceChangeField, 1>);
+
 // Коды, из которых экраны собирают ключи (st_ + статус и т. д.): у каждого — текст
 const CODES = {
   st: ["new", "viewed", "contacted", "deal", "declined", "withdrawn", "expired"],
@@ -48,6 +60,7 @@ const CODES = {
     "stir",
     "contacts",
     "pd_consent",
+    "attributes",
   ],
   // почему фото не загрузилось: проверка файла и ответы POST /vendor/listings/:id/photos
   img: IMAGE_ERRORS,
@@ -56,11 +69,16 @@ const CODES = {
     "duplicate_photo",
     "payload_too_large",
     "no_faces_ack_required",
+    "photo_consent_required",
     "storage_unavailable",
     "vendor_owner_required",
     "rate_limited",
     "failed",
   ],
+  // услуги витрины, части дня (модель parts), поля предложения правки услуги
+  svcSt: SERVICE_STATUSES,
+  part: DAY_PARTS,
+  svcField: SERVICE_CHANGE_FIELDS,
   // справочники из миграции foundation
   occ: ["toy", "beshik", "bd", "corp", "small"],
   dist: [

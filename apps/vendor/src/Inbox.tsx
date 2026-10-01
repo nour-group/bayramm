@@ -9,7 +9,12 @@
    была видна. Выбранная в списке новая заявка становится просмотренной и уходит во «В
    работе» — вкладку не переключаем: человек разбирает новые подряд. */
 
-import { type RequestTab, TAB_STATUSES, type VendorRequestDetail } from "@bayramm/shared/api/vendor";
+import {
+  type RequestTab,
+  TAB_STATUSES,
+  type VendorListingRef,
+  type VendorRequestDetail,
+} from "@bayramm/shared/api/vendor";
 import { useCallback, useRef, useState } from "react";
 import { RequestDetail } from "./RequestDetail";
 import { Requests } from "./Requests";
@@ -30,8 +35,12 @@ interface InboxProps extends ScreenProps {
   readonly tab: RequestTab;
   readonly onTab: (tab: RequestTab) => void;
   readonly navigate: Navigate;
-  readonly listingCount: number;
-  readonly onCounts: (counts: Readonly<Record<RequestTab, number>>) => void;
+  readonly listings: readonly VendorListingRef[];
+  /** Заявки одной витрины; null — всех */
+  readonly filter: string | null;
+  readonly onFilter: (listingId: string | null) => void;
+  /** Счётчики вкладок — для значка у раздела; нет — список одной витрины, значок не трогаем */
+  readonly onCounts?: (counts: Readonly<Record<RequestTab, number>>) => void;
 }
 
 export function Inbox({
@@ -40,7 +49,9 @@ export function Inbox({
   tab,
   onTab,
   navigate,
-  listingCount,
+  listings,
+  filter,
+  onFilter,
   onCounts,
   headingRef,
   ...screen
@@ -67,7 +78,9 @@ export function Inbox({
       tab={tab}
       onTab={onTab}
       navigate={navigate}
-      listingCount={listingCount}
+      listings={listings}
+      filter={filter}
+      onFilter={onFilter}
       selectedId={split ? (id ?? undefined) : undefined}
       version={version}
       onCounts={onCounts}

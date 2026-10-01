@@ -4,6 +4,10 @@
      new/viewed → «Я связался» | «Отказать»;  contacted → «Договорились» | «Не подошло»;
      deal/declined → «Вернуть в активные». Отказ — с причиной; «занято» занимает дату.
 
+   Что нужно клиенту — по форме заявки категории: часть дня (модель parts), поля категории
+   (detailRows: часы, машины, кг…) и выбранные услуги с количеством и дополнениями — названия
+   и цены как были при подаче заявки (chosenServices).
+
    На компьютере карточка стоит рядом со списком (split): заголовок — h2 под h1 «Заявки»,
    ссылки «Назад» нет (список и так на экране), а после открытия и каждого действия список
    перечитывается (onChanged) — статус и счётчики в нём меняются вместе с карточкой. */
@@ -15,9 +19,11 @@ import {
   type VendorRequestDetail,
   type VendorRequestPatch,
 } from "@bayramm/shared/api/vendor";
+import { categoryConfig, chosenServices, detailRows } from "@bayramm/shared/categories";
 import { RadioGroup } from "@bayramm/ui/react";
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
+import { categoryName, partName, partWindow, priceText } from "./category";
 import { formatBudget, formatDate, formatGuests, formatMoment, formatPhone, slaView } from "./format";
 import { fill, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
@@ -218,6 +224,9 @@ export function RequestDetail({
   const budget = formatBudget(request.budgetMinUzs, request.budgetMaxUzs, t, lang);
   const late = awaitsAnswer(request) && slaView(request.sla, now).kind === "late";
   const status = request.status;
+  const category = categoryConfig(request.listing.categoryCode);
+  const rows = detailRows(lang, category, request.details, (code) => textOf(t, `dist_${code}`));
+  const services = chosenServices(category, request.details);
 
   return (
     <section className="page request" aria-labelledby={titleId}>
@@ -235,6 +244,15 @@ export function RequestDetail({
           <dt>{t.eventDate}</dt>
           <dd>{formatDate(request.eventDate, t, true)}</dd>
         </div>
+        {request.dayPart ? (
+          <div>
+            <dt>{t.dayPartLabel}</dt>
+            <dd>
+              {partName(t, request.dayPart)}{" "}
+              <span className="fact-sub">{partWindow(category, request.dayPart)}</span>
+            </dd>
+          </div>
+        ) : null}
         {request.guests === null ? null : (
           <div>
             <dt>{t.guestsLabel}</dt>
@@ -250,10 +268,73 @@ export function RequestDetail({
           <dd>{textOf(t, `occ_${request.occasionCode}`)}</dd>
         </div>
         <div className="facts-wide">
-          <dt>{t.card}</dt>
-          <dd>{request.listing.name}</dd>
+          <dt>{t.listingPicker}</dt>
+          <dd className="fact-vitrina">
+            <span>{request.listing.name}</span>
+            <span className="chip chip-cat">{categoryName(lang, request.listing.categoryCode)}</span>
+          </dd>
         </div>
       </dl>
+
+      {rows.length > 0 || services.length > 0 ? (
+        <section className="panel request-details" aria-labelledby={`${titleId}-details`}>
+          <Sub className="panel-title" id={`${titleId}-details`}>
+            {t.requestDetails}
+          </Sub>
+          {rows.length > 0 ? (
+            <dl className="detail-rows">
+              {rows.map((row) =>
+                row.value === null ? (
+                  <div key={row.key} className="detail-flag">
+                    <dt>
+                      <Icon name="check" size={14} />
+                      {row.label}
+                    </dt>
+                    <dd className="sr-only">{t.yes}</dd>
+                  </div>
+                ) : (
+                  <div key={row.key}>
+                    <dt>{row.label}</dt>
+                    <dd>{row.value}</dd>
+                  </div>
+                ),
+              )}
+            </dl>
+          ) : null}
+          {services.length > 0 ? (
+            <div className="chosen">
+              <p className="field-label">{t.chosenServices}</p>
+              <ul className="chosen-list">
+                {services.map((service) => (
+                  <li key={service.id}>
+                    <p className="chosen-head">
+                      <span className="chosen-name">
+                        {service.name[lang]}
+                        {service.qty === null ? "" : ` ${fill(t.qtyLine, { n: service.qty })}`}
+                      </span>
+                      <span className="chosen-price">
+                        {priceText(service.priceUzs, service.priceUnit, t, lang)}
+                      </span>
+                    </p>
+                    {service.options.length > 0 ? (
+                      <ul className="chosen-options">
+                        {service.options.map((option) => (
+                          <li key={option.id}>
+                            <span>+ {option.name[lang]}</span>
+                            <span className="chosen-price">
+                              {priceText(option.priceUzs, option.priceUnit, t, lang)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {request.contact ? (
         <div className="panel client">

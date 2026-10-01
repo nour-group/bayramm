@@ -8,9 +8,14 @@
 import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { Me } from "@bayramm/shared/api/me";
 import type {
+  DayPart,
   ListingRevisionPayload,
+  ListingService,
+  ListingServices,
+  ServiceInput,
   VendorCalendar,
   VendorCalendarChange,
+  VendorCapacityChange,
   VendorListing,
   VendorMe,
   VendorPhoto,
@@ -22,7 +27,7 @@ import type {
   VendorRevisionList,
   VendorSignIn,
 } from "@bayramm/shared/api/vendor";
-import { CALENDAR_VERSION_HEADER, NO_FACES_HEADER } from "@bayramm/shared/api/vendor";
+import { CALENDAR_VERSION_HEADER, NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
 import { vendorHeaders } from "./hub";
 
 const API = "/api";
@@ -176,14 +181,32 @@ export async function fetchBotLink(): Promise<string | null> {
 
 // ── кабинет ────────────────────────────────────────────────────────────────
 
+/**
+ * Подтверждение к фото по правилу категории: noFaces — лиц на фото нет (X-No-Faces), consent —
+ * люди на фото согласны на публикацию (X-Photo-Consent, только у портфолио). Хоть одно — да
+ */
+export interface PhotoAck {
+  readonly noFaces: boolean;
+  readonly consent: boolean;
+}
+
+const listingPath = (listingId: string) => `/vendor/listings/${encodeURIComponent(listingId)}`;
+const servicePath = (listingId: string, serviceId: string) =>
+  `${listingPath(listingId)}/services/${encodeURIComponent(serviceId)}`;
+/** День календаря и, у режима parts, его часть: ?part=morning|day|evening */
+const dayPath = (listingId: string, day: string, part: DayPart | null) =>
+  `${listingPath(listingId)}/calendar/${day}${part ? `?part=${part}` : ""}`;
+
 export const api = {
   me: () => json<VendorMe>("/vendor/me"),
   setLocale: (locale: VendorMe["user"]["locale"]) =>
     json<VendorMe>("/vendor/me", { method: "PATCH", body: JSON.stringify({ locale }) }),
 
-  requests: (tab: string, cursor?: string | null) => {
+  /** Входящие вкладки; listingId — только заявки этой витрины (null — всех) */
+  requests: (tab: string, cursor?: string | null, listingId?: string | null) => {
     const query = new URLSearchParams({ tab });
     if (cursor) query.set("cursor", cursor);
+    if (listingId) query.set("listingId", listingId);
     return json<VendorRequestPage>(`/vendor/requests?${query}`);
   },
   request: (id: string) => json<VendorRequestDetail>(`/vendor/requests/${encodeURIComponent(id)}`),
@@ -197,14 +220,15 @@ export const api = {
   listing: (id: string) => json<VendorListing>(`/vendor/listings/${encodeURIComponent(id)}`),
   /**
    * Фото площадки (только владелец кабинета): photo — результат compressForUpload
-   * (@bayramm/media/browser), без метаданных. X-No-Faces — партнёр подтвердил, что лиц нет
+   * (@bayramm/media/browser), без метаданных. Подтверждение — заголовками: X-No-Faces — лиц
+   * нет, X-Photo-Consent — люди на фото согласны (правило portfolio)
    */
-  uploadPhoto: (listingId: string, photo: Blob) =>
-    json<VendorPhoto>(`/vendor/listings/${encodeURIComponent(listingId)}/photos`, {
-      method: "POST",
-      headers: { [NO_FACES_HEADER]: "1" },
-      body: photo,
-    }),
+  uploadPhoto: (listingId: string, photo: Blob, ack: PhotoAck = { noFaces: true, consent: false }) => {
+    const headers: Record<string, string> = {};
+    if (ack.noFaces) headers[NO_FACES_HEADER] = "1";
+    if (ack.consent) headers[PHOTO_CONSENT_HEADER] = "1";
+    return json<VendorPhoto>(`${listingPath(listingId)}/photos`, { method: "POST", headers, body: photo });
+  },
   deletePhoto: (listingId: string, photoId: string) =>
     empty(`/vendor/listings/${encodeURIComponent(listingId)}/photos/${encodeURIComponent(photoId)}`, {
       method: "DELETE",
@@ -212,17 +236,46 @@ export const api = {
 
   calendar: (listingId: string, month: string) =>
     json<VendorCalendar>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar?month=${month}`),
-  /** Правка дня — от версии календаря, которую видел человек: устарела — 409 calendar_conflict */
-  markBusy: (listingId: string, day: string, version: number) =>
-    json<VendorCalendarChange>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar/${day}`, {
+  /**
+   * Правка дня (part — части дня у режима parts) — от версии календаря, которую видел
+   * человек: устарела — 409 calendar_conflict
+   */
+  markBusy: (listingId: string, day: string, version: number, part: DayPart | null = null) =>
+    json<VendorCalendarChange>(dayPath(listingId, day, part), {
       method: "PUT",
       headers: { [CALENDAR_VERSION_HEADER]: String(version) },
     }),
-  markFree: (listingId: string, day: string, version: number) =>
-    json<VendorCalendarChange>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar/${day}`, {
+  markFree: (listingId: string, day: string, version: number, part: DayPart | null = null) =>
+    json<VendorCalendarChange>(dayPath(listingId, day, part), {
       method: "DELETE",
       headers: { [CALENDAR_VERSION_HEADER]: String(version) },
     }),
+  /** Сколько заказов витрина берёт одновременно — тоже от версии календаря */
+  setCapacity: (listingId: string, parallelCapacity: number, version: number) =>
+    json<VendorCapacityChange>(`${listingPath(listingId)}/calendar/capacity`, {
+      method: "PUT",
+      headers: { [CALENDAR_VERSION_HEADER]: String(version) },
+      body: JSON.stringify({ parallelCapacity }),
+    }),
+
+  // Услуги витрины: менять — только владелец кабинета (403 vendor_owner_required)
+  services: (listingId: string) => json<ListingServices>(`${listingPath(listingId)}/services`),
+  createService: (listingId: string, input: ServiceInput) =>
+    json<ListingService>(`${listingPath(listingId)}/services`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updateService: (listingId: string, serviceId: string, input: ServiceInput) =>
+    json<ListingService>(servicePath(listingId, serviceId), {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  submitService: (listingId: string, serviceId: string) =>
+    json<ListingService>(`${servicePath(listingId, serviceId)}/submit`, { method: "POST" }),
+  withdrawService: (listingId: string, serviceId: string) =>
+    json<ListingService>(`${servicePath(listingId, serviceId)}/withdraw`, { method: "POST" }),
+  deleteService: (listingId: string, serviceId: string) =>
+    empty(servicePath(listingId, serviceId), { method: "DELETE" }),
 
   revisions: (listingId: string) =>
     json<VendorRevisionList>(`/vendor/listings/${encodeURIComponent(listingId)}/revisions`),

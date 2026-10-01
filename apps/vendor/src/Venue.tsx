@@ -1,14 +1,21 @@
-/* Площадка — карточка как есть в базе (то, что видит клиент). Название, цену, описания и
-   пакеты владелец кабинета меняет предложением (Proposal.tsx), фото — загрузкой здесь: и то,
-   и другое проверяет команда, до одобрения клиенты видят прежнюю карточку. Адрес и
-   вместимость меняет менеджер — для разговора с ним здесь код вендора. Сотрудник площадки
-   (роль member) карточку только смотрит: заявки и календарь — его, карточка — владельца.
-   Рейтинга нет: его на первом запуске не показываем.
+/* Площадка — карточка выбранной витрины как есть в базе (то, что видит клиент). Название,
+   описания, поля витрины категории и ссылки на видео владелец кабинета меняет предложением
+   (Proposal.tsx), фото — загрузкой здесь: и то, и другое проверяет команда, до одобрения
+   клиенты видят прежнюю карточку. Цена «от» — из услуг (раздел «Услуги»), здесь — сводка
+   услуг на витрине. Адрес и вместимость меняет менеджер — для разговора с ним здесь код
+   вендора. Сотрудник площадки (роль member) карточку только смотрит: заявки и календарь —
+   его, карточка — владельца. Рейтинга нет: его на первом запуске не показываем.
 
-   Фото: на фото не должно быть лиц — предупреждение всегда на виду, без галочки (не
-   отмеченной заранее) файлы не выбрать. Каждый файл перекодирует браузер
-   (compressForUpload: без EXIF и геопозиции) и отправляет по одному; новое фото ждёт
-   модератора. Удаление — через подтверждение. Порядок и обложку выбирает команда.
+   Готовность к публикации: чего не хватает (blockers из базы) и какие обязательные поля
+   витрины пусты (missingAttributes).
+
+   Фото — по правилу категории (photoPolicy). no_people: на фото не должно быть лиц —
+   предупреждение всегда на виду, без галочки «лиц нет» (не отмеченной заранее) файлы не
+   выбрать (X-No-Faces). portfolio (фото и видео, студия): люди на снимках бывают — вторая
+   галочка «люди согласны на публикацию» (X-Photo-Consent) вместо «лиц нет»; нужна хоть одна.
+   Каждый файл перекодирует браузер (compressForUpload: без EXIF и геопозиции) и отправляет
+   по одному; новое фото ждёт модератора. Удаление — через подтверждение. Порядок и обложку
+   выбирает команда.
 
    На компьютере — две колонки: фото слева, сведения карточки справа; правки — ниже во всю
    ширину, поля формы парами (RU рядом с UZ). */
@@ -16,14 +23,24 @@
 import { isImageError } from "@bayramm/media";
 import { compressForUpload } from "@bayramm/media/browser";
 import type { VendorListing, VendorListingRef, VendorPhoto, VendorRole } from "@bayramm/shared/api/vendor";
+import {
+  attributeLabel,
+  type CategoryConfig,
+  categoryConfig,
+  priceUnitLabel,
+  serviceTypeLabel,
+} from "@bayramm/shared/categories";
 import { Checkbox, ConfirmSheet, FileDrop } from "@bayramm/ui/react";
-import { useRef, useState } from "react";
+import { type MouseEvent, useRef, useState } from "react";
+import { AttributeFacts } from "./Attributes";
 import { ApiFailure, api } from "./api";
+import { categoryName, priceText } from "./category";
 import { formatMoney, formatPhone } from "./format";
 import { fill, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
 import { Proposal } from "./Proposal";
+import { type Navigate, pathOf } from "./router";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -57,6 +74,8 @@ function Capacity({ listing, t }: { listing: VendorListing; t: VendorDict }) {
 
 interface PhotosProps {
   readonly listing: VendorListing;
+  /** Правило фото категории: portfolio — люди на фото с их согласия */
+  readonly portfolio: boolean;
   readonly t: VendorDict;
   /** Владелец кабинета: загружает и удаляет; сотрудник площадки только смотрит */
   readonly owner: boolean;
@@ -69,9 +88,11 @@ interface Problem {
   readonly text: string;
 }
 
-function Photos({ listing, t, owner, onChanged }: PhotosProps) {
+function Photos({ listing, portfolio, t, owner, onChanged }: PhotosProps) {
   const { photos, photoLimits } = listing;
   const [ack, setAck] = useState(false);
+  const [consent, setConsent] = useState(false);
+  const acknowledged = ack || (portfolio && consent);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [problems, setProblems] = useState<readonly Problem[]>([]);
   const [removing, setRemoving] = useState<VendorPhoto | null>(null);
@@ -93,7 +114,7 @@ function Photos({ listing, t, owner, onChanged }: PhotosProps) {
       try {
         // Перекодирование всегда: EXIF и геопозиция не уходят дальше телефона
         const photo = await compressForUpload(file);
-        await api.uploadPhoto(listing.id, photo.blob);
+        await api.uploadPhoto(listing.id, photo.blob, { noFaces: ack, consent: portfolio && consent });
       } catch (err) {
         found.push({
           key: `${index}:${file.name}`,
@@ -112,6 +133,7 @@ function Photos({ listing, t, owner, onChanged }: PhotosProps) {
     setProblems(found);
     // Подтверждение — про выбранные фото: следующие — снова с галочкой
     setAck(false);
+    setConsent(false);
   };
 
   const remove = async () => {
@@ -188,10 +210,15 @@ function Photos({ listing, t, owner, onChanged }: PhotosProps) {
 
       {owner ? (
         <>
-          <p className="notice notice-warn">{t.noFacesWarning}</p>
+          <p className="notice notice-warn">{portfolio ? t.portfolioWarning : t.noFacesWarning}</p>
           <p className="note">{t.photosModeration}</p>
           {room > 0 ? (
             <div className="upload">
+              {portfolio ? (
+                <Checkbox checked={consent} onChange={setConsent} disabled={uploading}>
+                  {t.consentAck}
+                </Checkbox>
+              ) : null}
               <Checkbox checked={ack} onChange={setAck} disabled={uploading}>
                 {t.noFacesAck}
               </Checkbox>
@@ -200,7 +227,7 @@ function Photos({ listing, t, owner, onChanged }: PhotosProps) {
                 hint={t.photosDrop}
                 accept={PHOTO_ACCEPT}
                 multiple={room > 1}
-                disabled={!ack || uploading}
+                disabled={!acknowledged || uploading}
                 onFiles={(files) => void upload(files)}
               />
             </div>
@@ -240,6 +267,38 @@ function Photos({ listing, t, owner, onChanged }: PhotosProps) {
   );
 }
 
+/** Чего не хватает для публикации: код базы словами; обязательные услуги — названиями */
+function blockerText(code: string, category: CategoryConfig | undefined, t: VendorDict, lang: "ru" | "uz") {
+  if (code === "packages" && category && category.requiredServices.length > 0) {
+    const list = category.requiredServices.map((type) => serviceTypeLabel(lang, category, type)).join(", ");
+    return fill(t.blockerServices, { list });
+  }
+  return textOf(t, `blocker_${code}`);
+}
+
+/** Ссылка на раздел без перезагрузки (новая вкладка, окно — как решит браузер) */
+function SectionLink({
+  navigate,
+  className,
+  children,
+}: {
+  navigate: Navigate;
+  className: string;
+  children: string;
+}) {
+  const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    navigate({ route: "services" });
+  };
+  return (
+    <a className={className} href={pathOf({ route: "services" })} onClick={onClick}>
+      {children}
+    </a>
+  );
+}
+
 interface VenueProps extends ScreenProps {
   readonly listings: readonly VendorListingRef[];
   readonly listingId: string | null;
@@ -247,9 +306,23 @@ interface VenueProps extends ScreenProps {
   readonly vendorCode: string;
   /** Роль в кабинете: карточку (фото и предложения) меняет только владелец */
   readonly role: VendorRole;
+  /** Выбор витрины — в боковой панели (компьютер) */
+  readonly inSidebar?: boolean;
+  readonly navigate: Navigate;
 }
 
-export function Venue({ t, lang, headingRef, listings, listingId, onListing, vendorCode, role }: VenueProps) {
+export function Venue({
+  t,
+  lang,
+  headingRef,
+  listings,
+  listingId,
+  onListing,
+  vendorCode,
+  role,
+  inSidebar = false,
+  navigate,
+}: VenueProps) {
   const [listing, reload, , refresh] = useLoad<VendorListing>(listingId, (id) => api.listing(id));
   const owner = role === "owner";
   // Тихо, чтобы список ошибок загрузки и фокус остались; не вышло — обычная загрузка с повтором
@@ -270,7 +343,15 @@ export function Venue({ t, lang, headingRef, listings, listingId, onListing, ven
   return (
     <section className="page" aria-labelledby="page-title">
       <Heading headingRef={headingRef}>{t.card}</Heading>
-      <ListingPicker listings={listings} value={listingId} onChange={onListing} t={t} />
+      <ListingPicker
+        listings={listings}
+        value={listingId}
+        onChange={onListing}
+        t={t}
+        lang={lang}
+        inSidebar={inSidebar}
+        line={false}
+      />
       <p className="promise">
         <Icon name="info" size={17} />
         <span>
@@ -281,104 +362,178 @@ export function Venue({ t, lang, headingRef, listings, listingId, onListing, ven
       {listing.state === "loading" ? <Loading t={t} /> : null}
       {listing.state === "error" ? <LoadError t={t} onRetry={reload} /> : null}
       {listing.state === "ready" ? (
-        <article className="venue">
-          <div className="detail-top">
-            <h2 className="venue-name">{listing.data.name}</h2>
-            <span className={`chip chip-${listing.data.status === "active" ? "done" : "wait"}`}>
-              {textOf(t, `ls_${listing.data.status}`)}
-            </span>
-          </div>
-          {listing.data.statusReason ? (
-            <p className="note">{fill(t.reasonLine, { reason: listing.data.statusReason })}</p>
-          ) : null}
-          {listing.data.status !== "active" && listing.data.blockers.length > 0 ? (
-            <div className="notice">
-              <p className="panel-title">{t.blockersTitle}</p>
-              <ul className="blockers">
-                {listing.data.blockers.map((code) => (
-                  <li key={code}>{textOf(t, `blocker_${code}`)}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <div className="venue-grid">
-            {/* Ключ — площадка: галочка и ошибки загрузки другой площадки не переносятся.
-              Не тот же, что у Proposal: ключи соседей в одном родителе обязаны различаться */}
-            <Photos
-              key={`photos-${listing.data.id}`}
-              listing={listing.data}
-              t={t}
-              owner={owner}
-              onChanged={refreshListing}
-            />
-
-            <div className="venue-side">
-              {/* Цена и телефон — во всю ширину: «от 25 млн сум за мероприятие» и номер в
-                половине строки телефона переносились посреди числа */}
-              <dl className="facts">
-                <div className="facts-wide">
-                  <dt>{t.priceLabel}</dt>
-                  <dd>
-                    {listing.data.priceFromUzs !== null
-                      ? `${fill(t.priceFrom, { price: formatMoney(listing.data.priceFromUzs, t, lang) })} ${
-                          listing.data.priceUnit === "per_guest" ? t.perGuest : t.perEvent
-                        }`
-                      : t.notSet}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t.capacity}</dt>
-                  <dd>
-                    <Capacity listing={listing.data} t={t} />
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t.district}</dt>
-                  <dd>
-                    {listing.data.districtCode ? textOf(t, `dist_${listing.data.districtCode}`) : t.notSet}
-                  </dd>
-                </div>
-                <div className="facts-wide">
-                  <dt>{t.phoneLabel}</dt>
-                  <dd className="fact-phone">
-                    {listing.data.phone ? formatPhone(listing.data.phone) : t.notSet}
-                  </dd>
-                </div>
-                <div className="facts-wide">
-                  <dt>{t.address}</dt>
-                  <dd>{listing.data.address[lang] || t.notSet}</dd>
-                </div>
-              </dl>
-
-              {listing.data.packages.length > 0 ? (
-                <div className="panel">
-                  <p className="panel-title">{t.packages}</p>
-                  <ul className="packages">
-                    {listing.data.packages.map((pack) => (
-                      <li key={`${pack.kind}-${pack.name.ru}`}>
-                        <span>{pack.name[lang]}</span>
-                        <strong className="package-price">
-                          {formatMoney(pack.priceUzs, t, lang)}{" "}
-                          {pack.priceUnit === "per_guest" ? t.perGuest : t.perEvent}
-                        </strong>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              <div className="panel">
-                <p className="panel-title">{t.description}</p>
-                <p className="description">{listing.data.description[lang] || t.notSet}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Ключ — площадка: при смене площадки форма и предложения — заново */}
-          <Proposal key={listing.data.id} listing={listing.data} t={t} lang={lang} owner={owner} />
-        </article>
+        <VenueCard
+          listing={listing.data}
+          t={t}
+          lang={lang}
+          owner={owner}
+          navigate={navigate}
+          onChanged={refreshListing}
+        />
       ) : null}
     </section>
+  );
+}
+
+interface VenueCardProps {
+  readonly listing: VendorListing;
+  readonly t: VendorDict;
+  readonly lang: "ru" | "uz";
+  readonly owner: boolean;
+  readonly navigate: Navigate;
+  readonly onChanged: () => Promise<void>;
+}
+
+function VenueCard({ listing, t, lang, owner, navigate, onChanged }: VenueCardProps) {
+  const category = categoryConfig(listing.categoryCode);
+  const fields = category?.listingFields ?? ["guest_capacity", "district"];
+  const active = listing.services.filter((service) => service.status === "active");
+  return (
+    <article className="venue">
+      <div className="detail-top">
+        <h2 className="venue-name">{listing.name}</h2>
+        <span className="venue-chips">
+          <span className="chip chip-cat">{categoryName(lang, listing.categoryCode)}</span>
+          <span className={`chip chip-${listing.status === "active" ? "done" : "wait"}`}>
+            {textOf(t, `ls_${listing.status}`)}
+          </span>
+        </span>
+      </div>
+      {listing.statusReason ? (
+        <p className="note">{fill(t.reasonLine, { reason: listing.statusReason })}</p>
+      ) : null}
+      {listing.status !== "active" && listing.blockers.length > 0 ? (
+        <div className="notice">
+          <p className="panel-title">{t.blockersTitle}</p>
+          <ul className="blockers">
+            {listing.blockers.map((code) => (
+              <li key={code}>{blockerText(code, category, t, lang)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {/* Обязательные поля витрины без значения — их заполняет предложение изменений ниже */}
+      {listing.missingAttributes.length > 0 && category ? (
+        <div className="notice notice-warn readiness">
+          <p className="panel-title">{t.missingTitle}</p>
+          <ul className="blockers">
+            {listing.missingAttributes.map((key) => (
+              <li key={key}>{attributeLabel(lang, category, key)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="venue-grid">
+        {/* Ключ — площадка: галочка и ошибки загрузки другой площадки не переносятся.
+          Не тот же, что у Proposal: ключи соседей в одном родителе обязаны различаться */}
+        <Photos
+          key={`photos-${listing.id}`}
+          listing={listing}
+          portfolio={category?.photoPolicy === "portfolio"}
+          t={t}
+          owner={owner}
+          onChanged={onChanged}
+        />
+
+        <div className="venue-side">
+          {/* Цена и телефон — во всю ширину: «от 25 млн сум за мероприятие» и номер в
+            половине строки телефона переносились посреди числа */}
+          <dl className="facts">
+            <div className="facts-wide">
+              <dt>{t.priceLabel}</dt>
+              <dd>
+                {listing.priceFromUzs !== null
+                  ? `${fill(t.priceFrom, { price: formatMoney(listing.priceFromUzs, t, lang) })} ${priceUnitLabel(
+                      lang,
+                      listing.priceUnit,
+                    )}`
+                  : t.notSet}
+                <span className="fact-sub fact-note">{t.priceFromServices}</span>
+              </dd>
+            </div>
+            {fields.includes("guest_capacity") ? (
+              <div>
+                <dt>{t.capacity}</dt>
+                <dd>
+                  <Capacity listing={listing} t={t} />
+                </dd>
+              </div>
+            ) : null}
+            {fields.includes("district") || listing.districtCode ? (
+              <div>
+                <dt>{t.district}</dt>
+                <dd>{listing.districtCode ? textOf(t, `dist_${listing.districtCode}`) : t.notSet}</dd>
+              </div>
+            ) : null}
+            <div className="facts-wide">
+              <dt>{t.phoneLabel}</dt>
+              <dd className="fact-phone">{listing.phone ? formatPhone(listing.phone) : t.notSet}</dd>
+            </div>
+            <div className="facts-wide">
+              <dt>{t.address}</dt>
+              <dd>{listing.address[lang] || t.notSet}</dd>
+            </div>
+          </dl>
+
+          <section className="panel" aria-labelledby="venue-services-title">
+            <h3 className="panel-title" id="venue-services-title">
+              {t.servicesSummary}
+            </h3>
+            {active.length === 0 ? (
+              <p className="note">{t.noActiveServices}</p>
+            ) : (
+              <ul className="packages">
+                {active.map((service) => (
+                  <li key={service.id}>
+                    <span>{service.name[lang] || service.name.ru}</span>
+                    <strong className="package-price">
+                      {priceText(service.priceUzs, service.priceUnit, t, lang)}
+                    </strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <SectionLink navigate={navigate} className="btn btn-ghost venue-services-link">
+              {t.toServices}
+            </SectionLink>
+          </section>
+
+          {category && category.attributes.length > 0 ? (
+            <section className="panel" aria-labelledby="venue-attrs-title">
+              <h3 className="panel-title" id="venue-attrs-title">
+                {t.attributesTitle}
+              </h3>
+              {Object.keys(listing.attributes).length === 0 ? (
+                <p className="note">{t.notSet}</p>
+              ) : (
+                <AttributeFacts category={category} attributes={listing.attributes} t={t} lang={lang} />
+              )}
+            </section>
+          ) : null}
+
+          {listing.videoLinks.length > 0 ? (
+            <section className="panel" aria-labelledby="venue-video-title">
+              <h3 className="panel-title" id="venue-video-title">
+                {t.videoTitle}
+              </h3>
+              <ul className="video-list">
+                {listing.videoLinks.map((link) => (
+                  <li key={link}>{link}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          <div className="panel">
+            <p className="panel-title">{t.description}</p>
+            <p className="description">{listing.description[lang] || t.notSet}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Ключ — площадка: при смене площадки форма и предложения — заново */}
+      <Proposal key={listing.id} listing={listing} t={t} lang={lang} owner={owner} />
+    </article>
   );
 }
