@@ -300,13 +300,7 @@ async function pendingRevision(trx: Tx, id: string) {
   const row = await trx
     .selectFrom("app.listing_revisions as rv")
     .innerJoin("app.listings as l", "l.id", "rv.listing_id")
-    .select([
-      "rv.id",
-      "rv.listing_id",
-      "rv.status",
-      "rv.payload",
-      "l.category_code",
-    ])
+    .select(["rv.id", "rv.listing_id", "rv.status", "rv.payload", "l.category_code"])
     .where("rv.id", "=", id)
     .forUpdate("rv")
     .executeTakeFirst();

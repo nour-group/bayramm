@@ -274,7 +274,9 @@ describe("GET /metrics/vendors", () => {
 
   it("с категорией — только её заявки и витрины", async () => {
     const { app, fake } = appAs("manager");
-    const body = (await (await get(app, "/metrics/vendors?days=7&category=hall")).json()) as VendorMetricsList;
+    const body = (await (
+      await get(app, "/metrics/vendors?days=7&category=hall")
+    ).json()) as VendorMetricsList;
     expect(body.category).toBe("hall");
     expect(fake.queries.find((q) => q.sql.includes("app.metrics_vendors"))?.parameters).toEqual([
       7,

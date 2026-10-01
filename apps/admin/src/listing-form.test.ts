@@ -45,7 +45,6 @@ const listing = (categoryCode: string, extra: Partial<ListingDetail> = {}): List
   videoLinks: [],
   parallelCapacity: 1,
   services: [],
-  packages: [],
   photos: [],
   blockers: { review: [], active: [] },
   vendor: { id: "aaaaaaaa-0000-0000-0000-000000000001", code: "V101", name: "Lola" },

@@ -320,10 +320,17 @@ describe("метрики по категориям", () => {
     // Очереди команды — всегда все
     expect(halls.queues).toEqual(all.queues);
 
-    const hallVendors = await ok<VendorMetricsList>(api("admin", "GET", "/staff/metrics/vendors?category=hall"));
+    const hallVendors = await ok<VendorMetricsList>(
+      api("admin", "GET", "/staff/metrics/vendors?category=hall"),
+    );
     expect(hallVendors.category).toBe("hall");
-    expect(hallVendors.items.find((v) => v.vendor.id === vendorId)).toMatchObject({ requests: 3, activeListings: 1 });
-    const carVendors = await ok<VendorMetricsList>(api("admin", "GET", "/staff/metrics/vendors?category=car"));
+    expect(hallVendors.items.find((v) => v.vendor.id === vendorId)).toMatchObject({
+      requests: 3,
+      activeListings: 1,
+    });
+    const carVendors = await ok<VendorMetricsList>(
+      api("admin", "GET", "/staff/metrics/vendors?category=car"),
+    );
     expect(carVendors.items.map((v) => v.vendor.id)).not.toContain(vendorId);
 
     expect((await api("admin", "GET", "/staff/metrics?category=nope")).status).toBe(422);

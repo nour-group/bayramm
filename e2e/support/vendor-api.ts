@@ -223,20 +223,6 @@ const LISTING: VendorListing = {
   priceUnit: "per_event",
   capMin: 80,
   capMax: 300,
-  packages: [
-    {
-      kind: "weekday",
-      name: { ru: "Будни", uz: "Ish kunlari" },
-      priceUzs: 25_000_000,
-      priceUnit: "per_event",
-    },
-    {
-      kind: "weekend",
-      name: { ru: "Выходные", uz: "Dam olish kunlari" },
-      priceUzs: 30_000_000,
-      priceUnit: "per_event",
-    },
-  ],
   photos: [
     photoOf(1, "approved", true),
     photoOf(2, "approved"),
@@ -282,7 +268,6 @@ const CAR: VendorListing = {
   priceUnit: "per_hour",
   capMin: null,
   capMax: null,
-  packages: [],
   photos: [
     photoOf(11, "approved", true, CAR_ID),
     photoOf(12, "approved", false, CAR_ID),
@@ -328,7 +313,6 @@ const PHOTO_LISTING: VendorListing = {
   priceUnit: "per_event",
   capMin: null,
   capMax: null,
-  packages: [],
   photos: [],
   blockers: ["price", "descriptions", "attributes", "photos"],
   attributes: {},
@@ -347,7 +331,6 @@ const CAKE: VendorListing = {
   priceUnit: "per_kg",
   capMin: null,
   capMax: null,
-  packages: [],
   photos: [
     photoOf(21, "approved", true, CAKE_ID),
     photoOf(22, "approved", false, CAKE_ID),

@@ -123,7 +123,6 @@ export function emptyListing(id: string, categoryCode: string, name: string, slu
     videoLinks: [],
     parallelCapacity: 1,
     services: [],
-    packages: [],
     photos: [],
     blockers: { review: [], active: [] },
     vendor: VENDOR_REF,

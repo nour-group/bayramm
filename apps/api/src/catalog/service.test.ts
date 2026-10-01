@@ -60,7 +60,9 @@ describe("listCatalog", () => {
     const order = sql.slice(sql.lastIndexOf("order by"));
     expect(order).toContain(`order by ${BUSY}, ${key}, "l"."id" limit`);
     expect(sql).toContain(`${key} as "sort_key"`);
-    expect(sql).toMatch(/left join app\.catalog_day_load\(\$\d+, \$\d+::date\) as "dl" on "dl"\."listing_id" = "l"\."id"/);
+    expect(sql).toMatch(
+      /left join app\.catalog_day_load\(\$\d+, \$\d+::date\) as "dl" on "dl"\."listing_id" = "l"\."id"/,
+    );
     expect(sql).not.toContain("listing_day_load");
     expect(query?.parameters).toEqual(expect.arrayContaining(["hall", "2026-10-03"]));
   });

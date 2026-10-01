@@ -157,9 +157,7 @@ export function sortKey(sort: CatalogSort, guests: number | null): RawBuilder<st
  * всю категорию (app.catalog_day_load, соединение dl), у одной карточки —
  * app.listing_day_load. Без даты — не считается. Занятые целиком идут в конце выдачи
  */
-type DayLoadSource =
-  | { readonly date: null }
-  | { readonly date: string; readonly category: string | null };
+type DayLoadSource = { readonly date: null } | { readonly date: string; readonly category: string | null };
 
 const NO_DATE: DayLoadSource = { date: null };
 
@@ -184,7 +182,8 @@ function loadOn(source: DayLoadSource): RawBuilder<DateLoad> {
 /** Занята ли витрина целиком на дату; без даты — нет */
 function busyOn(source: DayLoadSource): RawBuilder<boolean> {
   if (source.date === null) return sql<boolean>`false::boolean`;
-  if (source.category === null) return sql<boolean>`(app.listing_day_load(l.id, ${source.date}::date) = 'busy')`;
+  if (source.category === null)
+    return sql<boolean>`(app.listing_day_load(l.id, ${source.date}::date) = 'busy')`;
   return sql<boolean>`coalesce(dl.load = 'busy', false)`;
 }
 

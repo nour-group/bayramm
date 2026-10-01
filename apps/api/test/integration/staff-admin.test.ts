@@ -229,7 +229,12 @@ describe("вендор → карточка → проверка → публи�
     };
     expect((await api("moderator", "POST", "/staff/listings", input)).status).toBe(403);
     listing = await ok<ListingDetail>(api("manager", "POST", "/staff/listings", input), 201);
-    expect(listing).toMatchObject({ status: "draft", hasPhone: true, categoryCode: "hall", priceFromUzs: null });
+    expect(listing).toMatchObject({
+      status: "draft",
+      hasPhone: true,
+      categoryCode: "hall",
+      priceFromUzs: null,
+    });
     expect(listing.slug).toBe(`toyxona-xumo-${tag}`);
     expect(listing).not.toHaveProperty("packages");
     // Цены — только услугами: от менеджера — на проверку, одобрит публикация
@@ -237,7 +242,14 @@ describe("вендор → карточка → проверка → публи�
       ["banquet_weekday", 150_000],
       ["banquet_weekend", 180_000],
     ] as const) {
-      await ok(api("manager", "POST", `/staff/listings/${listing.id}/services`, { type, priceUzs, priceUnit: "per_guest" }), 201);
+      await ok(
+        api("manager", "POST", `/staff/listings/${listing.id}/services`, {
+          type,
+          priceUzs,
+          priceUnit: "per_guest",
+        }),
+        201,
+      );
     }
     listing = await ok<ListingDetail>(api("manager", "GET", `/staff/listings/${listing.id}`));
     expect(listing.services.map((s) => [s.type, s.status])).toEqual([
@@ -434,7 +446,11 @@ describe("вендор → карточка → проверка → публи�
     const proposed = await ok<ListingService>(
       api("manager", "PATCH", `/staff/listings/${listing.id}/services/${weekday?.id}`, { priceUzs: 170_000 }),
     );
-    expect(proposed).toMatchObject({ status: "active", priceUzs: 150_000, proposal: { changes: { priceUzs: 170_000 } } });
+    expect(proposed).toMatchObject({
+      status: "active",
+      priceUzs: 150_000,
+      proposal: { changes: { priceUzs: 170_000 } },
+    });
 
     // Пока правка ждёт — следующая правка модерируемых полей: 409 revision_pending, ничего не сохранено
     expect(

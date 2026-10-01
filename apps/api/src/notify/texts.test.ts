@@ -173,7 +173,12 @@ describe("тексты уведомлений", () => {
       vendorCode: "V101",
       fields: ["name", "attributes", "video_links", "unknown_key"],
     });
-    for (const part of ["Test Hall", "V101", "название, поля витрины, ссылки на видео, unknown_key", "«Модерация»"])
+    for (const part of [
+      "Test Hall",
+      "V101",
+      "название, поля витрины, ссылки на видео, unknown_key",
+      "«Модерация»",
+    ])
       expect(text).toContain(part);
   });
 

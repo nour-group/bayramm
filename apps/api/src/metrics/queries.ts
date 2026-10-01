@@ -83,7 +83,11 @@ interface WeekRow extends PeriodRow {
 }
 
 /** По ISO-неделям по Ташкенту: weeks последних, текущая — первой */
-export async function loadWeekly(trx: Tx, weeks: number, category: string | null = null): Promise<WeeklyMetrics[]> {
+export async function loadWeekly(
+  trx: Tx,
+  weeks: number,
+  category: string | null = null,
+): Promise<WeeklyMetrics[]> {
   const { rows } = await sql<WeekRow>`
     select * from app.metrics_weekly(${weeks}::int, ${category}::text)`.execute(trx);
   return rows.map((row) => ({
