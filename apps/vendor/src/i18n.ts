@@ -37,9 +37,9 @@ const ru = {
     "Войдите через сайт Bayramm — через Telegram. Или откройте кабинет из нашего бота.",
   gateNotLinkedTitle: "Сначала привяжите номер",
   gateNotLinkedText:
-    "Этот аккаунт ещё не связан с площадкой. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm, или войдите по этому номеру на сайте.",
+    "Этот аккаунт ещё не связан с кабинетом партнёра. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm, или войдите по этому номеру на сайте.",
   gateNotLinkedTextBot:
-    "Этот аккаунт ещё не связан с площадкой. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm.",
+    "Этот аккаунт ещё не связан с кабинетом партнёра. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm.",
   gateDisabledTitle: "Доступ отключён",
   gateDisabledText: "Свяжитесь с вашим менеджером Bayramm.",
   gateExpiredTitle: "Сессия закончилась",
@@ -54,7 +54,7 @@ const ru = {
   gateHubTitle: "Вход не завершился",
   gateHubText: "Ссылка входа устарела или открыта в другой вкладке. Попробуйте ещё раз.",
   chooseTitle: "Какой кабинет открыть?",
-  chooseText: "Вы партнёр нескольких площадок. Кабинет можно сменить в любой момент.",
+  chooseText: "У вас доступ к нескольким кабинетам. Кабинет можно сменить в любой момент.",
   account: "Аккаунт",
   switchVendor: "Другой кабинет",
   toClientApp: "Bayramm для клиентов",
@@ -69,9 +69,8 @@ const ru = {
   otherApps: "Другие приложения Bayramm",
 
   // вход из браузера: что это за кабинет и как получить доступ
-  welcomeTitle: "Кабинет площадок-партнёров Bayramm",
-  welcomeLead:
-    "Здесь площадки, которые работают с Bayramm, отвечают на заявки клиентов, ведут календарь занятости и витрину.",
+  welcomeTitle: "Кабинет партнёров Bayramm",
+  welcomeLead: "Здесь партнёры Bayramm отвечают на заявки клиентов, ведут календарь занятости и витрину.",
   welcomeRequests: "Заявки клиентов",
   welcomeRequestsText: "Дата, гости, бюджет и телефон клиента. О новой заявке сообщит наш бот в Telegram.",
   welcome12h: "12 часов на ответ",
@@ -83,14 +82,14 @@ const ru = {
   welcomeCardText: "Фото, описание и услуги с ценами. Изменения проверяет команда Bayramm.",
   welcomeAccess: "Как получить доступ",
   welcomeAccessText:
-    "Кабинет открывает команда Bayramm: менеджер заводит вашу площадку и номер телефона партнёра. Номер уже у менеджера — откройте бота, нажмите «Я партнёр» и поделитесь номером: кабинет откроется прямо в Telegram.",
-  welcomeAccessNew: "Регистрации здесь нет: новые площадки подключает команда Bayramm.",
+    "Кабинет открывает команда Bayramm: менеджер заводит вашу витрину и номер телефона партнёра. Номер уже у менеджера — откройте бота, нажмите «Я партнёр» и поделитесь номером: кабинет откроется прямо в Telegram.",
+  welcomeAccessNew: "Регистрации здесь нет: новых партнёров подключает команда Bayramm.",
 
   // входящие
   tabNew: "Новые",
   tabActive: "В работе",
   tabClosed: "Закрытые",
-  inboxPromise: "Мы обещаем клиенту ответ за 12 часов. Не ответите — он увидит похожие площадки.",
+  inboxPromise: "Мы обещаем клиенту ответ за 12 часов. Не ответите — он увидит похожие витрины.",
   emptyNew: "Новых заявок нет",
   emptyNewText: "Когда клиент отправит заявку, она появится здесь и придёт вам в Telegram.",
   emptyActive: "Нет заявок в работе",
@@ -158,7 +157,7 @@ const ru = {
   actNoDeal: "Не подошло",
   actReopen: "Вернуть в активные",
   declineTitle: "Почему отказываете?",
-  declineSub: "Клиент увидит, что вы отказали, — так он быстрее найдёт другую площадку.",
+  declineSub: "Клиент увидит, что вы отказали, — так он быстрее найдёт другого исполнителя.",
   reason_busy: "Занято на эту дату",
   reason_format: "Не наш формат",
   reason_price: "Не сходимся по цене",
@@ -263,9 +262,9 @@ const ru = {
   ],
   dateFormat: "{d} {m}",
 
-  // площадка
+  // витрина
   venueNote: "Так витрину видят клиенты. Всё, что вы меняете, сначала проверяет команда Bayramm.",
-  // сотрудник площадки (роль member): заявки и календарь — да, карточка — нет
+  // сотрудник площадки (роль member): заявки и календарь — да, витрина — нет
   venueNoteMember: "Так витрину видят клиенты. Менять её и услуги может только владелец кабинета.",
   vendorCode: "Ваш код для менеджера: {code}",
   managerFacts: "Эти данные меняет менеджер Bayramm — назовите ему код {code}.",
@@ -576,9 +575,9 @@ const uz: VendorDict = {
   gateOutsideTextTelegram: "Bayramm sayti orqali Telegram bilan kiring. Yoki kabinetni botimizdan oching.",
   gateNotLinkedTitle: "Avval raqamni ulang",
   gateNotLinkedText:
-    "Bu hisob hali maydonga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing yoki saytda shu raqam bilan kiring.",
+    "Bu hisob hali hamkor kabinetiga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing yoki saytda shu raqam bilan kiring.",
   gateNotLinkedTextBot:
-    "Bu hisob hali maydonga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing.",
+    "Bu hisob hali hamkor kabinetiga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing.",
   gateDisabledTitle: "Kirish oʻchirilgan",
   gateDisabledText: "Bayramm menejeringiz bilan bogʻlaning.",
   gateExpiredTitle: "Sessiya tugadi",
@@ -592,7 +591,7 @@ const uz: VendorDict = {
   gateHubTitle: "Kirish yakunlanmadi",
   gateHubText: "Kirish havolasi eskirgan yoki boshqa oynada ochilgan. Qayta urinib koʻring.",
   chooseTitle: "Qaysi kabinetni ochamiz?",
-  chooseText: "Siz bir nechta maydonning hamkorisiz. Kabinetni istalgan payt almashtirish mumkin.",
+  chooseText: "Sizda bir nechta kabinetga kirish bor. Kabinetni istalgan payt almashtirish mumkin.",
   account: "Hisob",
   switchVendor: "Boshqa kabinet",
   toClientApp: "Mijozlar uchun Bayramm",
@@ -606,9 +605,9 @@ const uz: VendorDict = {
   languageNote: "Kabinet va bot soʻrovlar haqidagi xabarlari shu tilda.",
   otherApps: "Boshqa Bayramm ilovalari",
 
-  welcomeTitle: "Bayramm hamkor maydonlari kabineti",
+  welcomeTitle: "Bayramm hamkorlari kabineti",
   welcomeLead:
-    "Bu yerda Bayramm bilan ishlaydigan maydonlar mijozlar soʻrovlariga javob beradi, bandlik taqvimi va vitrinani yuritadi.",
+    "Bu yerda Bayramm hamkorlari mijozlar soʻrovlariga javob beradi, bandlik taqvimi va vitrinani yuritadi.",
   welcomeRequests: "Mijozlar soʻrovlari",
   welcomeRequestsText:
     "Sana, mehmonlar, byudjet va mijoz telefoni. Yangi soʻrov haqida botimiz Telegramda xabar beradi.",
@@ -621,14 +620,14 @@ const uz: VendorDict = {
   welcomeCardText: "Fotolar, tavsif va narxli xizmatlar. Oʻzgarishlarni Bayramm jamoasi tekshiradi.",
   welcomeAccess: "Qanday kirish mumkin",
   welcomeAccessText:
-    "Kabinetni Bayramm jamoasi ochadi: menejer maydoningizni va hamkor telefon raqamini qoʻshadi. Raqam menejerda boʻlsa — botni oching, «Men hamkorman» tugmasini bosing va raqamingizni ulashing: kabinet toʻgʻridan-toʻgʻri Telegramda ochiladi.",
-  welcomeAccessNew: "Bu yerda roʻyxatdan oʻtish yoʻq: yangi maydonlarni Bayramm jamoasi ulaydi.",
+    "Kabinetni Bayramm jamoasi ochadi: menejer vitrinangizni va hamkor telefon raqamini qoʻshadi. Raqam menejerda boʻlsa — botni oching, «Men hamkorman» tugmasini bosing va raqamingizni ulashing: kabinet toʻgʻridan-toʻgʻri Telegramda ochiladi.",
+  welcomeAccessNew: "Bu yerda roʻyxatdan oʻtish yoʻq: yangi hamkorlarni Bayramm jamoasi ulaydi.",
 
   tabNew: "Yangi",
   tabActive: "Jarayonda",
   tabClosed: "Yopilgan",
   inboxPromise:
-    "Mijozga 12 soatda javob berishni vaʼda qilamiz. Javob bermasangiz, u oʻxshash maydonlarni koʻradi.",
+    "Mijozga 12 soatda javob berishni vaʼda qilamiz. Javob bermasangiz, u oʻxshash vitrinalarni koʻradi.",
   emptyNew: "Yangi soʻrov yoʻq",
   emptyNewText: "Mijoz soʻrov yuborganda u shu yerda paydo boʻladi va sizga Telegramda keladi.",
   emptyActive: "Jarayondagi soʻrov yoʻq",
@@ -692,7 +691,7 @@ const uz: VendorDict = {
   actNoDeal: "Toʻgʻri kelmadi",
   actReopen: "Faollarga qaytarish",
   declineTitle: "Nega rad etyapsiz?",
-  declineSub: "Mijoz rad etganingizni koʻradi — boshqa maydonni tezroq topadi.",
+  declineSub: "Mijoz rad etganingizni koʻradi — boshqa ijrochini tezroq topadi.",
   reason_busy: "Bu sanada band",
   reason_format: "Bizning format emas",
   reason_price: "Narxda kelishmadik",

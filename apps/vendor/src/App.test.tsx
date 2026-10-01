@@ -206,7 +206,7 @@ afterEach(() => {
 describe("вход в кабинет", () => {
   it("вне Telegram — что это за кабинет, как получить доступ, «Войти» (хаб) и бот; без попытки входа", async () => {
     await mount("/requests");
-    expect(heading()).toBe("Кабинет площадок-партнёров Bayramm");
+    expect(heading()).toBe("Кабинет партнёров Bayramm");
     const welcome = container.querySelector(".welcome")?.textContent ?? "";
     for (const point of ["Заявки клиентов", "12 часов на ответ", "Календарь занятости", "Витрина и услуги"])
       expect(welcome).toContain(point);
