@@ -1802,6 +1802,11 @@ textarea.field-input {
   display: grid;
   gap: var(--gap-9);
 }
+
+/* Поле номера — сразу под заголовком раздела «По номеру телефона», без лишнего зазора поля формы */
+.phone-code .fld {
+  margin-top: 0;
+}
 .phone-code-more {
   display: flex;
   flex-wrap: wrap;

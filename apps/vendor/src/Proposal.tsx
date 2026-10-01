@@ -21,7 +21,7 @@ import type {
 } from "@bayramm/shared/api/vendor";
 import { DESCRIPTION_MAX, MAX_REVISION_PACKAGES } from "@bayramm/shared/api/vendor";
 import { ConfirmSheet, RadioGroup } from "@bayramm/ui/react";
-import { type FormEvent, useId, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { formatMoment, formatMoney, groupDigits } from "./format";
 import { fill, textOf, type VendorDict, vendorDict } from "./i18n";
@@ -334,23 +334,26 @@ function ProposalForm({ listing, t, onSent, onPendingExists, onCancel }: FormPro
 
   return (
     <form className="proposal-form" onSubmit={submit} noValidate>
-      {text("name", t.nameLabel, false)}
-      <div className="form-row">
-        <label className="field-label" htmlFor={`${id}-price`}>
-          {t.priceFromLabel}
-        </label>
-        <input
-          id={`${id}-price`}
-          className="field"
-          inputMode="numeric"
-          autoComplete="off"
-          maxLength={16}
-          value={values.price}
-          aria-invalid={bad(FIELD_KEYS.price) || undefined}
-          aria-describedby={described(FIELD_KEYS.price)}
-          onChange={(event) => set("price")(event.target.value)}
-        />
-        {errorText(FIELD_KEYS.price)}
+      {/* Шире телефона поля — парами: название рядом с ценой, описание RU рядом с UZ */}
+      <div className="form-grid">
+        {text("name", t.nameLabel, false)}
+        <div className="form-row">
+          <label className="field-label" htmlFor={`${id}-price`}>
+            {t.priceFromLabel}
+          </label>
+          <input
+            id={`${id}-price`}
+            className="field"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={16}
+            value={values.price}
+            aria-invalid={bad(FIELD_KEYS.price) || undefined}
+            aria-describedby={described(FIELD_KEYS.price)}
+            onChange={(event) => set("price")(event.target.value)}
+          />
+          {errorText(FIELD_KEYS.price)}
+        </div>
       </div>
       <fieldset className="choices">
         <legend className="field-label">{t.priceUnitLabel}</legend>
@@ -362,8 +365,10 @@ function ProposalForm({ listing, t, onSent, onPendingExists, onCancel }: FormPro
           onChange={(unit) => setValues((prev) => ({ ...prev, priceUnit: unit }))}
         />
       </fieldset>
-      {text("descriptionRu", t.descriptionRuLabel, true)}
-      {text("descriptionUz", t.descriptionUzLabel, true)}
+      <div className="form-grid">
+        {text("descriptionRu", t.descriptionRuLabel, true)}
+        {text("descriptionUz", t.descriptionUzLabel, true)}
+      </div>
 
       <fieldset className="choices proposal-packages" aria-describedby={described(FIELD_KEYS.packages)}>
         <legend className="panel-title">{t.packages}</legend>
@@ -374,49 +379,59 @@ function ProposalForm({ listing, t, onSent, onPendingExists, onCancel }: FormPro
           return (
             <div key={row.key} className={rowBad ? "package-row package-row-bad" : "package-row"}>
               <p className="package-kind">{textOf(t, `pk_${row.kind}`)}</p>
-              <label className="field-label" htmlFor={`${rowId}-ru`}>
-                {t.packageNameRu}
-              </label>
-              <input
-                id={`${rowId}-ru`}
-                className="field"
-                maxLength={80}
-                value={row.nameRu}
-                aria-invalid={rowBad || undefined}
-                onChange={(event) => setRow(row.key, { nameRu: event.target.value })}
-              />
-              <label className="field-label" htmlFor={`${rowId}-uz`}>
-                {t.packageNameUz}
-              </label>
-              <input
-                id={`${rowId}-uz`}
-                className="field"
-                lang="uz"
-                maxLength={80}
-                value={row.nameUz}
-                aria-invalid={rowBad || undefined}
-                onChange={(event) => setRow(row.key, { nameUz: event.target.value })}
-              />
-              <label className="field-label" htmlFor={`${rowId}-price`}>
-                {t.packagePrice}
-              </label>
-              <input
-                id={`${rowId}-price`}
-                className="field"
-                inputMode="numeric"
-                maxLength={16}
-                value={row.price}
-                aria-invalid={rowBad || undefined}
-                onChange={(event) => setRow(row.key, { price: event.target.value })}
-              />
-              <RadioGroup
-                variant="segmented"
-                label={`${t.priceUnitLabel}: ${textOf(t, `pk_${row.kind}`)}`}
-                name={`${rowId}-unit`}
-                value={row.priceUnit}
-                options={unitOptions}
-                onChange={(unit) => setRow(row.key, { priceUnit: unit })}
-              />
+              <div className="form-grid">
+                <div className="form-row">
+                  <label className="field-label" htmlFor={`${rowId}-ru`}>
+                    {t.packageNameRu}
+                  </label>
+                  <input
+                    id={`${rowId}-ru`}
+                    className="field"
+                    maxLength={80}
+                    value={row.nameRu}
+                    aria-invalid={rowBad || undefined}
+                    onChange={(event) => setRow(row.key, { nameRu: event.target.value })}
+                  />
+                </div>
+                <div className="form-row">
+                  <label className="field-label" htmlFor={`${rowId}-uz`}>
+                    {t.packageNameUz}
+                  </label>
+                  <input
+                    id={`${rowId}-uz`}
+                    className="field"
+                    lang="uz"
+                    maxLength={80}
+                    value={row.nameUz}
+                    aria-invalid={rowBad || undefined}
+                    onChange={(event) => setRow(row.key, { nameUz: event.target.value })}
+                  />
+                </div>
+                <div className="form-row">
+                  <label className="field-label" htmlFor={`${rowId}-price`}>
+                    {t.packagePrice}
+                  </label>
+                  <input
+                    id={`${rowId}-price`}
+                    className="field"
+                    inputMode="numeric"
+                    maxLength={16}
+                    value={row.price}
+                    aria-invalid={rowBad || undefined}
+                    onChange={(event) => setRow(row.key, { price: event.target.value })}
+                  />
+                </div>
+                <div className="form-row package-unit">
+                  <RadioGroup
+                    variant="segmented"
+                    label={`${t.priceUnitLabel}: ${textOf(t, `pk_${row.kind}`)}`}
+                    name={`${rowId}-unit`}
+                    value={row.priceUnit}
+                    options={unitOptions}
+                    onChange={(unit) => setRow(row.key, { priceUnit: unit })}
+                  />
+                </div>
+              </div>
               {row.kind === "custom" ? (
                 <button
                   type="button"
@@ -489,6 +504,24 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
   const [busy, setBusy] = useState(false);
   const [withdrawFailed, setWithdrawFailed] = useState(false);
   const withdrawButton = useRef<HTMLButtonElement>(null);
+  // Кнопка, которую нажали, исчезает (форма вместо «Предложить», «на проверке» вместо
+  // формы) — фокус переходит в новый блок: на первое поле формы, на «Предложить» после
+  // «Отмены», на заголовок раздела после отправки (сам статус «Отправлено» читает диктор)
+  const section = useRef<HTMLElement>(null);
+  const title = useRef<HTMLHeadingElement>(null);
+  const refocus = useRef<"first" | "title" | null>(null);
+  const edit = (open: boolean) => {
+    refocus.current = "first";
+    setEditing(open);
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: перенос фокуса — после смены формы или отправки
+  useEffect(() => {
+    const target = refocus.current;
+    if (target === null) return;
+    refocus.current = null;
+    if (target === "title") title.current?.focus();
+    else section.current?.querySelector<HTMLElement>(".proposal-form input, .proposal-start")?.focus();
+  }, [editing, sent]);
 
   const body = () => {
     if (revisions.state === "loading") return <Loading t={t} />;
@@ -585,16 +618,17 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
             t={t}
             onSent={(revision) => {
               setRevisions((list) => ({ items: [revision, ...list.items] }));
+              refocus.current = "title";
               setEditing(false);
               setSent(true);
             }}
             onPendingExists={reload}
-            onCancel={() => setEditing(false)}
+            onCancel={() => edit(false)}
           />
         ) : (
           <>
             <p className="note">{t.proposalLead}</p>
-            <button type="button" className="btn btn-dark" onClick={() => setEditing(true)}>
+            <button type="button" className="btn btn-dark proposal-start" onClick={() => edit(true)}>
               {t.proposalStart}
             </button>
           </>
@@ -604,8 +638,8 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
   };
 
   return (
-    <section className="panel proposal" aria-labelledby="proposal-title">
-      <h2 className="section-title" id="proposal-title">
+    <section className="panel proposal" aria-labelledby="proposal-title" ref={section}>
+      <h2 className="section-title" id="proposal-title" ref={title} tabIndex={-1}>
         {t.proposalTitle}
       </h2>
       {body()}

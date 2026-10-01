@@ -57,8 +57,11 @@ function setup(api = fakeApi()) {
 
 const tag = (body: string, re: RegExp) => re.exec(body)?.[1] ?? null;
 const title = (body: string) => tag(body, /<title>([^<]*)<\/title>/);
-const metaContent = (body: string, attr: string, name: string) =>
-  tag(body, new RegExp(`<meta ${attr}="${name}" content="([^"]*)"`));
+const metaContent = (body: string, attr: "name" | "property", name: string) => {
+  for (const [, kind, key, content] of body.matchAll(/<meta (name|property)="([^"]+)" content="([^"]*)"/g))
+    if (kind === attr && key === name) return content ?? null;
+  return null;
+};
 const canonical = (body: string) => tag(body, /<link rel="canonical" href="([^"]*)"/);
 const hreflangs = (body: string) =>
   [...body.matchAll(/<link rel="alternate" hreflang="([^"]+)" href="([^"]+)"/g)].map(([, lang, href]) => [

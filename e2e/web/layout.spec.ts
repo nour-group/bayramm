@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { addDays } from "../../apps/web/src/format";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
+import { APPS } from "../support/account";
 import { expect, test } from "../support/offline";
 import { horizontalOverflow, open, PATHS, prepare, sections, T, TODAY, VENUE } from "../support/web";
 
@@ -52,8 +53,8 @@ test.describe("лендинг в браузере", () => {
     await expect(page.locator(".ln-promise h3")).toHaveText(ru.lnPromT);
     // Ни рейтингов, ни «брони», ни выдуманных цифр
     expect(await page.locator("main").innerText()).not.toMatch(FORBIDDEN_BOOKING);
-    // Кабинет партнёра — со входом через хаб
-    await expect(page.getByRole("link", { name: ru.accVendor })).toHaveAttribute("href", /\/\?signin=1$/);
+    // Кабинет партнёра — его приветствие вне Telegram: что это и как получить доступ
+    await expect(page.getByRole("link", { name: ru.accVendor })).toHaveAttribute("href", `${APPS.vendor}/`);
     // Подвал: документы, бот, язык
     const footer = page.locator(".site-footer");
     await expect(footer.getByRole("link", { name: ru.meDocs })).toHaveAttribute("href", PATHS.docs);

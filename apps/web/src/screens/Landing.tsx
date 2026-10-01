@@ -164,9 +164,10 @@ function PartnerBlock() {
         <p>{t.lnPartnerP}</p>
         <p className="muted small">{t.lnPartnerNote}</p>
       </div>
-      {/* Кабинет — другое приложение: полная загрузка, без сессии он сам уведёт в хаб входа */}
+      {/* Кабинет — другое приложение, полной загрузкой. Без ?signin=1: вне Telegram без входа
+          он сначала объясняет, что это и как получить доступ, и уже оттуда — вход через хаб */}
       {vendor ? (
-        <a className="btn btn-secondary" href={`${vendor}/?signin=1`}>
+        <a className="btn btn-secondary" href={`${vendor}/`}>
           {t.accVendor}
         </a>
       ) : null}
