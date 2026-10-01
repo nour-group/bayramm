@@ -33,7 +33,8 @@ describe("демо-фото", () => {
     }
     const digests = photos.map((bytes) => createHash("sha256").update(bytes).digest("hex"));
     expect(new Set(digests).size).toBe(photos.length);
-  });
+    // Три десятка WebP через sharp: на занятом раннере CI дольше 5 секунд по умолчанию
+  }, 30_000);
 
   it("рисунок — только линии и заливки: без текста, шрифтов и внешних ссылок", () => {
     for (let i = 0; i < DEMO_PHOTO_FILES; i++) {
