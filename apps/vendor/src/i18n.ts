@@ -6,7 +6,7 @@ import type { Lang } from "@bayramm/shared";
 
 const ru = {
   // оболочка
-  area: "кабинет вендора",
+  area: "кабинет партнёра",
   skip: "К содержимому",
   sections: "Разделы кабинета",
   language: "Язык",
@@ -43,6 +43,8 @@ const ru = {
   gateDisabledText: "Свяжитесь с вашим менеджером Bayramm.",
   gateExpiredTitle: "Сессия закончилась",
   gateExpiredText: "Закройте кабинет и откройте его из бота заново.",
+  // …в браузере: бота закрывать не нужно, войти снова через хаб
+  gateExpiredTextWeb: "Войдите снова — через сайт Bayramm.",
   gateErrorTitle: "Не удалось войти",
   gateErrorText: "Проверьте интернет и попробуйте ещё раз.",
   openBot: "Открыть бота",
@@ -57,6 +59,31 @@ const ru = {
   toClientApp: "Bayramm для клиентов",
   toAdmin: "Панель оператора",
   signOut: "Выйти",
+  // аккаунт: кто вошёл и в какой кабинет
+  cabinetLabel: "Кабинет",
+  roleOwner: "Вы — владелец кабинета: отвечаете на заявки, ведёте календарь, меняете карточку и фото.",
+  roleMember:
+    "Вы — сотрудник площадки: отвечаете на заявки и ведёте календарь. Карточку меняет владелец кабинета.",
+  languageNote: "На этом языке — кабинет и сообщения бота о заявках.",
+  otherApps: "Другие приложения Bayramm",
+
+  // вход из браузера: что это за кабинет и как получить доступ
+  welcomeTitle: "Кабинет площадок-партнёров Bayramm",
+  welcomeLead:
+    "Здесь площадки, которые работают с Bayramm, отвечают на заявки клиентов, ведут календарь занятости и карточку.",
+  welcomeRequests: "Заявки клиентов",
+  welcomeRequestsText: "Дата, гости, бюджет и телефон клиента. О новой заявке сообщит наш бот в Telegram.",
+  welcome12h: "12 часов на ответ",
+  welcome12hText:
+    "Мы обещаем клиенту ответ за 12 часов. Счётчик в каждой заявке показывает, сколько осталось.",
+  welcomeCalendar: "Календарь занятости",
+  welcomeCalendarText: "Отмечайте занятые дни одним нажатием — клиенты видят их до заявки.",
+  welcomeCard: "Карточка площадки",
+  welcomeCardText: "Фото, цены, описание и пакеты. Изменения проверяет команда Bayramm.",
+  welcomeAccess: "Как получить доступ",
+  welcomeAccessText:
+    "Кабинет открывает команда Bayramm: менеджер заводит вашу площадку и номер телефона партнёра. Номер уже у менеджера — откройте бота, нажмите «Я партнёр» и поделитесь номером: кабинет откроется прямо в Telegram.",
+  welcomeAccessNew: "Регистрации здесь нет: новые площадки подключает команда Bayramm.",
 
   // входящие
   tabNew: "Новые",
@@ -70,6 +97,11 @@ const ru = {
   emptyClosed: "Закрытых заявок пока нет",
   emptyClosedText: "Здесь будут сделки, отказы и заявки, отозванные клиентами.",
   loadMore: "Показать ещё",
+  // счётчик новых у раздела «Заявки» — для диктора
+  newCount: "новых: {n}",
+  // компьютер: список и карточка рядом, заявка ещё не выбрана
+  pickRequest: "Выберите заявку",
+  pickRequestText: "Она откроется здесь: телефон клиента, детали и что ответить.",
   requestNo: "Заявка № {n}",
   guestsOne: "{n} гость",
   guestsFew: "{n} гостя",
@@ -147,6 +179,10 @@ const ru = {
   nextMonth: "Следующий месяц",
   dayBusy: "{date}, занято",
   dayFree: "{date}, свободно",
+  dayBusyDecline: "{date}, занято отказом",
+  dayBusyStaff: "{date}, закрыл менеджер",
+  legendToday: "сегодня",
+  legendTitle: "Обозначения",
   staffLocked: "Этот день закрыл менеджер. Чтобы освободить его, свяжитесь с ним.",
   calendarSaveFailed: "Не удалось сохранить день. Попробуйте ещё раз.",
   // правку отклонили: календарь с тех пор изменил кто-то другой (коллега, менеджер, отказ «занято»)
@@ -360,6 +396,7 @@ const uz: VendorDict = {
   gateDisabledText: "Bayramm menejeringiz bilan bogʻlaning.",
   gateExpiredTitle: "Sessiya tugadi",
   gateExpiredText: "Kabinetni yoping va botdan qayta oching.",
+  gateExpiredTextWeb: "Bayramm sayti orqali qayta kiring.",
   gateErrorTitle: "Kirib boʻlmadi",
   gateErrorText: "Internetni tekshiring va qayta urinib koʻring.",
   openBot: "Botni ochish",
@@ -374,6 +411,31 @@ const uz: VendorDict = {
   toClientApp: "Mijozlar uchun Bayramm",
   toAdmin: "Boshqaruv paneli",
   signOut: "Chiqish",
+  cabinetLabel: "Kabinet",
+  roleOwner:
+    "Siz kabinet egasisiz: soʻrovlarga javob berasiz, taqvimni yuritasiz, kartochka va fotolarni oʻzgartirasiz.",
+  roleMember:
+    "Siz maydon xodimisiz: soʻrovlarga javob berasiz va taqvimni yuritasiz. Kartochkani kabinet egasi oʻzgartiradi.",
+  languageNote: "Kabinet va bot soʻrovlar haqidagi xabarlari shu tilda.",
+  otherApps: "Boshqa Bayramm ilovalari",
+
+  welcomeTitle: "Bayramm hamkor maydonlari kabineti",
+  welcomeLead:
+    "Bu yerda Bayramm bilan ishlaydigan maydonlar mijozlar soʻrovlariga javob beradi, bandlik taqvimi va kartochkani yuritadi.",
+  welcomeRequests: "Mijozlar soʻrovlari",
+  welcomeRequestsText:
+    "Sana, mehmonlar, byudjet va mijoz telefoni. Yangi soʻrov haqida botimiz Telegramda xabar beradi.",
+  welcome12h: "Javob uchun 12 soat",
+  welcome12hText:
+    "Mijozga 12 soatda javob berishni vaʼda qilamiz. Har bir soʻrovdagi hisoblagich qancha vaqt qolganini koʻrsatadi.",
+  welcomeCalendar: "Bandlik taqvimi",
+  welcomeCalendarText: "Band kunlarni bir bosishda belgilang — mijozlar ularni soʻrovdan oldin koʻradi.",
+  welcomeCard: "Maydon kartochkasi",
+  welcomeCardText: "Fotolar, narxlar, tavsif va paketlar. Oʻzgarishlarni Bayramm jamoasi tekshiradi.",
+  welcomeAccess: "Qanday kirish mumkin",
+  welcomeAccessText:
+    "Kabinetni Bayramm jamoasi ochadi: menejer maydoningizni va hamkor telefon raqamini qoʻshadi. Raqam menejerda boʻlsa — botni oching, «Men hamkorman» tugmasini bosing va raqamingizni ulashing: kabinet toʻgʻridan-toʻgʻri Telegramda ochiladi.",
+  welcomeAccessNew: "Bu yerda roʻyxatdan oʻtish yoʻq: yangi maydonlarni Bayramm jamoasi ulaydi.",
 
   tabNew: "Yangi",
   tabActive: "Jarayonda",
@@ -387,6 +449,9 @@ const uz: VendorDict = {
   emptyClosed: "Yopilgan soʻrov hali yoʻq",
   emptyClosedText: "Bu yerda kelishuvlar, rad etilgan va mijoz qaytarib olgan soʻrovlar boʻladi.",
   loadMore: "Yana koʻrsatish",
+  newCount: "yangi: {n}",
+  pickRequest: "Soʻrovni tanlang",
+  pickRequestText: "U shu yerda ochiladi: mijoz telefoni, tafsilotlar va nima javob berish.",
   requestNo: "Soʻrov № {n}",
   guestsOne: "{n} mehmon",
   guestsFew: "{n} mehmon",
@@ -462,6 +527,10 @@ const uz: VendorDict = {
   nextMonth: "Keyingi oy",
   dayBusy: "{date}, band",
   dayFree: "{date}, boʻsh",
+  dayBusyDecline: "{date}, rad etish bilan band",
+  dayBusyStaff: "{date}, menejer yopgan",
+  legendToday: "bugun",
+  legendTitle: "Belgilar",
   staffLocked: "Bu kunni menejer yopgan. Boʻshatish uchun u bilan bogʻlaning.",
   calendarSaveFailed: "Kunni saqlab boʻlmadi. Qayta urinib koʻring.",
   calendarConflict: "Taqvim oʻzgartirildi — yangiladik. Tekshiring va qayta belgilang.",

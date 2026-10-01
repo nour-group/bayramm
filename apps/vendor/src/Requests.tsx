@@ -1,7 +1,10 @@
 /* Входящие: вкладки «Новые · В работе · Закрытые» со счётчиками. В открытых вкладках
    сверху те, где время ответа истекает (просроченные — первыми), в закрытой — новые;
    порядок задаёт API. У ждущих ответа — счётчик 12 часов. Телефона в списке нет: он в
-   карточке заявки, где его чтение записывается в журнал. */
+   карточке заявки, где его чтение записывается в журнал.
+
+   На компьютере список стоит рядом с карточкой (Inbox.tsx): открытая заявка отмечена в
+   списке (aria-current), а список перечитывается тихо, когда карточка что-то изменила. */
 
 import {
   REQUEST_TABS,
@@ -9,7 +12,7 @@ import {
   type VendorRequestItem,
   type VendorRequestPage,
 } from "@bayramm/shared/api/vendor";
-import { type MouseEvent, useState } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 import { api } from "./api";
 import { formatBudget, formatDate, formatDuration, formatGuests, slaView, tashkentTime } from "./format";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
@@ -71,9 +74,11 @@ interface CardProps {
   readonly now: number;
   readonly showListing: boolean;
   readonly navigate: Navigate;
+  /** Эта заявка открыта рядом (компьютер) */
+  readonly selected: boolean;
 }
 
-function RequestCard({ item, t, lang, now, showListing, navigate }: CardProps) {
+function RequestCard({ item, t, lang, now, showListing, navigate, selected }: CardProps) {
   const location = { route: "request", id: item.id } as const;
   const late = awaitsAnswer(item) && slaView(item.sla, now).kind === "late";
   const budget = formatBudget(item.budgetMinUzs, item.budgetMaxUzs, t, lang);
@@ -85,7 +90,12 @@ function RequestCard({ item, t, lang, now, showListing, navigate }: CardProps) {
   };
   return (
     <li>
-      <a className={`rq${late ? " rq-late" : ""}`} href={pathOf(location)} onClick={onClick}>
+      <a
+        className={`rq${late ? " rq-late" : ""}`}
+        href={pathOf(location)}
+        aria-current={selected ? "page" : undefined}
+        onClick={onClick}
+      >
         <span className="rq-top">
           <span className="rq-name">{item.contactName ?? fill(t.requestNo, { n: item.publicNo })}</span>
           <StatusChip status={item.status} late={late} t={t} />
@@ -115,17 +125,46 @@ function RequestCard({ item, t, lang, now, showListing, navigate }: CardProps) {
   );
 }
 
-interface RequestsProps extends ScreenProps {
+interface RequestsProps extends Omit<ScreenProps, "headingRef"> {
+  /** Фокус после перехода — на заголовок списка; рядом с открытой заявкой — на её заголовок */
+  readonly headingRef?: ScreenProps["headingRef"];
   readonly tab: RequestTab;
   readonly onTab: (tab: RequestTab) => void;
   readonly navigate: Navigate;
   readonly listingCount: number;
+  /** Открытая рядом заявка (компьютер) */
+  readonly selectedId?: string;
+  /** Растёт, когда карточка рядом что-то изменила: список перечитывается тихо */
+  readonly version?: number;
+  /** Счётчики вкладок из ответа API — для значка у раздела «Заявки» */
+  readonly onCounts?: (counts: VendorRequestPage["counts"]) => void;
 }
 
-export function Requests({ t, lang, headingRef, tab, onTab, navigate, listingCount }: RequestsProps) {
+export function Requests({
+  t,
+  lang,
+  headingRef,
+  tab,
+  onTab,
+  navigate,
+  listingCount,
+  selectedId,
+  version = 0,
+  onCounts,
+}: RequestsProps) {
   const now = useNow();
-  const [page, reload, setPage] = useLoad<VendorRequestPage>(tab, (key) => api.requests(key));
+  const [page, reload, setPage, refresh] = useLoad<VendorRequestPage>(tab, (key) => api.requests(key));
   const [more, setMore] = useState<"idle" | "loading" | "failed">("idle");
+
+  // Карточка рядом изменила заявку — список и счётчики тоже (без «Загрузка…» и потери фокуса)
+  useEffect(() => {
+    if (version > 0) void refresh();
+  }, [version, refresh]);
+
+  const counts = page.state === "ready" ? page.data.counts : null;
+  useEffect(() => {
+    if (counts) onCounts?.(counts);
+  }, [counts, onCounts]);
 
   const loadMore = async (cursor: string) => {
     setMore("loading");
@@ -138,13 +177,12 @@ export function Requests({ t, lang, headingRef, tab, onTab, navigate, listingCou
     }
   };
 
-  const counts = page.state === "ready" ? page.data.counts : null;
   const hasLate =
     page.state === "ready" &&
     page.data.items.some((i) => awaitsAnswer(i) && slaView(i.sla, now).kind === "late");
 
   return (
-    <section className="page" aria-labelledby="page-title">
+    <section className="page inbox-list" aria-labelledby="page-title">
       <Heading headingRef={headingRef}>{t.requests}</Heading>
       <p className={`promise${hasLate ? " promise-late" : ""}`}>
         <Icon name={hasLate ? "warning" : "clock"} size={17} />
@@ -184,6 +222,7 @@ export function Requests({ t, lang, headingRef, tab, onTab, navigate, listingCou
                 now={now}
                 showListing={listingCount > 1}
                 navigate={navigate}
+                selected={item.id === selectedId}
               />
             ))}
           </ul>
@@ -204,7 +243,8 @@ export function Requests({ t, lang, headingRef, tab, onTab, navigate, listingCou
           ) : null}
         </>
       ) : null}
-      <p className="note">{t.consentNote}</p>
+      {/* Рядом с карточкой заявки (компьютер) то же сказано в ней */}
+      {selectedId === undefined ? <p className="note">{t.consentNote}</p> : null}
     </section>
   );
 }
