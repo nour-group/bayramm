@@ -69,7 +69,7 @@ describe("поиск клиентов: только псевдоним и ном
     expect(parseClientQuery(q)).toEqual(expected);
   });
 
-  it.each(["Иван", "+998901234567", "@username", "1a2b", "1a2b3c4d%"])(
+  it.each(["Иван", "+998001234567", "@username", "1a2b", "1a2b3c4d%"])(
     "%s — не ищем (ни имени, ни телефона)",
     (q) => {
       expect(parseClientQuery(q)).toEqual({ kind: "none" });

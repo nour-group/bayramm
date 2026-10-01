@@ -430,7 +430,7 @@ describe("клиенты", () => {
   it("администратор: телефон — с причиной", async () => {
     mockApi(staff("admin", ADMIN), {
       [`GET /api/staff/clients/${CLIENT_ID}`]: json(CLIENT),
-      [`POST /api/staff/clients/${CLIENT_ID}/phone`]: json({ phone: "+998901112233" }),
+      [`POST /api/staff/clients/${CLIENT_ID}/phone`]: json({ phone: "+998001112233" }),
     });
     await mount(`/clients/${CLIENT_ID}`);
     const form = [...container.querySelectorAll(".confirm")].find((f) =>
@@ -439,7 +439,7 @@ describe("клиенты", () => {
     await type(form?.querySelector("input") ?? null, "Жалоба вендора");
     await click(form?.querySelector("button") ?? undefined);
     expect(lastCall("/phone")?.body).toEqual({ reason: "Жалоба вендора" });
-    expect(text()).toContain("+998 90 111 22 33");
+    expect(text()).toContain("+998 00 111 22 33");
   });
 });
 
@@ -667,12 +667,12 @@ describe("команда", () => {
     expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/team"))).toBe(false);
     expect(form.querySelector(".field-error")?.textContent).toBe(t.fieldErrors.phone);
 
-    await type(phone ?? null, "90 123-45-67");
+    await type(phone ?? null, "00 123-45-67");
     await click(button(t.invite));
     expect(lastCall("/team")?.body).toEqual({
       displayName: "Новый менеджер",
       role: "manager",
-      phone: "+998901234567",
+      phone: "+998001234567",
     });
     expect(text()).toContain(t.invited);
   });

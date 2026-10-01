@@ -159,7 +159,7 @@ test.describe("кабинет", () => {
     await expect(page).toHaveURL(`/requests/${REQUEST_NEW}`);
     await expect(requestTitle(page)).toContainText("1051");
     const phone = page.locator("a.btn-phone");
-    await expect(phone).toHaveAttribute("href", "tel:+998901234567");
+    await expect(phone).toHaveAttribute("href", "tel:+998001234567");
     await expect(page.getByText("Нужен детский стол")).toBeVisible();
     await expectNoAxeViolations(page, "карточка заявки");
     await expectHitAreas(page, "карточка заявки", CONTROLS);

@@ -3,11 +3,11 @@ import { formatUzPhone, isUzPhone, normalizeUzPhone } from "./phone";
 
 describe("normalizeUzPhone", () => {
   it.each([
-    ["+998901234567", "+998901234567"],
-    ["+998 90 123 45 67", "+998901234567"],
-    ["998 (90) 123-45-67", "+998901234567"],
-    ["90 123 45 67", "+998901234567"],
-    ["  +998.90.123.45.67 ", "+998901234567"],
+    ["+998001234567", "+998001234567"],
+    ["+998 00 123 45 67", "+998001234567"],
+    ["998 (00) 123-45-67", "+998001234567"],
+    ["00 123 45 67", "+998001234567"],
+    ["  +998.00.123.45.67 ", "+998001234567"],
   ])("%s → %s", (input, expected) => {
     expect(normalizeUzPhone(input)).toBe(expected);
   });
@@ -15,12 +15,12 @@ describe("normalizeUzPhone", () => {
   it.each([
     "",
     "+7 912 345 67 89",
-    "+99890123456",
-    "+9989012345678",
-    "+901234567",
+    "+99800123456",
+    "+9980012345678",
+    "+001234567",
     "90123456a",
-    "++998901234567",
-    "+998 90 123 45 67 доб. 2",
+    "++998001234567",
+    "+998 00 123 45 67 доб. 2",
   ])("%j — не номер Узбекистана", (input) => {
     expect(normalizeUzPhone(input)).toBeNull();
   });
@@ -28,12 +28,12 @@ describe("normalizeUzPhone", () => {
 
 describe("isUzPhone / formatUzPhone", () => {
   it("только нормальный вид", () => {
-    expect(isUzPhone("+998901234567")).toBe(true);
-    expect(isUzPhone("998901234567")).toBe(false);
+    expect(isUzPhone("+998001234567")).toBe(true);
+    expect(isUzPhone("998001234567")).toBe(false);
   });
 
   it("для показа — группами", () => {
-    expect(formatUzPhone("+998901234567")).toBe("+998 90 123 45 67");
+    expect(formatUzPhone("+998001234567")).toBe("+998 00 123 45 67");
     expect(formatUzPhone("12345")).toBe("12345");
   });
 });

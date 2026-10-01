@@ -167,7 +167,7 @@ describe("POST /auth/phone/send с проверкой «не робот»", () =
 
   it("браузер без токена — 400 turnstile_required до базы", async () => {
     const fetch = vi.spyOn(globalThis, "fetch");
-    const { res } = await send({ phone: "+998901234567" });
+    const { res } = await send({ phone: "+998001234567" });
     expect(res.status).toBe(400);
     expect(await errorCode(res)).toBe("turnstile_required");
     expect(fetch).not.toHaveBeenCalled();
@@ -179,7 +179,7 @@ describe("POST /auth/phone/send с проверкой «не робот»", () =
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(Response.json({ success: false, "error-codes": ["invalid-input-response"] }));
     const { res } = await send(
-      { phone: "+998901234567", turnstileToken: "bad" },
+      { phone: "+998001234567", turnstileToken: "bad" },
       { "CF-Connecting-IP": "203.0.113.9" },
     );
     expect(res.status).toBe(403);
@@ -199,7 +199,7 @@ describe("POST /auth/phone/send с проверкой «не робот»", () =
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const fetch = vi.spyOn(globalThis, "fetch");
     const initData = await initDataFor({ id: 100000001, first_name: "Test" }, { botToken: "999:other-bot" });
-    const { res } = await send({ phone: "+998901234567", initData });
+    const { res } = await send({ phone: "+998001234567", initData });
     expect(res.status).toBe(401);
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -208,7 +208,7 @@ describe("POST /auth/phone/send с проверкой «не робот»", () =
     vi.spyOn(console, "error").mockImplementation(() => {});
     const fetch = vi.spyOn(globalThis, "fetch");
     const initData = await initDataFor({ id: 100000001, first_name: "Test" }, { botToken: BOT_TOKEN });
-    const { res } = await send({ phone: "+998901234567", initData });
+    const { res } = await send({ phone: "+998001234567", initData });
     // Базы в юнит-тестах нет: запрос дошёл до выдачи кода (500), а не остановлен проверкой
     expect(res.status).toBe(500);
     expect(fetch).not.toHaveBeenCalled();
@@ -219,7 +219,7 @@ describe("POST /auth/phone/send с проверкой «не робот»", () =
     const { res } = await call("/auth/phone/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "+998901234567" }),
+      body: JSON.stringify({ phone: "+998001234567" }),
     });
     expect(res.status).toBe(500);
   });

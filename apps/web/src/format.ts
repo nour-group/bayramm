@@ -145,7 +145,7 @@ export function isPhoneDigits(digits: string): boolean {
   return /^\d{9}$/.test(digits);
 }
 
-/** +998XXXXXXXXX → «+998 90 123 45 67»; другое — как есть */
+/** +998XXXXXXXXX → «+998 00 123 45 67»; другое — как есть */
 export function formatPhone(phone: string): string {
   const match = /^\+998(\d{2})(\d{3})(\d{2})(\d{2})$/.exec(phone);
   return match ? `${PHONE_PREFIX} ${match[1]} ${match[2]} ${match[3]} ${match[4]}` : phone;
