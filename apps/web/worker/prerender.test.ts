@@ -56,6 +56,22 @@ describe("пререндер лендинга в HTML страницы", () => {
     expect(body).toContain(dictionaries.ru.lnFaqH);
   });
 
+  it("без ?lang — язык браузера (Accept-Language): русский браузер видит русский лендинг", async () => {
+    const { res, body } = await setup().get("/", {
+      headers: { "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8" },
+    });
+    expect(res.headers.get("Vary")).toContain("Accept-Language");
+    expect(body).toContain('<html lang="ru"');
+    expect(h1(body)).toBe(dictionaries.ru.lnTitle);
+    // ?lang главнее браузера; чужой язык браузера — узбекский по умолчанию
+    expect(h1((await setup().get("/?lang=uz", { headers: { "Accept-Language": "ru" } })).body)).toBe(
+      dictionaries.uz.lnTitle,
+    );
+    expect(h1((await setup().get("/", { headers: { "Accept-Language": "en-US,en" } })).body)).toBe(
+      dictionaries.uz.lnTitle,
+    );
+  });
+
   it("CSP: в ответе ни встроенных скриптов, ни стилей; скрипты — только свои файлы", async () => {
     const { res, body } = await setup().get("/");
     expect(res.headers.get("content-security-policy")).not.toContain("'unsafe-inline'");

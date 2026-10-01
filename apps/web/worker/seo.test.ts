@@ -3,7 +3,7 @@ import { recordingFetcher, spaAssets } from "@bayramm/edge/testing";
 import type { ListingDetail } from "@bayramm/shared/api";
 import { describe, expect, it, vi } from "vitest";
 import { demoListings } from "../src/api/mock";
-import { escapeHtml, injectMeta, pageMeta } from "./meta";
+import { browserLang, escapeHtml, injectMeta, pageMeta } from "./meta";
 import { robotsTxt } from "./seo";
 
 // Под Vitest import.meta.env.DEV = true; проверяем воркер таким, каким он будет в сборке
@@ -188,6 +188,21 @@ describe("разметка страниц", () => {
     const meta = pageMeta(new URL(`${PROD}/venue/${LOLA.slug}`), long);
     expect(meta.description.length).toBeLessThanOrEqual(200);
     expect(meta.description.endsWith("…")).toBe(true);
+  });
+});
+
+describe("browserLang", () => {
+  it.each([
+    ["ru-RU,ru;q=0.9,en;q=0.8", "ru"],
+    ["en-US,en;q=0.9,uz;q=0.8,ru;q=0.7", "uz"],
+    ["ru;q=0.5,uz;q=0.8", "uz"],
+    ["uz-Latn-UZ", "uz"],
+    ["ru;q=0", null],
+    ["en, de", null],
+    ["", null],
+    [null, null],
+  ] as const)("%s → %s", (header, lang) => {
+    expect(browserLang(header)).toBe(lang);
   });
 });
 

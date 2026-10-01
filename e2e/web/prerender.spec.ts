@@ -4,8 +4,8 @@ import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
 import { PATHS, prepare, T } from "../support/web";
 
-/* Пререндер лендинга: HTML главной уже несёт лендинг на языке страницы (без ?lang= —
-   узбекский) — он виден до JS и без него. Приложение сменяет его своей первой отрисовкой
+/* Пререндер лендинга: HTML главной уже несёт лендинг на языке страницы (?lang=, иначе язык
+   браузера из Accept-Language, иначе узбекский) — он виден до JS и без него. Приложение сменяет его своей первой отрисовкой
    без заглушки загрузки. Внутри Telegram (корень — каталог) и при другом языке приложения
    public/boot.js помечает <html> ещё до разбора body, и boot.css прячет пререндер с первой
    отрисовки: ни чужого экрана, ни чужого языка на миг.
@@ -61,8 +61,8 @@ async function watchBoot(page: Page): Promise<() => Promise<Watch>> {
   return () => page.evaluate(() => (window as unknown as { __watch: Watch }).__watch);
 }
 
-test.describe("без JS", () => {
-  test.use({ javaScriptEnabled: false });
+test.describe("без JS, браузер не на русском и не на узбекском", () => {
+  test.use({ javaScriptEnabled: false, locale: "en-US" });
 
   test("главная — лендинг из HTML на узбекском: первый экран, как это работает, вопросы, подвал", async ({
     page,
@@ -82,6 +82,15 @@ test.describe("без JS", () => {
     await expect(page.locator("html")).not.toHaveAttribute("data-boot", /.*/);
   });
 
+  test("русский браузер (Accept-Language) — лендинг из HTML сразу на русском", async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false, locale: "ru-RU" });
+    const page = await context.newPage();
+    await page.goto(PATHS.home);
+    await expect(page.locator("html")).toHaveAttribute("lang", "ru");
+    await expect(page.locator(TITLE)).toHaveText(ru.lnTitle);
+    await context.close();
+  });
+
   test("?lang=ru — тот же лендинг на русском", async ({ page }) => {
     await page.goto(`${PATHS.home}?lang=ru`);
     await expect(page.locator("html")).toHaveAttribute("lang", "ru");
@@ -98,17 +107,18 @@ test.describe("без JS", () => {
 
 test.describe("с JS в браузере", () => {
   test("до приложения виден пререндер (код приложения не загрузился)", async ({ page }) => {
-    await prepare(page, { lang: "uz" });
+    // Браузер на русском, своего выбора нет: и сервер, и приложение — на русском
+    await prepare(page);
     await page.route("**/src/main.tsx", (route) => route.abort());
     await page.goto(PATHS.home);
     await expect(page.locator("html")).toHaveAttribute("data-boot", "show");
-    await expect(page.locator(TITLE)).toHaveText(uz.lnTitle);
+    await expect(page.locator(TITLE)).toHaveText(ru.lnTitle);
     await expect(page.locator(TITLE)).toBeVisible();
   });
 
   test("язык совпал: пререндер с первого кадра, приложение сменяет его без заглушки", async ({ page }) => {
     const errors = consoleErrors(page);
-    await prepare(page, { lang: "uz" });
+    await prepare(page);
     const watch = await watchBoot(page);
     await page.goto(PATHS.home);
     await expect(page.locator(".landing .ln-cards .card").first()).toBeVisible();
@@ -117,7 +127,7 @@ test.describe("с JS в браузере", () => {
     // Пререндер заменён целиком: один заголовок, один #ln-title, разметки пререндера нет
     await expect(page.locator("[data-prerendered]")).toHaveCount(0);
     await expect(page.locator("h1")).toHaveCount(1);
-    await expect(page.locator("#ln-title")).toHaveText(uz.lnTitle);
+    await expect(page.locator("#ln-title")).toHaveText(ru.lnTitle);
     await expectNoAxeViolations(page, "лендинг после пререндера");
     expect(errors).toEqual([]);
   });
@@ -135,16 +145,18 @@ test.describe("с JS в браузере", () => {
     expect(errors).toEqual([]);
   });
 
-  test("язык приложения другой (браузер на русском): узбекский пререндер не мелькает", async ({ page }) => {
+  test("язык приложения другой (выбран узбекский, браузер на русском): русский пререндер не мелькает", async ({
+    page,
+  }) => {
     const errors = consoleErrors(page);
-    await prepare(page);
+    await prepare(page, { lang: "uz" });
     const watch = await watchBoot(page);
     await page.goto(PATHS.home);
-    await expect(page.locator(TITLE)).toHaveText(ru.lnTitle);
+    await expect(page.locator(TITLE)).toHaveText(uz.lnTitle);
     await expect(page.locator(".landing .ln-cards .card").first()).toBeVisible();
-    // Узбекский пререндер в DOM, но с первой отрисовки спрятан; заглушки тоже нет
+    // Русский пререндер в DOM, но с первой отрисовки спрятан; заглушки тоже нет
     expect(await watch()).toEqual({ bootAtInsert: "skip", displayAtReady: "none", fallback: false });
-    await expect(page.getByText(uz.lnTitle)).toHaveCount(0);
+    await expect(page.getByText(ru.lnTitle)).toHaveCount(0);
     expect(errors).toEqual([]);
   });
 
