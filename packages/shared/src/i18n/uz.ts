@@ -591,4 +591,6 @@ export const uz: Dict = {
   ftAbout: "Toshkentda bayramlar uchun zal qidirish.",
   ftNav: "Bayramm haqida",
   ftTelegram: "Bayramm Telegramda",
+  // меню сайта для гостя (шторка из шапки на телефоне и планшете)
+  menu: "Menyu",
 };

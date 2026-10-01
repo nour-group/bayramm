@@ -118,13 +118,4 @@ test.describe("вне Telegram", () => {
     await expect(page.locator("form.request")).toHaveCount(0);
     await expect(page.locator(`a[href="tel:${VENUE.phone}"]`).first()).toBeVisible();
   });
-
-  test("«Мои заявки» без входа тоже ведут в бота", async ({ page }) => {
-    await prepare(page);
-    await open(page, PATHS.requests, ".tg-cta", { guest: true });
-    await expect(page.getByRole("link", { name: ru.openInTg })).toHaveAttribute(
-      "href",
-      `https://t.me/${DEMO_BOT}?startapp`,
-    );
-  });
 });

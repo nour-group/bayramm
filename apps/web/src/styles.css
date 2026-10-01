@@ -264,12 +264,44 @@ img {
   gap: var(--gap-9);
 }
 
-/* Разделы и вход в шапке — только на компьютере (ниже, @media 1024px); на телефоне и
-   планшете разделы — нижняя панель, вход — в профиле. После .btn: иначе его display
-   перекрыл бы это правило (ловушка №7) */
-.site-nav,
-.top-signin {
+/* Разделы в шапке — только на компьютере (ниже, @media 1024px); на телефоне и планшете
+   разделы — нижняя панель (после входа) или меню (у гостя) */
+.site-nav {
   display: none;
+}
+
+/* Шапка гостя сайта (nav.ts): логотип, язык, «Войти» и меню. «Войти» — компактнее обычной
+   кнопки: на телефоне в строке ещё логотип, язык и меню. После .btn (ловушка №7) */
+.top-signin {
+  flex: none;
+  min-height: var(--hit-min);
+  padding: 0 12px;
+  font-size: var(--fs-14);
+}
+
+/* Язык в шапке гостя — пока влезает рядом со входом и меню: с 390px, а на внутренних
+   экранах (там ещё «назад») — с планшета. Уже — он в меню и в подвале */
+@media (max-width: 389px) {
+  .app.guest .top > .lang {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .app.guest.inner .top > .lang {
+    display: none;
+  }
+}
+
+/* 320px на внутреннем экране: «назад», «Войти» и меню — логотип рядом с ними не влезает */
+@media (max-width: 359px) {
+  .app.guest.inner .top > .brand {
+    display: none;
+  }
+
+  .app.guest.inner .top > .top-signin {
+    margin-left: auto;
+  }
 }
 
 /* Переключатель языка: кнопки 44×44, выбранная — на белом */
@@ -1515,11 +1547,6 @@ textarea.field-input {
   margin-top: 4px;
 }
 
-/* На телефоне — два зала, дальше — «Смотреть все залы» */
-.ln-cards > li:nth-child(n + 3) {
-  display: none;
-}
-
 /* Место под карточку, пока залы грузятся: фото 3:2 и подпись той же высоты, что у
    карточки, — без сдвига вёрстки, когда залы придут */
 .card-skeleton {
@@ -1617,6 +1644,69 @@ textarea.field-input {
   padding-bottom: 12px;
 }
 
+/* Лендинг на телефоне: короче и плотнее. Правила — после основных (ловушка №7) */
+
+/* Залы — лентой вбок: следующий выглядывает из-за края, листают пальцем (как фото
+   площадки). Обе оси явно (ловушка №2); кольцо фокуса карточки — внутри, снаружи его
+   обрезал бы край ленты */
+@media (max-width: 639px) {
+  .ln-cards {
+    grid-auto-columns: 84%;
+    grid-auto-flow: column;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .ln-cards > li {
+    scroll-snap-align: start;
+  }
+
+  .ln-cards .card-link:focus-visible {
+    outline-offset: -3px;
+  }
+
+  /* Обещания — значок слева, текст справа */
+  .ln-promise {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--gap-12);
+    align-items: start;
+  }
+
+  .ln-promise-ico {
+    grid-row: span 2;
+  }
+
+  .ln-promise .ln-h3 {
+    margin-top: 0;
+  }
+}
+
+/* Шаги — номер слева, текст справа (с планшета — три колонки) */
+@media (max-width: 767px) {
+  .ln-step {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--gap-12);
+    align-items: start;
+  }
+
+  .ln-step-no {
+    grid-row: span 2;
+  }
+
+  .ln-step .ln-h3 {
+    margin-top: 6px;
+  }
+
+  /* Кабинет партнёра — кнопкой во всю ширину, как остальные действия на телефоне */
+  .ln-partner > .btn {
+    justify-self: stretch;
+  }
+}
+
 /* ---------- документы и подвал сайта ---------- */
 
 .page-lead {
@@ -1630,7 +1720,8 @@ textarea.field-input {
   border-top: 1px solid var(--rule);
 }
 
-.app.inner .site-footer {
+.app.inner .site-footer,
+.app.guest .site-footer {
   padding-bottom: calc(var(--pad-b) + 24px);
 }
 
@@ -1675,6 +1766,61 @@ textarea.field-input {
   margin-top: 12px;
 }
 
+/* ---------- меню сайта для гостя (шторка из шапки, components/SiteMenu.tsx) ---------- */
+
+/* Одна кнопка «Закрыть» — во всю ширину (у диалога набора колонки две) */
+.site-menu-dialog .ui-dialog-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.site-menu {
+  display: grid;
+  gap: var(--gap-12);
+}
+
+.menu-links {
+  display: grid;
+  gap: var(--gap-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menu-links a {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-12);
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+  color: var(--plum);
+  font-size: var(--fs-15);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.menu-ico {
+  flex: none;
+  color: var(--coral);
+}
+
+.menu-lang {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-12);
+  font-weight: 700;
+}
+
+.menu-signin {
+  display: grid;
+  gap: var(--gap-9);
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
 /* ---------- наведение и выбранное ---------- */
 
 /* Наведение — только там, где есть курсор (ловушка №6) */
@@ -1699,7 +1845,8 @@ textarea.field-input {
     color: var(--ink);
   }
 
-  .site-nav a:hover {
+  .site-nav a:hover,
+  .menu-links a:hover {
     background: var(--lilac);
     color: var(--ink);
   }
@@ -1735,6 +1882,11 @@ textarea.field-input {
 
 .site-nav a[aria-current="page"] svg {
   color: var(--coral);
+}
+
+.menu-links a[aria-current="page"] {
+  border-color: var(--lilac);
+  background: var(--lilac);
 }
 
 .tabs a[aria-current="page"] svg {
@@ -1878,10 +2030,6 @@ textarea.field-input {
     background: var(--white);
   }
 
-  .ln-cards > li:nth-child(n + 3) {
-    display: list-item;
-  }
-
   .ln-promises {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
@@ -1980,11 +2128,12 @@ textarea.field-input {
   }
 
   .top-signin {
-    display: inline-flex;
-    min-height: var(--hit-min);
     padding: 0 16px;
+    font-size: var(--fs-15);
   }
 
+  /* Меню гостя — до компьютера: здесь его разделы в шапке, вход — рядом */
+  .top-menu,
   .tabs {
     display: none;
   }

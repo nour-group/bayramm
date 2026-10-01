@@ -46,12 +46,14 @@ describe("избранное гостя (без входа)", () => {
     expect(window.localStorage.getItem(FAVORITES_KEY)).toBeNull();
   });
 
-  it("вкладка «Сохранённое»: четыре вкладки внизу, отмеченные карточки, снятое уходит сразу", async () => {
+  it("раздел «Сохранённое» у гостя: в шапке рядом с каталогом, отмеченные карточки, снятое уходит сразу", async () => {
     window.localStorage.setItem(FAVORITES_KEY, JSON.stringify([B.id, A.id]));
     await mount({ path: "/favorites", identity: "guest" });
-    const tabs = [...document.querySelectorAll("nav.tabs a")].map((a) => a.textContent);
-    expect(tabs).toEqual(["Каталог", "Сохранённое", "Заявки", "Профиль"]);
-    expect(document.querySelector('nav.tabs a[aria-current="page"]')?.textContent).toBe("Сохранённое");
+    // Оболочка гостя: нижней панели нет, разделы — каталог и сохранённое (личного без входа нет)
+    expect(document.querySelector("nav.tabs")).toBeNull();
+    const sections = [...document.querySelectorAll("nav.site-nav a")].map((a) => a.textContent);
+    expect(sections).toEqual(["Каталог", "Сохранённое"]);
+    expect(document.querySelector('nav.site-nav a[aria-current="page"]')?.textContent).toBe("Сохранённое");
     expect(document.querySelector("h1")?.textContent).toBe("Сохранённое");
     await waitFor(() => cardNames().length === 2, "две карточки");
     expect(cardNames()).toEqual([B.name, A.name]);

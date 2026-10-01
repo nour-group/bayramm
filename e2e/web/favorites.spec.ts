@@ -1,6 +1,6 @@
 import { expectNoAxeViolations } from "../support/a11y";
 import { expect, test } from "../support/offline";
-import { isDesktop, LISTINGS, open, PATHS, prepare, sections, T } from "../support/web";
+import { goToSection, isDesktop, LISTINGS, open, PATHS, prepare, sections, T } from "../support/web";
 
 /* Избранное без входа, язык гостя между визитами, связь (баннер и повтор) и проверка
    «не робот» в хабе. Всё — на демо-API клиента в браузере, без сети. */
@@ -12,7 +12,7 @@ if (!FIRST || !SECOND) throw new Error("нет демо-площадок");
 const heart = (name: string) => `button.fav-btn[aria-label="${ru.favToggle(name)}"]`;
 
 test.describe("избранное гостя", () => {
-  test("сердечко в каталоге и на площадке → вкладка «Сохранённое»; переживает перезагрузку", async ({
+  test("сердечко в каталоге и на площадке → раздел «Сохранённое»; переживает перезагрузку", async ({
     page,
   }) => {
     await prepare(page);
@@ -28,9 +28,9 @@ test.describe("избранное гостя", () => {
     await page.locator(heart(SECOND.name)).click();
     await expect(page.locator(heart(SECOND.name))).toHaveAttribute("aria-pressed", "true");
 
-    // Вкладка — из нижней панели (на компьютере — раздел в шапке); последние отмеченные — первыми
+    // Раздел — из меню гостя (на компьютере — из шапки); последние отмеченные — первыми
     await open(page, PATHS.catalog, ".card", { guest: true });
-    await sections(page).getByRole("link", { name: ru.svTitle }).click();
+    await goToSection(page, ru.svTitle);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.svTitle);
     const names = page.locator(".favorites .card-name");
     await expect(names).toHaveText([SECOND.name, FIRST.name]);
@@ -48,11 +48,12 @@ test.describe("избранное гостя", () => {
     await expect(page.getByRole("link", { name: ru.svGo })).toHaveAttribute("href", PATHS.catalog);
   });
 
-  test("четыре раздела — каждый не меньше 44px: внизу на телефоне, в шапке на компьютере", async ({
+  test("после входа четыре раздела — каждый не меньше 44px: внизу на телефоне, в шапке на компьютере", async ({
     page,
   }) => {
     await prepare(page);
-    await open(page, PATHS.catalog, ".card", { guest: true });
+    // Демо без ?guest — вошедший: оболочка приложения
+    await open(page, PATHS.catalog, ".card");
     const tabs = sections(page).locator("a");
     await expect(page.locator(isDesktop(page) ? "nav.site-nav" : "nav.tabs")).toBeVisible();
     await expect(page.locator(isDesktop(page) ? "nav.tabs" : "nav.site-nav")).toBeHidden();
@@ -67,16 +68,17 @@ test.describe("избранное гостя", () => {
 
 test("гость: язык, выбранный в прошлый визит, остаётся в новой вкладке", async ({ page, context }) => {
   await prepare(page);
-  await open(page, PATHS.profile, ".docs", { guest: true });
-  await page.locator('.top button[lang="uz"]').click();
+  await open(page, PATHS.docs, ".docs", { guest: true });
+  // Язык — в подвале сайта (в шапке он есть не на всякой ширине)
+  await page.locator('.site-footer button[lang="uz"]').click();
   await expect(page.locator("html")).toHaveAttribute("lang", "uz");
 
   // Новая вкладка — sessionStorage пуст, язык — из localStorage
   const next = await context.newPage();
   await next.clock.setFixedTime(new Date("2026-10-01T07:00:00Z"));
-  await next.goto(`${PATHS.profile}?guest`);
+  await next.goto(`${PATHS.docs}?guest`);
   await expect(next.locator("html")).toHaveAttribute("lang", "uz");
-  await expect(next.getByRole("heading", { level: 1 })).toHaveText(T.uz.navProfile);
+  await expect(next.getByRole("heading", { level: 1 })).toHaveText(T.uz.meDocs);
 });
 
 test("нет связи — полоса под шапкой; вернулась — «связь вернулась»", async ({ page, context }) => {

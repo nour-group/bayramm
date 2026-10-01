@@ -39,8 +39,9 @@ describe("лендинг (/ в браузере)", () => {
     const footer = document.querySelector(".site-footer");
     expect(footer?.querySelector('a[href="/docs"]')?.textContent).toBe("Документы");
     expect(footer?.querySelector('a[href="/catalog"]')).not.toBeNull();
-    // Ни одна вкладка не текущая: лендинг — не раздел
-    expect(document.querySelector('nav.tabs a[aria-current="page"]')).toBeNull();
+    // Оболочка гостя: без нижней панели; ни один раздел не текущий — лендинг не раздел
+    expect(document.querySelector("nav.tabs")).toBeNull();
+    expect(document.querySelector('nav.site-nav a[aria-current="page"]')).toBeNull();
   });
 
   it("площадок нет — блока залов нет, заглушек под видом залов тоже", async () => {

@@ -17,7 +17,8 @@ import { haptic } from "../telegram";
        аккаунта не добавить (409), слияния нет. Телефон с проверкой «не робот» на сайте
        добавляется в хабе (/auth?link=phone: виджет Turnstile разрешён только там), в
        Telegram — здесь же, запрос кода подписан initData;
-     · на сайте — «Войти» (хаб) и «Выйти». Ссылки в хаб — полной загрузкой: у /auth свой CSP */
+     · на сайте — «Выйти» (и на главную). Гость сюда не попадает: профиль только после входа
+       (nav.ts), «Войти» — в шапке и меню сайта. Ссылки в хаб — полной загрузкой: у /auth свой CSP */
 
 // Имя бота по правилам @BotFather: латиница, цифры, _, в конце bot
 const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
@@ -148,32 +149,16 @@ export function AccountSection() {
   const profile = me.status === "ready" ? me.data : null;
   const ready = methods.status === "ready" ? methods.data : null;
 
-  if (deleted) return null;
-
-  if (!canSignIn(identity)) {
-    return (
-      <section className="section" aria-labelledby="profile-account">
-        <h2 className="section-title" id="profile-account">
-          {t.accTitle}
-        </h2>
-        {/* Телефон — только если вход по нему здесь включён (пока не ответили — не обещаем) */}
-        <p className="muted small">{ready?.phone === true ? t.accSignInLead : t.accSignInLeadTelegram}</p>
-        <a className="btn btn-primary wide" href={authHref({ return: hrefFor({ name: "profile" }) })}>
-          {t.accSignIn}
-        </a>
-      </section>
-    );
-  }
-
-  if (profile === null) return null;
+  if (deleted || !canSignIn(identity) || profile === null) return null;
 
   const signOut = async () => {
     setLeaving(true);
     try {
       await api.signOut();
     } finally {
-      // Токен вкладки забыт в любом случае; страница — заново, уже гостем
-      browser.replace(hrefFor({ name: "profile" }));
+      // Токен вкладки забыт в любом случае; страница — заново, уже гостем: на главную
+      // (профиль гостю не показывается — он увёл бы прямо во вход)
+      browser.replace(hrefFor({ name: "home" }));
     }
   };
 
