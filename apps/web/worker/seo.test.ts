@@ -205,6 +205,7 @@ describe("robots.txt и sitemap.xml", () => {
   it("SEARCH_INDEXING=off: боевой домен закрыт целиком — robots.txt и noindex на страницах", async () => {
     const { get, html } = setup(fakeApi(), "off");
     expect(await (await get(`${PROD}/robots.txt`)).text()).toBe("User-agent: *\nDisallow: /\n");
+    expect((await get(`${PROD}/sitemap.xml`)).status).toBe(404);
     for (const path of ["/", "/catalog", `/venue/${LOLA.slug}`]) {
       const { res, body } = await html(`${PROD}${path}`);
       expect(res.status, path).toBe(200);

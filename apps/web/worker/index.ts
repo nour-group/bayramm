@@ -62,7 +62,14 @@ export default {
       return new Response(robotsTxt(url, indexingAllowed(url, env.SEARCH_INDEXING)), {
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
-    if (read && url.pathname === "/sitemap.xml") return sitemapXml(env.API, url);
+    // Карта сайта — только когда поисковиков пускают (как robots.txt); иначе её нет
+    if (read && url.pathname === "/sitemap.xml")
+      return indexingAllowed(url, env.SEARCH_INDEXING)
+        ? sitemapXml(env.API, url)
+        : new Response("Not found", {
+            status: 404,
+            headers: { "Content-Type": "text/plain; charset=utf-8" },
+          });
     if (read && isPagePath(url.pathname) && !taklifnomaRedirect(url)) return page(request, env, url);
     return site.fetch(request, env);
   },
