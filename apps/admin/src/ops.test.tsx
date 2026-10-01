@@ -752,11 +752,15 @@ describe("правки карточек", () => {
     listing: { id: LISTING_ID, name: "Oqsaroy Hall", status: "active", categoryCode: "hall" },
     vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
     proposedBy: { kind: "partner", name: null },
-    fields: ["name", "priceFromUzs"],
+    fields: ["name", "videoLinks"],
     stale: true,
     changes: [
       { field: "name", before: "Oqsaroy Hall", after: "Oqsaroy Grand" },
-      { field: "priceFromUzs", before: 150000, after: 180000 },
+      {
+        field: "videoLinks",
+        before: [],
+        after: ["https://www.youtube.com/watch?v=dQw4w9WgXcQ"],
+      },
     ],
     valid: true,
     decisionReason: null,
@@ -871,7 +875,7 @@ describe("правки карточек", () => {
     const rows = [...container.querySelectorAll("tbody tr")].map((r) => r.textContent);
     expect(rows[0]).toContain("Oqsaroy Hall");
     expect(rows[0]).toContain("Oqsaroy Grand");
-    expect(rows[1]).toMatch(/180\s000 сум/);
+    expect(rows[1]).toContain("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
 
     await click(button(t.revisionDecline));
     const form = container.querySelector(".confirm") as HTMLFormElement;

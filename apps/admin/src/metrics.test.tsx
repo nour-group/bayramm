@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-// Метрики запуска в панели: раздел (очереди, недели, вендоры с сортировкой по доле ответов в
-// срок), ответы вендора на его странице, пауза напоминаний в настройках. API — подменённый fetch
+// Метрики запуска в панели: раздел (очереди, сводка по категориям, недели и вендоры с фильтром
+// категории и сортировкой по доле ответов в срок), ответы вендора по витринам с категориями на
+// его странице, пауза напоминаний в настройках. API — подменённый fetch
 import type {
+  CategoryMetricsList,
   MetricsOverview,
   StaffDictionaries,
   StaffMe,
@@ -16,6 +18,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { categoryName } from "./categories";
 import { barClass, sortVendors } from "./pages/Metrics";
 import { tokenStore } from "./session";
 import { t } from "./texts";
@@ -71,6 +74,7 @@ const WEEK: WeeklyMetrics = {
 
 const OVERVIEW: MetricsOverview = {
   slaHours: 12,
+  category: null,
   weeks: [
     {
       ...WEEK,
@@ -92,6 +96,7 @@ const OVERVIEW: MetricsOverview = {
 const vendorRow = (id: string, code: string, rate: number | null, requests: number): VendorMetrics => ({
   vendor: { id, code, name: `Hall ${code}` },
   activeListings: 1,
+  categories: ["hall"],
   requests,
   measurable: requests,
   answeredInTime: rate === null ? 0 : Math.round((rate / 100) * requests),
@@ -105,10 +110,35 @@ const vendorRow = (id: string, code: string, rate: number | null, requests: numb
 
 const VENDORS: VendorMetricsList = {
   days: 30,
+  category: null,
   items: [
     vendorRow(VENDOR_A, "V101", 80, 5),
     vendorRow(VENDOR_B, "V102", null, 0),
     vendorRow(VENDOR_C, "V103", 20, 9),
+  ],
+};
+
+const CATEGORY_METRICS: CategoryMetricsList = {
+  days: 30,
+  items: [
+    {
+      ...vendorRow(VENDOR_A, "V101", 70, 10),
+      categoryCode: "hall",
+      activeListings: 4,
+      activeVendors: 3,
+      clients: 8,
+      p90ResponseMinutes: 600,
+      agreedRate: 20,
+    },
+    {
+      ...vendorRow(VENDOR_C, "V103", null, 0),
+      categoryCode: "car",
+      activeListings: 1,
+      activeVendors: 1,
+      clients: 0,
+      p90ResponseMinutes: null,
+      agreedRate: null,
+    },
   ],
 };
 
@@ -198,6 +228,7 @@ describe("раздел «Метрики»", () => {
     mockApi(MODERATOR, {
       "GET /api/staff/metrics": json(OVERVIEW),
       "GET /api/staff/metrics/vendors": json(VENDORS),
+      "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
     });
     await mount("/metrics");
     const nav = [...container.querySelectorAll(".nav a")].map((a) => a.textContent);
@@ -235,6 +266,39 @@ describe("раздел «Метрики»", () => {
     expect(calls.filter((c) => c.url.startsWith("/api/staff/metrics")).every((c) => c.method === "GET")).toBe(
       true,
     );
+  });
+
+  it("сводка по категориям; фильтр категории — у недель и вендоров, очереди — все", async () => {
+    mockApi(MODERATOR, {
+      "GET /api/staff/metrics": json(OVERVIEW),
+      "GET /api/staff/metrics/vendors": json(VENDORS),
+      "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
+    });
+    await mount("/metrics");
+    const rows = [
+      ...container.querySelectorAll("section[aria-labelledby='categories-metrics-title'] tbody tr"),
+    ];
+    expect(rows.map((tr) => tr.querySelector("th")?.firstChild?.textContent)).toEqual([
+      categoryName("hall"),
+      categoryName("car"),
+    ]);
+    expect(rows[0]?.textContent).toContain(t.activeVendors(3));
+    expect(rows[0]?.textContent).toContain("70 %");
+    expect(rows[1]?.textContent).toContain(t.none);
+    // У вендора — категории его витрин
+    expect(
+      container.querySelector("section[aria-labelledby='vendors-metrics-title']")?.textContent,
+    ).toContain(categoryName("hall"));
+
+    await click(container.querySelector("button[aria-haspopup=listbox]"));
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === categoryName("car")),
+    );
+    expect(calls.some((c) => c.url === "/api/staff/metrics?category=car")).toBe(true);
+    expect(calls.some((c) => c.url === "/api/staff/metrics/vendors?category=car")).toBe(true);
+    // Сводка по категориям от фильтра не зависит
+    expect(calls.filter((c) => c.url.startsWith("/api/staff/metrics/categories"))).toHaveLength(1);
+    expect(text()).toContain(t.metricsCategoryFilter(categoryName("car")));
   });
 
   it("без права metrics.read раздела нет в навигации", async () => {
@@ -300,18 +364,23 @@ describe("страница вендора: ответы на заявки", () =
     listings: [],
   };
 
-  it("за 30 дней: заявки, доля в срок, медиана; площадки — если их несколько", async () => {
+  it("за 30 дней: заявки, доля в срок, медиана; витрины с категориями — если их несколько", async () => {
     const stats: VendorResponseStats = {
       days: 30,
       vendor: vendorRow(VENDOR_A, "V101", 60, 5),
       listings: [
         {
           ...vendorRow(VENDOR_A, "V101", 60, 3),
-          listing: { id: LISTING_ID, name: "Zal 1", status: "active" },
+          listing: { id: LISTING_ID, name: "Zal 1", status: "active", categoryCode: "hall" },
         },
         {
           ...vendorRow(VENDOR_A, "V101", 50, 2),
-          listing: { id: "bbbbbbbb-0000-0000-0000-000000000002", name: "Zal 2", status: "suspended" },
+          listing: {
+            id: "bbbbbbbb-0000-0000-0000-000000000002",
+            name: "Kortej",
+            status: "suspended",
+            categoryCode: "car",
+          },
         },
       ],
     };
@@ -325,7 +394,12 @@ describe("страница вендора: ответы на заявки", () =
     expect(panel?.textContent).toContain("60 %");
     expect(panel?.textContent).toContain("1 ч");
     expect(panel?.querySelectorAll("tbody tr")).toHaveLength(2);
-    expect(panel?.textContent).toContain("Zal 2");
+    expect(panel?.textContent).toContain("Kortej");
+    expect([...(panel?.querySelectorAll("tbody .cat-chip") ?? [])].map((c) => c.textContent)).toEqual([
+      categoryName("hall"),
+      categoryName("car"),
+    ]);
+    expect(panel?.textContent).toContain(t.vendorCategories);
   });
 
   it("заявок не было — так и написано", async () => {

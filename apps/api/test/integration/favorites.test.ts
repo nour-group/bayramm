@@ -9,7 +9,16 @@ import type { ListingCards } from "@bayramm/shared/api";
 import type { Favorites } from "@bayramm/shared/api/me";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { adminClient, bearer, call, cleanup, loginToken, newTelegramUser, tgIdHash } from "./helpers";
+import {
+  addHallBanquets,
+  adminClient,
+  bearer,
+  call,
+  cleanup,
+  loginToken,
+  newTelegramUser,
+  tgIdHash,
+} from "./helpers";
 
 let admin: Client;
 const run = randomBytes(3).toString("hex");
@@ -29,11 +38,7 @@ async function createListing(id: string, name: string, publish: boolean): Promis
     "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000777')",
     [id],
   );
-  await admin.query(
-    `insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs)
-     values ($1, 'weekday', 'Будни', 'Ish kuni', 100000), ($1, 'weekend', 'Выходные', 'Dam olish', 120000)`,
-    [id],
-  );
+  await addHallBanquets(admin, id, 100_000);
   for (const n of [1, 2, 3]) {
     await admin.query(
       `insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,

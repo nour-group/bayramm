@@ -17,8 +17,6 @@ import { forbidden } from "../errors";
 import { reauthRequired, type SignInSource, signInTelegram, verifyWebApp, verifyWidget } from "./account";
 import { generateToken, hashToken } from "./crypto";
 
-export const STAFF_SESSION_TTL_SECONDS = 12 * 60 * 60;
-
 export interface StaffSession {
   token: string;
   expiresAt: Date;

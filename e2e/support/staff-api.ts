@@ -2,6 +2,7 @@ import type {
   AuditList,
   Availability,
   AvailabilityInput,
+  CategoryMetricsList,
   ClientDetail,
   ClientList,
   ClientListItem,
@@ -214,7 +215,7 @@ function newListing(input: ListingInput): ListingDetail {
     descriptionRu: null,
     descriptionUz: null,
     priceFromUzs: null,
-    priceUnit: input.priceUnit ?? "per_guest",
+    priceUnit: "per_guest",
     capMin: null,
     capMax: null,
     submittedAt: null,
@@ -228,7 +229,6 @@ function newListing(input: ListingInput): ListingDetail {
     videoLinks: [],
     parallelCapacity: 1,
     services: [],
-    packages: [],
     photos: [],
     blockers: { review: REVIEW_BLOCKERS, active: ACTIVE_BLOCKERS },
     vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
@@ -268,11 +268,8 @@ const EDITABLE = [
   "addressUz",
   "descriptionRu",
   "descriptionUz",
-  "priceFromUzs",
-  "priceUnit",
   "capMin",
   "capMax",
-  "packages",
 ] as const;
 
 const REQUEST: StaffRequestDetail = {
@@ -487,6 +484,7 @@ const WEEK = {
 
 const METRICS: MetricsOverview = {
   slaHours: 12,
+  category: null,
   weeks: [
     { ...WEEK, weekStart: "2026-09-28", weekLabel: "2026-W40", partial: true, answeredRate: null },
     { ...WEEK, weekStart: "2026-09-21", weekLabel: "2026-W39", partial: false },
@@ -497,6 +495,7 @@ const METRICS: MetricsOverview = {
 const VENDOR_METRICS: VendorMetrics = {
   vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
   activeListings: 1,
+  categories: ["hall"],
   requests: 5,
   measurable: 4,
   answeredInTime: 1,
@@ -516,11 +515,11 @@ const REVISION: RevisionDetail = {
   listing: { id: LISTING_ID, name: "Lola zali", status: "active", categoryCode: "hall" },
   vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
   proposedBy: { kind: "partner", name: null },
-  fields: ["name", "priceFromUzs"],
+  fields: ["name", "descriptionRu"],
   stale: false,
   changes: [
     { field: "name", before: "Lola zali", after: "Lola Grand" },
-    { field: "priceFromUzs", before: 150_000, after: 180_000 },
+    { field: "descriptionRu", before: "Зал на 300 гостей", after: "Зал на 300 гостей, своя кухня" },
   ],
   valid: true,
   decisionReason: null,
@@ -923,9 +922,30 @@ export async function mockStaffApi(
     if (key === "GET /staff/audit/pii") return json(route, 200, { total: 0, items: [] });
     if (key === "GET /staff/team") return json(route, 200, TEAM);
     if (key === "GET /staff/settings") return json(route, 200, SETTINGS);
-    if (key === "GET /staff/metrics") return json(route, 200, METRICS);
+    if (key === "GET /staff/metrics")
+      return json(route, 200, { ...METRICS, category: url.searchParams.get("category") });
+    if (key === "GET /staff/metrics/categories") {
+      const list: CategoryMetricsList = {
+        days: 30,
+        items: [
+          {
+            ...VENDOR_METRICS,
+            categoryCode: "hall",
+            activeVendors: 1,
+            clients: 4,
+            p90ResponseMinutes: 1_200,
+            agreedRate: 0,
+          },
+        ],
+      };
+      return json(route, 200, list);
+    }
     if (key === "GET /staff/metrics/vendors") {
-      const list: VendorMetricsList = { days: 30, items: [VENDOR_METRICS] };
+      const list: VendorMetricsList = {
+        days: 30,
+        category: url.searchParams.get("category"),
+        items: [VENDOR_METRICS],
+      };
       return json(route, 200, list);
     }
     if (key === `GET /staff/metrics/vendors/${VENDOR_ID}`) {

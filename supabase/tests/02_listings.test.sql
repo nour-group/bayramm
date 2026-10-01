@@ -26,10 +26,10 @@ from generate_series(1, 3) n;
 select is(
   pg_temp.error_detail($$update app.listings set status = 'review' where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$),
   'price,packages', 'без услуг с ценой (у зала — банкеты будни и выходные) — не на проверку');
--- пакеты v0.1 зеркалятся в услуги зала: цена «от» — из них
-insert into app.listing_packages (listing_id, kind, name_ru, name_uz, price_uzs) values
-  ('aaaaaaaa-0000-0000-0000-000000000102', 'weekday', 'Будни', 'Ish kuni', 90000),
-  ('aaaaaaaa-0000-0000-0000-000000000102', 'weekend', 'Выходные', 'Dam olish', 110000);
+-- банкеты будни и выходные — обязательные услуги зала: цена «от» — из них
+insert into app.listing_services (listing_id, category_code, service_type, status, price_uzs, price_unit, sort) values
+  ('aaaaaaaa-0000-0000-0000-000000000102', 'hall', 'banquet_weekday', 'active', 90000, 'per_guest', 1),
+  ('aaaaaaaa-0000-0000-0000-000000000102', 'hall', 'banquet_weekend', 'active', 110000, 'per_guest', 2);
 select throws_ok(
   $$update app.listings set cap_max = 10 where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$,
   '23514', null, 'cap_max не меньше cap_min');
@@ -37,8 +37,7 @@ select throws_ok(
 -- цена есть, но фото только два
 update app.photos set deleted_at = now() where id = 'aaaaaaaa-0000-0000-0000-00000000f003';
 select is(
-  pg_temp.error_detail($$update app.listings set status = 'review', price_from_uzs = 90000
-                          where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$),
+  pg_temp.error_detail($$update app.listings set status = 'review' where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$),
   'photos', 'с двумя фото — не на проверку');
 
 -- три обработанных фото: на проверку можно, в каталог — нет, пока фото не одобрены
@@ -46,7 +45,7 @@ insert into app.photos (listing_id, status, storage_key, mime, bytes, width, hei
 values ('aaaaaaaa-0000-0000-0000-000000000102', 'ready', pg_temp.photo_key('aaaaaaaa-0000-0000-0000-000000000102'),
         'image/webp', 1000, 1600, 1200, sha256('a2/4'), true);
 select lives_ok(
-  $$update app.listings set status = 'review', price_from_uzs = 90000 where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$,
+  $$update app.listings set status = 'review' where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$,
   'цена и 3 фото — можно на проверку');
 select is(
   pg_temp.error_detail($$update app.listings set status = 'active' where id = 'aaaaaaaa-0000-0000-0000-000000000102'$$),
@@ -69,8 +68,9 @@ select throws_ok(
   $$update app.listing_services set status = 'paused' where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
   'BR004', 'publish_blocked', 'у опубликованного листинга нельзя убрать все услуги с ценой');
 select throws_ok(
-  $$delete from app.listing_packages where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101' and kind = 'weekend'$$,
-  'BR004', 'publish_blocked', 'у опубликованного зала нельзя убрать цену выходных');
+  $$delete from app.listing_services
+     where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101' and service_type = 'banquet_weekend'$$,
+  'BR004', 'publish_blocked', 'у опубликованного зала нельзя убрать банкет выходных');
 select throws_ok(
   $$delete from pii.listing_contacts where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
   'BR004', 'publish_blocked', 'у опубликованного листинга нельзя убрать телефон');
@@ -114,11 +114,11 @@ select lives_ok(
   $$update app.listings set cap_min = 60 where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
   'немодерируемое поле вендор меняет сам');
 select throws_ok(
-  $$update app.listing_packages set price_uzs = 1000 where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
-  'BR005', 'moderated_field_requires_revision', 'пакеты опубликованного листинга — через ревизию');
+  $$update app.listing_services set price_uzs = 1000 where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
+  'BR005', 'moderated_field_requires_revision', 'цены услуг опубликованного листинга — предложением');
 select lives_ok(
   $$insert into app.listing_revisions (listing_id, payload, base_version)
-    values ('aaaaaaaa-0000-0000-0000-000000000101', '{"price_from_uzs": 160000}', 1)$$,
+    values ('aaaaaaaa-0000-0000-0000-000000000101', '{"name": "Новое имя зала"}', 1)$$,
   'вендор подаёт ревизию');
 select throws_ok(
   $$update app.listing_revisions set status = 'approved' where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,

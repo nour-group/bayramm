@@ -1,6 +1,6 @@
 // Правки карточки из кабинета: партнёр предлагает новое название, описания, поля витрины
-// и ссылки на видео (и, от кабинета v0.1, цену и пакеты) — карточку меняет только решение
-// команды (staff/revisions.ts). Клиент видит одобренную версию, пока правка ждёт. Поля
+// и ссылки на видео — карточку меняет только решение команды (staff/revisions.ts); цены —
+// в услугах (vendor/services.ts). Клиент видит одобренную версию, пока правка ждёт. Поля
 // витрины проверяются по конфигурации категории витрины.
 //
 //   · одна открытая правка на площадку (индекс listing_revisions_one_pending): вторая —
@@ -8,8 +8,7 @@
 //   · в правку попадают только поля, которые отличаются от карточки: команде видно,
 //     что именно меняется; ничего не изменилось — 422 no_changes;
 //   · проверка полей — та же, что при решении (revisionFromBody): правка, которая её
-//     не прошла бы, сюда не попадает. У зала пакеты будней и выходных обязательны —
-//     без них карточка перестала бы быть готовой к публикации;
+//     не прошла бы, сюда не попадает;
 //   · кто подал и когда, ставит триггер listing_revisions_guard, оповещение команде
 //     (ops.revision_submitted, без ПДн) — триггер listing_revisions_notify;
 //   · подать и отозвать может только владелец кабинета (vendor/access.ts, в базе —
@@ -25,13 +24,10 @@ import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import type { Json } from "../db/schema.generated";
 import { ApiError, notFound } from "../errors";
-import { type Body, invalidInput } from "../staff/input";
-import { changedOnly, currentPackages } from "../staff/revision-diff";
+import type { Body } from "../staff/input";
+import { changedOnly } from "../staff/revision-diff";
 import { revisionFromBody } from "../staff/revisions";
 import { assertVendorCan } from "./access";
-
-// Сравнение с карточкой — общее с правкой менеджера (staff/revision-diff.ts)
-export { changedOnly };
 
 /** Сколько последних предложений показывать партнёру */
 const HISTORY = 10;
@@ -87,8 +83,6 @@ async function ownListing(trx: Tx, actor: VendorActor, listingId: string) {
       "version",
       "category_code",
       "name",
-      "price_from_uzs",
-      "price_unit",
       "description_ru",
       "description_uz",
       "attributes",
@@ -131,12 +125,7 @@ export function submitRevision(
   return withActor(db, actor, async (trx) => {
     const listing = await ownListing(trx, actor, listingId);
     const values = revisionFromBody(body as Body, listing.category_code);
-    // У зала будни и выходные — всегда: без них опубликованную карточку не одобрить
-    if (listing.category_code === "hall" && values.packages !== undefined) {
-      const kinds = new Set(values.packages.map((p) => p.kind));
-      if (!kinds.has("weekday") || !kinds.has("weekend")) throw invalidInput(["packages"]);
-    }
-    const payload = changedOnly(values, listing, await currentPackages(trx, listingId));
+    const payload = changedOnly(values, listing);
     if (Object.keys(payload).length === 0) throw noChanges();
     const row = await trx
       .insertInto("app.listing_revisions")

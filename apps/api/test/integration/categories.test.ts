@@ -479,7 +479,8 @@ describe("клиент: категории, фильтры, карточка, з
 
   it("карточка: услуги с опциями, поля витрины, ссылки на видео; без вместимости", async () => {
     const detail = await ok<PublicListing>(call(`/catalog/listings/${car.slug}`));
-    expect(detail).toMatchObject({ categoryCode: "car", capMax: null, parallelCapacity: 2, packages: [] });
+    expect(detail).toMatchObject({ categoryCode: "car", capMax: null, parallelCapacity: 2 });
+    expect(detail).not.toHaveProperty("packages");
     expect(detail.services.map((s) => s.type).sort()).toEqual(["bride_car", "other"]);
     expect(detail.attributes).toMatchObject({ decoration: true, service_area: "tashkent" });
     const photoDetail = await ok<PublicListing>(call(`/catalog/listings/${photo.slug}`));

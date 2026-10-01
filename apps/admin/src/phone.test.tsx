@@ -67,7 +67,7 @@ const QUEUES = {
   revisionsPending: 2,
   photosPending: 0,
 };
-const METRICS: MetricsOverview = { slaHours: 12, weeks: [], queues: QUEUES };
+const METRICS: MetricsOverview = { slaHours: 12, category: null, weeks: [], queues: QUEUES };
 
 const REQUEST: StaffRequestDetail = {
   id: REQUEST_ID,

@@ -276,7 +276,7 @@ describe("dispatchOutbox: сообщения", () => {
       });
     const revision = {
       status: "pending",
-      payload: { price_from_uzs: 180000, description_ru: "Новое" },
+      payload: { name: "Новое имя", description_ru: "Новое" },
       name: "Test Hall",
       public_code: "V101",
     };
@@ -287,7 +287,7 @@ describe("dispatchOutbox: сообщения", () => {
     });
     expect(moderator.report.sent).toBe(1);
     expect(moderator.tg.calls[0]?.chat_id).toBe(9002);
-    for (const part of ["Test Hall", "V101", "цена, описание (рус.)"])
+    for (const part of ["Test Hall", "V101", "название, описание (рус.)"])
       expect(moderator.tg.calls[0]?.text).toContain(part);
 
     const manager = await run({

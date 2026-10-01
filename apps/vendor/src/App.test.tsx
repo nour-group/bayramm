@@ -653,10 +653,6 @@ const LISTING: VendorListing = {
   priceUnit: "per_guest",
   capMin: 50,
   capMax: 300,
-  packages: [
-    { kind: "weekday", name: { ru: "Будни", uz: "Ish kuni" }, priceUzs: 150_000, priceUnit: "per_guest" },
-    { kind: "weekend", name: { ru: "Выходные", uz: "Dam olish" }, priceUzs: 180_000, priceUnit: "per_guest" },
-  ],
   photos: [],
   phone: "+998000000999",
   blockers: [],
@@ -675,7 +671,7 @@ const revision = (patch: Partial<VendorRevision> = {}): VendorRevision => ({
   submittedAt: new Date().toISOString(),
   decidedAt: null,
   decisionReason: null,
-  payload: { price_from_uzs: 170_000 },
+  payload: { description_ru: "Большой зал на 300 гостей" },
   byTeam: false,
   ...patch,
 });
@@ -815,7 +811,7 @@ describe("изменения карточки", () => {
     expect(container.querySelector(".proposal-pending")?.textContent).toContain(
       "Команда Bayramm предложила изменения",
     );
-    expect(container.querySelector(".proposal-pending")?.textContent).toContain("от 170 000 сум за гостя");
+    expect(container.querySelector(".proposal-pending")?.textContent).toContain("Большой зал на 300 гостей");
     expect(byText("button", "Отозвать предложение")).toBeUndefined();
     expect(byText("button", "Предложить изменения")).toBeUndefined();
   });

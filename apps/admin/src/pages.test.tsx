@@ -121,16 +121,6 @@ const LISTING: ListingDetail = {
   videoLinks: [],
   parallelCapacity: 1,
   services: [],
-  packages: [
-    { kind: "weekday", nameRu: "Будни", nameUz: "Ish kunlari", priceUzs: 150000, priceUnit: "per_guest" },
-    {
-      kind: "weekend",
-      nameRu: "Выходные",
-      nameUz: "Dam olish kunlari",
-      priceUzs: 180000,
-      priceUnit: "per_guest",
-    },
-  ],
   photos: [],
   blockers: { review: [], active: [] },
   vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },

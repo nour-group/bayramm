@@ -16,7 +16,6 @@ import { idHmac } from "./crypto";
 export const OTP_CODE_LENGTH = 6;
 export const OTP_TTL_SECONDS = 10 * 60;
 export const OTP_RESEND_SECONDS = 60;
-export const OTP_MAX_ATTEMPTS = 5;
 
 export const TELEGRAM_GATEWAY_URL = "https://gatewayapi.telegram.org";
 const GATEWAY_TIMEOUT_MS = 10_000;

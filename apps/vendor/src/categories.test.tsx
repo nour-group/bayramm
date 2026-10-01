@@ -89,7 +89,6 @@ const listing = (ref: VendorListingRef, patch: Partial<VendorListing> = {}): Ven
   priceUnit: "per_hour",
   capMin: null,
   capMax: null,
-  packages: [],
   photos: [],
   phone: "+998000000999",
   blockers: [],

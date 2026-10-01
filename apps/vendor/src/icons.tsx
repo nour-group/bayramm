@@ -120,8 +120,6 @@ export type IconName = keyof typeof ICONS;
 /** Размеры иконок — только из шкалы 12·14·17·20·24·26 */
 export type IconSize = 12 | 14 | 17 | 20 | 24 | 26;
 
-export const ICON_NAMES = Object.keys(ICONS) as IconName[];
-
 export function Icon({ name, size = 17 }: { name: IconName; size?: IconSize }): ReactElement {
   const paths: readonly IconPath[] = ICONS[name];
   return (

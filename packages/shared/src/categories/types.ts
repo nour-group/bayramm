@@ -144,7 +144,6 @@ export interface ListField extends FieldBase {
 }
 
 export type AttributeField = IntField | BoolField | EnumField | MultiField | TextField | ListField;
-export type AttributeType = AttributeField["type"];
 
 // ── форма заявки (app.requests.details) ─────────────────────────────────────
 
