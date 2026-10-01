@@ -146,7 +146,7 @@ function Page({ view, title, headingRef, dictionaries, sections }: PageProps) {
       content = <VendorPage key={view.id} id={view.id} dictionaries={dictionaries} />;
       break;
     case "listingNew":
-      content = <ListingNewPage key={view.vendorId} vendorId={view.vendorId} dictionaries={dictionaries} />;
+      content = <ListingNewPage key={view.vendorId} vendorId={view.vendorId} />;
       break;
     case "listing":
       content = <ListingPage key={view.id} id={view.id} dictionaries={dictionaries} />;

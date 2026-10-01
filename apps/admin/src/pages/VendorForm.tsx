@@ -1,15 +1,18 @@
 /* Форма вендора: создание и правка. Телефоны только пишутся — текущий номер форма не
-   знает (его видно только по «Показать»); пустое поле при правке — «не менять». */
+   знает (его видно только по «Показать»); пустое поле при правке — «не менять».
+   При создании команда выбирает категорию: с ней заводится первая витрина вендора.
+   Категория — у витрины, а не у вендора: при правке её здесь нет. */
 
 import type { StaffDictionaries, VendorDetail, VendorInput } from "@bayramm/shared/api/staff";
 import { Select } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
 import type { Failure } from "../api";
+import { categoryOptions } from "../categories";
 import { t } from "../texts";
 import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
 import { useUnsaved } from "../unsaved";
 
-// Категория — у витрины: при создании вендора панель её пока не спрашивает
+// Категория — у витрины: при создании она отдельным полем (categoryCode), при правке её нет
 type Values = Record<Exclude<keyof VendorInput, "categoryCode">, string>;
 
 const TEXT_KEYS = [
@@ -70,14 +73,15 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const errors = fieldErrors(failure, t.fieldErrors);
+  const [categoryCode, setCategoryCode] = useState("");
+  const errors = fieldErrors(failure, { ...t.fieldErrors, categoryCode: t.categoryRequired });
   const creating = vendor === null;
   const form = useRevealErrors(failure);
   const formId = useId();
   // Есть несохранённое: на телефоне панель «Сохранить» появляется только тогда, а уход со
   // страницы переспросит
   const dirty = !readOnly && Object.keys(vendorBody(values, before, false)).length > 0;
-  useUnsaved(dirty);
+  useUnsaved(dirty || (creating && categoryCode !== ""));
 
   const put = (key: keyof Values) => (value: string) => {
     setSaved(false);
@@ -87,8 +91,14 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (creating && categoryCode === "") {
+      // Без категории вендор остался бы без витрины: спрашиваем до запроса
+      setFailure({ ok: false, status: 422, code: "invalid_input", details: ["categoryCode"] });
+      return;
+    }
     setBusy(true);
-    const result = await onSubmit(vendorBody(values, before, creating));
+    const body = vendorBody(values, before, creating);
+    const result = await onSubmit(creating ? { ...body, categoryCode } : body);
     setBusy(false);
     setFailure(result);
     if (result === null) {
@@ -152,6 +162,25 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           <p>{t.vendorSections.businessHint}</p>
         </div>
         <div className="fields">
+          {creating && (
+            <Field label={t.categoryFirst} error={errors.categoryCode} hint={t.categoryFirstHint}>
+              {(props) => (
+                <Select
+                  {...props}
+                  className="input"
+                  label={t.categoryFirst}
+                  placeholder={t.categoryRequired}
+                  value={categoryCode === "" ? null : categoryCode}
+                  onChange={(code) => {
+                    setSaved(false);
+                    setCategoryCode(code);
+                    if (failure?.details.includes("categoryCode")) setFailure(null);
+                  }}
+                  options={categoryOptions()}
+                />
+              )}
+            </Field>
+          )}
           {text("name", { maxLength: 120 })}
           <Field label={t.fields.legalForm ?? ""}>
             {(props) => (

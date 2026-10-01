@@ -1,36 +1,44 @@
-/* Форма карточки: создание и правка. Цена обязательна (без «по запросу»), пакеты будней
-   и выходных — для залов. Телефон для заявок только пишется: текущий — по «Показать».
-   Опубликованную карточку менеджер (без права решать по правкам) меняет так же, как
-   вендор из кабинета: название, цена, описания и пакеты уходят правкой на модерацию, а
-   карточка остаётся прежней — форма говорит «отправлено на модерацию» и показывает то,
-   что в карточке сейчас. Остальные поля сохраняются сразу. */
+/* Форма витрины (карточки): название, адрес страницы, район, тексты на двух языках, данные
+   витрины по категории, ссылки на видео, сколько заказов одновременно, телефон для заявок.
+   Что спрашивать — решает категория (@bayramm/shared/categories): вместимость в гостях —
+   только где она нужна (площадка), видео — где их можно (фото и видео, студия), заказы
+   одновременно — у занятости по частям дня (кортеж, фото и видео, декор).
+
+   Цены — в услугах витрины (Services.tsx): цена «от» считается из них, руками не задаётся.
+   Опубликованную витрину менеджер (без права решать по правкам) меняет как партнёр из
+   кабинета: название и описания уходят правкой на модерацию, а витрина остаётся прежней —
+   форма говорит «отправлено на модерацию» и показывает то, что в витрине сейчас. Остальное
+   (адрес, данные витрины, видео, телефон…) сохраняется сразу. Телефон только пишется:
+   текущий — по «Показать». */
 
 import type {
   ListingDetail,
   ListingInput,
   ListingSaveResult,
-  PriceUnit,
   RevisionField,
   StaffDictionaries,
-  StaffListingPackage,
 } from "@bayramm/shared/api/staff";
-import { Select, type SelectOption } from "@bayramm/ui/react";
+import {
+  type AttributeDraft,
+  type AttributeDrafts,
+  attributeDrafts,
+  attributeErrors,
+  attributePatch,
+  attributesOf,
+  type CategoryConfig,
+  missingAttributes,
+  parseAmount,
+  videoLinkErrors,
+  videoLinksValue,
+} from "@bayramm/shared/categories";
+import { NumberStepper, Select } from "@bayramm/ui/react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 import type { Failure } from "../api";
+import { categoryName } from "../categories";
 import { t } from "../texts";
 import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
 import { useUnsaved } from "../unsaved";
-
-type PackageKind = StaffListingPackage["kind"];
-
-interface PackageRow {
-  key: number;
-  kind: PackageKind;
-  nameRu: string;
-  nameUz: string;
-  price: string;
-  priceUnit: PriceUnit;
-}
+import { AttributeFields } from "./AttributeFields";
 
 interface Values {
   name: string;
@@ -40,152 +48,129 @@ interface Values {
   addressUz: string;
   descriptionRu: string;
   descriptionUz: string;
-  priceFromUzs: string;
-  priceUnit: PriceUnit;
   capMin: string;
   capMax: string;
+  parallelCapacity: string;
   phone: string;
-  status: "lead" | "draft";
 }
 
 const TEXT_KEYS = ["name", "addressRu", "addressUz", "descriptionRu", "descriptionUz"] as const;
-
-const PRICE_UNITS: readonly SelectOption<PriceUnit>[] = [
-  { value: "per_guest", label: t.priceUnits.per_guest },
-  { value: "per_event", label: t.priceUnits.per_event },
-];
-const NUMBER_KEYS = ["priceFromUzs", "capMin", "capMax"] as const;
-/** Поля тела запроса, которые у опубликованной карточки меняет только модерация */
+const CAP_KEYS = ["capMin", "capMax"] as const;
+/** Поля тела запроса, которые у опубликованной витрины меняет только модерация */
 const MODERATED_KEYS: ReadonlySet<string> = new Set<RevisionField>([
   "name",
-  "priceFromUzs",
-  "priceUnit",
   "descriptionRu",
   "descriptionUz",
-  "packages",
 ]);
 
-let rowKey = 0;
+export const MAX_PARALLEL = 50;
 
-function packageRows(listing: ListingDetail | null): PackageRow[] {
-  const rows: PackageRow[] = (listing?.packages ?? []).map((p) => ({
-    key: rowKey++,
-    kind: p.kind,
-    nameRu: p.nameRu,
-    nameUz: p.nameUz,
-    price: String(p.priceUzs),
-    priceUnit: p.priceUnit,
-  }));
-  // Будни и выходные — всегда строкой в форме: без них зал не опубликовать
-  for (const kind of ["weekend", "weekday"] as const) {
-    if (!rows.some((row) => row.kind === kind)) {
-      rows.unshift({
-        key: rowKey++,
-        kind,
-        nameRu: t.packageDefaults[kind].ru,
-        nameUz: t.packageDefaults[kind].uz,
-        price: "",
-        priceUnit: listing?.priceUnit ?? "per_guest",
-      });
-    }
-  }
-  return rows.sort((a, b) => order(a.kind) - order(b.kind));
-}
-
-const order = (kind: PackageKind) => (kind === "weekday" ? 0 : kind === "weekend" ? 1 : 2);
-
-function initial(listing: ListingDetail | null): Values {
+/** Что спрашивает форма у этой категории */
+export function formParts(category: CategoryConfig) {
   return {
-    name: listing?.name ?? "",
-    slug: listing?.slug ?? "",
-    districtCode: listing?.districtCode ?? "",
-    addressRu: listing?.addressRu ?? "",
-    addressUz: listing?.addressUz ?? "",
-    descriptionRu: listing?.descriptionRu ?? "",
-    descriptionUz: listing?.descriptionUz ?? "",
-    priceFromUzs: listing?.priceFromUzs?.toString() ?? "",
-    priceUnit: listing?.priceUnit ?? "per_guest",
-    capMin: listing?.capMin?.toString() ?? "",
-    capMax: listing?.capMax?.toString() ?? "",
-    phone: "",
-    status: "draft",
+    capacity: category.listingFields.includes("guest_capacity"),
+    videos: category.maxVideoLinks > 0,
+    parallel: category.availability === "parts",
   };
 }
 
-/** «150 000» → 150000; пусто — null; не число — NaN (сервер ответит ошибкой поля) */
-export function parseAmount(value: string): number | null {
-  const compact = value.replace(/[\s _]/g, "");
-  if (compact === "") return null;
-  return /^\d+$/.test(compact) ? Number(compact) : Number.NaN;
+function initial(listing: ListingDetail): Values {
+  return {
+    name: listing.name,
+    slug: listing.slug,
+    districtCode: listing.districtCode ?? "",
+    addressRu: listing.addressRu ?? "",
+    addressUz: listing.addressUz ?? "",
+    descriptionRu: listing.descriptionRu ?? "",
+    descriptionUz: listing.descriptionUz ?? "",
+    capMin: listing.capMin?.toString() ?? "",
+    capMax: listing.capMax?.toString() ?? "",
+    parallelCapacity: String(listing.parallelCapacity),
+    phone: "",
+  };
 }
 
-function packagesOf(rows: readonly PackageRow[]): StaffListingPackage[] {
-  return rows
-    .filter((row) => row.kind === "custom" || row.price.trim() !== "")
-    .map((row) => {
-      const price = parseAmount(row.price);
-      return {
-        kind: row.kind,
-        nameRu: row.nameRu.trim(),
-        nameUz: row.nameUz.trim(),
-        // Не число — как есть: сервер укажет на пакет
-        priceUzs: price === null || Number.isNaN(price) ? (row.price as unknown as number) : price,
-        priceUnit: row.priceUnit,
-      };
-    });
+/** Ссылки на видео в форму: сохранённые и пустое поле для новой, если ещё можно */
+function videoDrafts(listing: ListingDetail, category: CategoryConfig): string[] {
+  return listing.videoLinks.length < category.maxVideoLinks
+    ? [...listing.videoLinks, ""]
+    : [...listing.videoLinks];
 }
 
-/** Тело запроса: при создании — заполненное, при правке — изменённое */
-export function listingBody(
-  values: Values,
-  before: Values,
-  rows: readonly PackageRow[],
-  beforeRows: readonly PackageRow[],
-  creating: boolean,
-): ListingInput {
+export interface FormState {
+  readonly values: Values;
+  readonly attributes: AttributeDrafts;
+  readonly videos: readonly string[];
+}
+
+export function formState(listing: ListingDetail, category: CategoryConfig): FormState {
+  return {
+    values: initial(listing),
+    attributes: attributeDrafts(category, listing.attributes),
+    videos: videoDrafts(listing, category),
+  };
+}
+
+/** Число из поля: пусто — null, не число — строкой как есть (сервер назовёт поле, а не очистит его) */
+function amount(value: string): number | string | null {
+  const n = parseAmount(value);
+  return n === null ? null : Number.isNaN(n) ? value.trim() : n;
+}
+
+/** Тело правки: только изменённое против того, что было загружено (before) */
+export function listingBody(category: CategoryConfig, now: FormState, before: FormState): ListingInput {
+  const parts = formParts(category);
   const body: Record<string, unknown> = {};
-  const changed = (key: keyof Values) => creating || values[key].trim() !== before[key].trim();
+  const changed = (key: keyof Values) => now.values[key].trim() !== before.values[key].trim();
   for (const key of TEXT_KEYS) {
     if (!changed(key)) continue;
-    const value = values[key].trim();
-    if (creating && value === "") continue;
+    const value = now.values[key].trim();
     body[key] = value === "" ? null : value;
   }
-  for (const key of NUMBER_KEYS) {
-    if (!changed(key)) continue;
-    const value = parseAmount(values[key]);
-    if (creating && value === null) continue;
-    // Не число — отправляем как есть: сервер ответит ошибкой этого поля, а не очистит его
-    body[key] = Number.isNaN(value) ? values[key] : value;
+  if (parts.capacity) for (const key of CAP_KEYS) if (changed(key)) body[key] = amount(now.values[key]);
+  if (now.values.districtCode !== before.values.districtCode)
+    body.districtCode = now.values.districtCode || null;
+  const slug = now.values.slug.trim();
+  if (slug !== "" && slug !== before.values.slug) body.slug = slug;
+  if (now.values.phone.trim() !== "") body.phone = now.values.phone.trim();
+  const attributes = attributePatch(category, now.attributes, before.attributes);
+  if (Object.keys(attributes).length > 0) body.attributes = attributes;
+  if (parts.videos) {
+    const links = videoLinksValue(now.videos);
+    if (JSON.stringify(links) !== JSON.stringify(videoLinksValue(before.videos))) body.videoLinks = links;
   }
-  if (values.districtCode !== before.districtCode || (creating && values.districtCode)) {
-    body.districtCode = values.districtCode || null;
-  }
-  if (creating || values.priceUnit !== before.priceUnit) body.priceUnit = values.priceUnit;
-  const slug = values.slug.trim();
-  if (slug !== "" && slug !== before.slug) body.slug = slug;
-  if (values.phone.trim() !== "") body.phone = values.phone.trim();
-  const packages = packagesOf(rows);
-  if (creating ? packages.length > 0 : JSON.stringify(packages) !== JSON.stringify(packagesOf(beforeRows))) {
-    body.packages = packages;
-  }
-  if (creating) body.status = values.status;
+  if (parts.parallel && changed("parallelCapacity"))
+    body.parallelCapacity = amount(now.values.parallelCapacity);
   return body as ListingInput;
 }
 
+/** Ошибки до отправки — те же пути, что ответ 422: данные витрины, видео, заказы одновременно */
+export function formErrors(category: CategoryConfig, now: FormState): string[] {
+  const parts = formParts(category);
+  const errors = attributeErrors(category, now.attributes);
+  if (parts.videos) {
+    // Номер поля формы → номер в отправленном списке (пустые поля не отправляются)
+    const filled = now.videos.flatMap((link, index) => (link.trim() === "" ? [] : [index]));
+    for (const index of videoLinkErrors(category, now.videos))
+      errors.push(`videoLinks.${filled.indexOf(index)}`);
+  }
+  if (parts.parallel) {
+    const n = parseAmount(now.values.parallelCapacity);
+    if (n === null || Number.isNaN(n) || n < 1 || n > MAX_PARALLEL) errors.push("parallelCapacity");
+  }
+  return errors;
+}
+
 interface ListingFormProps {
-  listing: ListingDetail | null;
+  listing: ListingDetail;
+  category: CategoryConfig;
   dictionaries: StaffDictionaries | null;
-  /**
-   * Ответ сервера: ошибка; карточка после правки (и какие поля ушли на модерацию);
-   * null — готово (создание: страница уходит на новую карточку)
-   */
-  onSubmit: (body: ListingInput) => Promise<Failure | ListingSaveResult | null>;
-  submitLabel: string;
+  /** Ответ сервера: ошибка или витрина после правки (и какие поля ушли на модерацию) */
+  onSubmit: (body: ListingInput) => Promise<Failure | ListingSaveResult>;
   readOnly?: boolean;
-  /** Название, цена, описания и пакеты уйдут на модерацию — подсказать у этих полей */
+  /** Название и описания уйдут на модерацию — подсказать у этих полей */
   moderated?: boolean;
-  /** Есть несохранённые правки (true) или форма как в карточке (false) */
+  /** Есть несохранённые правки (true) или форма как в витрине (false) */
   onDirtyChange?: (dirty: boolean) => void;
 }
 
@@ -195,39 +180,37 @@ interface Sent {
   readonly rest: boolean;
 }
 
+const invalid = (details: string[]): Failure => ({ ok: false, status: 422, code: "invalid_input", details });
+
 export function ListingForm({
   listing,
+  category,
   dictionaries,
   onSubmit,
-  submitLabel,
   readOnly,
   moderated = false,
   onDirtyChange,
 }: ListingFormProps) {
-  const creating = listing === null;
-  const [before, setBefore] = useState(() => initial(listing));
-  const [values, setValues] = useState(before);
-  const [beforeRows, setBeforeRows] = useState(() => packageRows(listing));
-  const [rows, setRows] = useState(beforeRows);
+  const [before, setBefore] = useState(() => formState(listing, category));
+  const [now, setNow] = useState(before);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [sent, setSent] = useState<Sent | null>(null);
+  const parts = formParts(category);
   const errors = fieldErrors(failure, t.listingFieldErrors);
+  const details = failure?.code === "invalid_input" ? failure.details : [];
   const moderatedHint = moderated && !readOnly ? t.moderatedHint : undefined;
   const form = useRevealErrors(failure);
   const formId = useId();
-  // Несохранённое есть, если запрос правки был бы не пуст; на телефоне тогда видна «Сохранить»
-  const changed =
-    !readOnly &&
-    (Object.keys(listingBody(values, before, rows, beforeRows, false)).length > 0 ||
-      values.status !== before.status);
-  const dirty = !creating && changed;
+  const dirty = !readOnly && Object.keys(listingBody(category, now, before)).length > 0;
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
-  // И новая карточка, и правка: что-то вписано и не сохранено — уход переспросит
-  useUnsaved(changed);
+  // Вписанное и не сохранённое — уход переспросит
+  useUnsaved(dirty);
+  // Чего не хватает для публикации — по тому, что сейчас в форме
+  const missing = missingAttributes(category, attributesOf(category, now.attributes));
 
   // Любая новая правка — старое «Сохранено» или «Отправлено» уже не про неё
   const touch = () => {
@@ -236,44 +219,48 @@ export function ListingForm({
   };
   const put = (key: keyof Values) => (value: string) => {
     touch();
-    setValues((prev) => ({ ...prev, [key]: value }));
+    setNow((prev) => ({ ...prev, values: { ...prev.values, [key]: value } }));
   };
   const set = (key: keyof Values) => (event: { target: { value: string } }) => put(key)(event.target.value);
-  const setRow = (key: number, patch: Partial<PackageRow>) => {
+  const putAttribute = (key: string, draft: AttributeDraft) => {
     touch();
-    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+    setNow((prev) => ({ ...prev, attributes: { ...prev.attributes, [key]: draft } }));
+  };
+  const putVideo = (index: number, value: string) => {
+    touch();
+    setNow((prev) => ({ ...prev, videos: prev.videos.map((link, i) => (i === index ? value : link)) }));
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const found = formErrors(category, now);
+    if (found.length > 0) {
+      setFailure(invalid(found));
+      return;
+    }
     setBusy(true);
-    const body = listingBody(values, before, rows, beforeRows, creating);
+    const body = listingBody(category, now, before);
     const result = await onSubmit(body);
     setBusy(false);
-    if (result !== null && "ok" in result) {
+    if ("ok" in result) {
       setFailure(result);
       return;
     }
     setFailure(null);
-    const fields = result?.sentForModeration ?? [];
-    if (result && fields.length > 0) {
-      // Карточка не изменилась в том, что ушло на модерацию: форма — как в карточке сейчас
-      const next = initial(result);
-      const nextRows = packageRows(result);
-      setBefore(next);
-      setValues(next);
-      setBeforeRows(nextRows);
-      setRows(nextRows);
+    // Форма — как в витрине после правки: значения уже в том виде, как их хранит сервер
+    const next = formState(result, category);
+    setBefore(next);
+    setNow(next);
+    if (result.sentForModeration.length > 0) {
       setSaved(false);
-      setSent({ fields, rest: Object.keys(body).some((key) => !MODERATED_KEYS.has(key)) });
+      setSent({
+        fields: result.sentForModeration,
+        rest: Object.keys(body).some((key) => !MODERATED_KEYS.has(key)),
+      });
       return;
     }
     setSent(null);
     setSaved(true);
-    const next = { ...values, phone: "" };
-    setValues(next);
-    setBefore(next);
-    setBeforeRows(rows);
   };
 
   const input = (
@@ -286,7 +273,7 @@ export function ListingForm({
         <input
           {...props}
           className="input"
-          value={values[key]}
+          value={now.values[key]}
           onChange={set(key)}
           maxLength={extra.maxLength}
           inputMode={extra.numeric ? "numeric" : undefined}
@@ -307,7 +294,7 @@ export function ListingForm({
           className="input"
           lang={lang}
           rows={5}
-          value={values[key]}
+          value={now.values[key]}
           onChange={set(key)}
           maxLength={4000}
           readOnly={readOnly}
@@ -315,6 +302,11 @@ export function ListingForm({
       )}
     </Field>
   );
+
+  // Видео: номер поля формы ↔ номер в отправленном списке (пустые не отправляются)
+  const filledVideos = now.videos.flatMap((link, index) => (link.trim() === "" ? [] : [index]));
+  const videoError = (index: number) =>
+    details.includes(`videoLinks.${filledVideos.indexOf(index)}`) || details.includes("videoLinks");
 
   return (
     <form id={formId} ref={form} className="form" onSubmit={submit} noValidate>
@@ -327,16 +319,12 @@ export function ListingForm({
         </div>
         <div className="fields">
           {input("name", t.listingFields.name ?? "", { maxLength: 80, required: true, hint: moderatedHint })}
-          <Field
-            label={t.listingFields.slug ?? ""}
-            error={errors.slug}
-            hint={creating ? t.slugAuto : undefined}
-          >
+          <Field label={t.listingFields.slug ?? ""} error={errors.slug}>
             {(props) => (
               <input
                 {...props}
                 className="input"
-                value={values.slug}
+                value={now.values.slug}
                 onChange={set("slug")}
                 maxLength={40}
                 autoCapitalize="none"
@@ -351,7 +339,7 @@ export function ListingForm({
                 {...props}
                 className="input"
                 label={t.listingFields.districtCode ?? ""}
-                value={values.districtCode}
+                value={now.values.districtCode}
                 onChange={put("districtCode")}
                 disabled={readOnly}
                 options={[
@@ -365,35 +353,8 @@ export function ListingForm({
             )}
           </Field>
           <Field label={t.category}>
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                readOnly
-                value={
-                  dictionaries?.categories.find((c) => c.code === (listing?.categoryCode ?? "hall"))
-                    ?.nameRu ?? ""
-                }
-              />
-            )}
+            {(props) => <input {...props} className="input" readOnly value={categoryName(category.code)} />}
           </Field>
-          {creating && (
-            <Field label={t.startAs}>
-              {(props) => (
-                <Select
-                  {...props}
-                  className="input"
-                  label={t.startAs}
-                  value={values.status}
-                  onChange={put("status")}
-                  options={[
-                    { value: "draft", label: t.status.draft },
-                    { value: "lead", label: t.status.lead },
-                  ]}
-                />
-              )}
-            </Field>
-          )}
         </div>
       </section>
 
@@ -410,130 +371,121 @@ export function ListingForm({
         </div>
       </section>
 
-      <section className="fs">
-        <div className="fs-head">
-          <h2>{t.listingSections.prices}</h2>
-          <p>{t.listingSections.pricesHint}</p>
-        </div>
-        <div className="fields">
-          {input("priceFromUzs", t.listingFields.priceFromUzs ?? "", {
-            maxLength: 16,
-            numeric: true,
-            hint: moderatedHint,
-          })}
-          <Field label={t.listingFields.priceUnit ?? ""} hint={moderatedHint}>
-            {(props) => (
-              <Select
-                {...props}
-                className="input"
-                label={t.listingFields.priceUnit ?? ""}
-                value={values.priceUnit}
-                onChange={put("priceUnit")}
-                disabled={readOnly}
-                options={PRICE_UNITS}
-              />
-            )}
-          </Field>
-          {input("capMin", t.listingFields.capMin ?? "", { maxLength: 5, numeric: true })}
-          {input("capMax", t.listingFields.capMax ?? "", { maxLength: 5, numeric: true })}
-        </div>
-        <fieldset className="packages">
-          <legend>{t.packages}</legend>
-          {moderatedHint && <p className="field-hint">{moderatedHint}</p>}
-          {errors.packages && <p className="field-error">{errors.packages}</p>}
-          {rows.map((row) => (
-            <div key={row.key} className="package-row">
-              <span className="package-kind">{t.packageKinds[row.kind]}</span>
-              <Field label={t.packageNameRu}>
-                {(props) => (
-                  <input
-                    {...props}
-                    className="input"
-                    value={row.nameRu}
-                    maxLength={80}
-                    readOnly={readOnly}
-                    onChange={(event) => setRow(row.key, { nameRu: event.target.value })}
-                  />
-                )}
-              </Field>
-              <Field label={t.packageNameUz}>
-                {(props) => (
-                  <input
-                    {...props}
-                    className="input"
-                    lang="uz"
-                    value={row.nameUz}
-                    maxLength={80}
-                    readOnly={readOnly}
-                    onChange={(event) => setRow(row.key, { nameUz: event.target.value })}
-                  />
-                )}
-              </Field>
-              <Field label={t.packagePrice}>
-                {(props) => (
-                  <input
-                    {...props}
-                    className="input"
-                    inputMode="numeric"
-                    enterKeyHint="done"
-                    value={row.price}
-                    maxLength={16}
-                    readOnly={readOnly}
-                    onChange={(event) => setRow(row.key, { price: event.target.value })}
-                  />
-                )}
-              </Field>
-              <Field label={t.listingFields.priceUnit ?? ""}>
-                {(props) => (
-                  <Select
-                    {...props}
-                    className="input"
-                    label={`${t.listingFields.priceUnit ?? ""} · ${t.packageKinds[row.kind]}`}
-                    value={row.priceUnit}
-                    disabled={readOnly}
-                    onChange={(priceUnit) => setRow(row.key, { priceUnit })}
-                    options={PRICE_UNITS}
-                  />
-                )}
-              </Field>
-              {row.kind === "custom" && !readOnly && (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => {
-                    touch();
-                    setRows((prev) => prev.filter((r) => r.key !== row.key));
-                  }}
-                >
-                  {t.removePackage}
-                </button>
-              )}
+      {category.attributes.length > 0 || parts.capacity ? (
+        <section className="fs">
+          <div className="fs-head">
+            <h2>{t.listingDataSections.attributes}</h2>
+            <p>{t.listingDataSections.attributesHint(categoryName(category.code))}</p>
+          </div>
+          {parts.capacity ? (
+            <div className="fields attr-capacity">
+              {input("capMin", t.listingFields.capMin ?? "", { maxLength: 5, numeric: true })}
+              {input("capMax", t.listingFields.capMax ?? "", { maxLength: 5, numeric: true })}
             </div>
-          ))}
-          {!readOnly && rows.length < 10 && (
+          ) : null}
+          <AttributeFields
+            category={category}
+            drafts={now.attributes}
+            onChange={putAttribute}
+            errors={details}
+            missing={missing}
+            readOnly={readOnly}
+          />
+        </section>
+      ) : null}
+
+      {parts.videos ? (
+        <section className="fs">
+          <div className="fs-head">
+            <h2>{t.listingDataSections.videos}</h2>
+            <p>{t.listingDataSections.videosHint(category.maxVideoLinks)}</p>
+          </div>
+          <div className="fields">
+            {now.videos.map((link, index) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: поле ссылки — место в списке, своего id нет
+              <div key={index} className="video-row field-full">
+                <Field
+                  label={t.videoLink(index + 1)}
+                  error={videoError(index) ? t.videoLinkError : undefined}
+                  full
+                >
+                  {(props) => (
+                    <input
+                      {...props}
+                      className="input"
+                      type="url"
+                      inputMode="url"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      placeholder="https://youtu.be/…"
+                      value={link}
+                      maxLength={200}
+                      readOnly={readOnly}
+                      onChange={(event) => putVideo(index, event.target.value)}
+                    />
+                  )}
+                </Field>
+                {readOnly || link.trim() === "" ? null : (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      touch();
+                      setNow((prev) => ({ ...prev, videos: prev.videos.filter((_, i) => i !== index) }));
+                    }}
+                  >
+                    {t.videoRemove}
+                    <span className="visually-hidden"> {index + 1}</span>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          {readOnly ||
+          now.videos.length >= category.maxVideoLinks ||
+          now.videos.some((l) => l.trim() === "") ? null : (
             <button
               type="button"
               className="btn btn-sm"
               onClick={() => {
                 touch();
-                setRows((prev) => [
-                  ...prev,
-                  {
-                    key: rowKey++,
-                    kind: "custom",
-                    nameRu: "",
-                    nameUz: "",
-                    price: "",
-                    priceUnit: values.priceUnit,
-                  },
-                ]);
+                setNow((prev) => ({ ...prev, videos: [...prev.videos, ""] }));
               }}
             >
-              {t.addPackage}
+              {t.videoAdd}
             </button>
           )}
-        </fieldset>
-      </section>
+        </section>
+      ) : null}
+
+      {parts.parallel ? (
+        <section className="fs">
+          <div className="fs-head">
+            <h2>{t.listingDataSections.occupancy}</h2>
+            <p>{t.listingDataSections.occupancyHint}</p>
+          </div>
+          <div className="fields">
+            <Field
+              label={t.listingDataSections.occupancy}
+              error={errors.parallelCapacity ? t.parallelCapacityError : undefined}
+            >
+              {(props) => (
+                <NumberStepper
+                  {...props}
+                  value={now.values.parallelCapacity}
+                  onChange={put("parallelCapacity")}
+                  min={1}
+                  max={MAX_PARALLEL}
+                  maxLength={2}
+                  disabled={readOnly}
+                  decrementLabel={`${t.listingDataSections.occupancy} −1`}
+                  incrementLabel={`${t.listingDataSections.occupancy} +1`}
+                />
+              )}
+            </Field>
+          </div>
+        </section>
+      ) : null}
 
       {/* Номер только пишется: без права правки этой части формы нет (номер — по «Показать») */}
       {readOnly ? null : (
@@ -543,11 +495,7 @@ export function ListingForm({
             <p>{t.listingSections.phoneHint}</p>
           </div>
           <div className="fields">
-            <Field
-              label={creating ? (t.listingFields.phone ?? "") : t.phoneChange}
-              error={errors.phone}
-              hint={creating ? undefined : t.phoneKeep}
-            >
+            <Field label={t.phoneChange} error={errors.phone} hint={t.phoneKeep}>
               {(props) => (
                 <input
                   {...props}
@@ -556,7 +504,7 @@ export function ListingForm({
                   inputMode="tel"
                   autoComplete="off"
                   placeholder="+998 XX XXX XX XX"
-                  value={values.phone}
+                  value={now.values.phone}
                   onChange={set("phone")}
                   maxLength={24}
                   enterKeyHint="done"
@@ -571,9 +519,9 @@ export function ListingForm({
       {!readOnly && (
         <FormBar
           formId={formId}
-          show={creating || dirty}
+          show={dirty}
           busy={busy}
-          submitLabel={submitLabel}
+          submitLabel={t.save}
           note={
             saved ? (
               <span className="saved" role="status">

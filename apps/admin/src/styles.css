@@ -2110,6 +2110,292 @@ textarea.input {
   gap: var(--gap-9);
 }
 
+/* ── категории: витрины, данные витрины, услуги, части дня ───────────────── */
+
+/* Категория витрины — плашкой рядом с названием */
+.cat-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--r-999);
+  background: var(--lilac);
+  color: var(--plum);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Кнопка под списком в панели («Добавить витрину…») */
+.panel-foot {
+  margin: 12px 0 0;
+}
+
+/* Данные витрины: галочка «да/нет» — по нижнему краю строки полей */
+.attr-bool {
+  justify-content: flex-end;
+}
+
+/* Несколько вариантов и список записей — во всю ширину, своей рамкой */
+.attr-group,
+.attr-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-11);
+}
+
+.attr-group legend,
+.attr-list legend {
+  padding: 0 4px;
+  color: var(--plum);
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
+.attr-group > p,
+.attr-list > p {
+  margin: 0;
+}
+
+.attr-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--gap-3) var(--gap-12);
+}
+
+/* Запись списка (машина автопарка) */
+.attr-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.attr-item-title {
+  margin: 0;
+  color: var(--plum);
+  font-weight: 700;
+}
+
+/* Вместимость — над полями категории, тем же шагом */
+.attr-capacity {
+  margin-bottom: 12px;
+}
+
+/* Ссылка на видео и «Убрать» — в строку, кнопка по нижнему краю поля */
+.video-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gap-9);
+}
+
+.video-row > .field {
+  flex: 1 1 260px;
+}
+
+/* Цена «от» — из услуг */
+.price-from {
+  margin: 0 0 8px;
+}
+
+.service-row {
+  gap: var(--gap-5);
+}
+
+.service-name {
+  min-width: 0;
+  color: var(--plum);
+  font-size: var(--fs-15);
+}
+
+/* Форма услуги — на месте, в рамке, чтобы не потеряться среди списка */
+.service-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  margin: 8px 0;
+  padding: 14px;
+  border: 1px solid var(--plum-mid);
+  border-radius: var(--r-14);
+  background: var(--paper);
+}
+
+.service-form-title {
+  margin: 0;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-15);
+}
+
+.svc-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.svc-options legend {
+  margin-bottom: 4px;
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.svc-options > p {
+  margin: 0;
+}
+
+.option-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.option-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+/* Предложение правки: поле — сейчас → предлагают */
+.diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  margin: 0;
+  font-size: var(--fs-14);
+}
+
+.diff-row {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: var(--gap-9);
+}
+
+.diff-row dt {
+  color: var(--muted);
+}
+
+.diff-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.diff-before {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.diff-after {
+  font-weight: 700;
+}
+
+/* Части дня: день занят частично — сиреневой клеткой со сливовой полосой снизу */
+.cal-partial {
+  background-color: var(--lilac);
+  background-image: linear-gradient(to top, var(--plum) 4px, transparent 4px);
+}
+
+.cal-key-partial {
+  border-color: var(--lilac);
+  background-color: var(--lilac);
+  background-image: linear-gradient(to top, var(--plum) 4px, transparent 4px);
+}
+
+/* Открытый день — после «сегодня» (ловушка №7): его части под сеткой */
+.cal-open {
+  box-shadow: inset 0 0 0 2px var(--plum);
+}
+
+.cal-capacity {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.day-parts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+}
+
+.day-parts-title {
+  margin: 0;
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.day-part-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+  padding-top: 7px;
+  border-top: 1px solid var(--rule);
+}
+
+.day-part-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-weight: 700;
+}
+
+/* Срок заказа (без календаря) */
+.lead-days {
+  margin: 0;
+  color: var(--plum);
+  font-size: var(--fs-16);
+  font-weight: 700;
+}
+
+/* Заявка: подзаголовок внутри панели и выбранные услуги */
+.sub-title {
+  margin: 12px 0 4px;
+  color: var(--plum);
+  font-size: var(--fs-14);
+}
+
+.chosen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 719px) {
+  .diff-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--gap-3);
+  }
+
+  .attr-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .service-form {
+    padding: 12px;
+  }
+}
+
 /* ── телефон ─────────────────────────────────────────────────────────────── */
 
 @media (max-width: 719px) {

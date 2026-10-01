@@ -2,17 +2,9 @@ import type { StaffRole } from "@bayramm/shared/api/staff";
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectNoAxeViolations } from "../support/a11y";
+import { createVitrina } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
-import {
-  CLIENT_ID,
-  LISTING_ID,
-  mockStaffApi,
-  NOW,
-  REQUEST_ID,
-  REVISION_ID,
-  staffOf,
-  VENDOR_ID,
-} from "../support/staff-api";
+import { CLIENT_ID, mockStaffApi, NOW, REQUEST_ID, REVISION_ID, staffOf } from "../support/staff-api";
 
 /* Роли (права — apps/api/src/staff/access.ts): у каждой — только свои разделы, кнопки —
    только тех действий, что ей разрешены; чужой раздел по ссылке — «нет доступа», а не 403 с
@@ -119,11 +111,8 @@ test("модератор на карточке: «Отклонить» есть,
   // Карточку создаёт администратор (подмена API — одна на страницу), смотрит модератор
   await page.clock.setFixedTime(NOW);
   const admin = await mockStaffApi(page, { role: "admin" });
-  await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-  await page.getByLabel(t.listingFields.name ?? "", { exact: true }).fill("Navruz zali");
-  await page.getByRole("button", { name: t.createListing }).click();
-  await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
-  expect(admin.created).toHaveLength(1);
+  await createVitrina(page);
+  expect(admin.vitrinas).toHaveLength(1);
   // Тот же сотрудник — уже модератор: GET /staff/me отвечает его правами
   await page.route("**/api/staff/me", (route) =>
     route.fulfill({

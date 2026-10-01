@@ -1,6 +1,8 @@
 /* Заявки: без ответа — сверху, ближайший срок первым; «Требуют действия» — очередь
-   просроченных. Заявка: данные, срок ответа по шагам, работа с заявкой (напомнить вендору,
-   «связались»), заметки команды, история; телефоны — скрыты до «Показать» (в журнал). */
+   просроченных; фильтр по категории витрины. Заявка: данные, что нужно клиенту по форме
+   категории (часть дня, часы, машины, вес, выбранные услуги с добавками — как были при
+   подаче), срок ответа по шагам, работа с заявкой (напомнить вендору, «связались»), заметки
+   команды, история; телефоны — скрыты до «Показать» (в журнал). */
 
 import type {
   RequestVendorPhones,
@@ -12,15 +14,24 @@ import type {
   StaffRequestDetail,
   StaffRequestList,
 } from "@bayramm/shared/api/staff";
-import { Dialog, RadioGroup, SearchField } from "@bayramm/ui/react";
-import { type FormEvent, useCallback, useId, useRef, useState } from "react";
+import {
+  type CategoryConfig,
+  categoryConfig,
+  chosenServices,
+  type DayPart,
+  detailRows,
+} from "@bayramm/shared/categories";
+import { Dialog, RadioGroup, SearchField, Select } from "@bayramm/ui/react";
+import { type FormEvent, Fragment, useCallback, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
-import { formatDay, formatMoment, formatSum, vendorLabel } from "../format";
+import { categoryName, categoryOptions, partWindow } from "../categories";
+import { formatDay, formatMoment, formatPrice, formatSum, vendorLabel } from "../format";
 import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
   ActionBar,
   ActiveFilter,
+  CategoryChip,
   ConfirmForm,
   ErrorText,
   FilterButton,
@@ -74,14 +85,21 @@ function filterCount(list: StaffRequestList, filter: SlaFilter): number {
   return filter === "late" ? list.counts.overdue + list.counts.breached : list.counts[filter];
 }
 
+/** «Утро» — часть дня заявки; у категории без частей дня — пусто */
+function partName(part: DayPart | null): string {
+  return part === null ? "" : (t.dayParts[part] ?? part);
+}
+
 export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries | null }) {
   const phone = usePhone();
   const [sla, setSla] = useState<SlaFilter | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const params = new URLSearchParams({ limit: "100" });
   if (sla) params.set("sla", sla);
+  if (category) params.set("category", category);
   if (query) params.set("q", query);
   const { loaded, reload } = useLoad<StaffRequestList>(`/staff/requests?${params}`);
   const list = loaded.state === "ready" ? loaded.data : null;
@@ -104,14 +122,30 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
           maxLength={100}
         />
         {phone ? (
-          <FilterButton count={sla ? 1 : 0} open={filtersOpen} onOpen={() => setFiltersOpen(true)} />
+          <FilterButton
+            count={(sla ? 1 : 0) + (category ? 1 : 0)}
+            open={filtersOpen}
+            onOpen={() => setFiltersOpen(true)}
+          />
         ) : (
-          <button type="submit" className="btn">
-            {t.search}
-          </button>
+          <>
+            <Select
+              size="compact"
+              label={t.colCategory}
+              value={category ?? ""}
+              onChange={(code) => setCategory(code === "" ? null : code)}
+              options={[{ value: "", label: t.allCategories }, ...categoryOptions()]}
+            />
+            <button type="submit" className="btn">
+              {t.search}
+            </button>
+          </>
         )}
       </form>
       {phone && sla ? <ActiveFilter label={filterLabel(sla)} onClear={() => setSla(null)} /> : null}
+      {phone && category ? (
+        <ActiveFilter label={categoryName(category)} onClear={() => setCategory(null)} />
+      ) : null}
       {phone ? (
         <Dialog
           open={filtersOpen}
@@ -119,7 +153,14 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
           onClose={() => setFiltersOpen(false)}
           actions={
             <>
-              <button type="button" className="ui-btn ui-btn-secondary" onClick={() => setSla(null)}>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary"
+                onClick={() => {
+                  setSla(null);
+                  setCategory(null);
+                }}
+              >
                 {t.reset}
               </button>
               <button type="button" className="ui-btn ui-btn-primary" onClick={() => setFiltersOpen(false)}>
@@ -138,6 +179,13 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
               label: filterLabel(filter),
               ...(filter && list ? { hint: t.requestsCount(filterCount(list, filter)) } : {}),
             }))}
+          />
+          <RadioGroup<string>
+            variant="row"
+            label={t.colCategory}
+            value={category ?? "all"}
+            onChange={(value) => setCategory(value === "all" ? null : value)}
+            options={[{ value: "all", label: t.allCategories }, ...categoryOptions()]}
           />
         </Dialog>
       ) : null}
@@ -179,12 +227,15 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                     <dl className="rcard-facts">
                       <dt>{t.colVendor}</dt>
                       <dd>
-                        {request.listing.name} · {vendorLabel(request.vendor)}
+                        <CategoryChip code={request.listing.categoryCode} /> {request.listing.name} ·{" "}
+                        {vendorLabel(request.vendor)}
                       </dd>
                       <dt>{t.colEvent}</dt>
                       <dd>
-                        {formatDay(request.eventDate)} · {occasionName(dictionaries, request.occasionCode)} ·{" "}
-                        {t.guests(request.guests)}
+                        {formatDay(request.eventDate)}
+                        {request.dayPart ? ` · ${partName(request.dayPart)}` : ""} ·{" "}
+                        {occasionName(dictionaries, request.occasionCode)}
+                        {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
                       </dd>
                       <dt>{t.colDue}</dt>
                       <dd>
@@ -219,12 +270,16 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                         </td>
                         <td>
                           <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
-                          <span className="sub">{vendorLabel(request.vendor)}</span>
+                          <span className="sub">
+                            <CategoryChip code={request.listing.categoryCode} /> {vendorLabel(request.vendor)}
+                          </span>
                         </td>
                         <td>
                           {formatDay(request.eventDate)}
+                          {request.dayPart ? ` · ${partName(request.dayPart)}` : ""}
                           <span className="sub">
-                            {occasionName(dictionaries, request.occasionCode)} · {t.guests(request.guests)}
+                            {occasionName(dictionaries, request.occasionCode)}
+                            {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
                           </span>
                         </td>
                         <td>
@@ -288,6 +343,9 @@ function RequestView({
     [api, request.id],
   );
   const phone = usePhone();
+  const category = categoryConfig(request.listing.categoryCode);
+  const district = (code: string) => dictionaries?.districts.find((d) => d.code === code)?.nameRu;
+  const details = <RequestDetails category={category} request={request} district={district} />;
   const budget =
     request.budgetMinUzs !== null || request.budgetMaxUzs !== null
       ? `${formatSum(request.budgetMinUzs)} — ${formatSum(request.budgetMaxUzs)}`
@@ -301,11 +359,23 @@ function RequestView({
           <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link> ·{" "}
           <Link to={{ name: "vendor", id: request.vendor.id }}>{vendorLabel(request.vendor)}</Link>
         </dd>
+        <dt>{t.colCategory}</dt>
+        <dd>
+          <CategoryChip code={request.listing.categoryCode} />
+        </dd>
         <dt>{t.colEvent}</dt>
         <dd>
-          {formatDay(request.eventDate)} · {occasionName(dictionaries, request.occasionCode)} ·{" "}
-          {t.guests(request.guests)}
+          {formatDay(request.eventDate)} · {occasionName(dictionaries, request.occasionCode)}
+          {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
         </dd>
+        {request.dayPart && category ? (
+          <>
+            <dt>{t.dayPart}</dt>
+            <dd>
+              {partName(request.dayPart)} · {partWindow(category, request.dayPart)}
+            </dd>
+          </>
+        ) : null}
         <dt>{t.requestBudget}</dt>
         <dd>{budget}</dd>
         <dt>{t.colDue}</dt>
@@ -394,6 +464,7 @@ function RequestView({
         // Телефон: сначала главное — данные заявки, клиент, как дозвониться вендору
         <>
           {facts}
+          {details}
           {client}
           {phones}
           <Timeline events={request.timeline} />
@@ -404,6 +475,7 @@ function RequestView({
         <div className="columns">
           <div className="stack">
             {facts}
+            {details}
             <Timeline events={request.timeline} />
             <Notes request={request} onChange={onChange} />
             {history}
@@ -625,6 +697,62 @@ function Notes({
           {failure && <ErrorText failure={failure} />}
         </form>
       )}
+    </section>
+  );
+}
+
+/**
+ * Что нужно клиенту — поля формы заявки категории (часы, машины, вес, цвета…) и выбранные
+ * услуги с количеством и добавками: названия и цены — как были при подаче заявки
+ */
+function RequestDetails({
+  category,
+  request,
+  district,
+}: {
+  category: CategoryConfig | undefined;
+  request: StaffRequestDetail;
+  district: (code: string) => string | undefined;
+}) {
+  const rows = detailRows("ru", category, request.details, district);
+  const services = chosenServices(category, request.details);
+  if (rows.length === 0 && services.length === 0) return null;
+  return (
+    <section className="panel" aria-labelledby="details-title">
+      <h2 id="details-title">{t.requestDetails}</h2>
+      {rows.length > 0 ? (
+        <dl className="dl">
+          {rows.map((row) => (
+            <Fragment key={row.key}>
+              <dt>{row.label}</dt>
+              <dd>{row.value ?? t.yes}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      ) : null}
+      {services.length > 0 ? (
+        <>
+          <h3 className="sub-title">{t.requestServices}</h3>
+          <ul className="chosen">
+            {services.map((service) => (
+              <li key={service.id}>
+                <strong>{service.name.ru}</strong>
+                {service.qty !== null ? ` × ${service.qty}` : ""}
+                <span className="sub">{formatPrice(service.priceUzs, service.priceUnit)}</span>
+                {service.options.length > 0 ? (
+                  <ul className="plain">
+                    {service.options.map((option) => (
+                      <li key={option.id}>
+                        + {option.name.ru} — {formatPrice(option.priceUzs, option.priceUnit)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </section>
   );
 }

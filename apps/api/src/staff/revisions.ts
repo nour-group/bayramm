@@ -254,7 +254,12 @@ function itemView(row: RevisionRow): RevisionListItem {
     status: row.status,
     submittedAt: iso(row.submitted_at),
     decidedAt: iso(row.decided_at),
-    listing: { id: row.listing_id, name: row.listing_name, status: row.listing_status },
+    listing: {
+      id: row.listing_id,
+      name: row.listing_name,
+      status: row.listing_status,
+      categoryCode: row.category_code,
+    },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
     proposedBy: row.by_staff
       ? { kind: "staff", name: row.submitted_by_name }

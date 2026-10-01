@@ -1264,7 +1264,7 @@ body {
   left: 0;
   z-index: 2;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   padding: 6px calc(var(--sa-r) + 8px) calc(var(--pad-b) + 6px) calc(var(--sa-l) + 8px);
   border-top: 1px solid var(--rule);
   background: var(--rail-bg);
@@ -1286,12 +1286,25 @@ body {
   text-decoration: none;
 }
 
-/* Подпись не шире своей четверти: «Календарь» на 320px не раздвигает панель */
+/* Подпись не шире своей пятой части: «Календарь» на 320px не раздвигает панель */
 .tab .nav-label {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Уже 390px пять подписей кеглем 12,5 не влезают («Календарь» — 67px при пятой части в
+   61px на 320px): кегль 11 и поля панели уже — подписи целиком, без многоточия */
+@media (max-width: 389px) {
+  .tabbar {
+    padding-right: calc(var(--sa-r) + 4px);
+    padding-left: calc(var(--sa-l) + 4px);
+  }
+
+  .tab {
+    font-size: var(--fs-11);
+  }
 }
 
 /* Планшет: шапка сверху, узкая колонка разделов слева */
@@ -1512,6 +1525,567 @@ body {
   justify-content: flex-end;
 }
 
+/* ── витрины: переключатель, строка витрины, категория ─────────────────────── */
+
+/* Категория витрины — чип на белом: plum на white */
+.chip-cat {
+  border: 1px solid var(--rule);
+  background: var(--white);
+  color: var(--plum);
+}
+
+/* Отказ (услуга отклонена): berry на white */
+.chip-bad {
+  border: 1px solid var(--berry);
+  background: var(--white);
+  color: var(--berry);
+}
+
+/* Пилюля витрины: название и категория строкой ниже — цвет тот же, что у подписи */
+.vitrina-pill {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  padding: 4px 16px;
+  line-height: 1.25;
+}
+
+.vitrina-name {
+  font-weight: 700;
+}
+
+.vitrina-cat {
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+}
+
+/* Какая витрина на экране: витрина одна или выбор — в боковой панели */
+.vitrina-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7);
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.vitrina-line .icon {
+  color: var(--coral);
+}
+
+.vitrina-line-name {
+  overflow-wrap: anywhere;
+}
+
+/* Боковая панель компьютера: витрины под разделами */
+.side-vitrinas {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.side-title {
+  margin: 0 0 4px;
+  padding: 0 12px;
+  color: var(--muted-lt);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+}
+
+.side-vitrina {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: var(--hit-min);
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--r-14);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-14);
+  line-height: 1.3;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.side-vitrina .vitrina-cat {
+  color: var(--muted);
+}
+
+/* ── заявка: категория, часть дня, что нужно клиенту ──────────────────────── */
+
+.rq-vitrina {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5) var(--gap-7);
+  color: var(--ink);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.rq-vitrina-name {
+  overflow-wrap: anywhere;
+}
+
+/* Поля заявки категории одной-двумя строками: подробно — в карточке заявки */
+.rq-details {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.fact-sub {
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.fact-note {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+}
+
+.fact-vitrina {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5) var(--gap-9);
+  overflow-wrap: anywhere;
+}
+
+.request-details,
+.chosen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+/* Поля заявки и поля витрины: подпись слева, значение справа; узко — друг под другом */
+.detail-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 0;
+}
+
+.detail-rows > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--gap-3) var(--gap-12);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-14);
+}
+
+.detail-rows > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.detail-rows dt {
+  color: var(--muted);
+}
+
+.detail-rows dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.detail-flag dt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.detail-flag .icon {
+  color: var(--teal);
+}
+
+.chosen-list,
+.chosen-options,
+.svc-list,
+.svc-options,
+.day-parts,
+.video-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chosen-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.chosen-head,
+.chosen-options li,
+.svc-options li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--gap-3) var(--gap-12);
+  margin: 0;
+}
+
+.chosen-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.chosen-price,
+.svc-option-price {
+  color: var(--plum);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chosen-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  margin-top: 4px;
+  padding-left: 12px;
+  border-left: 2px solid var(--rule);
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
+/* ── услуги ────────────────────────────────────────────────────────────────── */
+
+.svc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.svc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.svc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+}
+
+.svc-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.svc-title {
+  min-width: 0;
+}
+
+.svc-name {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-16);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.svc-type {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.svc-facts {
+  margin: 0;
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.svc-includes {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+  white-space: pre-line;
+}
+
+.svc-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  font-size: var(--fs-14);
+}
+
+.svc-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+}
+
+/* Предложение правки: что сейчас и что предложено */
+.changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 0;
+}
+
+.changes dt {
+  color: var(--plum);
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
+.changes dd {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.change-was {
+  color: var(--muted);
+}
+
+.change-now {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.svc-actions .btn {
+  flex: 1 1 140px;
+}
+
+.svc-type-fixed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.svc-option-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+.svc-option-remove,
+.attr-add,
+.package-row > .btn {
+  align-self: flex-start;
+}
+
+.svc-unit-fixed {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* ── поля витрины и видео в предложении правки ─────────────────────────────── */
+
+.attr-form,
+.proposal-attributes,
+.proposal-videos,
+.attr-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.attr-checks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.video-field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+.video-field .field {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.video-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  font-size: var(--fs-14);
+  overflow-wrap: anywhere;
+}
+
+.venue-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5);
+}
+
+.readiness {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+.venue-services-link {
+  align-self: flex-start;
+}
+
+/* ── календарь: части дня, выбранный день, сколько заказов одновременно ───── */
+
+.cal-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  min-width: 0;
+}
+
+/* Части дня под числом: утро, день, вечер — полоски; занятая — цвета «занято» */
+.cal-parts {
+  display: flex;
+  gap: 2px;
+}
+
+.cal-parts i {
+  width: 8px;
+  height: 4px;
+  border-radius: var(--r-999);
+  background: var(--rule);
+}
+
+.cal-parts i.is-booked {
+  background: var(--coral);
+}
+
+.cal-parts i.is-busy {
+  background: var(--berry);
+}
+
+.cal-day.cal-partial {
+  background: var(--busy);
+}
+
+.cal-day.cal-full::after {
+  content: none;
+}
+
+.day-panel {
+  gap: var(--gap-12);
+}
+
+.day-parts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+}
+
+.day-part {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+}
+
+.day-part.is-busy {
+  border-left: 4px solid var(--berry);
+}
+
+.day-part-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.day-part-window,
+.day-part-state {
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.day-part-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.day-part .btn {
+  flex: 0 0 auto;
+}
+
+.capacity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.capacity-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.dot-part {
+  border-bottom: 3px solid var(--berry);
+  background: var(--cell);
+}
+
+/* Срок заказа вместо календаря (цветы, торты, подарки) */
+.lead-panel {
+  gap: var(--gap-12);
+}
+
+.lead-days {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-9);
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-16);
+  font-weight: 700;
+}
+
+.lead-days .icon {
+  margin-top: 2px;
+  color: var(--coral);
+}
+
 /* Наведение — только там, где есть курсор (ловушка №6) */
 @media (hover: hover) {
   .lang button:hover,
@@ -1520,7 +2094,8 @@ body {
   }
 
   .side-link:hover,
-  .rail-link:hover {
+  .rail-link:hover,
+  .side-vitrina:hover {
     background: var(--lilac);
     color: var(--ink);
   }
@@ -1569,6 +2144,21 @@ body {
   color: var(--plum);
 }
 
+/* Выбранная витрина в боковой панели — как текущий раздел */
+.side-vitrina[aria-pressed="true"] {
+  background: var(--lilac);
+  color: var(--plum);
+}
+
+.side-vitrina[aria-pressed="true"] .vitrina-cat {
+  color: var(--plum);
+}
+
+/* Выбранный день (режим частей дня): рамка цвета фокуса, отметки дня остаются видны */
+.cal-day.cal-selected {
+  border: 2px solid var(--plum);
+}
+
 /* Заявка, открытая рядом со списком (компьютер) */
 .rq[aria-current="page"] {
   border-color: var(--plum);
@@ -1599,6 +2189,13 @@ body {
 
   .welcome-points {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Несколько вариантов (команда, начинки) — столбцами, а не длинной лентой */
+  .attr-checks {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--gap-3) var(--gap-12);
   }
 
   .cal-day {

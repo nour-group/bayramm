@@ -1,144 +1,87 @@
-/* Изменения карточки: партнёр предлагает новое название, цену, описания и пакеты, команда
-   Bayramm проверяет (панель → «Модерация»). Клиенты видят одобренную карточку, пока
-   предложение ждёт решения. Одно открытое предложение на площадку: пока оно на проверке —
-   его видно здесь, его можно отозвать; решение (одобрено или отказ с причиной) — тоже здесь.
+/* Изменения карточки: партнёр предлагает новое название, описания, поля витрины своей
+   категории (Attributes.tsx) и ссылки на видео (у фото и видео, студии), команда Bayramm
+   проверяет (панель → «Модерация»). Цены — не здесь: цена «от» считается из услуг (раздел
+   «Услуги»). Клиенты видят одобренную карточку, пока предложение ждёт решения. Одно открытое
+   предложение на площадку: пока оно на проверке — его видно здесь, его можно отозвать;
+   решение (одобрено или отказ с причиной) — тоже здесь.
 
    Предлагать и отзывать может только владелец кабинета: сотрудник площадки видит, что
    предложено и что решили, но без формы и кнопок. Предложение, которое внёс менеджер Bayramm
    (byTeam), партнёр не отзывает — по нему решает модератор.
 
-   В предложение уходят только изменённые поля; ничего не изменили — запроса нет. Проверка
-   полей — на сервере (те же правила, что при решении); неверные поля подсвечиваются. Цена
-   обязательна: пустой или «по запросу» не отправляется. Контролы — из @bayramm/ui/react. */
+   В предложение уходят только изменённые поля (у полей витрины — только изменённые ключи,
+   attributePatch); ничего не изменили — запроса нет. Поля проверяются до запроса теми же
+   правилами, что на сервере (attributeErrors, videoLinkErrors); неверные поля от сервера
+   (attributes.fleet.0.class, video_links.1) тоже подсвечиваются. Старые предложения с ценой и
+   пакетами (кабинет v0.1, команда) показываются как есть. Контролы — из @bayramm/ui/react. */
 
 import type {
   ListingRevisionPayload,
   PriceUnit,
-  RevisionPackage,
   VendorListing,
   VendorRevision,
   VendorRevisionList,
 } from "@bayramm/shared/api/vendor";
-import { DESCRIPTION_MAX, MAX_REVISION_PACKAGES } from "@bayramm/shared/api/vendor";
-import { ConfirmSheet, RadioGroup } from "@bayramm/ui/react";
+import { DESCRIPTION_MAX } from "@bayramm/shared/api/vendor";
+import {
+  type AttributeDraft,
+  type AttributeDrafts,
+  type AttributeValue,
+  attributeDrafts,
+  attributeErrors,
+  attributePatch,
+  type CategoryConfig,
+  categoryConfig,
+  videoLinkErrors,
+  videoLinksValue,
+} from "@bayramm/shared/categories";
+import { ConfirmSheet } from "@bayramm/ui/react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { AttributeFacts, AttributesForm } from "./Attributes";
 import { ApiFailure, api } from "./api";
-import { formatMoment, formatMoney, groupDigits } from "./format";
-import { fill, textOf, type VendorDict, vendorDict } from "./i18n";
+import { formatMoment, formatMoney } from "./format";
+import { fill, type VendorDict } from "./i18n";
 import { LoadError, Loading } from "./ui";
 import { useLoad } from "./useLoad";
 
-type PackageKind = RevisionPackage["kind"];
-
-interface PackageRow {
-  readonly key: number;
-  readonly kind: PackageKind;
-  readonly nameRu: string;
-  readonly nameUz: string;
-  readonly price: string;
-  readonly priceUnit: PriceUnit;
-}
-
 interface Values {
   readonly name: string;
-  readonly price: string;
-  readonly priceUnit: PriceUnit;
   readonly descriptionRu: string;
   readonly descriptionUz: string;
 }
 
-/** Поле формы → ключ правки (и имя в details ответа 422) */
-const FIELD_KEYS = {
-  name: "name",
-  price: "price_from_uzs",
-  priceUnit: "price_unit",
-  descriptionRu: "description_ru",
-  descriptionUz: "description_uz",
-  packages: "packages",
-} as const;
-type FieldKey = (typeof FIELD_KEYS)[keyof typeof FIELD_KEYS];
+/** Ссылки на видео в форме: сохранённые, а если их нет — одно пустое поле */
+const videoDraftsOf = (listing: VendorListing) =>
+  listing.videoLinks.length > 0 ? [...listing.videoLinks] : [""];
 
-let rowKey = 0;
-
-/** «25 000 000» → 25000000; пусто или не число — null */
-export function parseSum(value: string): number | null {
-  const compact = value.replace(/[\s  _]/g, "");
-  if (!/^\d{1,11}$/.test(compact)) return null;
-  const sum = Number(compact);
-  return sum > 0 ? sum : null;
-}
-
-const order = (kind: PackageKind) => (kind === "weekday" ? 0 : kind === "weekend" ? 1 : 2);
-
-function rowsOf(listing: VendorListing): PackageRow[] {
-  const rows: PackageRow[] = listing.packages.map((p) => ({
-    key: rowKey++,
-    kind: p.kind,
-    nameRu: p.name.ru,
-    nameUz: p.name.uz,
-    price: groupDigits(p.priceUzs),
-    priceUnit: p.priceUnit,
-  }));
-  // У зала будни и выходные — всегда строкой: без них карточку не опубликовать
-  if (listing.categoryCode === "hall") {
-    for (const kind of ["weekday", "weekend"] as const) {
-      if (!rows.some((row) => row.kind === kind)) {
-        // Название пакета — для клиентов на обоих языках, какой бы язык ни был у кабинета
-        rows.push({
-          key: rowKey++,
-          kind,
-          nameRu: vendorDict.ru[`pk_${kind}`],
-          nameUz: vendorDict.uz[`pk_${kind}`],
-          price: "",
-          priceUnit: listing.priceUnit,
-        });
-      }
-    }
-  }
-  return rows.sort((a, b) => order(a.kind) - order(b.kind));
-}
-
-function packagesOf(rows: readonly PackageRow[]): RevisionPackage[] {
-  return rows
-    .filter((row) => row.kind === "custom" || row.price.trim() !== "")
-    .map((row) => ({
-      kind: row.kind,
-      name_ru: row.nameRu.trim(),
-      name_uz: row.nameUz.trim(),
-      // Не число — как есть: сервер укажет на этот пакет
-      price_uzs: parseSum(row.price) ?? (row.price as unknown as number),
-      price_unit: row.priceUnit,
-    }));
-}
-
-const currentPackages = (listing: VendorListing): RevisionPackage[] =>
-  listing.packages.map((p) => ({
-    kind: p.kind,
-    name_ru: p.name.ru,
-    name_uz: p.name.uz,
-    price_uzs: p.priceUzs,
-    price_unit: p.priceUnit,
-  }));
-
-/** Только изменённые поля; цена не числом — null (форма покажет ошибку до запроса) */
+/**
+ * Предложение: только изменённые поля. category — категория витрины (поля витрины и
+ * видео); before — поля витрины, как их загрузила форма
+ */
 export function proposalOf(
   listing: VendorListing,
+  category: CategoryConfig | undefined,
   values: Values,
-  rows: readonly PackageRow[],
-): ListingRevisionPayload | null {
+  drafts: AttributeDrafts,
+  before: AttributeDrafts,
+  videos: readonly string[],
+): ListingRevisionPayload {
   const payload: { -readonly [K in keyof ListingRevisionPayload]: ListingRevisionPayload[K] } = {};
   const name = values.name.trim();
   if (name !== listing.name) payload.name = name;
-  const price = parseSum(values.price);
-  if (price === null) return null;
-  if (price !== listing.priceFromUzs) payload.price_from_uzs = price;
-  if (values.priceUnit !== listing.priceUnit) payload.price_unit = values.priceUnit;
   const ru = values.descriptionRu.trim();
   if (ru !== listing.description.ru.trim()) payload.description_ru = ru;
   const uz = values.descriptionUz.trim();
   if (uz !== listing.description.uz.trim()) payload.description_uz = uz;
-  const packages = packagesOf(rows);
-  if (JSON.stringify(packages) !== JSON.stringify(currentPackages(listing))) payload.packages = packages;
+  if (category) {
+    const patch = attributePatch(category, drafts, before);
+    if (Object.keys(patch).length > 0)
+      payload.attributes = patch as Readonly<Record<string, AttributeValue | null>>;
+    if (category.maxVideoLinks > 0) {
+      const links = videoLinksValue(videos);
+      if (JSON.stringify(links) !== JSON.stringify(listing.videoLinks)) payload.video_links = links;
+    }
+  }
   return payload;
 }
 
@@ -157,6 +100,7 @@ function Proposed({
   t: VendorDict;
   lang: "ru" | "uz";
 }) {
+  const category = categoryConfig(listing.categoryCode);
   const price = payload.price_from_uzs ?? listing.priceFromUzs;
   const unit = payload.price_unit ?? listing.priceUnit;
   return (
@@ -189,6 +133,30 @@ function Proposed({
           </dd>
         </div>
       ) : null}
+      {payload.attributes !== undefined && category ? (
+        <div className="facts-wide">
+          <dt>{t.attributesTitle}</dt>
+          <dd>
+            <AttributeFacts category={category} attributes={payload.attributes} t={t} lang={lang} />
+          </dd>
+        </div>
+      ) : null}
+      {payload.video_links !== undefined ? (
+        <div className="facts-wide">
+          <dt>{t.videoTitle}</dt>
+          <dd>
+            {payload.video_links.length === 0 ? (
+              t.notSet
+            ) : (
+              <ul className="video-list">
+                {payload.video_links.map((link) => (
+                  <li key={link}>{link}</li>
+                ))}
+              </ul>
+            )}
+          </dd>
+        </div>
+      ) : null}
       {payload.packages !== undefined ? (
         <div className="facts-wide">
           <dt>{t.packages}</dt>
@@ -215,6 +183,7 @@ function Proposed({
 interface FormProps {
   readonly listing: VendorListing;
   readonly t: VendorDict;
+  readonly lang: "ru" | "uz";
   readonly onSent: (revision: VendorRevision) => void;
   /** Открытое предложение уже есть (409): показать его */
   readonly onPendingExists: () => void;
@@ -223,41 +192,53 @@ interface FormProps {
 
 type FormNotice = "noChanges" | "invalid" | "failed" | "pendingExists" | null;
 
-function ProposalForm({ listing, t, onSent, onPendingExists, onCancel }: FormProps) {
+/** Ссылка на видео N из пути ответа API: video_links.1 → 1; весь список — все */
+function videoErrorIndexes(details: readonly string[], count: number): number[] {
+  if (details.includes("video_links")) return Array.from({ length: count }, (_, i) => i);
+  return details.flatMap((path) => {
+    const match = /^video_links\.(\d+)$/.exec(path);
+    return match ? [Number(match[1])] : [];
+  });
+}
+
+function ProposalForm({ listing, t, lang, onSent, onPendingExists, onCancel }: FormProps) {
   const id = useId();
+  const category = categoryConfig(listing.categoryCode);
   const [values, setValues] = useState<Values>(() => ({
     name: listing.name,
-    // Суммы — с разрядами, как на карточке: «25 000 000»; пробелы при разборе отбрасываются
-    price: listing.priceFromUzs === null ? "" : groupDigits(listing.priceFromUzs),
-    priceUnit: listing.priceUnit,
     descriptionRu: listing.description.ru,
     descriptionUz: listing.description.uz,
   }));
-  const [rows, setRows] = useState<PackageRow[]>(() => rowsOf(listing));
+  const [before] = useState<AttributeDrafts>(() =>
+    category ? attributeDrafts(category, listing.attributes) : {},
+  );
+  const [drafts, setDrafts] = useState<AttributeDrafts>(before);
+  const [videos, setVideos] = useState<string[]>(() => videoDraftsOf(listing));
   const [invalid, setInvalid] = useState<ReadonlySet<string>>(new Set());
+  const [badVideos, setBadVideos] = useState<ReadonlySet<number>>(new Set());
   const [notice, setNotice] = useState<FormNotice>(null);
   const [busy, setBusy] = useState(false);
+  const maxVideos = category?.maxVideoLinks ?? 0;
 
-  const unitOptions = [
-    { value: "per_guest" as const, label: t.perGuest },
-    { value: "per_event" as const, label: t.perEvent },
-  ];
   const set = (key: keyof Values) => (value: string) => setValues((prev) => ({ ...prev, [key]: value }));
-  const setRow = (key: number, patch: Partial<PackageRow>) =>
-    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
   const bad = (key: string) => invalid.has(key);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setNotice(null);
-    const payload = proposalOf(listing, values, rows);
-    if (payload === null) {
-      setInvalid(new Set([FIELD_KEYS.price]));
+    // Сначала — те же проверки, что на сервере: поля витрины и ссылки
+    const attrErrors = category ? attributeErrors(category, drafts) : [];
+    const videoErrors = category && maxVideos > 0 ? videoLinkErrors(category, videos) : [];
+    if (attrErrors.length > 0 || videoErrors.length > 0) {
+      setInvalid(new Set(attrErrors));
+      setBadVideos(new Set(videoErrors));
       setNotice("invalid");
       return;
     }
+    const payload = proposalOf(listing, category, values, drafts, before, videos);
+    setInvalid(new Set());
+    setBadVideos(new Set());
     if (Object.keys(payload).length === 0) {
-      setInvalid(new Set());
       setNotice("noChanges");
       return;
     }
@@ -266,12 +247,9 @@ function ProposalForm({ listing, t, onSent, onPendingExists, onCancel }: FormPro
       onSent(await api.proposeRevision(listing.id, payload));
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "invalid_input") {
-        // packages.1.price_uzs → подсветить и весь блок пакетов, и строку packages.1
-        const parts = (detail: string) => [
-          detail.split(".")[0] ?? detail,
-          detail.split(".").slice(0, 2).join("."),
-        ];
-        setInvalid(new Set(err.details.flatMap(parts)));
+        // attributes.fleet.0.class — подсвечивается поле, запись и список; name — поле
+        setInvalid(new Set(err.details));
+        setBadVideos(new Set(videoErrorIndexes(err.details, videos.length)));
         setNotice("invalid");
       } else if (err instanceof ApiFailure && err.code === "no_changes") {
         setNotice("noChanges");
@@ -286,16 +264,20 @@ function ProposalForm({ listing, t, onSent, onPendingExists, onCancel }: FormPro
     }
   };
 
-  const errorText = (key: FieldKey) =>
+  const errorText = (key: string) =>
     bad(key) ? (
       <p className="field-error" id={`${id}-${key}-error`}>
-        {key === FIELD_KEYS.price ? t.priceInvalid : t.fieldInvalid}
+        {t.fieldInvalid}
       </p>
     ) : null;
-  const described = (key: FieldKey) => (bad(key) ? `${id}-${key}-error` : undefined);
+  const described = (key: string) => (bad(key) ? `${id}-${key}-error` : undefined);
 
-  const text = (key: "name" | "descriptionRu" | "descriptionUz", label: string, multiline: boolean) => {
-    const field = FIELD_KEYS[key];
+  const text = (
+    key: "name" | "descriptionRu" | "descriptionUz",
+    field: string,
+    label: string,
+    multiline: boolean,
+  ) => {
     const inputId = `${id}-${key}`;
     const common = {
       id: inputId,
@@ -334,138 +316,96 @@ function ProposalForm({ listing, t, onSent, onPendingExists, onCancel }: FormPro
 
   return (
     <form className="proposal-form" onSubmit={submit} noValidate>
-      {/* Шире телефона поля — парами: название рядом с ценой, описание RU рядом с UZ */}
+      {text("name", "name", t.nameLabel, false)}
+      {/* Шире телефона поля — парами: описание RU рядом с UZ */}
       <div className="form-grid">
-        {text("name", t.nameLabel, false)}
-        <div className="form-row">
-          <label className="field-label" htmlFor={`${id}-price`}>
-            {t.priceFromLabel}
-          </label>
-          <input
-            id={`${id}-price`}
-            className="field"
-            inputMode="numeric"
-            autoComplete="off"
-            maxLength={16}
-            value={values.price}
-            aria-invalid={bad(FIELD_KEYS.price) || undefined}
-            aria-describedby={described(FIELD_KEYS.price)}
-            onChange={(event) => set("price")(event.target.value)}
-          />
-          {errorText(FIELD_KEYS.price)}
-        </div>
-      </div>
-      <fieldset className="choices">
-        <legend className="field-label">{t.priceUnitLabel}</legend>
-        <RadioGroup
-          variant="segmented"
-          name={`${id}-unit`}
-          value={values.priceUnit}
-          options={unitOptions}
-          onChange={(unit) => setValues((prev) => ({ ...prev, priceUnit: unit }))}
-        />
-      </fieldset>
-      <div className="form-grid">
-        {text("descriptionRu", t.descriptionRuLabel, true)}
-        {text("descriptionUz", t.descriptionUzLabel, true)}
+        {text("descriptionRu", "description_ru", t.descriptionRuLabel, true)}
+        {text("descriptionUz", "description_uz", t.descriptionUzLabel, true)}
       </div>
 
-      <fieldset className="choices proposal-packages" aria-describedby={described(FIELD_KEYS.packages)}>
-        <legend className="panel-title">{t.packages}</legend>
-        {errorText(FIELD_KEYS.packages)}
-        {rows.map((row, index) => {
-          const rowBad = bad(`packages.${index}`);
-          const rowId = `${id}-pk-${row.key}`;
-          return (
-            <div key={row.key} className={rowBad ? "package-row package-row-bad" : "package-row"}>
-              <p className="package-kind">{textOf(t, `pk_${row.kind}`)}</p>
-              <div className="form-grid">
-                <div className="form-row">
-                  <label className="field-label" htmlFor={`${rowId}-ru`}>
-                    {t.packageNameRu}
-                  </label>
-                  <input
-                    id={`${rowId}-ru`}
-                    className="field"
-                    maxLength={80}
-                    value={row.nameRu}
-                    aria-invalid={rowBad || undefined}
-                    onChange={(event) => setRow(row.key, { nameRu: event.target.value })}
-                  />
-                </div>
-                <div className="form-row">
-                  <label className="field-label" htmlFor={`${rowId}-uz`}>
-                    {t.packageNameUz}
-                  </label>
-                  <input
-                    id={`${rowId}-uz`}
-                    className="field"
-                    lang="uz"
-                    maxLength={80}
-                    value={row.nameUz}
-                    aria-invalid={rowBad || undefined}
-                    onChange={(event) => setRow(row.key, { nameUz: event.target.value })}
-                  />
-                </div>
-                <div className="form-row">
-                  <label className="field-label" htmlFor={`${rowId}-price`}>
-                    {t.packagePrice}
-                  </label>
-                  <input
-                    id={`${rowId}-price`}
-                    className="field"
-                    inputMode="numeric"
-                    maxLength={16}
-                    value={row.price}
-                    aria-invalid={rowBad || undefined}
-                    onChange={(event) => setRow(row.key, { price: event.target.value })}
-                  />
-                </div>
-                <div className="form-row package-unit">
-                  <RadioGroup
-                    variant="segmented"
-                    label={`${t.priceUnitLabel}: ${textOf(t, `pk_${row.kind}`)}`}
-                    name={`${rowId}-unit`}
-                    value={row.priceUnit}
-                    options={unitOptions}
-                    onChange={(unit) => setRow(row.key, { priceUnit: unit })}
-                  />
-                </div>
-              </div>
-              {row.kind === "custom" ? (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
-                >
-                  {t.packageRemove}
-                </button>
-              ) : null}
-            </div>
-          );
-        })}
-        {rows.length < MAX_REVISION_PACKAGES ? (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() =>
-              setRows((prev) => [
-                ...prev,
-                {
-                  key: rowKey++,
-                  kind: "custom",
-                  nameRu: "",
-                  nameUz: "",
-                  price: "",
-                  priceUnit: values.priceUnit,
-                },
-              ])
+      {category && category.attributes.length > 0 ? (
+        <fieldset className="choices proposal-attributes">
+          <legend className="panel-title">{t.attributesTitle}</legend>
+          <p className="note">{t.attributesLead}</p>
+          <AttributesForm
+            category={category}
+            drafts={drafts}
+            onChange={(key: string, value: AttributeDraft) =>
+              setDrafts((prev) => ({ ...prev, [key]: value }))
             }
-          >
-            {t.packageAdd}
-          </button>
-        ) : null}
-      </fieldset>
+            invalid={invalid}
+            t={t}
+            lang={lang}
+            idPrefix={`${id}-attr`}
+          />
+        </fieldset>
+      ) : null}
+
+      {maxVideos > 0 ? (
+        <fieldset className="choices proposal-videos">
+          <legend className="panel-title">{t.videoTitle}</legend>
+          <p className="note">{fill(t.videoLead, { max: maxVideos })}</p>
+          {videos.map((link, index) => {
+            const inputId = `${id}-video-${index}`;
+            const wrong = badVideos.has(index);
+            return (
+              // Ссылки без своего id: номер поля и есть его место
+              // biome-ignore lint/suspicious/noArrayIndexKey: поле ссылки — по месту
+              <div key={index} className="form-row video-row">
+                <label className="field-label" htmlFor={inputId}>
+                  {fill(t.videoLabel, { n: index + 1 })}
+                </label>
+                <div className="video-field">
+                  <input
+                    id={inputId}
+                    className="field"
+                    type="url"
+                    inputMode="url"
+                    autoComplete="off"
+                    maxLength={200}
+                    placeholder="https://"
+                    value={link}
+                    aria-invalid={wrong || undefined}
+                    aria-describedby={wrong ? `${inputId}-error` : undefined}
+                    onChange={(event) =>
+                      setVideos((prev) => prev.map((v, i) => (i === index ? event.target.value : v)))
+                    }
+                  />
+                  {videos.length > 1 || link !== "" ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        setBadVideos(new Set());
+                        setVideos((prev) => {
+                          const next = prev.filter((_, i) => i !== index);
+                          return next.length > 0 ? next : [""];
+                        });
+                      }}
+                    >
+                      {fill(t.videoRemove, { n: index + 1 })}
+                    </button>
+                  ) : null}
+                </div>
+                {wrong ? (
+                  <p className="field-error" id={`${inputId}-error`}>
+                    {t.videoInvalid}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+          {videos.length < maxVideos ? (
+            <button
+              type="button"
+              className="btn btn-ghost attr-add"
+              onClick={() => setVideos((prev) => [...prev, ""])}
+            >
+              {t.videoAdd}
+            </button>
+          ) : null}
+        </fieldset>
+      ) : null}
 
       {notice ? (
         <p className={notice === "noChanges" ? "note" : "form-error"} role="alert">
@@ -616,6 +556,7 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
           <ProposalForm
             listing={listing}
             t={t}
+            lang={lang}
             onSent={(revision) => {
               setRevisions((list) => ({ items: [revision, ...list.items] }));
               refocus.current = "title";

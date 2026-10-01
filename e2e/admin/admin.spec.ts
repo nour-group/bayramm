@@ -2,6 +2,7 @@ import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
 import { BOT } from "../support/account";
+import { createVitrina, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   CLIENT_ID,
@@ -108,19 +109,23 @@ test.describe("вход", () => {
 });
 
 test.describe("работа сотрудника", () => {
-  test("новая карточка → чего не хватает для проверки и публикации — словами", async ({ page }) => {
+  test("новая витрина → чего не хватает для проверки и публикации — словами", async ({ page }) => {
     const api = await start(page);
     await page.goto(`/vendors/${VENDOR_ID}`);
-    await page.getByRole("link", { name: t.newListing }).click();
+    await page.getByRole("link", { name: t.addVitrina }).click();
     await expect(page).toHaveURL(`/vendors/${VENDOR_ID}/listings/new`);
     await expect(heading(page)).toHaveText(t.views.listingNew);
-    await expectNoAxeViolations(page, "новая карточка");
+    await expectNoAxeViolations(page, "новая витрина");
 
-    await page.getByLabel(t.listingFields.name ?? "", { exact: true }).fill("Navruz zali");
-    await page.getByRole("button", { name: t.createListing }).click();
+    // Без категории витрину не завести: ошибка у поля, запроса нет
+    await page.getByRole("button", { name: t.createVitrina }).click();
+    await expect(page.locator(".field-error")).toHaveText(t.categoryRequired);
+    expect(api.vitrinas).toEqual([]);
+    await pick(page, t.categoryFirst, "Площадка / Тойхона");
+    await page.getByLabel(t.vitrinaName, { exact: true }).fill("Navruz zali");
+    await page.getByRole("button", { name: t.createVitrina }).click();
     await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
-    expect(api.created).toHaveLength(1);
-    expect(api.created[0]).toMatchObject({ vendorId: VENDOR_ID, name: "Navruz zali" });
+    expect(api.vitrinas).toEqual([{ categoryCode: "hall", name: "Navruz zali" }]);
 
     // Оба списка — словами из словаря панели
     const review = page.locator(".notice-warn").filter({ hasText: t.blockersReview });
@@ -198,10 +203,7 @@ test.describe("работа сотрудника", () => {
 
   test("занятые дни: отметка уходит с версией календаря, следующая — с новой", async ({ page }) => {
     const api = await start(page);
-    await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    await page.getByLabel(t.listingFields.name ?? "", { exact: true }).fill("Navruz zali");
-    await page.getByRole("button", { name: t.createListing }).click();
-    await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
+    await createVitrina(page);
 
     // «Сегодня» по Ташкенту при часах теста
     const today = page.locator(".cal-today");

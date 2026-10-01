@@ -24,7 +24,13 @@ import type {
   RequestCreated,
 } from "@bayramm/shared/api";
 import type { ListingService, ListingServices } from "@bayramm/shared/api/services";
-import type { ListingDetail, ServiceQueue, VendorDetail } from "@bayramm/shared/api/staff";
+import type {
+  ListingDetail,
+  ServiceQueue,
+  StaffRequestList,
+  VendorDetail,
+  VendorList,
+} from "@bayramm/shared/api/staff";
 import type { VendorCalendar, VendorListing, VendorMe, VendorRequestPage } from "@bayramm/shared/api/vendor";
 import { CATEGORIES, categoriesRu, categoriesUz, requiredAttributeKeys } from "@bayramm/shared/categories";
 import type { Client } from "pg";
@@ -568,6 +574,24 @@ describe("клиент: категории, фильтры, карточка, з
       ),
     ).toEqual({ status: 409, code: "category_locked", details: undefined });
     expect(requestId).not.toBe("");
+  });
+
+  it("списки панели: категория у витрин вендора, фильтры вендоров и заявок по категории", async () => {
+    const q = encodeURIComponent(`Кортеж ${run}`);
+    const vendors = await ok<VendorList>(api("manager", "GET", `/staff/vendors?q=${q}&category=photo`));
+    expect(vendors.items.map((v) => v.id)).toEqual([vendor.id]);
+    expect(vendors.items[0]?.listings.map((l) => l.categoryCode)).toEqual(["car", "photo"]);
+    expect(
+      (await ok<VendorList>(api("manager", "GET", `/staff/vendors?q=${q}&category=cake`))).items,
+    ).toEqual([]);
+
+    const cars = await ok<StaffRequestList>(api("manager", "GET", "/staff/requests?category=car&limit=100"));
+    expect(cars.items.some((r) => r.id === requestId)).toBe(true);
+    expect(cars.items.every((r) => r.listing.categoryCode === "car")).toBe(true);
+    const photos = await ok<StaffRequestList>(
+      api("manager", "GET", "/staff/requests?category=photo&limit=100"),
+    );
+    expect(photos.items.some((r) => r.id === requestId)).toBe(false);
   });
 });
 

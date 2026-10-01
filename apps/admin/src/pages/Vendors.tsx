@@ -1,12 +1,14 @@
-/* Вендоры: поиск, фильтр по статусу карточек, таблица. Строка ведёт на страницу вендора. */
+/* Вендоры: поиск, фильтры по статусу и категории витрин, таблица. Строка ведёт на страницу
+   вендора; у каждой витрины — её категория. */
 
 import type { ListingStatus, VendorList } from "@bayramm/shared/api/staff";
-import { Dialog, RadioGroup, SearchField } from "@bayramm/ui/react";
+import { Dialog, RadioGroup, SearchField, Select } from "@bayramm/ui/react";
 import { useEffect, useState } from "react";
 import { useCan, useLoad } from "../api";
+import { categoryName, categoryOptions } from "../categories";
 import { usePhone } from "../layout";
 import { t } from "../texts";
-import { ActionBar, ActiveFilter, FilterButton, Link, LoadedView, StatusPill } from "../ui";
+import { ActionBar, ActiveFilter, CategoryChip, FilterButton, Link, LoadedView, StatusPill } from "../ui";
 
 const FILTERS: readonly (ListingStatus | null)[] = [
   null,
@@ -33,11 +35,13 @@ export function VendorsPage() {
   const phone = usePhone();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<ListingStatus | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const query = useDebounced(q.trim());
   const params = new URLSearchParams({ limit: "100" });
   if (query) params.set("q", query);
   if (status) params.set("listingStatus", status);
+  if (category) params.set("category", category);
   const { loaded, reload } = useLoad<VendorList>(`/staff/vendors?${params}`);
 
   return (
@@ -52,8 +56,20 @@ export function VendorsPage() {
           maxLength={100}
         />
         {phone ? (
-          <FilterButton count={status ? 1 : 0} open={filtersOpen} onOpen={() => setFiltersOpen(true)} />
-        ) : null}
+          <FilterButton
+            count={(status ? 1 : 0) + (category ? 1 : 0)}
+            open={filtersOpen}
+            onOpen={() => setFiltersOpen(true)}
+          />
+        ) : (
+          <Select
+            size="compact"
+            label={t.colCategory}
+            value={category ?? ""}
+            onChange={(code) => setCategory(code === "" ? null : code)}
+            options={[{ value: "", label: t.allCategories }, ...categoryOptions()]}
+          />
+        )}
         {can("vendors.write") && !phone && (
           <Link to={{ name: "vendorNew" }} className="btn btn-primary">
             {t.newVendor}
@@ -61,6 +77,9 @@ export function VendorsPage() {
         )}
       </div>
       {phone && status ? <ActiveFilter label={t.status[status]} onClear={() => setStatus(null)} /> : null}
+      {phone && category ? (
+        <ActiveFilter label={categoryName(category)} onClear={() => setCategory(null)} />
+      ) : null}
       {phone ? (
         <Dialog
           open={filtersOpen}
@@ -68,7 +87,14 @@ export function VendorsPage() {
           onClose={() => setFiltersOpen(false)}
           actions={
             <>
-              <button type="button" className="ui-btn ui-btn-secondary" onClick={() => setStatus(null)}>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary"
+                onClick={() => {
+                  setStatus(null);
+                  setCategory(null);
+                }}
+              >
                 {t.reset}
               </button>
               <button type="button" className="ui-btn ui-btn-primary" onClick={() => setFiltersOpen(false)}>
@@ -86,6 +112,13 @@ export function VendorsPage() {
               value: filter ?? "all",
               label: filter ? t.status[filter] : t.all,
             }))}
+          />
+          <RadioGroup<string>
+            variant="row"
+            label={t.colCategory}
+            value={category ?? "all"}
+            onChange={(value) => setCategory(value === "all" ? null : value)}
+            options={[{ value: "all", label: t.allCategories }, ...categoryOptions()]}
           />
         </Dialog>
       ) : (
@@ -115,7 +148,7 @@ export function VendorsPage() {
       <LoadedView loaded={loaded} onRetry={reload}>
         {(list) =>
           list.items.length === 0 ? (
-            <p className="empty">{query || status ? t.vendorsEmpty : t.vendorsEmptyAll}</p>
+            <p className="empty">{query || status || category ? t.vendorsEmpty : t.vendorsEmptyAll}</p>
           ) : phone ? (
             <>
               <ul className="rcards">
@@ -151,7 +184,8 @@ export function VendorsPage() {
                         <ul className="rcard-tags" aria-label={t.colListings}>
                           {vendor.listings.map((listing) => (
                             <li key={listing.id}>
-                              {listing.name} <StatusPill status={listing.status} />
+                              {listing.name} <CategoryChip code={listing.categoryCode} />{" "}
+                              <StatusPill status={listing.status} />
                             </li>
                           ))}
                         </ul>
@@ -201,6 +235,7 @@ export function VendorsPage() {
                                 {vendor.listings.map((listing) => (
                                   <li key={listing.id}>
                                     <Link to={{ name: "listing", id: listing.id }}>{listing.name}</Link>{" "}
+                                    <CategoryChip code={listing.categoryCode} />{" "}
                                     <StatusPill status={listing.status} />
                                   </li>
                                 ))}

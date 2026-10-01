@@ -19,6 +19,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { Failure, Loaded, Result } from "./api";
+import { categoryName } from "./categories";
 import { Icon, type IconName } from "./icons";
 import { usePhone } from "./layout";
 import { type Navigate, pathOf, type View } from "./router";
@@ -96,6 +97,11 @@ const STATUS_TONE: Record<ListingStatus, Tone> = {
 
 export function StatusPill({ status }: { status: ListingStatus }) {
   return <Pill tone={STATUS_TONE[status]}>{t.status[status]}</Pill>;
+}
+
+/** Категория витрины — плашкой рядом с названием */
+export function CategoryChip({ code }: { code: string }) {
+  return <span className="cat-chip">{categoryName(code)}</span>;
 }
 
 // ── состояния загрузки и ошибки ────────────────────────────────────────────
