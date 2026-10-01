@@ -272,7 +272,8 @@ function Photos({ listing, portfolio, t, owner, onChanged }: PhotosProps) {
 /** Пункт чек-листа готовности: что сделать и кнопка туда, где это делается */
 export interface Todo {
   readonly key: string;
-  readonly text: string;
+  /** Что сделать: пункты с одной и той же кнопкой — строками одного пункта */
+  readonly lines: readonly string[];
   readonly action?: { readonly label: string; readonly run: () => void };
 }
 
@@ -314,32 +315,41 @@ export function vendorTodos(
   const todos: Todo[] = [];
   const toServices = { label: t.toServices, run: go.services };
   const propose = { label: t.proposalStart, run: go.propose };
-  if (blockers.has("price")) todos.push({ key: "price", text: t.todoPrice, action: toServices });
+  if (blockers.has("price")) todos.push({ key: "price", lines: [t.todoPrice], action: toServices });
   if (blockers.has("packages")) {
     const list =
       category && category.requiredServices.length > 0
         ? category.requiredServices.map((type) => serviceTypeLabel(lang, category, type)).join(", ")
         : t.blocker_packages;
-    todos.push({ key: "packages", text: fill(t.todoServices, { list }), action: toServices });
+    todos.push({ key: "packages", lines: [fill(t.todoServices, { list })], action: toServices });
   }
   if (blockers.has("photos")) {
     const ready = listing.photos.filter((photo) => photo.moderation !== "declined").length;
     todos.push({
       key: "photos",
-      text: fill(t.todoPhotos, { n: ready, min: listing.photoLimits.min }),
+      lines: [fill(t.todoPhotos, { n: ready, min: listing.photoLimits.min })],
       action: { label: t.toPhotos, run: go.photos },
     });
   }
   if (blockers.has("descriptions"))
-    todos.push({ key: "descriptions", text: t.todoDescriptions, action: propose });
+    todos.push({ key: "descriptions", lines: [t.todoDescriptions], action: propose });
   if (blockers.has("attributes") || listing.missingAttributes.length > 0) {
     const list =
       category && listing.missingAttributes.length > 0
         ? listing.missingAttributes.map((key) => attributeLabel(lang, category, key)).join(", ")
         : t.blocker_attributes;
-    todos.push({ key: "attributes", text: fill(t.todoAttributes, { list }), action: propose });
+    todos.push({ key: "attributes", lines: [fill(t.todoAttributes, { list })], action: propose });
   }
-  return todos;
+  // Одна кнопка — один пункт: «описание» и «данные витрины» делаются одним предложением, цена и
+  // обязательные услуги — в «Услугах»; две одинаковые кнопки подряд только путали бы
+  const merged: Todo[] = [];
+  for (const todo of todos) {
+    const same = merged.findIndex((m) => m.action?.label === todo.action?.label);
+    const into = merged[same];
+    if (into && todo.action) merged[same] = { ...into, lines: [...into.lines, ...todo.lines] };
+    else merged.push(todo);
+  }
+  return merged;
 }
 
 interface ReadinessProps {
@@ -387,12 +397,18 @@ function Readiness({ listing, category, t, lang, owner, go }: ReadinessProps) {
             <li key={todo.key} className="todo-item">
               <span className="todo-text">
                 <span className="todo-mark" aria-hidden="true" />
-                {todo.text}
+                <span className="todo-lines">
+                  {todo.lines.map((line) => (
+                    <span key={line} className="todo-line">
+                      {line}
+                    </span>
+                  ))}
+                </span>
               </span>
               {owner && todo.action ? (
                 <button type="button" className="btn btn-ghost todo-go" onClick={todo.action.run}>
                   {todo.action.label}
-                  <span className="sr-only">: {todo.text}</span>
+                  <span className="sr-only">: {todo.lines.join("; ")}</span>
                 </button>
               ) : null}
             </li>

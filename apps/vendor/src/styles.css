@@ -1472,6 +1472,12 @@ body {
   scrollbar-width: thin;
 }
 
+/* Список выше окна прокручивается, а не сжимает свои блоки: иначе вкладки (overflow: hidden)
+   обрезались по высоте, как только над ними появлялась строка «витрина не на сайте» */
+.inbox > .inbox-list > * {
+  flex-shrink: 0;
+}
+
 .inbox-detail {
   min-width: 0;
 }
@@ -1992,6 +1998,12 @@ body {
   overflow-wrap: anywhere;
 }
 
+.todo-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
 .todo-mark {
   flex: none;
   width: 14px;
@@ -2211,6 +2223,12 @@ body {
   gap: var(--gap-5);
   color: var(--muted);
   font-size: var(--fs-13-5);
+}
+
+/* Части выбранного дня прокручиваются на экран (телефон): не под шапку и не под нижнюю панель */
+.day-panel-slot {
+  scroll-margin-top: calc(var(--pad-t) + 84px);
+  scroll-margin-bottom: calc(var(--pad-b) + 96px);
 }
 
 /* Строка части дня — переключатель «занято» во всю строку: подпись слева, дорожка справа */

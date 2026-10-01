@@ -616,6 +616,9 @@ test.describe("витрины в разных категориях", () => {
     await page.goto("/requests");
     const notLive = page.locator(".not-live");
     await expect(notLive).toContainText(fill(t.notLiveDraft, { name: "Kadr Studio" }));
+    // Список с карточкой рядом (компьютер) не сжимает вкладки под строкой — они целиком
+    const tabs = await page.getByRole("group", { name: t.requests }).boundingBox();
+    expect(tabs?.height ?? 0).toBeGreaterThanOrEqual(44);
     await expectNoAxeViolations(page, "входящие: витрина не на сайте");
     await notLive.getByRole("button", { name: new RegExp(`^${t.whatIsLeft}`) }).click();
     await expect(heading(page)).toHaveText(t.card);

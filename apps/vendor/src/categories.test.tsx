@@ -10,11 +10,14 @@ import type {
   VendorRequestItem,
   VendorRole,
 } from "@bayramm/shared/api/vendor";
+import { categoryConfig } from "@bayramm/shared/categories";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { tashkentToday } from "./format";
+import { vendorDict } from "./i18n";
+import { vendorTodos } from "./Venue";
 
 /* Кабинет с несколькими витринами в разных категориях: выбор витрины, входящие по витрине,
    поля заявки категории, услуги, поля витрины и видео в правке, фото с согласием людей,
@@ -796,6 +799,25 @@ describe("карточка по категории", () => {
     // Ответ сервера про первую ссылку — подсвечена она
     expect(field("Ссылка на видео 1")?.getAttribute("aria-invalid")).toBe("true");
     expect(field("Ссылка на видео 2")?.getAttribute("aria-invalid")).toBeNull();
+  });
+});
+
+describe("чек-лист готовности", () => {
+  it("пункты с одной кнопкой — один пункт: двух «Предложить изменения» подряд нет", () => {
+    const go = { services: () => {}, photos: () => {}, propose: () => {} };
+    const card = {
+      ...(LISTINGS[CAR] as VendorListing),
+      blockers: ["price", "packages", "descriptions", "attributes", "district", "contract"],
+      missingAttributes: ["service_area"],
+    };
+    const todos = vendorTodos(card, categoryConfig("car"), vendorDict.ru, "ru", go);
+    expect(todos.map((todo) => todo.action?.label)).toEqual(["К услугам", "Предложить изменения"]);
+    expect(todos[1]?.lines).toEqual([
+      "Напишите описание на русском и узбекском",
+      "Заполните данные витрины: Где работает",
+    ]);
+    // Район и договор — дело команды: пунктов партнёра для них нет
+    expect(todos.flatMap((todo) => todo.lines).join(" ")).not.toMatch(/район|договор/i);
   });
 });
 
