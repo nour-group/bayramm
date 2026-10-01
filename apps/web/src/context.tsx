@@ -1,11 +1,22 @@
 import type { MediaEnv } from "@bayramm/media";
-import { type Dict, dictionaries, LANGS, type Lang } from "@bayramm/shared";
+import { type Dict, LANGS, type Lang } from "@bayramm/shared";
 import type { Dictionaries, Localized } from "@bayramm/shared/api";
 import type { Me } from "@bayramm/shared/api/me";
 import type { TelegramWebApp } from "@bayramm/tg/webapp";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  use,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ClientApi } from "./api/types";
 import { type AsyncResult, useAsync } from "./hooks";
+import { dictionary, loadDictionary } from "./i18n";
 import { localGet, localSet, sessionGet, sessionSet } from "./storage";
 
 /**
@@ -78,7 +89,10 @@ export function takeLangParam(url: URL): boolean {
 interface LangValue {
   readonly lang: Lang;
   readonly t: Dict;
+  /** Сменить язык: его словарь ещё не загружен — сначала он, до того прежний язык */
   readonly setLang: (lang: Lang) => void;
+  /** Язык, чей словарь сейчас грузится (выбрали в переключателе); null — ничего не ждём */
+  readonly pendingLang: Lang | null;
 }
 
 const LangContext = createContext<LangValue | null>(null);
@@ -130,8 +144,20 @@ export function useAccount(): AccountValue {
 
 /* ---------- всё вместе ---------- */
 
-export function AppProviders({ services, children }: { services: Services; children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => initialLang(services.webApp));
+export function AppProviders({
+  services,
+  lang: fixedLang,
+  children,
+}: {
+  services: Services;
+  /** Язык первого показа вместо выбранного в браузере: пререндер при сборке (prerender.tsx) */
+  lang?: Lang;
+  children: ReactNode;
+}) {
+  const [lang, setLangState] = useState<Lang>(() => fixedLang ?? initialLang(services.webApp));
+  const [pendingLang, setPendingLang] = useState<Lang | null>(null);
+  // Последний запрошенный язык: словарь, пришедший позже другого выбора, язык не меняет
+  const wanted = useRef(lang);
   const [deleted, setDeleted] = useState(false);
   const signedIn = canSignIn(services.identity) && !deleted;
   const me = useAsync(signedIn ? "me" : "me:none", (signal) =>
@@ -140,29 +166,58 @@ export function AppProviders({ services, children }: { services: Services; child
   const { replace: replaceMe } = me;
   const profile = me.status === "ready" ? me.data : null;
 
+  /* Показать язык, когда его словарь на месте: уже загружен — сразу, иначе прежний язык
+     остаётся, пока грузится второй (pendingLang), и только потом — после (done). Не
+     загрузился (нет сети) — язык прежний, ничего не сломано; выбор можно повторить */
+  const showLang = useCallback((next: Lang, done?: () => void) => {
+    wanted.current = next;
+    if (dictionary(next)) {
+      setPendingLang(null);
+      setLangState(next);
+      done?.();
+      return;
+    }
+    setPendingLang(next);
+    loadDictionary(next).then(
+      () => {
+        if (wanted.current !== next) return;
+        setPendingLang(null);
+        setLangState(next);
+        done?.();
+      },
+      () => {
+        if (wanted.current === next) setPendingLang(null);
+      },
+    );
+  }, []);
+
   // Язык из профиля — если в этой вкладке его не выбирали (выбор здесь главнее)
   useEffect(() => {
-    if (profile && sessionGet(LANG_KEY) === null) setLangState(profile.locale);
-  }, [profile]);
+    if (profile && sessionGet(LANG_KEY) === null) showLang(profile.locale);
+  }, [profile, showLang]);
 
   const setLang = useCallback(
     (next: Lang) => {
-      setLangState(next);
-      sessionSet(LANG_KEY, next);
-      // Между визитами — и гостю, и вошедшему (после выхода язык останется тем же)
-      localSet(LANG_KEY, next);
-      if (!signedIn) return;
-      // Не сохранилось — язык в этой вкладке всё равно сменился; бот пишет на прежнем
-      services.api.updateMe({ locale: next }).then(replaceMe, () => {});
+      showLang(next, () => {
+        sessionSet(LANG_KEY, next);
+        // Между визитами — и гостю, и вошедшему (после выхода язык останется тем же)
+        localSet(LANG_KEY, next);
+        if (!signedIn) return;
+        // Не сохранилось — язык в этой вкладке всё равно сменился; бот пишет на прежнем
+        services.api.updateMe({ locale: next }).then(replaceMe, () => {});
+      });
     },
-    [services.api, signedIn, replaceMe],
+    [showLang, services.api, signedIn, replaceMe],
   );
 
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
 
-  const langValue = useMemo(() => ({ lang, t: dictionaries[lang], setLang }), [lang, setLang]);
+  // Словарь первого языка загружает bootstrap до первого показа (тесты — test-setup.ts);
+  // если всё же нет — ждём его здесь (use), а не показываем пустые строки
+  const t = dictionary(lang) ?? use(loadDictionary(lang));
+  const langValue = useMemo(() => ({ lang, t, setLang, pendingLang }), [lang, t, setLang, pendingLang]);
 
   const state = useAsync("dictionaries", (signal) => services.api.dictionaries(signal));
   const data = state.status === "ready" ? state.data : null;

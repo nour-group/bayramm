@@ -7,6 +7,10 @@
     <meta name="color-scheme" content="light" />
     <meta name="robots" content="noindex" />
     <title>Bayramm</title>
+    <!-- До первой отрисовки: прятать ли лендинг из HTML и какие куски сборки просить заранее
+         (public/boot.js, boot.css). Внешние файлы: встроенные скрипты и стили CSP не пускает -->
+    <script src="/boot.js"></script>
+    <link rel="stylesheet" href="/boot.css" />
     <!-- Основной шрифт текста (@bayramm/ui/fonts.css): грузится сразу, а не после стилей -->
     <link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>

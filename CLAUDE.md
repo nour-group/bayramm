@@ -420,6 +420,21 @@ title, description, canonical, hreflang (`?lang=`), Open Graph (`public/og.png`,
 `sitemap.xml` (площадки — из API, кэш на час) — тоже воркер; индексируется только
 `bayramm.uz`, staging — `noindex` и `Disallow: /`.
 
+Лендинг пререндерится при сборке (`apps/web/vite-prerender.ts` → `src/prerender.tsx`,
+`react-dom/server` в Node): в `index.html` — `<template data-prerender="ru|uz">`, воркер
+(`worker/prerender.ts`) убирает их со всех страниц и на `/` кладёт вариант языка страницы в
+`#root` — до JS и без него виден лендинг (залы — заготовки, придут после JS). Приложение не
+гидрирует, а заменяет его первой отрисовкой (`createRoot`); экран лендинга `bootstrap`
+грузит до неё (`loadStartScreen`), поэтому без заглушки. `public/boot.js` (обычный скрипт в
+`<head>`, CSP) ставит `<html data-boot="skip">`, если приложение покажет другое — Mini App
+(там корень — каталог) или другой язык, — и `public/boot.css` прячет пререндер; его правила
+обязаны совпадать с `getWebApp`/`launchedFromTelegram` и `initialLang` (`src/boot.test.ts`).
+Ещё он просит заранее (modulepreload) словарь своего языка и экран первого показа — адреса
+вписывает сборка. Портал в разметке пререндера невозможен: `Shell` с `prerender` — без
+уведомлений и избранного. Словари клиент грузит по языку (`src/i18n.ts`): первый — до
+первой отрисовки, второй — при переключении (заранее — при наведении на переключатель);
+поэтому у `@bayramm/shared` `sideEffects: false`. Воркеру словари нужны оба — у него своя сборка.
+
 ### Иконки и узор
 
 Иконки — **Phosphor**, вшиты как inline SVG: duotone для смысловых, bold для
