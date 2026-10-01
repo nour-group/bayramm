@@ -8,10 +8,13 @@
   box-sizing: border-box;
 }
 
+/* Фокус с клавиатуры и прокрутка к элементу не прячут его под прилипшей шапкой и нижней
+   панелью (WCAG 2.4.11): запас — их высота с безопасными зонами */
 html {
   color-scheme: light;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  scroll-padding: calc(var(--pad-t) + 72px) 0 calc(var(--pad-b) + 72px);
 }
 
 body {

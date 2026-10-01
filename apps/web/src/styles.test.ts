@@ -89,6 +89,12 @@ describe("styles.css клиента", () => {
     expect(css).not.toMatch(/--sa-t\)|--sa-b\)/);
   });
 
+  it("фокус не уходит под шапку и нижнюю панель: запас прокрутки с обеими зонами", () => {
+    expect(declarationsOf("html")).toMatch(
+      /scroll-padding:\s*calc\(var\(--pad-t\) \+ \d+px\) 0 calc\(var\(--pad-b\) \+ \d+px\)/,
+    );
+  });
+
   it("overflow-y только вместе с overflow-x (ловушка №2)", () => {
     for (const rule of rules) {
       if (/overflow-y:/.test(rule.body)) expect(rule.body, rule.selectors.join()).toMatch(/overflow-x:/);

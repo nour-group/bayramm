@@ -60,6 +60,8 @@ const SCREENS: readonly Screen[] = [
     guest: true,
     setup: async (page) => {
       for (const item of await page.locator(".ln-faq summary").all()) await item.click();
+      // Раскрытые вопросы — к началу блока: проверяем их, а не то, что уехало под шапку
+      await page.locator(".ln-faq").evaluate((el) => el.scrollIntoView({ block: "start" }));
     },
   },
   { name: "каталог", path: PATHS.catalog, ready: ".card" },
