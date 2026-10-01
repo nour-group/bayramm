@@ -46,12 +46,14 @@ import { ConfirmSheet, NumberStepper, RadioGroup, Select } from "@bayramm/ui/rea
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { priceText } from "./category";
+import { errorText } from "./errors";
 import { formatMoney } from "./format";
 import { fill, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
 import { useBackButton } from "./telegram";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
+import { useConfirmLeave, useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 
 /** Карточка на проверке или опубликована: услугу на витрине партнёр меняет только предложением */
@@ -297,6 +299,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
   const [before] = useState<ServiceDraft | null>(() => (service ? serviceDraftOf(service) : null));
   const [invalid, setInvalid] = useState<ReadonlySet<string>>(new Set());
   const [notice, setNotice] = useState<FormNotice>(null);
+  const [failedText, setFailedText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const title = useRef<HTMLHeadingElement>(null);
   const byProposal = service !== null && changesByProposal(listing, service);
@@ -305,11 +308,18 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
   useEffect(() => {
     title.current?.focus({ preventScroll: true });
   }, []);
-  // Кнопка «Назад» Telegram — та же «Отмена»; обработчик один на всё время формы, иначе
-  // кнопка мигала бы на каждом нажатии клавиши
+  // Вписанное и не сохранённое: уход с экрана (и «назад» Telegram) переспросит
+  useUnsaved(
+    create ? draft !== null : draft !== null && before !== null && serviceDirty(category, draft, before),
+  );
+  // Кнопка «Назад» Telegram — та же «Отмена», но с правками — сначала вопрос (это не явное
+  // «Отмена»); обработчик один на всё время формы, иначе кнопка мигала бы на каждом нажатии
+  const confirmLeave = useConfirmLeave();
   const cancel = useRef(onCancel);
   cancel.current = onCancel;
-  const back = useCallback(() => cancel.current(), []);
+  const leave = useRef(confirmLeave);
+  leave.current = confirmLeave;
+  const back = useCallback(() => leave.current(() => cancel.current()), []);
   useBackButton(back);
 
   const set = (patch: Partial<ServiceDraft>) => setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -360,7 +370,10 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
       else if (err.code === "illegal_transition" || err.code === "moderated_field_requires_revision") {
         setNotice("stale");
         onStale();
-      } else setNotice("failed");
+      } else {
+        setFailedText(errorText(err, t));
+        setNotice("failed");
+      }
     } finally {
       setBusy(false);
     }
@@ -436,7 +449,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
     tooMany: t.svcTooMany,
     stale: t.svcStale,
     ownerOnly: t.servicesMember,
-    failed: t.actionFailed,
+    failed: failedText ?? t.actionFailed,
   };
   const templates = type?.options.filter((o) => !draft?.options.some((d) => d.code === o.code)) ?? [];
   const roomForOptions = (draft?.options.length ?? 0) < SERVICE_LIMITS.maxOptions;
@@ -787,7 +800,7 @@ export function Services({
     if (err.code === "publish_blocked") return t.svcPublishBlocked;
     if (err.code === "illegal_transition") return t.svcStale;
     if (err.code === "vendor_owner_required") return t.servicesMember;
-    return t.actionFailed;
+    return errorText(err, t);
   };
 
   const act = async (service: ListingService, action: "submit" | "withdraw") => {
@@ -871,7 +884,7 @@ export function Services({
       <ListingPicker
         listings={listings}
         value={listingId}
-        onChange={onListing}
+        onChange={(id) => id && onListing(id)}
         t={t}
         lang={lang}
         inSidebar={inSidebar}
@@ -881,8 +894,8 @@ export function Services({
         <span>{owner ? t.servicesLead : `${t.servicesLead} ${t.servicesMember}`}</span>
       </p>
 
-      {listing.state === "loading" ? <Loading t={t} /> : null}
-      {listing.state === "error" ? <LoadError t={t} onRetry={reload} /> : null}
+      {listing.state === "loading" ? <Loading t={t} kind="list" /> : null}
+      {listing.state === "error" ? <LoadError t={t} onRetry={reload} error={listing.error} /> : null}
       {ready && editing && category ? (
         <ServiceEditor
           key={editing.id ?? "new"}
@@ -917,7 +930,7 @@ export function Services({
           ) : null}
           <div className="svc-head">
             <h2 className="section-title" ref={listTitle} tabIndex={-1}>
-              {t.servicesSummary}
+              {t.servicesSummary} <span className="count">{ready.services.length}</span>
             </h2>
             {owner && category ? (
               <button

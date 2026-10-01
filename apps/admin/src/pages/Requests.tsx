@@ -24,14 +24,13 @@ import {
 import { Dialog, RadioGroup, SearchField, Select } from "@bayramm/ui/react";
 import { type FormEvent, Fragment, useCallback, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
-import { categoryName, categoryOptions, partWindow } from "../categories";
+import { CategoryChip, categoryName, categoryOptions, partWindow } from "../categories";
 import { formatDay, formatMoment, formatPrice, formatSum, vendorLabel } from "../format";
 import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
   ActionBar,
   ActiveFilter,
-  CategoryChip,
   ConfirmForm,
   ErrorText,
   FilterButton,

@@ -13,10 +13,8 @@ import { VendorChooser } from "./Account";
 import { ApiFailure, accountMe, api, setUnauthorizedHandler, signIn, tokenStore } from "./api";
 import { Gate, type GateKind } from "./Gate";
 import { CALLBACK_PATH, chooseVendor, finishHub, SIGNIN_PARAM, startHub } from "./hub";
-import { Inbox } from "./Inbox";
 import { fill, LANG_NAMES, type VendorDict, vendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
-import { VitrinaSwitch } from "./ListingPicker";
 import { initialLang, saveLang } from "./lang";
 import { type Layout, useLayout } from "./layout";
 import {
@@ -30,9 +28,11 @@ import {
   type Section,
   useRoute,
 } from "./router";
-import { Lazy, preloadScreens, SCREENS } from "./screens";
+import { SideVitrinas } from "./SideVitrinas";
+import { Lazy, preloadScreens, SCREENS, warmInbox } from "./screens";
 import { announceReady, launchedFromTelegram, loadTelegramWebApp } from "./telegram";
 import { Heading } from "./ui";
+import { UnsavedContext, useUnsavedGuard } from "./unsaved";
 import { Welcome } from "./Welcome";
 
 /* Оболочка кабинета: вход, раскладка и разделы.
@@ -40,13 +40,14 @@ import { Welcome } from "./Welcome";
      · планшет — шапка и узкая колонка разделов слева;
      · компьютер — боковая панель: название, разделы, витрины, кабинет (код), язык.
    Раскладку выбирает layout.ts; те же границы — в @media styles.css. Заявки на компьютере —
-   списком и карточкой рядом (Inbox.tsx). Календарь, площадка, услуги и аккаунт — свои части
-   сборки (screens.tsx): после входа они подгружаются заранее.
+   списком и карточкой рядом (Inbox.tsx). Все разделы, и заявки тоже, — свои части сборки
+   (screens.tsx): заявки грузятся параллельно со входом, остальное — после него.
 
-   Витрина (карточка в одной категории; у вендора их бывает несколько) выбрана одна на весь
-   кабинет — listingId: её показывают календарь, площадка и услуги. Выбор — в боковой панели
-   компьютера, на телефоне и планшете — вверху этих экранов. Заявки — все витрины сразу или
-   одна (scope): выбор одной витрины во входящих делает её выбранной и в остальных разделах. */
+   Витрина (страница вендора в одной категории; их бывает несколько) выбрана одна на весь
+   кабинет — listingId: её показывают календарь, витрина и услуги. Выбор — в боковой панели
+   компьютера (там же на входящих — «Все витрины»), на телефоне и планшете — вверху экранов.
+   Заявки — все витрины сразу или одна (scope): выбор одной витрины во входящих делает её
+   выбранной и в остальных разделах. */
 
 type Auth =
   | { readonly kind: GateKind; readonly back?: string }
@@ -99,6 +100,8 @@ let hubReturn: ReturnType<typeof finishHub> | null = null;
 async function startSession(): Promise<Auth> {
   if (window.location.pathname === CALLBACK_PATH) hubReturn = finishHub(window.location.search);
   if (hubReturn) {
+    // Вход будет: заявки — первый экран, их часть сборки грузится вместе с обменом кода
+    warmInbox();
     const running = hubReturn;
     const result = await running;
     if (hubReturn === running) hubReturn = null;
@@ -109,13 +112,17 @@ async function startSession(): Promise<Auth> {
   const webApp = await loadTelegramWebApp();
   if (!webApp) {
     if (launchedFromTelegram()) return { kind: "error" };
-    if (tokenStore.get() !== null) return openCabinet();
+    if (tokenStore.get() !== null) {
+      warmInbox();
+      return openCabinet();
+    }
     if (new URLSearchParams(window.location.search).has(SIGNIN_PARAM) && (await startHub())) {
       return { kind: "loading" };
     }
     return { kind: "outside" };
   }
   announceReady(webApp);
+  warmInbox();
   try {
     await signIn(webApp.initData);
   } catch (err) {
@@ -232,9 +239,12 @@ export function App() {
 }
 
 function Cabinet() {
-  const [location, navigate] = useRoute();
-  const layout: Layout = useLayout();
   const [lang, setLang] = useState<Lang>(initialLang);
+  const t = vendorDict[lang];
+  // Несохранённое в формах экрана: уход (раздел, витрина, «назад») сначала спрашивает
+  const unsaved = useUnsavedGuard(t);
+  const [location, navigate] = useRoute(unsaved.guard);
+  const layout: Layout = useLayout();
   const [auth, setAuth] = useState<Auth>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [inboxTab, setInboxTab] = useState<RequestTab>("new");
@@ -242,8 +252,10 @@ function Cabinet() {
   // Входящие: все витрины или только выбранная
   const [scope, setScope] = useState<"all" | "listing">("all");
   const [fresh, setFresh] = useState<number | null>(null);
-  const t = vendorDict[lang];
   const ready = auth.kind === "ready" ? auth : null;
+  const { confirmLeave } = unsaved.registry;
+  // Другая витрина — формы прежней закрываются: с правками — сначала вопрос
+  const chooseListing = useCallback((id: string) => confirmLeave(() => setListingId(id)), [confirmLeave]);
 
   // Вход при открытии и по «Повторить»
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt — повтор входа по «Повторить»
@@ -348,13 +360,27 @@ function Cabinet() {
   // Заявки одной витрины — только когда витрин несколько и выбрана одна
   const listings = ready?.me.listings ?? [];
   const inboxFilter = scope === "listing" && listings.length > 1 ? listingId : null;
-  const filterInbox = useCallback((id: string | null) => {
-    if (id === null) setScope("all");
-    else {
-      setListingId(id);
-      setScope("listing");
-    }
-  }, []);
+  const filterInbox = useCallback(
+    (id: string | null) =>
+      confirmLeave(() => {
+        if (id === null) setScope("all");
+        else {
+          setListingId(id);
+          setScope("listing");
+        }
+      }),
+    [confirmLeave],
+  );
+
+  // Витрина ещё не на сайте: из входящих — к её чек-листу готовности
+  const openListing = useCallback(
+    (id: string) =>
+      confirmLeave(() => {
+        setListingId(id);
+        navigate({ route: "card" }, { force: true });
+      }),
+    [confirmLeave, navigate],
+  );
 
   const signInHub = useCallback(() => {
     // Токен этого аккаунта не подошёл (не партнёр) — войти другим: старый забыть
@@ -395,7 +421,7 @@ function Cabinet() {
             {...screenProps}
             listings={auth.me.listings}
             listingId={listingId}
-            onListing={setListingId}
+            onListing={chooseListing}
             inSidebar={layout === "desktop"}
             navigate={navigate}
           />
@@ -410,7 +436,7 @@ function Cabinet() {
             {...screenProps}
             listings={auth.me.listings}
             listingId={listingId}
-            onListing={setListingId}
+            onListing={chooseListing}
             vendorCode={auth.me.vendor.code}
             role={auth.me.user.role}
             inSidebar={layout === "desktop"}
@@ -427,7 +453,7 @@ function Cabinet() {
             {...screenProps}
             listings={auth.me.listings}
             listingId={listingId}
-            onListing={setListingId}
+            onListing={chooseListing}
             role={auth.me.user.role}
             inSidebar={layout === "desktop"}
           />
@@ -444,19 +470,26 @@ function Cabinet() {
     );
   } else {
     screen = (
-      <Inbox
-        {...screenProps}
-        id={location.route === "request" ? (location.id ?? null) : null}
-        split={layout === "desktop"}
-        tab={inboxTab}
-        onTab={setInboxTab}
-        navigate={navigate}
-        listings={auth.me.listings}
-        filter={inboxFilter}
-        onFilter={filterInbox}
-        // Значок у раздела — новые всех витрин: счётчики одной витрины его не меняют
-        onCounts={inboxFilter === null ? onCounts : undefined}
-      />
+      <Lazy part={SCREENS.inbox} t={t}>
+        {({ Inbox }) => (
+          <Inbox
+            {...screenProps}
+            id={location.route === "request" ? (location.id ?? null) : null}
+            split={layout === "desktop"}
+            tab={inboxTab}
+            onTab={setInboxTab}
+            navigate={navigate}
+            listings={auth.me.listings}
+            filter={inboxFilter}
+            onFilter={filterInbox}
+            // Выбор витрины на компьютере — в боковой панели, над списком его нет
+            inSidebar={layout === "desktop"}
+            onOpenListing={openListing}
+            // Значок у раздела — новые всех витрин: счётчики одной витрины его не меняют
+            onCounts={inboxFilter === null ? onCounts : undefined}
+          />
+        )}
+      </Lazy>
     );
   }
 
@@ -464,69 +497,75 @@ function Cabinet() {
   const shell = ready ? layout : "gate";
   return (
     <UiTextsProvider texts={uiTexts}>
-      <div className={`app app-${shell}`}>
-        <a className="skip" href="#main">
-          {t.skip}
-        </a>
-        {shell === "desktop" && ready ? (
-          <aside className="side">
-            <Brand t={t} />
+      <UnsavedContext.Provider value={unsaved.registry}>
+        <div className={`app app-${shell}`}>
+          <a className="skip" href="#main">
+            {t.skip}
+          </a>
+          {shell === "desktop" && ready ? (
+            <aside className="side">
+              <Brand t={t} />
+              <Sections
+                t={t}
+                section={section}
+                navigate={navigate}
+                fresh={fresh}
+                className="side-nav"
+                linkClass="side-link"
+              />
+              <SideVitrinas
+                listings={ready.me.listings}
+                value={section === "requests" ? inboxFilter : listingId}
+                onChange={section === "requests" ? filterInbox : (id) => id && chooseListing(id)}
+                allLabel={section === "requests" ? t.allListings : undefined}
+                t={t}
+                lang={lang}
+              />
+              <div className="side-foot">
+                <p className="side-vendor">
+                  <span className="side-vendor-name">{ready.me.vendor.name || ready.me.vendor.code}</span>
+                  <span className="side-vendor-code">
+                    {fill(t.vendorCode, { code: ready.me.vendor.code })}
+                  </span>
+                </p>
+                <LangSwitch lang={lang} t={t} onChange={chooseLang} />
+              </div>
+            </aside>
+          ) : (
+            <header className="top">
+              <Brand t={t} />
+              <LangSwitch lang={lang} t={t} onChange={chooseLang} />
+            </header>
+          )}
+          {shell === "tablet" ? (
             <Sections
               t={t}
               section={section}
               navigate={navigate}
               fresh={fresh}
-              className="side-nav"
-              linkClass="side-link"
+              className="rail"
+              linkClass="rail-link"
             />
-            <VitrinaSwitch
-              listings={ready.me.listings}
-              value={listingId}
-              onChange={setListingId}
+          ) : null}
+          <div className="frame">
+            <OfflineBanner offline={t.offline} back={t.backOnline} />
+            <main id="main" className="main" tabIndex={-1}>
+              {screen}
+            </main>
+          </div>
+          {shell === "phone" ? (
+            <Sections
               t={t}
-              lang={lang}
+              section={section}
+              navigate={navigate}
+              fresh={fresh}
+              className="tabbar"
+              linkClass="tab"
             />
-            <div className="side-foot">
-              <p className="side-vendor">
-                <span className="side-vendor-name">{ready.me.vendor.name || ready.me.vendor.code}</span>
-                <span className="side-vendor-code">{fill(t.vendorCode, { code: ready.me.vendor.code })}</span>
-              </p>
-              <LangSwitch lang={lang} t={t} onChange={chooseLang} />
-            </div>
-          </aside>
-        ) : (
-          <header className="top">
-            <Brand t={t} />
-            <LangSwitch lang={lang} t={t} onChange={chooseLang} />
-          </header>
-        )}
-        {shell === "tablet" ? (
-          <Sections
-            t={t}
-            section={section}
-            navigate={navigate}
-            fresh={fresh}
-            className="rail"
-            linkClass="rail-link"
-          />
-        ) : null}
-        <div className="frame">
-          <OfflineBanner offline={t.offline} back={t.backOnline} />
-          <main id="main" className="main" tabIndex={-1}>
-            {screen}
-          </main>
+          ) : null}
         </div>
-        {shell === "phone" ? (
-          <Sections
-            t={t}
-            section={section}
-            navigate={navigate}
-            fresh={fresh}
-            className="tabbar"
-            linkClass="tab"
-          />
-        ) : null}
-      </div>
+        {unsaved.sheet}
+      </UnsavedContext.Provider>
     </UiTextsProvider>
   );
 }

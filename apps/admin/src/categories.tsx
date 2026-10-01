@@ -1,5 +1,7 @@
 /* Категории в панели: подписи по-русски из конфигурации (@bayramm/shared/categories), а не
-   из справочника базы — те же ключи видят кабинет и клиент. Панель только на русском. */
+   из справочника базы — те же ключи видят кабинет и клиент. Панель только на русском.
+   Конфигурация категорий нужна только экранам вендоров, витрин, модерации и заявок — этот
+   модуль импортируют лишь они, в основную часть сборки (оболочка, вход) он не попадает. */
 
 import {
   CATEGORIES,
@@ -35,6 +37,11 @@ export function unitName(unit: PriceUnit): string {
 export function partWindow(category: CategoryConfig, part: DayPart): string {
   const window = dayPartWindows(category)[part];
   return `${window.from}–${window.to}`;
+}
+
+/** Категория витрины — плашкой рядом с названием */
+export function CategoryChip({ code }: { code: string }) {
+  return <span className="cat-chip">{categoryName(code)}</span>;
 }
 
 /** Строка из подписи по-русски: поля, услуги, варианты */

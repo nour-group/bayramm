@@ -5,7 +5,6 @@
    перезагрузку, но не закрытие вкладки. sessionStorage недоступен (старый вебвью,
    запрет) — токен только в памяти, до перезагрузки. */
 
-import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { Me } from "@bayramm/shared/api/me";
 import type {
   DayPart,
@@ -153,30 +152,6 @@ export async function signIn(initData: string): Promise<void> {
     body: JSON.stringify(body),
   });
   tokenStore.set(session.token);
-}
-
-/** Чем можно войти на сайте (GET /auth/methods); null — API не ответило */
-export async function fetchAuthMethods(): Promise<AuthMethods | null> {
-  try {
-    return await json<AuthMethods>("/auth/methods");
-  } catch {
-    return null;
-  }
-}
-
-// Имя бота: 5–32 символа латиницы, цифр и _, в конце — bot (правила @BotFather)
-const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
-
-/** Ссылка на бота окружения со стартом партнёра; null — API не ответило */
-export async function fetchBotLink(): Promise<string | null> {
-  try {
-    const { username } = await json<{ username?: unknown }>("/telegram/bot");
-    return typeof username === "string" && BOT_USERNAME_RE.test(username)
-      ? `https://t.me/${username}?start=partner`
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 // ── кабинет ────────────────────────────────────────────────────────────────

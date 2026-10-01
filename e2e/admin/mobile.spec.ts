@@ -176,12 +176,12 @@ test.describe("навигация на телефоне", () => {
     await more.click();
     const sheet = page.getByRole("dialog", { name: t.moreSections });
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByRole("link")).toHaveText([
-      new RegExp(t.clients),
-      new RegExp(t.notifications),
-      new RegExp(t.audit),
-      new RegExp(t.team),
-      new RegExp(t.settings),
+    await expect(sheet.getByRole("link")).toContainText([
+      t.clients,
+      t.notifications,
+      t.audit,
+      t.team,
+      t.settings,
     ]);
     await expectNoAxeViolations(page, "шторка «Ещё»");
     await sheet.getByRole("link", { name: t.team }).click();
@@ -244,11 +244,9 @@ test.describe("навигация на телефоне", () => {
     await expect(bar.getByRole("button", { name: t.remindVendor })).toBeVisible();
     await bar.getByRole("button", { name: t.markContacted }).click();
     const sheet = page.getByRole("dialog", { name: t.markContacted });
-    await expect(sheet.getByLabel(new RegExp(t.comment))).toBeVisible();
+    await expect(sheet.getByLabel(t.comment)).toBeVisible();
     // Поле — 16px: iOS не увеличивает страницу при фокусе
-    expect(
-      await sheet.getByLabel(new RegExp(t.comment)).evaluate((el) => getComputedStyle(el).fontSize),
-    ).toBe("16px");
+    expect(await sheet.getByLabel(t.comment).evaluate((el) => getComputedStyle(el).fontSize)).toBe("16px");
     await expectNoAxeViolations(page, "заявка: «Связались»");
     await sheet.getByRole("button", { name: t.cancel }).click();
     await expect(sheet).toBeHidden();
@@ -260,7 +258,7 @@ test.describe("навигация на телефоне", () => {
     await page.goto("/requests");
     await page.getByRole("button", { name: t.filters, exact: true }).click();
     const sheet = page.getByRole("dialog", { name: t.filters });
-    await sheet.getByRole("radio", { name: new RegExp(t.slaLate) }).check();
+    await sheet.getByRole("radio", { name: t.slaLate }).check();
     await sheet.getByRole("button", { name: t.done }).click();
     await expect(page.getByRole("button", { name: `${t.filters} (1)` })).toBeVisible();
     await expect(page.getByRole("button", { name: `${t.reset}: ${t.slaLate}` })).toBeVisible();

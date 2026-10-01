@@ -2,9 +2,10 @@
      · day (залы) — месяц, одно нажатие — день занят или свободен;
      · slot (студия) — то же; время и часы клиент указывает в заявке;
      · parts (фото и видео, кортеж, декор) — день делится на утро, день и вечер. Нажатие на
-       день открывает его части: занять весь день или одну часть (?part=). Часть занята, когда
-       её отметили или договорённостей (заявки deal) на неё не меньше, чем витрина берёт
-       заказов одновременно (parallelCapacity) — это число правится здесь же;
+       день открывает его части — строки с переключателем «занято»: весь день или одна часть
+       (?part=). Часть занята, когда её отметили или договорённостей (заявки deal) на неё не
+       меньше, чем витрина берёт заказов одновременно (parallelCapacity) — это число правится
+       здесь же. На телефоне выбранный день прокручивается к его частям;
      · lead (цветы, торты, подарки) — календаря нет: срок «заказ не позже чем за N дней» из
        поля витрины и сроки услуг, со ссылками туда, где они меняются.
 
@@ -36,16 +37,18 @@ import {
   categoryConfig,
   DAY_PARTS,
 } from "@bayramm/shared/categories";
-import { NumberStepper } from "@bayramm/ui/react";
+import { NumberStepper, Switch } from "@bayramm/ui/react";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { availabilityOf, partName, partWindow } from "./category";
+import { errorText } from "./errors";
 import { formatDate, tashkentToday, weekdayIndex } from "./format";
 import { fill, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
 import { type Location, type Navigate, pathOf } from "./router";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
+import { useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 
 /** "2026-10" ± n месяцев */
@@ -239,74 +242,77 @@ function DayPanel({ calendar, category, day, t, pending, onToggle }: DayPanelPro
   }
   const entry = calendar.busy.find((b) => b.day === day);
   const locked = day < calendar.today || day > calendar.maxDay;
-  const control = (
+
+  /**
+   * Строка с переключателем «занято»: включён — занято (отметкой, договорённостями или весь
+   * день). Нельзя переключить — закрыл менеджер, весь день занят или места заняты
+   * договорённостями: переключатель неактивен, почему — словами в строке
+   */
+  const row = (
     key: string,
     current: BusyDay | BusyPart | undefined,
     part: DayPart | null,
-    label: string,
-    blocked: ReactNode,
-  ) => {
-    if (blocked) return <span className="day-part-note">{blocked}</span>;
-    if (current?.source === "staff")
-      return (
-        <span className="day-part-note">
-          <Icon name="lock" size={12} />
-          {t.legendStaff}
-        </span>
-      );
-    const free = current !== undefined;
-    return (
-      <button
-        type="button"
-        className={free ? "btn btn-ghost" : "btn btn-dark"}
-        aria-label={`${free ? t.markFree : t.markBusy}: ${label}`}
-        disabled={locked || pending.has(key)}
-        onClick={() => onToggle(day, part, current)}
+    busy: boolean,
+    title: ReactNode,
+    state: ReactNode,
+    blocked: boolean,
+  ) => (
+    <li key={key} className={busy ? "day-part is-busy" : "day-part"}>
+      <Switch
+        className="day-part-switch"
+        checked={busy}
+        disabled={locked || blocked || current?.source === "staff" || pending.has(key)}
+        onChange={() => onToggle(day, part, current)}
       >
-        {free ? t.markFree : t.markBusy}
-      </button>
-    );
-  };
+        <span className="day-part-name">
+          <strong>{title}</strong>
+          <span className="day-part-state">
+            {current?.source === "staff" ? <Icon name="lock" size={12} /> : null}
+            {state}
+          </span>
+        </span>
+      </Switch>
+    </li>
+  );
 
   return (
     <section className="panel day-panel" aria-labelledby="day-panel-title">
-      <h2 className="section-title" id="day-panel-title">
+      <h2 className="section-title" id="day-panel-title" tabIndex={-1}>
         {formatDate(day, t, true)}
       </h2>
       <ul className="day-parts">
-        <li className={entry ? "day-part is-busy" : "day-part"}>
-          <span className="day-part-name">
-            <strong>{t.wholeDay}</strong>
-            <span className="day-part-state">{entry ? t.partBusy : t.partFree}</span>
-          </span>
-          {control(day, entry, null, `${t.wholeDay}, ${formatDate(day, t)}`, null)}
-        </li>
+        {row(
+          day,
+          entry,
+          null,
+          entry !== undefined,
+          t.wholeDay,
+          entry?.source === "staff" ? t.legendStaff : entry ? t.partBusy : t.partFree,
+          false,
+        )}
         {partsOf(calendar, day).map((info) => {
-          const name = partName(t, info.part);
-          const blocked = entry ? t.partCovered : !info.mark && info.full ? t.partFull : null;
-          return (
-            <li key={info.part} className={info.busy ? "day-part is-busy" : "day-part"}>
-              <span className="day-part-name">
-                <strong>
-                  {name} <span className="day-part-window">{partWindow(category, info.part)}</span>
-                </strong>
-                <span className="day-part-state">
-                  {info.mark?.source === "staff"
-                    ? t.partBusy
-                    : partStateText(info, calendar.parallelCapacity, t)}
-                  {info.booked > 0 && info.busy
-                    ? ` · ${fill(t.partBookings, { n: info.booked, cap: calendar.parallelCapacity })}`
-                    : ""}
-                </span>
-              </span>
-              {control(
-                `${day}/${info.part}`,
-                info.mark,
-                info.part,
-                `${name}, ${formatDate(day, t)}`,
-                blocked,
-              )}
-            </li>
+          const state = entry
+            ? t.partCovered
+            : info.mark?.source === "staff"
+              ? t.legendStaff
+              : !info.mark && info.full
+                ? t.partFull
+                : `${partStateText(info, calendar.parallelCapacity, t)}${
+                    info.booked > 0 && info.busy
+                      ? ` · ${fill(t.partBookings, { n: info.booked, cap: calendar.parallelCapacity })}`
+                      : ""
+                  }`;
+          return row(
+            `${day}/${info.part}`,
+            info.mark,
+            info.part,
+            info.busy,
+            <>
+              {partName(t, info.part)}{" "}
+              <span className="day-part-window">{partWindow(category, info.part)}</span>
+            </>,
+            state,
+            entry !== undefined || (!info.mark && info.full),
           );
         })}
       </ul>
@@ -342,8 +348,8 @@ function LeadTime({
   navigate: Navigate;
 }) {
   const [listing, reload] = useLoad<VendorListing>(listingId, (id) => api.listing(id));
-  if (listing.state === "loading") return <Loading t={t} />;
-  if (listing.state === "error") return <LoadError t={t} onRetry={reload} />;
+  if (listing.state === "loading") return <Loading t={t} kind="card" />;
+  if (listing.state === "error") return <LoadError t={t} onRetry={reload} error={listing.error} />;
   const leadDays = listing.data.attributes.lead_days;
   const services = listing.data.services.filter(
     (s) => s.leadDays !== null && (s.status === "active" || s.status === "review"),
@@ -456,7 +462,7 @@ export function Calendar({
         <ListingPicker
           listings={listings}
           value={listingId}
-          onChange={onListing}
+          onChange={(id) => id && onListing(id)}
           t={t}
           lang={lang}
           inSidebar={inSidebar}
@@ -502,7 +508,10 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
   });
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [message, setMessage] = useState<Message | null>(null);
+  // Почему правка не сохранилась (нет связи, прошедший день…): текст по коду ответа API
+  const [failure, setFailure] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const dayPanel = useRef<HTMLDivElement>(null);
   const [capacity, setCapacity] = useState<string | null>(null);
   // Правки уходят по одной, каждая — от последней известной версии календаря площадки:
   // две правки от одной версии вторая не прошла бы (409), хотя чужих изменений не было
@@ -582,6 +591,7 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
       });
     } catch (err) {
       if (!(await conflicted(err))) {
+        setFailure(errorText(err, t));
         setMessage("failed");
         setCalendar((current) =>
           onScreen(current, listing, day) ? withMark(current, day, part, entry ?? null) : current,
@@ -636,7 +646,10 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
       } catch (err) {
         // Календарь изменили — на экране число из базы: человек проверит и поправит заново
         if (await conflicted(err)) setCapacity(null);
-        else setMessage("failed");
+        else {
+          setFailure(errorText(err, t));
+          setMessage("failed");
+        }
       } finally {
         mark("capacity", false);
       }
@@ -651,8 +664,18 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
   const canPrev = ready ? month > ready.today.slice(0, 7) : false;
   const canNext = ready ? month < ready.maxDay.slice(0, 7) : false;
   const note = NOTE[mode];
+  // Части выбранного дня на телефоне — под месяцем, за краем экрана: прокрутить к ним
+  // (scrollIntoView есть не везде — ловушка №5; без анимации — reducedMotion не мешает)
+  const pickDay = (day: string) => {
+    setSelected(day);
+    if (window.innerWidth < 1024) {
+      requestAnimationFrame(() => dayPanel.current?.scrollIntoView?.({ block: "nearest" }));
+    }
+  };
   const capacityValue = capacity ?? String(ready?.parallelCapacity ?? 1);
   const capacityChanged = ready !== null && capacityValue !== String(ready.parallelCapacity);
+  // Новое число заказов одновременно не сохранено — уход переспросит
+  useUnsaved(capacityChanged);
 
   return (
     <>
@@ -688,33 +711,35 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
                 </button>
               </div>
             </div>
-            {calendar.state === "loading" ? <Loading t={t} /> : null}
-            {calendar.state === "error" ? <LoadError t={t} onRetry={reload} /> : null}
+            {calendar.state === "loading" ? <Loading t={t} kind="month" /> : null}
+            {calendar.state === "error" ? <LoadError t={t} onRetry={reload} error={calendar.error} /> : null}
             {ready ? (
               <MonthGrid
                 calendar={ready}
                 t={t}
                 pending={pending}
                 selected={selected}
-                onDay={(day, entry) => (parts ? setSelected(day) : toggle(day, null, entry))}
+                onDay={(day, entry) => (parts ? pickDay(day) : toggle(day, null, entry))}
               />
             ) : null}
             {/* Сообщение — у самого месяца: на компьютере легенда сбоку, низ страницы далеко */}
             {message ? (
               <p className={message === "failed" ? "form-error" : "notice"} role="alert">
-                {t[MESSAGE_TEXT[message]]}
+                {message === "failed" && failure ? failure : t[MESSAGE_TEXT[message]]}
               </p>
             ) : null}
           </div>
           {ready && parts ? (
-            <DayPanel
-              calendar={ready}
-              category={category}
-              day={selected}
-              t={t}
-              pending={pending}
-              onToggle={toggle}
-            />
+            <div ref={dayPanel} className="day-panel-slot">
+              <DayPanel
+                calendar={ready}
+                category={category}
+                day={selected}
+                t={t}
+                pending={pending}
+                onToggle={toggle}
+              />
+            </div>
           ) : null}
         </div>
         <aside className="cal-aside" aria-labelledby="legend-title">
@@ -780,9 +805,8 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
               {t.legendToday}
             </li>
           </ul>
-          <p className="note">
-            {parts ? t.calendarHintParts : t.calendarHint} {t.tz}
-          </p>
+          {/* У частей дня «нажмите на день» уже сказано под месяцем (пока день не выбран) */}
+          <p className="note">{parts ? t.tz : `${t.calendarHint} ${t.tz}`}</p>
         </aside>
       </div>
     </>

@@ -1,27 +1,38 @@
-/* Витрины вендора. У вендора их может быть несколько — по одной в каждой категории (зал и
-   кортеж, студия и фото-видео): у каждой свои заявки, календарь, карточка и услуги. Выбранная
-   витрина — одна на весь кабинет (App.tsx): её показывают календарь, площадка и услуги.
+/* Выбор витрины на экране (телефон и планшет). У вендора витрин бывает несколько — по одной в
+   каждой категории (зал и кортеж, студия и фото-видео): у каждой свои заявки, календарь,
+   данные и услуги. Выбранная витрина — одна на весь кабинет (App.tsx): её показывают
+   календарь, витрина и услуги; во входящих есть ещё «Все витрины».
 
-     · ListingPicker — переключатель на экране (телефон и планшет): пилюли с названием и
-       категорией. Витрина одна или переключатель уже в боковой панели (компьютер) — вместо
-       него строка «какая это витрина»;
-     · VitrinaSwitch — тот же выбор в боковой панели компьютера. */
+   Два варианта — две пилюли на всю ширину, оба видны сразу. Больше — список выбора
+   (Select набора: на телефоне — шторка): пилюли уходили за край экрана, и о третьей витрине
+   никто не догадывался. Витрина одна или выбор — в боковой панели (компьютер, SideVitrinas.tsx) —
+   вместо выбора строка «какая это витрина». */
 
 import type { VendorListingRef } from "@bayramm/shared/api/vendor";
+import { Select } from "@bayramm/ui/react";
+import { useId } from "react";
 import { categoryName } from "./category";
 import type { VendorDict } from "./i18n";
 import { Icon } from "./icons";
 
+/** Значение «все витрины» во входящих (у Select значение — строка) */
+const ALL = "all";
+
 interface ListingPickerProps {
   readonly listings: readonly VendorListingRef[];
-  readonly value: string;
-  readonly onChange: (id: string) => void;
+  /** Выбранная витрина; null — все (только с allLabel) */
+  readonly value: string | null;
+  readonly onChange: (id: string | null) => void;
   readonly t: VendorDict;
   readonly lang: "ru" | "uz";
   /** Выбор — в боковой панели (компьютер): здесь только строка с витриной */
   readonly inSidebar?: boolean;
-  /** Строка «какая это витрина» не нужна: экран сам называет витрину (площадка) */
+  /** Строка «какая это витрина» не нужна: экран сам называет витрину */
   readonly line?: boolean;
+  /** Подпись варианта «все витрины» (входящие); нет — выбрать можно только одну */
+  readonly allLabel?: string;
+  /** Имя группы для диктора: «Витрина», «Заявки какой витрины» */
+  readonly label?: string;
 }
 
 export function ListingPicker({
@@ -32,7 +43,10 @@ export function ListingPicker({
   lang,
   inSidebar = false,
   line = true,
+  allLabel,
+  label = t.listingPicker,
 }: ListingPickerProps) {
+  const id = useId();
   const current = listings.find((listing) => listing.id === value);
   if (listings.length < 2 || inSidebar) {
     if (!current || !line) return null;
@@ -44,54 +58,53 @@ export function ListingPicker({
       </p>
     );
   }
-  return (
-    // biome-ignore lint/a11y/useSemanticElements: переключатель витрин — группа кнопок, не форма
-    <div className="pills vitrina-pills" role="group" aria-label={t.listingPicker}>
-      {listings.map((listing) => (
-        <button
-          key={listing.id}
-          type="button"
-          className="pill vitrina-pill"
-          aria-pressed={listing.id === value}
-          onClick={() => onChange(listing.id)}
-        >
-          <span className="vitrina-name">{listing.name}</span>
-          <span className="vitrina-cat">{categoryName(lang, listing.categoryCode)}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
 
-interface VitrinaSwitchProps {
-  readonly listings: readonly VendorListingRef[];
-  readonly value: string | null;
-  readonly onChange: (id: string) => void;
-  readonly t: VendorDict;
-  readonly lang: "ru" | "uz";
-}
+  const options = [
+    ...(allLabel ? [{ value: ALL, name: allLabel, category: null }] : []),
+    ...listings.map((listing) => ({
+      value: listing.id,
+      name: listing.name,
+      category: categoryName(lang, listing.categoryCode),
+    })),
+  ];
+  const selected = value ?? (allLabel ? ALL : null);
 
-/** Витрины в боковой панели компьютера: одна — выбирать нечего, блока нет */
-export function VitrinaSwitch({ listings, value, onChange, t, lang }: VitrinaSwitchProps) {
-  if (listings.length < 2) return null;
+  if (options.length === 2) {
+    return (
+      // biome-ignore lint/a11y/useSemanticElements: переключатель витрин — группа кнопок, не форма
+      <div className="pills vitrina-pills vitrina-pills-two" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className="pill vitrina-pill"
+            aria-pressed={option.value === selected}
+            onClick={() => onChange(option.value === ALL ? null : option.value)}
+          >
+            <span className="vitrina-name">{option.name}</span>
+            {option.category ? <span className="vitrina-cat">{option.category}</span> : null}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    // biome-ignore lint/a11y/useSemanticElements: переключатель витрин — группа кнопок, не форма
-    <div className="side-vitrinas" role="group" aria-labelledby="side-vitrinas-title">
-      <p className="side-title" id="side-vitrinas-title">
-        {t.vitrinas}
-      </p>
-      {listings.map((listing) => (
-        <button
-          key={listing.id}
-          type="button"
-          className="side-vitrina"
-          aria-pressed={listing.id === value}
-          onClick={() => onChange(listing.id)}
-        >
-          <span className="vitrina-name">{listing.name}</span>
-          <span className="vitrina-cat">{categoryName(lang, listing.categoryCode)}</span>
-        </button>
-      ))}
+    <div className="vitrina-select">
+      <label className="field-label" htmlFor={id}>
+        {label}
+      </label>
+      <Select
+        id={id}
+        label={label}
+        value={selected}
+        icon={<Icon name="hall" size={17} />}
+        options={options.map((option) => ({
+          value: option.value,
+          label: option.category ? `${option.name} · ${option.category}` : option.name,
+        }))}
+        onChange={(picked) => onChange(picked === ALL ? null : picked)}
+      />
     </div>
   );
 }

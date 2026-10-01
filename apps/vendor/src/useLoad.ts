@@ -1,6 +1,6 @@
 import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ApiFailure } from "./api";
+import { isRetryable } from "./errors";
 
 export type Load<T> =
   | { readonly state: "loading" }
@@ -65,7 +65,4 @@ export function useLoad<T>(key: string | null, load: (key: string) => Promise<T>
   return [result, reload, set, refresh] as const;
 }
 
-/** Повторить, когда вернётся связь: запрос не дошёл или сервер не ответил (5xx) */
-export function isRetryable(error: unknown): boolean {
-  return error instanceof ApiFailure ? error.status === 0 || error.status >= 500 : true;
-}
+export { isRetryable };

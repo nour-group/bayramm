@@ -24,6 +24,7 @@ import { RadioGroup } from "@bayramm/ui/react";
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { categoryName, partName, partWindow, priceText } from "./category";
+import { errorText } from "./errors";
 import { formatBudget, formatDate, formatGuests, formatMoment, formatPhone, slaView } from "./format";
 import { fill, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
@@ -31,6 +32,7 @@ import { awaitsAnswer, SlaTimer } from "./Requests";
 import type { Navigate } from "./router";
 import { useBackButton } from "./telegram";
 import { Heading, LoadError, Loading, type ScreenProps, StatusChip } from "./ui";
+import { useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 import { useNow } from "./useNow";
 
@@ -45,6 +47,8 @@ function DeclineForm({ t, busy, onSubmit, onCancel }: DeclineFormProps) {
   const [reason, setReason] = useState<DeclineReason | null>(null);
   const [note, setNote] = useState("");
   const noteId = useId();
+  // Выбранная причина или вписанный комментарий — несохранённое
+  useUnsaved(reason !== null || note.trim() !== "");
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (reason) onSubmit(reason, note);
@@ -97,7 +101,8 @@ interface RequestDetailProps extends ScreenProps {
   readonly onLoaded?: (status: VendorRequestDetail["status"]) => void;
 }
 
-type Notice = "failed" | "stale" | null;
+/** Что сказать под действиями: правка не сохранилась (текст по коду API) или статус устарел */
+type Notice = { readonly kind: "failed"; readonly text: string } | { readonly kind: "stale" } | null;
 
 export function RequestDetail({
   id,
@@ -171,12 +176,12 @@ export function RequestDetail({
       onChanged?.();
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "illegal_transition") {
-        setNotice("stale");
+        setNotice({ kind: "stale" });
         setDeclining(false);
         reload();
         onChanged?.();
       } else {
-        setNotice("failed");
+        setNotice({ kind: "failed", text: errorText(err, t) });
       }
     } finally {
       setPending(false);
@@ -196,7 +201,7 @@ export function RequestDetail({
     return (
       <section className="page request" aria-busy="true">
         {backTo}
-        <Loading t={t} />
+        <Loading t={t} kind="card" />
       </section>
     );
   }
@@ -213,7 +218,7 @@ export function RequestDetail({
             <p className="lead">{t.requestNotFoundText}</p>
           </>
         ) : (
-          <LoadError t={t} onRetry={reload} />
+          <LoadError t={t} onRetry={reload} error={detail.error} />
         )}
       </section>
     );
@@ -365,7 +370,7 @@ export function RequestDetail({
 
       {notice ? (
         <p className="form-error" role="alert">
-          {notice === "stale" ? t.staleStatus : t.actionFailed}
+          {notice.kind === "stale" ? t.staleStatus : notice.text}
         </p>
       ) : null}
 
@@ -452,7 +457,7 @@ export function RequestDetail({
               </>
             ) : null}
             {status === "withdrawn" || status === "expired" ? (
-              <p className="note">{textOf(t, `st_${status}`)}</p>
+              <p className="note">{status === "withdrawn" ? t.doneWithdrawn : t.doneExpired}</p>
             ) : null}
           </div>
         )}

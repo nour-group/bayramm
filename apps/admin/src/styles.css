@@ -832,6 +832,35 @@ textarea.input {
   font-weight: 600;
 }
 
+/* Модерация: сводка очередей вверху — кнопками к ним; где есть что решать — выделена */
+.queue-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+.queue-jump .chip.is-active {
+  border-color: var(--plum);
+  font-weight: 700;
+}
+
+/* После решения — к следующему в очереди */
+.next-in-queue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.next-in-queue p {
+  margin: 0;
+}
+
+/* Пустая очередь — строкой: место отдано очередям, где есть что разбирать */
+.queue-empty {
+  margin: 0;
+}
+
 /* Таблицы: на узком экране — прокрутка вбок внутри рамки; обе оси явно (ловушка №2).
    Край, за которым ещё есть столбцы, — в тени: белые «шторки» едут вместе с таблицей
    (local) и закрывают тень, пока прокручивать некуда */
@@ -904,6 +933,7 @@ textarea.input {
   color: var(--ink);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .ring-done {
@@ -995,6 +1025,29 @@ textarea.input {
 .blockers {
   margin: 0;
   padding-left: 20px;
+}
+
+/* Чего не хватает — с переходом: пункт слева, «Перейти» справа (узко — под пунктом) */
+.blockers-go {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  padding: 0;
+  list-style: none;
+}
+
+.blockers-go li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-5) var(--gap-12);
+}
+
+.blocker-text {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Панели и формы */

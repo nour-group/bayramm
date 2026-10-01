@@ -88,6 +88,10 @@ describe("styles.css кабинета вендора", () => {
     expect(outside).not.toMatch(/:hover/);
   });
 
+  it("список заявок рядом с карточкой прокручивается, а не сжимает вкладки и строки над ними", () => {
+    expect(declarationsOf(".inbox > .inbox-list > *")).toMatch(/flex-shrink:\s*0/);
+  });
+
   it("фокус с клавиатуры виден", () => {
     expect(declarationsOf(":focus-visible")).toMatch(/outline:\s*\d+px solid var\(--coral\)/);
   });

@@ -64,7 +64,15 @@ export const browser = {
 
 let methodsCache: Promise<AuthMethods | null> | null = null;
 
-/** Чем входить и где приложения окружения (GET /api/auth/methods); null — API не ответило */
+/** Забыть ответ GET /auth/methods (тесты: у каждого свой) */
+export function forgetAuthMethods(): void {
+  methodsCache = null;
+}
+
+/**
+ * Чем входить, где приложения окружения и имя бота (GET /api/auth/methods) — один запрос на
+ * страницу: его ждут экран входа, ссылка на бота, хаб и аккаунт. null — API не ответило
+ */
 export function authMethods(): Promise<AuthMethods | null> {
   methodsCache ??= fetch("/api/auth/methods", { credentials: "omit" })
     .then((res) => (res.ok ? (res.json() as Promise<AuthMethods>) : null))
@@ -74,6 +82,18 @@ export function authMethods(): Promise<AuthMethods | null> {
       return methods;
     });
   return methodsCache;
+}
+
+// Имя бота: 5–32 символа латиницы, цифр и _, в конце — bot (правила @BotFather)
+export const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
+
+/**
+ * Бот окружения из GET /auth/methods (его имя там уже есть — второй запрос за ним не нужен);
+ * null — API не ответило или имени нет
+ */
+export function botOf(methods: AuthMethods | null): string | null {
+  const bot = methods?.telegram.bot ?? null;
+  return bot !== null && BOT_USERNAME_RE.test(bot) ? bot : null;
 }
 
 /** Путь, куда вернуться после входа: свой путь, без ?signin */

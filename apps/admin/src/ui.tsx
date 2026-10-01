@@ -19,7 +19,6 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { Failure, Loaded, Result } from "./api";
-import { categoryName } from "./categories";
 import { Icon, type IconName } from "./icons";
 import { usePhone } from "./layout";
 import { type Navigate, pathOf, type View } from "./router";
@@ -97,11 +96,6 @@ const STATUS_TONE: Record<ListingStatus, Tone> = {
 
 export function StatusPill({ status }: { status: ListingStatus }) {
   return <Pill tone={STATUS_TONE[status]}>{t.status[status]}</Pill>;
-}
-
-/** Категория витрины — плашкой рядом с названием */
-export function CategoryChip({ code }: { code: string }) {
-  return <span className="cat-chip">{categoryName(code)}</span>;
 }
 
 // ── состояния загрузки и ошибки ────────────────────────────────────────────
@@ -704,6 +698,18 @@ export function ActiveFilter({ label, onClear }: { label: string; onClear: () =>
       </button>
     </div>
   );
+}
+
+/**
+ * Перейти к блоку страницы по id его заголовка (tabIndex -1): прокрутить к нему и поставить
+ * фокус — диктор прочтёт, куда пришли. Фокус без прокрутки (ловушка №3), scrollIntoView есть
+ * не везде (№5)
+ */
+export function focusSection(id: string): void {
+  const heading = document.getElementById(id);
+  if (!heading) return;
+  heading.scrollIntoView?.({ block: "start" });
+  heading.focus({ preventScroll: true });
 }
 
 /**

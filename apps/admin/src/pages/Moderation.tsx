@@ -1,9 +1,15 @@
-/* Модерация: карточки на проверке — по порядку отправки (решение — на странице карточки),
-   правки опубликованных карточек от вендоров и менеджеров (решение — на странице правки),
-   услуги и правки услуг опубликованных витрин (решение — прямо в очереди: одобрить или
-   отклонить с причиной для партнёра) и новые фото опубликованных карточек — старые загрузки
-   первыми (одобрить или отклонить — на странице карточки, в блоке фото). Элемент очереди —
-   карточка целиком: нажатие в любом её месте открывает то, по чему решать. */
+/* Модерация: витрины на проверке — по порядку отправки (решение — на странице витрины),
+   предложения изменений опубликованных витрин от вендоров и менеджеров (решение — на странице
+   предложения), услуги и изменения услуг опубликованных витрин (решение — прямо в очереди:
+   одобрить или отклонить с причиной для партнёра) и новые фото опубликованных витрин — старые
+   загрузки первыми (одобрить или отклонить — на странице витрины, в блоке фото). Элемент
+   очереди — карточка целиком: нажатие в любом её месте открывает то, по чему решать.
+
+   Разбор с телефона: вверху — сколько ждёт в каждой очереди (кнопки ведут к ней), у заголовка
+   очереди — число, пустая очередь — одной строкой, пояснение — только у непустой. Решение по
+   услуге — без клавиатуры (одобрить) или с причиной в шторке; после решения очередь
+   перечитывается тихо, фокус — на следующей услуге (или на заголовке очереди, если она
+   кончилась), что решили — говорит строка статуса. */
 
 import type {
   ListingList,
@@ -12,15 +18,16 @@ import type {
   ServiceQueue,
   ServiceQueueItem,
 } from "@bayramm/shared/api/staff";
-import { useRef, useState } from "react";
-import { type Failure, useCan, useLoad, useSession } from "../api";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type Failure, type Loaded, useCan, useLoad, useSession } from "../api";
+import { CategoryChip } from "../categories";
 import { formatMoment, formatPrice, vendorLabel } from "../format";
 import { t } from "../texts";
 import {
   Blockers,
-  CategoryChip,
   ConfirmForm,
   ErrorText,
+  focusSection,
   Link,
   LoadedView,
   PhoneSheet,
@@ -29,160 +36,264 @@ import {
 } from "../ui";
 import { ServiceChanges } from "./Services";
 
+type Queue = "review" | "revisions" | "services" | "photos";
+
+const QUEUE_TITLE: Readonly<Record<Queue, string>> = {
+  review: t.listingsInReview,
+  revisions: t.revisions,
+  services: t.serviceQueue,
+  photos: t.photoQueue,
+};
+
+const QUEUE_HINT: Readonly<Record<Queue, string | null>> = {
+  review: null,
+  revisions: t.revisionsHint,
+  services: t.serviceQueueHint,
+  photos: t.photoQueueHint,
+};
+
+const QUEUE_EMPTY: Readonly<Record<Queue, string>> = {
+  review: t.moderationEmpty,
+  revisions: t.revisionsEmpty,
+  services: t.serviceQueueEmpty,
+  photos: t.photoQueueEmpty,
+};
+
+const titleId = (queue: Queue) => `queue-${queue}-title`;
+
+/** Сколько в очереди, когда загрузилась: для сводки вверху и числа у заголовка */
+function countOf<T extends { readonly items: readonly unknown[] }>(loaded: Loaded<T>): number | null {
+  return loaded.state === "ready" ? loaded.data.items.length : null;
+}
+
+/**
+ * Очередь: заголовок с числом (на него — фокус после перехода из сводки и когда очередь
+ * кончилась), пояснение — если есть что разбирать, пустая — одной строкой
+ */
+function QueueSection({
+  queue,
+  count,
+  children,
+}: {
+  queue: Queue;
+  count: number | null;
+  children: ReactNode;
+}) {
+  const hint = QUEUE_HINT[queue];
+  return (
+    <section className="stack queue" aria-labelledby={titleId(queue)}>
+      <h2 id={titleId(queue)} className="section-title" tabIndex={-1}>
+        {QUEUE_TITLE[queue]} {count !== null ? <span className="count">{count}</span> : null}
+      </h2>
+      {hint && count !== 0 ? <p className="muted small">{hint}</p> : null}
+      {children}
+    </section>
+  );
+}
+
+/** Пустая очередь — строкой, а не большой рамкой: разбирать нечего, место — тем, где есть */
+function QueueEmpty({ queue }: { queue: Queue }) {
+  return <p className="muted queue-empty">{QUEUE_EMPTY[queue]}</p>;
+}
+
 export function ModerationPage({ minPhotos }: { minPhotos: number }) {
   const can = useCan();
+  const services = can("revisions.moderate");
+  const review = useLoad<ListingList>("/staff/listings?status=review&limit=100");
+  const revisions = useLoad<RevisionList>("/staff/revisions?status=pending&limit=100");
+  const photos = useLoad<ListingList>("/staff/listings?photos=pending&limit=100");
+  const queues: readonly Queue[] = services
+    ? ["review", "revisions", "services", "photos"]
+    : ["review", "revisions", "photos"];
+  const [serviceCount, setServiceCount] = useState<number | null>(null);
+  const counts: Readonly<Record<Queue, number | null>> = {
+    review: countOf(review.loaded),
+    revisions: countOf(revisions.loaded),
+    services: serviceCount,
+    photos: countOf(photos.loaded),
+  };
+
   return (
     <div className="stack">
-      <section className="stack" aria-labelledby="review-title">
-        <h2 id="review-title" className="section-title">
-          {t.listingsInReview}
-        </h2>
-        <ReviewQueue minPhotos={minPhotos} />
-      </section>
-      <section className="stack" aria-labelledby="revisions-title">
-        <h2 id="revisions-title" className="section-title">
-          {t.revisions}
-        </h2>
-        <p className="muted small">{t.revisionsHint}</p>
-        <RevisionQueue />
-      </section>
-      {can("revisions.moderate") ? (
-        <section className="stack" aria-labelledby="service-queue-title">
-          <h2 id="service-queue-title" className="section-title">
-            {t.serviceQueue}
-          </h2>
-          <p className="muted small">{t.serviceQueueHint}</p>
-          <ServiceQueueList />
-        </section>
+      {/* Сводка: сколько ждёт решения в каждой очереди — кнопкой к ней (на телефоне очереди
+          длинные, листать до нужной долго) */}
+      <nav className="queue-jump" aria-label={t.moderation}>
+        {queues.map((queue) => (
+          <button
+            key={queue}
+            type="button"
+            className={`chip${counts[queue] ? " is-active" : ""}`}
+            onClick={() => focusSection(titleId(queue))}
+          >
+            {QUEUE_TITLE[queue]}
+            <span className="chip-count">{counts[queue] ?? "…"}</span>
+          </button>
+        ))}
+      </nav>
+
+      <QueueSection queue="review" count={counts.review}>
+        <LoadedView loaded={review.loaded} onRetry={review.reload} skeleton="block">
+          {(list) => <ReviewQueue list={list} minPhotos={minPhotos} />}
+        </LoadedView>
+      </QueueSection>
+      <QueueSection queue="revisions" count={counts.revisions}>
+        <LoadedView loaded={revisions.loaded} onRetry={revisions.reload} skeleton="block">
+          {(list) => <RevisionQueue list={list} />}
+        </LoadedView>
+      </QueueSection>
+      {services ? (
+        <QueueSection queue="services" count={counts.services}>
+          <ServiceQueueList onCount={setServiceCount} />
+        </QueueSection>
       ) : null}
-      <section className="stack" aria-labelledby="photo-queue-title">
-        <h2 id="photo-queue-title" className="section-title">
-          {t.photoQueue}
-        </h2>
-        <p className="muted small">{t.photoQueueHint}</p>
-        <PhotoQueue />
-      </section>
+      <QueueSection queue="photos" count={counts.photos}>
+        <LoadedView loaded={photos.loaded} onRetry={photos.reload} skeleton="block">
+          {(list) => <PhotoQueue list={list} />}
+        </LoadedView>
+      </QueueSection>
     </div>
   );
 }
 
-function ReviewQueue({ minPhotos }: { minPhotos: number }) {
-  const { loaded, reload } = useLoad<ListingList>("/staff/listings?status=review&limit=100");
+/** «до 300 гостей» — вместимость там, где она есть (залы) */
+const capacityText = (capMax: number | null) => (capMax ? ` · ${t.guestsUpTo(capMax)}` : "");
+
+function ReviewQueue({ list, minPhotos }: { list: ListingList; minPhotos: number }) {
+  if (list.items.length === 0) return <QueueEmpty queue="review" />;
   return (
-    <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
-      {(list) =>
-        list.items.length === 0 ? (
-          <p className="empty">{t.moderationEmpty}</p>
-        ) : (
-          <ul className="rcards">
-            {list.items.map((listing) => (
-              <li key={listing.id} className="rcard rcard-tap">
-                <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
-                  {listing.name}
-                </Link>
-                <p className="rcard-meta">
-                  {vendorLabel(listing.vendor)} · {t.submittedAt} {formatMoment(listing.submittedAt)}
-                </p>
-                <p className="rcard-meta">
-                  {formatPrice(listing.priceFromUzs, listing.priceUnit)}
-                  {listing.capMax ? ` · до ${listing.capMax}` : ""} ·{" "}
-                  {t.photosCount(listing.photos.ready, listing.photos.approved)}
-                </p>
-                <Blockers
-                  title={t.blockersActive}
-                  codes={publishBlockers(listing.blockers, listing.photos.ready, minPhotos)}
-                />
-              </li>
-            ))}
-          </ul>
-        )
-      }
-    </LoadedView>
+    <ul className="rcards">
+      {list.items.map((listing) => (
+        <li key={listing.id} className="rcard rcard-tap">
+          <div className="rcard-head">
+            <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
+              {listing.name}
+            </Link>
+            <CategoryChip code={listing.categoryCode} />
+          </div>
+          <p className="rcard-meta">
+            {vendorLabel(listing.vendor)} · {t.submittedAt} {formatMoment(listing.submittedAt)}
+          </p>
+          <p className="rcard-meta">
+            {formatPrice(listing.priceFromUzs, listing.priceUnit)}
+            {capacityText(listing.capMax)} · {t.photosCount(listing.photos.ready, listing.photos.approved)}
+          </p>
+          <Blockers
+            title={t.blockersActive}
+            codes={publishBlockers(listing.blockers, listing.photos.ready, minPhotos)}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }
 
-function RevisionQueue() {
-  const { loaded, reload } = useLoad<RevisionList>("/staff/revisions?status=pending&limit=100");
+function RevisionQueue({ list }: { list: RevisionList }) {
+  if (list.items.length === 0) return <QueueEmpty queue="revisions" />;
   return (
-    <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
-      {(list) =>
-        list.items.length === 0 ? (
-          <p className="empty">{t.revisionsEmpty}</p>
-        ) : (
-          <ul className="rcards">
-            {list.items.map((revision) => (
-              <li key={revision.id} className="rcard rcard-tap">
-                <Link to={{ name: "revision", id: revision.id }} className="rcard-link">
-                  {revision.listing.name}
-                </Link>
-                <p className="rcard-meta">
-                  {vendorLabel(revision.vendor)} · {t.submittedAt} {formatMoment(revision.submittedAt)}
-                </p>
-                <p className="rcard-meta">
-                  {t.proposedBy(revision.proposedBy.kind, revision.proposedBy.name)}
-                </p>
-                <p className="rcard-meta">
-                  {revision.fields.map((field) => t.revisionFields[field] ?? field).join(", ")}
-                </p>
-                {revision.stale && <p className="notice notice-warn">{t.revisionStale}</p>}
-              </li>
-            ))}
-          </ul>
-        )
-      }
-    </LoadedView>
+    <ul className="rcards">
+      {list.items.map((revision) => (
+        <li key={revision.id} className="rcard rcard-tap">
+          <Link to={{ name: "revision", id: revision.id }} className="rcard-link">
+            {revision.listing.name}
+          </Link>
+          <p className="rcard-meta">
+            {vendorLabel(revision.vendor)} · {t.submittedAt} {formatMoment(revision.submittedAt)}
+          </p>
+          <p className="rcard-meta">{t.proposedBy(revision.proposedBy.kind, revision.proposedBy.name)}</p>
+          <p className="rcard-meta">
+            {revision.fields.map((field) => t.revisionFields[field] ?? field).join(", ")}
+          </p>
+          {revision.stale && <p className="notice notice-warn">{t.revisionStale}</p>}
+        </li>
+      ))}
+    </ul>
   );
 }
 
-function PhotoQueue() {
-  const { loaded, reload } = useLoad<ListingList>("/staff/listings?photos=pending&limit=100");
+function PhotoQueue({ list }: { list: ListingList }) {
+  if (list.items.length === 0) return <QueueEmpty queue="photos" />;
   return (
-    <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
-      {(list) =>
-        list.items.length === 0 ? (
-          <p className="empty">{t.photoQueueEmpty}</p>
-        ) : (
-          <ul className="rcards">
-            {list.items.map((listing) => (
-              <li key={listing.id} className="rcard rcard-tap">
-                <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
-                  {listing.name}
-                </Link>
-                <p className="rcard-meta">{vendorLabel(listing.vendor)}</p>
-                <p className="rcard-meta">
-                  {t.pendingPhotos(listing.photos.pending)} ·{" "}
-                  {t.photosCount(listing.photos.ready, listing.photos.approved)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )
-      }
-    </LoadedView>
+    <ul className="rcards">
+      {list.items.map((listing) => (
+        <li key={listing.id} className="rcard rcard-tap">
+          <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
+            {listing.name}
+          </Link>
+          <p className="rcard-meta">{vendorLabel(listing.vendor)}</p>
+          <p className="rcard-meta">
+            {t.pendingPhotos(listing.photos.pending)} ·{" "}
+            {t.photosCount(listing.photos.ready, listing.photos.approved)}
+          </p>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-function ServiceQueueList() {
+/**
+ * Очередь услуг: решение — прямо здесь. После решения очередь перечитывается тихо (без
+ * заготовки), фокус — на «Одобрить» услуги, вставшей на место решённой, а если очередь
+ * кончилась — на её заголовок; строка статуса говорит, что решили
+ */
+function ServiceQueueList({ onCount }: { onCount: (n: number | null) => void }) {
   const { loaded, reload } = useLoad<ServiceQueue>("/staff/services?status=pending&limit=100");
+  const list = useRef<HTMLUListElement>(null);
+  // Место решённой услуги в очереди: после перечитывания фокус — туда
+  const decidedAt = useRef<number | null>(null);
+  const [said, setSaid] = useState("");
+  const count = countOf(loaded);
+  useEffect(() => onCount(count), [count, onCount]);
+  useEffect(() => {
+    if (loaded.state !== "ready" || decidedAt.current === null) return;
+    const at = decidedAt.current;
+    decidedAt.current = null;
+    const buttons = list.current?.querySelectorAll<HTMLButtonElement>(".queue-approve") ?? [];
+    const next = buttons[Math.min(at, buttons.length - 1)];
+    if (next) next.focus({ preventScroll: false });
+    else focusSection(titleId("services"));
+  }, [loaded]);
+  const decided = useCallback(
+    (index: number, text: string) => {
+      decidedAt.current = index;
+      setSaid(text);
+      reload();
+    },
+    [reload],
+  );
   return (
-    <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
-      {(queue) =>
-        queue.items.length === 0 ? (
-          <p className="empty">{t.serviceQueueEmpty}</p>
-        ) : (
-          <ul className="rcards">
-            {queue.items.map((item) => (
-              <ServiceQueueCard key={`${item.kind}-${item.service.id}`} item={item} onDecided={reload} />
-            ))}
-          </ul>
-        )
-      }
-    </LoadedView>
+    <>
+      <p className="visually-hidden" aria-live="polite">
+        {said}
+      </p>
+      <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
+        {(queue) =>
+          queue.items.length === 0 ? (
+            <QueueEmpty queue="services" />
+          ) : (
+            <ul className="rcards" ref={list}>
+              {queue.items.map((item, index) => (
+                <ServiceQueueCard
+                  key={`${item.kind}-${item.service.id}`}
+                  item={item}
+                  onDecided={(text) => decided(index, text)}
+                />
+              ))}
+            </ul>
+          )
+        }
+      </LoadedView>
+    </>
   );
 }
 
 /** Услуга в очереди: что предлагают, кто и когда; одобрить или отклонить с причиной */
-function ServiceQueueCard({ item, onDecided }: { item: ServiceQueueItem; onDecided: () => void }) {
+function ServiceQueueCard({
+  item,
+  onDecided,
+}: {
+  item: ServiceQueueItem;
+  onDecided: (said: string) => void;
+}) {
   const { api } = useSession();
   const [declining, setDeclining] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -196,13 +307,13 @@ function ServiceQueueCard({ item, onDecided }: { item: ServiceQueueItem; onDecid
     const result = await api.post<ListingService>(`/staff/services/${service.id}/approve`);
     setBusy(false);
     setFailure(result.ok ? null : result);
-    if (result.ok) onDecided();
+    if (result.ok) onDecided(t.serviceApproved(name));
   };
   const decline = async (reason: string): Promise<Failure | null> => {
     const result = await api.post<ListingService>(`/staff/services/${service.id}/decline`, { reason });
     if (!result.ok) return result;
     setDeclining(false);
-    onDecided();
+    onDecided(t.serviceDeclinedSaid(name));
     return null;
   };
 
@@ -232,7 +343,12 @@ function ServiceQueueCard({ item, onDecided }: { item: ServiceQueueItem; onDecid
         </p>
       )}
       <div className="rcard-actions">
-        <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void approve()}>
+        <button
+          type="button"
+          className="btn btn-primary queue-approve"
+          disabled={busy}
+          onClick={() => void approve()}
+        >
           {t.serviceApprove}
           <span className="visually-hidden">: {name}</span>
         </button>

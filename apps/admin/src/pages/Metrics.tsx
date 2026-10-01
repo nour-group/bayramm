@@ -20,11 +20,11 @@ import type {
 import { Dialog, RadioGroup, Select } from "@bayramm/ui/react";
 import { useState } from "react";
 import { useLoad } from "../api";
-import { categoryName, categoryOptions } from "../categories";
+import { CategoryChip, categoryName, categoryOptions } from "../categories";
 import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel } from "../format";
 import { usePhone } from "../layout";
 import { t } from "../texts";
-import { ActiveFilter, CategoryChip, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
+import { ActiveFilter, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
 
 /** Меньше половины заявок отвечено в срок — полоса коралловая */
 const RATE_LOW = 50;

@@ -5,10 +5,10 @@ import type { ListingStatus, VendorList } from "@bayramm/shared/api/staff";
 import { Dialog, RadioGroup, SearchField, Select } from "@bayramm/ui/react";
 import { useEffect, useState } from "react";
 import { useCan, useLoad } from "../api";
-import { categoryName, categoryOptions } from "../categories";
+import { CategoryChip, categoryName, categoryOptions } from "../categories";
 import { usePhone } from "../layout";
 import { t } from "../texts";
-import { ActionBar, ActiveFilter, CategoryChip, FilterButton, Link, LoadedView, StatusPill } from "../ui";
+import { ActionBar, ActiveFilter, FilterButton, Link, LoadedView, StatusPill } from "../ui";
 
 const FILTERS: readonly (ListingStatus | null)[] = [
   null,
@@ -160,9 +160,9 @@ export function VendorsPage() {
                         <Link to={{ name: "vendor", id: vendor.id }} className="rcard-link">
                           {vendor.name ?? vendor.legalName ?? vendor.code}
                         </Link>
+                        {/* Что значит «0/4» — словами и на виду: на телефоне заголовка столбца нет */}
                         <span className={`ring${done === 4 ? " ring-done" : ""}`}>
-                          <span className="visually-hidden">{t.colChecklist}: </span>
-                          {done}/4
+                          {t.colChecklist} {done}/4
                         </span>
                       </div>
                       <p className="rcard-meta">

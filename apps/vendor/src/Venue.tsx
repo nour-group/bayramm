@@ -1,13 +1,15 @@
-/* Площадка — карточка выбранной витрины как есть в базе (то, что видит клиент). Название,
-   описания, поля витрины категории и ссылки на видео владелец кабинета меняет предложением
+/* Витрина — выбранная витрина как есть в базе (то, что видит клиент). Название, описания,
+   данные витрины категории и ссылки на видео владелец кабинета меняет предложением
    (Proposal.tsx), фото — загрузкой здесь: и то, и другое проверяет команда, до одобрения
-   клиенты видят прежнюю карточку. Цена «от» — из услуг (раздел «Услуги»), здесь — сводка
-   услуг на витрине. Адрес и вместимость меняет менеджер — для разговора с ним здесь код
-   вендора. Сотрудник площадки (роль member) карточку только смотрит: заявки и календарь —
-   его, карточка — владельца. Рейтинга нет: его на первом запуске не показываем.
+   клиенты видят прежнее (сказано один раз — вверху экрана). Цена «от» — из услуг: здесь
+   только она и ссылка на «Услуги», списка услуг второй раз нет. Адрес, район, вместимость и
+   телефон меняет менеджер — под ними код вендора для разговора с ним. Сотрудник площадки
+   (роль member) витрину только смотрит. Рейтинга нет: его на первом запуске не показываем.
 
-   Готовность к публикации: чего не хватает (blockers из базы) и какие обязательные поля
-   витрины пусты (missingAttributes).
+   Витрина не на сайте — сверху чек-лист «что осталось до публикации» (Readiness): почему она
+   не опубликована, пункты партнёра — каждый с кнопкой туда, где он делается (услуги, фото,
+   предложение изменений), и одной строкой — что сделает команда (район, договор, СТИР…).
+   Новый партнёр попадает сюда из входящих (строка «что дальше»).
 
    Фото — по правилу категории (photoPolicy). no_people: на фото не должно быть лиц —
    предупреждение всегда на виду, без галочки «лиц нет» (не отмеченной заранее) файлы не
@@ -31,16 +33,17 @@ import {
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
 import { Checkbox, ConfirmSheet, FileDrop } from "@bayramm/ui/react";
-import { type MouseEvent, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useRef, useState } from "react";
 import { AttributeFacts } from "./Attributes";
 import { ApiFailure, api } from "./api";
-import { categoryName, priceText } from "./category";
+import { categoryName } from "./category";
+import { errorText } from "./errors";
 import { formatMoney, formatPhone } from "./format";
-import { fill, textOf, type VendorDict } from "./i18n";
+import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
 import { Proposal } from "./Proposal";
-import { type Navigate, pathOf } from "./router";
+import { type Location, type Navigate, pathOf } from "./router";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -148,7 +151,7 @@ function Photos({ listing, portfolio, t, owner, onChanged }: PhotosProps) {
         setRemoveError(
           err instanceof ApiFailure && err.code === "publish_blocked"
             ? fill(t.photoDeleteBlocked, { min: photoLimits.min })
-            : t.actionFailed,
+            : errorText(err, t),
         );
         setRemoveBusy(false);
         return;
@@ -211,7 +214,6 @@ function Photos({ listing, portfolio, t, owner, onChanged }: PhotosProps) {
       {owner ? (
         <>
           <p className="notice notice-warn">{portfolio ? t.portfolioWarning : t.noFacesWarning}</p>
-          <p className="note">{t.photosModeration}</p>
           {room > 0 ? (
             <div className="upload">
               {portfolio ? (
@@ -267,33 +269,182 @@ function Photos({ listing, portfolio, t, owner, onChanged }: PhotosProps) {
   );
 }
 
-/** Чего не хватает для публикации: код базы словами; обязательные услуги — названиями */
-function blockerText(code: string, category: CategoryConfig | undefined, t: VendorDict, lang: "ru" | "uz") {
-  if (code === "packages" && category && category.requiredServices.length > 0) {
-    const list = category.requiredServices.map((type) => serviceTypeLabel(lang, category, type)).join(", ");
-    return fill(t.blockerServices, { list });
+/** Пункт чек-листа готовности: что сделать и кнопка туда, где это делается */
+export interface Todo {
+  readonly key: string;
+  /** Что сделать: пункты с одной и той же кнопкой — строками одного пункта */
+  readonly lines: readonly string[];
+  readonly action?: { readonly label: string; readonly run: () => void };
+}
+
+/** Пункты партнёра — их он делает сам; остальные коды готовности делает команда Bayramm */
+const VENDOR_BLOCKERS: ReadonlySet<string> = new Set([
+  "price",
+  "packages",
+  "photos",
+  "descriptions",
+  "attributes",
+]);
+
+/** Что сказано о витрине не на сайте — по статусу */
+const STATUS_LEAD: Readonly<Record<VendorListing["status"], TextKey | null>> = {
+  lead: "readyDraft",
+  draft: "readyDraft",
+  review: "readyReview",
+  active: null,
+  suspended: "readySuspended",
+  rejected: "readyRejected",
+};
+
+/** Куда ведут кнопки чек-листа */
+interface TodoRoutes {
+  readonly services: () => void;
+  readonly photos: () => void;
+  readonly propose: () => void;
+}
+
+/** Пункты партнёра: что сделать самому и где (коды готовности базы и пустые данные витрины) */
+export function vendorTodos(
+  listing: VendorListing,
+  category: CategoryConfig | undefined,
+  t: VendorDict,
+  lang: "ru" | "uz",
+  go: TodoRoutes,
+): Todo[] {
+  const blockers = new Set(listing.blockers);
+  const todos: Todo[] = [];
+  const toServices = { label: t.toServices, run: go.services };
+  const propose = { label: t.proposalStart, run: go.propose };
+  if (blockers.has("price")) todos.push({ key: "price", lines: [t.todoPrice], action: toServices });
+  if (blockers.has("packages")) {
+    const list =
+      category && category.requiredServices.length > 0
+        ? category.requiredServices.map((type) => serviceTypeLabel(lang, category, type)).join(", ")
+        : t.blocker_packages;
+    todos.push({ key: "packages", lines: [fill(t.todoServices, { list })], action: toServices });
   }
-  return textOf(t, `blocker_${code}`);
+  if (blockers.has("photos")) {
+    const ready = listing.photos.filter((photo) => photo.moderation !== "declined").length;
+    todos.push({
+      key: "photos",
+      lines: [fill(t.todoPhotos, { n: ready, min: listing.photoLimits.min })],
+      action: { label: t.toPhotos, run: go.photos },
+    });
+  }
+  if (blockers.has("descriptions"))
+    todos.push({ key: "descriptions", lines: [t.todoDescriptions], action: propose });
+  if (blockers.has("attributes") || listing.missingAttributes.length > 0) {
+    const list =
+      category && listing.missingAttributes.length > 0
+        ? listing.missingAttributes.map((key) => attributeLabel(lang, category, key)).join(", ")
+        : t.blocker_attributes;
+    todos.push({ key: "attributes", lines: [fill(t.todoAttributes, { list })], action: propose });
+  }
+  // Одна кнопка — один пункт: «описание» и «данные витрины» делаются одним предложением, цена и
+  // обязательные услуги — в «Услугах»; две одинаковые кнопки подряд только путали бы
+  const merged: Todo[] = [];
+  for (const todo of todos) {
+    const same = merged.findIndex((m) => m.action?.label === todo.action?.label);
+    const into = merged[same];
+    if (into && todo.action) merged[same] = { ...into, lines: [...into.lines, ...todo.lines] };
+    else merged.push(todo);
+  }
+  return merged;
+}
+
+interface ReadinessProps {
+  readonly listing: VendorListing;
+  readonly category: CategoryConfig | undefined;
+  readonly t: VendorDict;
+  readonly lang: "ru" | "uz";
+  readonly owner: boolean;
+  readonly go: TodoRoutes;
+}
+
+/**
+ * Готовность к публикации — чек-лист: почему витрины нет на сайте, что сделать партнёру (с
+ * кнопкой туда, где это делается) и одной строкой — что сделает команда. Опубликованная
+ * витрина, где делать нечего, — блока нет
+ */
+function Readiness({ listing, category, t, lang, owner, go }: ReadinessProps) {
+  const todos = vendorTodos(listing, category, t, lang, go);
+  const team = listing.blockers.filter((code) => !VENDOR_BLOCKERS.has(code));
+  const leadKey = STATUS_LEAD[listing.status];
+  const lead =
+    leadKey === "readyDraft" && todos.length === 0 ? t.readyDraftDone : leadKey ? t[leadKey] : null;
+  if (lead === null && todos.length === 0) return null;
+  const reason = listing.statusReason ? (
+    <p className="note">{fill(t.reasonLine, { reason: listing.statusReason })}</p>
+  ) : null;
+  if (todos.length === 0 && team.length === 0) {
+    return (
+      <div className="notice readiness">
+        <p>{lead}</p>
+        {reason}
+      </div>
+    );
+  }
+  return (
+    <section className="panel readiness" aria-labelledby="ready-title">
+      <h2 className="section-title" id="ready-title">
+        {t.blockersTitle}
+      </h2>
+      {lead ? <p className="lead">{lead}</p> : null}
+      {reason}
+      {todos.length > 0 ? (
+        <ul className="todo">
+          {todos.map((todo) => (
+            <li key={todo.key} className="todo-item">
+              <span className="todo-text">
+                <span className="todo-mark" aria-hidden="true" />
+                <span className="todo-lines">
+                  {todo.lines.map((line) => (
+                    <span key={line} className="todo-line">
+                      {line}
+                    </span>
+                  ))}
+                </span>
+              </span>
+              {owner && todo.action ? (
+                <button type="button" className="btn btn-ghost todo-go" onClick={todo.action.run}>
+                  {todo.action.label}
+                  <span className="sr-only">: {todo.lines.join("; ")}</span>
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {!owner && todos.length > 0 ? <p className="note">{t.todoOwner}</p> : null}
+      {team.length > 0 ? (
+        <p className="note">
+          {fill(t.todoTeam, { list: team.map((code) => textOf(t, `blocker_${code}`)).join(", ") })}
+        </p>
+      ) : null}
+    </section>
+  );
 }
 
 /** Ссылка на раздел без перезагрузки (новая вкладка, окно — как решит браузер) */
 function SectionLink({
+  to,
   navigate,
   className,
   children,
 }: {
+  to: Location;
   navigate: Navigate;
   className: string;
-  children: string;
+  children: ReactNode;
 }) {
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
-    navigate({ route: "services" });
+    navigate(to);
   };
   return (
-    <a className={className} href={pathOf({ route: "services" })} onClick={onClick}>
+    <a className={className} href={pathOf(to)} onClick={onClick}>
       {children}
     </a>
   );
@@ -304,7 +455,7 @@ interface VenueProps extends ScreenProps {
   readonly listingId: string | null;
   readonly onListing: (id: string) => void;
   readonly vendorCode: string;
-  /** Роль в кабинете: карточку (фото и предложения) меняет только владелец */
+  /** Роль в кабинете: витрину (фото и предложения) меняет только владелец */
   readonly role: VendorRole;
   /** Выбор витрины — в боковой панели (компьютер) */
   readonly inSidebar?: boolean;
@@ -340,13 +491,15 @@ export function Venue({
     );
   }
 
+  // Выбор витрины на экране (телефон, планшет) уже называет её — второй раз имя не нужно
+  const pickerShown = listings.length > 1 && !inSidebar;
   return (
     <section className="page" aria-labelledby="page-title">
       <Heading headingRef={headingRef}>{t.card}</Heading>
       <ListingPicker
         listings={listings}
         value={listingId}
-        onChange={onListing}
+        onChange={(id) => id && onListing(id)}
         t={t}
         lang={lang}
         inSidebar={inSidebar}
@@ -354,19 +507,19 @@ export function Venue({
       />
       <p className="promise">
         <Icon name="info" size={17} />
-        <span>
-          {owner ? t.venueNote : t.venueNoteMember} {fill(t.vendorCode, { code: vendorCode })}
-        </span>
+        <span>{owner ? t.venueNote : t.venueNoteMember}</span>
       </p>
 
-      {listing.state === "loading" ? <Loading t={t} /> : null}
-      {listing.state === "error" ? <LoadError t={t} onRetry={reload} /> : null}
+      {listing.state === "loading" ? <Loading t={t} kind="card" /> : null}
+      {listing.state === "error" ? <LoadError t={t} onRetry={reload} error={listing.error} /> : null}
       {listing.state === "ready" ? (
         <VenueCard
           listing={listing.data}
           t={t}
           lang={lang}
           owner={owner}
+          showName={!pickerShown}
+          vendorCode={vendorCode}
           navigate={navigate}
           onChanged={refreshListing}
         />
@@ -380,52 +533,43 @@ interface VenueCardProps {
   readonly t: VendorDict;
   readonly lang: "ru" | "uz";
   readonly owner: boolean;
+  /** Имя витрины заголовком: выбора витрины на экране нет */
+  readonly showName: boolean;
+  readonly vendorCode: string;
   readonly navigate: Navigate;
   readonly onChanged: () => Promise<void>;
 }
 
-function VenueCard({ listing, t, lang, owner, navigate, onChanged }: VenueCardProps) {
+function VenueCard({ listing, t, lang, owner, showName, vendorCode, navigate, onChanged }: VenueCardProps) {
   const category = categoryConfig(listing.categoryCode);
   const fields = category?.listingFields ?? ["guest_capacity", "district"];
-  const active = listing.services.filter((service) => service.status === "active");
+  // Кнопка чек-листа «Предложить изменения»: растёт — форма предложения открывается
+  const [propose, setPropose] = useState(0);
+  const go: TodoRoutes = {
+    services: () => navigate({ route: "services" }),
+    // Фото — на этом же экране: фокус на заголовок блока, браузер прокрутит к нему
+    photos: () => document.getElementById("photos-title")?.focus(),
+    propose: () => setPropose((n) => n + 1),
+  };
   return (
     <article className="venue">
       <div className="detail-top">
-        <h2 className="venue-name">{listing.name}</h2>
+        {showName ? <h2 className="venue-name">{listing.name}</h2> : null}
         <span className="venue-chips">
-          <span className="chip chip-cat">{categoryName(lang, listing.categoryCode)}</span>
+          {/* Имя и категорию уже называет выбор витрины на экране — здесь только статус */}
+          {showName ? (
+            <span className="chip chip-cat">{categoryName(lang, listing.categoryCode)}</span>
+          ) : null}
           <span className={`chip chip-${listing.status === "active" ? "done" : "wait"}`}>
             {textOf(t, `ls_${listing.status}`)}
           </span>
         </span>
       </div>
-      {listing.statusReason ? (
-        <p className="note">{fill(t.reasonLine, { reason: listing.statusReason })}</p>
-      ) : null}
-      {listing.status !== "active" && listing.blockers.length > 0 ? (
-        <div className="notice">
-          <p className="panel-title">{t.blockersTitle}</p>
-          <ul className="blockers">
-            {listing.blockers.map((code) => (
-              <li key={code}>{blockerText(code, category, t, lang)}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {/* Обязательные поля витрины без значения — их заполняет предложение изменений ниже */}
-      {listing.missingAttributes.length > 0 && category ? (
-        <div className="notice notice-warn readiness">
-          <p className="panel-title">{t.missingTitle}</p>
-          <ul className="blockers">
-            {listing.missingAttributes.map((key) => (
-              <li key={key}>{attributeLabel(lang, category, key)}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+
+      <Readiness listing={listing} category={category} t={t} lang={lang} owner={owner} go={go} />
 
       <div className="venue-grid">
-        {/* Ключ — площадка: галочка и ошибки загрузки другой площадки не переносятся.
+        {/* Ключ — витрина: галочка и ошибки загрузки другой витрины не переносятся.
           Не тот же, что у Proposal: ключи соседей в одном родителе обязаны различаться */}
         <Photos
           key={`photos-${listing.id}`}
@@ -449,7 +593,16 @@ function VenueCard({ listing, t, lang, owner, navigate, onChanged }: VenueCardPr
                       listing.priceUnit,
                     )}`
                   : t.notSet}
-                <span className="fact-sub fact-note">{t.priceFromServices}</span>
+                <span className="fact-sub fact-note">
+                  {listing.priceFromUzs !== null ? t.priceFromServices : t.priceFromNone}
+                </span>
+                <SectionLink
+                  to={{ route: "services" }}
+                  navigate={navigate}
+                  className="btn btn-ghost fact-link"
+                >
+                  {t.toServices}
+                </SectionLink>
               </dd>
             </div>
             {fields.includes("guest_capacity") ? (
@@ -475,29 +628,7 @@ function VenueCard({ listing, t, lang, owner, navigate, onChanged }: VenueCardPr
               <dd>{listing.address[lang] || t.notSet}</dd>
             </div>
           </dl>
-
-          <section className="panel" aria-labelledby="venue-services-title">
-            <h3 className="panel-title" id="venue-services-title">
-              {t.servicesSummary}
-            </h3>
-            {active.length === 0 ? (
-              <p className="note">{t.noActiveServices}</p>
-            ) : (
-              <ul className="packages">
-                {active.map((service) => (
-                  <li key={service.id}>
-                    <span>{service.name[lang] || service.name.ru}</span>
-                    <strong className="package-price">
-                      {priceText(service.priceUzs, service.priceUnit, t, lang)}
-                    </strong>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <SectionLink navigate={navigate} className="btn btn-ghost venue-services-link">
-              {t.toServices}
-            </SectionLink>
-          </section>
+          <p className="note">{fill(t.managerFacts, { code: vendorCode })}</p>
 
           {category && category.attributes.length > 0 ? (
             <section className="panel" aria-labelledby="venue-attrs-title">
@@ -532,8 +663,8 @@ function VenueCard({ listing, t, lang, owner, navigate, onChanged }: VenueCardPr
         </div>
       </div>
 
-      {/* Ключ — площадка: при смене площадки форма и предложения — заново */}
-      <Proposal key={listing.id} listing={listing} t={t} lang={lang} owner={owner} />
+      {/* Ключ — витрина: при смене витрины форма и предложения — заново */}
+      <Proposal key={listing.id} listing={listing} t={t} lang={lang} owner={owner} openSignal={propose} />
     </article>
   );
 }

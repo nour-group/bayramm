@@ -1472,6 +1472,12 @@ body {
   scrollbar-width: thin;
 }
 
+/* Список выше окна прокручивается, а не сжимает свои блоки: иначе вкладки (overflow: hidden)
+   обрезались по высоте, как только над ними появлялась строка «витрина не на сайте» */
+.inbox > .inbox-list > * {
+  flex-shrink: 0;
+}
+
 .inbox-detail {
   min-width: 0;
 }
@@ -1875,8 +1881,10 @@ body {
   font-weight: 700;
 }
 
+/* Кнопка — по своей подписи («Снять с витрины» не ломается на две строки), лишнее место
+   делят поровну; не влезли — следующей строкой */
 .svc-actions .btn {
-  flex: 1 1 140px;
+  flex: 1 1 auto;
 }
 
 .svc-type-fixed {
@@ -1949,11 +1957,186 @@ body {
 .readiness {
   display: flex;
   flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.readiness .lead {
+  color: var(--ink);
+}
+
+/* Чек-лист готовности: пункт — текст с меткой слева и кнопка туда, где он делается.
+   Узко кнопка уходит под текст, шире — справа от него */
+.todo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.todo-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+}
+
+.todo-text {
+  display: flex;
+  flex: 1 1 200px;
+  align-items: flex-start;
+  gap: var(--gap-9);
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.todo-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.todo-mark {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 4px;
+  border: 2px solid var(--coral);
+  border-radius: var(--r-3);
+}
+
+.todo-go {
+  flex: none;
+}
+
+/* Цена «от» — с кнопкой к услугам под пояснением */
+.fact-link {
+  margin-top: 8px;
+}
+
+/* Число рядом с заголовком: «Услуги витрины 3» */
+.count {
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-14);
+  font-weight: 700;
+}
+
+/* Входящие: витрина ещё не на сайте — что дальше, кнопка к её чек-листу */
+.not-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.not-live-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+  overflow-wrap: anywhere;
+}
+
+.not-live-item p {
+  flex: 1 1 220px;
+  margin: 0;
+}
+
+/* Две витрины — обе пилюли на всю ширину, без прокрутки вбок: обе видны сразу */
+.vitrina-pills-two .vitrina-pill {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.vitrina-pills-two .vitrina-name,
+.vitrina-pills-two .vitrina-cat {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Три витрины и больше — список выбора с подписью: о третьей витрине теперь видно сразу */
+.vitrina-select {
+  display: flex;
+  flex-direction: column;
   gap: var(--gap-5);
 }
 
-.venue-services-link {
-  align-self: flex-start;
+.side-vitrina .vitrina-cat:empty::before {
+  content: "\00a0";
+}
+
+/* Заготовка, пока грузятся данные: той же формы, что содержимое, — экран не прыгает */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.sk-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+}
+
+.skeleton-card .sk-block:first-child {
+  min-height: 180px;
+}
+
+.skeleton-month .sk-block {
+  min-height: 300px;
+  border: 0;
+  background: transparent;
+}
+
+.sk-line {
+  display: block;
+  width: 100%;
+  height: 12px;
+  border-radius: var(--r-999);
+  background: var(--lilac);
+}
+
+.sk-line-title {
+  width: 55%;
+  height: 16px;
+}
+
+.sk-line-short {
+  width: 35%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sk-line {
+    animation: sk-pulse 1.4s var(--ease-soft) infinite alternate;
+  }
+}
+
+@keyframes sk-pulse {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0.45;
+  }
 }
 
 /* ── календарь: части дня, выбранный день, сколько заказов одновременно ───── */
@@ -2042,8 +2225,33 @@ body {
   font-size: var(--fs-13-5);
 }
 
-.day-part .btn {
-  flex: 0 0 auto;
+/* Части выбранного дня прокручиваются на экран (телефон): не под шапку и не под нижнюю панель */
+.day-panel-slot {
+  scroll-margin-top: calc(var(--pad-t) + 84px);
+  scroll-margin-bottom: calc(var(--pad-b) + 96px);
+}
+
+/* Строка части дня — переключатель «занято» во всю строку: подпись слева, дорожка справа */
+.day-part-switch {
+  flex: 1 1 auto;
+  flex-direction: row-reverse;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.day-part-switch .ui-switch-label {
+  flex: 1 1 auto;
+}
+
+/* Занято — цветом занятости календаря (berry), а не «включено» (teal) */
+.day-part .ui-native:checked + .ui-switch-track {
+  background: var(--berry);
+}
+
+.day-part-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
 }
 
 .capacity {

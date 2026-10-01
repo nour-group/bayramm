@@ -4,8 +4,12 @@
    карточке заявки, где его чтение записывается в журнал.
 
    Витрин несколько — над вкладками выбор: все витрины или одна (запрос с listingId,
-   счётчики вкладок — тоже по ней). У каждой заявки — категория, часть дня (модель parts) и
-   коротко поля заявки категории: часы, машины, кг.
+   счётчики вкладок — тоже по ней); на компьютере этот выбор — в боковой панели. У каждой
+   заявки — категория, часть дня (модель parts) и коротко поля заявки категории: часы,
+   машины, кг.
+
+   Витрина ещё не на сайте (новый партнёр, первый вход) — под списком строка «что дальше» со
+   ссылкой на витрину, где чек-лист готовности: заявок не будет, пока витрину не опубликуют.
 
    На компьютере список стоит рядом с карточкой (Inbox.tsx): открытая заявка отмечена в
    списке (aria-current), а список перечитывается тихо, когда карточка что-то изменила. */
@@ -24,6 +28,7 @@ import { categoryName, partName } from "./category";
 import { formatBudget, formatDate, formatDuration, formatGuests, slaView, tashkentTime } from "./format";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
+import { ListingPicker } from "./ListingPicker";
 import { type Navigate, pathOf } from "./router";
 import { Empty, Heading, LoadError, Loading, type ScreenProps, StatusChip } from "./ui";
 import { useLoad } from "./useLoad";
@@ -145,6 +150,49 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
   );
 }
 
+/** Что сказать о витрине, которой ещё нет на сайте: по статусу */
+const NOT_LIVE: Readonly<Record<Exclude<VendorListingRef["status"], "active">, TextKey>> = {
+  lead: "notLiveDraft",
+  draft: "notLiveDraft",
+  review: "notLiveReview",
+  suspended: "notLiveSuspended",
+  rejected: "notLiveRejected",
+};
+
+/**
+ * Витрины не на сайте: почему и куда идти. Новый партнёр видит это первым — заявок не будет,
+ * пока витрину не опубликуют
+ */
+function NotLive({
+  listings,
+  t,
+  onOpen,
+}: {
+  listings: readonly VendorListingRef[];
+  t: VendorDict;
+  onOpen: (id: string) => void;
+}) {
+  const pending = listings.filter((listing) => listing.status !== "active");
+  if (pending.length === 0) return null;
+  return (
+    <ul className="not-live">
+      {pending.map((listing) => (
+        <li key={listing.id} className="notice not-live-item">
+          <p>
+            {fill(t[NOT_LIVE[listing.status as Exclude<VendorListingRef["status"], "active">]], {
+              name: listing.name,
+            })}
+          </p>
+          <button type="button" className="btn btn-ghost" onClick={() => onOpen(listing.id)}>
+            {listing.status === "review" ? t.openVitrina : t.whatIsLeft}
+            <span className="sr-only">: {listing.name}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 interface RequestsProps extends Omit<ScreenProps, "headingRef"> {
   /** Фокус после перехода — на заголовок списка; рядом с открытой заявкой — на её заголовок */
   readonly headingRef?: ScreenProps["headingRef"];
@@ -155,6 +203,10 @@ interface RequestsProps extends Omit<ScreenProps, "headingRef"> {
   /** Заявки одной витрины; null — всех */
   readonly filter: string | null;
   readonly onFilter: (listingId: string | null) => void;
+  /** Выбор витрины — в боковой панели (компьютер): над списком его нет */
+  readonly inSidebar?: boolean;
+  /** Открыть витрину (чек-лист готовности): витрина ещё не на сайте */
+  readonly onOpenListing: (listingId: string) => void;
   /** Открытая рядом заявка (компьютер) */
   readonly selectedId?: string;
   /** Растёт, когда карточка рядом что-то изменила: список перечитывается тихо */
@@ -173,6 +225,8 @@ export function Requests({
   listings,
   filter,
   onFilter,
+  inSidebar = false,
+  onOpenListing,
   selectedId,
   version = 0,
   onCounts,
@@ -218,31 +272,17 @@ export function Requests({
         <span>{t.inboxPromise}</span>
       </p>
 
-      {listings.length > 1 ? (
-        // biome-ignore lint/a11y/useSemanticElements: выбор витрины — группа кнопок, не форма
-        <div className="pills vitrina-pills" role="group" aria-label={t.inboxFilter}>
-          <button
-            type="button"
-            className="pill"
-            aria-pressed={filter === null}
-            onClick={() => onFilter(null)}
-          >
-            {t.allListings}
-          </button>
-          {listings.map((listing) => (
-            <button
-              key={listing.id}
-              type="button"
-              className="pill vitrina-pill"
-              aria-pressed={filter === listing.id}
-              onClick={() => onFilter(listing.id)}
-            >
-              <span className="vitrina-name">{listing.name}</span>
-              <span className="vitrina-cat">{categoryName(lang, listing.categoryCode)}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <ListingPicker
+        listings={listings}
+        value={filter}
+        onChange={onFilter}
+        allLabel={t.allListings}
+        label={t.inboxFilter}
+        inSidebar={inSidebar}
+        line={false}
+        t={t}
+        lang={lang}
+      />
 
       {/* biome-ignore lint/a11y/useSemanticElements: переключатель вкладок — группа кнопок, не форма */}
       <div className="pills pills-fill" role="group" aria-label={t.requests}>
@@ -260,8 +300,8 @@ export function Requests({
         ))}
       </div>
 
-      {page.state === "loading" ? <Loading t={t} /> : null}
-      {page.state === "error" ? <LoadError t={t} onRetry={reload} /> : null}
+      {page.state === "loading" ? <Loading t={t} kind="list" /> : null}
+      {page.state === "error" ? <LoadError t={t} onRetry={reload} error={page.error} /> : null}
       {page.state === "ready" && page.data.items.length === 0 ? (
         <Empty icon="requests" title={t[EMPTY[tab][0]]} text={t[EMPTY[tab][1]]} />
       ) : null}
@@ -298,6 +338,9 @@ export function Requests({
           ) : null}
         </>
       ) : null}
+      {/* Под списком: заявки — главное на экране; у нового партнёра список пуст, и строка
+        «что дальше» всё равно на первом экране */}
+      <NotLive listings={listings} t={t} onOpen={onOpenListing} />
       {/* Рядом с карточкой заявки (компьютер) то же сказано в ней */}
       {selectedId === undefined ? <p className="note">{t.consentNote}</p> : null}
     </section>

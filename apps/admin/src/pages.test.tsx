@@ -13,6 +13,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { categoryName } from "./categories";
 import { tashkentToday } from "./pages/Calendar";
 import { tokenStore } from "./session";
 import { t } from "./texts";
@@ -418,13 +419,48 @@ describe("карточка", () => {
       }),
     });
     await mount(`/listings/${LISTING_ID}`);
-    const blockers = [...container.querySelectorAll(".blockers li")].map((li) => li.textContent);
-    expect(blockers).toEqual([t.blockers.stir]);
+    const blockers = [...container.querySelectorAll(".blockers li")].map(
+      (li) => li.querySelector(".blocker-text")?.textContent,
+    );
+    // Проверка вендора — одной строкой со ссылкой на страницу вендора, где её отмечают
+    expect(blockers).toEqual([`${t.checklist}${t.blockers.stir}`]);
+    const toVendor = container.querySelector<HTMLAnchorElement>(".blockers li a");
+    expect(toVendor?.textContent).toBe(t.toChecklist);
+    expect(toVendor?.getAttribute("href")).toBe(`/vendors/${LISTING.vendor.id}`);
     // Предупреждение о лицах — всегда на виду
     expect(text()).toContain(t.noFacesWarning);
     // Модератор решает по фото, но не загружает их
     expect(text()).toContain(t.approve);
     expect(text()).not.toContain(t.addPhotos);
+  });
+
+  it("пункт «чего не хватает» ведёт к блоку, где он заполняется; телефон и категория — по одному разу", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        status: "draft",
+        blockers: { review: ["price", "descriptions"], active: ["price", "descriptions"] },
+      }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 1,
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    const go = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>(".blockers li button")].find((b) =>
+        b.textContent?.includes(label),
+      );
+    await act(async () => go(t.blockers.price ?? "")?.click());
+    expect(document.activeElement?.id).toBe("services-title");
+    await act(async () => go(t.blockers.descriptions ?? "")?.click());
+    expect(document.activeElement?.id).toBe("form-texts-title");
+    // Телефон — один блок формы (показать и сменить), а не два; категория — не полем формы
+    const headings = [...container.querySelectorAll("h2")].map((h) => h.textContent);
+    expect(headings.filter((h) => h === t.listingSections.phone)).toHaveLength(1);
+    expect(container.querySelector(`input[value="${categoryName("hall")}"]`)).toBeNull();
   });
 });
 
