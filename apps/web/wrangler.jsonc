@@ -13,16 +13,22 @@
     "run_worker_first": true
   },
   "services": [{ "binding": "API", "service": "bayramm-api-dev" }],
+  // SEARCH_INDEXING — пускать ли поисковики (on/off). Индексируется только боевой домен и только
+  // с on: до запуска (каталог пуст, тексты согласий не утверждены) — off. Переменные окружениями
+  // не наследуются — значение в каждом
+  "vars": { "SEARCH_INDEXING": "off" },
   "env": {
     "staging": {
       "name": "bayramm-web-staging",
       "routes": [{ "pattern": "staging.bayramm.uz", "custom_domain": true }],
-      "services": [{ "binding": "API", "service": "bayramm-api-staging" }]
+      "services": [{ "binding": "API", "service": "bayramm-api-staging" }],
+      "vars": { "SEARCH_INDEXING": "off" }
     },
     "production": {
       "name": "bayramm-web",
       "routes": [{ "pattern": "bayramm.uz", "custom_domain": true }],
-      "services": [{ "binding": "API", "service": "bayramm-api" }]
+      "services": [{ "binding": "API", "service": "bayramm-api" }],
+      "vars": { "SEARCH_INDEXING": "off" }
     }
   }
 }

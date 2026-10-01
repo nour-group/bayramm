@@ -2,7 +2,7 @@ import { createSiteWorker } from "@bayramm/edge";
 import { mediaImageOrigins } from "@bayramm/media";
 import { matchRoute } from "../src/routes";
 import { taklifnomaRedirect } from "./legacy";
-import { injectMeta, pageMeta, type VenueLookup } from "./meta";
+import { indexingAllowed, injectMeta, pageMeta, type VenueLookup } from "./meta";
 import { lookupVenue, robotsTxt, sitemapXml } from "./seo";
 
 // Vite подставляет значение при сборке: в dist всегда false, строгий CSP
@@ -45,7 +45,7 @@ async function page(request: Request, env: Env, url: URL): Promise<Response> {
   const match = matchRoute(url.pathname);
   const slug = match?.name === "venue" || match?.name === "request" ? match.slug : null;
   const venue: VenueLookup = slug ? await lookupVenue(env.API, url.origin, slug) : null;
-  const meta = pageMeta(url, venue);
+  const meta = pageMeta(url, venue, indexingAllowed(url, env.SEARCH_INDEXING));
   const headers = new Headers(res.headers);
   headers.delete("ETag");
   headers.delete("Content-Length");
@@ -59,7 +59,9 @@ export default {
     const url = new URL(request.url);
     const read = request.method === "GET" || request.method === "HEAD";
     if (read && url.pathname === "/robots.txt")
-      return new Response(robotsTxt(url), { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+      return new Response(robotsTxt(url, indexingAllowed(url, env.SEARCH_INDEXING)), {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
     if (read && url.pathname === "/sitemap.xml") return sitemapXml(env.API, url);
     if (read && isPagePath(url.pathname) && !taklifnomaRedirect(url)) return page(request, env, url);
     return site.fetch(request, env);

@@ -39,8 +39,9 @@ function fakeApi(listings: readonly ListingDetail[] = [LOLA, SECOND], fail = fal
   });
 }
 
-function setup(api = fakeApi()) {
+function setup(api = fakeApi(), indexing: "on" | "off" = "on") {
   const env = {
+    SEARCH_INDEXING: indexing,
     ASSETS: spaAssets({
       "/index.html": { body: INDEX_HTML, type: "text/html" },
       "/og.png": { body: "png", type: "image/png" },
@@ -199,6 +200,16 @@ describe("robots.txt и sitemap.xml", () => {
       expect(prod).toContain(`Disallow: ${path}\n`);
     expect(prod).toContain(`Sitemap: ${PROD}/sitemap.xml`);
     expect(robotsTxt(new URL(`${STAGING}/robots.txt`))).toBe("User-agent: *\nDisallow: /\n");
+  });
+
+  it("SEARCH_INDEXING=off: боевой домен закрыт целиком — robots.txt и noindex на страницах", async () => {
+    const { get, html } = setup(fakeApi(), "off");
+    expect(await (await get(`${PROD}/robots.txt`)).text()).toBe("User-agent: *\nDisallow: /\n");
+    for (const path of ["/", "/catalog", `/venue/${LOLA.slug}`]) {
+      const { res, body } = await html(`${PROD}${path}`);
+      expect(res.status, path).toBe(200);
+      expect(metaContent(body, "name", "robots"), path).toBe("noindex, nofollow");
+    }
   });
 
   it("sitemap.xml: лендинг, каталог, документы и все опубликованные площадки по курсору", async () => {

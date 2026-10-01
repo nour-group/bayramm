@@ -20,9 +20,9 @@ const SITEMAP_PAGE_SIZE = 50;
 /** Закрытые от поисковиков разделы: личное, форма заявки и вход */
 const PRIVATE_PATHS = ["/auth", "/profile", "/requests", "/favorites", "/venue/*/request"] as const;
 
-/** robots.txt: на боевом домене — всё, кроме личного; на остальных (staging) — ничего */
-export function robotsTxt(url: URL): string {
-  if (url.hostname !== PRODUCTION_HOST) return "User-agent: *\nDisallow: /\n";
+/** robots.txt: с индексацией — всё, кроме личного; без неё (staging, боевой до запуска) — ничего */
+export function robotsTxt(url: URL, indexing = false): string {
+  if (!indexing || url.hostname !== PRODUCTION_HOST) return "User-agent: *\nDisallow: /\n";
   return [
     "User-agent: *",
     ...PRIVATE_PATHS.map((path) => `Disallow: ${path}`),
