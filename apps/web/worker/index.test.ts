@@ -32,10 +32,10 @@ describe("воркер клиента", () => {
     expect(env.API.requests.map((r) => r.url)).toEqual([`${ORIGIN}/health?x=1`]);
   });
 
-  it("неизвестный путь — index.html (фолбэк SPA) с заголовками безопасности", async () => {
+  it("неизвестный путь — index.html (фолбэк SPA) со статусом 404 и заголовками безопасности", async () => {
     const { get } = setup();
     const res = await get("/vendor/42");
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
     expect(await res.text()).toContain('<div id="root">');
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");

@@ -2,7 +2,7 @@ import type { Dict } from "@bayramm/shared";
 import type { Page } from "@playwright/test";
 import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
 import { expect, test } from "../support/offline";
-import { BUSY_DAY, horizontalOverflow, open, PATHS, prepare, T, VENUE } from "../support/web";
+import { BUSY_DAY, horizontalOverflow, open, PATHS, prepare, sections, T, VENUE } from "../support/web";
 
 /* Доступность и раскладка каждого главного экрана клиента: axe без серьёзных нарушений,
    кольцо фокуса, зона нажатия, ни одного пикселя горизонтальной прокрутки. */
@@ -17,6 +17,10 @@ const CONTROLS = [
   ".ui-icon-btn",
   ".ui-btn",
   ".tabs a",
+  ".site-nav a",
+  ".top-signin",
+  ".footer-nav a",
+  ".gallery-nav",
   ".lang button",
   ".field-input",
   ".ui-select",
@@ -41,6 +45,16 @@ interface Screen {
 }
 
 const SCREENS: readonly Screen[] = [
+  { name: "лендинг", path: PATHS.home, ready: ".ln-cards .card", guest: true },
+  {
+    name: "лендинг: вопросы раскрыты",
+    path: PATHS.home,
+    ready: ".ln-faq",
+    guest: true,
+    setup: async (page) => {
+      for (const item of await page.locator(".ln-faq summary").all()) await item.click();
+    },
+  },
   { name: "каталог", path: PATHS.catalog, ready: ".card" },
   {
     name: "каталог: выбор даты",
@@ -68,7 +82,7 @@ const SCREENS: readonly Screen[] = [
     ready: ".card",
     setup: async (page, t) => {
       await page.locator(".card .fav-btn").first().click();
-      await page.locator("nav.tabs").getByRole("link", { name: t.svTitle }).click();
+      await sections(page).getByRole("link", { name: t.svTitle }).click();
       await page.locator(".favorites .card").first().waitFor();
     },
   },
@@ -119,6 +133,8 @@ const SCREENS: readonly Screen[] = [
       await page.locator(".docs summary").first().click();
     },
   },
+  { name: "документы", path: PATHS.docs, ready: ".docs .doc", guest: true },
+  { name: "хаб входа", path: "/auth", ready: ".auth-block", guest: true },
   { name: "не найдено", path: PATHS.notFound, ready: ".state-empty h1" },
 ];
 
@@ -142,6 +158,7 @@ test.describe("доступность", () => {
   }
 
   test("узбекский: длинные подписи не распирают экраны", async ({ page }) => {
+    test.slow();
     await prepare(page, { lang: "uz" });
     const width = page.viewportSize()?.width ?? 0;
     for (const screen of SCREENS) {
@@ -152,7 +169,7 @@ test.describe("доступность", () => {
   });
 
   for (const screen of SCREENS.filter((s) =>
-    ["каталог", "площадка", "сохранённое", "форма заявки с ошибками", "профиль"].includes(s.name),
+    ["лендинг", "каталог", "площадка", "сохранённое", "форма заявки с ошибками", "профиль"].includes(s.name),
   )) {
     test(`${screen.name}: фокус с клавиатуры виден`, async ({ page }) => {
       await prepare(page);

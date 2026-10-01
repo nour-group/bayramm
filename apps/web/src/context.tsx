@@ -57,6 +57,24 @@ export function initialLang(webApp: TelegramWebApp | null): Lang {
   return "uz";
 }
 
+/** Параметр языка в адресе: у языковых версий страниц для поисковиков (?lang=ru, ?lang=uz) */
+export const LANG_PARAM = "lang";
+
+/**
+ * Язык из адреса (?lang=ru) — как выбор в переключателе: в эту вкладку и между визитами.
+ * Параметр из адреса убирается (url меняется на месте); true — адрес изменился
+ */
+export function takeLangParam(url: URL): boolean {
+  const value = url.searchParams.get(LANG_PARAM);
+  if (value === null) return false;
+  if (isLang(value)) {
+    sessionSet(LANG_KEY, value);
+    localSet(LANG_KEY, value);
+  }
+  url.searchParams.delete(LANG_PARAM);
+  return true;
+}
+
 interface LangValue {
   readonly lang: Lang;
   readonly t: Dict;

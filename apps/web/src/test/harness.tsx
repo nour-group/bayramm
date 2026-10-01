@@ -35,7 +35,7 @@ export interface MountOptions {
 let mounted: { root: Root; container: HTMLElement } | null = null;
 
 export async function mount({
-  path = "/",
+  path = "/catalog",
   identity = "demo",
   webApp = null,
   api,

@@ -13,7 +13,16 @@ interface ListingCardProps {
   readonly date: string | null;
   readonly guests: number | null;
   readonly eager?: boolean;
+  /** Уровень заголовка с названием: 2 — в списке экрана, 3 — в разделе лендинга */
+  readonly headingLevel?: 2 | 3;
 }
+
+/**
+ * Ширина фото в сетке карточек (styles.css, .cards): одна колонка на телефоне, две с 640px,
+ * три с 1024px, четыре с 1280px (колонка ~300px). По ней браузер выбирает вариант из srcset
+ */
+export const CARD_PHOTO_SIZES =
+  "(min-width: 1280px) 300px, (min-width: 1024px) 31vw, (min-width: 640px) 50vw, 100vw";
 
 /**
  * Карточка зала в выдаче. Рейтинга и отзывов нет (правило продукта): вместо них — «Новый».
@@ -21,7 +30,7 @@ interface ListingCardProps {
  * Занятый на дату зал не прячется и не бледнеет текстом: отметка «занято» и приглушённое фото.
  * С числом гостей у цены за гостя — примерная сумма на них: по ней и сортирует каталог
  */
-export function ListingCard({ card, date, guests, eager }: ListingCardProps) {
+export function ListingCard({ card, date, guests, eager, headingLevel = 2 }: ListingCardProps) {
   const { t } = useLang();
   const { districtName } = useDictionaries();
   const price = formatPriceFrom(card.priceFromUzs, card.priceUnit, t);
@@ -32,12 +41,13 @@ export function ListingCard({ card, date, guests, eager }: ListingCardProps) {
       ? t.estimateFor(formatMoney(estimatedTotalUzs(card, guests), t), guests)
       : null;
   const href = hrefFor({ name: "venue", slug: card.slug }, { date, guests });
+  const Name = headingLevel === 3 ? "h3" : "h2";
 
   return (
     <article className={busy ? "card busy" : "card"}>
       <Link href={href} className="card-link">
         <div className="card-photo">
-          <Photo photo={card.cover} alt="" sizes="(min-width: 640px) 50vw, 100vw" eager={eager} />
+          <Photo photo={card.cover} alt="" sizes={CARD_PHOTO_SIZES} eager={eager} />
           <span className="card-badges">
             {date && card.busyOnDate !== null ? (
               <span className={busy ? "chip chip-busy" : "chip chip-free"}>
@@ -48,7 +58,7 @@ export function ListingCard({ card, date, guests, eager }: ListingCardProps) {
         </div>
         <div className="card-body">
           <div className="card-top">
-            <h2 className="card-name">{card.name}</h2>
+            <Name className="card-name">{card.name}</Name>
             <NewBadge />
           </div>
           <p className="card-meta">{[district, t.people(card.capMax)].filter(Boolean).join(" · ")}</p>
