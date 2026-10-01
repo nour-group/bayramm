@@ -8,6 +8,8 @@
                        фильтров каталога — одинаковые на сервере и в интерфейсах;
      availability.ts — части дня (модель parts) и перевод времени заявки в часть дня;
      details.ts      — поля заявки как их хранит база и их краткая запись строками;
+     forms.ts        — формы панели и кабинета: поля витрины, ссылки на видео, услуга с
+                       опциями, поля заявки и предложение правки услуги для показа;
      sql.ts          — сид app.categories и app.service_types для миграции.
    Тексты — i18n/categories (ru, uz): ключи подписей проверяет компилятор. */
 
@@ -28,6 +30,39 @@ export {
   detailsSummary,
   type RequestDetails,
 } from "./details";
+export {
+  type AttributeDraft,
+  type AttributeDrafts,
+  attributeDrafts,
+  attributeErrors,
+  attributeLabel,
+  attributePatch,
+  attributesOf,
+  attributeText,
+  choiceLabel,
+  chosenServices,
+  type DetailRow,
+  detailRows,
+  draftValue,
+  emptyListItem,
+  type ListItemDraft,
+  newOptionDraft,
+  newServiceDraft,
+  type OptionDraft,
+  parseAmount,
+  priceUnitLabel,
+  type ServiceChangeField,
+  type ServiceChangeRow,
+  type ServiceDraft,
+  serviceChangeRows,
+  serviceDirty,
+  serviceDraftOf,
+  serviceErrors,
+  serviceInput,
+  serviceTypeLabel,
+  videoLinkErrors,
+  videoLinksValue,
+} from "./forms";
 export { categoriesSeedSql, SEED_BEGIN, SEED_END } from "./sql";
 export * from "./types";
 export {
