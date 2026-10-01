@@ -113,18 +113,84 @@ export function formatMoney(uzs: number, t: Dict): string {
   return `${groupThousands(uzs)}${NBSP}${t.sum}`;
 }
 
-/** Цена «от» с единицей: за гостя — подписью, за мероприятие — без неё */
+/** Единица цены подписью: «за гостя», «за час», «за кг»… */
+export function unitText(unit: PriceUnit, t: Dict): string {
+  switch (unit) {
+    case "per_guest":
+      return t.perGuest;
+    case "per_event":
+      return t.perEvent;
+    case "per_hour":
+      return t.perHour;
+    case "per_item":
+      return t.perItem;
+    case "per_kg":
+      return t.perKg;
+    case "per_set":
+      return t.perSet;
+    case "per_table":
+      return t.perTable;
+  }
+}
+
+/**
+ * Цена «от» с единицей: «за гостя», «за час», «за кг»…; за мероприятие — без подписи
+ * (цена за всё — так и читается)
+ */
 export function formatPriceFrom(
   uzs: number,
   unit: PriceUnit,
   t: Dict,
 ): { amount: string; unit: string | null } {
-  return { amount: t.priceFrom(formatMoney(uzs, t)), unit: unit === "per_guest" ? t.perGuest : null };
+  return { amount: t.priceFrom(formatMoney(uzs, t)), unit: unit === "per_event" ? null : unitText(unit, t) };
 }
 
+/** Цена с единицей, без «от»: за мероприятие — без подписи */
 export function formatPrice(uzs: number, unit: PriceUnit, t: Dict): string {
   const money = formatMoney(uzs, t);
-  return unit === "per_guest" ? `${money} ${t.perGuest}` : money;
+  return unit === "per_event" ? money : `${money} ${unitText(unit, t)}`;
+}
+
+/** Подпись поля количества услуги: «Сколько часов», «Сколько кг»…; у цены за гостя и за
+ * мероприятие количества нет — null */
+export function qtyQuestion(unit: PriceUnit, t: Dict): string | null {
+  switch (unit) {
+    case "per_hour":
+      return t.qtyAskHour;
+    case "per_kg":
+      return t.qtyAskKg;
+    case "per_item":
+      return t.qtyAskItem;
+    case "per_set":
+      return t.qtyAskSet;
+    case "per_table":
+      return t.qtyAskTable;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Количество в единице цены: «3 ч», «5 кг», «50 шт.», «200 гостей»; у цены за мероприятие
+ * количества нет — null
+ */
+export function formatQty(unit: PriceUnit, n: number, t: Dict): string | null {
+  switch (unit) {
+    case "per_event":
+      return null;
+    case "per_guest":
+      return t.guestsShort(n);
+    case "per_hour":
+      return t.durHours(n);
+    case "per_item":
+      return t.qtyItem(n);
+    case "per_kg":
+      return t.qtyKg(n);
+    case "per_set":
+      return t.qtySet(n);
+    case "per_table":
+      return t.qtyTable(n);
+  }
 }
 
 /* ---------- телефоны ---------- */

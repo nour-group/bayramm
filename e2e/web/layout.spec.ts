@@ -69,11 +69,15 @@ test.describe("лендинг в браузере", () => {
     await expectNoOverflow(page, "лендинг 1280");
   });
 
-  test("подбор на лендинге ведёт в каталог с этими датой, гостями и районом", async ({ page }) => {
+  test("подбор на лендинге: залы — в каталог с датой и гостями; другая категория — без гостей", async ({
+    page,
+  }) => {
     await prepare(page);
     await at(page, 1280);
     await open(page, PATHS.home, ".ln-search", { guest: true });
     const form = page.locator("form.ln-search");
+    // Что ищете — залы по умолчанию
+    await expect(form.locator("button[aria-haspopup=listbox]")).toContainText("Площадка / Тойхона");
     await form.locator("button[aria-haspopup=dialog]").click();
     const day = addDays(TODAY, 19);
     await page
@@ -82,22 +86,28 @@ test.describe("лендинг в браузере", () => {
       .first()
       .click();
     await form.getByRole("spinbutton").fill("150");
-    await form.locator("button[aria-haspopup=listbox]").click();
-    await page.getByRole("option", { name: "Чиланзар" }).click();
     await form.getByRole("button", { name: ru.lnSearch }).click();
 
     await expect(page).toHaveURL((url) => url.pathname === PATHS.catalog);
     const params = new URL(page.url()).searchParams;
     expect(params.get("date")).toBe(day);
     expect(params.get("guests")).toBe("150");
-    expect(params.get("district")).toBe("chilonzor");
-    // Каталог применил фильтры: поля заполнены, выдача — только этот район
+    expect(params.get("category")).toBeNull();
+    // Каталог применил фильтры: поле гостей заполнено, отметки на дату у карточек
     const filters = page.locator(".catalog .filters");
     await expect(filters.getByRole("spinbutton")).toHaveValue("150");
-    await expect(filters.locator("button[aria-haspopup=listbox]")).toContainText("Чиланзар");
-    await page.locator(".cards .card").first().waitFor();
-    for (const meta of await page.locator(".cards .card-meta").allInnerTexts())
-      expect(meta).toContain("Чиланзар");
+    await page.locator(".cards .card .chip").first().waitFor();
+
+    // Кортеж: гостей в подборе нет — каталог по ним не отбирает
+    await open(page, PATHS.home, ".ln-search", { guest: true });
+    await form.locator("button[aria-haspopup=listbox]").click();
+    await page.getByRole("option", { name: "Кортеж" }).click();
+    await expect(form.getByRole("spinbutton")).toHaveCount(0);
+    await form.getByRole("button", { name: ru.lnSearch }).click();
+    await expect(page).toHaveURL(
+      (url) => url.pathname === PATHS.catalog && url.search.includes("category=car"),
+    );
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catTitle("Кортеж"));
   });
 
   test("старая ссылка на каталог в корне (/?date=…) ведёт в /catalog; ?lang= — язык страницы", async ({
@@ -149,13 +159,18 @@ test.describe("лендинг в браузере", () => {
 });
 
 test.describe("компьютер (1280)", () => {
-  test("каталог: разделы в шапке, без нижней панели, сетка в четыре колонки", async ({ page }) => {
+  test("каталог: разделы в шапке, без нижней панели, фильтры колонкой слева, сетка в три колонки", async ({
+    page,
+  }) => {
     await prepare(page);
     await at(page, 1280);
     await open(page, PATHS.catalog, ".card");
     await expect(page.locator("nav.site-nav")).toBeVisible();
     await expect(page.locator("nav.tabs")).toBeHidden();
-    expect(await columns(page, ".cards")).toBe(4);
+    // У залов есть фильтры по полям витрины (парковка, кухня, доступность) — колонкой слева
+    await expect(page.locator(".filters-side")).toBeVisible();
+    await expect(page.locator(".filters-open")).toBeHidden();
+    expect(await columns(page, ".cards")).toBe(3);
     // Содержимое — по центру, не шире сетки 1280px
     const main = await page.locator("main").boundingBox();
     expect(main?.width ?? 0).toBeLessThanOrEqual(1280);

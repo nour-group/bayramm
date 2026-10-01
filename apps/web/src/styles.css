@@ -389,6 +389,11 @@ textarea.field-input {
   color: var(--berry);
 }
 
+/* Занята часть дня (кортеж, фото, декор): ещё можно выбрать */
+.chip-partial {
+  color: var(--coral-deep);
+}
+
 .badge-new {
   flex: none;
   padding: 2px 10px;
@@ -593,14 +598,108 @@ textarea.field-input {
 
 /* ---------- каталог ---------- */
 
+/* Общие фильтры: дата; гости и район — где они есть. Сколько полей, столько колонок; у залов
+   (три поля) на телефоне район — строкой во всю ширину */
 .filters {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--gap-9);
 }
 
-.filters .field:last-child {
+.filters .field:nth-child(3):last-child {
   grid-column: 1 / -1;
+}
+
+.date-note {
+  margin-top: 8px;
+}
+
+/* Категории каталога — чипы-ссылки лентой вбок (обе оси явно, ловушка №2); кольцо фокуса —
+   внутри, снаружи его обрезал бы край ленты */
+.cat-switch {
+  margin: 0 calc(-1 * (var(--sa-r) + 16px)) 12px calc(-1 * (var(--sa-l) + 16px));
+}
+
+.cat-switch ul,
+.ln-pick {
+  display: flex;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 2px calc(var(--sa-r) + 16px) 6px calc(var(--sa-l) + 16px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  list-style: none;
+  scrollbar-width: none;
+}
+
+.cat-switch li {
+  flex: none;
+}
+
+.cat-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  background: var(--white);
+  color: var(--plum);
+  font-family: inherit;
+  font-size: var(--fs-14);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cat-chip-ico {
+  flex: none;
+  color: var(--coral);
+}
+
+.cat-switch .cat-chip:focus-visible,
+.ln-pick .cat-chip:focus-visible {
+  outline-offset: -3px;
+}
+
+/* Кнопка «Фильтры» и порядок — рядом, над сеткой */
+.list-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.filters-open {
+  min-height: var(--hit-min);
+  padding: 0 14px;
+  font-size: var(--fs-14);
+}
+
+/* Колонка фильтров — только на компьютере (ниже, @media 1024px); на телефоне — шторка */
+.filters-side {
+  display: none;
+}
+
+.attr-filters {
+  display: grid;
+  gap: var(--gap-12);
+}
+
+.filter-group {
+  display: grid;
+  gap: var(--gap-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.filter-check {
+  font-size: var(--fs-14);
 }
 
 .list-head {
@@ -896,6 +995,182 @@ textarea.field-input {
   text-align: right;
 }
 
+/* Услуги витрины: цена с единицей, минимум и срок, что входит, опции, «в заявку» */
+.svcs {
+  display: grid;
+  gap: var(--gap-9);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.svc {
+  display: grid;
+  gap: var(--gap-5);
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+}
+
+.svc.picked {
+  border-color: var(--plum);
+}
+
+.svc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-7);
+}
+
+.svc-name {
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--fs-15);
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.svc-price {
+  color: var(--plum);
+  font-size: var(--fs-15);
+  white-space: nowrap;
+}
+
+.svc-includes {
+  font-size: var(--fs-13-5);
+}
+
+.svc-options ul {
+  display: grid;
+  gap: var(--gap-3);
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-13-5);
+}
+
+.svc-options li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.svc-pick {
+  justify-self: start;
+  min-height: var(--hit-min);
+  margin-top: 4px;
+  padding: 0 14px;
+  font-size: var(--fs-14);
+}
+
+.features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.features li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  background: var(--white);
+  font-size: var(--fs-13-5);
+}
+
+.features svg {
+  flex: none;
+  color: var(--teal);
+}
+
+.attr-list ul,
+.parts-upcoming ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: var(--fs-14);
+}
+
+.videos {
+  display: grid;
+  gap: var(--gap-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.video-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.video-link svg {
+  flex: none;
+  color: var(--coral);
+}
+
+.lead-note {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-9);
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.lead-note svg {
+  flex: none;
+  color: var(--coral);
+}
+
+.parts {
+  display: grid;
+  gap: var(--gap-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.part {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--gap-9);
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-11);
+  background: var(--white);
+}
+
+.part-state {
+  color: var(--teal);
+}
+
+.part.busy .part-state {
+  color: var(--berry);
+}
+
+.bar-chosen {
+  color: var(--teal);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+}
+
 .facts {
   display: grid;
   gap: var(--gap-7);
@@ -1095,6 +1370,81 @@ textarea.field-input {
   margin-bottom: 6px;
 }
 
+.checks {
+  display: grid;
+  gap: var(--gap-3);
+}
+
+.svc-choices {
+  display: grid;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.svc-choice {
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+}
+
+.svc-choice.on {
+  border-color: var(--plum);
+}
+
+.svc-choice-name {
+  font-weight: 700;
+}
+
+.svc-choice-more {
+  display: grid;
+  gap: var(--gap-9);
+  padding: 4px 0 8px 32px;
+}
+
+.svc-qty {
+  max-width: 240px;
+}
+
+.svc-choice-options {
+  display: grid;
+  gap: var(--gap-3);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Примерная сумма по выбранным услугам — подсказка, а не цена: точную назовёт вендор */
+.estimate {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-14);
+  background: var(--lilac);
+}
+
+.estimate-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--gap-9);
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.estimate-sum b {
+  font-family: var(--font-display);
+  font-size: var(--fs-19);
+  font-weight: 600;
+}
+
+.estimate .small {
+  margin-top: 4px;
+}
+
 .form-error {
   margin-top: 16px;
   padding: 12px;
@@ -1219,6 +1569,12 @@ textarea.field-input {
 .status-closed {
   background: var(--paper);
   color: var(--muted);
+}
+
+.req-details {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  font-size: var(--fs-13-5);
 }
 
 .req-sla {
@@ -1474,8 +1830,10 @@ textarea.field-input {
   background: var(--white);
 }
 
-.ln-search .field:nth-child(3),
-.ln-search-go {
+/* Что ищете и кнопка — во всю ширину; дата и гости — рядом (без гостей — дата во всю ширину) */
+.ln-search-what,
+.ln-search-go,
+.ln-search:not(.with-guests) .field:nth-child(2) {
   grid-column: 1 / -1;
 }
 
@@ -1500,6 +1858,62 @@ textarea.field-input {
 
 .ln-hero-art.girih {
   background-size: 84px 84px;
+}
+
+/* Категории: значок и название; пустая — с пометкой «скоро» */
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-9);
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cat-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-7);
+  height: 100%;
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-18);
+  background: var(--white);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.cat-tile-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-14);
+  background: var(--lilac);
+  color: var(--plum);
+}
+
+.cat-tile-name {
+  color: var(--plum);
+  font-size: var(--fs-15);
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.cat-soon {
+  padding: 2px 8px;
+  border-radius: var(--r-999);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: var(--fs-11);
+  font-weight: 700;
+}
+
+.ln-pick {
+  margin: 0 calc(-1 * (var(--sa-r) + 16px)) 12px calc(-1 * (var(--sa-l) + 16px));
 }
 
 .ln-hero-badge {
@@ -1545,6 +1959,10 @@ textarea.field-input {
 .ln-head-note {
   max-width: 560px;
   margin-top: 4px;
+}
+
+.ln-cats .ln-head {
+  margin-bottom: 0;
 }
 
 /* Место под карточку, пока залы грузятся: фото 3:2 и подпись той же высоты, что у
@@ -1836,8 +2254,13 @@ textarea.field-input {
   }
 
   .card-link:hover .card-name,
+  .cat-tile:hover .cat-tile-name,
   .req-name a:hover {
     color: var(--coral-deep);
+  }
+
+  .cat-chip:hover {
+    background: var(--lilac);
   }
 
   .lang button:hover,
@@ -1895,6 +2318,22 @@ textarea.field-input {
 
 .fav-btn[aria-pressed="true"] {
   color: var(--coral);
+}
+
+.cat-chip[aria-current="page"],
+.cat-chip[aria-pressed="true"] {
+  border-color: var(--plum);
+  background: var(--plum);
+  color: var(--sel-ink);
+}
+
+.cat-chip[aria-current="page"] .cat-chip-ico {
+  color: var(--peach);
+}
+
+.svc-pick[aria-pressed="true"] {
+  border-color: var(--plum);
+  background: var(--lilac);
 }
 
 /* Фокус с клавиатуры: кольцо --coral, 3:1 на всех фонах */
@@ -2077,9 +2516,33 @@ textarea.field-input {
     align-items: end;
   }
 
-  .ln-search .field:nth-child(3),
-  .ln-search-go {
+  .ln-search-what,
+  .ln-search-go,
+  .ln-search:not(.with-guests) .field:nth-child(2) {
     grid-column: auto;
+  }
+
+  .ln-search:not(.with-guests) .ln-search-go {
+    grid-column: 1 / -1;
+  }
+
+  .cat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* Чипы категорий — в несколько строк, без ленты */
+  .cat-switch,
+  .ln-pick {
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .cat-switch ul,
+  .ln-pick {
+    flex-wrap: wrap;
+    padding: 2px 0 6px;
+    overflow-x: visible;
+    overflow-y: visible;
   }
 
   .ln-steps {
@@ -2170,8 +2633,50 @@ textarea.field-input {
     background: var(--white);
   }
 
+  /* Одна дата (категории без гостей и района) — поле обычной ширины без панели вокруг */
+  .catalog .filters.solo {
+    grid-template-columns: minmax(0, 320px);
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
   .cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* Каталог с фильтрами по полям витрины: колонка фильтров слева, прилипает под шапкой;
+     кнопка «Фильтры» (шторка) не нужна */
+  .catalog-body.has-side {
+    display: grid;
+    grid-template-columns: 248px 24px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .has-side .filters-side {
+    display: block;
+    position: sticky;
+    top: calc(var(--pad-t) + 80px);
+    max-height: calc(100vh - 120px);
+    margin-top: 20px;
+    padding: 16px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 1px solid var(--rule);
+    border-radius: var(--r-18);
+    background: var(--white);
+  }
+
+  .has-side .catalog-list {
+    grid-column: 3;
+  }
+
+  .has-side .filters-open {
+    display: none;
+  }
+
+  .has-side .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .more {
@@ -2198,7 +2703,7 @@ textarea.field-input {
     position: sticky;
     top: calc(var(--pad-t) + 80px);
     grid-column: 3;
-    grid-row: 1 / span 8;
+    grid-row: 1 / span 10;
   }
 
   /* Номер — в карточке справа: второй раз в описании он не нужен */
@@ -2276,9 +2781,10 @@ textarea.field-input {
   }
 
   .ln-hero-art {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(2, 96px);
+    gap: var(--gap-12);
+    place-content: center;
     grid-column: 2;
     grid-row: 1;
     min-height: 280px;
@@ -2299,8 +2805,16 @@ textarea.field-input {
     grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   }
 
+  .ln-search:not(.with-guests) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  }
+
   .ln-search-go {
     padding: 0 24px;
+  }
+
+  .ln-search:not(.with-guests) .ln-search-go {
+    grid-column: auto;
   }
 
   .ln-cards {
@@ -2315,5 +2829,9 @@ textarea.field-input {
 @media (min-width: 1280px) {
   .cards {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .has-side .cards {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }

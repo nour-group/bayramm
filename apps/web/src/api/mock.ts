@@ -1,5 +1,6 @@
 import { normalizeUzPhone } from "@bayramm/shared";
 import {
+  type CatalogCategories,
   type CatalogPage,
   type CatalogQuery,
   type ClientConsentPurpose,
@@ -7,27 +8,48 @@ import {
   type ConsentText,
   type CreateRequest,
   comparablePriceUzs,
+  type DateLoad,
+  type DayPart,
   type Dictionaries,
   FAVORITES_MAX,
   type ListingCard,
   type ListingDetail,
   type Locale,
+  type RequestDetails,
   type RequestStatus,
 } from "@bayramm/shared/api";
 import type { AccountIdentity, AppCode, VendorMembership } from "@bayramm/shared/api/account";
 import type { ClientDataExport, ClientMe, Favorites, Me } from "@bayramm/shared/api/me";
+import {
+  type AttributeFilter,
+  CATEGORIES,
+  type ChosenServiceSnapshot,
+  categoryConfig,
+  categoryTexts,
+  dayPartOf,
+  guestsAllowed,
+  hasDayParts,
+  parseAttributeFilters,
+  validateRequestDetails,
+} from "@bayramm/shared/categories";
 import { addDays, tashkentToday } from "../format";
+import { demoUuid, demoVitrinas } from "./demo-vitrinas";
 import { ApiError } from "./errors";
 import type { ClientApi, PhoneProof } from "./types";
 
 /* Демо-реализация API в памяти: для тестов и для `pnpm dev:web` без сервера.
-   Ведёт себя по контракту @bayramm/shared/api: занятые на дату — в конце выдачи при
-   любом порядке, гости отсекают по вместимости, курсор, 404, 409 на повторную заявку.
+   Ведёт себя по контракту @bayramm/shared/api: выдача по категории (без неё — залы),
+   фильтры по полям витрины (a.*), загрузка на дату (свободно, занята часть дня, занято),
+   занятые — в конце выдачи при любом порядке, гости отсекают по вместимости, курсор, 404,
+   заявка проверяется по форме категории (поля, услуги, срок заказа), 409 на повторную.
    Площадки вымышленные, телефоны в несуществующем коде +998 00 — живых людей тут нет.
    В сборку для staging и production не попадает (api/index.ts, проверка в тесте). */
 
 export const DEMO_DICTIONARIES: Dictionaries = {
-  categories: [{ code: "hall", name: { ru: "Площадка / Тойхона", uz: "Maydon / Toʻyxona" } }],
+  categories: CATEGORIES.filter((c) => c.enabled).map((c) => ({
+    code: c.code,
+    name: categoryTexts(c.label),
+  })),
   districts: [
     { code: "yunusobod", name: { ru: "Юнусабад", uz: "Yunusobod" } },
     { code: "mirzo_ulugbek", name: { ru: "Мирзо-Улугбек", uz: "Mirzo Ulugʻbek" } },
@@ -83,9 +105,9 @@ const SLUGS = NAMES.map((name) => `${name.toLowerCase().replace(/[^a-z]/g, "")}-
 const CAPACITY = [120, 200, 250, 300, 350, 400, 500, 600, 800, 1000];
 
 /** UUID из числа: у каждого демо-листинга и фото свой, формат как у Postgres */
-const uuid = (kind: number, n: number) => `00000000-0000-4000-8${kind}00-${n.toString(16).padStart(12, "0")}`;
+const uuid = demoUuid;
 
-/** Демо-площадки; занятые даты считаются от today, чтобы календарь всегда был живой */
+/** Демо-залы; занятые даты считаются от today, чтобы календарь всегда был живой */
 export function demoListings(today: string): ListingDetail[] {
   return NAMES.map((name, i) => {
     const id = uuid(1, i + 1);
@@ -164,6 +186,11 @@ export function demoListings(today: string): ListingDetail[] {
   });
 }
 
+/** Все демо-витрины: залы и остальные категории (api/demo-vitrinas.ts) */
+export function allDemoListings(today: string): ListingDetail[] {
+  return [...demoListings(today), ...demoVitrinas(today)];
+}
+
 const PURPOSES: readonly ClientConsentPurpose[] = ["client_service", "request_transfer", "bot_notifications"];
 
 const CONSENT_BODY: Readonly<Record<Locale, Record<ClientConsentPurpose, string>>> = {
@@ -196,40 +223,100 @@ export function demoConsentTexts(locale: Locale): ConsentText[] {
 const ACTIVE: readonly RequestStatus[] = ["new", "viewed", "contacted"];
 const HOUR = 60 * 60 * 1000;
 
-/** Заявки для показа статусов в `pnpm dev:web`: ждём, просрочено, ответили, отказ */
+/** Снимок выбранной услуги витрины — как его сохраняет сервер в заявке */
+function snapshot(
+  listing: ListingDetail,
+  serviceId: string,
+  qty: number | null,
+  optionIds: readonly string[],
+): ChosenServiceSnapshot | null {
+  const service = listing.services.find((s) => s.id === serviceId);
+  if (!service) return null;
+  return {
+    id: service.id,
+    type: service.type,
+    name: service.name,
+    priceUzs: service.priceUzs,
+    priceUnit: service.priceUnit,
+    qty,
+    options: service.options
+      .filter((o) => optionIds.includes(o.id))
+      .map((o) => ({ id: o.id, name: o.name, priceUzs: o.priceUzs, priceUnit: o.priceUnit })),
+  };
+}
+
+/**
+ * Заявки для показа статусов в `pnpm dev:web`: ждём, просрочено, ответили, отказ — у первых
+ * залов; если среди витрин есть кортеж и торт — ещё по заявке с полями категории
+ */
 export function demoRequests(listings: readonly ListingDetail[], now: number): ClientRequest[] {
   const today = tashkentToday(now);
   const at = (hoursAgo: number) => new Date(now - hoursAgo * HOUR).toISOString();
+  const halls = listings.filter((l) => l.categoryCode === "hall");
   const seeds: [number, RequestStatus, number, number | null, ClientRequest["declineReason"]][] = [
     [0, "new", 3, null, null],
     [1, "viewed", 14, null, null],
     [2, "contacted", 26, 2.25, null],
     [3, "declined", 50, 5, "busy"],
   ];
-  return seeds.flatMap(([index, status, hoursAgo, answeredAfter, declineReason], n) => {
-    const listing = listings[index];
-    if (!listing) return [];
+  const base = (
+    listing: ListingDetail,
+    n: number,
+    status: RequestStatus,
+    hoursAgo: number,
+    answeredAfter: number | null,
+  ) => {
     const createdAt = now - hoursAgo * HOUR;
+    return {
+      id: uuid(3, n + 1),
+      publicNo: 1040 + n,
+      status,
+      declineReason: null,
+      eventDate: addDays(today, 30 + n * 9),
+      occasionCode: "toy",
+      createdAt: at(hoursAgo),
+      slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),
+      firstResponseAt:
+        answeredAfter === null ? null : new Date(createdAt + answeredAfter * HOUR).toISOString(),
+      slaBreached: answeredAfter === null && hoursAgo > 12,
+      listing: pickListing(listing),
+    };
+  };
+  const out: ClientRequest[] = seeds.flatMap(([index, status, hoursAgo, answeredAfter, declineReason], n) => {
+    const listing = halls[index];
+    if (!listing) return [];
     return [
       {
-        id: uuid(3, n + 1),
-        publicNo: 1040 + n,
-        status,
+        ...base(listing, n, status, hoursAgo, answeredAfter),
         declineReason,
-        eventDate: addDays(today, 30 + n * 9),
         guests: Math.min(200, listing.capMax ?? 200),
         dayPart: null,
         details: {},
-        occasionCode: "toy",
-        createdAt: at(hoursAgo),
-        slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),
-        firstResponseAt:
-          answeredAfter === null ? null : new Date(createdAt + answeredAfter * HOUR).toISOString(),
-        slaBreached: answeredAfter === null && hoursAgo > 12,
-        listing: pickListing(listing),
       },
     ];
   });
+  const car = listings.find((l) => l.categoryCode === "car");
+  const carService = car?.services[0];
+  const carChoice =
+    car && carService ? snapshot(car, carService.id, 5, [carService.options[0]?.id ?? ""]) : null;
+  if (car && carChoice)
+    out.push({
+      ...base(car, 4, "new", 1, null),
+      guests: null,
+      dayPart: "evening",
+      details: { start_time: "17:30", hours: 5, cars_count: 2, car_class: "premium", services: [carChoice] },
+    });
+  const cake = listings.find((l) => l.categoryCode === "cake");
+  const cakeService = cake?.services[0];
+  const cakeChoice = cake && cakeService ? snapshot(cake, cakeService.id, 6, []) : null;
+  if (cake && cakeChoice)
+    out.push({
+      ...base(cake, 5, "contacted", 30, 3),
+      guests: 150,
+      dayPart: null,
+      details: { weight_kg: 6, tiers: 3, filling: "berry", fulfillment: "delivery", services: [cakeChoice] },
+    });
+  return out;
 }
 
 function pickListing(listing: ListingDetail): ClientRequest["listing"] {
@@ -243,7 +330,20 @@ function pickListing(listing: ListingDetail): ClientRequest["listing"] {
   };
 }
 
+/**
+ * Загрузка витрины на дату — как app.listing_day_load: занята целиком (вендор отметил день или
+ * заняты все части дня) — busy, занята часть дня — partial; без календаря (срок заказа) — free
+ */
+export function demoDayLoad(listing: ListingDetail, date: string): DateLoad {
+  if (categoryConfig(listing.categoryCode)?.availability === "lead") return "free";
+  if (listing.busyDates.includes(date)) return "busy";
+  const parts = listing.busyParts.find((p) => p.date === date)?.parts ?? [];
+  if (parts.length >= 3) return "busy";
+  return parts.length > 0 ? "partial" : "free";
+}
+
 function toCard(listing: ListingDetail, date: string | undefined): ListingCard {
+  const load = date ? demoDayLoad(listing, date) : null;
   return {
     id: listing.id,
     slug: listing.slug,
@@ -256,8 +356,101 @@ function toCard(listing: ListingDetail, date: string | undefined): ListingCard {
     capMax: listing.capMax,
     cover: listing.cover,
     photoCount: listing.photoCount,
-    busyOnDate: date ? listing.busyDates.includes(date) : null,
-    dateLoad: date ? (listing.busyDates.includes(date) ? "busy" : "free") : null,
+    busyOnDate: load === null ? null : load === "busy",
+    dateLoad: load,
+  };
+}
+
+/** Фильтр по полю витрины — как SQL каталога (apps/api/src/catalog/service.ts, attributeFilter) */
+export function matchesAttributeFilter(
+  attributes: ListingDetail["attributes"],
+  filter: AttributeFilter,
+): boolean {
+  const [key = "", sub] = filter.path;
+  const raw: unknown = attributes[key];
+  // Значения поля: у списка (автопарк) — поле каждой записи, «есть запись, где…»
+  const values: unknown[] =
+    sub === undefined
+      ? [raw]
+      : Array.isArray(raw)
+        ? raw.map((item: unknown) =>
+            typeof item === "object" && item !== null ? (item as Record<string, unknown>)[sub] : undefined,
+          )
+        : [];
+  const test = (value: unknown): boolean => {
+    switch (filter.kind) {
+      case "eq":
+        return value === true;
+      case "any":
+        return Array.isArray(value)
+          ? filter.values.some((v) => value.includes(v))
+          : filter.values.includes(value as string);
+      case "all":
+        return Array.isArray(value) ? filter.values.every((v) => value.includes(v)) : false;
+      case "min":
+        return typeof value === "number" && value >= filter.value;
+      case "max":
+        return typeof value === "number" && value <= filter.value;
+    }
+  };
+  // Список и «все из»: каждое значение — в какой-нибудь записи (как and из path у сервера)
+  if (sub !== undefined && filter.kind === "all") return filter.values.every((v) => values.includes(v));
+  return values.some(test);
+}
+
+const invalid = (details: readonly string[]) =>
+  new ApiError(400, "invalid_request", undefined, undefined, [...new Set(details)]);
+
+/**
+ * Поля заявки по форме категории витрины — как apps/api/src/requests/details.ts: гости по
+ * правилу формы и вместимости, поля категории, услуги только этой витрины, срок заказа,
+ * часть дня из времени начала
+ */
+function checkDetails(
+  listing: ListingDetail,
+  body: CreateRequest,
+  today: string,
+): { details: RequestDetails; dayPart: DayPart | null } {
+  const category = categoryConfig(listing.categoryCode);
+  if (!category) throw invalid(["listingId"]);
+  const guests = body.guests ?? null;
+  const bad: string[] = [];
+  if (!guestsAllowed(category, guests)) bad.push("guests");
+  const parsed = validateRequestDetails(category, body.details);
+  if (!parsed.ok) bad.push(...parsed.errors);
+  if (bad.length > 0 || !parsed.ok) throw invalid(bad);
+  if (guests !== null && listing.capMax !== null && guests > listing.capMax)
+    throw new ApiError(422, "guests_over_capacity");
+  const { values, services: choices } = parsed.value;
+  const lead = listing.attributes.lead_days;
+  let leadDays = typeof lead === "number" ? lead : 0;
+  const snapshots: ChosenServiceSnapshot[] = [];
+  choices.forEach((choice, index) => {
+    const at = `details.services.${index}`;
+    const service = listing.services.find((s) => s.id === choice.id);
+    if (!service) {
+      bad.push(`${at}.id`);
+      return;
+    }
+    if (choice.qty !== null && service.minQty !== null && choice.qty < service.minQty) bad.push(`${at}.qty`);
+    if (!choice.options.every((id) => service.options.some((o) => o.id === id))) {
+      bad.push(`${at}.options`);
+      return;
+    }
+    leadDays = Math.max(leadDays, service.leadDays ?? 0);
+    const shot = snapshot(listing, choice.id, choice.qty, choice.options);
+    if (shot) snapshots.push(shot);
+  });
+  if (bad.length > 0) throw invalid(bad);
+  if (leadDays > 0 && body.eventDate < addDays(today, leadDays))
+    throw new ApiError(422, "lead_time_too_short", undefined, undefined, ["eventDate"]);
+  const details: Record<string, RequestDetails[string]> = { ...values };
+  const servicesField = category.requestForm.fields.find((f) => f.type === "services");
+  if (servicesField && snapshots.length > 0) details[servicesField.key] = snapshots;
+  const start = values.start_time;
+  return {
+    details,
+    dayPart: hasDayParts(category) && typeof start === "string" ? dayPartOf(category, start) : null,
   };
 }
 
@@ -340,7 +533,9 @@ const DEMO_ME: ClientMe = {
 export function createMockApi(options: MockOptions = {}): MockApi {
   const now = options.now ?? Date.now;
   const hidden = new Set(options.hidden ?? []);
-  const listings = (options.listings ?? demoListings(tashkentToday(now()))).filter((l) => !hidden.has(l.id));
+  const listings = (options.listings ?? allDemoListings(tashkentToday(now()))).filter(
+    (l) => !hidden.has(l.id),
+  );
   const requests: ClientRequest[] = [...(options.requests ?? [])];
   const created: CreateRequest[] = [];
   const latency = options.latencyMs ?? 0;
@@ -422,12 +617,42 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     favoriteIds: () => favoriteIds,
     dictionaries: (signal) => respond("dictionaries", signal, () => DEMO_DICTIONARIES),
 
+    catalogCategories: (signal) =>
+      respond(
+        "catalogCategories",
+        signal,
+        (): CatalogCategories => ({
+          items: CATEGORIES.filter((c) => c.enabled)
+            .sort((a, b) => a.sort - b.sort)
+            .map((c) => ({
+              code: c.code,
+              name: categoryTexts(c.label),
+              listings: listings.filter((l) => l.categoryCode === c.code).length,
+            })),
+        }),
+      ),
+
     catalog: (query: CatalogQuery, signal) =>
       respond("catalog", signal, (): CatalogPage => {
+        // Без категории — залы, как у сервера; фильтры по полям витрины — по её описанию
+        const category = query.category ?? "hall";
+        const config = categoryConfig(category);
+        const filterParams = Object.fromEntries(
+          Object.entries(query.filters ?? {}).map(([name, value]) => [name, [value]]),
+        );
+        let filters: AttributeFilter[] = [];
+        if (config) {
+          const parsed = parseAttributeFilters(config, filterParams);
+          if (!parsed.ok) throw invalid(parsed.errors);
+          filters = parsed.value;
+        } else if (Object.keys(filterParams).length > 0) {
+          throw invalid(Object.keys(filterParams));
+        }
         const limit = Math.min(50, Math.max(1, query.limit ?? 20));
         const offset = Number(query.cursor ?? 0) || 0;
         const rows = listings
-          .filter((l) => !query.category || l.categoryCode === query.category)
+          .filter((l) => l.categoryCode === category)
+          .filter((l) => filters.every((f) => matchesAttributeFilter(l.attributes, f)))
           .filter((l) => !query.district || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax === null || l.capMax >= query.guests)
           .map((l) => toCard(l, query.date));
@@ -505,6 +730,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const listing = listings.find((l) => l.id === body.listingId);
         if (!listing) throw new ApiError(404, "not_found");
         if (!body.requestTransferConsentId) throw new ApiError(422, "validation_failed");
+        const { details, dayPart } = checkDetails(listing, body, tashkentToday(now()));
         const duplicate = requests.find(
           (r) =>
             r.listing.id === body.listingId && r.eventDate === body.eventDate && ACTIVE.includes(r.status),
@@ -519,8 +745,8 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           declineReason: null,
           eventDate: body.eventDate,
           guests: body.guests ?? null,
-          dayPart: null,
-          details: {},
+          dayPart,
+          details,
           occasionCode: body.occasionCode,
           createdAt: new Date(createdAt).toISOString(),
           slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),

@@ -14,6 +14,7 @@ import { authHref, browser } from "./hub";
 import { Icon, type IconName } from "./icons";
 import { chromeOf, sectionsOf, signInGate } from "./nav";
 import {
+  canonicalHref,
   hrefFor,
   isAuth,
   isInner,
@@ -207,16 +208,19 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
     return () => observer.disconnect();
   }, [screenKey]);
 
-  // Адрес страницы для поисковиков — без фильтров и прочих параметров. Первую загрузку
-  // размечает воркер (с ?lang= у языковых версий), здесь — только переходы внутри приложения
+  // Адрес страницы для поисковиков — без фильтров и прочих параметров (у каталога — с
+  // категорией). Первую загрузку размечает воркер (с ?lang= у языковых версий), здесь —
+  // только переходы внутри приложения
   const path = route ? hrefFor(route) : null;
-  const firstPath = useRef(path);
+  const canonicalPath = route ? canonicalHref(route, query) : null;
+  const firstPath = useRef(canonicalPath);
   useEffect(() => {
-    if (path === firstPath.current) return;
+    if (canonicalPath === firstPath.current) return;
     firstPath.current = null;
     const canonical = document.querySelector('link[rel="canonical"]');
-    if (canonical && path) canonical.setAttribute("href", new URL(path, window.location.origin).href);
-  }, [path]);
+    if (canonical && canonicalPath)
+      canonical.setAttribute("href", new URL(canonicalPath, window.location.origin).href);
+  }, [canonicalPath]);
 
   // Вход в шапке и в меню сайта: гостю — в хаб и назад на этот же экран
   const search = query.toString();

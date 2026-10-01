@@ -22,7 +22,11 @@ test.describe("избранное гостя", () => {
     await expect(first).toHaveAttribute("aria-pressed", "false");
     await first.click();
     await expect(first).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator(".ui-toasts")).toContainText(ru.saved);
+    // Гостю — где искать список на сайте (вкладок у гостя нет)
+    await expect(page.locator(".ui-toasts")).toContainText(ru.savedGuest);
+    // «Сохранённое» и правда там: в шапке на компьютере, в меню на телефоне
+    if (isDesktop(page)) await expect(sections(page).getByRole("link", { name: ru.svTitle })).toBeVisible();
+    else await expect(page.locator(".top .top-menu")).toBeVisible();
 
     await open(page, `${PATHS.venue(SECOND.slug)}?guest`, ".venue-head h1");
     await page.locator(heart(SECOND.name)).click();

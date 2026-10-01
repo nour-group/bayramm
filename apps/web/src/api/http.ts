@@ -1,4 +1,5 @@
 import {
+  type CatalogCategories,
   type CatalogPage,
   type CatalogQuery,
   CLIENT_SOURCE_HEADER,
@@ -138,8 +139,11 @@ export function createHttpApi({
   return {
     mode: "live",
     dictionaries: (signal) => get<Dictionaries>("/dictionaries", signal),
+    catalogCategories: (signal) => get<CatalogCategories>("/catalog/categories", signal),
     catalog: (query: CatalogQuery, signal) =>
       get<CatalogPage>("/catalog/listings", signal, {
+        // Фильтры по полям витрины — как есть (a.<поле>=…); имена и значения проверил экран
+        ...query.filters,
         category: query.category,
         district: query.district,
         date: query.date,

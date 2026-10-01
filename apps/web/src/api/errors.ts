@@ -10,14 +10,23 @@ export class ApiError extends Error {
   readonly existingId: string | undefined;
   /** 429: через сколько секунд можно снова (заголовок Retry-After) */
   readonly retryAfter: number | undefined;
+  /** 400 invalid_request, 422: имена неверных полей (details.hours, eventDate…) */
+  readonly details: readonly string[];
 
-  constructor(status: number, code: string, existingId?: string, retryAfter?: number) {
+  constructor(
+    status: number,
+    code: string,
+    existingId?: string,
+    retryAfter?: number,
+    details: readonly string[] = [],
+  ) {
     super(`API ${status} ${code}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.existingId = existingId;
     this.retryAfter = retryAfter;
+    this.details = details;
   }
 }
 
@@ -48,10 +57,12 @@ export async function errorFromResponse(res: Response): Promise<ApiError> {
   // existingId по контракту — рядом с error; на всякий случай смотрим и внутрь
   const existingId = field(body, "existingId") ?? field(error, "existingId");
   const retry = Number(res.headers.get("retry-after"));
+  const details = field(error, "details");
   return new ApiError(
     res.status,
     typeof code === "string" && code.length > 0 ? code : `http_${res.status}`,
     typeof existingId === "string" ? existingId : undefined,
     Number.isFinite(retry) && retry > 0 ? retry : undefined,
+    Array.isArray(details) ? details.filter((d): d is string => typeof d === "string").slice(0, 50) : [],
   );
 }

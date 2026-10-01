@@ -1,9 +1,12 @@
-import type { ListingDetail } from "@bayramm/shared/api";
+import type { DayPart, ListingDetail, PublicService } from "@bayramm/shared/api";
+import { type CategoryConfig, categoryConfig, hasDayParts } from "@bayramm/shared/categories";
 import { type UIEvent, useMemo, useRef, useState } from "react";
 import { isNotFound } from "../api/errors";
+import { categoryIcon, categoryName, clientCategory, DAY_PART_ORDER, hasCalendar } from "../categories";
 import { Calendar } from "../components/Calendar";
 import { FavoriteButton } from "../components/FavoriteButton";
 import { Link } from "../components/Link";
+import { dayLoadChip } from "../components/ListingCard";
 import { NewBadge } from "../components/NewBadge";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
@@ -15,6 +18,7 @@ import {
   formatPhone,
   formatPrice,
   formatPriceFrom,
+  formatQty,
   isIsoDate,
   tashkentToday,
   telHref,
@@ -24,9 +28,15 @@ import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
 import { useMainButton } from "../telegram";
 import { DATE_HORIZON_DAYS, parseGuests } from "./catalog-feed";
+import { draftServiceIds, loadDraft, toggleDraftService } from "./request-draft";
+import { suggestedQty } from "./request-estimate";
+import { attributeView, dayPartWindow, listingLeadDays, safeVideoLinks } from "./venue-attributes";
 
 /** Ширина главного фото: на компьютере — левая колонка рядом с карточкой связи (styles.css, .venue) */
 const GALLERY_SIZES = "(min-width: 1280px) 830px, (min-width: 1024px) 60vw, (min-width: 768px) 720px, 100vw";
+
+/** Сколько ближайших частично занятых дней перечислить под календарём */
+const PARTIAL_LIST = 6;
 
 function Gallery({ listing }: { listing: ListingDetail }) {
   const { t } = useLang();
@@ -95,15 +105,176 @@ function Gallery({ listing }: { listing: ListingDetail }) {
   );
 }
 
+/** Услуга витрины: цена с единицей, минимум, срок, что входит, опции и «в заявку» */
+function ServiceItem({
+  service,
+  picked,
+  onToggle,
+}: {
+  service: PublicService;
+  picked: boolean;
+  onToggle: () => void;
+}) {
+  const { t, lang } = useLang();
+  const includes = service.includes ? pick({ ru: service.includes.ru, uz: service.includes.uz }, lang) : "";
+  const name = pick(service.name, lang);
+  const min = service.minQty === null ? null : formatQty(service.priceUnit, service.minQty, t);
+  const terms = [min ? t.svcMin(min) : null, service.leadDays ? t.svcLead(service.leadDays) : null].filter(
+    Boolean,
+  );
+  return (
+    <li className={picked ? "svc picked" : "svc"}>
+      <div className="svc-head">
+        <h3 className="svc-name">{name}</h3>
+        <b className="svc-price">{formatPrice(service.priceUzs, service.priceUnit, t)}</b>
+      </div>
+      {terms.length > 0 ? <p className="muted small">{terms.join(" · ")}</p> : null}
+      {includes ? (
+        <p className="svc-includes">
+          <span className="muted">{t.svcIncludes}: </span>
+          {includes}
+        </p>
+      ) : null}
+      {service.options.length > 0 ? (
+        <div className="svc-options">
+          <p className="muted small">{t.svcOptions}</p>
+          <ul>
+            {service.options.map((option) => (
+              <li key={option.id}>
+                <span>+ {pick(option.name, lang)}</span>
+                <span className="muted">{formatPrice(option.priceUzs, option.priceUnit, t)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className={picked ? "btn btn-secondary svc-pick on" : "btn btn-secondary svc-pick"}
+        aria-pressed={picked}
+        aria-label={`${t.svcPick}: ${name}`}
+        onClick={onToggle}
+      >
+        <Icon name={picked ? "check" : "plus"} size={14} />
+        {picked ? t.svcPicked : t.svcPick}
+      </button>
+    </li>
+  );
+}
+
+/** Занятость по модели категории: календарь дня, части дня, слот или срок заказа */
+function Availability({
+  listing,
+  category,
+  filterDate,
+  today,
+}: {
+  listing: ListingDetail;
+  category: CategoryConfig;
+  filterDate: string | null;
+  today: string;
+}) {
+  const { t } = useLang();
+  const busy = useMemo(() => new Set(listing.busyDates), [listing.busyDates]);
+  const partName = (part: DayPart) => t.dayPartName(part);
+  const partial = useMemo(
+    () =>
+      new Map(
+        listing.busyParts
+          .filter((p) => p.parts.length > 0 && !busy.has(p.date))
+          .map((p) => [p.date, p.parts.map((part) => t.dayPartName(part)).join(", ")]),
+      ),
+    [listing.busyParts, busy, t],
+  );
+
+  if (!hasCalendar(category)) {
+    const lead = listingLeadDays(listing);
+    return (
+      <section className="section" aria-labelledby="venue-lead">
+        <h2 className="section-title" id="venue-lead">
+          {t.leadTitle}
+        </h2>
+        <p className="lead-note">
+          <Icon name="clockD" size={20} />
+          <span>{lead ? t.leadNote(lead) : t.leadNoteAny}</span>
+        </p>
+        <p className="note">
+          <Icon name="info" size={14} />
+          <span>{t.leadNoteSvc}</span>
+        </p>
+      </section>
+    );
+  }
+
+  const parts = hasDayParts(category);
+  const onDate = filterDate ? (listing.busyParts.find((p) => p.date === filterDate)?.parts ?? []) : [];
+  const upcoming = [...partial.entries()].filter(([date]) => date >= today).slice(0, PARTIAL_LIST);
+
+  return (
+    <section className="section" aria-labelledby="venue-calendar">
+      <h2 className="section-title" id="venue-calendar">
+        {t.pfCal}
+      </h2>
+      <Calendar
+        label={t.pfCal}
+        min={today}
+        max={addDays(today, DATE_HORIZON_DAYS)}
+        busy={busy}
+        partial={parts ? partial : undefined}
+        selected={filterDate}
+      />
+      {parts && filterDate && !busy.has(filterDate) ? (
+        <div className="parts-day">
+          <h3 className="sub-title">{t.partsOn(formatDayMonth(filterDate, t))}</h3>
+          <ul className="parts">
+            {DAY_PART_ORDER.map((part) => {
+              const taken = onDate.includes(part);
+              return (
+                <li key={part} className={taken ? "part busy" : "part"}>
+                  <span>
+                    {partName(part)} <span className="muted">{dayPartWindow(category, part)}</span>
+                  </span>
+                  <b className="part-state">{taken ? t.legBusy : t.legFree}</b>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
+      {parts && upcoming.length > 0 ? (
+        <div className="parts-upcoming">
+          <h3 className="sub-title">{t.partsUpcoming}</h3>
+          <ul>
+            {upcoming.map(([date, taken]) => (
+              <li key={date}>
+                {formatDayMonth(date, t)}: {t.partsTaken(taken)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <p className="note">
+        <Icon name="info" size={14} />
+        <span>
+          {parts ? `${t.partsNote} ` : ""}
+          {category.availability === "slot" ? `${t.slotNote} ` : ""}
+          {t.pfCalNote}
+        </span>
+      </p>
+    </section>
+  );
+}
+
 function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHref: string }) {
   const { webApp, now } = useServices();
   const { t, lang } = useLang();
   const { districtName } = useDictionaries();
   const { query, navigate } = useNav();
   const today = tashkentToday(now());
+  const category = categoryConfig(listing.categoryCode) ?? clientCategory(listing.categoryCode);
   const date = query.get("date");
   const filterDate = isIsoDate(date) && date >= today ? date : null;
-  const busy = useMemo(() => new Set(listing.busyDates), [listing.busyDates]);
+  const [picked, setPicked] = useState<readonly string[]>(() => draftServiceIds(listing.slug));
   const price = formatPriceFrom(listing.priceFromUzs, listing.priceUnit, t);
   const phone = formatPhone(listing.phone);
   const district = districtName(listing.districtCode);
@@ -115,6 +286,24 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         : t.people(listing.capMax);
   const address = pick(listing.address, lang);
   const description = pick(listing.description, lang);
+  const view = attributeView(category, listing.attributes, lang);
+  const videos = safeVideoLinks(listing.videoLinks);
+  const load = (() => {
+    if (!filterDate || !hasCalendar(category)) return null;
+    if (listing.busyDates.includes(filterDate)) return "busy" as const;
+    const parts = listing.busyParts.find((p) => p.date === filterDate)?.parts ?? [];
+    return parts.length >= 3
+      ? ("busy" as const)
+      : parts.length > 0
+        ? ("partial" as const)
+        : ("free" as const);
+  })();
+  const chip = filterDate && load ? dayLoadChip(load, filterDate, t) : null;
+
+  const toggle = (service: PublicService) =>
+    setPicked(
+      toggleDraftService(listing.slug, service, suggestedQty(service, loadDraft(listing.slug)?.values ?? {})),
+    );
 
   // В Telegram «Оставить заявку» — его главная кнопка внизу; в браузере — своя в панели
   const nativeMain = useMainButton(webApp, {
@@ -136,16 +325,12 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
           <FavoriteButton listing={listing} className="fav-btn fav-inline" />
         </div>
         <p className="venue-meta">
-          <Icon name="pin" size={14} />
-          <span>{[district, capacity].filter(Boolean).join(" · ")}</span>
+          <Icon name={listing.districtCode ? "pin" : categoryIcon(listing.categoryCode)} size={14} />
+          <span>
+            {[categoryName(listing.categoryCode, lang), district, capacity].filter(Boolean).join(" · ")}
+          </span>
         </p>
-        {filterDate ? (
-          <p className={busy.has(filterDate) ? "chip chip-busy" : "chip chip-free"}>
-            {busy.has(filterDate)
-              ? t.dayBusy(formatDayMonth(filterDate, t))
-              : t.dayFree(formatDayMonth(filterDate, t))}
-          </p>
-        ) : null}
+        {chip ? <p className={chip.tone}>{chip.text}</p> : null}
       </div>
 
       {/* Телефон виден сразу, до заявки — правило продукта */}
@@ -165,19 +350,25 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         <p className="muted small">{t.callNote}</p>
       </section>
 
-      {listing.packages.length > 0 ? (
-        <section className="section" aria-labelledby="venue-packages">
-          <h2 className="section-title" id="venue-packages">
-            {t.pfPack}
+      {listing.services.length > 0 ? (
+        <section className="section" aria-labelledby="venue-services">
+          <h2 className="section-title" id="venue-services">
+            {t.svcTitle}
           </h2>
-          <ul className="packages">
-            {listing.packages.map((item) => (
-              <li key={`${item.kind}-${item.name.ru}`}>
-                <span>{pick(item.name, lang)}</span>
-                <b>{formatPrice(item.priceUzs, item.priceUnit, t)}</b>
-              </li>
+          <ul className="svcs">
+            {listing.services.map((service) => (
+              <ServiceItem
+                key={service.id}
+                service={service}
+                picked={picked.includes(service.id)}
+                onToggle={() => toggle(service)}
+              />
             ))}
           </ul>
+          <p className="note">
+            <Icon name="info" size={14} />
+            <span>{t.svcNote}</span>
+          </p>
         </section>
       ) : null}
 
@@ -199,25 +390,64 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
               <dd>{capacity}</dd>
             </div>
           )}
+          {view.facts.map((fact) => (
+            <div key={fact.label}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
         </dl>
+        {view.features.length > 0 ? (
+          <ul className="features" aria-label={t.featuresLabel}>
+            {view.features.map((feature) => (
+              <li key={feature}>
+                <Icon name="checkFill" size={14} />
+                {feature}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {view.lists.map((list) => (
+          <div key={list.label} className="attr-list">
+            <h3 className="sub-title">{list.label}</h3>
+            <ul>
+              {list.items.map((item, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: записи списка без id, порядок — как у вендора
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </section>
 
-      <section className="section" aria-labelledby="venue-calendar">
-        <h2 className="section-title" id="venue-calendar">
-          {t.pfCal}
-        </h2>
-        <Calendar
-          label={t.pfCal}
-          min={today}
-          max={addDays(today, DATE_HORIZON_DAYS)}
-          busy={busy}
-          selected={filterDate}
-        />
-        <p className="note">
-          <Icon name="info" size={14} />
-          <span>{t.pfCalNote}</span>
-        </p>
-      </section>
+      {videos.length > 0 ? (
+        <section className="section" aria-labelledby="venue-video">
+          <h2 className="section-title" id="venue-video">
+            {t.videoTitle}
+          </h2>
+          {/* Только ссылки наружу — без встраивания чужих плееров (CSP, трекеры) */}
+          <ul className="videos">
+            {videos.map((video, i) => (
+              <li key={video.href}>
+                <a
+                  href={video.href}
+                  target="_blank"
+                  rel="noopener noreferrer external"
+                  className="video-link"
+                >
+                  <Icon name="video" size={20} />
+                  <span>
+                    {t.videoN(i + 1)} · {video.host}
+                    <span className="sr-only"> {t.newTab}</span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <Availability listing={listing} category={category} filterDate={filterDate} today={today} />
 
       {/* Цена, телефон и заявка: на телефоне — панель внизу экрана, на компьютере — карточка
           справа, прилипает при прокрутке. Номер в ней виден сразу — правило продукта */}
@@ -226,6 +456,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
           <div className="bar-price">
             <b>{price.amount}</b>
             <span className={price.unit ? "unit" : "unit unit-phone"}>{price.unit ?? phone}</span>
+            {picked.length > 0 ? <span className="bar-chosen">{t.svcChosenN(picked.length)}</span> : null}
           </div>
           <a className="contact-phone bar-phone" href={telHref(listing.phone)}>
             {phone}

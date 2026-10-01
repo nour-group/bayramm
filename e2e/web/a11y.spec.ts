@@ -34,6 +34,12 @@ const CONTROLS = [
   ".contact-phone",
   ".row-link",
   ".fav-btn",
+  ".cat-chip",
+  ".cat-tile",
+  ".svc-pick",
+  ".filters-open",
+  "label.ui-check",
+  ".video-link",
 ].join(", ");
 
 interface Screen {
@@ -76,6 +82,32 @@ const SCREENS: readonly Screen[] = [
     },
   },
   { name: "площадка", path: PATHS.venue(VENUE.slug), ready: ".venue-head h1" },
+  { name: "каталог кортежа на дату", path: `/catalog?category=car&date=${BUSY_DAY}`, ready: ".card .chip" },
+  {
+    name: "каталог фото: фильтры",
+    path: "/catalog?category=photo",
+    ready: ".card",
+    setup: async (page) => {
+      // Телефон и планшет — шторка; компьютер — колонка слева, она уже на экране
+      const open = page.locator(".filters-open");
+      if (await open.isVisible()) {
+        await open.click();
+        await page.getByRole("dialog").waitFor();
+      }
+    },
+  },
+  { name: "витрина кортежа на дату", path: `/venue/oq-kortej?date=${BUSY_DAY}`, ready: ".parts" },
+  { name: "витрина фото и видео", path: "/venue/kadr-media", ready: ".videos" },
+  { name: "витрина торта", path: "/venue/shirin-cake", ready: ".lead-note" },
+  {
+    name: "форма заявки фото с услугой",
+    path: "/venue/kadr-media/request",
+    ready: "form.request .consents",
+    setup: async (page) => {
+      await page.locator(".svc-choice label.ui-check").first().click();
+      await page.locator(".estimate").waitFor();
+    },
+  },
   {
     // Сердечко на карточке каталога, потом вкладка «Сохранённое»
     name: "сохранённое",

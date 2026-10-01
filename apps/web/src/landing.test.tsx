@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiError } from "./api/errors";
+import { allDemoListings } from "./api/mock";
 import { normalizeStartUrl } from "./bootstrap";
 import { LANG_KEY } from "./context";
 import { byText, cleanup, click, fakeWebApp, field, LISTINGS, mount, type, waitFor } from "./test/harness";
@@ -22,8 +23,10 @@ describe("лендинг (/ в браузере)", () => {
   it("первый экран, четыре настоящих зала из каталога, как это работает, обещания, вопросы", async () => {
     await mount({ path: "/", identity: "guest" });
     await waitFor(() => cards().length === 4, "залы на лендинге");
-    expect(document.querySelector("h1")?.textContent).toBe("Зал на праздник — с ценой и свободной датой");
-    expect(document.title).toBe("Bayramm — залы для праздников в Ташкенте");
+    expect(document.querySelector("h1")?.textContent).toBe(
+      "Зал, кортеж, фото, торт — с ценой и телефоном сразу",
+    );
+    expect(document.title).toBe("Bayramm — всё для праздника в Ташкенте");
     // Залы — из выдачи каталога, в её порядке; названия — заголовки третьего уровня
     for (const name of cards()) expect(LISTINGS.map((l) => l.name)).toContain(name);
     expect(document.querySelectorAll(".ln-cards h3.card-name")).toHaveLength(4);
@@ -44,12 +47,67 @@ describe("лендинг (/ в браузере)", () => {
     expect(document.querySelector('nav.site-nav a[aria-current="page"]')).toBeNull();
   });
 
-  it("площадок нет — блока залов нет, заглушек под видом залов тоже", async () => {
+  it("витрин нет — блока витрин нет, заглушек под видом витрин тоже; категории — «скоро»", async () => {
     await mount({ path: "/", identity: "guest", mock: { listings: [] } });
-    await waitFor(() => !document.querySelector(".ln-cards"), "блок залов скрыт");
+    await waitFor(() => !document.querySelector(".ln-cards"), "блок витрин скрыт");
     expect(document.querySelector(".card-skeleton")).toBeNull();
-    expect(document.body.textContent).not.toContain("Залы в каталоге");
-    expect(document.querySelector("h1")?.textContent).toBe("Зал на праздник — с ценой и свободной датой");
+    expect(document.body.textContent).not.toContain("Сейчас в каталоге");
+    expect(document.querySelector("h1")?.textContent).toBe(
+      "Зал, кортеж, фото, торт — с ценой и телефоном сразу",
+    );
+    // Чисел витрин нет нигде; пустые категории честно помечены
+    await waitFor(() => document.querySelectorAll(".cat-soon").length === 8, "пометки «скоро»");
+    expect(document.querySelector(".cat-soon")?.textContent).toBe("скоро");
+  });
+
+  it("сетка категорий: все включённые, значок и название; пустая — «скоро», с витринами — без пометки", async () => {
+    const car = allDemoListings("2026-10-01").filter((l) => l.categoryCode === "car");
+    await mount({ path: "/", identity: "guest", mock: { listings: [...LISTINGS, ...car] } });
+    await waitFor(() => document.querySelectorAll(".cat-soon").length > 0, "категории из API");
+    const tiles = [...document.querySelectorAll<HTMLAnchorElement>(".cat-tile")];
+    expect(tiles.map((a) => a.querySelector(".cat-tile-name")?.textContent)).toEqual([
+      "Площадка / Тойхона",
+      "Кортеж",
+      "Фотостудия",
+      "Цветы",
+      "Фото и видео",
+      "Торты и сладости",
+      "Подарки",
+      "Декор / Оформление",
+    ]);
+    expect(tiles.map((a) => a.getAttribute("href"))[1]).toBe("/catalog?category=car");
+    expect(tiles[0]?.getAttribute("href")).toBe("/catalog");
+    const soon = tiles
+      .filter((a) => a.querySelector(".cat-soon"))
+      .map((a) => a.querySelector(".cat-tile-name")?.textContent);
+    expect(soon).toEqual([
+      "Фотостудия",
+      "Цветы",
+      "Фото и видео",
+      "Торты и сладости",
+      "Подарки",
+      "Декор / Оформление",
+    ]);
+    expect(document.body.textContent).not.toMatch(/\d+\s+(витрин|вендор)/);
+  });
+
+  it("витрины по категориям: переключатель — только категории с витринами; «весь раздел» ведёт в неё", async () => {
+    await mount({ path: "/", identity: "guest", mock: { listings: allDemoListings("2026-10-01") } });
+    await waitFor(() => cards().length === 4, "залы");
+    const chips = () => [...document.querySelectorAll<HTMLButtonElement>(".ln-pick .cat-chip")];
+    await waitFor(() => chips().length === 8, "все категории");
+    expect(chips()[0]?.getAttribute("aria-pressed")).toBe("true");
+    await click(chips().find((c) => c.textContent === "Торты и сладости"));
+    await waitFor(() => cards().includes("Bento Box"), "торты");
+    expect(cards()).toHaveLength(3);
+    expect(document.querySelector(".ln-venues .ln-head-link")?.getAttribute("href")).toBe(
+      "/catalog?category=cake",
+    );
+    expect(document.querySelector(".ln-venues .ln-head-link")?.textContent).toBe(
+      "Весь раздел: Торты и сладости",
+    );
+    // Цена торта — «за кг», «за шт.»
+    expect(document.querySelector(".ln-cards")?.textContent).toMatch(/за кг|за шт\./);
   });
 
   it("выдача не загрузилась — блок залов просто не показываем", async () => {
@@ -62,18 +120,36 @@ describe("лендинг (/ в браузере)", () => {
     expect(document.querySelector(".landing .state-error")).toBeNull();
   });
 
-  it("подбор: дата, гости и район уходят в каталог фильтрами", async () => {
+  it("подбор: залы — с гостями, они уходят в каталог фильтром", async () => {
     await mount({ path: "/", identity: "guest" });
     await waitFor(() => document.querySelector("form.ln-search"), "подбор");
     const form = document.querySelector("form.ln-search") as HTMLFormElement;
+    expect(form.querySelector('button[aria-haspopup="listbox"]')?.textContent).toContain(
+      "Площадка / Тойхона",
+    );
     await type(form.querySelector("input"), "120");
-    await click(form.querySelector('button[aria-haspopup="listbox"]'));
-    await click([...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === "Чиланзар"));
-    await click(byText("form.ln-search button", "Показать залы"));
+    await click(byText("form.ln-search button", "Показать"));
     await waitFor(() => window.location.pathname === "/catalog", "каталог");
-    expect(window.location.search).toBe("?guests=120&district=chilonzor");
+    expect(window.location.search).toBe("?guests=120");
     await waitFor(() => document.querySelectorAll(".catalog .card").length > 0, "выдача");
     expect(field("Гости")?.value).toBe("120");
+  });
+
+  it("подбор: другая категория — без гостей (каталог по ним не отбирает), в каталог этой категории", async () => {
+    await mount({ path: "/", identity: "guest", mock: { listings: allDemoListings("2026-10-01") } });
+    await waitFor(() => document.querySelector("form.ln-search"), "подбор");
+    const form = () => document.querySelector("form.ln-search") as HTMLFormElement;
+    await click(form().querySelector('button[aria-haspopup="listbox"]'));
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === "Фото и видео"),
+    );
+    expect(form().classList.contains("with-guests")).toBe(false);
+    expect(form().querySelector('input[inputmode="numeric"]')).toBeNull();
+    await click(byText("form.ln-search button", "Показать"));
+    await waitFor(() => window.location.pathname === "/catalog", "каталог");
+    expect(window.location.search).toBe("?category=photo");
+    await waitFor(() => document.querySelectorAll(".catalog .card").length === 3, "фото и видео");
+    expect(document.querySelector("h1")?.textContent).toBe("Фото и видео в Ташкенте");
   });
 
   it("гостю в шапке — «Войти» в хаб с возвратом на этот экран", async () => {

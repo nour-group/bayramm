@@ -34,9 +34,9 @@ export async function bootstrap(): Promise<Services> {
   const now = () => Date.now();
 
   if (import.meta.env.DEV && import.meta.env.VITE_API !== "live") {
-    const { createMockApi, demoListings, demoRequests } = await import("./api/mock");
+    const { createMockApi, allDemoListings, demoRequests } = await import("./api/mock");
     const { tashkentToday } = await import("./format");
-    const listings = demoListings(tashkentToday());
+    const listings = allDemoListings(tashkentToday());
     // Язык демо-профиля — как у сервера при первом входе: язык Telegram или браузера
     const env = import.meta.env;
     // ?guest — посмотреть приложение глазами гостя из обычного браузера; ?turnstile — хаб с

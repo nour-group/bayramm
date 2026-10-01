@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { recordingFetcher, spaAssets } from "@bayramm/edge/testing";
 import type { ListingDetail } from "@bayramm/shared/api";
 import { describe, expect, it, vi } from "vitest";
-import { demoListings } from "../src/api/mock";
+import { allDemoListings, demoListings } from "../src/api/mock";
 import { browserLang, escapeHtml, injectMeta, pageMeta } from "./meta";
 import { robotsTxt } from "./seo";
 
@@ -17,8 +17,13 @@ const STAGING = "https://staging.bayramm.uz";
 const INDEX_HTML = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const [LOLA, SECOND] = demoListings("2026-10-01");
 if (!LOLA || !SECOND) throw new Error("нет демо-площадок");
+const CAR = allDemoListings("2026-10-01").find((l) => l.categoryCode === "car");
+if (!CAR) throw new Error("нет демо-кортежа");
 
-/** API: карточка площадки по slug и выдача каталога в две страницы */
+/**
+ * API: карточка по slug, категории с числом витрин и выдача категории (без параметра — залы)
+ * в две страницы
+ */
 function fakeApi(listings: readonly ListingDetail[] = [LOLA, SECOND], fail = false) {
   return recordingFetcher((request) => {
     const url = new URL(request.url);
@@ -30,10 +35,22 @@ function fakeApi(listings: readonly ListingDetail[] = [LOLA, SECOND], fail = fal
         ? Response.json(listing)
         : Response.json({ error: { code: "not_found", message: "" } }, { status: 404 });
     }
+    if (url.pathname === "/catalog/categories") {
+      const codes = ["hall", "car", "cake"];
+      return Response.json({
+        items: codes.map((code) => ({
+          code,
+          name: { ru: code, uz: code },
+          listings: listings.filter((l) => l.categoryCode === code).length,
+        })),
+      });
+    }
     if (url.pathname === "/catalog/listings") {
+      const category = url.searchParams.get("category") ?? "hall";
+      const own = listings.filter((l) => l.categoryCode === category);
       const cursor = url.searchParams.get("cursor");
-      const items = cursor ? listings.slice(1) : listings.slice(0, 1);
-      return Response.json({ items, nextCursor: cursor ? null : "next" });
+      const items = cursor ? own.slice(1) : own.slice(0, 1);
+      return Response.json({ items, nextCursor: cursor || own.length < 2 ? null : "next" });
     }
     return new Response("not found", { status: 404 });
   });
@@ -74,7 +91,7 @@ describe("разметка страниц", () => {
   it("лендинг на боевом домене: индексируется, canonical, языковые версии, Open Graph", async () => {
     const { res, body } = await setup().html(`${PROD}/`);
     expect(res.status).toBe(200);
-    expect(title(body)).toBe("Bayramm — Toshkentda bayramlar uchun zallar");
+    expect(title(body)).toBe("Bayramm — Toshkentda bayram uchun hammasi");
     expect(metaContent(body, "name", "robots")).toBe("index, follow");
     expect(body.match(/<meta name="robots"/g)).toHaveLength(1);
     expect(body.match(/<title>/g)).toHaveLength(1);
@@ -105,6 +122,31 @@ describe("разметка страниц", () => {
     expect(metaContent(body, "property", "og:locale")).toBe("ru_RU");
     // Фильтры в canonical не попадают
     expect(canonical(body)).toBe(`${PROD}/catalog?lang=ru`);
+  });
+
+  it("каталог категории — своя страница: заголовок, описание, canonical и языковые версии с категорией", async () => {
+    const { body } = await setup().html(
+      `${PROD}/catalog?category=car&lang=ru&date=2026-10-20&a.decoration=1`,
+    );
+    expect(title(body)).toBe("Кортеж в Ташкенте · Bayramm");
+    expect(metaContent(body, "name", "description")).toContain("Кортеж в Ташкенте: цены «от»");
+    expect(canonical(body)).toBe(`${PROD}/catalog?category=car&amp;lang=ru`);
+    expect(hreflangs(body)).toEqual([
+      ["ru", `${PROD}/catalog?category=car&amp;lang=ru`],
+      ["uz", `${PROD}/catalog?category=car&amp;lang=uz`],
+      ["x-default", `${PROD}/catalog?category=car`],
+    ]);
+    // Неизвестная категория и залы — общая страница каталога
+    for (const category of ["spaceships", "hall"]) {
+      const other = await setup().html(`${PROD}/catalog?category=${category}`);
+      expect(canonical(other.body), category).toBe(`${PROD}/catalog`);
+    }
+  });
+
+  it("витрина: в описании — категория и цена с единицей", async () => {
+    const { body } = await setup(fakeApi([CAR])).html(`${PROD}/venue/${CAR.slug}?lang=ru`);
+    expect(metaContent(body, "name", "description")).toContain("Кортеж");
+    expect(metaContent(body, "name", "description")).toContain("за час");
   });
 
   it("staging и разработка — noindex на всех страницах", async () => {
@@ -143,7 +185,7 @@ describe("разметка страниц", () => {
   it("API не ответило — страница площадки всё равно отдаётся, с общей разметкой", async () => {
     const { res, body } = await setup(fakeApi([], true)).html(`${PROD}/venue/${LOLA.slug}`);
     expect(res.status).toBe(200);
-    expect(title(body)).toBe("Toshkent toʻyxonalari · Bayramm");
+    expect(title(body)).toBe("Katalog · Bayramm");
   });
 
   it("личное, форма заявки и вход — noindex; неизвестный путь — 404", async () => {
@@ -228,21 +270,32 @@ describe("robots.txt и sitemap.xml", () => {
     }
   });
 
-  it("sitemap.xml: лендинг, каталог, документы и все опубликованные площадки по курсору", async () => {
-    const api = fakeApi();
+  it("sitemap.xml: лендинг, каталог и категории с витринами, документы, все витрины по курсору", async () => {
+    const api = fakeApi([LOLA, SECOND, CAR]);
     const res = await setup(api).get(`${PROD}/sitemap.xml`);
     expect(res.headers.get("content-type")).toBe("application/xml; charset=utf-8");
     const xml = await res.text();
     const locs = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(([, loc]) => loc);
+    // Торты без витрин — страницы категории в карте нет
     expect(locs).toEqual([
       `${PROD}/`,
       `${PROD}/catalog`,
       `${PROD}/docs`,
+      `${PROD}/catalog?category=car`,
       `${PROD}/venue/${LOLA.slug}`,
       `${PROD}/venue/${SECOND.slug}`,
+      `${PROD}/venue/${CAR.slug}`,
     ]);
     expect(xml).toContain(`<xhtml:link rel="alternate" hreflang="ru" href="${PROD}/catalog?lang=ru"/>`);
-    expect(api.requests.map((r) => new URL(r.url).search)).toEqual(["?limit=50", "?limit=50&cursor=next"]);
+    expect(xml).toContain(
+      `<xhtml:link rel="alternate" hreflang="uz" href="${PROD}/catalog?category=car&amp;lang=uz"/>`,
+    );
+    expect(api.requests.map((r) => `${new URL(r.url).pathname}${new URL(r.url).search}`)).toEqual([
+      "/catalog/categories",
+      "/catalog/listings?category=hall&limit=50",
+      "/catalog/listings?category=hall&limit=50&cursor=next",
+      "/catalog/listings?category=car&limit=50",
+    ]);
   });
 
   it("sitemap.xml без API — только страницы сайта", async () => {

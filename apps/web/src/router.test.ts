@@ -1,6 +1,9 @@
 import { clientCatalogPath, clientRequestPath } from "@bayramm/shared/api";
+import { CATEGORIES } from "@bayramm/shared/categories";
 import { describe, expect, it } from "vitest";
 import {
+  CATEGORY_CODES,
+  canonicalHref,
   hrefFor,
   isIndexable,
   legacyCatalogHref,
@@ -145,8 +148,66 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
     const url = at(clientCatalogPath(filters));
     // Кнопка бота открывает Mini App: там корень — каталог
     expect(screenOf(matchRoute(url.pathname), true)).toEqual({ name: "catalog" });
-    expect(readFilters(url.searchParams, "2026-10-01")).toEqual({ ...filters, sort: null });
+    expect(readFilters(url.searchParams, "2026-10-01")).toEqual({
+      ...filters,
+      category: "hall",
+      sort: null,
+      attrs: {},
+    });
     // Та же ссылка в браузере — каталог с теми же фильтрами
     expect(legacyCatalogHref(url.pathname, url.search)).toBe(hrefFor({ name: "catalog" }, filters));
+  });
+
+  it("похожие другой категории — та же категория и дата; гости и район у неё не отбирают", () => {
+    const url = at(
+      clientCatalogPath({ category: "car", date: "2026-10-20", guests: 200, district: "chilonzor" }),
+    );
+    expect(url.searchParams.get("category")).toBe("car");
+    expect(readFilters(url.searchParams, "2026-10-01")).toEqual({
+      category: "car",
+      date: "2026-10-20",
+      guests: null,
+      district: null,
+      sort: null,
+      attrs: {},
+    });
+    // В браузере — в /catalog той же категории (параметр category — тоже фильтр каталога)
+    expect(legacyCatalogHref("/", "?category=car")).toBe("/catalog?category=car");
+  });
+});
+
+describe("каталог категории в адресе", () => {
+  it("неизвестная или выключенная категория — залы; чужие фильтры отброшены, свои — проверены", () => {
+    const read = (search: string) => readFilters(new URLSearchParams(search), "2026-10-01");
+    expect(read("?category=spaceships").category).toBe("hall");
+    expect(read("?category=food").category).toBe("hall");
+    expect(read("?category=photo&sort=capacity_desc").sort).toBeNull();
+    expect(read("?category=hall&sort=capacity_desc").sort).toBe("capacity_desc");
+    expect(
+      read("?category=car&a.fleet.class=premium,suv&a.decoration=1&a.parking_spaces=10&a.fleet.seats=999")
+        .attrs,
+    ).toEqual({ "a.fleet.class": "premium,suv", "a.decoration": "1" });
+    expect(read("?category=studio&district=chilonzor&guests=20")).toMatchObject({
+      district: "chilonzor",
+      guests: null,
+    });
+  });
+
+  it("canonical каталога — с категорией (кроме залов), фильтры — нет", () => {
+    const q = (search: string) => new URLSearchParams(search);
+    expect(canonicalHref({ name: "catalog" }, q("?category=cake&date=2026-10-20&a.delivery=1"))).toBe(
+      "/catalog?category=cake",
+    );
+    expect(canonicalHref({ name: "catalog" }, q("?category=hall&guests=100"))).toBe("/catalog");
+    expect(canonicalHref({ name: "catalog" }, q("?category=nope"))).toBe("/catalog");
+    expect(canonicalHref({ name: "venue", slug: "a" }, q("?category=car"))).toBe("/venue/a");
+  });
+
+  it("список категорий маршрутов совпадает с включёнными в описании категорий", () => {
+    expect([...CATEGORY_CODES]).toEqual(
+      CATEGORIES.filter((c) => c.enabled)
+        .sort((a, b) => a.sort - b.sort)
+        .map((c) => c.code),
+    );
   });
 });

@@ -59,6 +59,8 @@ export interface CalendarTexts {
   /** «свободно» / «занято» — в легенде и в имени дня; пустая строка — без пометки (фильтр дат) */
   readonly free: string;
   readonly busy: string;
+  /** «частично занято» — в легенде и в имени дня с частью дня занятой (календарь с partial) */
+  readonly partial?: string;
   /** Подпись выбранного дня в легенде: «ваша дата» */
   readonly selected: string;
   /** Итог месяца под названием: «занято 3 дня», «весь месяц свободен» */
@@ -71,6 +73,11 @@ export interface CalendarProps {
   readonly max: string;
   /** Занятые дни: выбрать нельзя */
   readonly busy?: ReadonlySet<string>;
+  /**
+   * Частично занятые дни (заняты не все части дня): дата → что занято («утро, вечер»).
+   * Выбрать можно; диктор слышит «частично занято: утро, вечер»
+   */
+  readonly partial?: ReadonlyMap<string, string>;
   readonly selected: string | null;
   /** Нет — календарь только показывает занятость */
   readonly onSelect?: (date: string) => void;
@@ -86,11 +93,13 @@ export interface CalendarProps {
 }
 
 const NO_BUSY: ReadonlySet<string> = new Set();
+const NO_PARTIAL: ReadonlyMap<string, string> = new Map();
 
 export function Calendar({
   min,
   max,
   busy = NO_BUSY,
+  partial = NO_PARTIAL,
   selected,
   onSelect,
   label,
@@ -214,6 +223,7 @@ export function Calendar({
         {days.map((day, i) => {
           const outside = day < min || day > max;
           const isBusy = busy.has(day) && !outside;
+          const parts = isBusy || outside ? undefined : partial.get(day);
           // Занятый день выбранным не рисуется: «занято» важнее «ваша дата»
           const isSelected = day === selected && !isBusy && !outside;
           const classes = [
@@ -221,11 +231,18 @@ export function Calendar({
             weekdayMon(day) >= 5 ? "is-weekend" : "",
             outside ? "is-out" : "",
             isBusy ? "is-busy" : "",
+            parts !== undefined ? "is-partial" : "",
             isSelected ? "is-selected" : "",
           ]
             .filter(Boolean)
             .join(" ");
-          const status = outside ? "" : isBusy ? texts.busy : texts.free;
+          const status = outside
+            ? ""
+            : isBusy
+              ? texts.busy
+              : parts !== undefined
+                ? `${texts.partial ?? texts.free}: ${parts}`
+                : texts.free;
           const name = status ? `${texts.dayLabel(day)}, ${status}` : texts.dayLabel(day);
           if (!onSelect)
             return (
@@ -258,6 +275,9 @@ export function Calendar({
       {legend ? (
         <p className="ui-cal-legend" aria-hidden="true">
           <span className="ui-leg ui-leg-free">{texts.free}</span>
+          {partial.size > 0 && texts.partial ? (
+            <span className="ui-leg ui-leg-part">{texts.partial}</span>
+          ) : null}
           <span className="ui-leg ui-leg-busy">{texts.busy}</span>
           {selected ? <span className="ui-leg ui-leg-sel">{texts.selected}</span> : null}
         </p>
