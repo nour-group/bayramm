@@ -233,7 +233,7 @@ describe("getListingDetail", () => {
     expect(fake.queries.some((q) => q.sql.includes("listing_services"))).toBe(false);
   });
 
-  it("телефон — через pii.read_listing_phone; услуги — из одобренных; занятость — [сегодня, +180 дней)", async () => {
+  it("телефон — через pii.read_listing_phone; услуги — из одобренных; занятость — [сегодня, +366 дней): весь горизонт даты каталога", async () => {
     const service = {
       id: ID(91),
       listing_id: ID(1),
@@ -295,7 +295,7 @@ describe("getListingDetail", () => {
     expect(fake.queries.find((q) => q.sql.includes("app.listing_busy"))?.parameters).toEqual([
       ID(1),
       "2026-09-29",
-      "2027-03-28",
+      "2027-09-30",
     ]);
     const services = fake.queries.filter((q) => q.sql.includes('from "app"."listing_services"'));
     expect(services.every((q) => q.parameters.includes("active"))).toBe(true);

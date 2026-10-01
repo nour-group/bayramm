@@ -31,6 +31,18 @@ describe("воркер клиента", () => {
     expect(env.ASSETS.requests).toEqual([]);
   });
 
+  it("по http — 301 на https, и robots.txt тоже; страницы — со Strict-Transport-Security", async () => {
+    const { env } = setup();
+    for (const path of ["/", "/catalog?category=car", "/robots.txt", "/sitemap.xml"]) {
+      const res = await worker.fetch(new Request(`http://bayramm.uz${path}`), env);
+      expect(res.status, path).toBe(301);
+      expect(res.headers.get("location"), path).toBe(`${ORIGIN}${path}`);
+    }
+    expect(env.ASSETS.requests).toEqual([]);
+    const { get } = setup();
+    expect((await get("/catalog")).headers.get("strict-transport-security")).toBe("max-age=31536000");
+  });
+
   it("/api/* уходит в API без префикса", async () => {
     const { env, get } = setup();
     const res = await get("/api/health?x=1");

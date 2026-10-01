@@ -80,6 +80,17 @@ describe("демо-витрины: метка и диапазон id", () => {
     }
   });
 
+  it("чек-лист выпуска (.github/scripts/release-check.sh) ищет демо-витрины по тем же меткам", () => {
+    const script = readFileSync(
+      join(import.meta.dirname, "../../../../.github/scripts/release-check.sh"),
+      "utf8",
+    );
+    expect(script).toContain(`demo_prefix="${DEMO_ID_PREFIX}"`);
+    expect(script).toContain('"$slug" == demo-*');
+    expect(script).toContain('startswith("+99800")');
+    for (const venue of DEMO_VENUES) expect(venue.phone.startsWith("+99800")).toBe(true);
+  });
+
   it("префикс не пересекается со случайными UUID v4 и не содержит символов шаблона LIKE", () => {
     // У gen_random_uuid() первые 12 знаков случайны: 00000000-0000 выпадает с вероятностью 2^-48
     expect(DEMO_ID_PREFIX).toBe("00000000-0000-4000-8000-de");

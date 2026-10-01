@@ -22,6 +22,7 @@ import {
   fieldOrder,
   firstDate,
   leadDaysOf,
+  nearbyFreeDays,
   toCreateRequest,
   toDetails,
   validate,
@@ -494,5 +495,30 @@ describe("демо-API по контракту категорий", () => {
     });
     await expect(early).rejects.toBeInstanceOf(ApiError);
     await expect(early).rejects.toMatchObject({ status: 422, code: "lead_time_too_short" });
+  });
+});
+
+describe("свободные дни рядом с занятым", () => {
+  const range = { first: "2026-10-02", last: "2026-12-31" };
+
+  it("по обе стороны, сначала ближние, по порядку дат; занятые пропускаются", () => {
+    const busy = new Set(["2026-10-08", "2026-10-09", "2026-10-07"]);
+    expect(nearbyFreeDays(busy, "2026-10-08", range)).toEqual(["2026-10-05", "2026-10-06", "2026-10-10"]);
+  });
+
+  it("не раньше first (завтра или срок заказа) и не позже last", () => {
+    expect(nearbyFreeDays(new Set(["2026-10-02"]), "2026-10-02", range)).toEqual([
+      "2026-10-03",
+      "2026-10-04",
+      "2026-10-05",
+    ]);
+    expect(nearbyFreeDays(new Set(["2026-12-31"]), "2026-12-31", range, 2)).toEqual([
+      "2026-12-29",
+      "2026-12-30",
+    ]);
+  });
+
+  it("свободных нет — пусто", () => {
+    expect(nearbyFreeDays(new Set(), "2026-10-08", { first: "2026-10-08", last: "2026-10-08" })).toEqual([]);
   });
 });

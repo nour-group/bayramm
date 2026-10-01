@@ -72,11 +72,24 @@ describe("каталог", () => {
   });
 
   it("пусто — объяснение и сброс фильтров", async () => {
-    await mount({ path: "/catalog?guests=5000" });
-    await waitFor(() => byText("h2", "Никого не нашли"), "пустое состояние");
+    await mount({ path: "/catalog?guests=5000&district=chilonzor" });
+    await waitFor(() => byText("h2", "Для 5000 гостей никого не нашли"), "пустое состояние");
+    // Сброс — один, в пустом состоянии: в колонке фильтров второго нет
+    expect(document.querySelectorAll(".filters-reset")).toHaveLength(0);
     await click(byText(".state-empty button", "Сбросить фильтры"));
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки после сброса");
     expect(window.location.search).toBe("");
+  });
+
+  it("пусто — названо, что мешает; этот фильтр убирается один, остальные остаются", async () => {
+    await mount({ path: "/catalog?guests=5000&date=2026-10-15" });
+    await waitFor(() => byText("h2", "Для 5000 гостей никого не нашли"), "пустое состояние");
+    // Дата не отсекает (занятые лишь уходят в конец) — её в списке нет
+    const chips = [...document.querySelectorAll<HTMLButtonElement>(".state-empty .cut-chip")];
+    expect(chips.map((chip) => chip.getAttribute("aria-label"))).toEqual(["Убрать фильтр: Гости: 5000"]);
+    await click(chips[0]);
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки без фильтра гостей");
+    expect(window.location.search).toBe("?date=2026-10-15");
   });
 
   it("исполнителей ещё нет — «скоро», как у любого раздела, без сброса фильтров", async () => {

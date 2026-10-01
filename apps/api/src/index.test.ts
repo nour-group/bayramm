@@ -22,6 +22,23 @@ describe("маршруты", () => {
     expect(await res.json()).toMatchObject({ ok: true, service: "bayramm-api", db: "not_configured" });
   });
 
+  it("по http — редирект на https до маршрутов: GET — 301, POST — 308", async () => {
+    const get = await call("http://api.bayramm.uz/health");
+    expect(get.res.status).toBe(301);
+    expect(get.res.headers.get("location")).toBe("https://api.bayramm.uz/health");
+    const post = await call("http://api.bayramm.uz/telegram/webhook", { method: "POST" });
+    expect(post.res.status).toBe(308);
+    expect(post.res.headers.get("location")).toBe("https://api.bayramm.uz/telegram/webhook");
+    expect(post.pending).toHaveLength(0);
+  });
+
+  it("ответы — со Strict-Transport-Security, и ошибки тоже", async () => {
+    for (const path of ["https://api.bayramm.uz/nope", "/me"]) {
+      const { res } = await call(path);
+      expect(res.headers.get("strict-transport-security"), path).toBe("max-age=31536000");
+    }
+  });
+
   it("неизвестный путь — 404 в едином формате", async () => {
     const { res } = await call("/nope");
     expect(res.status).toBe(404);

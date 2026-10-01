@@ -4,6 +4,7 @@ import { type UIEvent, useEffect, useMemo, useRef, useState } from "react";
 import { isNotFound } from "../api/errors";
 import { categoryIcon, categoryName, clientCategory, DAY_PART_ORDER, hasCalendar } from "../categories";
 import { Calendar } from "../components/Calendar";
+import { categoryHref } from "../components/Categories";
 import { FavoriteButton } from "../components/FavoriteButton";
 import { Link } from "../components/Link";
 import { dayLoadChip } from "../components/ListingCard";
@@ -30,7 +31,7 @@ import { hrefFor, useNav } from "../router";
 import { preloadScreens } from "../screens";
 import { useMainButton } from "../telegram";
 import { DATE_HORIZON_DAYS, parseGuests } from "./catalog-feed";
-import { draftServiceIds, loadDraft, toggleDraftService } from "./request-draft";
+import { draftServiceIds, firstDate, loadDraft, nearbyFreeDays, toggleDraftService } from "./request-draft";
 import { suggestedQty } from "./request-estimate";
 import { attributeView, dayPartWindow, listingLeadDays, safeVideoLinks } from "./venue-attributes";
 
@@ -268,6 +269,81 @@ function Availability({
   );
 }
 
+/**
+ * Дата из фильтра занята: не «оставить заявку», а выбрать другой день — ближайшие свободные
+ * рядом — или посмотреть, кто свободен в эту дату (каталог раздела на неё)
+ */
+function BusyDay({
+  listing,
+  day,
+  today,
+  guests,
+}: {
+  listing: ListingDetail;
+  day: string;
+  today: string;
+  guests: number | null;
+}) {
+  const { t } = useLang();
+  const nearby = useMemo(
+    () =>
+      nearbyFreeDays(new Set(listing.busyDates), day, {
+        first: firstDate(today, listingLeadDays(listing) ?? 0),
+        last: addDays(today, DATE_HORIZON_DAYS),
+      }),
+    [listing, day, today],
+  );
+  const label = formatDayMonth(day, t);
+  return (
+    <div className="callout callout-warn busy-day">
+      <Icon name="warnD" size={20} />
+      <div className="busy-day-text">
+        <p>
+          <b>{t.busyDayH(label)}</b>
+        </p>
+        <p>{t.busyDayP}</p>
+        {nearby.length > 0 ? (
+          <>
+            <p className="muted small">{t.busyNearby}</p>
+            <ul className="busy-alts">
+              {nearby.map((date) => (
+                <li key={date}>
+                  <Link
+                    className="btn btn-secondary"
+                    href={hrefFor({ name: "venue", slug: listing.slug }, { date, guests })}
+                    replace
+                  >
+                    {formatDayMonth(date, t)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+        <Link className="link-btn" href={categoryHref(listing.categoryCode, day)}>
+          {t.busyOthers(label)}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Пометка над кнопкой заявки. Гостю сайта — сразу, что отправить заявку можно после входа и чем
+ * войти (телефон — только когда вход по нему включён), а не после нажатия
+ */
+function RequestNote() {
+  const { api, identity } = useServices();
+  const { t } = useLang();
+  const guest = !canSignIn(identity);
+  const methods = useAsync(guest ? "auth-methods" : "auth-methods:skip", (signal) =>
+    guest ? api.authMethods(signal) : Promise.resolve(null),
+  );
+  const text =
+    guest && methods.status === "ready" && methods.data ? t.reqGuestNote(methods.data.phone) : t.requestNote;
+  return <p className="bar-note">{text}</p>;
+}
+
 function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHref: string }) {
   const { api, identity, webApp, now } = useServices();
   const { t, lang } = useLang();
@@ -301,7 +377,13 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         ? ("partial" as const)
         : ("free" as const);
   })();
-  const chip = filterDate && load ? dayLoadChip(load, filterDate, t) : null;
+  // Занятый день — не пометкой, а блоком с другими днями (BusyDay); свободный и частично — пометкой
+  const busyDay = load === "busy" ? filterDate : null;
+  const chip = filterDate && load && load !== "busy" ? dayLoadChip(load, filterDate, t) : null;
+  const guests = parseGuests(query.get("guests"));
+  // На занятый день заявку не подать: кнопка ведёт в форму без даты — день выбирают там
+  const reqHref = busyDay ? hrefFor({ name: "request", slug: listing.slug }, { guests }) : requestHref;
+  const reqLabel = busyDay ? t.reqOtherDate : t.pfReq;
 
   const toggle = (service: PublicService) =>
     setPicked(
@@ -310,9 +392,9 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
 
   // В Telegram «Оставить заявку» — его главная кнопка внизу; в браузере — своя в панели
   const nativeMain = useMainButton(webApp, {
-    text: t.pfReq,
+    text: reqLabel,
     visible: true,
-    onClick: () => navigate(requestHref),
+    onClick: () => navigate(reqHref),
   });
 
   // Форма заявки — следующий экран: её кусок сборки (и тексты согласий — у вошедшего, в кэш
@@ -342,6 +424,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         </p>
         {chip ? <p className={chip.tone}>{chip.text}</p> : null}
       </div>
+      {busyDay ? <BusyDay listing={listing} day={busyDay} today={today} guests={guests} /> : null}
 
       {/* Телефон виден сразу, до заявки — правило продукта */}
       <section className="section contact" aria-labelledby="venue-phone">
@@ -464,7 +547,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
           о заявке — над панелью (на телефоне она прилипает к низу, пометка — в конце страницы),
           в карточке справа — под кнопками */}
       <div className="venue-side">
-        <p className="bar-note">{t.requestNote}</p>
+        <RequestNote />
         <div className="action-bar venue-bar">
           <div className="bar-price">
             <b>{price.amount}</b>
@@ -483,12 +566,12 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
           {nativeMain ? null : (
             <Link
               className="btn btn-primary"
-              href={requestHref}
+              href={reqHref}
               onPointerEnter={preloadRequest}
               onTouchStart={preloadRequest}
               onFocus={preloadRequest}
             >
-              {t.pfReq}
+              {reqLabel}
             </Link>
           )}
         </div>

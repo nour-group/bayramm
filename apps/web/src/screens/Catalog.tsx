@@ -147,10 +147,32 @@ export function Catalog() {
       : units.size > 1
         ? t.sortHintUnits
         : null;
-  // Пусто с фильтрами — «никого не нашли» и сброс; без фильтров — в разделе ещё никого: «скоро»
-  const empty = filtered
-    ? { title: t.emptyH, text: hasCapacity(category) ? t.emptyHint : t.emptyHintCat }
-    : { title: t.catSoonH(name), text: t.catSoonP };
+  // Что отсекает выдачу — каждое можно убрать по одному (пустая выдача называет его). Дата не
+  // отсекает: занятые в этот день лишь уходят в конец
+  const districtLabel = districts.find((d) => d.code === filters.district);
+  const cutting: readonly { key: string; label: string; drop: Partial<CatalogFilters> }[] = [
+    ...(filters.guests !== null
+      ? [{ key: "guests", label: `${t.fGuests}: ${filters.guests}`, drop: { guests: null } }]
+      : []),
+    ...(filters.district !== null
+      ? [
+          {
+            key: "district",
+            label: `${t.fDistrict}: ${districtLabel ? pick(districtLabel.name, lang) : filters.district}`,
+            drop: { district: null },
+          },
+        ]
+      : []),
+    ...(extra > 0 ? [{ key: "attrs", label: t.moreFiltersN(extra), drop: { attrs: {} } }] : []),
+  ];
+  // Пусто из-за фильтров — что именно мешает и как убрать; иначе в разделе ещё никого: «скоро»
+  const empty =
+    cutting.length > 0
+      ? {
+          title: filters.guests !== null ? t.emptyGuestsH(filters.guests) : t.emptyH,
+          text: hasCapacity(category) ? t.emptyHint : t.emptyHintCat,
+        }
+      : { title: t.catSoonH(name), text: t.catSoonP };
   const loaded = feed.status !== "loading" && feed.status !== "error";
   // Кнопка шторки показывает, сколько нашлось (пока выдача грузится — просто «Показать»)
   const apply = loaded ? t.filtersShowN(items.length, feed.hasMore) : t.filtersApply;
@@ -227,7 +249,8 @@ export function Catalog() {
               />
             </div>
           ) : null}
-          {filtered ? (
+          {/* Пустая выдача сбрасывает фильтры сама (ниже) — второй кнопки рядом не нужно */}
+          {filtered && !(loaded && items.length === 0) ? (
             <button type="button" className="link-btn filters-reset" onClick={reset}>
               {t.resetFilters}
             </button>
@@ -268,9 +291,31 @@ export function Catalog() {
               text={empty.text}
               action={
                 filtered ? (
-                  <button type="button" className="btn btn-secondary" onClick={reset}>
-                    {t.resetFilters}
-                  </button>
+                  <div className="empty-filters">
+                    {cutting.length > 0 ? (
+                      <>
+                        <p className="muted small">{t.emptyActive}</p>
+                        <ul className="empty-cuts">
+                          {cutting.map((cut) => (
+                            <li key={cut.key}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary cut-chip"
+                                aria-label={t.dropFilter(cut.label)}
+                                onClick={() => setFilters(cut.drop)}
+                              >
+                                {cut.label}
+                                <Icon name="close" size={14} />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                    <button type="button" className="btn btn-primary" onClick={reset}>
+                      {t.resetFilters}
+                    </button>
+                  </div>
                 ) : null
               }
             />

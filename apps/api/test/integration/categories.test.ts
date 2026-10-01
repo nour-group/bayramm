@@ -738,6 +738,21 @@ describe("кабинет: витрины, услуги, предложения, 
     expect(detail.busyParts).toContainEqual({ date: target, parts: ["evening"] });
     expect(detail).toMatchObject({ busyOnDate: false, dateLoad: "partial" });
 
+    // Заявку на занятую часть дня сервер не примет — та же занятость, что у каталога и витрины
+    expect(
+      await error(
+        request(clientToken, "POST", "/requests", {
+          listingId: car.id,
+          occasionCode: "toy",
+          eventDate: target,
+          contactName: "Тест",
+          contactPhone: "+998000000123",
+          requestTransferConsentId: transferText,
+          details: { start_time: "19:00", hours: 3, cars_count: 1 },
+        }),
+      ),
+    ).toEqual({ status: 409, code: "date_busy", details: ["details.start_time"] });
+
     const capacity = await call(`/vendor/listings/${car.id}/calendar/capacity`, {
       method: "PUT",
       headers: {

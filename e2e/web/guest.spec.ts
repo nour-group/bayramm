@@ -1,9 +1,20 @@
 import type { Page } from "@playwright/test";
 import { DEMO_OTP_CODE } from "../../apps/web/src/api/mock";
+import { addDays, formatDayMonth } from "../../apps/web/src/format";
 import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
 import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
-import { horizontalOverflow, isDesktop, open, PATHS, prepare, sections, T, VENUE } from "../support/web";
+import {
+  horizontalOverflow,
+  isDesktop,
+  open,
+  PATHS,
+  prepare,
+  sections,
+  T,
+  TODAY,
+  VENUE,
+} from "../support/web";
 
 /* Сайт у гостя и после входа (apps/web/src/nav.ts). Гость в браузере — лендинг и шапка
    сайта: логотип, язык, «Войти» и меню-шторка; нижней панели приложения нет, личного нет —
@@ -204,6 +215,56 @@ test.describe("гость и вход", () => {
     await expect(page.locator(".top-signin, .top-menu")).toHaveCount(0);
   });
 
+  test("заявка гостя: о входе — до кнопки; вход кодом возвращает в форму с датой, гостями и услугой", async ({
+    page,
+  }) => {
+    await prepare(page);
+    // Хаб — гостем: иначе демо-аккаунт вошёл бы сразу, без кода из сообщения
+    await page.addInitScript(() => {
+      const { pathname, search } = window.location;
+      const params = new URLSearchParams(search);
+      if (pathname === "/auth" && params.has("return") && !params.has("guest"))
+        window.history.replaceState(null, "", `${pathname}${search}&guest`);
+    });
+    let day = addDays(TODAY, 14);
+    while (VENUE.busyDates.includes(day)) day = addDays(day, 1);
+    const service = VENUE.services[0];
+    if (!service) throw new Error("у демо-площадки нет услуг");
+    const requestPath = `${PATHS.request(VENUE.slug)}?date=${day}&guests=120`;
+
+    await open(page, `${PATHS.venue(VENUE.slug)}?date=${day}&guests=120`, ".venue-head h1", { guest: true });
+    // Что нужен вход — видно до нажатия, рядом с кнопкой
+    await expect(page.locator(".venue-side .bar-note")).toHaveText(ru.reqGuestNote(true));
+    await page.locator(".svc-pick").first().click();
+    await page.locator(".venue-bar").getByRole("link", { name: ru.pfReq }).click();
+    await expect(page.getByRole("heading", { level: 1, name: ru.tgOnlyH })).toBeVisible();
+    const draft = page.locator("section", { has: page.getByRole("heading", { name: ru.rqDraftH }) });
+    await expect(draft).toContainText(service.name.ru);
+    await expect(draft).toContainText(formatDayMonth(day, ru));
+
+    // Путь возврата хаб держит во вкладке, а не в адресе
+    const hub = page.waitForRequest(
+      (request) => request.isNavigationRequest() && new URL(request.url()).pathname === "/auth",
+    );
+    await page.getByRole("link", { name: ru.ctaSignIn }).click();
+    expect(new URL((await hub).url()).searchParams.get("return")).toBe(requestPath);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.authTitle);
+    expect(new URL(page.url()).search).toBe("");
+
+    await page.getByLabel(ru.authPhoneLabel).first().fill("00 123 45 67");
+    await page.getByRole("button", { name: ru.authSendCode }).click();
+    await page.getByLabel(ru.authCodeLabel).fill(DEMO_OTP_CODE);
+    await page.getByRole("button", { name: ru.authSignIn, exact: true }).click();
+
+    // Назад — в форму заявки этой площадки, всё выбранное на месте
+    await expect(page).toHaveURL((url) => `${url.pathname}${url.search}` === requestPath);
+    const form = page.locator("form.request");
+    await expect(form.locator(".consents")).toBeVisible();
+    await expect(form).toContainText(formatDayMonth(day, ru));
+    await expect(form.getByRole("spinbutton", { name: ru.rqG })).toHaveValue("120");
+    await expect(form.getByRole("checkbox", { name: new RegExp(service.name.ru) })).toBeChecked();
+  });
+
   test("«Войти» в шапке гостя ведёт в хаб и обратно на этот же экран", async ({ page }) => {
     await prepare(page);
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1", { guest: true });
@@ -275,9 +336,9 @@ test.describe("гость на всех ширинах", () => {
       await expectHeaderFits(page, `${width} лендинг`);
       await expectNoOverflow(page, `${width} лендинг`);
       await expectHitAreas(page, `${width} лендинг`, CONTROLS);
-      // Язык — в шапке, пока влезает (с 390px), и всегда в подвале
+      // Язык — в шапке, пока влезает (с 390px), и всегда в подвале (строкой, не вторым переключателем)
       await expect(page.locator(".top > .lang")).toBeVisible({ visible: width >= 390 });
-      await expect(page.locator(".site-footer .lang")).toBeVisible();
+      await expect(page.locator(".site-footer .footer-lang")).toBeVisible();
 
       const button = page.locator(".top-menu");
       if (width >= 1024) {

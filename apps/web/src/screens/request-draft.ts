@@ -218,6 +218,27 @@ export function leadDaysOf(
 /** Первая дата, на которую можно подать заявку: завтра или позже срока заказа */
 export const firstDate = (today: string, leadDays: number) => addDays(today, Math.max(1, leadDays));
 
+/**
+ * Свободные дни рядом с занятым — вместо него: по обе стороны, сначала ближние, по порядку дат.
+ * Не раньше first (завтра или срок заказа) и не позже last. Частично занятый день (parts) —
+ * свободный: часть дня выбирают в форме заявки
+ */
+export function nearbyFreeDays(
+  busy: ReadonlySet<string>,
+  day: string,
+  range: { readonly first: string; readonly last: string },
+  count = 3,
+): string[] {
+  const found: string[] = [];
+  for (let step = 1; step <= 60 && found.length < count; step++) {
+    for (const candidate of [addDays(day, -step), addDays(day, step)]) {
+      if (found.length < count && candidate >= range.first && candidate <= range.last && !busy.has(candidate))
+        found.push(candidate);
+    }
+  }
+  return found.sort();
+}
+
 /** Число из поля «количество»: целое ≥ 1 или null */
 export function parseQty(text: string): number | null {
   if (!/^\d{1,6}$/.test(text.trim())) return null;
@@ -295,13 +316,9 @@ export function validate(
     draft.services.map((s) => s.id),
   );
   const first = firstDate(today, lead);
-  if (
-    !isIsoDate(draft.date) ||
-    draft.date <= today ||
-    draft.date > addDays(today, EVENT_MAX_DAYS_AHEAD) ||
-    context.busy.has(draft.date)
-  )
+  if (!isIsoDate(draft.date) || draft.date <= today || draft.date > addDays(today, EVENT_MAX_DAYS_AHEAD))
     errors.date = t.errDate;
+  else if (context.busy.has(draft.date)) errors.date = t.errDateBusy;
   else if (draft.date < first) {
     const date = new Date(`${first}T00:00:00Z`);
     errors.date = t.errLead(lead, t.dayMonth(date.getUTCDate(), t.monthsShort[date.getUTCMonth()] ?? ""));

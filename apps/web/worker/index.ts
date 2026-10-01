@@ -1,4 +1,4 @@
-import { createSiteWorker } from "@bayramm/edge";
+import { createSiteWorker, httpsRedirect } from "@bayramm/edge";
 import { mediaImageOrigins } from "@bayramm/media";
 import { matchRoute } from "../src/routes";
 import { taklifnomaRedirect } from "./legacy";
@@ -68,6 +68,9 @@ async function page(request: Request, env: Env, url: URL): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // По http — только редирект на https, и для robots.txt и карты сайта тоже (packages/edge, https.ts)
+    const insecure = dev ? null : httpsRedirect(request);
+    if (insecure) return insecure;
     const url = new URL(request.url);
     const read = request.method === "GET" || request.method === "HEAD";
     if (read && url.pathname === "/robots.txt")

@@ -17,6 +17,7 @@
 // только ключи фото листингов. Всё прочее — 404 без похода в хранилище: воркер
 // не прокси для чего угодно и не расходует квоту преобразований на мусор.
 
+import { HSTS, httpsRedirect } from "@bayramm/edge/https";
 import { LISTING_PHOTOS_BUCKET, MEDIA_QUALITY, parseMediaPath } from "@bayramm/media";
 import { trimTrailingSlashes } from "@bayramm/shared";
 
@@ -64,6 +65,7 @@ function baseHeaders(cacheControl: string): Headers {
     // Формат зависит от Accept — кэши обязаны это учитывать
     vary: "Accept",
     "x-content-type-options": "nosniff",
+    "strict-transport-security": HSTS,
     // Картинки встраивают web, кабинет, админка, а при разработке — localhost
     "cross-origin-resource-policy": "cross-origin",
     "access-control-allow-origin": "*",
@@ -135,6 +137,9 @@ export function createMediaHandler(fetcher: Fetch = (input, init) => fetch(input
   }
 
   return async function handle(request: Request, env: MediaBindings): Promise<Response> {
+    // Только HTTPS: по http — редирект (packages/edge, https.ts)
+    const insecure = httpsRedirect(request);
+    if (insecure) return insecure;
     if (request.method !== "GET" && request.method !== "HEAD") {
       return plain(405, "Method not allowed", "no-store", { allow: "GET, HEAD" });
     }

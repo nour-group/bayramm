@@ -105,12 +105,33 @@ test("хаб без входа на сайте: код из сообщения, 
   expect(vendor.unexpected).toEqual([]);
 });
 
+test("кабинет по ссылке с сайта — на языке сайта, и хаб входа оттуда тоже", async ({ page }) => {
+  await start(page);
+  // Сайт — гостем (?guest): иначе хаб сразу вернул бы в кабинет
+  await page.addInitScript((web) => {
+    const { origin, pathname, search } = window.location;
+    if (origin === web && pathname === "/auth" && search.includes("app=") && !search.includes("guest"))
+      window.history.replaceState(null, "", `${pathname}${search}&guest`);
+  }, APPS.web);
+
+  await page.goto(`${APPS.vendor}/requests?lang=uz`);
+  await expect(heading(page)).toHaveText(vendorDict.uz.welcomeTitle);
+  await expect(page.locator("html")).toHaveAttribute("lang", "uz");
+  // ?lang= из адреса убран
+  expect(page.url()).toBe(`${APPS.vendor}/requests`);
+
+  await page.getByRole("button", { name: vendorDict.uz.signIn, exact: true }).click();
+  await expect(page).toHaveURL(`${APPS.web}/auth`);
+  await expect(heading(page)).toHaveText(dictionaries.uz.authTitle);
+});
+
 test("профиль на сайте: роли аккаунта — ссылки в кабинет и панель со входом через хаб", async ({ page }) => {
   await page.clock.setFixedTime(NOW);
   await page.goto(`${APPS.web}/profile`);
+  // Кабинет — на языке сайта (?lang=), панель — только по-русски
   await expect(page.getByRole("link", { name: ru.accVendor })).toHaveAttribute(
     "href",
-    `${APPS.vendor}/?signin=1`,
+    `${APPS.vendor}/?signin=1&lang=ru`,
   );
   await expect(page.getByRole("link", { name: ru.accAdmin })).toHaveAttribute(
     "href",

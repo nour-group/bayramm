@@ -49,8 +49,14 @@ import { type CatalogCursor, type CatalogParams, encodeCursor } from "./query";
 
 /** Правило продукта «Фото обязательны»: меньше трёх — не публикуется (у категории бывает больше) */
 export const MIN_PUBLIC_PHOTOS = 3;
-/** Сколько дней вперёд карточка отдаёт занятые даты */
-export const BUSY_DAYS_AHEAD = 180;
+/**
+ * Сколько дней вперёд карточка отдаёт занятые даты: весь срок, на который клиент выбирает дату в
+ * каталоге и календаре витрины (DATE_HORIZON_DAYS = 365 в apps/web, включительно). Короче —
+ * и каталог сказал бы «занято», а витрина на тот же день — «свободно». Дальше (форма заявки
+ * пускает до двух лет) занятость сверяет сервер при подаче (date_busy). app.listing_busy
+ * принимает не больше 400 дней
+ */
+export const BUSY_DAYS_AHEAD = 366;
 
 export const CLIENT_CONSENT_PURPOSES: readonly ClientConsentPurpose[] = [
   "client_service",

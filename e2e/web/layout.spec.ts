@@ -57,7 +57,10 @@ test.describe("лендинг в браузере", () => {
     // Ни рейтингов, ни «брони», ни выдуманных цифр
     expect(await page.locator("main").innerText()).not.toMatch(FORBIDDEN_BOOKING);
     // Кабинет партнёра — его приветствие вне Telegram: что это и как получить доступ
-    await expect(page.getByRole("link", { name: ru.accVendor })).toHaveAttribute("href", `${APPS.vendor}/`);
+    await expect(page.getByRole("link", { name: ru.accVendor })).toHaveAttribute(
+      "href",
+      `${APPS.vendor}/?lang=ru`,
+    );
     // Подвал: документы, бот, язык
     const footer = page.locator(".site-footer");
     await expect(footer.getByRole("link", { name: ru.meDocs })).toHaveAttribute("href", PATHS.docs);

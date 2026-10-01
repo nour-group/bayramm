@@ -7,6 +7,7 @@
    Понадобится внешний источник — добавлять сюда явным параметром, а не ослаблять политику. */
 
 import { TELEGRAM_WEB_APP_SCRIPT } from "@bayramm/tg/webapp";
+import { HSTS } from "./https";
 
 /* Виджет входа Telegram: скрипт telegram-widget.js (путь точный — остальной telegram.org не
    нужен) и кнопка входа во фрейме с oauth.telegram.org. Колбэк data-onauth виджет собирает
@@ -136,6 +137,8 @@ export function securityHeaders(options: SecurityOptions = {}): Record<string, s
     "Referrer-Policy": REFERRER_POLICY,
     "Permissions-Policy": PERMISSIONS_POLICY,
   };
+  // Только HTTPS (https.ts). Сервер разработки Vite — по http, там заголовок ни к чему
+  if (!options.dev) headers["Strict-Transport-Security"] = HSTS;
   // Для старых браузеров без frame-ancestors. Список разрешённых origin в X-Frame-Options
   // не выразить, поэтому при непустом frameAncestors заголовок не ставим
   if (!options.frameAncestors?.length) headers["X-Frame-Options"] = "DENY";

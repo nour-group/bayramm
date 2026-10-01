@@ -34,7 +34,8 @@ export type ClientSource = "tma" | "web";
  *       услуг — details.services.<номер>.id | .options | .qty), invalid_cursor · 401 unauthorized ·
  *   403 forbidden (сессия не клиента), client_blocked · 404 not_found ·
  *   409 duplicate_request (+ existingId), listing_not_active, consent_text_not_current,
- *       illegal_transition (отозвать можно только new/viewed/contacted) ·
+ *       illegal_transition (отозвать можно только new/viewed/contacted), date_busy (витрина
+ *       занята в этот день — details eventDate — или в эту часть дня — details.start_time) ·
  *   413 payload_too_large · 422 consent_required (details — поле), guests_over_capacity,
  *       lead_time_too_short (details — eventDate: позже срока подготовки витрины или услуги),
  *       invalid_input · 429 daily_request_limit, rate_limited (Retry-After, секунды) ·
@@ -56,6 +57,7 @@ export type ClientErrorCode =
   | "consent_required"
   | "guests_over_capacity"
   | "lead_time_too_short"
+  | "date_busy"
   | "invalid_input"
   | "daily_request_limit"
   | "rate_limited"

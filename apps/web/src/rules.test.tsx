@@ -285,3 +285,87 @@ describe("заявка от начала до конца", () => {
     await waitFor(() => document.querySelector(`a[href="tel:${VENUE.phone}"]`), "телефон площадки");
   });
 });
+
+describe("занятая дата", () => {
+  it("витрина на занятую дату: блок с ближайшими свободными днями, заявка — на другую дату", async () => {
+    await mount({ path: `${VENUE_PATH}?date=${BUSY_DAY}&guests=120` });
+    const block = await waitFor(() => document.querySelector(".busy-day"), "блок занятой даты");
+    expect(block.textContent).toContain("8 окт исполнитель занят");
+    // Пометки «занято» в шапке нет: объяснение — один раз, блоком
+    expect(document.querySelector(".venue-head .chip-busy")).toBeNull();
+    const days = [...block.querySelectorAll<HTMLAnchorElement>(".busy-alts a")];
+    expect(days.length).toBeGreaterThan(0);
+    for (const day of days) {
+      const query = new URLSearchParams(day.getAttribute("href")?.split("?")[1]);
+      expect(VENUE?.busyDates).not.toContain(query.get("date"));
+      expect(query.get("guests")).toBe("120");
+    }
+    expect(byText<HTMLAnchorElement>("a", "Кто свободен 8 окт")?.getAttribute("href")).toBe(
+      `/catalog?date=${BUSY_DAY}`,
+    );
+    // Кнопка заявки — без занятой даты: день выбирают в форме
+    const cta = byText<HTMLAnchorElement>(".venue-bar a", "Заявка на другую дату");
+    expect(cta?.getAttribute("href")).toBe(`${FORM_PATH}?guests=120`);
+  });
+
+  it("в форму пришли с занятой датой: её нет, и сказано почему", async () => {
+    await mount({ path: `${FORM_PATH}?date=${BUSY_DAY}` });
+    await waitFor(() => transferCheckbox(), "форма заявки");
+    expect(field("Дата события")?.textContent).toContain("Выберите дату");
+    expect(text()).toContain("8 окт у исполнителя занято — выберите другую дату.");
+  });
+
+  it("сервер сказал «день занят» (витрина устарела): ошибка у даты, день в календаре занят", async () => {
+    const api = createMockApi({ now: () => NOW, listings: LISTINGS });
+    Object.assign(api, {
+      createRequest: () =>
+        Promise.reject(new ApiError(409, "date_busy", undefined, undefined, ["eventDate"])),
+    });
+    await mount({ path: FORM_PATH, api });
+    await waitFor(() => transferCheckbox(), "форма заявки");
+    await fillForm();
+    await click(transferCheckbox());
+    await click(byText("button", "Отправить заявку"));
+    await waitFor(() => byText(".fld-error", /В этот день исполнитель занят/), "ошибка у даты");
+    await click(field("Дата события"));
+    expect(calendarDay("15 окт")?.getAttribute("aria-label")).toBe("15 окт, занято");
+    expect(calendarDay("15 окт")?.getAttribute("aria-disabled")).toBe("true");
+  });
+});
+
+describe("вход перед заявкой — до кнопки, а не после", () => {
+  it("гость сайта: у кнопки заявки сказано, что нужен вход и чем войти", async () => {
+    await mount({ path: VENUE_PATH, identity: "guest" });
+    await waitFor(() => byText(".bar-note", /после входа/), "пометка о входе");
+    expect(byText(".bar-note", /после входа/)?.textContent).toContain(
+      "через Telegram или по номеру телефона",
+    );
+  });
+
+  it("вход по телефону выключен — о телефоне ни слова", async () => {
+    await mount({ path: VENUE_PATH, identity: "guest", mock: { phone: false } });
+    const note = await waitFor(() => byText(".bar-note", /после входа/), "пометка о входе");
+    expect(note.textContent).not.toMatch(/телефон/);
+  });
+
+  it("в Telegram и после входа — обычная пометка", async () => {
+    await mount({ path: VENUE_PATH });
+    await waitFor(() => document.querySelector(".venue-bar"), "витрина");
+    expect(document.querySelector(".bar-note")?.textContent).toBe(
+      "Заявка бесплатна и не закрепляет дату: её подтверждает исполнитель.",
+    );
+  });
+
+  it("гость на форме заявки видит, что уже выбрано: дата, гости, услуги", async () => {
+    const service = VENUE?.services[0];
+    if (!service) throw new Error("у демо-площадки нет услуг");
+    await mount({ path: `${VENUE_PATH}?date=2026-10-15&guests=120`, identity: "guest" });
+    await click(await waitFor(() => document.querySelector(".svc-pick"), "услуга «в заявку»"));
+    cleanup();
+    await mount({ path: `${FORM_PATH}?date=2026-10-15&guests=120`, identity: "guest" });
+    const summary = await waitFor(() => byText("section", /Что уйдёт в заявку/), "что уйдёт в заявку");
+    expect(summary.textContent).toContain("15 окт");
+    expect(summary.textContent).toContain("120");
+    expect(summary.textContent).toContain(service.name.ru);
+  });
+});

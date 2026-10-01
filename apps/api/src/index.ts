@@ -1,3 +1,4 @@
+import { HSTS, httpsRedirect } from "@bayramm/edge/https";
 import { Hono } from "hono";
 import { Client } from "pg";
 import { scheduled } from "./cron";
@@ -17,6 +18,15 @@ import { vendor } from "./routes/vendor";
 
 // Веб проксирует /api/* сюда, отрезая префикс: /api/me → /me
 const app = new Hono<AppEnv>();
+
+// Только HTTPS (packages/edge, https.ts): по http — редирект до маршрутов (308 сохраняет метод
+// POST вебхука и входа), ответы — со Strict-Transport-Security. Первым: раньше /health и лимитов
+app.use(async (c, next) => {
+  const insecure = httpsRedirect(c.req.raw);
+  if (insecure) return insecure;
+  await next();
+  c.res.headers.set("Strict-Transport-Security", HSTS);
+});
 
 type DbStatus = "ok" | "error" | "not_configured";
 

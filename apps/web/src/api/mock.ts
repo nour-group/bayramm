@@ -722,6 +722,12 @@ export function createMockApi(options: MockOptions = {}): MockApi {
             r.listing.id === body.listingId && r.eventDate === body.eventDate && ACTIVE.includes(r.status),
         );
         if (duplicate) throw new ApiError(409, "duplicate_request", duplicate.id);
+        // Занятый день или часть дня — как в API (requests/service.ts, assertDateFree)
+        if (demoDayLoad(listing, body.eventDate) === "busy")
+          throw new ApiError(409, "date_busy", undefined, undefined, ["eventDate"]);
+        const takenParts = listing.busyParts.find((p) => p.date === body.eventDate)?.parts ?? [];
+        if (dayPart !== null && takenParts.includes(dayPart))
+          throw new ApiError(409, "date_busy", undefined, undefined, ["details.start_time"]);
         created.push(body);
         const createdAt = now();
         const request: ClientRequest = {
