@@ -124,6 +124,7 @@ export function safeVideoLinks(links: readonly string[]): { readonly href: strin
   return links.flatMap((link) => {
     const href = normalizeVideoLink(link);
     if (href === null) return [];
-    return [{ href, host: href.includes("instagram.com") ? "Instagram" : "YouTube" }];
+    // Канонический вид — только www.youtube.com и www.instagram.com: подпись по хосту
+    return [{ href, host: new URL(href).hostname === "www.instagram.com" ? "Instagram" : "YouTube" }];
   });
 }
