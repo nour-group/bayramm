@@ -18,11 +18,11 @@ import {
 } from "../support/vendor-api";
 
 /* Кабинет партнёра: экраны до входа (вне Telegram и отказы API), входящие, карточка
-   заявки, календарь, площадка, услуги, аккаунт — на перехваченном /api. Роли: владелец
-   кабинета меняет карточку (фото, правки, услуги), сотрудник площадки — только заявки и
+   заявки, календарь, витрина, услуги, аккаунт — на перехваченном /api. Роли: владелец
+   кабинета меняет витрину (фото, предложения, услуги), сотрудник площадки — только заявки и
    календарь. Витрины в разных категориях (listings: "many") — в конце: выбор витрины,
-   входящие по витрине, поля заявки, услуги, поля витрины и видео, фото с согласием людей,
-   части дня и срок заказа вместо календаря.
+   входящие по витрине, витрина не на сайте и её чек-лист готовности, поля заявки, услуги,
+   данные витрины и видео, фото с согласием людей, части дня и срок заказа вместо календаря.
 
    Два проекта: vendor-phone (Mini App на телефоне, нижняя панель) и vendor-desktop (сайт,
    1280px: боковая панель, заявки списком и карточкой рядом). Проверки раскладки —
@@ -384,7 +384,8 @@ test.describe("кабинет", () => {
     await expect(page.getByRole("checkbox")).toHaveCount(0);
     await expect(page.locator(".photo-delete")).toHaveCount(0);
     await expect(page.getByRole("button", { name: t.proposalStart })).toHaveCount(0);
-    await expect(page.getByText(t.proposalOwnerOnly)).toBeVisible();
+    // Кто меняет витрину — сказано один раз, вверху; блока изменений без предложений нет
+    await expect(page.locator(".proposal")).toHaveCount(0);
     await expectNoAxeViolations(page, "площадка: сотрудник площадки");
     await expectHitAreas(page, "площадка: сотрудник площадки", CONTROLS);
 
@@ -406,7 +407,7 @@ test.describe("кабинет", () => {
     expect(api.signIns.length).toBeGreaterThan(0);
     for (const body of api.signIns) expect(body).toMatchObject({ app: "vendor" });
 
-    await page.getByRole("button", { name: t.proposalStart }).click();
+    await page.getByRole("button", { name: t.proposalStart, exact: true }).click();
     const form = page.locator("form.proposal-form");
     await expect(form).toBeVisible();
     // Цены в правке нет: она — из услуг; поля витрины зала — из конфигурации категории
@@ -429,7 +430,7 @@ test.describe("кабинет", () => {
     await expect(dialog).toContainText(t.proposalWithdrawQ);
     await expectNoAxeViolations(page, "изменения карточки: отзыв");
     await dialog.getByRole("button", { name: t.proposalWithdraw }).click();
-    await expect(page.getByRole("button", { name: t.proposalStart })).toBeVisible();
+    await expect(page.getByRole("button", { name: t.proposalStart, exact: true })).toBeVisible();
     expect(api.revisions.map((r) => r.status)).toEqual(["withdrawn"]);
     expect(api.unexpected).toEqual([]);
   });
@@ -539,7 +540,7 @@ test.describe("кабинет", () => {
       for (const path of screens) {
         await page.goto(path);
         await heading(page).waitFor();
-        await expect(page.locator(".status-line")).toHaveCount(0);
+        await expect(page.locator(".status-line, .skeleton")).toHaveCount(0);
         await expectNoOverflow(page, `${width}px ${path}`);
         await expectHitAreas(page, `${width}px ${path}`, CONTROLS);
         // Разделы видны на любой ширине: панель снизу, колонка или боковая панель
@@ -550,10 +551,17 @@ test.describe("кабинет", () => {
 });
 
 test.describe("витрины в разных категориях", () => {
-  /** Выбрать витрину: на компьютере — в боковой панели, на телефоне — пилюли вверху экрана */
+  /**
+   * Выбрать витрину: на компьютере — в боковой панели, на телефоне (витрин больше двух) — список
+   * выбора вверху экрана
+   */
   async function chooseVitrina(page: Page, name: string) {
-    const scope = isDesktop(page) ? page.locator(".side-vitrinas") : page.locator("main .vitrina-pills");
-    await scope.getByRole("button", { name }).click();
+    if (isDesktop(page)) {
+      await page.locator(".side-vitrinas").getByRole("button", { name }).click();
+      return;
+    }
+    await page.locator("main .vitrina-select").getByRole("button").click();
+    await page.getByRole("option", { name: new RegExp(`^${name}`) }).click();
   }
 
   test("входящие: все витрины или одна; заявка — категория, часть дня, поля категории и услуги", async ({
@@ -562,8 +570,15 @@ test.describe("витрины в разных категориях", () => {
     const api = await start(page, { listings: "many" });
     await page.goto("/requests");
     await expect(heading(page)).toHaveText(t.requests);
-    const filter = page.getByRole("group", { name: t.inboxFilter });
-    await expect(filter.getByRole("button", { name: t.allListings })).toHaveAttribute("aria-pressed", "true");
+    // Выбор витрины — один на экране: на компьютере в боковой панели, на телефоне — над списком
+    if (isDesktop(page)) {
+      await expect(page.locator("main .vitrina-select")).toHaveCount(0);
+      await expect(
+        page.locator(".side-vitrinas").getByRole("button", { name: t.allListings }),
+      ).toHaveAttribute("aria-pressed", "true");
+    } else {
+      await expect(page.locator("main .vitrina-select").getByRole("button")).toContainText(t.allListings);
+    }
     await expect(page.locator(".rq-list .rq")).toHaveCount(2);
     const car = page.locator(".rq-list .rq").filter({ hasText: "Дильноза" });
     await expect(car.locator(".chip-cat")).toHaveText("Кортеж");
@@ -573,7 +588,7 @@ test.describe("витрины в разных категориях", () => {
     await expectHitAreas(page, "входящие: витрины", CONTROLS);
     await expectNoOverflow(page, "входящие: витрины");
 
-    await filter.getByRole("button", { name: /Kortej Premium/ }).click();
+    await chooseVitrina(page, "Kortej Premium");
     await expect(page.locator(".rq-list .rq")).toHaveCount(1);
     await expect.poll(() => api.inboxQueries.at(-1)).toEqual({ tab: "new", listingId: CAR_ID });
     // Значок у раздела — новые всех витрин
@@ -591,6 +606,35 @@ test.describe("витрины в разных категориях", () => {
     await expectNoAxeViolations(page, "заявка на кортеж");
     await expectHitAreas(page, "заявка на кортеж", CONTROLS);
     await expectNoOverflow(page, "заявка на кортеж");
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("витрина не на сайте: во входящих — почему и путь к чек-листу; пункты ведут туда, где их делают", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/requests");
+    const notLive = page.locator(".not-live");
+    await expect(notLive).toContainText(fill(t.notLiveDraft, { name: "Kadr Studio" }));
+    await expectNoAxeViolations(page, "входящие: витрина не на сайте");
+    await notLive.getByRole("button", { name: new RegExp(`^${t.whatIsLeft}`) }).click();
+    await expect(heading(page)).toHaveText(t.card);
+    const ready = page.locator(".readiness");
+    await expect(ready.getByRole("heading", { name: t.blockersTitle })).toBeVisible();
+    await expect(ready).toContainText(t.readyDraft);
+    await expectNoAxeViolations(page, "витрина: чек-лист готовности");
+    await expectHitAreas(page, "витрина: чек-лист готовности", CONTROLS);
+    await expectNoOverflow(page, "витрина: чек-лист готовности");
+    // «Данные витрины» — форма предложения открывается, фокус — в первом поле
+    await ready
+      .getByRole("button", { name: new RegExp(`^${t.proposalStart}`) })
+      .first()
+      .click();
+    await expect(page.locator("form.proposal-form input").first()).toBeFocused();
+    // «Добавьте услугу с ценой» — в «Услуги» той же витрины
+    await ready.getByRole("button", { name: new RegExp(`^${t.toServices}`) }).click();
+    await expect(heading(page)).toHaveText(t.services);
+    await expect(page.locator(".svc-head")).toBeVisible();
     expect(api.unexpected).toEqual([]);
   });
 
@@ -672,8 +716,8 @@ test.describe("витрины в разных категориях", () => {
     const api = await start(page, { listings: "many" });
     await page.goto("/card");
     await chooseVitrina(page, "Kortej Premium");
-    await expect(page.locator(".venue-name")).toHaveText("Kortej Premium");
-    await page.getByRole("button", { name: t.proposalStart }).click();
+    await expect(page.locator(".venue .chip-cat")).toHaveText("Кортеж");
+    await page.getByRole("button", { name: t.proposalStart, exact: true }).click();
     const form = page.locator("form.proposal-form");
     await form.getByRole("button", { name: `${t.listAdd}: Автопарк` }).click();
     const rows = form.locator(".attr-list .package-row");
@@ -705,7 +749,9 @@ test.describe("витрины в разных категориях", () => {
     const api = await start(page, { listings: "many" });
     await page.goto("/card");
     await chooseVitrina(page, "Kadr Studio");
-    await expect(page.locator(".venue-name")).toHaveText("Kadr Studio");
+    // Имя витрины — один раз: в выборе (телефон) или заголовком (выбор — в боковой панели)
+    if (isDesktop(page)) await expect(page.locator(".venue-name")).toHaveText("Kadr Studio");
+    else await expect(page.locator(".venue-name")).toHaveCount(0);
     await expect(page.locator(".readiness")).toContainText("Команда");
     const section = page.locator("section[aria-labelledby='photos-title']");
     await expect(section.getByText(t.portfolioWarning)).toBeVisible();
@@ -728,7 +774,7 @@ test.describe("витрины в разных категориях", () => {
       expect.objectContaining({ listingId: PHOTO_ID, consent: "1", noFaces: "" }),
     ]);
 
-    await page.getByRole("button", { name: t.proposalStart }).click();
+    await page.getByRole("button", { name: t.proposalStart, exact: true }).click();
     const form = page.locator("form.proposal-form");
     await form.getByLabel(fill(t.videoLabel, { n: 1 })).fill("https://vimeo.com/123456");
     await form.getByRole("button", { name: t.proposalSubmit }).click();
@@ -760,18 +806,20 @@ test.describe("витрины в разных категориях", () => {
     await expect(dayButton(page, 24)).toHaveAttribute("aria-pressed", "true");
     const panel = page.locator(".day-panel");
     await expect(panel.getByRole("heading", { level: 2 })).toContainText("24");
-    await expect(
-      panel.getByRole("button", { name: new RegExp(`^${t.markFree}: ${t.part_morning}`) }),
-    ).toBeVisible();
+    // Части выбранного дня — на экране, даже если месяц занял его целиком (телефон)
+    await expect(panel).toBeInViewport();
+    // Часть дня — строка с переключателем «занято»: утро занято, вечер свободен (1 из 2 мест)
+    const morning = panel.getByRole("switch", { name: new RegExp(`^${t.part_morning}`) });
+    const evening = panel.getByRole("switch", { name: new RegExp(`^${t.part_evening}`) });
+    await expect(morning).toBeChecked();
+    await expect(evening).not.toBeChecked();
     await expect(panel.locator(".day-part").nth(3)).toContainText(fill(t.partBookings, { n: 1, cap: 2 }));
     await expectNoAxeViolations(page, "календарь частей дня");
     await expectHitAreas(page, "календарь частей дня", CONTROLS);
     await expectNoOverflow(page, "календарь частей дня");
 
-    await panel.getByRole("button", { name: new RegExp(`^${t.markBusy}: ${t.part_evening}`) }).click();
-    await expect(
-      panel.getByRole("button", { name: new RegExp(`^${t.markFree}: ${t.part_evening}`) }),
-    ).toBeVisible();
+    await evening.check();
+    await expect(evening).toBeChecked();
     await expect.poll(() => api.calendarWrites).toEqual(["PUT 2026-10-24?part=evening If-Match: 1"]);
 
     await page.getByRole("button", { name: `${t.capacityTitle}: ${t.capacityMore}` }).click();
@@ -835,10 +883,14 @@ test.describe("витрины в разных категориях", () => {
         await page.goto(path);
         await heading(page).waitFor();
         if (vitrina) {
-          const scope = width >= 1024 ? page.locator(".side-vitrinas") : page.locator("main .vitrina-pills");
-          await scope.getByRole("button", { name: vitrina }).click();
+          if (width >= 1024) {
+            await page.locator(".side-vitrinas").getByRole("button", { name: vitrina }).click();
+          } else {
+            await page.locator("main .vitrina-select").getByRole("button").click();
+            await page.getByRole("option", { name: new RegExp(`^${vitrina}`) }).click();
+          }
         }
-        await expect(page.locator(".status-line")).toHaveCount(0);
+        await expect(page.locator(".status-line, .skeleton")).toHaveCount(0);
         await expectNoOverflow(page, `${width}px ${path} ${vitrina ?? ""}`);
         await expectHitAreas(page, `${width}px ${path} ${vitrina ?? ""}`, CONTROLS);
       }
