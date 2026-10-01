@@ -121,6 +121,22 @@ export function RequestDetail({
     onChanged?.();
   }, [ready, onLoaded, onChanged]);
 
+  // Нажатая кнопка исчезает (форма отказа вместо действий, новые действия после ответа) —
+  // фокус не теряется в body: он переходит на первое поле или кнопку нового блока
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const refocus = useRef(false);
+  const decline = useCallback((open: boolean) => {
+    refocus.current = true;
+    setDeclining(open);
+  }, []);
+  const shownStatus = ready?.status;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: перенос фокуса — после смены формы или статуса
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    actionsRef.current?.querySelector<HTMLElement>("input, button:not(:disabled)")?.focus();
+  }, [declining, shownStatus]);
+
   const back = useCallback(() => navigate({ route: "requests" }), [navigate]);
   const nativeBack = useBackButton(back);
   // Ссылка «Назад» — для браузера и старых клиентов без кнопки Telegram
@@ -144,6 +160,7 @@ export function RequestDetail({
             ? current.history
             : [...current.history, { status: item.status, at: new Date().toISOString(), by: "vendor_user" }],
       }));
+      refocus.current = true;
       setDeclining(false);
       onChanged?.();
     } catch (err) {
@@ -268,92 +285,94 @@ export function RequestDetail({
         </p>
       ) : null}
 
-      {declining ? (
-        <DeclineForm
-          t={t}
-          busy={pending}
-          onCancel={() => setDeclining(false)}
-          onSubmit={(reason, note) =>
-            void act({
-              status: "declined",
-              declineReason: reason,
-              ...(note.trim() ? { declineNote: note } : {}),
-            })
-          }
-        />
-      ) : (
-        <div className="panel">
-          {status === "new" || status === "viewed" ? (
-            <>
-              <p className="note">{t.callFirst}</p>
-              <div className="actions">
+      <div className="request-actions" ref={actionsRef}>
+        {declining ? (
+          <DeclineForm
+            t={t}
+            busy={pending}
+            onCancel={() => decline(false)}
+            onSubmit={(reason, note) =>
+              void act({
+                status: "declined",
+                declineReason: reason,
+                ...(note.trim() ? { declineNote: note } : {}),
+              })
+            }
+          />
+        ) : (
+          <div className="panel">
+            {status === "new" || status === "viewed" ? (
+              <>
+                <p className="note">{t.callFirst}</p>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn btn-dark"
+                    disabled={pending}
+                    onClick={() => void act({ status: "contacted" })}
+                  >
+                    <Icon name="check" size={17} />
+                    {t.actContacted}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={pending}
+                    onClick={() => decline(true)}
+                  >
+                    {t.actDecline}
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {status === "contacted" ? (
+              <>
+                <p className="panel-title">{t.askOutcome}</p>
+                <div className="actions">
+                  <button
+                    type="button"
+                    className="btn btn-dark"
+                    disabled={pending}
+                    onClick={() => void act({ status: "deal" })}
+                  >
+                    <Icon name="check" size={17} />
+                    {t.actDeal}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={pending}
+                    onClick={() => decline(true)}
+                  >
+                    {t.actNoDeal}
+                  </button>
+                </div>
+              </>
+            ) : null}
+            {status === "deal" || status === "declined" ? (
+              <>
+                {status === "declined" && request.declineReason ? (
+                  <p className="note">
+                    {fill(t.reasonLine, { reason: textOf(t, `reason_${request.declineReason}`) })}
+                    {request.declineNote ? ` — ${request.declineNote}` : ""}
+                  </p>
+                ) : null}
                 <button
                   type="button"
-                  className="btn btn-dark"
+                  className="btn btn-ghost"
                   disabled={pending}
                   onClick={() => void act({ status: "contacted" })}
                 >
-                  <Icon name="check" size={17} />
-                  {t.actContacted}
+                  {t.actReopen}
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={pending}
-                  onClick={() => setDeclining(true)}
-                >
-                  {t.actDecline}
-                </button>
-              </div>
-            </>
-          ) : null}
-          {status === "contacted" ? (
-            <>
-              <p className="panel-title">{t.askOutcome}</p>
-              <div className="actions">
-                <button
-                  type="button"
-                  className="btn btn-dark"
-                  disabled={pending}
-                  onClick={() => void act({ status: "deal" })}
-                >
-                  <Icon name="check" size={17} />
-                  {t.actDeal}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={pending}
-                  onClick={() => setDeclining(true)}
-                >
-                  {t.actNoDeal}
-                </button>
-              </div>
-            </>
-          ) : null}
-          {status === "deal" || status === "declined" ? (
-            <>
-              {status === "declined" && request.declineReason ? (
-                <p className="note">
-                  {fill(t.reasonLine, { reason: textOf(t, `reason_${request.declineReason}`) })}
-                  {request.declineNote ? ` — ${request.declineNote}` : ""}
-                </p>
-              ) : null}
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={pending}
-                onClick={() => void act({ status: "contacted" })}
-              >
-                {t.actReopen}
-              </button>
-            </>
-          ) : null}
-          {status === "withdrawn" || status === "expired" ? (
-            <p className="note">{textOf(t, `st_${status}`)}</p>
-          ) : null}
-        </div>
-      )}
+              </>
+            ) : null}
+            {status === "withdrawn" || status === "expired" ? (
+              <p className="note">{textOf(t, `st_${status}`)}</p>
+            ) : null}
+          </div>
+        )}
+      </div>
 
       <p className="note">{t.consentNote}</p>
 

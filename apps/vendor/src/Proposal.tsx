@@ -21,7 +21,7 @@ import type {
 } from "@bayramm/shared/api/vendor";
 import { DESCRIPTION_MAX, MAX_REVISION_PACKAGES } from "@bayramm/shared/api/vendor";
 import { ConfirmSheet, RadioGroup } from "@bayramm/ui/react";
-import { type FormEvent, useId, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { formatMoment, formatMoney, groupDigits } from "./format";
 import { fill, textOf, type VendorDict, vendorDict } from "./i18n";
@@ -504,6 +504,24 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
   const [busy, setBusy] = useState(false);
   const [withdrawFailed, setWithdrawFailed] = useState(false);
   const withdrawButton = useRef<HTMLButtonElement>(null);
+  // Кнопка, которую нажали, исчезает (форма вместо «Предложить», «на проверке» вместо
+  // формы) — фокус переходит в новый блок: на первое поле формы, на «Предложить» после
+  // «Отмены», на заголовок раздела после отправки (сам статус «Отправлено» читает диктор)
+  const section = useRef<HTMLElement>(null);
+  const title = useRef<HTMLHeadingElement>(null);
+  const refocus = useRef<"first" | "title" | null>(null);
+  const edit = (open: boolean) => {
+    refocus.current = "first";
+    setEditing(open);
+  };
+  // biome-ignore lint/correctness/useExhaustiveDependencies: перенос фокуса — после смены формы или отправки
+  useEffect(() => {
+    const target = refocus.current;
+    if (target === null) return;
+    refocus.current = null;
+    if (target === "title") title.current?.focus();
+    else section.current?.querySelector<HTMLElement>(".proposal-form input, .proposal-start")?.focus();
+  }, [editing, sent]);
 
   const body = () => {
     if (revisions.state === "loading") return <Loading t={t} />;
@@ -600,16 +618,17 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
             t={t}
             onSent={(revision) => {
               setRevisions((list) => ({ items: [revision, ...list.items] }));
+              refocus.current = "title";
               setEditing(false);
               setSent(true);
             }}
             onPendingExists={reload}
-            onCancel={() => setEditing(false)}
+            onCancel={() => edit(false)}
           />
         ) : (
           <>
             <p className="note">{t.proposalLead}</p>
-            <button type="button" className="btn btn-dark proposal-start" onClick={() => setEditing(true)}>
+            <button type="button" className="btn btn-dark proposal-start" onClick={() => edit(true)}>
               {t.proposalStart}
             </button>
           </>
@@ -619,8 +638,8 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
   };
 
   return (
-    <section className="panel proposal" aria-labelledby="proposal-title">
-      <h2 className="section-title" id="proposal-title">
+    <section className="panel proposal" aria-labelledby="proposal-title" ref={section}>
+      <h2 className="section-title" id="proposal-title" ref={title} tabIndex={-1}>
         {t.proposalTitle}
       </h2>
       {body()}

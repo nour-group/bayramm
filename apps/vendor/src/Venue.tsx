@@ -314,8 +314,10 @@ export function Venue({ t, lang, headingRef, listings, listingId, onListing, ven
             />
 
             <div className="venue-side">
+              {/* Цена и телефон — во всю ширину: «от 25 млн сум за мероприятие» и номер в
+                половине строки телефона переносились посреди числа */}
               <dl className="facts">
-                <div>
+                <div className="facts-wide">
                   <dt>{t.priceLabel}</dt>
                   <dd>
                     {listing.data.priceFromUzs !== null
@@ -337,9 +339,11 @@ export function Venue({ t, lang, headingRef, listings, listingId, onListing, ven
                     {listing.data.districtCode ? textOf(t, `dist_${listing.data.districtCode}`) : t.notSet}
                   </dd>
                 </div>
-                <div>
+                <div className="facts-wide">
                   <dt>{t.phoneLabel}</dt>
-                  <dd>{listing.data.phone ? formatPhone(listing.data.phone) : t.notSet}</dd>
+                  <dd className="fact-phone">
+                    {listing.data.phone ? formatPhone(listing.data.phone) : t.notSet}
+                  </dd>
                 </div>
                 <div className="facts-wide">
                   <dt>{t.address}</dt>

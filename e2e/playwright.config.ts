@@ -51,7 +51,9 @@ export default defineConfig({
   projects: [
     { name: "web-phone", testDir: "web", use: { ...phone, baseURL: APPS.web } },
     { name: "web-desktop", testDir: "web", use: { ...desktop, baseURL: APPS.web } },
+    // Кабинет — Mini App на телефоне и сайт на компьютере (заявки списком и карточкой рядом)
     { name: "vendor-phone", testDir: "vendor", use: { ...phone, baseURL: APPS.vendor } },
+    { name: "vendor-desktop", testDir: "vendor", use: { ...desktop, baseURL: APPS.vendor } },
     // Панель — и Mini App на телефоне: те же проверки плюс телефонные (mobile.spec.ts — только тут)
     {
       name: "admin-desktop",

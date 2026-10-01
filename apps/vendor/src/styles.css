@@ -46,6 +46,18 @@ body {
   min-width: 0;
 }
 
+/* «Нет связи» — на виду и при прокрутке: под шапкой (телефон, планшет, вход), на компьютере
+   шапки нет — у верхнего края */
+.frame > .ui-net {
+  position: sticky;
+  top: calc(var(--pad-t) + 65px);
+  z-index: 2;
+}
+
+.app-desktop .frame > .ui-net {
+  top: 0;
+}
+
 /* Только для диктора: счётчик новых у раздела «Заявки» словами */
 .sr-only {
   position: absolute;
@@ -398,7 +410,7 @@ body {
 }
 
 /* Узкий телефон (320–374px): три подписи со счётчиками в строку не влезают — счётчик под
-   подписью, вкладки равной ширины */
+   подписью, вкладки равной ширины. Календарь узкого телефона — ниже, у .cal */
 @media (max-width: 374px) {
   .pills-fill .pill {
     flex: 1 1 0;
@@ -644,6 +656,11 @@ body {
   grid-column: 1 / -1;
 }
 
+/* Номер телефона не рвётся посреди цифр */
+.fact-phone {
+  white-space: nowrap;
+}
+
 .facts dt {
   color: var(--muted-lt);
   font-size: var(--fs-12-5);
@@ -688,6 +705,13 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-9);
+}
+
+/* Действия заявки или форма отказа — блок, куда переходит фокус после нажатия */
+.request-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
 }
 
 .actions .btn {
@@ -820,6 +844,32 @@ body {
 
 .cal-day.cal-we {
   background: var(--cell-wk);
+}
+
+/* Телефон уже 390px: семь дней по 44px с полями экрана и рамкой месяца не влезают.
+   Месяц — от края до края экрана, дни — без зазора, а зазор рисует прозрачная рамка
+   (фон под ней не красится): палец попадает в 45px и больше, рисунок дня — меньше */
+@media (max-width: 389px) {
+  .cal {
+    margin: 0 -16px;
+    padding: 14px 0;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .cal-head {
+    padding: 0 12px;
+  }
+
+  .cal-grid {
+    gap: 0;
+  }
+
+  .cal-day {
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
 }
 
 .cal-day:disabled {
@@ -1269,8 +1319,8 @@ body {
 
 .rail {
   position: sticky;
-  /* под шапкой: 8 + 44 + 8 + линия и верхние безопасные зоны */
-  top: calc(var(--pad-t) + 61px);
+  /* под шапкой: 8 + язык 48 + 8 + линия и верхние безопасные зоны */
+  top: calc(var(--pad-t) + 65px);
   display: flex;
   flex-direction: column;
   align-self: start;

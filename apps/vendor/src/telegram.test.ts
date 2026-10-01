@@ -2,8 +2,9 @@
 // Загрузчик SDK общий (@bayramm/tg/webapp, там же подробные проверки); здесь — что он
 // работает с настоящим окном браузера: адрес, sessionStorage, <script> в <head>
 import { TELEGRAM_WEB_APP_SCRIPT } from "@bayramm/edge";
+import { base } from "@bayramm/ui";
 import { afterEach, describe, expect, it } from "vitest";
-import { launchedFromTelegram, loadTelegramWebApp } from "./telegram";
+import { announceReady, launchedFromTelegram, loadTelegramWebApp, type TelegramWebApp } from "./telegram";
 
 const sdkScripts = () =>
   [...document.head.querySelectorAll("script")].filter((s) => s.src === TELEGRAM_WEB_APP_SCRIPT);
@@ -35,5 +36,47 @@ describe("SDK Telegram в окне браузера", () => {
   it("перезагрузка без параметров в адресе — Telegram узнаётся по сохранённым SDK", () => {
     window.sessionStorage.setItem("__telegram__initParams", "{}");
     expect(launchedFromTelegram()).toBe(true);
+  });
+});
+
+describe("Mini App готов", () => {
+  const calls: string[] = [];
+  const fake = (version: string | null): TelegramWebApp => {
+    const record =
+      (name: string) =>
+      (...args: unknown[]) =>
+        void calls.push([name, ...args].join(" "));
+    return {
+      initData: "hash=x",
+      initDataUnsafe: {},
+      ready: record("ready"),
+      expand: record("expand"),
+      setHeaderColor: record("header"),
+      setBackgroundColor: record("background"),
+      setBottomBarColor: record("bottom"),
+      disableVerticalSwipes: record("noSwipes"),
+      ...(version ? { isVersionAtLeast: (v: string) => Number(v) <= Number(version) } : {}),
+    } as unknown as TelegramWebApp;
+  };
+
+  afterEach(() => {
+    calls.length = 0;
+  });
+
+  it("свежий клиент: цвета из токенов, свайп вниз не сворачивает", () => {
+    announceReady(fake("8.0"));
+    expect(calls).toEqual([
+      "ready",
+      "expand",
+      `header ${base.white}`,
+      `background ${base.paper}`,
+      `bottom ${base.railBg}`,
+      "noSwipes",
+    ]);
+  });
+
+  it("старый клиент без проверки версии — только готовность и весь экран", () => {
+    announceReady(fake(null));
+    expect(calls).toEqual(["ready", "expand"]);
   });
 });

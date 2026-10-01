@@ -428,6 +428,16 @@ describe("заявки", () => {
     });
   });
 
+  it("фокус не теряется: форма отказа — на первую причину, «Отмена» и ответ — на новые действия", async () => {
+    await mount(`/requests/${REQUEST_ID}`);
+    await click(byText("button", "Отказать"));
+    expect((document.activeElement as HTMLInputElement | null)?.name).toBe("decline-reason");
+    await click(byText("form.decline button", "Отмена"));
+    expect(document.activeElement?.textContent).toBe("Я связался с клиентом");
+    await click(byText("button", "Я связался с клиентом"));
+    expect(document.activeElement?.textContent).toBe("Договорились");
+  });
+
   it("переход устарел (409) — сообщение и свежая карточка", async () => {
     routes[`PATCH /api/vendor/requests/${REQUEST_ID}`] = () => ({
       status: 409,
@@ -684,6 +694,22 @@ describe("изменения карточки", () => {
     expect(container.querySelector(".venue-side > .facts")?.textContent).toContain(
       "от 150\u202f000 сум за гостя",
     );
+  });
+
+  it("фокус не теряется: форма — на первое поле, «Отмена» — на «Предложить», отправка — на заголовок", async () => {
+    routes[`POST ${revisionsPath}`] = (init) => ({
+      status: 201,
+      body: revision({ payload: JSON.parse(String(init.body)) }),
+    });
+    await mount("/card");
+    await click(byText("button", "Предложить изменения"));
+    expect(document.activeElement).toBe(field("Название"));
+    await click(byText(".proposal-form button", "Отмена"));
+    expect(document.activeElement?.textContent).toBe("Предложить изменения");
+    await click(byText("button", "Предложить изменения"));
+    await type(field("Цена от, сум"), "170 000");
+    await click(byText("button", "Отправить на проверку"));
+    expect(document.activeElement?.id).toBe("proposal-title");
   });
 
   it("цена не числом — ошибка у поля без запроса; «по запросу» не бывает", async () => {
