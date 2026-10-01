@@ -93,17 +93,19 @@ export function useUnsavedGuard(webApp: TelegramWebApp | null): Unsaved {
     else leave();
   }, []);
 
-  // Перезагрузка и закрытие вкладки: браузер спрашивает своим окном (текст — его)
+  // Перезагрузка и закрытие вкладки: браузер спрашивает своим окном (текст — его). Есть ли что
+  // терять — по реестру в момент ухода, а не по отрисовке: стёрли поле и сразу обновили
+  // страницу — вопроса нет
   useEffect(() => {
-    if (!any) return;
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirty.current.size === 0) return;
       event.preventDefault();
       // Старые браузеры спрашивают, только если задан returnValue
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [any]);
+  }, []);
 
   // Закрыть Mini App с несохранённым — Telegram переспросит (6.2+)
   useEffect(() => {
