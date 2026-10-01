@@ -150,7 +150,7 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
   return (
     <section className="panel" aria-labelledby="services-title">
       <div className="panel-head">
-        <h2 id="services-title">
+        <h2 id="services-title" tabIndex={-1}>
           {t.services} <span className="count">{listing.services.length}</span>
         </h2>
         {editable && editing === null ? (

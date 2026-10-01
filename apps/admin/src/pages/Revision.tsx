@@ -1,7 +1,8 @@
-/* Правка опубликованной карточки: «сейчас» и «предлагает» по каждому полю. Предлагает
-   вендор из кабинета или менеджер из панели — кто именно, видно в шапке. Одобрить —
-   значения сразу попадают в карточку; отклонить — только с причиной (её увидит вендор).
-   Решает модератор или администратор. */
+/* Предложение изменений опубликованной витрины: «сейчас» и «предлагает» по каждому полю.
+   Предлагает вендор из кабинета или менеджер из панели — кто именно, видно в шапке.
+   Одобрить — значения сразу попадают на витрину; отклонить — только с причиной (её увидит
+   вендор). Решает модератор или администратор; после решения — кнопка к следующему
+   предложению в очереди (NextInQueue), фокус — на ней. */
 
 import type {
   PriceUnit,
@@ -32,6 +33,7 @@ import {
   StatusPill,
   useEntityTitle,
 } from "../ui";
+import { NextInQueue } from "./NextInQueue";
 
 export function RevisionPage({ id }: { id: string }) {
   const { loaded, reload, set } = useLoad<RevisionDetail>(`/staff/revisions/${id}`);
@@ -133,6 +135,8 @@ function RevisionView({
   const can = useCan();
   const phone = usePhone();
   const [pending, setPending] = useState<"approve" | "decline" | null>(null);
+  // Решили здесь и сейчас — показать путь к следующему предложению очереди
+  const [decided, setDecided] = useState(false);
   const approveButton = useRef<HTMLButtonElement>(null);
   const declineButton = useRef<HTMLButtonElement>(null);
 
@@ -143,6 +147,7 @@ function RevisionView({
         : await api.post<RevisionDetail>(`/staff/revisions/${revision.id}/approve`);
     if (!result.ok) return result;
     setPending(null);
+    setDecided(true);
     onChange(result.data);
     return null;
   };
@@ -182,6 +187,7 @@ function RevisionView({
         )}
       </div>
 
+      {decided && !open ? <NextInQueue queue="revisions" currentId={revision.id} /> : null}
       {open && revision.stale && <p className="notice notice-warn">{t.revisionStale}</p>}
       {open && !revision.valid && <p className="notice notice-error">{t.revisionInvalid}</p>}
 

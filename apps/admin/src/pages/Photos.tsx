@@ -150,7 +150,7 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
 
   return (
     <section className="panel" aria-labelledby="photos-title">
-      <h2 id="photos-title">
+      <h2 id="photos-title" tabIndex={-1}>
         {t.photos} <span className="count">{photos.length}</span>
       </h2>
       <p className="muted small">{t.photosHint(minPhotos, maxPhotos)}</p>

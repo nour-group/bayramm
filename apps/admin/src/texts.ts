@@ -212,6 +212,9 @@ export const t = {
     pd_consent: "Согласие на обработку ПДн подписано",
   } as Record<string, string>,
   blockersReview: "Не хватает для проверки",
+  // переход от пункта «чего не хватает» к блоку, где он заполняется
+  goTo: "Перейти",
+  toChecklist: "К проверке вендора",
   blockersActive: "Не хватает для публикации",
   readyToPublish: "Всё готово к публикации",
   legalForms: { ooo: "ООО", yatt: "ЯТТ (ИП)", self_employed: "Самозанятый" },
@@ -1000,6 +1003,15 @@ export const t = {
   serviceApprove: "Одобрить",
   serviceDecline: "Отклонить",
   serviceDeclineHint: "Причину увидит партнёр в кабинете.",
+  // что решили по услуге в очереди — строкой статуса (фокус уже на следующей)
+  serviceApproved: (name: string) => `Одобрено: ${name}. Дальше — следующая услуга.`,
+  serviceDeclinedSaid: (name: string) => `Отклонено: ${name}. Дальше — следующая услуга.`,
+  guestsUpTo: (n: number) => `до ${n} гостей`,
+  // после решения по предложению или витрине на проверке — к следующему в очереди
+  nextRevision: (name: string) => `Следующее предложение: ${name}`,
+  nextReview: (name: string) => `Следующая на проверке: ${name}`,
+  queueDone: "В этой очереди больше ничего не ждёт решения.",
+  toModeration: "К модерации",
 
   // занятость по режимам категорий
   availabilityHints: {
@@ -1015,7 +1027,7 @@ export const t = {
   partBookings: (count: number, capacity: number) => `договорённостей: ${count} из ${capacity}`,
   dayLoad: { free: "свободно", partial: "занято частично", busy: "занято" } as Record<string, string>,
   legendPartial: "занято частично",
-  capacityNow: (n: number) => `Заказов одновременно: ${n} — меняется в данных витрины.`,
+  capacityNow: (n: number) => `Заказов одновременно: ${n} — меняется в одноимённом блоке формы витрины.`,
   pickedDay: (day: string) => `День: ${day}`,
   leadTitle: "Срок заказа",
   leadHint: "Календаря у этой категории нет: витрина принимает заказы не позже чем за указанный срок.",

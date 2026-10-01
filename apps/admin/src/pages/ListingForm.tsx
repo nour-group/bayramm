@@ -33,10 +33,10 @@ import {
 } from "@bayramm/shared/categories";
 import { NumberStepper, Select } from "@bayramm/ui/react";
 import { type FormEvent, useEffect, useId, useState } from "react";
-import type { Failure } from "../api";
+import type { Failure, Result } from "../api";
 import { categoryName } from "../categories";
 import { t } from "../texts";
-import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
+import { ErrorText, Field, FormBar, fieldErrors, PhoneReveal, useRevealErrors } from "../ui";
 import { useUnsaved } from "../unsaved";
 import { AttributeFields } from "./AttributeFields";
 
@@ -172,6 +172,8 @@ interface ListingFormProps {
   moderated?: boolean;
   /** Есть несохранённые правки (true) или форма как в витрине (false) */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Телефон для заявок: вписан ли и как его показать (чтение пишется в журнал) */
+  phone?: { readonly has: boolean; readonly load: () => Promise<Result<string | null>> };
 }
 
 /** Что ушло на модерацию и было ли в правке что-то ещё (оно сохранено сразу) */
@@ -190,6 +192,7 @@ export function ListingForm({
   readOnly,
   moderated = false,
   onDirtyChange,
+  phone,
 }: ListingFormProps) {
   const [before, setBefore] = useState(() => formState(listing, category));
   const [now, setNow] = useState(before);
@@ -314,7 +317,9 @@ export function ListingForm({
       {moderatedHint && <p className="notice notice-warn">{t.moderatedNotice}</p>}
       <section className="fs">
         <div className="fs-head">
-          <h2>{t.listingSections.main}</h2>
+          <h2 id="form-main-title" tabIndex={-1}>
+            {t.listingSections.main}
+          </h2>
           <p>{t.listingSections.mainHint}</p>
         </div>
         <div className="fields">
@@ -352,15 +357,14 @@ export function ListingForm({
               />
             )}
           </Field>
-          <Field label={t.category}>
-            {(props) => <input {...props} className="input" readOnly value={categoryName(category.code)} />}
-          </Field>
         </div>
       </section>
 
       <section className="fs">
         <div className="fs-head">
-          <h2>{t.listingSections.texts}</h2>
+          <h2 id="form-texts-title" tabIndex={-1}>
+            {t.listingSections.texts}
+          </h2>
           <p>{t.listingSections.textsHint}</p>
         </div>
         <div className="fields">
@@ -374,7 +378,9 @@ export function ListingForm({
       {category.attributes.length > 0 || parts.capacity ? (
         <section className="fs">
           <div className="fs-head">
-            <h2>{t.listingDataSections.attributes}</h2>
+            <h2 id="form-attrs-title" tabIndex={-1}>
+              {t.listingDataSections.attributes}
+            </h2>
             <p>{t.listingDataSections.attributesHint(categoryName(category.code))}</p>
           </div>
           {parts.capacity ? (
@@ -487,13 +493,23 @@ export function ListingForm({
         </section>
       ) : null}
 
-      {/* Номер только пишется: без права правки этой части формы нет (номер — по «Показать») */}
-      {readOnly ? null : (
-        <section className="fs">
-          <div className="fs-head">
-            <h2>{t.listingSections.phone}</h2>
-            <p>{t.listingSections.phoneHint}</p>
-          </div>
+      {/* Телефон — один блок: нынешний номер по «Показать» (чтение — в журнал), новый — полем;
+        без права правки — только показать */}
+      <section className="fs">
+        <div className="fs-head">
+          <h2 id="form-phone-title" tabIndex={-1}>
+            {t.listingSections.phone}
+          </h2>
+          <p>{t.listingSections.phoneHint}</p>
+        </div>
+        {phone ? (
+          phone.has ? (
+            <PhoneReveal label={t.listingFields.phone ?? ""} load={phone.load} />
+          ) : (
+            <p className="muted">{t.phoneMissing}</p>
+          )
+        ) : null}
+        {readOnly ? null : (
           <div className="fields">
             <Field label={t.phoneChange} error={errors.phone} hint={t.phoneKeep}>
               {(props) => (
@@ -512,8 +528,8 @@ export function ListingForm({
               )}
             </Field>
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
       {failure && <ErrorText failure={failure} />}
       {!readOnly && (

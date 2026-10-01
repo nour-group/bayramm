@@ -38,6 +38,12 @@ import { VendorForm } from "./VendorForm";
 
 const CHECKLIST: readonly ChecklistItem[] = ["contract", "stir", "contacts", "pdConsent"];
 
+/**
+ * Пункты готовности, которые отмечают в «Проверке вендора» на этой же странице: у витрин их
+ * не повторяем — иначе четыре одинаковых строки у каждой витрины
+ */
+const VENDOR_CHECKS: ReadonlySet<string> = new Set(["contract", "stir", "contacts", "pd_consent"]);
+
 export function VendorNewPage({ dictionaries }: { dictionaries: StaffDictionaries | null }) {
   const { api } = useSession();
   const navigate = useNavigate();
@@ -211,9 +217,14 @@ function Listings({ vendor }: { vendor: VendorDetail }) {
               <span className="sub">
                 <CategoryChip code={listing.categoryCode} />{" "}
                 {formatPrice(listing.priceFromUzs, listing.priceUnit)}
-                {listing.capMax ? ` · до ${listing.capMax}` : ""}
+                {listing.capMax ? ` · ${t.guestsUpTo(listing.capMax)}` : ""}
               </span>
-              {listing.status !== "active" && <Blockers title={t.blockersActive} codes={listing.blockers} />}
+              {listing.status !== "active" && (
+                <Blockers
+                  title={t.blockersActive}
+                  codes={listing.blockers.filter((code) => !VENDOR_CHECKS.has(code))}
+                />
+              )}
             </li>
           ))}
         </ul>

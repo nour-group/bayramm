@@ -701,6 +701,18 @@ export function ActiveFilter({ label, onClear }: { label: string; onClear: () =>
 }
 
 /**
+ * Перейти к блоку страницы по id его заголовка (tabIndex -1): прокрутить к нему и поставить
+ * фокус — диктор прочтёт, куда пришли. Фокус без прокрутки (ловушка №3), scrollIntoView есть
+ * не везде (№5)
+ */
+export function focusSection(id: string): void {
+  const heading = document.getElementById(id);
+  if (!heading) return;
+  heading.scrollIntoView?.({ block: "start" });
+  heading.focus({ preventScroll: true });
+}
+
+/**
  * Первое поле с ошибкой — в видимую часть и в фокус: на телефоне ошибка иначе остаётся
  * за краем экрана. Фокус без прокрутки (ловушка №3), scrollIntoView есть не везде (№5)
  */

@@ -829,11 +829,20 @@ describe("правки карточек", () => {
       "GET /api/staff/listings?photos=pending&limit=100": json(queue),
       "GET /api/staff/listings": json(EMPTY_LISTINGS),
       "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] }),
     });
     await mount("/moderation");
     expect(calls.some((c) => c.url === "/api/staff/listings?photos=pending&limit=100")).toBe(true);
-    const section = container.querySelector("section[aria-labelledby=photo-queue-title]");
-    expect(section?.querySelector("h2")?.textContent).toBe(t.photoQueue);
+    const section = container.querySelector("section[aria-labelledby=queue-photos-title]");
+    // У заголовка очереди — сколько ждёт; в сводке вверху — то же число кнопкой к очереди
+    expect(section?.querySelector("h2")?.textContent).toBe(`${t.photoQueue} 1`);
+    const jump = [...container.querySelectorAll(".queue-jump button")].map((b) => b.textContent);
+    expect(jump).toEqual([
+      `${t.listingsInReview}0`,
+      `${t.revisions}0`,
+      `${t.serviceQueue}0`,
+      `${t.photoQueue}1`,
+    ]);
     expect(section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}"]`)?.textContent).toBe("Lola zali");
     expect(section?.textContent).toContain(t.pendingPhotos(2));
     expect(section?.textContent).toContain("Lola · V102");
@@ -852,6 +861,11 @@ describe("правки карточек", () => {
         decidedBy: "Test moderator",
         decidedAt: "2026-09-29T07:00:00.000Z",
       }),
+      // В очереди — только это предложение
+      "GET /api/staff/revisions": json({
+        total: 1,
+        items: [{ id: REVISION_ID, listing: { name: "Oqsaroy Hall" } }],
+      }),
     });
     await mount(`/revisions/${REVISION_ID}`);
     const rows = [...container.querySelectorAll("tbody tr")].map((r) => r.textContent);
@@ -868,6 +882,37 @@ describe("правки карточек", () => {
     expect(lastCall("/decline")?.body).toEqual({ reason: "Не совпадает с вывеской" });
     expect(text()).toContain(t.revisionStatus.declined);
     expect(button(t.revisionApprove)).toBeUndefined();
+    // Очередь пуста — так и сказано, путь — в «Модерацию», фокус на нём (не потерялся в странице)
+    expect(text()).toContain(t.queueDone);
+    expect(document.activeElement?.textContent).toBe(t.toModeration);
+  });
+
+  it("после решения — к следующему предложению очереди, фокус на нём", async () => {
+    const NEXT_ID = "99999999-0000-0000-0000-000000000002";
+    mockApi(staff("moderator", MODERATOR), {
+      [`GET /api/staff/revisions/${REVISION_ID}`]: json(REVISION),
+      [`POST /api/staff/revisions/${REVISION_ID}/approve`]: json({
+        ...REVISION,
+        status: "approved",
+        decidedBy: "Test moderator",
+        decidedAt: "2026-09-29T07:00:00.000Z",
+      }),
+      "GET /api/staff/revisions": json({
+        total: 2,
+        items: [
+          { id: REVISION_ID, listing: { name: "Oqsaroy Hall" } },
+          { id: NEXT_ID, listing: { name: "Bogʻ zali" } },
+        ],
+      }),
+    });
+    await mount(`/revisions/${REVISION_ID}`);
+    await click(button(t.revisionApprove));
+    const form = container.querySelector(".confirm") as HTMLFormElement;
+    await click([...form.querySelectorAll("button")].find((b) => b.textContent === t.revisionApprove));
+    const next = container.querySelector<HTMLAnchorElement>(".next-in-queue a");
+    expect(next?.textContent).toBe(t.nextRevision("Bogʻ zali"));
+    expect(next?.getAttribute("href")).toBe(`/revisions/${NEXT_ID}`);
+    expect(document.activeElement).toBe(next);
   });
 
   it("правка не проходит проверку — «Одобрить» неактивна", async () => {
