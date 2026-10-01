@@ -553,7 +553,7 @@ test.describe("витрины в разных категориях", () => {
   /** Выбрать витрину: на компьютере — в боковой панели, на телефоне — пилюли вверху экрана */
   async function chooseVitrina(page: Page, name: string) {
     const scope = isDesktop(page) ? page.locator(".side-vitrinas") : page.locator("main .vitrina-pills");
-    await scope.getByRole("button", { name: new RegExp(name) }).click();
+    await scope.getByRole("button", { name }).click();
   }
 
   test("входящие: все витрины или одна; заявка — категория, часть дня, поля категории и услуги", async ({
@@ -836,7 +836,7 @@ test.describe("витрины в разных категориях", () => {
         await heading(page).waitFor();
         if (vitrina) {
           const scope = width >= 1024 ? page.locator(".side-vitrinas") : page.locator("main .vitrina-pills");
-          await scope.getByRole("button", { name: new RegExp(vitrina) }).click();
+          await scope.getByRole("button", { name: vitrina }).click();
         }
         await expect(page.locator(".status-line")).toHaveCount(0);
         await expectNoOverflow(page, `${width}px ${path} ${vitrina ?? ""}`);

@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { pick } from "../support/admin-ui";
@@ -40,8 +40,8 @@ const CONTROLS = [
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 0) < 720;
 
 /** Кнопка действия над объектом: «Снять с витрины: Лимузин» (объект — скрытой подписью) */
-const named = (action: string, object: string) =>
-  new RegExp(`^${action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*${object}$`);
+const act = (scope: Locator, action: string, object: string) =>
+  scope.getByRole("button", { name: action }).filter({ hasText: object });
 
 async function start(page: Page, options: StaffApiOptions = { seeded: true }) {
   await page.clock.setFixedTime(NOW);
@@ -97,7 +97,7 @@ test("кортеж: автопарк — ошибка поля до отправ
   const api = await start(page);
   await page.goto(`/listings/${CAR_LISTING_ID}`);
   await expect(heading(page)).toHaveText("Oq kortej");
-  await page.getByRole("button", { name: named(t.listAdd, "автопарк") }).click();
+  await page.getByRole("button", { name: `${t.listAdd}: автопарк` }).click();
   const car = page.getByRole("region", { name: t.listItem("Автопарк", 2) });
   await car.getByLabel("Марка и модель").fill("Lexus LX");
   await car.getByLabel("Мест").fill("семь");
@@ -205,9 +205,9 @@ test("услуги: из каталога с добавкой; правка; с�
   const retro = services.getByRole("listitem").filter({ hasText: "Ретро-автомобиль" });
   await expect(retro).toContainText(t.serviceStatus.active ?? "");
 
-  await retro.getByRole("button", { name: named(t.servicePause, "Ретро-автомобиль") }).click();
+  await act(retro, t.servicePause, "Ретро-автомобиль").click();
   await expect(retro).toContainText(t.serviceStatus.paused ?? "");
-  await retro.getByRole("button", { name: named(t.serviceDelete, "Ретро-автомобиль") }).click();
+  await act(retro, t.serviceDelete, "Ретро-автомобиль").click();
   await page
     .getByRole("alertdialog", { name: t.serviceDeleteTitle })
     .getByRole("button", { name: t.serviceDelete })
@@ -215,7 +215,7 @@ test("услуги: из каталога с добавкой; правка; с�
   await expect(services.getByText("Ретро-автомобиль")).toHaveCount(0);
 
   // Правка: в форме — предложенная цена (правка ждёт решения), уходит новая
-  await services.getByRole("button", { name: named(t.serviceEdit, "Машина для молодожёнов") }).click();
+  await act(services, t.serviceEdit, "Машина для молодожёнов").click();
   const edit = services.locator("form.service-form");
   // Цена услуги — первое поле «Цена, сум» формы (дальше — цены добавок)
   const price = edit.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true }).first();
@@ -250,13 +250,13 @@ test("модерация услуг: правка — сейчас → пред�
   await expectNoAxeViolations(page, "модерация услуг");
   await expectHitAreas(page, "модерация услуг", CONTROLS);
 
-  await proposal.getByRole("button", { name: named(t.serviceApprove, "Машина для молодожёнов") }).click();
+  await act(proposal, t.serviceApprove, "Машина для молодожёнов").click();
   await expect(proposal).toHaveCount(0);
   expect(api.services.map((c) => c.key)).toContain(`POST /staff/services/${BRIDE_CAR_ID}/approve`);
 
   const limo = queue.getByRole("listitem").filter({ hasText: "Лимузин" });
   await expect(limo).toContainText(t.serviceQueueKinds.review ?? "");
-  await limo.getByRole("button", { name: named(t.serviceDecline, "Лимузин") }).click();
+  await act(limo, t.serviceDecline, "Лимузин").click();
   const reasonForm = page.locator("form.confirm");
   await reasonForm.getByLabel(t.reason).fill("Нужно фото лимузина");
   await reasonForm.getByRole("button", { name: t.serviceDecline }).click();
@@ -282,9 +282,9 @@ test("части дня: вечер — одна машина из двух; о�
   await expectNoAxeViolations(page, "части дня");
   await expectHitAreas(page, "части дня", CONTROLS);
 
-  await parts.getByRole("button", { name: named(t.markBusy, "Утро") }).click();
+  await act(parts, t.markBusy, "Утро").click();
   await expect(day).toHaveClass(/cal-partial/);
-  await parts.getByRole("button", { name: named(t.markBusy, t.wholeDay) }).click();
+  await act(parts, t.markBusy, t.wholeDay).click();
   await expect(day).toHaveClass(/cal-busy/);
   expect(api.calendar).toEqual([
     { version: 0, busyParts: [{ day: BOOKED_DAY, part: "morning" }] },
@@ -326,7 +326,7 @@ test("роли: модератор услуги только смотрит; м�
   await page.goto(`/listings/${CAR_LISTING_ID}`);
   await expect(heading(page)).toHaveText("Oq kortej");
   await expect(page.getByRole("button", { name: t.serviceAdd })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: new RegExp(`^${t.serviceEdit}`) })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: t.serviceEdit })).toHaveCount(0);
   await expect(page.getByRole("button", { name: t.categoryChange })).toHaveCount(0);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });

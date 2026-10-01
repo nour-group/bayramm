@@ -10,11 +10,10 @@ import { LISTING_ID, VENDOR_ID } from "./staff-api";
  * где искать поле: форма или вся страница
  */
 export async function pick(page: Page, label: string, option: string, scope = page.locator("body")) {
-  await scope.getByRole("button", { name: new RegExp(`^${escapeRe(label)}`) }).click();
+  // Имя кнопки поля — подпись и выбранное: ищем по подписи как по части имени
+  await scope.getByRole("button", { name: label }).click();
   await page.getByRole("option", { name: option, exact: true }).click();
 }
-
-const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Новая витрина вендору: категория и название → страница витрины (LISTING_ID) */
 export async function createVitrina(
