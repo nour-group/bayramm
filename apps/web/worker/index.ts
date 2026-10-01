@@ -47,11 +47,18 @@ async function page(request: Request, env: Env, url: URL): Promise<Response> {
   const match = matchRoute(url.pathname);
   const slug = match?.name === "venue" || match?.name === "request" ? match.slug : null;
   const venue: VenueLookup = slug ? await lookupVenue(env.API, url.origin, slug) : null;
-  const meta = pageMeta(url, venue, indexingAllowed(url, env.SEARCH_INDEXING));
+  const meta = pageMeta(
+    url,
+    venue,
+    indexingAllowed(url, env.SEARCH_INDEXING),
+    request.headers.get("Accept-Language"),
+  );
   const headers = new Headers(res.headers);
   headers.delete("ETag");
   headers.delete("Content-Length");
   headers.set("Cache-Control", "no-cache");
+  // Без ?lang язык страницы — по Accept-Language: кэшам это нужно знать
+  headers.append("Vary", "Accept-Language");
   if (request.method === "HEAD") return new Response(null, { status: meta.status, headers });
   // Главная — с лендингом на языке страницы прямо в HTML; шаблоны пререндера — ни у кого
   const lang = meta.status === 200 && wantsPrerender(url) ? meta.lang : null;

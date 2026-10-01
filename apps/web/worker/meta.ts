@@ -30,9 +30,39 @@ const DESCRIPTION_MAX = 200;
 const isLang = (value: string | null): value is Lang => LANGS.includes(value as Lang);
 
 /** Язык страницы из адреса */
-export function pageLang(url: URL): { readonly lang: Lang; readonly explicit: boolean } {
+export function pageLang(
+  url: URL,
+  acceptLanguage: string | null = null,
+): { readonly lang: Lang; readonly explicit: boolean } {
   const value = url.searchParams.get("lang");
-  return isLang(value) ? { lang: value, explicit: true } : { lang: DEFAULT_LANG, explicit: false };
+  if (isLang(value)) return { lang: value, explicit: true };
+  return { lang: browserLang(acceptLanguage) ?? DEFAULT_LANG, explicit: false };
+}
+
+/**
+ * Язык из Accept-Language — тот же выбор, что у приложения по navigator.languages
+ * (initialLang): первый ru/uz по убыванию q. Иначе при русском браузере сервер отдал бы
+ * узбекский лендинг, а boot.js спрятал бы его до первой отрисовки приложения. Поисковики
+ * заголовок не шлют — им язык по умолчанию (x-default)
+ */
+export function browserLang(header: string | null): Lang | null {
+  if (!header) return null;
+  const ranked = header
+    .split(",")
+    .slice(0, 20)
+    .map((part, index) => {
+      const [tag = "", ...params] = part.trim().split(";");
+      const q = params.map((p) => p.trim()).find((p) => p.startsWith("q="));
+      const weight = q === undefined ? 1 : Number(q.slice(2));
+      return {
+        code: tag.trim().slice(0, 2).toLowerCase(),
+        weight: Number.isFinite(weight) ? weight : 0,
+        index,
+      };
+    })
+    .filter((entry) => entry.weight > 0)
+    .sort((a, b) => b.weight - a.weight || a.index - b.index);
+  return ranked.map((entry) => entry.code).find(isLang) ?? null;
 }
 
 /** Площадка для разметки: данные, «нет такой» (404) или не узнали (API недоступно) */
@@ -111,9 +141,14 @@ function venueImage(venue: VenueLookup, hostname: string) {
 }
 
 /** Разметка страницы по адресу; для площадки — с её данными */
-export function pageMeta(url: URL, venue: VenueLookup = null, indexing = false): PageMeta {
+export function pageMeta(
+  url: URL,
+  venue: VenueLookup = null,
+  indexing = false,
+  acceptLanguage: string | null = null,
+): PageMeta {
   const match = matchRoute(url.pathname);
-  const { lang, explicit } = pageLang(url);
+  const { lang, explicit } = pageLang(url, acceptLanguage);
   const t = dictionaries[lang];
   const missing =
     match === null || ((match.name === "venue" || match.name === "request") && venue === "missing");
