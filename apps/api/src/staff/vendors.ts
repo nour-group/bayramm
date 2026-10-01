@@ -2,7 +2,7 @@
 // реквизиты и контакты (vendor_contacts, db/pii), чек-лист проверки, пользователи
 // кабинета. Контракт — @bayramm/shared/api/staff.
 //
-//   GET   /staff/vendors?q=&listingStatus=&limit=&offset=   список и поиск
+//   GET   /staff/vendors?q=&listingStatus=&category=&limit=&offset=   список и поиск
 //   POST  /staff/vendors                                     создать (categoryCode — и первая витрина)
 //   GET   /staff/vendors/:id                                 вендор целиком
 //   PATCH /staff/vendors/:id                                 правка
@@ -252,6 +252,8 @@ vendors.get("/", requirePermission("catalog.read"), async (c) => {
   const q = (c.req.query("q") ?? "").trim().slice(0, 100);
   const statusParam = c.req.query("listingStatus");
   const status = LISTING_STATUSES.find((s) => s === statusParam);
+  const categoryParam = c.req.query("category");
+  const category = categoryParam && /^[a-z_]{2,20}$/.test(categoryParam) ? categoryParam : undefined;
   const { limit, offset } = paging((key) => c.req.query(key));
 
   // Телефон ищется по псевдониму — тому же HMAC, что у пользователей кабинета
@@ -277,7 +279,7 @@ vendors.get("/", requirePermission("catalog.read"), async (c) => {
         "vc.contact_person",
         staffName("v.manager_id").as("manager_name"),
         sql<ListingRef[]>`coalesce((
-          select jsonb_agg(jsonb_build_object('id', l.id, 'name', l.name, 'status', l.status) order by l.created_at)
+          select jsonb_agg(jsonb_build_object('id', l.id, 'name', l.name, 'status', l.status, 'categoryCode', l.category_code) order by l.created_at)
           from app.listings l where l.vendor_id = v.id), '[]'::jsonb)`.as("listings"),
         sql<number>`(select count(*)::int from app.vendor_users u
                      where u.vendor_id = v.id and u.disabled_at is null)`.as("users"),
@@ -325,6 +327,17 @@ vendors.get("/", requirePermission("catalog.read"), async (c) => {
             .select("l.id")
             .whereRef("l.vendor_id", "=", "v.id")
             .where("l.status", "=", status),
+        ),
+      );
+    }
+    if (category) {
+      query = query.where((eb) =>
+        eb.exists(
+          eb
+            .selectFrom("app.listings as l")
+            .select("l.id")
+            .whereRef("l.vendor_id", "=", "v.id")
+            .where("l.category_code", "=", category),
         ),
       );
     }

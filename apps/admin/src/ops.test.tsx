@@ -749,7 +749,7 @@ describe("правки карточек", () => {
     status: "pending",
     submittedAt: "2026-09-29T06:00:00.000Z",
     decidedAt: null,
-    listing: { id: LISTING_ID, name: "Oqsaroy Hall", status: "active" },
+    listing: { id: LISTING_ID, name: "Oqsaroy Hall", status: "active", categoryCode: "hall" },
     vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
     proposedBy: { kind: "partner", name: null },
     fields: ["name", "priceFromUzs"],

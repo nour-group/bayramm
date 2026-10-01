@@ -202,6 +202,13 @@ describe("несохранённые правки", () => {
     mockApi();
     await mount("/vendors/new");
     await type(nameField(), "Oqsaroy");
+    // Категория первой витрины — свой список: открыть и выбрать
+    await click(container.querySelector<HTMLElement>("button[aria-haspopup=listbox]") as HTMLElement);
+    await click(
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (o) => o.textContent === "Кортеж",
+      ) as HTMLElement,
+    );
     await click(buttonIn(container, t.createVendor));
     expect(question()).toBeNull();
     expect(window.location.pathname).toBe(`/vendors/${VENDOR_ID}`);

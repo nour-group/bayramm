@@ -2,8 +2,9 @@
 // вендора (SLA), история, заметки. Телефоны скрыты: показать — отдельным
 // запросом, который база пишет в журнал доступа к ПДн.
 //
-//   GET  /staff/requests?status=&sla=&q=&limit=&offset=   список: сначала без ответа;
-//        sla=late — очередь просроченных и нарушенных, самый давний срок первым
+//   GET  /staff/requests?status=&sla=&category=&q=&limit=&offset=   список: сначала без ответа;
+//        sla=late — очередь просроченных и нарушенных, самый давний срок первым;
+//        category — заявки витрин этой категории
 //   GET  /staff/requests/:id                              заявка, история, срок ответа по
 //        шагам (timeline), заметки
 //   POST /staff/requests/:id/client-phone  { reason }     телефон клиента — только
@@ -152,12 +153,15 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
   const status = REQUEST_STATUSES.find((s) => s === c.req.query("status"));
   const slaParam = c.req.query("sla");
   const sla = slaParam === "late" ? LATE : SLA_STATES.filter((s) => s === slaParam);
+  const categoryParam = c.req.query("category");
+  const category = categoryParam && /^[a-z_]{2,20}$/.test(categoryParam) ? categoryParam : undefined;
   const { limit, offset } = paging((key) => c.req.query(key));
 
   const result = await withActor(c.var.db, staffOf(c), async (trx) => {
     let query = selectRequests(trx).select(sql<number>`(count(*) over ())::int`.as("total"));
     if (status) query = query.where("r.status", "=", status);
     if (sla.length > 0) query = query.where(sql<boolean>`${slaState} in (${sql.join(sla)})`);
+    if (category) query = query.where("l.category_code", "=", category);
     if (q !== "") {
       const pattern = likePattern(q);
       const number = /^\d{1,12}$/.test(q) ? q : null;

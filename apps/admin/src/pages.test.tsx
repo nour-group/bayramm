@@ -230,7 +230,7 @@ describe("вендоры", () => {
         managerName: null,
         createdAt: "2026-09-29T06:00:00.000Z",
         checklist: { contract: true, stir: true, contacts: false, pdConsent: false },
-        listings: [{ id: LISTING_ID, name: "Oqsaroy Hall", status: "review" }],
+        listings: [{ id: LISTING_ID, name: "Oqsaroy Hall", status: "review", categoryCode: "hall" }],
         users: 1,
         linkedUsers: 0,
       },
@@ -366,6 +366,9 @@ describe("карточка", () => {
   });
 });
 
+/** Занятость витрины с режимом «день целиком» (зал): частей дня и договорённостей нет */
+const DAY_MODE = { mode: "day", parallelCapacity: 1, parts: [], bookings: [] } as const;
+
 describe("карточка: занятые дни", () => {
   const MANAGER: StaffMe["permissions"] = ["catalog.read", "listings.write", "listings.submit"];
   const AVAILABILITY = `/api/staff/listings/${LISTING_ID}/availability`;
@@ -375,11 +378,12 @@ describe("карточка: занятые дни", () => {
   it("отметка уходит с версией календаря; следующая — с версией из ответа", async () => {
     mockApi(staff("manager", MANAGER), {
       [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
-      [`GET ${AVAILABILITY}`]: json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 4 }),
+      [`GET ${AVAILABILITY}`]: json({ ...DAY_MODE, from: "2026-09-01", to: "2026-09-30", busy: [], version: 4 }),
       [`PUT ${AVAILABILITY}`]: (body) => {
         const input = body as { busy?: string[]; free?: string[]; version: number };
         const day = input.busy?.[0] ?? input.free?.[0];
         return json({
+          ...DAY_MODE,
           from: day,
           to: day,
           busy: input.busy ? [{ day, source: "staff" }] : [],
@@ -406,10 +410,11 @@ describe("карточка: занятые дни", () => {
   it("несколько дней: начало и конец нажатием, «Занять» — одной правкой с версией", async () => {
     mockApi(staff("manager", MANAGER), {
       [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
-      [`GET ${AVAILABILITY}`]: json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 4 }),
+      [`GET ${AVAILABILITY}`]: json({ ...DAY_MODE, from: "2026-09-01", to: "2026-09-30", busy: [], version: 4 }),
       [`PUT ${AVAILABILITY}`]: (body) => {
         const input = body as { busy: string[]; version: number };
         return json({
+          ...DAY_MODE,
           from: input.busy[0],
           to: input.busy.at(-1),
           busy: input.busy.map((day) => ({ day, source: "staff" })),
@@ -445,6 +450,7 @@ describe("карточка: занятые дни", () => {
       [`GET ${AVAILABILITY}`]: () => {
         reads++;
         return json({
+          ...DAY_MODE,
           from: "2026-09-01",
           to: "2026-09-30",
           busy: reads > 1 ? [{ day: tashkentToday(), source: "vendor" }] : [],
