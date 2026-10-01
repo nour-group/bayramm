@@ -1,8 +1,10 @@
-/* Разделы кабинета — отдельными частями сборки (code splitting). Первый экран — заявки
-   (и вход) — в основной части; календарь, площадка (с формой правок и сжатием фото), услуги
-   и аккаунт грузятся при первом переходе. Пока человек смотрит на заявки, оболочка
-   подгружает их заранее (preloadScreens): переход мгновенный, а пропавшая потом связь
-   раздел уже не сломает.
+/* Разделы кабинета — отдельными частями сборки (code splitting). В основной части — только
+   вход и оболочка: экран «что это за кабинет» из браузера не тянет за собой ни заявок, ни
+   конфигурации категорий. Заявки (с категориями: подписи, поля заявки, услуги) грузятся,
+   как только ясно, что вход будет (warmInbox — параллельно с запросами входа), календарь,
+   витрина (с формой правок и сжатием фото), услуги и аккаунт — после входа, пока человек
+   смотрит на заявки (preloadScreens): переход мгновенный, а пропавшая потом связь раздел
+   уже не сломает.
 
    Без React.lazy: отказ import() у него запоминается навсегда, а здесь кусок, который не
    загрузился (нет связи), показывает «Не удалось загрузить» с повтором и сам грузится
@@ -42,11 +44,44 @@ function part<T>(importer: () => Promise<T>): Part<T> {
 }
 
 export const SCREENS = {
+  inbox: part(() => import("./Inbox")),
   calendar: part(() => import("./Calendar")),
   venue: part(() => import("./Venue")),
   services: part(() => import("./Services")),
   account: part(() => import("./AccountPage")),
 } as const;
+
+/**
+ * Категории глазами кабинета (подписи категорий для боковой панели) — своей частью: она
+ * общая у всех разделов и в основную часть не попадает
+ */
+export const CATEGORY_KIT = part(() => import("./category"));
+
+/** Заявки — первый экран после входа: грузить, пока идёт вход. Ошибка — покажет сам раздел */
+export function warmInbox(): void {
+  void SCREENS.inbox.load().catch(() => {});
+}
+
+/**
+ * Модуль части, когда загрузится (до того — undefined): для мелочей, которые можно показать
+ * чуть позже, не задерживая экран (подпись категории у витрины)
+ */
+export function usePart<T>(piece: Part<T>): T | undefined {
+  const [, setLoaded] = useState(0);
+  const module = piece.peek();
+  useEffect(() => {
+    if (piece.peek() !== undefined) return;
+    let active = true;
+    piece.load().then(
+      () => active && setLoaded((n) => n + 1),
+      () => {},
+    );
+    return () => {
+      active = false;
+    };
+  }, [piece]);
+  return module;
+}
 
 /** Подгрузить разделы заранее; ошибку не показываем — раздел загрузится при переходе */
 export function preloadScreens(): void {
@@ -55,7 +90,7 @@ export function preloadScreens(): void {
 
 /** Все разделы сразу (тесты: переход не ждёт загрузки куска) */
 export function preloadAll(): Promise<unknown> {
-  return Promise.all(Object.values(SCREENS).map((screen) => screen.load()));
+  return Promise.all([...Object.values(SCREENS), CATEGORY_KIT].map((screen) => screen.load()));
 }
 
 interface LazyProps<T> {

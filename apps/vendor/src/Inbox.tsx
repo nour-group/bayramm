@@ -39,6 +39,10 @@ interface InboxProps extends ScreenProps {
   /** Заявки одной витрины; null — всех */
   readonly filter: string | null;
   readonly onFilter: (listingId: string | null) => void;
+  /** Выбор витрины — в боковой панели (компьютер) */
+  readonly inSidebar: boolean;
+  /** Открыть витрину (чек-лист готовности) */
+  readonly onOpenListing: (listingId: string) => void;
   /** Счётчики вкладок — для значка у раздела; нет — список одной витрины, значок не трогаем */
   readonly onCounts?: (counts: Readonly<Record<RequestTab, number>>) => void;
 }
@@ -52,6 +56,8 @@ export function Inbox({
   listings,
   filter,
   onFilter,
+  inSidebar,
+  onOpenListing,
   onCounts,
   headingRef,
   ...screen
@@ -81,6 +87,8 @@ export function Inbox({
       listings={listings}
       filter={filter}
       onFilter={onFilter}
+      inSidebar={inSidebar}
+      onOpenListing={onOpenListing}
       selectedId={split ? (id ?? undefined) : undefined}
       version={version}
       onCounts={onCounts}

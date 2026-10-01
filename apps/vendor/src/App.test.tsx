@@ -18,6 +18,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { tashkentToday } from "./format";
+import { forgetAuthMethods } from "./hub";
 
 // Сжатие фото — канвас браузера, которого в jsdom нет: подменено в test-setup.ts
 
@@ -104,7 +105,10 @@ async function fakeFetch(input: RequestInfo | URL, init: RequestInit = {}) {
 
 function defaultRoutes(locale: "ru" | "uz" = "ru"): Record<string, Handler> {
   return {
-    "GET /api/telegram/bot": () => ({ body: { username: "bayramm_test_bot", miniAppUrl: "https://x" } }),
+    // Имя бота кабинет берёт отсюда же (GET /telegram/bot ему не нужен)
+    "GET /api/auth/methods": () => ({
+      body: { telegram: { bot: "bayramm_test_bot", loginDomain: null }, phone: false, apps: {} },
+    }),
     "POST /api/auth/telegram": () => ({
       body: { token: "t".repeat(43), expiresAt: "2026-10-01T20:00:00Z" },
     }),
@@ -183,6 +187,7 @@ beforeEach(() => {
   routes = defaultRoutes();
   calls = [];
   vi.stubGlobal("fetch", vi.fn(fakeFetch));
+  forgetAuthMethods();
 });
 
 /** Ширина окна: раскладку выбирает layout.ts (в jsdom нет matchMedia — по innerWidth) */
@@ -203,7 +208,7 @@ describe("вход в кабинет", () => {
     await mount("/requests");
     expect(heading()).toBe("Кабинет площадок-партнёров Bayramm");
     const welcome = container.querySelector(".welcome")?.textContent ?? "";
-    for (const point of ["Заявки клиентов", "12 часов на ответ", "Календарь занятости", "Карточка площадки"])
+    for (const point of ["Заявки клиентов", "12 часов на ответ", "Календарь занятости", "Витрина и услуги"])
       expect(welcome).toContain(point);
     expect(welcome).toContain("Кабинет открывает команда Bayramm");
     expect(welcome).toContain("Регистрации здесь нет");
@@ -213,6 +218,9 @@ describe("вход в кабинет", () => {
     const link = byText<HTMLAnchorElement>("a", "Открыть бота");
     expect(link?.getAttribute("href")).toBe("https://t.me/bayramm_test_bot?start=partner");
     expect(calls.some((c) => c.method === "POST" && c.path.startsWith("/api/auth"))).toBe(false);
+    // Имя бота — из того же ответа GET /auth/methods: один запрос на страницу, без /telegram/bot
+    expect(calls.filter((c) => c.path === "/api/auth/methods")).toHaveLength(1);
+    expect(calls.some((c) => c.path === "/api/telegram/bot")).toBe(false);
     expect(container.querySelector("nav")).toBeNull();
     expect(document.title).toBe("кабинет партнёра · Bayramm");
     // Вход на сайте по телефону здесь не включён (API не сказало иного) — о нём ни слова
@@ -609,7 +617,7 @@ describe("календарь", () => {
     expect(container.textContent).toContain("Этот день закрыл менеджер");
   });
 
-  it("не сохранилось — день возвращается как был", async () => {
+  it("не сохранилось — день возвращается как был, причина — словами по коду ответа", async () => {
     routes[`PUT /api/vendor/listings/${LISTING_ID}/calendar/${today}`] = () => ({
       status: 503,
       body: { error: { code: "service_unavailable", message: "x" } },
@@ -617,7 +625,17 @@ describe("календарь", () => {
     await mount("/calendar");
     await click(container.querySelector(".cal-today") ?? undefined);
     expect(container.querySelector(".cal-today")?.getAttribute("aria-pressed")).toBe("false");
-    expect(container.textContent).toContain("Не удалось сохранить день");
+    expect(container.textContent).toContain("Сервер временно недоступен. Попробуйте через минуту.");
+  });
+
+  it("прошедший день (сервер — date_out_of_range): не «не удалось», а что случилось", async () => {
+    routes[`PUT /api/vendor/listings/${LISTING_ID}/calendar/${today}`] = () => ({
+      status: 422,
+      body: { error: { code: "date_out_of_range", message: "x" } },
+    });
+    await mount("/calendar");
+    await click(container.querySelector(".cal-today") ?? undefined);
+    expect(container.textContent).toContain("Прошедший день не изменить");
   });
 });
 
@@ -810,11 +828,15 @@ describe("изменения карточки", () => {
     expect(byText("button", "Отозвать предложение")).toBeUndefined();
   });
 
-  it("сотрудник площадки: вместо формы — кто предлагает изменения", async () => {
+  it("сотрудник площадки: формы нет, кто меняет витрину — сказано один раз, вверху экрана", async () => {
     routes["GET /api/vendor/me"] = () => ({ body: me("ru", "member") });
     await mount("/card");
     expect(byText("button", "Предложить изменения")).toBeUndefined();
-    expect(container.textContent).toContain("Предлагать изменения может только владелец кабинета.");
+    const text = container.textContent ?? "";
+    expect(text).toContain("Менять её и услуги может только владелец кабинета.");
+    expect(text.match(/владелец кабинета/g)).toHaveLength(1);
+    // Ни предложения, ни решения по прошлому — блока изменений нет
+    expect(container.querySelector(".proposal")).toBeNull();
   });
 });
 
@@ -870,17 +892,19 @@ describe("площадка", () => {
     vi.mocked(compressForUpload).mockResolvedValue(compressed());
   });
 
-  it("карточка как в базе: подсказка про изменения и менеджера, код вендора; текстовых полей нет", async () => {
+  it("витрина как в базе: подсказка про проверку и менеджера, код вендора; текстовых полей нет", async () => {
     await mount("/card");
-    expect(heading()).toBe("Площадка");
+    expect(heading()).toBe("Витрина");
     expect(container.textContent).toContain(
-      "Название, описание, поля витрины и фото вы меняете здесь, цены — в разделе «Услуги»",
+      "Так витрину видят клиенты. Всё, что вы меняете, сначала проверяет команда Bayramm.",
     );
-    // Цена «от» — из услуг; категория витрины — на виду
-    expect(container.textContent).toContain("Цена «от» считается из услуг.");
+    // Цена «от» — из услуг, сказано один раз, рядом — переход к услугам; списка услуг второй раз нет
+    expect(container.textContent).toContain("Самая низкая цена среди одобренных услуг.");
+    expect(container.textContent?.match(/«Услуги»|из услуг/g) ?? []).toEqual([]);
+    expect(byText<HTMLAnchorElement>(".venue a", "К услугам")?.getAttribute("href")).toBe("/services");
+    expect(container.querySelector(".venue .packages")).toBeNull();
     expect(container.querySelector(".venue .chip-cat")?.textContent).toBe("Площадка / Тойхона");
-    expect(container.textContent).toContain("Адрес и вместимость меняет ваш менеджер");
-    expect(container.textContent).toContain("V101");
+    expect(container.textContent).toContain("Эти данные меняет менеджер Bayramm — назовите ему код V101.");
     expect(container.textContent).toContain("от 150 000 сум за гостя");
     expect(container.textContent).toContain("50–300 гостей");
     expect(container.textContent).toContain("Чиланзар");
@@ -894,8 +918,7 @@ describe("площадка", () => {
   it("фото: предупреждение про лица на виду, без галочки файлы не выбрать; загрузка — после сжатия, с подтверждением", async () => {
     await mount("/card");
     expect(container.textContent).toContain("На фото не должно быть людей и лиц");
-    expect(container.textContent).toContain("Для публикации нужно не меньше 3 фото, всего можно до 10.");
-    expect(container.textContent).toContain("клиенты увидят их после одобрения");
+    expect(container.textContent).toContain("Для публикации — не меньше 3 фото, всего до 10.");
     expect(container.querySelector(".photos .photo-chip")?.textContent).toBe("на проверке");
     // Галочка не отмечена заранее; без неё выбор файлов недоступен
     expect(checkbox()?.checked).toBe(false);
@@ -943,7 +966,7 @@ describe("площадка", () => {
     expect(uploads()).toHaveLength(2);
     expect(alert()).toContain("a.heic: браузер не смог открыть файл");
     expect(alert()).toContain("b.jpg: слишком маленькое фото");
-    expect(alert()).toContain("c.jpg: это фото уже есть в карточке");
+    expect(alert()).toContain("c.jpg: это фото уже есть на витрине");
   });
 
   it("больше максимума не загрузить: лишние файлы не уходят, при полной карточке выбора нет", async () => {
@@ -952,7 +975,7 @@ describe("площадка", () => {
     await click(checkbox());
     await choose([file("a.jpg"), file("b.jpg"), file("c.jpg")]);
     expect(uploads()).toHaveLength(2);
-    expect(alert()).toContain("Ещё 1 фото не загружено: в карточке не больше 10.");
+    expect(alert()).toContain("Ещё 1 фото не загружено: на витрине не больше 10.");
     // Теперь их 10 — вместо выбора файлов подсказка
     expect(fileInput()).toBeUndefined();
     expect(container.textContent).toContain("Загружено максимум — 10 фото");
@@ -972,7 +995,7 @@ describe("площадка", () => {
     await click(container.querySelector('button[aria-label="Удалить фото 1"]') ?? undefined);
     expect(dialog()?.textContent).toContain("Удалить фото?");
     await click(dialogButton("Удалить"));
-    expect(dialog()?.textContent).toContain("Опубликованной площадке нужно не меньше 3 одобренных фото");
+    expect(dialog()?.textContent).toContain("Опубликованной витрине нужно не меньше 3 одобренных фото");
     expect(images()).toBe(3);
     await click(dialogButton("Отмена"));
     expect(dialog()).toBeNull();
@@ -993,7 +1016,7 @@ describe("площадка", () => {
     routes["GET /api/vendor/me"] = () => ({ body: me("ru", "member") });
     await mount("/card");
     expect(images()).toBe(3);
-    expect(container.textContent).toContain("Карточку — фото и изменения — меняет владелец кабинета");
+    expect(container.textContent).toContain("Менять её и услуги может только владелец кабинета");
     expect(container.textContent).not.toContain("На фото не должно быть людей");
     expect(container.querySelector("input, textarea, select")).toBeNull();
     expect(container.querySelector(".photo-delete")).toBeNull();

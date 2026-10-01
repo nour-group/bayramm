@@ -39,6 +39,7 @@ import { ConfirmSheet } from "@bayramm/ui/react";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { AttributeFacts, AttributesForm } from "./Attributes";
 import { ApiFailure, api } from "./api";
+import { errorText as apiErrorText } from "./errors";
 import { formatMoment, formatMoney } from "./format";
 import { fill, type VendorDict } from "./i18n";
 import { LoadError, Loading } from "./ui";
@@ -217,6 +218,7 @@ function ProposalForm({ listing, t, lang, onSent, onPendingExists, onCancel }: F
   const [invalid, setInvalid] = useState<ReadonlySet<string>>(new Set());
   const [badVideos, setBadVideos] = useState<ReadonlySet<number>>(new Set());
   const [notice, setNotice] = useState<FormNotice>(null);
+  const [failedText, setFailedText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const maxVideos = category?.maxVideoLinks ?? 0;
 
@@ -257,6 +259,7 @@ function ProposalForm({ listing, t, lang, onSent, onPendingExists, onCancel }: F
         setNotice("pendingExists");
         onPendingExists();
       } else {
+        setFailedText(apiErrorText(err, t));
         setNotice("failed");
       }
     } finally {
@@ -310,7 +313,7 @@ function ProposalForm({ listing, t, lang, onSent, onPendingExists, onCancel }: F
   const notices: Record<Exclude<FormNotice, null>, string> = {
     noChanges: t.proposalNoChanges,
     invalid: t.proposalInvalid,
-    failed: t.actionFailed,
+    failed: failedText ?? t.actionFailed,
     pendingExists: t.proposalPendingExists,
   };
 
@@ -432,9 +435,14 @@ interface ProposalProps {
   readonly lang: "ru" | "uz";
   /** Владелец кабинета: только он предлагает и отзывает */
   readonly owner: boolean;
+  /**
+   * Растёт, когда чек-лист готовности просит «Предложить изменения»: форма открывается (или,
+   * если предложение уже на проверке, — показывается оно)
+   */
+  readonly openSignal?: number;
 }
 
-export function Proposal({ listing, t, lang, owner }: ProposalProps) {
+export function Proposal({ listing, t, lang, owner, openSignal = 0 }: ProposalProps) {
   const [revisions, reload, setRevisions] = useLoad<VendorRevisionList>(listing.id, (key) =>
     api.revisions(key),
   );
@@ -442,7 +450,7 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
   const [sent, setSent] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [withdrawFailed, setWithdrawFailed] = useState(false);
+  const [withdrawFailed, setWithdrawFailed] = useState<string | null>(null);
   const withdrawButton = useRef<HTMLButtonElement>(null);
   // Кнопка, которую нажали, исчезает (форма вместо «Предложить», «на проверке» вместо
   // формы) — фокус переходит в новый блок: на первое поле формы, на «Предложить» после
@@ -463,9 +471,20 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
     else section.current?.querySelector<HTMLElement>(".proposal-form input, .proposal-start")?.focus();
   }, [editing, sent]);
 
+  // Чек-лист готовности позвал: открыть форму (фокус — на первое поле, браузер прокрутит к
+  // нему); предложение уже на проверке или форма уже открыта — к заголовку блока
+  const asked = useRef(openSignal);
+  const pendingNow = revisions.state === "ready" && revisions.data.items.some((r) => r.status === "pending");
+  useEffect(() => {
+    if (openSignal === asked.current) return;
+    asked.current = openSignal;
+    if (owner && !pendingNow && !editing) edit(true);
+    else title.current?.focus();
+  });
+
   const body = () => {
     if (revisions.state === "loading") return <Loading t={t} />;
-    if (revisions.state === "error") return <LoadError t={t} onRetry={reload} />;
+    if (revisions.state === "error") return <LoadError t={t} onRetry={reload} error={revisions.error} />;
     const items = revisions.data.items;
     const pending = items.find((r) => r.status === "pending");
     const latest = items[0];
@@ -476,7 +495,7 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
     const withdraw = async () => {
       if (!pending) return;
       setBusy(true);
-      setWithdrawFailed(false);
+      setWithdrawFailed(null);
       try {
         replace(await api.withdrawRevision(listing.id, pending.id));
         setConfirming(false);
@@ -489,7 +508,7 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
         ) {
           setConfirming(false);
           reload();
-        } else setWithdrawFailed(true);
+        } else setWithdrawFailed(apiErrorText(err, t));
       } finally {
         setBusy(false);
       }
@@ -517,7 +536,7 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
                 type="button"
                 className="btn btn-ghost"
                 onClick={() => {
-                  setWithdrawFailed(false);
+                  setWithdrawFailed(null);
                   setConfirming(true);
                 }}
               >
@@ -531,7 +550,7 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
                 cancelLabel={t.cancel}
                 tone="danger"
                 busy={busy}
-                error={withdrawFailed ? t.actionFailed : undefined}
+                error={withdrawFailed ?? undefined}
                 onConfirm={() => void withdraw()}
                 onCancel={() => setConfirming(false)}
                 returnFocus={withdrawButton}
@@ -550,9 +569,7 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
         {latest?.status === "approved" && latest.decidedAt ? (
           <p className="note">{fill(t.proposalApproved, { date: formatMoment(latest.decidedAt, t) })}</p>
         ) : null}
-        {!owner ? (
-          <p className="note">{t.proposalOwnerOnly}</p>
-        ) : editing ? (
+        {!owner ? null : editing ? (
           <ProposalForm
             listing={listing}
             t={t}
@@ -577,6 +594,12 @@ export function Proposal({ listing, t, lang, owner }: ProposalProps) {
       </>
     );
   };
+
+  // Сотруднику площадки показывать нечего, пока нет ни предложения, ни решения по прошлому:
+  // что витрину меняет владелец, сказано вверху экрана
+  const shown = (r: VendorRevision) =>
+    r.status === "pending" || r.status === "declined" || r.status === "approved";
+  if (!owner && revisions.state === "ready" && !revisions.data.items.some(shown)) return null;
 
   return (
     <section className="panel proposal" aria-labelledby="proposal-title" ref={section}>

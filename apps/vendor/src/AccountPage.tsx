@@ -13,14 +13,11 @@ import { RadioGroup } from "@bayramm/ui/react";
 import type { MouseEvent } from "react";
 import { SignOutButton } from "./Account";
 import { accountMe } from "./api";
-import { authMethods, SIGNIN_PARAM } from "./hub";
+import { authMethods, botOf, SIGNIN_PARAM } from "./hub";
 import { fill, LANG_NAMES } from "./i18n";
 import { getWebApp, inTelegram } from "./telegram";
 import { Heading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
-
-// Имя бота: 5–32 символа латиницы, цифр и _, в конце — bot (правила @BotFather)
-const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
 
 interface Links {
   readonly me: Me;
@@ -32,12 +29,11 @@ interface Links {
 async function loadLinks(): Promise<Links> {
   const [me, methods] = await Promise.all([accountMe(), authMethods()]);
   if (methods === null) throw new Error("auth/methods");
-  const bot = methods.telegram.bot;
   return {
     me,
     web: methods.apps.web,
     admin: `${methods.apps.admin}/?${SIGNIN_PARAM}=1`,
-    bot: bot && BOT_USERNAME_RE.test(bot) ? bot : null,
+    bot: botOf(methods),
   };
 }
 

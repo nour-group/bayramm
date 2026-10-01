@@ -3,6 +3,7 @@ import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { DECLINE_REASONS, SERVICE_STATUSES } from "@bayramm/shared/api/vendor";
 import { DAY_PARTS, type ServiceChangeField } from "@bayramm/shared/categories";
 import { describe, expect, it } from "vitest";
+import { API_ERROR_CODES } from "./errors";
 import { fill, LANG_NAMES, textOf, vendorDict } from "./i18n";
 import { NAV } from "./router";
 
@@ -75,6 +76,8 @@ const CODES = {
     "rate_limited",
     "failed",
   ],
+  // ошибки API словами (errors.ts): код без текста здесь роняет тест
+  err: API_ERROR_CODES,
   // услуги витрины, части дня (модель parts), поля предложения правки услуги
   svcSt: SERVICE_STATUSES,
   part: DAY_PARTS,

@@ -2,6 +2,7 @@
 
 import type { RequestStatus } from "@bayramm/shared/api/vendor";
 import type { ReactNode, Ref } from "react";
+import { errorText, isRetryable } from "./errors";
 import { textOf, type VendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
 
@@ -32,21 +33,47 @@ export function Heading({ headingRef, level = 1, id = "page-title", children }: 
   );
 }
 
-export function Loading({ t }: { t: VendorDict }) {
+/**
+ * Пока грузится: заготовка той же формы, что и содержимое (список, карточка, месяц), — экран
+ * не прыгает, когда данные придут. Диктору — «Загрузка…»
+ */
+export function Loading({ t, kind = "line" }: { t: VendorDict; kind?: "line" | "list" | "card" | "month" }) {
+  if (kind === "line") {
+    return (
+      <p className="status-line" role="status">
+        {t.loading}
+      </p>
+    );
+  }
+  const rows = kind === "list" ? 3 : kind === "card" ? 2 : 1;
   return (
-    <p className="status-line" role="status">
-      {t.loading}
-    </p>
+    <div className={`skeleton skeleton-${kind}`} role="status" aria-busy="true">
+      <span className="sr-only">{t.loading}</span>
+      {Array.from({ length: rows }, (_, i) => i).map((i) => (
+        <span key={i} className="sk-block" aria-hidden="true">
+          <span className="sk-line sk-line-title" />
+          <span className="sk-line" />
+          <span className="sk-line sk-line-short" />
+        </span>
+      ))}
+    </div>
   );
 }
 
-export function LoadError({ t, onRetry }: { t: VendorDict; onRetry: () => void }) {
+/**
+ * Не загрузилось. Нет связи, сбой сервера, лимит — «Повторить» (и повтор сам, когда связь
+ * вернётся); нет доступа, не найдено — что случилось, без мёртвой кнопки повтора
+ */
+export function LoadError({ t, onRetry, error }: { t: VendorDict; onRetry: () => void; error?: unknown }) {
+  const retryable = error === undefined || isRetryable(error);
   return (
     <div className="notice notice-error" role="alert">
-      <p>{t.loadFailed}</p>
-      <button type="button" className="btn btn-ghost" onClick={onRetry}>
-        {t.retry}
-      </button>
+      <p>{retryable ? t.loadFailed : errorText(error, t)}</p>
+      {retryable ? (
+        <button type="button" className="btn btn-ghost" onClick={onRetry}>
+          {t.retry}
+        </button>
+      ) : null}
     </div>
   );
 }

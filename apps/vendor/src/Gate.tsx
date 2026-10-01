@@ -9,7 +9,7 @@
    «откройте из бота»: человек пришёл не из бота. */
 
 import { type MouseEvent, useEffect, useState } from "react";
-import { fetchAuthMethods, fetchBotLink } from "./api";
+import { authMethods, botOf } from "./hub";
 import type { TextKey, VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { inTelegram, openBotLink } from "./telegram";
@@ -44,7 +44,7 @@ export function usePhoneSignIn(enabled: boolean): boolean {
   useEffect(() => {
     if (!enabled) return;
     let active = true;
-    void fetchAuthMethods().then((methods) => {
+    void authMethods().then((methods) => {
       if (active) setPhone(methods?.phone === true);
     });
     return () => {
@@ -59,8 +59,10 @@ export function BotLink({ t, primary }: { t: VendorDict; primary: boolean }) {
 
   useEffect(() => {
     let active = true;
-    void fetchBotLink().then((url) => {
-      if (active) setLink(url);
+    // Имя бота — из того же ответа GET /auth/methods, что и способы входа (он один на страницу)
+    void authMethods().then((methods) => {
+      const bot = botOf(methods);
+      if (active) setLink(bot ? `https://t.me/${bot}?start=partner` : null);
     });
     return () => {
       active = false;
