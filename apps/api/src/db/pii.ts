@@ -157,33 +157,6 @@ export async function insertRequestContact(
 }
 
 /**
- * Профиль клиента при входе: Telegram ID, имя, username. Имя и username
- * обновляются при каждом входе — в Telegram их меняют. Вход клиента
- */
-export async function upsertClientProfile(
-  trx: Tx,
-  profile: {
-    client_id: string;
-    telegram_id: number;
-    first_name: string;
-    last_name: string | null;
-    username: string | null;
-  },
-): Promise<void> {
-  await trx
-    .insertInto("pii.client_profiles")
-    .values(profile)
-    .onConflict((oc) =>
-      oc.column("client_id").doUpdateSet((eb) => ({
-        first_name: eb.ref("excluded.first_name"),
-        last_name: eb.ref("excluded.last_name"),
-        username: eb.ref("excluded.username"),
-      })),
-    )
-    .execute();
-}
-
-/**
  * Реквизиты и контакт вендора, включая телефоны, — только заданные поля. Панель оператора.
  * Телефонные столбцы API не читает, поэтому не INSERT … ON CONFLICT (DO UPDATE читал
  * бы их), а UPDATE, и если строки ещё нет — INSERT

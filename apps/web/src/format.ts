@@ -38,27 +38,6 @@ export function weekdayMon(iso: string): number {
   return (utcDate(iso).getUTCDay() + 6) % 7;
 }
 
-export function isWeekend(iso: string): boolean {
-  return weekdayMon(iso) >= 5;
-}
-
-/** Первое число месяца даты: 2026-10-17 → 2026-10-01 */
-export function monthOf(iso: string): string {
-  return `${iso.slice(0, 7)}-01`;
-}
-
-/** Сдвиг месяца: monthOf-дата ± n месяцев */
-export function addMonths(monthIso: string, months: number): string {
-  const date = utcDate(monthIso);
-  date.setUTCDate(1);
-  date.setUTCMonth(date.getUTCMonth() + months);
-  return date.toISOString().slice(0, 10);
-}
-
-export function daysInMonth(monthIso: string): number {
-  const date = utcDate(monthIso);
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
-}
 
 /** «14 сен» / «14-sen» */
 export function formatDayMonth(iso: string, t: Dict): string {

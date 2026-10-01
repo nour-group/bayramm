@@ -401,6 +401,3 @@ export function toCreateRequest(
     ...(consents.notify ? { notifyConsentId: consents.notify.id } : {}),
   };
 }
-
-/** Дата для подсказок: «15 окт» */
-export const shortDate = (iso: string, t: Dict) => formatDayMonth(iso, t);

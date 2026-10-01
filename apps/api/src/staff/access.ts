@@ -22,7 +22,7 @@ export const PERMISSIONS = {
   "vendors.write": ["admin", "manager"],
   /** Пользователи кабинета вендора: завести по телефону, отключить */
   "vendor_users.write": ["admin", "manager"],
-  /** Создавать и править карточки: поля, пакеты, телефон, фото, занятость */
+  /** Создавать и править карточки: поля, услуги, телефон, фото, занятость */
   "listings.write": ["admin", "manager"],
   /** Отправить карточку на проверку */
   "listings.submit": ["admin", "manager"],

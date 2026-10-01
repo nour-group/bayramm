@@ -120,8 +120,6 @@ export const t = {
   reset: "Сбросить",
   actionsTitle: "Действия",
   listingActionsContext: "действия с карточкой",
-  shownOnly: (what: string) => `Показаны: ${what}`,
-  scrollHint: "Таблица шире экрана — листайте вбок",
   total: (n: number) => `Всего: ${n}`,
   // Коды ошибок API → понятный текст. Неизвестный код — общий текст
   api: {
@@ -343,15 +341,10 @@ export const t = {
     capMax: "Не меньше, чем «гостей от»",
     phone: "Номер Узбекистана: +998 и 9 цифр",
   } as Record<string, string>,
-  slugAuto: "Сформируется из названия",
   category: "Категория",
   packagePrice: "Цена, сум",
-  addPackage: "Добавить пакет",
-  removePackage: "Убрать",
   createListing: "Создать карточку",
   listingReadOnly: "Только просмотр: поля карточки меняют менеджер и администратор.",
-  startAs: "Создать как",
-  phoneSet: "Телефон вписан",
   phoneMissing: "Телефона нет",
   phoneChange: "Сменить номер",
   history: "История статусов",
@@ -440,7 +433,6 @@ export const t = {
 
   // занятость
   availability: "Занятые дни",
-  availabilityHint: "Отметьте дни, когда зал занят. Нажмите на день, чтобы отметить или снять.",
   availabilityReadOnly: "Дни, когда зал занят. Отмечают вендор, менеджер и администратор.",
   prevMonth: "Предыдущий месяц",
   nextMonth: "Следующий месяц",
@@ -934,7 +926,6 @@ export const t = {
   videoLinkError: "Нужна ссылка на ролик YouTube или пост Instagram",
   parallelCapacityError: "Целое число от 1 до 50",
   readiness: "Готовность к публикации",
-  readinessReady: "Всё нужное для публикации есть",
   readinessAttributes: (labels: string) => `Не заполнено: ${labels}`,
   readinessServices: (labels: string) => `Нужны услуги: ${labels}`,
   readinessPhotos: (n: number, min: number) => `Фото: ${n} из ${min}`,
@@ -1016,7 +1007,6 @@ export const t = {
   serviceApprove: "Одобрить",
   serviceDecline: "Отклонить",
   serviceDeclineHint: "Причину увидит партнёр в кабинете.",
-  serviceApproveHint: "Услуга или правка сразу появится на витрине.",
 
   // занятость по режимам категорий
   availabilityHints: {

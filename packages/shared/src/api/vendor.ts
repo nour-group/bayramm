@@ -476,7 +476,5 @@ export interface VendorRevisionList {
   readonly items: readonly VendorRevision[];
 }
 
-/** Не больше пакетов в правке — как в панели */
-export const MAX_REVISION_PACKAGES = 10;
 /** Длина описания на одном языке */
 export const DESCRIPTION_MAX = 4000;
