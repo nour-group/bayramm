@@ -37,7 +37,7 @@ describe("styles.css панели оператора", () => {
     expect(missing).toEqual([]);
     expect(used.size).toBeGreaterThan(10);
     // Свои — только размеры и высота экрана, не цвета: цвета только из токенов
-    expect([...own].sort()).toEqual(["--app-h", "--bar-h", "--rail-w", "--tabbar-h"]);
+    expect([...own].sort()).toEqual(["--app-h", "--bar-h", "--net-h", "--rail-w", "--tabbar-h"]);
   });
 
   it("цвета не вписаны числом", () => {
@@ -82,7 +82,11 @@ describe("styles.css панели оператора", () => {
   });
 
   it("безопасные зоны: шапка складывает обе верхние (--pad-t), нижняя панель — обе нижние (--pad-b)", () => {
-    expect(declarationsOf(".appbar")).toMatch(/padding:\s*calc\(var\(--pad-t\) \+ 8px\)/);
+    // Над шапкой полоса «нет связи» — зоны отступает она, шапке остаётся 8px
+    expect(declarationsOf(".appbar")).toMatch(
+      /padding:\s*max\(8px, calc\(var\(--pad-t\) \+ 8px - var\(--net-h\)\)\)/,
+    );
+    expect(declarationsOf(".net-slot .ui-net-banner")).toMatch(/padding:\s*calc\(var\(--pad-t\) \+ 6px\)/);
     expect(declarationsOf(".tabbar")).toMatch(/calc\(var\(--pad-b\) \+ 6px\)/);
     expect(declarationsOf(".rail")).toMatch(/var\(--sa-l\)/);
     // Панель действий липнет над нижней навигацией и безопасной зоной

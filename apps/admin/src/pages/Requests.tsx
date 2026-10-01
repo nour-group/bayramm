@@ -33,6 +33,7 @@ import {
   type Tone,
   useEntityTitle,
 } from "../ui";
+import { useUnsaved } from "../unsaved";
 
 const SLA_FILTERS: readonly (SlaFilter | null)[] = [
   null,
@@ -571,6 +572,8 @@ function Notes({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  // Вписанная и не добавленная заметка — несохранённое
+  useUnsaved(text.trim() !== "");
 
   const add = async (event: FormEvent) => {
     event.preventDefault();

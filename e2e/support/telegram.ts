@@ -161,6 +161,8 @@ export async function fakeTelegram(page: Page, options: FakeTelegramOptions = {}
             setBackgroundColor: (color: string) => record("setBackgroundColor", color),
             setBottomBarColor: (color: string) => record("setBottomBarColor", color),
             disableVerticalSwipes: () => record("disableVerticalSwipes"),
+            enableClosingConfirmation: () => record("enableClosingConfirmation"),
+            disableClosingConfirmation: () => record("disableClosingConfirmation"),
             openTelegramLink: (url: string) => record("openTelegramLink", url),
             requestWriteAccess: (callback?: (granted: boolean) => void) => {
               record("requestWriteAccess");

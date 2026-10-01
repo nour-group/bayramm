@@ -14,7 +14,7 @@ import {
   ROUTES,
   SECTION_PERMISSION,
   sectionOf,
-  TAB_PRIORITY,
+  TAB_SECTIONS,
   tabsFor,
 } from "./router";
 import { t } from "./texts";
@@ -94,14 +94,34 @@ describe("маршруты панели оператора", () => {
     });
   });
 
-  it("нижняя панель: пять и меньше — все кнопками, по частоте, без «Ещё»", () => {
-    expect(tabsFor(["vendors", "moderation", "requests", "clients", "notifications"])).toEqual({
-      tabs: ["requests", "moderation", "vendors", "clients", "notifications"],
+  it("нижняя панель: ежедневные разделы — кнопками по частоте; пять и меньше — без «Ещё»", () => {
+    expect(tabsFor(["vendors", "moderation", "requests", "clients", "metrics"])).toEqual({
+      tabs: ["requests", "moderation", "vendors", "metrics", "clients"],
       more: [],
     });
     expect(tabsFor(["vendors", "moderation"])).toEqual({ tabs: ["moderation", "vendors"], more: [] });
-    // Порядок частоты — все разделы, каждый один раз
-    expect([...TAB_PRIORITY].sort()).toEqual([...NAV].sort());
+    // Кнопки — разделы навигации, каждый один раз
+    expect(TAB_SECTIONS.every((section) => NAV.includes(section))).toBe(true);
+    expect(new Set(TAB_SECTIONS).size).toBe(TAB_SECTIONS.length);
+  });
+
+  it("нижняя панель: «Уведомления», журнал, команда, настройки — только в «Ещё», без сокращений", () => {
+    // Роль с пятью разделами, среди них уведомления: четыре кнопки и «Ещё»
+    expect(tabsFor(["vendors", "moderation", "requests", "metrics", "notifications"])).toEqual({
+      tabs: ["requests", "moderation", "vendors", "metrics"],
+      more: ["notifications"],
+    });
+    // Менеджер (шесть разделов) и модератор (три) — как и были
+    expect(tabsFor(["vendors", "moderation", "requests", "metrics", "clients", "notifications"])).toEqual({
+      tabs: ["requests", "moderation", "vendors", "metrics"],
+      more: ["clients", "notifications"],
+    });
+    expect(tabsFor(["vendors", "moderation", "metrics"])).toEqual({
+      tabs: ["moderation", "vendors", "metrics"],
+      more: [],
+    });
+    for (const section of ["notifications", "audit", "team", "settings"] as const)
+      expect(TAB_SECTIONS).not.toContain(section);
   });
 
   it("экран объекта вложен в раздел; «назад» без истории — к разделу, новая карточка — к вендору", () => {

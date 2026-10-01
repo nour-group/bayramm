@@ -6,7 +6,8 @@
    по одной — дни неактивны, пока не пришёл ответ.
    «Несколько дней»: первое нажатие — начало, второе — конец (пальцем, без перетаскивания,
    можно и через месяц), затем «Занять» или «Освободить» — одной правкой. Прошедшие дни в
-   выбор не входят. Клетка дня — не меньше 44px: месяц на телефоне выходит за поля страницы. */
+   выбор не входят. Клетка дня — вся дорожка сетки, не меньше 44px: на 320px месяц выходит
+   на 10px за поля страницы и семь дорожек по 44px помещаются без прокрутки вбок. */
 
 import type { Availability, AvailabilityInput, BusyDay } from "@bayramm/shared/api/staff";
 import { Tooltip } from "@bayramm/ui/react";
@@ -155,7 +156,8 @@ export function Calendar({ listingId }: { listingId: string }) {
   return (
     <section className="panel cal-panel" aria-labelledby="calendar-title">
       <h2 id="calendar-title">{t.availability}</h2>
-      <p className="muted small">{t.availabilityHint}</p>
+      {/* Без права правки дни неактивны — и подсказка не зовёт на них нажимать */}
+      <p className="muted small">{editable ? t.availabilityHint : t.availabilityReadOnly}</p>
       <div className="cal-head">
         <button type="button" className="btn btn-sm" onClick={() => goMonth(-1)} aria-label={t.prevMonth}>
           ←

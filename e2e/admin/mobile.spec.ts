@@ -12,7 +12,7 @@ import {
   STAFF,
   VENDOR_ID,
 } from "../support/staff-api";
-import { fakeTelegram, telegramState } from "../support/telegram";
+import { clickBackButton, fakeTelegram, telegramState } from "../support/telegram";
 import { horizontalOverflow } from "../support/web";
 
 /* Панель на телефоне (только проект admin-phone): каждый экран на 360 и 390px — без
@@ -86,7 +86,7 @@ async function coveredAtEnd(page: Page): Promise<string[]> {
   });
 }
 
-for (const width of [360, 390] as const) {
+for (const width of [320, 360, 390] as const) {
   test.describe(`телефон ${width}px`, () => {
     test.use({ viewport: { width, height: 800 } });
 
@@ -103,6 +103,15 @@ for (const width of [360, 390] as const) {
         expect(overflow.scrollWidth, `${screen.name}: прокрутка вбок`).toBeLessThanOrEqual(width);
         expect(overflow.bodyWidth, `${screen.name}: прокрутка вбок`).toBeLessThanOrEqual(width);
         await expectHitAreas(page, `${screen.name} ${width}px`, INTERACTIVE);
+        // Подписи нижней панели — целиком: ни обрезки «…», ни сокращений
+        expect(
+          await page.evaluate(() =>
+            [...document.querySelectorAll<HTMLElement>(".tabbar .tab-label")]
+              .filter((el) => el.scrollWidth > el.clientWidth || /\.$/.test(el.textContent ?? ""))
+              .map((el) => el.textContent),
+          ),
+          `${screen.name}: подписи нижней панели`,
+        ).toEqual([]);
         expect(await coveredAtEnd(page), screen.name).toEqual([]);
         await expectNoAxeViolations(page, `${screen.name} ${width}px`);
         expect(api.unexpected).toEqual([]);
@@ -110,6 +119,37 @@ for (const width of [360, 390] as const) {
     }
   });
 }
+
+test.describe("календарь на 320px", () => {
+  test.use({ viewport: { width: 320, height: 700 } });
+
+  test("семь дней в строку по 44px и больше, без прокрутки вбок; день отмечается", async ({ page }) => {
+    const api = await start(page);
+    await openNewListing(page);
+    const days = page.locator(".cal-day");
+    await expect(days.first()).toBeVisible();
+    const boxes = await days.evaluateAll((all) =>
+      all.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { width: r.width, height: r.height, left: r.left, right: r.right };
+      }),
+    );
+    expect(boxes.length).toBeGreaterThanOrEqual(28);
+    for (const box of boxes) {
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(320);
+    }
+    // Раньше месяц был шире экрана (333px): страница уезжала вбок
+    const overflow = await horizontalOverflow(page);
+    expect(overflow.scrollWidth).toBeLessThanOrEqual(320);
+    await expectHitAreas(page, "календарь 320px", ".cal-day");
+    await page.locator(".cal-today").click();
+    await expect(page.locator(".cal-today")).toHaveAttribute("aria-pressed", "true");
+    expect(api.calendar).toEqual([{ version: 0, busy: ["2026-10-01"] }]);
+  });
+});
 
 test.describe("навигация на телефоне", () => {
   test("нижняя панель: частые разделы и «Ещё» со всеми остальными; переход закрывает шторку", async ({
@@ -146,6 +186,26 @@ test.describe("навигация на телефоне", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(t.team);
     // Раздел из «Ещё» открыт — «Ещё» выделено и говорит, какой
     await expect(tabs.getByRole("button", { name: t.moreCurrent(t.team) })).toBeVisible();
+  });
+
+  test("несохранённое и «Ещё»: шторка закрывается, вопрос — от «Ещё», «Остаться» — фокус туда же", async ({
+    page,
+  }) => {
+    await start(page);
+    await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
+    const name = page.getByLabel(t.listingFields.name ?? "", { exact: true });
+    await name.fill("Navruz zali");
+    await name.blur();
+    const more = tabbar(page).getByRole("button", { name: t.more });
+    await more.click();
+    await page.getByRole("dialog", { name: t.moreSections }).getByRole("link", { name: t.team }).click();
+    await expect(page.getByRole("dialog", { name: t.moreSections })).toHaveCount(0);
+    const question = page.getByRole("alertdialog", { name: t.unsavedTitle });
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: t.unsavedStay }).click();
+    await expect(question).toHaveCount(0);
+    await expect(more).toBeFocused();
+    await expect(page).toHaveURL(`/vendors/${VENDOR_ID}/listings/new`);
   });
 
   test("аккаунт в шторке: имя, роль, другие приложения и выход", async ({ page }) => {
@@ -204,6 +264,78 @@ test.describe("навигация на телефоне", () => {
 });
 
 test.describe("Telegram на телефоне", () => {
+  test("нет связи: полоса — ниже выреза и кнопок Telegram, шапка — сразу под ней", async ({ page }) => {
+    await start(page);
+    await fakeTelegram(page, { safeArea: { top: 24, bottom: 20 }, contentSafeArea: { top: 40 } });
+    await page.goto("/requests");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(t.requests);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "onLine", { configurable: true, get: () => false });
+      window.dispatchEvent(new Event("offline"));
+    });
+    const banner = page.getByText(t.offline);
+    await expect(banner).toBeVisible();
+    // Раньше полоса стояла под кнопками Telegram (текст не прочесть), а шапка под ней ещё раз
+    // отступала на 64px пустоты
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const text = document.querySelector(".ui-net-banner") as HTMLElement;
+          const bar = document.querySelector(".appbar") as HTMLElement;
+          const range = document.createRange();
+          range.selectNodeContents(text);
+          return {
+            textTop: Math.round(range.getBoundingClientRect().top),
+            gap: Math.round(bar.getBoundingClientRect().top - text.getBoundingClientRect().bottom),
+            barPad: getComputedStyle(bar).paddingTop,
+          };
+        }),
+      )
+      .toEqual({ textTop: expect.any(Number), gap: 0, barPad: "8px" });
+    const textTop = await page.evaluate(() => {
+      const range = document.createRange();
+      range.selectNodeContents(document.querySelector(".ui-net-banner") as Node);
+      return range.getBoundingClientRect().top;
+    });
+    expect(textTop).toBeGreaterThanOrEqual(64);
+    // Прокрутили — полоса и шапка прилипают вместе, одна под другой
+    await page.evaluate(() => window.scrollTo(0, 400));
+    expect(
+      await page.evaluate(() => {
+        const net = document.querySelector(".net-slot")?.getBoundingClientRect();
+        const bar = document.querySelector(".appbar")?.getBoundingClientRect();
+        return net && bar ? [Math.round(net.top), Math.round(bar.top - net.bottom)] : null;
+      }),
+    ).toEqual([0, 0]);
+  });
+
+  test("несохранённое: «назад» Telegram спрашивает, закрыть Mini App — подтверждение Telegram", async ({
+    page,
+  }) => {
+    await start(page);
+    await fakeTelegram(page);
+    await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
+    const name = page.getByLabel(t.listingFields.name ?? "", { exact: true });
+    await name.fill("Navruz zali");
+    await name.blur();
+    await expect
+      .poll(async () => (await telegramState(page)).calls.map((c) => c.name))
+      .toContain("enableClosingConfirmation");
+
+    await clickBackButton(page);
+    const question = page.getByRole("alertdialog", { name: t.unsavedTitle });
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: t.unsavedStay }).click();
+    await expect(page).toHaveURL(`/vendors/${VENDOR_ID}/listings/new`);
+    await expect(name).toHaveValue("Navruz zali");
+
+    await clickBackButton(page);
+    await question.getByRole("button", { name: t.unsavedLeave }).click();
+    await expect(page).toHaveURL(`/vendors/${VENDOR_ID}`);
+    // Правки брошены — Telegram больше не переспрашивает при закрытии
+    expect((await telegramState(page)).calls.map((c) => c.name)).toContain("disableClosingConfirmation");
+  });
+
   test("«назад» Telegram на вложенных экранах; безопасные зоны — в шапке и нижней панели", async ({
     page,
   }) => {

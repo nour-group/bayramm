@@ -169,6 +169,8 @@ function RevisionView({
         </div>
       )}
 
+      {/* Решить не может (менеджер) — объяснение, а не пустое место вместо кнопок */}
+      {open && !can("revisions.moderate") && <p className="notice">{t.revisionWhoDecides}</p>}
       {open && can("revisions.moderate") && (
         <section className="panel panel-actions" aria-label={t.revisions}>
           <ActionBar label={t.revisions}>

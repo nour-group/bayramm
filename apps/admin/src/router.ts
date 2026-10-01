@@ -1,6 +1,6 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
 import type { StaffPermission } from "@bayramm/shared/api/staff";
-import { useCallback, useEffect, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 /* Все маршруты панели — в одной карте. Пути, вписанные по месту, разъезжаются
    (ловушка №9 в CLAUDE.md). login — страница входа, authCallback — куда хаб входа на
@@ -56,31 +56,27 @@ export const SECTION_PERMISSION: Readonly<Record<Section, StaffPermission>> = {
 export const HOME: Section = "vendors";
 
 /**
- * Нижняя панель телефона: разделы по тому, как часто в них заходят с телефона каждый день.
- * Помещается пять кнопок; если разделов у роли больше — четыре первых и «Ещё» с остальными
+ * Нижняя панель телефона — только разделы, в которые заходят с телефона каждый день, по
+ * частоте. Их названия целиком влезают в кнопку и на 320px (сокращений в панели нет).
+ * Остальные — очередь уведомлений, журнал, команда, настройки — всегда в «Ещё»: «Уведомления»
+ * в кнопку пятой части экрана не помещаются
  */
-export const TAB_PRIORITY: readonly Section[] = [
-  "requests",
-  "moderation",
-  "vendors",
-  "metrics",
-  "clients",
-  "notifications",
-  "audit",
-  "team",
-  "settings",
-];
+export const TAB_SECTIONS: readonly Section[] = ["requests", "moderation", "vendors", "metrics", "clients"];
 
 export const TAB_SLOTS = 5;
 
-/** Разделы роли → кнопки нижней панели и то, что уходит в «Ещё» (в порядке NAV) */
+/**
+ * Разделы роли → кнопки нижней панели и «Ещё» (в порядке NAV). Всё влезает — кнопками без
+ * «Ещё»; иначе четыре частых кнопками, остальное — в «Ещё»
+ */
 export function tabsFor(
   sections: readonly Section[],
   slots = TAB_SLOTS,
 ): { readonly tabs: readonly Section[]; readonly more: readonly Section[] } {
-  const ranked = TAB_PRIORITY.filter((section) => sections.includes(section));
-  if (ranked.length <= slots) return { tabs: ranked, more: [] };
-  const tabs = ranked.slice(0, slots - 1);
+  const daily = TAB_SECTIONS.filter((section) => sections.includes(section));
+  const rest = NAV.filter((section) => sections.includes(section) && !daily.includes(section));
+  if (rest.length === 0 && daily.length <= slots) return { tabs: daily, more: [] };
+  const tabs = daily.slice(0, slots - 1);
   return { tabs, more: NAV.filter((section) => sections.includes(section) && !tabs.includes(section)) };
 }
 
@@ -205,11 +201,33 @@ const isLoginPath = (pathname: string) => {
   return route === "login" || route === "authCallback";
 };
 
-export type Navigate = (view: View, options?: { readonly replace?: boolean }) => void;
+export type Navigate = (
+  view: View,
+  options?: {
+    readonly replace?: boolean;
+    /** Без вопроса о несохранённом: форма только что сохранилась и сама уводит на результат */
+    readonly force?: boolean;
+  },
+) => void;
 
-/** Текущий экран по адресной строке и переход без перезагрузки */
-export function useRoute(): readonly [View | null, Navigate] {
+/**
+ * Что держит уход с экрана: несохранённые правки (unsaved.tsx). holding — есть что терять:
+ * адрес и запись истории экрана с правками; ask — спросить, leave — уйти
+ */
+export interface LeaveGuard {
+  readonly holding: () => { readonly url: string; readonly state: unknown } | null;
+  readonly ask: (leave: () => void) => void;
+}
+
+/**
+ * Текущий экран по адресной строке и переход без перезагрузки. guard — уход с экрана с
+ * несохранёнными правками сначала спрашивает: и переход по ссылке, и «назад» браузера
+ * или Telegram (адрес экрана возвращается в историю, «Уйти» — снова назад)
+ */
+export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [View | null, Navigate] {
   const [path, setPath] = useState(() => window.location.pathname);
+  // «Уйти» после вопроса: следующий popstate — тот самый уход, не держать
+  const passing = useRef(false);
 
   useEffect(() => {
     // Корень и страницы входа у вошедшего показывают главный экран; в адресе — его настоящий путь
@@ -218,18 +236,40 @@ export function useRoute(): readonly [View | null, Navigate] {
       window.history.replaceState(null, "", `${ROUTES[HOME]}${pathname === "/" ? search + hash : ""}`);
       setPath(ROUTES[HOME]);
     }
-    const onPop = () => setPath(window.location.pathname);
+    const onPop = () => {
+      const held = passing.current ? null : (guard?.current?.holding() ?? null);
+      passing.current = false;
+      if (held && guard?.current) {
+        // Браузер уже ушёл: вернуть экран с правками новой записью поверх той, куда ушли
+        window.history.pushState(held.state, "", held.url);
+        guard.current.ask(() => {
+          passing.current = true;
+          window.history.back();
+        });
+        return;
+      }
+      setPath(window.location.pathname);
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [guard]);
 
-  const navigate = useCallback<Navigate>((view, options) => {
-    const next = pathOf(view);
-    if (options?.replace) window.history.replaceState({ idx: historyIndex() }, "", next);
-    else if (window.location.pathname !== next)
-      window.history.pushState({ idx: historyIndex() + 1 }, "", next);
-    setPath(next);
-  }, []);
+  const navigate = useCallback<Navigate>(
+    (view, options) => {
+      const next = pathOf(view);
+      const go = () => {
+        if (options?.replace) window.history.replaceState({ idx: historyIndex() }, "", next);
+        else if (window.location.pathname !== next)
+          window.history.pushState({ idx: historyIndex() + 1 }, "", next);
+        setPath(next);
+      };
+      // Тот же экран (раздел, где уже стоим) — никуда не уходим, спрашивать не о чем
+      const held = options?.force || next === window.location.pathname ? null : guard?.current?.holding();
+      if (held && guard?.current) guard.current.ask(go);
+      else go();
+    },
+    [guard],
+  );
 
   return [isLoginPath(path) ? { name: HOME } : parseView(path), navigate] as const;
 }

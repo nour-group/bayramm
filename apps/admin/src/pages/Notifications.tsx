@@ -115,6 +115,7 @@ function DeadTable({
                     className="btn"
                     onClick={() => retry(item.id)}
                     disabled={busy !== null}
+                    aria-label={t.retryNotice(t.noticeKinds[item.kind] ?? item.kind)}
                   >
                     {t.retry}
                   </button>
@@ -177,6 +178,7 @@ function DeadTable({
                       className="btn btn-sm"
                       onClick={() => retry(item.id)}
                       disabled={busy !== null}
+                      aria-label={t.retryNotice(t.noticeKinds[item.kind] ?? item.kind)}
                     >
                       {t.retry}
                     </button>

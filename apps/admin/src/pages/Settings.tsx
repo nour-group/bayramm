@@ -9,6 +9,7 @@ import { type Failure, useLoad, useSession } from "../api";
 import { formatMoment } from "../format";
 import { t } from "../texts";
 import { ErrorText, LoadedView } from "../ui";
+import { useUnsaved } from "../unsaved";
 
 export function SettingsPage() {
   const { loaded, reload, set } = useLoad<StaffSettings>("/staff/settings");
@@ -58,6 +59,10 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
   const label = t.settingsLabels[setting.key] ?? setting.key;
   const hintId = `${id}-hint`;
   const invalid = failure?.code === "invalid_input";
+  // Значение изменено и не сохранено: «Сохранить» доступна, уход переспросит. Без изменений
+  // сохранять нечего — и в журнал не уходит пустая запись
+  const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(setting));
+  useUnsaved(dirty);
 
   const change = (index: number) => (value: string) => {
     const next = [...draft];
@@ -76,6 +81,9 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
     setFailure(result.ok ? null : result);
     if (result.ok) {
       setSaved(true);
+      // Поля — как сохранил сервер («04» → 4): иначе форма осталась бы «изменённой»
+      const next = result.data.items.find((item) => item.key === setting.key);
+      if (next) setDraft(draftOf(next));
       onSaved(result.data);
     }
   };
@@ -104,6 +112,10 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
   return (
     <form className={`setting${invalid ? " field-bad" : ""}`} onSubmit={submit} noValidate>
       <h2 className="setting-title">{label}</h2>
+      {/* Границы — до полей: на телефоне «Сохранить» встаёт под полем, подсказка — не под ней */}
+      <p id={hintId} className={invalid ? "field-error" : "field-hint"}>
+        {invalid ? t.settingInvalid : t.settingsHints[setting.key]}
+      </p>
       <div className="setting-inputs">
         {setting.key === "sla_reminder_hours"
           ? [
@@ -114,14 +126,11 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
             ? [input(0, { label: t.quietFrom, type: "time" }), input(1, { label: t.quietTo, type: "time" })]
             : input(0, { label: t.settingValue, type: "number" })}
         <div className="setting-save">
-          <button type="submit" className="btn" disabled={busy}>
-            {t.save}
+          <button type="submit" className="btn" disabled={busy || !dirty}>
+            {busy ? t.saving : t.save}
           </button>
         </div>
       </div>
-      <p id={hintId} className={invalid ? "field-error" : "field-hint"}>
-        {invalid ? t.settingInvalid : t.settingsHints[setting.key]}
-      </p>
       <p className="sub">{t.updatedBy(formatMoment(setting.updatedAt), setting.updatedBy)}</p>
       {saved && (
         <p className="saved" role="status">

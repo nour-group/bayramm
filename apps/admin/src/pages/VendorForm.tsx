@@ -7,6 +7,7 @@ import { type FormEvent, useId, useState } from "react";
 import type { Failure } from "../api";
 import { t } from "../texts";
 import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
+import { useUnsaved } from "../unsaved";
 
 type Values = Record<keyof VendorInput, string>;
 
@@ -72,8 +73,10 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
   const creating = vendor === null;
   const form = useRevealErrors(failure);
   const formId = useId();
-  // Есть несохранённое: на телефоне панель «Сохранить» появляется только тогда
-  const dirty = Object.keys(vendorBody(values, before, false)).length > 0;
+  // Есть несохранённое: на телефоне панель «Сохранить» появляется только тогда, а уход со
+  // страницы переспросит
+  const dirty = !readOnly && Object.keys(vendorBody(values, before, false)).length > 0;
+  useUnsaved(dirty);
 
   const put = (key: keyof Values) => (value: string) => {
     setSaved(false);
@@ -141,6 +144,7 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
 
   return (
     <form id={formId} ref={form} className="form" onSubmit={submit} noValidate>
+      {readOnly ? <p className="notice">{t.vendorReadOnly}</p> : null}
       <section className="fs">
         <div className="fs-head">
           <h2>{t.vendorSections.business}</h2>
@@ -200,8 +204,9 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
         <div className="fields">
           {text("contactPerson", { maxLength: 120 })}
           {text("contactRole", { maxLength: 80 })}
-          {phone("phone")}
-          {phone("phoneAlt")}
+          {/* Номера только пишутся: без права правки полям «новый номер» здесь нечего делать */}
+          {readOnly ? null : phone("phone")}
+          {readOnly ? null : phone("phoneAlt")}
           {text("telegramUsername", { maxLength: 33, latin: true })}
         </div>
       </section>

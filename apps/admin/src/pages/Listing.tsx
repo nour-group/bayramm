@@ -32,6 +32,7 @@ import {
   useEntityTitle,
   useNavigate,
 } from "../ui";
+import { useUnsaved } from "../unsaved";
 import { Calendar } from "./Calendar";
 import { ListingForm } from "./ListingForm";
 import { Photos } from "./Photos";
@@ -69,7 +70,8 @@ export function ListingNewPage({
     async (body: ListingInput): Promise<Failure | null> => {
       const result = await api.post<ListingDetail>("/staff/listings", { ...body, vendorId });
       if (!result.ok) return result;
-      navigate({ name: "listing", id: result.data.id });
+      // Карточка создана — форма сохранена: переход без вопроса о несохранённом
+      navigate({ name: "listing", id: result.data.id }, { force: true });
       return null;
     },
     [api, navigate, vendorId],
@@ -269,6 +271,8 @@ function StatusActions({
   const [reason, setReason] = useState("");
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
+  // Вписанная причина или комментарий к смене статуса — несохранённое
+  useUnsaved(pending !== null && reason.trim() !== "");
   const actions = ACTIONS_FROM[listing.status].filter((action) => can(PERMISSION[action]));
   if (actions.length === 0) return null;
 
@@ -289,7 +293,13 @@ function StatusActions({
 
   const choose = (action: ListingAction) => {
     setPending(pending === action ? null : action);
+    setReason("");
     setFailure(null);
+  };
+  // Закрыли форму причины — вписанное не остаётся висеть невидимым черновиком
+  const cancel = () => {
+    setPending(null);
+    setReason("");
   };
   // Телефон: главное действие — кнопкой, остальные — в «Ещё»
   const primary = phone ? (actions.find((action) => PRIMARY.includes(action)) ?? actions[0]) : undefined;
@@ -340,7 +350,7 @@ function StatusActions({
       <PhoneSheet
         open={pending !== null}
         title={pending ? t.actions[pending] : ""}
-        onClose={() => setPending(null)}
+        onClose={cancel}
         returnFocus={pending === primary ? primaryButton : moreButton}
       >
         {pending && (
@@ -366,7 +376,7 @@ function StatusActions({
               >
                 {t.actions[pending]}
               </button>
-              <button type="button" className="btn" onClick={() => setPending(null)}>
+              <button type="button" className="btn" onClick={cancel}>
                 {t.cancel}
               </button>
             </div>

@@ -19,6 +19,7 @@ import { type FormEvent, useEffect, useId, useState } from "react";
 import type { Failure } from "../api";
 import { t } from "../texts";
 import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
+import { useUnsaved } from "../unsaved";
 
 type PackageKind = StaffListingPackage["kind"];
 
@@ -217,11 +218,16 @@ export function ListingForm({
   const form = useRevealErrors(failure);
   const formId = useId();
   // Несохранённое есть, если запрос правки был бы не пуст; на телефоне тогда видна «Сохранить»
-  const dirty =
-    !creating && !readOnly && Object.keys(listingBody(values, before, rows, beforeRows, false)).length > 0;
+  const changed =
+    !readOnly &&
+    (Object.keys(listingBody(values, before, rows, beforeRows, false)).length > 0 ||
+      values.status !== before.status);
+  const dirty = !creating && changed;
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
+  // И новая карточка, и правка: что-то вписано и не сохранено — уход переспросит
+  useUnsaved(changed);
 
   // Любая новая правка — старое «Сохранено» или «Отправлено» уже не про неё
   const touch = () => {
@@ -312,6 +318,7 @@ export function ListingForm({
 
   return (
     <form id={formId} ref={form} className="form" onSubmit={submit} noValidate>
+      {readOnly ? <p className="notice">{t.listingReadOnly}</p> : null}
       {moderatedHint && <p className="notice notice-warn">{t.moderatedNotice}</p>}
       <section className="fs">
         <div className="fs-head">
@@ -528,35 +535,37 @@ export function ListingForm({
         </fieldset>
       </section>
 
-      <section className="fs">
-        <div className="fs-head">
-          <h2>{t.listingSections.phone}</h2>
-          <p>{t.listingSections.phoneHint}</p>
-        </div>
-        <div className="fields">
-          <Field
-            label={creating ? (t.listingFields.phone ?? "") : t.phoneChange}
-            error={errors.phone}
-            hint={creating ? undefined : t.phoneKeep}
-          >
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                type="tel"
-                inputMode="tel"
-                autoComplete="off"
-                placeholder="+998 90 123 45 67"
-                value={values.phone}
-                onChange={set("phone")}
-                maxLength={24}
-                enterKeyHint="done"
-                readOnly={readOnly}
-              />
-            )}
-          </Field>
-        </div>
-      </section>
+      {/* Номер только пишется: без права правки этой части формы нет (номер — по «Показать») */}
+      {readOnly ? null : (
+        <section className="fs">
+          <div className="fs-head">
+            <h2>{t.listingSections.phone}</h2>
+            <p>{t.listingSections.phoneHint}</p>
+          </div>
+          <div className="fields">
+            <Field
+              label={creating ? (t.listingFields.phone ?? "") : t.phoneChange}
+              error={errors.phone}
+              hint={creating ? undefined : t.phoneKeep}
+            >
+              {(props) => (
+                <input
+                  {...props}
+                  className="input"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="off"
+                  placeholder="+998 90 123 45 67"
+                  value={values.phone}
+                  onChange={set("phone")}
+                  maxLength={24}
+                  enterKeyHint="done"
+                />
+              )}
+            </Field>
+          </div>
+        </section>
+      )}
 
       {failure && <ErrorText failure={failure} />}
       {!readOnly && (
