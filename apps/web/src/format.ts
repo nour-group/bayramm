@@ -38,7 +38,6 @@ export function weekdayMon(iso: string): number {
   return (utcDate(iso).getUTCDay() + 6) % 7;
 }
 
-
 /** «14 сен» / «14-sen» */
 export function formatDayMonth(iso: string, t: Dict): string {
   const date = utcDate(iso);
