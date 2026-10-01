@@ -185,7 +185,7 @@ describe("разметка страниц", () => {
   it("API не ответило — страница площадки всё равно отдаётся, с общей разметкой", async () => {
     const { res, body } = await setup(fakeApi([], true)).html(`${PROD}/venue/${LOLA.slug}`);
     expect(res.status).toBe(200);
-    expect(title(body)).toBe("Toshkent toʻyxonalari · Bayramm");
+    expect(title(body)).toBe("Katalog · Bayramm");
   });
 
   it("личное, форма заявки и вход — noindex; неизвестный путь — 404", async () => {

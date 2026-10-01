@@ -511,6 +511,14 @@ interface FormProps {
   readonly onConsentsOutdated: () => void;
 }
 
+/** В черновике есть что-то кроме услуг, отмеченных на витрине: его заполняли в форме */
+const touched = (draft: Draft): boolean =>
+  draft.occasion !== null ||
+  draft.date !== null ||
+  draft.budget !== null ||
+  [draft.guests, draft.name, draft.phone, draft.comment].some((v) => v.trim() !== "") ||
+  Object.keys(draft.values).length > 0;
+
 function initialDraft(
   listing: ListingDetail,
   category: CategoryConfig,
@@ -522,7 +530,7 @@ function initialDraft(
   const date = query.get("date");
   const guests = parseGuests(query.get("guests"));
   // Черновик с формой: в нём уже всё; с витрины — только отмеченные услуги: дополняем
-  if (saved && (saved.occasion !== null || saved.name !== "" || saved.date !== null)) return saved;
+  if (saved && touched(saved)) return saved;
   const lead = leadDaysOf(listing, saved?.services.map((s) => s.id) ?? []);
   return {
     ...EMPTY_DRAFT,

@@ -133,7 +133,8 @@ function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup, cat
     case "request":
     case "venue": {
       if (venue === "missing") return { title: site(t.venueGoneH), description: t.venueGoneP };
-      if (venue === null) return { title: site(t.hallsTitle), description: t.metaCatalogDesc };
+      // API не ответило: какая это категория, неизвестно — общие тексты сайта
+      if (venue === null) return { title: site(t.navCatalog), description: t.metaHomeDesc };
       const price = formatPriceFrom(venue.priceFromUzs, venue.priceUnit, t);
       const facts = [
         categoryLabel(venue.categoryCode, lang),

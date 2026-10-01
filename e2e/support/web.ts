@@ -1,6 +1,6 @@
 import { type Dict, dictionaries, type Lang } from "@bayramm/shared";
 import type { Page } from "@playwright/test";
-import { demoListings } from "../../apps/web/src/api/mock";
+import { allDemoListings, demoListings } from "../../apps/web/src/api/mock";
 import { addDays } from "../../apps/web/src/format";
 
 /* Клиент в демо-режиме (`vite` с VITE_API=mock): данные — те же демо-площадки, что
@@ -12,7 +12,26 @@ export const NOW = new Date("2026-10-01T07:00:00Z");
 export const TODAY = "2026-10-01";
 /** Через неделю: каждая третья демо-площадка на эту дату занята */
 export const BUSY_DAY = addDays(TODAY, 7);
+/** Демо-залы: каталог без категории — это они */
 export const LISTINGS = demoListings(TODAY);
+/** Все демо-витрины: залы и по три в каждой включённой категории */
+export const ALL_LISTINGS = allDemoListings(TODAY);
+
+/** Витрина категории по slug (api/demo-vitrinas.ts) */
+export function vitrina(slug: string) {
+  const listing = ALL_LISTINGS.find((l) => l.slug === slug);
+  if (!listing) throw new Error(`нет демо-витрины ${slug}`);
+  return listing;
+}
+
+/** По одной витрине каждой включённой категории — первая в её демо-данных */
+export const CATEGORY_VITRINAS = ["hall", "car", "studio", "flowers", "photo", "cake", "gifts", "decor"].map(
+  (code) => {
+    const listing = ALL_LISTINGS.find((l) => l.categoryCode === code);
+    if (!listing) throw new Error(`нет демо-витрины категории ${code}`);
+    return listing;
+  },
+);
 
 export const VENUE =
   LISTINGS[0] ??
@@ -28,6 +47,8 @@ export const PATHS = {
   home: "/",
   catalog: "/catalog",
   venue: (slug: string) => `/venue/${slug}`,
+  /** Каталог категории; залы — без параметра */
+  category: (code: string) => (code === "hall" ? "/catalog" : `/catalog?category=${code}`),
   request: (slug: string) => `/venue/${slug}/request`,
   favorites: "/favorites",
   requests: "/requests",

@@ -240,6 +240,19 @@ describe("витрина категории", () => {
 });
 
 describe("заявка по форме категории", () => {
+  it("черновик: только комментарий — тоже черновик, переживает уход с формы; услуга с витрины его не стирает", async () => {
+    await mount({ path: "/venue/oq-kortej/request", mock: { listings: ALL } });
+    await waitFor(() => transferCheckbox(), "форма");
+    await type(field("Комментарий"), "Маршрут: ЗАГС → парк → зал");
+    await click(byText("button", "Не сейчас"));
+    await waitFor(() => document.querySelector(".svc-pick"), "витрина");
+    await click(document.querySelector(".svc-pick"));
+    await click(byText(".venue-bar a", "Оставить заявку"));
+    await waitFor(() => transferCheckbox(), "форма снова");
+    expect(field("Комментарий")?.value).toBe("Маршрут: ЗАГС → парк → зал");
+    expect(document.querySelector<HTMLInputElement>(".svc-choice input[type=checkbox]")?.checked).toBe(true);
+  });
+
   it("кортеж: время → часть дня, часы, машины, услуга с опцией и примерной суммой; гостей нет", async () => {
     const oq = by("oq-kortej");
     const bride = oq.services[0];

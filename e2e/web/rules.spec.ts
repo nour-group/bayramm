@@ -1,11 +1,13 @@
 import { LANGS } from "@bayramm/shared";
 import { comparablePriceUzs, type ListingDetail } from "@bayramm/shared/api";
 import type { Locator, Page } from "@playwright/test";
-import { formatDayMonth, formatPhone } from "../../apps/web/src/format";
+import { formatDayMonth, formatPhone, formatPriceFrom } from "../../apps/web/src/format";
 import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
 import {
+  ALL_LISTINGS,
   BUSY_DAY,
+  CATEGORY_VITRINAS,
   humanText,
   isDesktop,
   LISTINGS,
@@ -41,43 +43,51 @@ async function fillRequest(page: Page, comment: string) {
 }
 
 test.describe("телефон виден сразу", () => {
-  for (const who of ["гость в браузере", "Telegram"] as const) {
-    test(`${who}: номер и «Позвонить» на площадке — до всякой заявки`, async ({ page }) => {
-      await prepare(page);
-      if (who === "Telegram") await fakeTelegram(page);
-      await open(page, PATHS.venue(VENUE.slug), ".venue-head h1", { guest: who !== "Telegram" });
-
-      const tel = `tel:${VENUE.phone}`;
-      const desktop = isDesktop(page);
-      // Телефон: на телефоне — раздел «Телефон» под названием, на компьютере — карточка справа
-      const number = page.locator(
-        desktop ? `.venue-side a.bar-phone[href="${tel}"]` : `.contact a.contact-phone[href="${tel}"]`,
-      );
-      await expect(number).toBeVisible();
-      await expect(number).toBeInViewport();
-      await expect(number).toHaveText(formatPhone(VENUE.phone));
-      if (!desktop) await expect(page.locator(`.contact a.btn[href="${tel}"]`)).toContainText(ru.sentCall);
-      // Кнопка звонка — в панели внизу (на компьютере — в карточке), на экране без прокрутки
-      const barCall = page.locator(`.venue-bar a.call[href="${tel}"]`);
-      await expect(barCall).toBeVisible();
-      await expect(barCall).toBeInViewport();
-      if (desktop) await expect(barCall).toContainText(ru.sentCall);
-      // Цена в панели не уходит под кнопку звонка: рядом с ней на телефоне, над ней — на компьютере
-      const priceBox = await page.locator(".venue-bar .bar-price b").boundingBox();
-      const callBox = await barCall.boundingBox();
-      expect(priceBox && callBox).toBeTruthy();
-      if (priceBox && callBox)
-        expect(
-          desktop ? priceBox.y + priceBox.height <= callBox.y : priceBox.x + priceBox.width <= callBox.x,
-        ).toBe(true);
-      expect(
-        await page.locator(".venue-bar .bar-price b").evaluate((el) => el.scrollWidth <= el.clientWidth),
-      ).toBe(true);
-      // Ни формы, ни согласий на пути к номеру нет
-      await expect(page.locator("form.request")).toHaveCount(0);
-    });
-  }
+  for (const listing of CATEGORY_VITRINAS)
+    for (const who of ["гость в браузере", "Telegram"] as const) {
+      test(`${listing.categoryCode} · ${who}: номер и «Позвонить» на витрине — до всякой заявки`, async ({
+        page,
+      }) => {
+        await expectPhoneFirst(page, listing, who);
+      });
+    }
 });
+
+/** Номер и «Позвонить» на витрине — сразу, на экране без прокрутки, без формы на пути */
+async function expectPhoneFirst(page: Page, venue: ListingDetail, who: "гость в браузере" | "Telegram") {
+  await prepare(page);
+  if (who === "Telegram") await fakeTelegram(page);
+  await open(page, PATHS.venue(venue.slug), ".venue-head h1", { guest: who !== "Telegram" });
+
+  const tel = `tel:${venue.phone}`;
+  const desktop = isDesktop(page);
+  // Телефон: на телефоне — раздел «Телефон» под названием, на компьютере — карточка справа
+  const number = page.locator(
+    desktop ? `.venue-side a.bar-phone[href="${tel}"]` : `.contact a.contact-phone[href="${tel}"]`,
+  );
+  await expect(number).toBeVisible();
+  await expect(number).toBeInViewport();
+  await expect(number).toHaveText(formatPhone(venue.phone));
+  if (!desktop) await expect(page.locator(`.contact a.btn[href="${tel}"]`)).toContainText(ru.sentCall);
+  // Кнопка звонка — в панели внизу (на компьютере — в карточке), на экране без прокрутки
+  const barCall = page.locator(`.venue-bar a.call[href="${tel}"]`);
+  await expect(barCall).toBeVisible();
+  await expect(barCall).toBeInViewport();
+  if (desktop) await expect(barCall).toContainText(ru.sentCall);
+  // Цена в панели не уходит под кнопку звонка: рядом с ней на телефоне, над ней — на компьютере
+  const priceBox = await page.locator(".venue-bar .bar-price b").boundingBox();
+  const callBox = await barCall.boundingBox();
+  expect(priceBox && callBox).toBeTruthy();
+  if (priceBox && callBox)
+    expect(
+      desktop ? priceBox.y + priceBox.height <= callBox.y : priceBox.x + priceBox.width <= callBox.x,
+    ).toBe(true);
+  expect(
+    await page.locator(".venue-bar .bar-price b").evaluate((el) => el.scrollWidth <= el.clientWidth),
+  ).toBe(true);
+  // Ни формы, ни согласий на пути к номеру нет
+  await expect(page.locator("form.request")).toHaveCount(0);
+}
 
 test.describe("тексты экранов", () => {
   for (const lang of LANGS) {
@@ -121,6 +131,31 @@ test.describe("тексты экранов", () => {
       await expect(page.locator('.card .badge-new [aria-hidden="true"]').first()).toHaveText(
         T[lang].newBadge,
       );
+    });
+  }
+});
+
+test.describe("тексты категорий", () => {
+  for (const lang of LANGS) {
+    test(`${lang}: каталог, витрина и форма каждой категории — без «брони», рейтингов и отзывов`, async ({
+      page,
+    }) => {
+      test.slow();
+      await prepare(page, { lang });
+      // Тексты из описания категорий (поля, услуги, опции, варианты) — тоже по правилам продукта
+      for (const listing of CATEGORY_VITRINAS.slice(1)) {
+        for (const [what, path, ready] of [
+          ["каталог", PATHS.category(listing.categoryCode), ".card"],
+          ["витрина", PATHS.venue(listing.slug), ".venue-head h1"],
+          ["форма заявки", PATHS.request(listing.slug), "form.request .consents"],
+        ] as const) {
+          await open(page, path, ready);
+          const text = await humanText(page);
+          const name = `${lang} · ${what} ${listing.categoryCode}`;
+          expect.soft(text, `${name}: «брон»`).not.toMatch(FORBIDDEN_BOOKING);
+          expect.soft(text, `${name}: рейтинг/отзывы`).not.toMatch(RATINGS);
+        }
+      }
     });
   }
 });
@@ -170,6 +205,56 @@ test.describe("согласие", () => {
     await send.click();
     await expect(page.getByRole("heading", { level: 1, name: ru.sentH })).toBeVisible();
   });
+});
+
+test.describe("согласие в форме каждой категории", () => {
+  for (const listing of CATEGORY_VITRINAS.slice(1)) {
+    test(`${listing.categoryCode}: галочки не отмечены, отказ и отправка одного размера, без платёжных полей`, async ({
+      page,
+    }) => {
+      await prepare(page);
+      await open(page, PATHS.request(listing.slug), "form.request .consents");
+      const boxes = page.locator(".consents input[type=checkbox]");
+      await expect(boxes).toHaveCount(2);
+      for (const box of await boxes.all()) {
+        await expect(box).not.toBeChecked();
+        expect(await box.evaluate((el: HTMLInputElement) => el.defaultChecked)).toBe(false);
+      }
+      const cancel = page.locator(".form-bar").getByRole("button", { name: ru.permCancel });
+      const send = page.locator(".form-bar").getByRole("button", { name: ru.rqSend });
+      const [a, b] = [await cancel.boundingBox(), await send.boundingBox()];
+      expect(a && b).toBeTruthy();
+      if (a && b) {
+        expect(Math.abs(a.width - b.width), "ширина").toBeLessThanOrEqual(1);
+        expect(Math.abs(a.height - b.height), "высота").toBeLessThanOrEqual(1);
+      }
+      // Клиент не платит: платёжных полей нет; сумма по услугам — только «примерно»
+      await expect(page.locator('form.request [autocomplete^="cc-"]')).toHaveCount(0);
+    });
+  }
+});
+
+test.describe("цена обязательна и с единицей", () => {
+  for (const listing of CATEGORY_VITRINAS) {
+    test(`${listing.categoryCode}: у каждой карточки — цена «от» с единицей категории`, async ({ page }) => {
+      await prepare(page);
+      await open(page, PATHS.category(listing.categoryCode), ".card");
+      const own = ALL_LISTINGS.filter((l) => l.categoryCode === listing.categoryCode);
+      const cards = page.locator(".cards .card");
+      await expect(cards).toHaveCount(Math.min(own.length, 20));
+      for (const card of await cards.all()) {
+        const name = await card.locator(".card-name").innerText();
+        const data = own.find((l) => l.name === name);
+        expect(data, name).toBeTruthy();
+        if (!data) continue;
+        const price = formatPriceFrom(data.priceFromUzs, data.priceUnit, ru);
+        const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+        const shown = flat(await card.locator(".card-price").innerText());
+        expect(shown, name).toBe(flat([price.amount, price.unit].filter(Boolean).join(" ")));
+        expect(shown).not.toMatch(/по запросу/i);
+      }
+    });
+  }
 });
 
 test.describe("занятые на дату", () => {

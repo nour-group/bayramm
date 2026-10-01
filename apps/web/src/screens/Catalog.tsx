@@ -202,10 +202,11 @@ export function Catalog() {
 
       <div className={specs.length > 0 ? "catalog-body has-side" : "catalog-body"}>
         {specs.length > 0 ? (
+          // Подпись колонки — не заголовок: колонка стоит раньше заголовка экрана (h1)
           <aside className="filters-side" aria-labelledby={`${dateId}-side`}>
-            <h2 className="section-title" id={`${dateId}-side`}>
+            <p className="section-title" id={`${dateId}-side`}>
               {t.moreFilters}
-            </h2>
+            </p>
             <AttrFiltersForm
               category={category}
               attrs={filters.attrs}
