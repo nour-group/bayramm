@@ -49,7 +49,7 @@ export function Favorites() {
         <ul className="cards">
           {items.map((card, i) => (
             <li key={card.id}>
-              <ListingCard card={card} date={null} guests={null} eager={i < 2} />
+              <ListingCard card={card} date={null} guests={null} eager={i < 2} showCategory />
             </li>
           ))}
         </ul>

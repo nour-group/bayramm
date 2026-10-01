@@ -1,8 +1,22 @@
 import type { Dict } from "@bayramm/shared";
-import type { ConsentText, ListingDetail, RequestCreated } from "@bayramm/shared/api";
-import { Checkbox, DateField, NumberStepper, RadioGroup } from "@bayramm/ui/react";
+import type {
+  ConsentText,
+  DictItem,
+  ListingDetail,
+  PublicService,
+  RequestCreated,
+} from "@bayramm/shared/api";
+import {
+  type CategoryConfig,
+  categoryConfig,
+  dayPartOf,
+  hasDayParts,
+  MAX_CHOSEN_SERVICES,
+} from "@bayramm/shared/categories";
+import { Checkbox, DateField, NumberStepper, RadioGroup, Select, TimeField } from "@bayramm/ui/react";
 import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { isApiError, isNotFound } from "../api/errors";
+import { categoryName, catText, clientCategory } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
@@ -13,13 +27,16 @@ import { canSignIn, pick, useDictionaries, useLang, useServices } from "../conte
 import {
   addDays,
   formatDayMonth,
+  formatMoney,
   formatPhone,
+  formatPrice,
   formatPriceFrom,
   isIsoDate,
   PHONE_PREFIX,
   phoneDigits,
   tashkentToday,
   telHref,
+  unitText,
   weekdayMon,
 } from "../format";
 import { useAsync, useDocumentTitle } from "../hooks";
@@ -28,21 +45,36 @@ import { hrefFor, useNav } from "../router";
 import { haptic, requestWriteAccess } from "../telegram";
 import { MAX_GUESTS, parseGuests } from "./catalog-feed";
 import {
+  budgetScale,
   COMMENT_MAX,
   clearDraft,
+  type DetailField,
   type Draft,
+  type DraftService,
+  type DraftValue,
+  detailFields,
   EMPTY_DRAFT,
   EVENT_MAX_DAYS_AHEAD,
-  FIELDS,
   type Field,
+  fieldOrder,
+  fieldShown,
+  firstDate,
+  leadDaysOf,
   loadDraft,
   NAME_MAX,
+  parseQty,
   saveDraft,
+  servicesField,
   toCreateRequest,
   validate,
 } from "./request-draft";
+import { estimate, hasQty, suggestedQty } from "./request-estimate";
+import { dayPartWindow } from "./venue-attributes";
 
 const GUESTS_STEP = 20;
+
+/** RadioGroup — у обязательного выбора из немногих вариантов; иначе — список с «не важно» */
+const RADIO_MAX = 4;
 
 /** Текст ошибки отправки по коду API (контракт: ClientErrorCode) */
 function sendErrorText(error: unknown, t: Dict, capMax: number): string {
@@ -60,9 +92,31 @@ function sendErrorText(error: unknown, t: Dict, capMax: number): string {
       return t.errConsentOutdated;
     case "listing_not_active":
       return t.venueGoneP;
+    case "lead_time_too_short":
+      return t.errLeadServer;
+    case "invalid_request":
+      return t.errForm;
     default:
       return t.errSend;
   }
+}
+
+/** Поля из ответа 400/422 (details.hours, guests, eventDate…) — ошибки под полями формы */
+function serverFieldErrors(error: unknown, draft: Draft, t: Dict): Partial<Record<Field, string>> {
+  if (!isApiError(error)) return {};
+  const out: Partial<Record<Field, string>> = {};
+  if (error.code === "lead_time_too_short") out.date = t.errLeadServer;
+  for (const path of error.details) {
+    const [head = "", key, index, sub] = path.split(".");
+    if (head === "guests") out.guests = t.errGuests;
+    else if (head === "eventDate") out.date ??= t.errDate;
+    else if (head === "details" && key === "services") {
+      const chosen = index === undefined ? undefined : draft.services[Number(index)];
+      if (chosen && sub === "qty") out[`svc.${chosen.id}`] = t.errQty;
+      else out.services = t.errServices;
+    } else if (head === "details" && key) out[`d.${key}`] = t.errInvalid;
+  }
+  return out;
 }
 
 /** Поле формы: подпись, пометка «обязательно/по желанию», ошибка под полем */
@@ -225,9 +279,228 @@ function Sent({ listing, created }: { listing: ListingDetail; created: RequestCr
   );
 }
 
+/** Поле категории из её описания: число, да/нет, выбор, несколько, время, район */
+function DetailInput({
+  field,
+  id,
+  value,
+  error,
+  hint,
+  districts,
+  onChange,
+}: {
+  field: DetailField;
+  id: string;
+  value: DraftValue | undefined;
+  error: string | undefined;
+  hint?: string;
+  districts: readonly DictItem[];
+  onChange: (value: DraftValue) => void;
+}) {
+  const { t, lang } = useLang();
+  const label = catText(lang, field.label);
+  const aria = {
+    "aria-invalid": error ? true : undefined,
+    "aria-describedby": describedBy(id, error, Boolean(hint)),
+  };
+  switch (field.type) {
+    case "int":
+      return (
+        <Fld id={id} label={label} required={field.required} error={error} hint={hint}>
+          <NumberStepper
+            id={id}
+            min={field.min}
+            max={field.max}
+            maxLength={String(field.max).length}
+            value={typeof value === "string" ? value : ""}
+            onChange={onChange}
+            {...aria}
+          />
+        </Fld>
+      );
+    case "bool":
+      return (
+        <div className="fld">
+          <Checkbox id={id} checked={value === true} onChange={onChange} {...aria}>
+            {label}
+          </Checkbox>
+          {error ? (
+            <p className="fld-error" id={`${id}-error`}>
+              {error}
+            </p>
+          ) : null}
+        </div>
+      );
+    case "time":
+      return (
+        <Fld id={id} label={label} required={field.required} error={error} hint={hint}>
+          <TimeField
+            id={id}
+            label={label}
+            placeholder={t.timePh}
+            value={typeof value === "string" && value ? value : null}
+            onChange={onChange}
+            {...aria}
+          />
+        </Fld>
+      );
+    case "district":
+      return (
+        <Fld id={id} label={label} required={field.required} error={error} hint={hint}>
+          <Select
+            id={id}
+            label={label}
+            placeholder={t.anyDistrict}
+            value={typeof value === "string" ? value : ""}
+            options={[
+              ...(field.required ? [] : [{ value: "", label: t.anyGuestV }]),
+              ...districts.map((d) => ({ value: d.code, label: pick(d.name, lang) })),
+            ]}
+            onChange={onChange}
+            {...aria}
+          />
+        </Fld>
+      );
+    case "enum": {
+      const options = field.options.map((o) => ({ value: o.code, label: catText(lang, o.label) }));
+      if (field.required && options.length <= RADIO_MAX)
+        return (
+          <Fld id={id} label={label} required error={error} hint={hint} group>
+            <RadioGroup
+              id={id}
+              name={id}
+              value={typeof value === "string" && value ? value : null}
+              options={options}
+              onChange={onChange}
+              {...aria}
+            />
+          </Fld>
+        );
+      return (
+        <Fld id={id} label={label} required={field.required} error={error} hint={hint}>
+          <Select
+            id={id}
+            label={label}
+            placeholder={t.errChoose}
+            value={typeof value === "string" ? value : field.required ? null : ""}
+            options={[...(field.required ? [] : [{ value: "", label: t.anyGuestV }]), ...options]}
+            onChange={onChange}
+            {...aria}
+          />
+        </Fld>
+      );
+    }
+    case "multi": {
+      const codes = Array.isArray(value) ? value : [];
+      return (
+        <Fld id={id} label={label} required={field.required} error={error} hint={hint} group>
+          <div className="checks">
+            {field.options.map((option, i) => (
+              <Checkbox
+                key={option.code}
+                id={i === 0 ? id : undefined}
+                checked={codes.includes(option.code)}
+                aria-invalid={error ? true : undefined}
+                onChange={(on) =>
+                  onChange(on ? [...codes, option.code] : codes.filter((code) => code !== option.code))
+                }
+              >
+                {catText(lang, option.label)}
+              </Checkbox>
+            ))}
+          </div>
+        </Fld>
+      );
+    }
+  }
+}
+
+/** Выбор услуги витрины: галочка, количество (у штучных единиц) и опции */
+function ServicePick({
+  service,
+  chosen,
+  pickId,
+  qtyId,
+  error,
+  disabled,
+  onToggle,
+  onChange,
+}: {
+  service: PublicService;
+  chosen: DraftService | undefined;
+  /** id галочки: у первой услуги — id поля «услуги» (к нему фокус при ошибке выбора) */
+  pickId: string;
+  /** id поля количества: к нему фокус при ошибке количества */
+  qtyId: string;
+  error: string | undefined;
+  disabled: boolean;
+  onToggle: (on: boolean) => void;
+  onChange: (next: DraftService) => void;
+}) {
+  const { t, lang } = useLang();
+  const name = pick(service.name, lang);
+  return (
+    <li className={chosen ? "svc-choice on" : "svc-choice"}>
+      <Checkbox id={pickId} checked={chosen !== undefined} disabled={disabled && !chosen} onChange={onToggle}>
+        <span className="svc-choice-name">{name}</span>{" "}
+        <span className="muted">{formatPrice(service.priceUzs, service.priceUnit, t)}</span>
+      </Checkbox>
+      {chosen ? (
+        <div className="svc-choice-more">
+          {hasQty(service.priceUnit) ? (
+            <div className="field svc-qty">
+              <label className="field-label" htmlFor={qtyId}>
+                {t.qtyLabel(unitText(service.priceUnit, t))}
+              </label>
+              <NumberStepper
+                id={qtyId}
+                min={service.minQty ?? 1}
+                max={100_000}
+                value={chosen.qty}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? `${qtyId}-error` : undefined}
+                onChange={(qty) => onChange({ ...chosen, qty })}
+              />
+              {error ? (
+                <p className="fld-error" id={`${qtyId}-error`}>
+                  {error}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {service.options.length > 0 ? (
+            <fieldset className="svc-choice-options">
+              <legend className="field-label">{t.svcOptions}</legend>
+              {service.options.map((option) => (
+                <Checkbox
+                  key={option.id}
+                  checked={chosen.options.includes(option.id)}
+                  onChange={(on) =>
+                    onChange({
+                      ...chosen,
+                      options: on
+                        ? [...chosen.options, option.id]
+                        : chosen.options.filter((o) => o !== option.id),
+                    })
+                  }
+                >
+                  {pick(option.name, lang)}{" "}
+                  <span className="muted">+{formatPrice(option.priceUzs, option.priceUnit, t)}</span>
+                </Checkbox>
+              ))}
+            </fieldset>
+          ) : null}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
 interface FormProps {
   readonly listing: ListingDetail;
-  readonly occasions: readonly { code: string; name: { ru: string; uz: string } }[];
+  readonly category: CategoryConfig;
+  readonly occasions: readonly DictItem[];
+  readonly districts: readonly DictItem[];
   readonly consents: readonly ConsentText[];
   readonly onCreated: (created: RequestCreated) => void;
   readonly onConsentsOutdated: () => void;
@@ -235,23 +508,39 @@ interface FormProps {
 
 function initialDraft(
   listing: ListingDetail,
+  category: CategoryConfig,
   query: URLSearchParams,
   today: string,
   telegramName: string,
 ): Draft {
   const saved = loadDraft(listing.slug);
-  if (saved) return saved;
   const date = query.get("date");
   const guests = parseGuests(query.get("guests"));
+  // Черновик с формой: в нём уже всё; с витрины — только отмеченные услуги: дополняем
+  if (saved && (saved.occasion !== null || saved.name !== "" || saved.date !== null)) return saved;
+  const lead = leadDaysOf(listing, saved?.services.map((s) => s.id) ?? []);
   return {
     ...EMPTY_DRAFT,
-    date: isIsoDate(date) && date > today && !listing.busyDates.includes(date) ? date : null,
-    guests: guests === null ? "" : String(Math.min(guests, listing.capMax ?? MAX_GUESTS)),
+    services: saved?.services ?? [],
+    date:
+      isIsoDate(date) && date >= firstDate(today, lead) && !listing.busyDates.includes(date) ? date : null,
+    guests:
+      guests === null || category.requestForm.guests === "hidden"
+        ? ""
+        : String(Math.min(guests, listing.capMax ?? MAX_GUESTS)),
     name: telegramName,
   };
 }
 
-function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: FormProps) {
+function Form({
+  listing,
+  category,
+  occasions,
+  districts,
+  consents,
+  onCreated,
+  onConsentsOutdated,
+}: FormProps) {
   const { api, webApp, now } = useServices();
   const { t, lang } = useLang();
   const { query, navigate, back } = useNav();
@@ -259,12 +548,15 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
   const busy = useMemo(() => new Set(listing.busyDates), [listing.busyDates]);
   const user = webApp?.initDataUnsafe.user;
   const telegramName = user ? [user.first_name, user.last_name].filter(Boolean).join(" ") : "";
-  const [draft, setDraft] = useState<Draft>(() => initialDraft(listing, query, today, telegramName));
+  const [draft, setDraft] = useState<Draft>(() =>
+    initialDraft(listing, category, query, today, telegramName),
+  );
   const [transfer, setTransfer] = useState(false);
   const [notify, setNotify] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [serverErrors, setServerErrors] = useState<Partial<Record<Field, string>>>({});
   const calendarTexts = useCalendarTexts();
   const id = useId();
   const fieldId = (field: Field | "budget" | "comment") => `${id}-${field}`;
@@ -281,9 +573,24 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
   useEffect(() => {
     if (notifyId) setNotify(false);
   }, [notifyId]);
-  const errors = submitted ? validate(draft, { listing, busy, today, transferChecked: transfer }, t) : {};
+  const context = { listing, category, busy, today, transferChecked: transfer };
+  const errors = submitted ? { ...serverErrors, ...validate(draft, context, t) } : serverErrors;
   const guests = parseGuests(draft.guests);
   const price = formatPriceFrom(listing.priceFromUzs, listing.priceUnit, t);
+  const guestsMode = category.requestForm.guests;
+  const lead = leadDaysOf(
+    listing,
+    draft.services.map((s) => s.id),
+  );
+  const minDate = firstDate(today, lead);
+  const svcField = servicesField(category);
+  const scale = budgetScale(category);
+  const budgetLabels = category.code === "hall" ? t.budgets : t.budgetsSmall;
+  const chosenEstimate = estimate(
+    listing.services,
+    draft.services.map((s) => ({ id: s.id, qty: parseQty(s.qty), options: s.options })),
+    guests,
+  );
 
   const update = (patch: Partial<Draft>) => {
     setDraft((prev) => {
@@ -292,14 +599,39 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
       return next;
     });
   };
+  const setValue = (key: string, value: DraftValue) =>
+    setDraft((prev) => {
+      const values = { ...prev.values, [key]: value };
+      // Самовывоз — району доставки не место
+      if (key === "fulfillment" && value !== "delivery") delete values.delivery_district;
+      const next = { ...prev, values };
+      saveDraft(listing.slug, next);
+      return next;
+    });
+  const setService = (service: PublicService, on: boolean) =>
+    setDraft((prev) => {
+      const services = on
+        ? [...prev.services, { id: service.id, qty: suggestedQty(service, prev.values), options: [] }]
+        : prev.services.filter((s) => s.id !== service.id);
+      const next = { ...prev, services };
+      saveDraft(listing.slug, next);
+      return next;
+    });
+  const changeService = (next: DraftService) =>
+    setDraft((prev) => {
+      const draftNext = { ...prev, services: prev.services.map((s) => (s.id === next.id ? next : s)) };
+      saveDraft(listing.slug, draftNext);
+      return draftNext;
+    });
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (sending) return;
     setSubmitted(true);
     setSendError(null);
-    const found = validate(draft, { listing, busy, today, transferChecked: transfer }, t);
-    const first = FIELDS.find((field) => found[field]);
+    setServerErrors({});
+    const found = validate(draft, context, t);
+    const first = fieldOrder(category, draft).find((field) => found[field]);
     if (first || !transferText) {
       haptic(webApp, "error");
       if (first) document.getElementById(fieldId(first))?.focus({ preventScroll: false });
@@ -307,7 +639,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
     }
     setSending(true);
     try {
-      const body = toCreateRequest(draft, listing, {
+      const body = toCreateRequest(draft, listing, category, {
         transfer: transferText,
         notify: notify ? notifyText : null,
       });
@@ -322,6 +654,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
         return;
       }
       setSendError(sendErrorText(error, t, listing.capMax ?? MAX_GUESTS));
+      setServerErrors(serverFieldErrors(error, draft, t));
       // Текст согласия сменился на сервере: перечитываем, галочки ставятся заново
       if (isApiError(error) && error.code === "consent_text_not_current") onConsentsOutdated();
     } finally {
@@ -330,6 +663,22 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
   };
 
   const dateLabel = (date: string) => `${formatDayMonth(date, t)}, ${t.weekdaysMon[weekdayMon(date)] ?? ""}`;
+  // Подсказка у даты: срок заказа или что в этот день уже занято по частям
+  const dateParts = draft.date ? (listing.busyParts.find((p) => p.date === draft.date)?.parts ?? []) : [];
+  const dateHint =
+    lead > 0
+      ? t.leadNote(lead)
+      : hasDayParts(category) && dateParts.length > 0
+        ? t.partsTaken(dateParts.map((part) => t.dayPartName(part)).join(", "))
+        : undefined;
+  const start = draft.values.start_time;
+  const startHint =
+    hasDayParts(category) && typeof start === "string" && start
+      ? t.dayPartHint(
+          t.dayPartName(dayPartOf(category, start)),
+          dayPartWindow(category, dayPartOf(category, start)),
+        )
+      : undefined;
 
   return (
     <form className="screen request" onSubmit={onSubmit} noValidate>
@@ -341,8 +690,12 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
         <p>
           <b>{listing.name}</b>
           <span className="muted small">
-            {price.amount}
-            {price.unit ? ` ${price.unit}` : ""} · {t.people(listing.capMax ?? MAX_GUESTS)}
+            {[
+              `${price.amount}${price.unit ? ` ${price.unit}` : ""}`,
+              listing.capMax === null ? categoryName(listing.categoryCode, lang) : t.people(listing.capMax),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         </p>
       </div>
@@ -357,56 +710,113 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
         />
       </Fld>
 
-      <Fld id={fieldId("date")} label={t.rqDate} required error={errors.date}>
+      <Fld id={fieldId("date")} label={t.rqDate} required error={errors.date} hint={dateHint}>
         <DateField
           id={fieldId("date")}
           label={t.rqDate}
           placeholder={t.pickAny}
           value={draft.date}
-          min={addDays(today, 1)}
+          min={minDate}
           max={addDays(today, EVENT_MAX_DAYS_AHEAD)}
           busy={busy}
           format={dateLabel}
           texts={calendarTexts}
           aria-invalid={errors.date ? true : undefined}
-          aria-describedby={describedBy(fieldId("date"), errors.date)}
+          aria-describedby={describedBy(fieldId("date"), errors.date, Boolean(dateHint))}
           onChange={(date) => update({ date })}
         />
       </Fld>
 
-      <Fld
-        id={fieldId("guests")}
-        label={t.rqG}
-        required
-        error={errors.guests}
-        hint={
-          guests !== null &&
-          listing.capMin !== null &&
-          guests < listing.capMin &&
-          guests <= (listing.capMax ?? MAX_GUESTS)
-            ? t.guestsBelowMin(listing.capMin)
-            : t.people(listing.capMax ?? MAX_GUESTS)
-        }
-      >
-        <NumberStepper
+      {guestsMode === "hidden" ? null : (
+        <Fld
           id={fieldId("guests")}
-          min={1}
-          max={Math.min(MAX_GUESTS, listing.capMax ?? MAX_GUESTS)}
-          step={GUESTS_STEP}
-          decrementLabel={`${t.rqG} −${GUESTS_STEP}`}
-          incrementLabel={`${t.rqG} +${GUESTS_STEP}`}
-          value={draft.guests}
-          aria-invalid={errors.guests ? true : undefined}
-          aria-describedby={describedBy(fieldId("guests"), errors.guests, true)}
-          onChange={(value) => update({ guests: value })}
-        />
-      </Fld>
+          label={t.rqG}
+          required={guestsMode === "required"}
+          error={errors.guests}
+          hint={
+            listing.capMax === null
+              ? undefined
+              : guests !== null &&
+                  listing.capMin !== null &&
+                  guests < listing.capMin &&
+                  guests <= listing.capMax
+                ? t.guestsBelowMin(listing.capMin)
+                : t.people(listing.capMax)
+          }
+        >
+          <NumberStepper
+            id={fieldId("guests")}
+            min={1}
+            max={Math.min(MAX_GUESTS, listing.capMax ?? MAX_GUESTS)}
+            step={GUESTS_STEP}
+            decrementLabel={`${t.rqG} −${GUESTS_STEP}`}
+            incrementLabel={`${t.rqG} +${GUESTS_STEP}`}
+            value={draft.guests}
+            aria-invalid={errors.guests ? true : undefined}
+            aria-describedby={describedBy(fieldId("guests"), errors.guests, listing.capMax !== null)}
+            onChange={(value) => update({ guests: value })}
+          />
+        </Fld>
+      )}
+
+      {detailFields(category)
+        .filter((field) => fieldShown(field, draft.values))
+        .map((field) => (
+          <DetailInput
+            key={field.key}
+            field={field}
+            id={fieldId(`d.${field.key}`)}
+            value={draft.values[field.key]}
+            error={errors[`d.${field.key}`]}
+            hint={field.key === "start_time" ? startHint : undefined}
+            districts={districts}
+            onChange={(value) => setValue(field.key, value)}
+          />
+        ))}
+
+      {svcField && listing.services.length > 0 ? (
+        <Fld
+          id={fieldId("services")}
+          label={catText(lang, svcField.label)}
+          required={svcField.required}
+          error={errors.services}
+          group
+        >
+          <ul className="svc-choices">
+            {listing.services.map((service, i) => (
+              <ServicePick
+                key={service.id}
+                service={service}
+                chosen={draft.services.find((s) => s.id === service.id)}
+                pickId={i === 0 ? fieldId("services") : `${fieldId(`svc.${service.id}`)}-pick`}
+                qtyId={fieldId(`svc.${service.id}`)}
+                error={errors[`svc.${service.id}`]}
+                disabled={draft.services.length >= MAX_CHOSEN_SERVICES}
+                onToggle={(on) => setService(service, on)}
+                onChange={changeService}
+              />
+            ))}
+          </ul>
+          {draft.services.length > 0 ? (
+            <div className="estimate" aria-live="polite">
+              <p className="estimate-sum">
+                <span>{t.estimateH}</span>
+                <b>
+                  {chosenEstimate.counted > 0 ? t.estimateTotal(formatMoney(chosenEstimate.total, t)) : "—"}
+                </b>
+              </p>
+              {chosenEstimate.needsGuests ? <p className="small">{t.estimateNeedsGuests}</p> : null}
+              <p className="muted small">{t.estimateNote}</p>
+            </div>
+          ) : null}
+        </Fld>
+      ) : null}
 
       <Fld id={fieldId("budget")} label={t.rqBud} required={false} error={undefined} group>
         <RadioGroup
           name={`${id}-budget`}
           value={draft.budget === null ? null : String(draft.budget)}
-          options={t.budgets.map((label, i) => ({ value: String(i), label }))}
+          options={budgetLabels.slice(0, scale.length).map((label, i) => ({ value: String(i), label }))}
           onChange={(budget) => update({ budget: Number(budget) })}
         />
       </Fld>
@@ -454,7 +864,7 @@ function Form({ listing, occasions, consents, onCreated, onConsentsOutdated }: F
           className="field-input"
           rows={3}
           maxLength={COMMENT_MAX}
-          placeholder={t.rqComPh}
+          placeholder={category.code === "hall" ? t.rqComPh : t.rqComPhCat}
           value={draft.comment}
           onChange={(event) => update({ comment: event.target.value })}
         />
@@ -592,11 +1002,14 @@ export function RequestForm({ slug }: { slug: string }) {
   if (consents.status === "ready") lastConsents.current = consents.data.items;
   if (listing.status === "loading" || dicts.status === "loading" || !lastConsents.current) return <Loading />;
 
+  const category = categoryConfig(listing.data.categoryCode) ?? clientCategory(listing.data.categoryCode);
   return (
     <Form
       key={slug}
       listing={listing.data}
+      category={category}
       occasions={dicts.data.occasions}
+      districts={dicts.data.districts}
       consents={lastConsents.current}
       onCreated={setCreated}
       onConsentsOutdated={consents.reload}

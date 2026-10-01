@@ -1,6 +1,8 @@
 import type { ClientRequest, DeclineReason, RequestStatus } from "@bayramm/shared/api";
+import { categoryConfig, detailsSummary } from "@bayramm/shared/categories";
 import { useEffect, useRef, useState } from "react";
 import { isApiError } from "../api/errors";
+import { categoryName } from "../categories";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { EmptyState, ErrorState, Loading } from "../components/States";
@@ -8,7 +10,7 @@ import { useAccount, useDictionaries, useLang, useServices } from "../context";
 import { formatDayMonth, formatDuration, formatMomentTashkent, hoursLeft } from "../format";
 import { useAsync, useDocumentTitle, useNow } from "../hooks";
 import { Icon } from "../icons";
-import { hrefFor, useNav } from "../router";
+import { DEFAULT_CATEGORY, hrefFor, useNav } from "../router";
 import { haptic } from "../telegram";
 
 /* Статус → текст чипа и его вид. «contacted» — вендор связался: для клиента «ответили» */
@@ -58,8 +60,8 @@ function RequestItem({
   onWithdrawn: (next: ClientRequest) => void;
 }) {
   const { api, webApp, now } = useServices();
-  const { t } = useLang();
-  const { occasionName } = useDictionaries();
+  const { t, lang } = useLang();
+  const { occasionName, districtName } = useDictionaries();
   const current = useNow(now);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,10 +77,24 @@ function RequestItem({
   const waiting = WAITING.includes(request.status) && request.firstResponseAt === null;
   const breached = waiting && request.slaBreached;
   const left = hoursLeft(request.slaDueAt, current);
+  // Похожие — та же категория и дата; гости и район — только у залов (у остальных каталог по
+  // ним не отбирает)
+  const category = request.listing.categoryCode;
+  const hall = category === DEFAULT_CATEGORY;
   const similarHref = hrefFor(
     { name: "catalog" },
-    { date: request.eventDate, guests: request.guests, district: request.listing.districtCode },
+    {
+      category: hall ? null : category,
+      date: request.eventDate,
+      guests: hall ? request.guests : null,
+      district: hall ? request.listing.districtCode : null,
+    },
   );
+  // Поля заявки категории строками: «Начало: 17:30», «Какие услуги нужны: …»
+  const config = categoryConfig(category);
+  const summary = config
+    ? detailsSummary(lang, config, request.details, (code) => districtName(code) ?? undefined)
+    : [];
 
   const withdraw = async () => {
     setBusy(true);
@@ -110,8 +126,10 @@ function RequestItem({
           </h2>
           <p className="muted small">
             {[
+              hall ? null : categoryName(category, lang),
               occasionName(request.occasionCode),
               formatDayMonth(request.eventDate, t),
+              request.dayPart === null ? null : t.dayPartName(request.dayPart),
               request.guests === null ? null : t.guestsShort(request.guests),
               t.requestNo(request.publicNo),
             ]
@@ -123,6 +141,14 @@ function RequestItem({
           {t[STATUS_TEXT[request.status]]}
         </span>
       </div>
+
+      {summary.length > 0 ? (
+        <ul className="req-details" aria-label={t.rqDetails}>
+          {summary.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
 
       {highlighted && duplicate ? <p className="callout">{t.duplicateNote}</p> : null}
 

@@ -1,4 +1,5 @@
 import type {
+  CatalogCategories,
   CatalogPage,
   CatalogQuery,
   ClientRequest,
@@ -51,6 +52,9 @@ export interface ClientApi {
   /** live — настоящий API; mock — демо-данные в памяти (только разработка и тесты) */
   readonly mode: "live" | "mock";
   dictionaries(signal?: AbortSignal): Promise<Dictionaries>;
+  /** Категории каталога с числом витрин (GET /catalog/categories); пустые клиент не показывает */
+  catalogCategories(signal?: AbortSignal): Promise<CatalogCategories>;
+  /** Выдача категории (без category — залы); фильтры по полям витрины — query.filters (a.*) */
   catalog(query: CatalogQuery, signal?: AbortSignal): Promise<CatalogPage>;
   listing(slug: string, signal?: AbortSignal): Promise<ListingDetail>;
   consentTexts(locale: Locale, signal?: AbortSignal): Promise<ConsentTexts>;

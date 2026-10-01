@@ -33,8 +33,14 @@ describe("пререндер лендинга", () => {
       for (const line of [...t.lnStepH, ...t.lnPromT, t.lnPartnerH, t.lnFaqH, ...t.lnFaqQ, t.ftAbout]) {
         expect(body).toContain(line);
       }
-      // Подбор — форма с полями даты, гостей и района; ссылки — настоящие адреса
-      expect(html).toContain('class="ln-search"');
+      // Подбор — форма: что ищете (залы по умолчанию), дата и гости; ссылки — настоящие адреса
+      expect(html).toContain('class="ln-search with-guests"');
+      // Сетка категорий — все включённые, ссылками в каталог категории; «скоро» — только после API
+      for (const code of ["car", "studio", "flowers", "photo", "cake", "gifts", "decor"])
+        expect(html).toContain(`href="/catalog?category=${code}"`);
+      expect(html.match(/class="cat-tile"/g)).toHaveLength(8);
+      expect(html).not.toContain("cat-soon");
+      for (const line of [t.lnCatsH, t.lnCatsP, t.lnVenuesH]) expect(body).toContain(line);
       expect(html).toContain('href="/catalog"');
       expect(html).toContain('href="/docs"');
       // Гость: «Войти» в хаб с возвратом на главную; подвал сайта; вкладки
@@ -44,7 +50,7 @@ describe("пререндер лендинга", () => {
     });
   }
 
-  it("залы не пререндерим: на их месте заготовки (без сдвига, когда придут), без данных", async () => {
+  it("витрины не пререндерим: на их месте заготовки (без сдвига, когда придут), без данных", async () => {
     const html = await renderLanding("ru", NOW);
     expect(html).toContain('class="ln-section ln-venues"');
     expect(html.match(/class="card-skeleton"/g)).toHaveLength(4);

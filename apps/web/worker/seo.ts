@@ -1,7 +1,7 @@
 import type { FetcherLike } from "@bayramm/edge";
 import { LANGS } from "@bayramm/shared";
-import type { CatalogPage, ListingDetail } from "@bayramm/shared/api";
-import { hrefFor, matchRoute } from "../src/routes";
+import type { CatalogCategories, CatalogPage, ListingDetail } from "@bayramm/shared/api";
+import { CATEGORY_CODES, DEFAULT_CATEGORY, hrefFor, matchRoute } from "../src/routes";
 import { escapeHtml, PRODUCTION_HOST, type VenueLookup } from "./meta";
 
 /* robots.txt, sitemap.xml и данные площадки для разметки её страницы. Всё из API по
@@ -82,12 +82,33 @@ export async function lookupVenue(
   }
 }
 
-/** Адреса опубликованных площадок: выдача каталога по курсору */
-async function venueSlugs(api: FetcherLike, origin: string): Promise<string[]> {
+/**
+ * Категории с опубликованными витринами (GET /catalog/categories), только известные клиенту;
+ * API не ответило — только залы (страница каталога по умолчанию есть всегда)
+ */
+async function liveCategories(api: FetcherLike, origin: string): Promise<string[]> {
+  const res = await api.fetch(
+    new Request(`${origin}/catalog/categories`, { headers: { accept: "application/json" } }),
+  );
+  if (!res.ok) return [DEFAULT_CATEGORY];
+  const body = (await res.json()) as CatalogCategories;
+  return (body.items ?? [])
+    .filter((c) => c.listings > 0 && (CATEGORY_CODES as readonly string[]).includes(c.code))
+    .map((c) => c.code);
+}
+
+/** Адреса опубликованных витрин категории: выдача каталога по курсору */
+async function venueSlugs(
+  api: FetcherLike,
+  origin: string,
+  category: string,
+  limit: number,
+): Promise<string[]> {
   const slugs: string[] = [];
   let cursor: string | null = null;
-  for (let page = 0; page < SITEMAP_PAGES; page++) {
+  for (let page = 0; page < limit; page++) {
     const target = new URL(`${origin}/catalog/listings`);
+    target.searchParams.set("category", category);
     target.searchParams.set("limit", String(SITEMAP_PAGE_SIZE));
     if (cursor) target.searchParams.set("cursor", cursor);
     const res = await api.fetch(new Request(target, { headers: { accept: "application/json" } }));
@@ -104,8 +125,9 @@ async function venueSlugs(api: FetcherLike, origin: string): Promise<string[]> {
 /** Одна страница в sitemap.xml: адрес по умолчанию и языковые версии */
 function entry(origin: string, path: string): string {
   const loc = `${origin}${path}`;
+  const join = loc.includes("?") ? "&" : "?";
   const alternates = [
-    ...LANGS.map((lang) => [lang, `${loc}?lang=${lang}`] as const),
+    ...LANGS.map((lang) => [lang, `${loc}${join}lang=${lang}`] as const),
     ["x-default", loc] as const,
   ].map(
     ([hreflang, href]) => `<xhtml:link rel="alternate" hreflang="${hreflang}" href="${escapeHtml(href)}"/>`,
@@ -113,13 +135,23 @@ function entry(origin: string, path: string): string {
   return `<url><loc>${escapeHtml(loc)}</loc>${alternates.join("")}</url>`;
 }
 
-/** sitemap.xml: лендинг, каталог, документы и опубликованные площадки (из API, с кэшем на час) */
+/**
+ * sitemap.xml: лендинг, каталог и страницы категорий с витринами, документы и опубликованные
+ * витрины всех категорий (из API, с кэшем на час)
+ */
 export async function sitemapXml(api: FetcherLike | undefined, url: URL): Promise<Response> {
   const build = async () => {
     const pages = [hrefFor({ name: "home" }), hrefFor({ name: "catalog" }), hrefFor({ name: "docs" })];
-    // API не ответило — карта без площадок, но страницы сайта в ней есть
-    const slugs = api ? await venueSlugs(api, url.origin).catch(() => []) : [];
-    for (const slug of slugs) pages.push(hrefFor({ name: "venue", slug }));
+    // API не ответило — карта без категорий и витрин, но страницы сайта в ней есть
+    const categories = api ? await liveCategories(api, url.origin).catch(() => [DEFAULT_CATEGORY]) : [];
+    for (const category of categories)
+      if (category !== DEFAULT_CATEGORY) pages.push(hrefFor({ name: "catalog" }, { category }));
+    // Страниц выдачи на категорию — поровну, всего не больше SITEMAP_PAGES
+    const perCategory = Math.max(1, Math.floor(SITEMAP_PAGES / Math.max(1, categories.length)));
+    for (const category of categories) {
+      const slugs = api ? await venueSlugs(api, url.origin, category, perCategory).catch(() => []) : [];
+      for (const slug of slugs) pages.push(hrefFor({ name: "venue", slug }));
+    }
     const body = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">',

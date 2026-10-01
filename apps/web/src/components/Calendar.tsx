@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useLang } from "../context";
 import { formatDayMonth, formatMonthYear } from "../format";
 
-/** Тексты календаря набора из словаря клиента: месяцы, дни недели, легенда, итог месяца */
+/** Тексты календаря набора из словаря клиента: месяцы, дни недели, легенда (и «частично»), итог месяца */
 export function calendarTexts(t: Dict): CalendarTexts {
   return {
     prev: t.calPrev,
@@ -14,6 +14,7 @@ export function calendarTexts(t: Dict): CalendarTexts {
     dayLabel: (date) => formatDayMonth(date, t),
     free: t.legFree,
     busy: t.legBusy,
+    partial: t.legPartial,
     selected: t.legSel,
     summary: (busyDays) => (busyDays ? t.calBusyN(busyDays) : t.calAllFree),
   };

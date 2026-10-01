@@ -7,7 +7,7 @@
   const LANG_KEY = "bayramm.web.lang";
   const LAUNCH_RE = /[#&?]tgWebApp[A-Za-z]+=/;
   const SDK_KEY = "__telegram__initParams";
-  const CATALOG_PARAMS = ["date", "guests", "district", "sort"];
+  const CATALOG_PARAMS = ["category", "date", "guests", "district", "sort"];
   const loc = w.location;
 
   const isLang = (value) => LANGS.includes(value);

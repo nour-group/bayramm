@@ -470,6 +470,13 @@ button.ui-cal-day {
   color: var(--muted);
 }
 
+/* Частично занятый день (заняты не все части дня): нижняя половина клетки — цветом
+   занятого, число — в полном контрасте (пары ink/cell и ink/busy). Выбрать можно */
+.ui-cal-day.is-partial {
+  background: linear-gradient(to top, var(--busy) 50%, var(--cell) 50%);
+  box-shadow: inset 0 -3px 0 var(--busy-ink);
+}
+
 .ui-cal-day[aria-disabled="true"] {
   cursor: not-allowed;
 }
@@ -500,6 +507,11 @@ button.ui-cal-day {
 
 .ui-leg-busy::before {
   background: var(--busy-ink);
+}
+
+.ui-leg-part::before {
+  border: 1px solid var(--rule);
+  background: linear-gradient(to top, var(--busy-ink) 50%, var(--cell) 50%);
 }
 
 .ui-leg-sel::before {

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api/errors";
-import { createMockApi } from "./api/mock";
+import { allDemoListings, createMockApi } from "./api/mock";
 import { LANG_KEY } from "./context";
 import { FAVORITES_KEY } from "./favorites";
 import { byText, cleanup, click, LISTINGS, mount, NOW, text, waitFor } from "./test/harness";
@@ -28,7 +28,7 @@ const cardNames = () => [...document.querySelectorAll(".card .card-name")].map((
 const toast = () => document.querySelector(".ui-toasts")?.textContent ?? "";
 
 describe("избранное гостя (без входа)", () => {
-  it("сердечко на карточке: переключатель, список в браузере, уведомление как в прототипе", async () => {
+  it("сердечко на карточке: переключатель, список в браузере, уведомление — где искать список", async () => {
     await mount({ path: "/catalog", identity: "guest" });
     await waitFor(() => heartOf(A.name), "сердечко на карточке");
     const heart = heartOf(A.name);
@@ -39,7 +39,11 @@ describe("избранное гостя (без входа)", () => {
     await click(heart);
     expect(heartOf(A.name)?.getAttribute("aria-pressed")).toBe("true");
     expect(stored()).toEqual([A.id]);
-    expect(toast()).toContain("Сохранили. Список во вкладке «Сохранённое» — вход не нужен.");
+    // У гостя сайта вкладок нет: «Сохранённое» — раздел в шапке (на телефоне — в меню)
+    expect(toast()).toContain(
+      "Сохранили. Список — в разделе «Сохранённое» вверху страницы, входить не нужно.",
+    );
+    expect(toast()).not.toContain("вкладк");
 
     await click(heartOf(A.name));
     expect(heartOf(A.name)?.getAttribute("aria-pressed")).toBe("false");
@@ -109,6 +113,21 @@ describe("избранное вошедшего", () => {
     await waitFor(() => api.favoriteIds().includes(A.id), "отметка в аккаунте");
     expect(window.localStorage.getItem(FAVORITES_KEY)).toBeNull();
     expect(heartOf(A.name)?.getAttribute("aria-pressed")).toBe("true");
+    // После входа — оболочка приложения: список во вкладке
+    await waitFor(() => toast().includes("во вкладке «Сохранённое»"), "уведомление про вкладку");
+  });
+
+  it("в «Сохранённом» у карточек разных категорий подписана категория", async () => {
+    const car = allDemoListings("2026-10-01").find((l) => l.categoryCode === "car");
+    if (!car) throw new Error("нет демо-кортежа");
+    const api = createMockApi({ now: () => NOW, listings: [...LISTINGS, car], favorites: [car.id, A.id] });
+    await mount({ path: "/favorites", api });
+    await waitFor(() => cardNames().length === 2, "две карточки");
+    const metas = [...document.querySelectorAll(".card .card-meta")].map((el) => el.textContent);
+    expect(metas[0]).toBe("Кортеж");
+    expect(metas[1]).toContain("Площадка / Тойхона");
+    // Цена кортежа — с единицей: за час
+    expect(document.querySelector(".card .card-price")?.textContent).toContain("за час");
   });
 
   it("при входе гостевой список сливается с аккаунтом и из браузера стирается", async () => {

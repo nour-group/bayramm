@@ -1,0 +1,91 @@
+import type { CatalogCategory } from "@bayramm/shared/api";
+import { categoryText } from "@bayramm/shared/categories";
+import { CLIENT_CATEGORIES, categoryIcon } from "../categories";
+import { useLang, useServices } from "../context";
+import { type AsyncResult, useAsync } from "../hooks";
+import { Icon } from "../icons";
+import { DEFAULT_CATEGORY, hrefFor } from "../router";
+import { Link } from "./Link";
+
+/* Категории в каталоге и на лендинге: список — из описания категорий (включённые, по
+   порядку), сколько витрин — из API (GET /catalog/categories). Пустую категорию клиент не
+   показывает как живую: в переключателе каталога её нет, на лендинге — пометка «скоро».
+   Чисел витрин не пишем: выдуманных цифр нет, а настоящие на старте малы и быстро стареют. */
+
+export function useCatalogCategories(): AsyncResult<{ readonly items: readonly CatalogCategory[] }> {
+  const { api } = useServices();
+  return useAsync("catalog-categories", (signal) => api.catalogCategories(signal));
+}
+
+/** Есть ли в категории витрины; пока API не ответило (или ошибка) — null: не знаем */
+export function listingsIn(
+  state: AsyncResult<{ readonly items: readonly CatalogCategory[] }>,
+  code: string,
+): boolean | null {
+  if (state.status !== "ready") return null;
+  const item = state.data.items.find((c) => c.code === code);
+  return item ? item.listings > 0 : false;
+}
+
+/** Адрес каталога категории (залы — без параметра); дата — та же, что выбрана */
+export function categoryHref(code: string, date: string | null = null): string {
+  return hrefFor({ name: "catalog" }, { category: code === DEFAULT_CATEGORY ? null : code, date });
+}
+
+/**
+ * Переключатель категорий каталога: ссылки-чипы, лентой вбок на телефоне. Категории без
+ * витрин не показываются (кроме открытой — по ссылке в неё можно попасть); пока список
+ * не пришёл — все включённые
+ */
+export function CategorySwitch({ current, date }: { current: string; date: string | null }) {
+  const { t, lang } = useLang();
+  const state = useCatalogCategories();
+  const shown = CLIENT_CATEGORIES.filter((c) => c.code === current || listingsIn(state, c.code) !== false);
+  return (
+    <nav className="cat-switch" aria-label={t.catSwitch}>
+      <ul>
+        {shown.map((category) => (
+          <li key={category.code}>
+            <Link
+              className="cat-chip"
+              href={categoryHref(category.code, date)}
+              aria-current={category.code === current ? "page" : undefined}
+            >
+              <Icon name={categoryIcon(category.code)} size={17} className="cat-chip-ico" />
+              <span>{categoryText(lang, category.label)}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+/**
+ * Сетка категорий лендинга: все включённые, со значком и названием. Категория без витрин —
+ * с пометкой «скоро» (ведёт в каталог, где честно сказано, что вендоров пока нет). Пометка
+ * появляется, когда API ответило: в пререндере её нет
+ */
+export function CategoryGrid({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
+  const { t, lang } = useLang();
+  const state = useCatalogCategories();
+  const Name = headingLevel === 2 ? "h2" : "h3";
+  return (
+    <ul className="cat-grid">
+      {CLIENT_CATEGORIES.map((category) => {
+        const soon = listingsIn(state, category.code) === false;
+        return (
+          <li key={category.code}>
+            <Link className={soon ? "cat-tile is-soon" : "cat-tile"} href={categoryHref(category.code)}>
+              <span className="cat-tile-ico" aria-hidden="true">
+                <Icon name={categoryIcon(category.code)} size={26} />
+              </span>
+              <Name className="cat-tile-name">{categoryText(lang, category.label)}</Name>
+              {soon ? <span className="cat-soon">{t.catSoon}</span> : null}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}

@@ -87,8 +87,34 @@ export function screenOf(match: Match | null, inTelegram: boolean): Match | null
   return match?.name === "home" && inTelegram ? { name: "catalog" } : match;
 }
 
-/** Параметры фильтров каталога в адресе (catalog-feed.ts) */
-export const CATALOG_PARAMS = ["date", "guests", "district", "sort"] as const;
+/**
+ * Категории каталога клиента — включённые в @bayramm/shared/categories (CATEGORIES, enabled),
+ * по порядку показа. Список здесь, а не из описания категорий: карту маршрутов грузит
+ * оболочка и воркер, описание категорий с подписями ей не нужно. Сверяет categories.test.ts
+ */
+export const CATEGORY_CODES = [
+  "hall",
+  "car",
+  "studio",
+  "flowers",
+  "photo",
+  "cake",
+  "gifts",
+  "decor",
+] as const;
+export type ClientCategoryCode = (typeof CATEGORY_CODES)[number];
+
+/** Категория каталога без параметра category — залы, как у API */
+export const DEFAULT_CATEGORY: ClientCategoryCode = "hall";
+
+export const isCategoryParam = (value: string | null | undefined): value is ClientCategoryCode =>
+  (CATEGORY_CODES as readonly string[]).includes(value ?? "");
+
+/**
+ * Параметры фильтров каталога в адресе (catalog-feed.ts). Фильтры по полям витрины —
+ * «a.<поле>» (ATTRIBUTE_FILTER_PREFIX), их набор у каждой категории свой
+ */
+export const CATALOG_PARAMS = ["category", "date", "guests", "district", "sort"] as const;
 
 /**
  * Старые ссылки на каталог с фильтрами — корень с ?date=&guests=… (до лендинга каталог жил
@@ -100,6 +126,17 @@ export function legacyCatalogHref(pathname: string, search: string): string | nu
   const params = new URLSearchParams(search);
   if (!CATALOG_PARAMS.some((key) => params.has(key))) return null;
   return `${ROUTES.catalog}?${params.toString()}`;
+}
+
+/**
+ * Адрес страницы для поисковиков (canonical): путь без фильтров; у каталога — с категорией
+ * (у каждой категории своя страница), залы — без параметра
+ */
+export function canonicalHref(match: Match, query: URLSearchParams): string {
+  const category = query.get("category");
+  if (match.name === "catalog" && isCategoryParam(category) && category !== DEFAULT_CATEGORY)
+    return hrefFor(match, { category });
+  return hrefFor(match);
 }
 
 /** Куда ведёт «назад», если в истории вкладки до этого экрана ничего нет */

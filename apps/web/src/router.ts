@@ -3,8 +3,12 @@ import { hrefFor, type Match, matchRoute, parentOf } from "./routes";
 
 /* Навигация без перезагрузки поверх карты маршрутов (routes.ts — без React, её читает и воркер) */
 export {
+  CATEGORY_CODES,
+  canonicalHref,
+  DEFAULT_CATEGORY,
   hrefFor,
   isAuth,
+  isCategoryParam,
   isInner,
   type Match,
   matchRoute,

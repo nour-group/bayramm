@@ -146,6 +146,37 @@ describe("Calendar", () => {
     expect(document.querySelector(".ui-cal")?.classList.contains("is-view")).toBe(true);
     expect(document.querySelector("span.ui-cal-day.is-busy .ui-sr-only")?.textContent).toBe("8 окт, занято");
   });
+
+  it("частично занятые дни: помечены, имя — что занято, выбрать можно; в легенде — «частично»", () => {
+    const picked: string[] = [];
+    render(
+      <Calendar
+        label="Занятость"
+        min="2026-10-01"
+        max="2026-12-31"
+        busy={BUSY}
+        partial={
+          new Map([
+            ["2026-10-09", "утро, вечер"],
+            ["2026-10-08", "день"],
+          ])
+        }
+        selected={null}
+        onSelect={(date) => picked.push(date)}
+        texts={{ ...TEXTS, partial: "частично занято" }}
+      />,
+    );
+    const partial = day("9 окт");
+    expect(partial?.classList.contains("is-partial")).toBe(true);
+    expect(partial?.getAttribute("aria-label")).toBe("9 окт, частично занято: утро, вечер");
+    expect(partial?.getAttribute("aria-disabled")).toBeNull();
+    click(partial);
+    expect(picked).toEqual(["2026-10-09"]);
+    // Занятый целиком важнее частичной пометки
+    expect(day("8 окт")?.classList.contains("is-partial")).toBe(false);
+    expect(day("8 окт")?.getAttribute("aria-label")).toBe("8 окт, занято");
+    expect(document.querySelector(".ui-leg-part")?.textContent).toBe("частично занято");
+  });
 });
 
 describe("DateField вместо input type=date", () => {

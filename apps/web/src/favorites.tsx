@@ -12,6 +12,7 @@ import {
 } from "react";
 import { isApiError } from "./api/errors";
 import { canSignIn, useAccount, useLang, useServices } from "./context";
+import { chromeOf } from "./nav";
 import { localGetJson, localRemove, localSetJson } from "./storage";
 
 /* Избранное — площадки с сердечком (в прототипе «Сохранённое»).
@@ -71,11 +72,14 @@ export function useFavorites(): FavoritesValue {
 }
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
-  const { api, identity } = useServices();
+  const { api, identity, webApp } = useServices();
   const { deleted } = useAccount();
   const { t } = useLang();
   const toast = useToast();
   const mode = canSignIn(identity) && !deleted ? "account" : "guest";
+  // Где искать список — по оболочке (nav.ts): у приложения это вкладка, у гостя сайта —
+  // раздел в шапке (на телефоне — в меню)
+  const savedText = chromeOf(identity, webApp !== null, deleted) === "app" ? t.savedApp : t.savedGuest;
   const [guest, setGuest] = useState<string[]>(guestFavorites);
   const [account, setAccount] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -134,7 +138,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         const next = adding ? [id, ...guest] : guest.filter((item) => item !== id);
         saveGuestFavorites(next);
         setGuest(next);
-        if (adding) toast(t.saved);
+        if (adding) toast(savedText);
         return;
       }
       pending.current.set(id, adding);
@@ -144,7 +148,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
       (adding ? api.addFavorite(id) : api.removeFavorite(id)).then(
         () => {
           pending.current.delete(id);
-          if (adding) toast(t.saved);
+          if (adding) toast(savedText);
         },
         (error: unknown) => {
           pending.current.delete(id);
@@ -155,7 +159,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         },
       );
     },
-    [api, ids, mode, guest, toast, t],
+    [api, ids, mode, guest, toast, t, savedText],
   );
 
   const cards = useCallback(

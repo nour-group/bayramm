@@ -1,22 +1,26 @@
+import { categoryText } from "@bayramm/shared/categories";
 import { DateField, NumberStepper, Select } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
+import { CLIENT_CATEGORIES, clientCategory, hasCapacity } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
+import { CategoryGrid, categoryHref, listingsIn, useCatalogCategories } from "../components/Categories";
 import { Link } from "../components/Link";
 import { ListingCard } from "../components/ListingCard";
-import { pick, useDictionaries, useLang, useServices } from "../context";
+import { useLang, useServices } from "../context";
 import { addDays, formatDayMonth, tashkentToday } from "../format";
 import { useAsync, useDocumentTitle } from "../hooks";
 import { Icon, type IconName } from "../icons";
-import { hrefFor, useNav } from "../router";
+import { DEFAULT_CATEGORY, hrefFor, useNav } from "../router";
 import { DATE_HORIZON_DAYS, filtersQuery, MAX_GUESTS, NO_FILTERS, parseGuests } from "./catalog-feed";
 
 /* Лендинг (/) — для тех, кто открыл сайт в браузере; внутри Telegram корень — каталог.
-   Блоки: первый экран с подбором (дата, гости, район → каталог с этими фильтрами),
-   настоящие опубликованные залы из API (нет их — блока нет, заглушек под видом залов
-   не рисуем), как это работает, обещания клиенту — из правил продукта, площадкам,
-   вопросы. Рейтингов, отзывов и выдуманных цифр нет. */
+   Блоки: первый экран про весь праздник с подбором (что ищете, дата; гости — где они есть →
+   каталог категории с этими фильтрами), сетка категорий (пустая — с пометкой «скоро»),
+   настоящие витрины из API по категориям (нет их — блока нет, заглушек под видом витрин не
+   рисуем), как это работает, обещания клиенту — из правил продукта, вендорам, вопросы.
+   Рейтингов, отзывов и выдуманных цифр нет. */
 
-/** Сколько залов показать на лендинге: ряд на компьютере, два — на телефоне */
+/** Сколько витрин показать на лендинге: ряд на компьютере, лента — на телефоне */
 const FEATURED = 4;
 
 /** Обещания — по порядку lnPromT/lnPromP; иконки — смысловые (duotone) */
@@ -25,28 +29,44 @@ const PROMISE_ICONS: readonly IconName[] = ["shieldD", "checkFill", "phone", "cl
 function QuickSearch() {
   const { now } = useServices();
   const { t, lang } = useLang();
-  const { state: dicts } = useDictionaries();
   const { navigate } = useNav();
   const calendarTexts = useCalendarTexts();
   const today = tashkentToday(now());
+  const [category, setCategory] = useState<string>(DEFAULT_CATEGORY);
   const [date, setDate] = useState<string | null>(null);
   const [guests, setGuests] = useState("");
-  const [district, setDistrict] = useState("");
   const id = useId();
-  const districts = dicts.status === "ready" ? dicts.data.districts : [];
+  // Гости — только где у витрин вместимость (залы): у остальных каталог по ним не отбирает
+  const withGuests = hasCapacity(clientCategory(category));
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     navigate(
       hrefFor(
         { name: "catalog" },
-        filtersQuery({ ...NO_FILTERS, date, guests: parseGuests(guests), district: district || null }),
+        filtersQuery({ ...NO_FILTERS, category, date, guests: withGuests ? parseGuests(guests) : null }),
       ),
     );
   };
 
   return (
-    <form className="ln-search" aria-label={t.lnSearchLabel} onSubmit={onSubmit}>
+    <form
+      className={withGuests ? "ln-search with-guests" : "ln-search"}
+      aria-label={t.lnSearchLabel}
+      onSubmit={onSubmit}
+    >
+      <div className="field ln-search-what">
+        <label className="field-label" htmlFor={`${id}-what`}>
+          {t.cats}
+        </label>
+        <Select
+          id={`${id}-what`}
+          label={t.cats}
+          value={category}
+          options={CLIENT_CATEGORIES.map((c) => ({ value: c.code, label: categoryText(lang, c.label) }))}
+          onChange={setCategory}
+        />
+      </div>
       <div className="field">
         <label className="field-label" htmlFor={`${id}-date`}>
           {t.fDate}
@@ -64,34 +84,21 @@ function QuickSearch() {
           onChange={setDate}
         />
       </div>
-      <div className="field">
-        <label className="field-label" htmlFor={`${id}-guests`}>
-          {t.fGuests}
-        </label>
-        <NumberStepper
-          id={`${id}-guests`}
-          min={1}
-          max={MAX_GUESTS}
-          placeholder={t.anyGuestV}
-          value={guests}
-          onChange={setGuests}
-        />
-      </div>
-      <div className="field">
-        <label className="field-label" htmlFor={`${id}-district`}>
-          {t.fDistrict}
-        </label>
-        <Select
-          id={`${id}-district`}
-          label={t.fDistrict}
-          value={district}
-          options={[
-            { value: "", label: t.anyDistrict },
-            ...districts.map((item) => ({ value: item.code, label: pick(item.name, lang) })),
-          ]}
-          onChange={setDistrict}
-        />
-      </div>
+      {withGuests ? (
+        <div className="field">
+          <label className="field-label" htmlFor={`${id}-guests`}>
+            {t.fGuests}
+          </label>
+          <NumberStepper
+            id={`${id}-guests`}
+            min={1}
+            max={MAX_GUESTS}
+            placeholder={t.anyGuestV}
+            value={guests}
+            onChange={setGuests}
+          />
+        </div>
+      ) : null}
       <button type="submit" className="btn btn-primary ln-search-go">
         <Icon name="search" size={17} />
         {t.lnSearch}
@@ -100,15 +107,27 @@ function QuickSearch() {
   );
 }
 
-/** Залы из каталога — в том же порядке, что и каталог по умолчанию (по цене; оплата не влияет) */
+/**
+ * Витрины из каталога — по категориям, в том же порядке, что и каталог по умолчанию (по цене;
+ * оплата не влияет). Категории — только с витринами; пока список не пришёл — все включённые
+ */
 function Featured() {
   const { api } = useServices();
-  const { t } = useLang();
-  const venues = useAsync("landing:featured", (signal) => api.catalog({ limit: FEATURED }, signal));
+  const { t, lang } = useLang();
+  const categories = useCatalogCategories();
+  const live = CLIENT_CATEGORIES.filter((c) => listingsIn(categories, c.code) !== false);
+  const [picked, setPicked] = useState<string | null>(null);
+  const current = live.find((c) => c.code === picked) ?? live[0] ?? null;
+  const code = current?.code ?? DEFAULT_CATEGORY;
+  const venues = useAsync(`landing:featured:${code}`, (signal) =>
+    api.catalog({ category: code === DEFAULT_CATEGORY ? undefined : code, limit: FEATURED }, signal),
+  );
 
-  // Пока грузятся — место под карточки (без сдвига вёрстки); пусто или ошибка — блока нет
+  // Ни в одной категории витрин нет, выдача не загрузилась или пуста — блока нет
+  if (categories.status === "ready" && live.length === 0) return null;
   if (venues.status === "error") return null;
   if (venues.status === "ready" && venues.data.items.length === 0) return null;
+  const name = current ? categoryText(lang, current.label) : "";
 
   return (
     <section
@@ -123,10 +142,26 @@ function Featured() {
           </h2>
           <p className="muted ln-head-note">{t.lnVenuesP}</p>
         </div>
-        <Link className="btn btn-secondary ln-head-link" href={hrefFor({ name: "catalog" })}>
-          {t.lnVenuesAll}
+        <Link className="btn btn-secondary ln-head-link" href={categoryHref(code)}>
+          {t.lnSeeAll(name)}
         </Link>
       </div>
+      {live.length > 1 ? (
+        // biome-ignore lint/a11y/useSemanticElements: группа кнопок-переключателей с подписью, не поле формы
+        <div className="ln-pick" role="group" aria-label={t.catSwitch}>
+          {live.map((category) => (
+            <button
+              key={category.code}
+              type="button"
+              className="cat-chip"
+              aria-pressed={category.code === code}
+              onClick={() => setPicked(category.code)}
+            >
+              {categoryText(lang, category.label)}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {venues.status === "ready" ? (
         <ul className="cards ln-cards">
           {venues.data.items.map((card) => (
@@ -159,7 +194,7 @@ function PartnerBlock() {
   return (
     <section className="ln-section ln-partner" aria-labelledby="ln-partner">
       <span className="ln-partner-art girih" aria-hidden="true">
-        <Icon name="hall" size={26} />
+        <Icon name="decor" size={26} />
       </span>
       <div className="ln-partner-text">
         <h2 className="ln-h2" id="ln-partner">
@@ -179,6 +214,9 @@ function PartnerBlock() {
   );
 }
 
+/** Значки первого экрана: по одному на несколько категорий — праздник целиком */
+const HERO_ICONS: readonly IconName[] = ["hall", "car", "camera", "cake"];
+
 export function Landing() {
   const { t } = useLang();
   useDocumentTitle(t.metaHomeTitle, t.metaHomeDesc, true);
@@ -195,14 +233,28 @@ export function Landing() {
         </div>
         {/* Иллюстрация: узор гириха — только здесь, за картинкой, не за текстом */}
         <div className="ln-hero-art girih" aria-hidden="true">
-          <span className="ln-hero-badge">
-            <Icon name="hall" size={26} />
-          </span>
+          {HERO_ICONS.map((icon) => (
+            <span key={icon} className="ln-hero-badge">
+              <Icon name={icon} size={26} />
+            </span>
+          ))}
         </div>
         <QuickSearch />
         <Link className="link-btn ln-browse" href={hrefFor({ name: "catalog" })}>
           {t.lnBrowse}
         </Link>
+      </section>
+
+      <section className="ln-section ln-cats" aria-labelledby="ln-cats">
+        <div className="ln-head">
+          <div>
+            <h2 className="ln-h2" id="ln-cats">
+              {t.lnCatsH}
+            </h2>
+            <p className="muted ln-head-note">{t.lnCatsP}</p>
+          </div>
+        </div>
+        <CategoryGrid />
       </section>
 
       <Featured />

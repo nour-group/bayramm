@@ -1,9 +1,17 @@
 import { isListingPhotoKey, mediaUrl } from "@bayramm/media";
 import { type Dict, dictionaries, LANGS, type Lang } from "@bayramm/shared";
 import type { ListingDetail } from "@bayramm/shared/api";
+import { categoryConfig, categoryText } from "@bayramm/shared/categories";
 import { formatPriceFrom } from "../src/format";
 import { mediaEnvFor } from "../src/media";
-import { hrefFor, isIndexable, type Match, matchRoute } from "../src/routes";
+import {
+  canonicalHref,
+  DEFAULT_CATEGORY,
+  isCategoryParam,
+  isIndexable,
+  type Match,
+  matchRoute,
+} from "../src/routes";
 
 /* Разметка страницы для поисковиков и превью ссылок (Telegram, соцсети): заголовок,
    описание, canonical, языковые версии, Open Graph — на сервере, в HTML первой загрузки.
@@ -91,14 +99,26 @@ function clip(text: string, max = DESCRIPTION_MAX): string {
 const pick = (value: { ru: string; uz: string }, lang: Lang) =>
   value[lang] || value[lang === "ru" ? "uz" : "ru"];
 
-/** Заголовок и описание экрана; venue — только для площадки */
-function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup) {
+/** Название категории на языке; неизвестная — null */
+function categoryLabel(code: string | null, lang: Lang): string | null {
+  const config = code ? categoryConfig(code) : undefined;
+  return config ? categoryText(lang, config.label) : null;
+}
+
+/** Заголовок и описание экрана; venue — только для площадки, category — для каталога */
+function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup, category: string | null) {
   const site = (title: string) => `${title} · Bayramm`;
   switch (match?.name) {
     case "home":
       return { title: t.metaHomeTitle, description: t.metaHomeDesc };
-    case "catalog":
-      return { title: site(t.hallsTitle), description: t.metaCatalogDesc };
+    case "catalog": {
+      // У каждой категории — своя страница каталога; залы — без параметра
+      const name =
+        isCategoryParam(category) && category !== DEFAULT_CATEGORY ? categoryLabel(category, lang) : null;
+      return name
+        ? { title: site(t.catTitle(name)), description: t.metaCatDesc(name) }
+        : { title: site(t.hallsTitle), description: t.metaCatalogDesc };
+    }
     case "docs":
       return { title: site(t.meDocs), description: t.metaDocsDesc };
     case "favorites":
@@ -116,6 +136,7 @@ function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup) {
       if (venue === null) return { title: site(t.hallsTitle), description: t.metaCatalogDesc };
       const price = formatPriceFrom(venue.priceFromUzs, venue.priceUnit, t);
       const facts = [
+        categoryLabel(venue.categoryCode, lang),
         pick(venue.address, lang),
         venue.capMax === null ? null : t.people(venue.capMax),
         [price.amount, price.unit].filter(Boolean).join(" "),
@@ -153,10 +174,11 @@ export function pageMeta(
   const missing =
     match === null || ((match.name === "venue" || match.name === "request") && venue === "missing");
   const status = missing ? 404 : 200;
-  const { title, description } = texts(match, t, lang, venue);
+  const { title, description } = texts(match, t, lang, venue, url.searchParams.get("category"));
   const index = indexing && url.hostname === PRODUCTION_HOST && status === 200 && isIndexable(match);
-  const base = match && !missing ? `${url.origin}${hrefFor(match)}` : null;
-  const withLang = (code: Lang) => `${base}?lang=${code}`;
+  // Адрес без фильтров; у каталога — с категорией (canonicalHref)
+  const base = match && !missing ? `${url.origin}${canonicalHref(match, url.searchParams)}` : null;
+  const withLang = (code: Lang) => `${base}${base?.includes("?") ? "&" : "?"}lang=${code}`;
   return {
     lang,
     status,
