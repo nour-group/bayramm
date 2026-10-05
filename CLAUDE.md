@@ -201,9 +201,11 @@ HMAC от IP, `POST /requests` по IP и по клиенту, `POST /catalog/li
 кэшируется), выбор «Позвонить» или «Написать в Telegram» — тот же маршрут с `phone` / `telegram`
 (204). События — `app.contact_events`: витрина, действие, источник (tma / web) и вошёл ли — без
 клиента (ПДн); открыть контакты можно только вместе с событием (`pii.reveal_listing_contacts`).
-Сводка «у кого чаще ищут связь» — `GET /staff/metrics/contacts` (`app.metrics_contacts`). Telegram
+Сводка «у кого чаще ищут связь» — `GET /staff/metrics/contacts` (`app.metrics_contacts`; в панели — блок
+«Контакты витрин» в «Метриках», 30 дней и фильтр категории). Telegram
 витрины — `pii.listing_contacts.public_telegram` (только имя, без @; задаёт сотрудник рядом с
-телефоном витрины, `normalizeTelegram` принимает и ссылку t.me).
+телефоном витрины, `normalizeTelegram` принимает и ссылку t.me). Клиенты в панели — по имени из Telegram
+(«Азиза К.»), способам входа и последней заявке; код `C-…` — вторым текстом, по нему и ищут.
 
 Демо-залы для показа — только staging: workflow `Demo data (staging)` (seed / reset) рисует
 фото и зовёт `POST /ops/demo` (`apps/api/src/demo`). Seed заводит три зала и по витрине в каждой

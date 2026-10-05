@@ -63,16 +63,17 @@ function category(code: string): CategoryConfig {
 export const CAR_CONTACTS = { phone: "+998901112233", telegram: "oq_kortej" } as const;
 
 /**
- * Telegram витрины, как его понимает сервер: «@имя», «имя» или ссылка t.me/имя → имя без @
- * (5–32 знака, латиница, цифры и «_», начинается с буквы); иначе null
+ * Telegram витрины, как его понимает сервер (apps/api/src/staff/input.ts): «@имя», «имя» или ссылка
+ * t.me/имя → имя без @ (5–32 знака, латиница, цифры и «_», с буквы, не на «_»); иначе null
  */
 export function normalizeTelegram(value: string): string | null {
   const name = value
     .trim()
-    .replace(/^(?:https?:\/\/)?(?:www\.)?t\.me\//i, "")
+    .replace(/^https?:\/\//i, "")
+    .replace(/^(www\.)?(t\.me|telegram\.me)\//i, "")
     .replace(/^@/, "")
-    .replace(/[/?#].*$/, "");
-  return /^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(name) ? name : null;
+    .replace(/\/$/, "");
+  return /^[A-Za-z][A-Za-z0-9_]{3,30}[A-Za-z0-9]$/.test(name) ? name : null;
 }
 
 const BASE_REVIEW: readonly PublishBlocker[] = ["price", "descriptions", "phone", "photos"];

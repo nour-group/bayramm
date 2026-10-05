@@ -128,19 +128,14 @@ describe("styles.css клиента", () => {
       expect(css.indexOf(selector), selector).toBeGreaterThan(hover);
   });
 
-  it.each([
-    ".btn",
-    ".icon-btn",
-    ".link-btn",
-    ".lang button",
-    ".field-input",
-    ".brand",
-    ".skip",
-  ])("%s: зона нажатия не меньше 44px", (selector) => {
-    expect(declarationsOf(selector)).toMatch(
-      /min-height:\s*(var\(--hit-min\)|4[4-9]px|5\dpx)|height:\s*var\(--hit-min\)/,
-    );
-  });
+  it.each([".btn", ".icon-btn", ".link-btn", ".lang button", ".field-input", ".brand", ".skip"])(
+    "%s: зона нажатия не меньше 44px",
+    (selector) => {
+      expect(declarationsOf(selector)).toMatch(
+        /min-height:\s*(var\(--hit-min\)|4[4-9]px|5\dpx)|height:\s*var\(--hit-min\)/,
+      );
+    },
+  );
 
   it(".fav-btn: кнопка 44px — и видимая, и зона нажатия", () => {
     const body = declarationsOf(".fav-btn");
