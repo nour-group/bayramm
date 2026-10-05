@@ -16,7 +16,7 @@ test.describe("избранное гостя", () => {
     page,
   }) => {
     await prepare(page);
-    await open(page, PATHS.catalog, ".card", { guest: true });
+    await open(page, PATHS.category("hall"), ".card", { guest: true });
 
     const first = page.locator(heart(FIRST.name));
     await expect(first).toHaveAttribute("aria-pressed", "false");

@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../errors";
 import { parseFilters } from "./audit";
-import { clientRef, parseClientQuery } from "./clients";
+import { clientDisplayName, clientRef, parseClientQuery } from "./clients";
 import { parseRevision } from "./revisions";
 import { INT_SETTINGS, parseSettingValue, SETTING_KEYS } from "./settings";
 
@@ -78,6 +78,14 @@ describe("поиск клиентов: только псевдоним и ном
 
   it("пусто — без фильтра", () => {
     expect(parseClientQuery("  ")).toBeNull();
+  });
+
+  it("имя в списке — имя из Telegram и первая буква фамилии; без имени — null", () => {
+    expect(clientDisplayName("Азиза", "Каримова")).toBe("Азиза К.");
+    expect(clientDisplayName(" Aziz ", null)).toBe("Aziz");
+    expect(clientDisplayName(null, "karimov")).toBe("K.");
+    expect(clientDisplayName("", " ")).toBeNull();
+    expect(clientDisplayName(null, null)).toBeNull();
   });
 
   it("короткая ссылка — C- и начало id", () => {

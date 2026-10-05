@@ -93,6 +93,8 @@ function DeclineForm({ t, busy, onSubmit, onCancel }: DeclineFormProps) {
 interface RequestDetailProps extends ScreenProps {
   readonly id: string;
   readonly navigate: Navigate;
+  /** Витрин несколько: заявка называет, к какой из них она. Витрина одна — называть нечего */
+  readonly showListing: boolean;
   /** Рядом со списком (компьютер) */
   readonly split?: boolean;
   /** Заявка открыта (стала просмотренной) или изменилась — перечитать список */
@@ -110,6 +112,7 @@ export function RequestDetail({
   lang,
   headingRef,
   navigate,
+  showListing,
   split = false,
   onChanged,
   onLoaded,
@@ -272,13 +275,15 @@ export function RequestDetail({
           <dt>{t.occasionLabel}</dt>
           <dd>{textOf(t, `occ_${request.occasionCode}`)}</dd>
         </div>
-        <div className="facts-wide">
-          <dt>{t.listingPicker}</dt>
-          <dd className="fact-vitrina">
-            <span>{request.listing.name}</span>
-            <span className="chip chip-cat">{categoryName(lang, request.listing.categoryCode)}</span>
-          </dd>
-        </div>
+        {showListing ? (
+          <div className="facts-wide">
+            <dt>{t.listingPicker}</dt>
+            <dd className="fact-vitrina">
+              <span>{request.listing.name}</span>
+              <span className="chip chip-cat">{categoryName(lang, request.listing.categoryCode)}</span>
+            </dd>
+          </div>
+        ) : null}
       </dl>
 
       {request.contact ? (
@@ -471,7 +476,9 @@ export function RequestDetail({
           <ol>
             {request.history.map((entry) => (
               <li key={`${entry.at}-${entry.status}`}>
-                <span className="history-status">{textOf(t, `st_${entry.status}`)}</span>
+                <span className="history-status">
+                  {entry.status === "viewed" ? t.histViewed : textOf(t, `st_${entry.status}`)}
+                </span>
                 <span className="history-meta">
                   {formatMoment(entry.at, t, now)} · {textOf(t, `by_${entry.by}`)}
                 </span>

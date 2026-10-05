@@ -1,5 +1,6 @@
 /* Форма витрины (карточки): название, адрес страницы, район, тексты на двух языках, данные
-   витрины по категории, ссылки на видео, сколько заказов одновременно, телефон для заявок.
+   витрины по категории, ссылки на видео, сколько заказов одновременно, телефон и Telegram для
+   клиентов.
    Что спрашивать — решает категория (@bayramm/shared/categories): вместимость в гостях —
    только где она нужна (площадка), видео — где их можно (фото и видео, студия), заказы
    одновременно — у занятости по частям дня (кортеж, фото и видео, декор).
@@ -8,13 +9,15 @@
    Опубликованную витрину менеджер (без права решать по правкам) меняет как партнёр из
    кабинета: название и описания уходят правкой на модерацию, а витрина остаётся прежней —
    форма говорит «отправлено на модерацию» и показывает то, что в витрине сейчас. Остальное
-   (адрес, данные витрины, видео, телефон…) сохраняется сразу. Телефон только пишется:
-   текущий — по «Показать». */
+   (адрес, данные витрины, видео, телефон…) сохраняется сразу. Телефон и Telegram только
+   пишутся: текущие — по «Показать» (одним чтением). Telegram — по желанию: пустое поле не
+   меняет, «Убрать Telegram» снимает; имя, @имя и ссылку t.me/имя сервер понимает сам. */
 
 import type {
   ListingDetail,
   ListingInput,
   ListingSaveResult,
+  RevealedListingContacts,
   RevisionField,
   StaffDictionaries,
 } from "@bayramm/shared/api/staff";
@@ -31,12 +34,12 @@ import {
   videoLinkErrors,
   videoLinksValue,
 } from "@bayramm/shared/categories";
-import { NumberStepper, Select } from "@bayramm/ui/react";
+import { Checkbox, NumberStepper, Select } from "@bayramm/ui/react";
 import { type FormEvent, useEffect, useId, useState } from "react";
 import type { Failure, Result } from "../api";
 import { categoryName } from "../categories";
 import { t } from "../texts";
-import { ErrorText, Field, FormBar, fieldErrors, PhoneReveal, useRevealErrors } from "../ui";
+import { ContactsReveal, ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
 import { useUnsaved } from "../unsaved";
 import { AttributeFields } from "./AttributeFields";
 
@@ -52,6 +55,7 @@ interface Values {
   capMax: string;
   parallelCapacity: string;
   phone: string;
+  telegram: string;
 }
 
 const TEXT_KEYS = ["name", "addressRu", "addressUz", "descriptionRu", "descriptionUz"] as const;
@@ -87,6 +91,7 @@ function initial(listing: ListingDetail): Values {
     capMax: listing.capMax?.toString() ?? "",
     parallelCapacity: String(listing.parallelCapacity),
     phone: "",
+    telegram: "",
   };
 }
 
@@ -101,6 +106,8 @@ export interface FormState {
   readonly values: Values;
   readonly attributes: AttributeDrafts;
   readonly videos: readonly string[];
+  /** «Убрать Telegram»: в тело уйдёт telegram: null */
+  readonly clearTelegram: boolean;
 }
 
 export function formState(listing: ListingDetail, category: CategoryConfig): FormState {
@@ -108,6 +115,7 @@ export function formState(listing: ListingDetail, category: CategoryConfig): For
     values: initial(listing),
     attributes: attributeDrafts(category, listing.attributes),
     videos: videoDrafts(listing, category),
+    clearTelegram: false,
   };
 }
 
@@ -133,6 +141,9 @@ export function listingBody(category: CategoryConfig, now: FormState, before: Fo
   const slug = now.values.slug.trim();
   if (slug !== "" && slug !== before.values.slug) body.slug = slug;
   if (now.values.phone.trim() !== "") body.phone = now.values.phone.trim();
+  // Telegram: убрать — null; иначе только то, что вписали (как есть: имя, @имя или ссылку — разберёт сервер)
+  if (now.clearTelegram) body.telegram = null;
+  else if (now.values.telegram.trim() !== "") body.telegram = now.values.telegram.trim();
   const attributes = attributePatch(category, now.attributes, before.attributes);
   if (Object.keys(attributes).length > 0) body.attributes = attributes;
   if (parts.videos) {
@@ -172,8 +183,12 @@ interface ListingFormProps {
   moderated?: boolean;
   /** Есть несохранённые правки (true) или форма как в витрине (false) */
   onDirtyChange?: (dirty: boolean) => void;
-  /** Телефон для заявок: вписан ли и как его показать (чтение пишется в журнал) */
-  phone?: { readonly has: boolean; readonly load: () => Promise<Result<string | null>> };
+  /** Контакты для клиентов: что вписано и как показать (чтение пишется в журнал доступа к ПДн) */
+  contacts?: {
+    readonly hasPhone: boolean;
+    readonly hasTelegram: boolean;
+    readonly load: () => Promise<Result<RevealedListingContacts>>;
+  };
 }
 
 /** Что ушло на модерацию и было ли в правке что-то ещё (оно сохранено сразу) */
@@ -192,7 +207,7 @@ export function ListingForm({
   readOnly,
   moderated = false,
   onDirtyChange,
-  phone,
+  contacts,
 }: ListingFormProps) {
   const [before, setBefore] = useState(() => formState(listing, category));
   const [now, setNow] = useState(before);
@@ -200,6 +215,8 @@ export function ListingForm({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [sent, setSent] = useState<Sent | null>(null);
+  // Сколько раз сохранили: открытые контакты после правки закрываются — новое чтение, новая запись в журнале
+  const [saves, setSaves] = useState(0);
   const parts = formParts(category);
   const errors = fieldErrors(failure, t.listingFieldErrors);
   const details = failure?.code === "invalid_input" ? failure.details : [];
@@ -250,6 +267,7 @@ export function ListingForm({
       return;
     }
     setFailure(null);
+    setSaves((n) => n + 1);
     // Форма — как в витрине после правки: значения уже в том виде, как их хранит сервер
     const next = formState(result, category);
     setBefore(next);
@@ -493,8 +511,8 @@ export function ListingForm({
         </section>
       ) : null}
 
-      {/* Телефон — один блок: нынешний номер по «Показать» (чтение — в журнал), новый — полем;
-        без права правки — только показать */}
+      {/* Контакты для клиентов — один блок: нынешние по «Показать» (чтение — в журнал), новые —
+        полями; без права правки — только показать */}
       <section className="fs">
         <div className="fs-head">
           <h2 id="form-phone-title" tabIndex={-1}>
@@ -502,12 +520,13 @@ export function ListingForm({
           </h2>
           <p>{t.listingSections.phoneHint}</p>
         </div>
-        {phone ? (
-          phone.has ? (
-            <PhoneReveal label={t.listingFields.phone ?? ""} load={phone.load} />
-          ) : (
-            <p className="muted">{t.phoneMissing}</p>
-          )
+        {contacts ? (
+          <ContactsReveal
+            key={saves}
+            hasPhone={contacts.hasPhone}
+            hasTelegram={contacts.hasTelegram}
+            load={contacts.load}
+          />
         ) : null}
         {readOnly ? null : (
           <div className="fields">
@@ -527,6 +546,45 @@ export function ListingForm({
                 />
               )}
             </Field>
+            <Field
+              label={t.telegramChange}
+              error={errors.telegram}
+              hint={contacts?.hasTelegram ? t.phoneKeep : t.telegramHintNew}
+            >
+              {(props) => (
+                <input
+                  {...props}
+                  className="input"
+                  inputMode="text"
+                  autoCapitalize="none"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="@username"
+                  value={now.values.telegram}
+                  onChange={set("telegram")}
+                  maxLength={64}
+                  enterKeyHint="done"
+                  disabled={now.clearTelegram}
+                />
+              )}
+            </Field>
+            {contacts?.hasTelegram ? (
+              <div className="field-full">
+                <Checkbox
+                  checked={now.clearTelegram}
+                  onChange={(checked) => {
+                    touch();
+                    setNow((prev) => ({
+                      ...prev,
+                      clearTelegram: checked,
+                      values: checked ? { ...prev.values, telegram: "" } : prev.values,
+                    }));
+                  }}
+                >
+                  {t.telegramRemove}
+                </Checkbox>
+              </div>
+            ) : null}
           </div>
         )}
       </section>

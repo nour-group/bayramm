@@ -9,9 +9,10 @@
 // 400 invalid_cursor: ключи там другие. Фильтры по полям витрины (a.*) ключ не
 // меняют — курсор от выдачи без них продолжает и выдачу с ними.
 //
-// Без category — залы (hall), как в v0.1: у категорий разные единицы цены, общей
-// выдачи нет. Фильтры «a.<поле>» — из конфигурации категории (@bayramm/shared/categories),
-// неизвестный — 400 invalid_request.
+// Без category — залы (hall), как в v0.1 (старые сборки клиента). category=all — все включённые
+// категории одной выдачей (раздел «Все»): цены разных единиц сравниваются как есть. Фильтры
+// «a.<поле>» — из конфигурации категории (@bayramm/shared/categories), неизвестный — 400
+// invalid_request; у «all» их нет.
 
 import type { CatalogSort } from "@bayramm/shared/api";
 import { type AttributeFilter, categoryConfig, parseAttributeFilters } from "@bayramm/shared/categories";
@@ -25,6 +26,8 @@ export const MAX_LIMIT = 50;
 export const MAX_GUESTS = 5000;
 /** Категория выдачи без параметра category — залы, как в v0.1 */
 export const DEFAULT_CATEGORY = "hall";
+/** Все включённые категории одной выдачей */
+export const ALL_CATEGORIES = "all";
 
 const CODE_RE = /^[a-z_]{2,30}$/;
 const POSITIVE_INT_RE = /^[1-9][0-9]{0,5}$/;

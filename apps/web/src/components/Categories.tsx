@@ -3,7 +3,7 @@ import { CLIENT_CATEGORIES, categoryIcon, categoryName } from "../categories";
 import { useLang, useServices } from "../context";
 import { type AsyncResult, useAsync } from "../hooks";
 import { Icon } from "../icons";
-import { DEFAULT_CATEGORY, hrefFor } from "../router";
+import { ALL_CATEGORIES, hrefFor } from "../router";
 import { Link } from "./Link";
 
 /* Категории в каталоге и на лендинге: список — из описания категорий (включённые, по
@@ -32,15 +32,15 @@ export function listingsIn(
   return item ? item.listings > 0 : false;
 }
 
-/** Адрес каталога категории (залы — без параметра); дата — та же, что выбрана */
+/** Адрес каталога категории (весь каталог — без параметра); дата — та же, что выбрана */
 export function categoryHref(code: string, date: string | null = null): string {
-  return hrefFor({ name: "catalog" }, { category: code === DEFAULT_CATEGORY ? null : code, date });
+  return hrefFor({ name: "catalog" }, { category: code === ALL_CATEGORIES ? null : code, date });
 }
 
 /**
- * Переключатель категорий каталога: ссылки-чипы, лентой вбок на телефоне. Категории без
- * витрин не показываются (кроме открытой — по ссылке в неё можно попасть); пока список
- * не пришёл — все включённые
+ * Переключатель категорий каталога: «Все» первым, затем разделы — ссылки-чипы, лентой вбок на
+ * телефоне. Категории без витрин не показываются (кроме открытой — по ссылке в неё можно
+ * попасть); пока список не пришёл — все включённые
  */
 export function CategorySwitch({ current, date }: { current: string; date: string | null }) {
   const { t, lang } = useLang();
@@ -49,6 +49,16 @@ export function CategorySwitch({ current, date }: { current: string; date: strin
   return (
     <nav className="cat-switch" aria-label={t.catSwitch}>
       <ul>
+        <li>
+          <Link
+            className="cat-chip"
+            href={categoryHref(ALL_CATEGORIES, date)}
+            aria-current={current === ALL_CATEGORIES ? "page" : undefined}
+          >
+            <Icon name="list" size={17} className="cat-chip-ico" />
+            <span>{t.catAll}</span>
+          </Link>
+        </li>
         {shown.map((category) => (
           <li key={category.code}>
             <Link

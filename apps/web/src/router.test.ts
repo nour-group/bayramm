@@ -144,16 +144,11 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
   });
 
   it("похожие — корень с фильтрами: в Telegram это каталог, в браузере — переход в /catalog", () => {
-    const filters = { date: "2026-10-20", guests: 200, district: "chilonzor" };
+    const filters = { category: "hall", date: "2026-10-20", guests: 200, district: "chilonzor" };
     const url = at(clientCatalogPath(filters));
     // Кнопка бота открывает Mini App: там корень — каталог
     expect(screenOf(matchRoute(url.pathname), true)).toEqual({ name: "catalog" });
-    expect(readFilters(url.searchParams, "2026-10-01")).toEqual({
-      ...filters,
-      category: "hall",
-      sort: null,
-      attrs: {},
-    });
+    expect(readFilters(url.searchParams, "2026-10-01")).toEqual({ ...filters, sort: null, attrs: {} });
     // Та же ссылка в браузере — каталог с теми же фильтрами
     expect(legacyCatalogHref(url.pathname, url.search)).toBe(hrefFor({ name: "catalog" }, filters));
   });
@@ -174,13 +169,30 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
     // В браузере — в /catalog той же категории (параметр category — тоже фильтр каталога)
     expect(legacyCatalogHref("/", "?category=car")).toBe("/catalog?category=car");
   });
+
+  it("старые ссылки бота без категории — весь каталог на ту же дату; гости и район там не отбирают", () => {
+    const filters = readFilters(
+      new URLSearchParams("?date=2026-10-20&guests=200&district=chilonzor"),
+      "2026-10-01",
+    );
+    expect(filters).toEqual({
+      category: "all",
+      date: "2026-10-20",
+      guests: null,
+      district: null,
+      sort: null,
+      attrs: {},
+    });
+  });
 });
 
 describe("каталог категории в адресе", () => {
-  it("неизвестная или выключенная категория — залы; чужие фильтры отброшены, свои — проверены", () => {
+  it("неизвестная или выключенная категория — весь каталог; чужие фильтры отброшены, свои — проверены", () => {
     const read = (search: string) => readFilters(new URLSearchParams(search), "2026-10-01");
-    expect(read("?category=spaceships").category).toBe("hall");
-    expect(read("?category=food").category).toBe("hall");
+    expect(read("?category=spaceships").category).toBe("all");
+    expect(read("?category=food").category).toBe("all");
+    expect(read("").category).toBe("all");
+    expect(read("?sort=capacity_desc&a.stage=1")).toMatchObject({ sort: null, attrs: {} });
     expect(read("?category=photo&sort=capacity_desc").sort).toBeNull();
     expect(read("?category=hall&sort=capacity_desc").sort).toBe("capacity_desc");
     expect(
@@ -193,12 +205,12 @@ describe("каталог категории в адресе", () => {
     });
   });
 
-  it("canonical каталога — с категорией (кроме залов), фильтры — нет", () => {
+  it("canonical каталога — с категорией (и у залов), весь каталог — без неё; фильтры — нет", () => {
     const q = (search: string) => new URLSearchParams(search);
     expect(canonicalHref({ name: "catalog" }, q("?category=cake&date=2026-10-20&a.delivery=1"))).toBe(
       "/catalog?category=cake",
     );
-    expect(canonicalHref({ name: "catalog" }, q("?category=hall&guests=100"))).toBe("/catalog");
+    expect(canonicalHref({ name: "catalog" }, q("?category=hall&guests=100"))).toBe("/catalog?category=hall");
     expect(canonicalHref({ name: "catalog" }, q("?category=nope"))).toBe("/catalog");
     expect(canonicalHref({ name: "venue", slug: "a" }, q("?category=car"))).toBe("/venue/a");
   });

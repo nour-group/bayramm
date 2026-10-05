@@ -6,6 +6,7 @@ import type {
   ClientDetail,
   ClientList,
   ClientListItem,
+  ContactMetrics,
   ListingDetail,
   ListingInput,
   ListingList,
@@ -14,6 +15,7 @@ import type {
   MetricsOverview,
   OutboxHealth,
   PublishBlocker,
+  RevealedListingContacts,
   RevisionDetail,
   RevisionList,
   StaffDictionaries,
@@ -36,6 +38,8 @@ import { accountMe, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account"
 import {
   applyAvailability,
   availabilityOf,
+  CAR_CONTACTS,
+  CAR_LISTING_ID,
   CAR_REQUEST_ID,
   type Calendar,
   carRequest,
@@ -43,6 +47,7 @@ import {
   decide,
   emptyListing,
   newCalendar,
+  normalizeTelegram,
   patchCategoryFields,
   refresh,
   seededListings,
@@ -55,6 +60,7 @@ export {
   BOOKED_DAY,
   BRIDE_CAR_ID,
   CAKE_LISTING_ID,
+  CAR_CONTACTS,
   CAR_LISTING_ID,
   CAR_REQUEST_ID,
   LIMOUSINE_ID,
@@ -224,6 +230,7 @@ function newListing(input: ListingInput): ListingDetail {
     createdAt: iso,
     updatedAt: iso,
     hasPhone: false,
+    hasTelegram: false,
     attributes: {},
     missingAttributes: [],
     videoLinks: [],
@@ -351,6 +358,9 @@ export const REVISION_ID = "00000000-0000-4000-8900-000000000001";
 const CLIENT_ITEM: ClientListItem = {
   id: CLIENT_ID,
   ref: "C-00000000",
+  displayName: "Азиза К.",
+  signIn: ["telegram"],
+  lastRequest: { publicNo: REQUEST.publicNo, listingName: REQUEST.listing.name, status: REQUEST.status },
   createdAt: iso,
   lastSeenAt: iso,
   locale: "uz",
@@ -360,12 +370,51 @@ const CLIENT_ITEM: ClientListItem = {
   lastRequestAt: REQUEST.createdAt,
 };
 
+/** Остальные клиенты списка: вошёл и Telegram, и телефоном; только телефон, без имени; удалил аккаунт */
+const OTHER_CLIENTS: readonly ClientListItem[] = [
+  {
+    ...CLIENT_ITEM,
+    id: "00000000-0000-4000-8800-000000000002",
+    ref: "C-3f9a1c2e",
+    displayName: "Рустам Б.",
+    signIn: ["telegram", "phone"],
+    lastRequest: { publicNo: 1049, listingName: "Bogʻ zali", status: "contacted" },
+    locale: "ru",
+    requests: 3,
+    lastRequestAt: new Date(NOW.getTime() - 40 * 3_600_000).toISOString(),
+    lastSeenAt: new Date(NOW.getTime() - 3_600_000).toISOString(),
+  },
+  {
+    ...CLIENT_ITEM,
+    id: "00000000-0000-4000-8800-000000000003",
+    ref: "C-7b21d0aa",
+    displayName: null,
+    signIn: ["phone"],
+    lastRequest: null,
+    locale: "uz",
+    requests: 0,
+    lastRequestAt: null,
+    lastSeenAt: null,
+  },
+  {
+    ...CLIENT_ITEM,
+    id: "00000000-0000-4000-8800-000000000004",
+    ref: "C-c4e8f517",
+    displayName: null,
+    signIn: [],
+    lastRequest: { publicNo: 1012, listingName: "Oq kortej", status: "declined" },
+    deleted: true,
+    requests: 2,
+    lastRequestAt: new Date(NOW.getTime() - 20 * 86_400_000).toISOString(),
+  },
+];
+
 const CLIENT: ClientDetail = {
   ...CLIENT_ITEM,
   canMessage: true,
   deletedAt: null,
   blockedInfo: null,
-  profile: { firstName: "Азиза", lastName: null, username: null },
+  profile: { firstName: "Азиза", lastName: "Каримова", username: "aziza_k" },
   requestList: [
     {
       id: REQUEST_ID,
@@ -540,8 +589,10 @@ export interface StaffApi {
   readonly services: { readonly key: string; readonly body: unknown }[];
   /** Смены категории витрины */
   readonly categoryChanges: Record<string, unknown>[];
-  /** Строки запроса GET /staff/requests и GET /staff/vendors */
+  /** Строки запроса GET /staff/requests, /staff/vendors, /staff/clients и метрик контактов */
   readonly queries: string[];
+  /** Витрины, чьи контакты показали («Показать»): POST …/phone — каждое чтение пишется в журнал */
+  readonly reveals: string[];
   readonly actions: string[];
   /** Правки занятых дней: тело PUT …/availability (с версией календаря) */
   readonly calendar: AvailabilityInput[];
@@ -602,6 +653,7 @@ export async function mockStaffApi(
     services: [],
     categoryChanges: [],
     queries: [],
+    reveals: [],
     actions: [],
     calendar: [],
     webapp: [],
@@ -625,6 +677,11 @@ export async function mockStaffApi(
     if (index >= 0) listings.splice(index, 1, next);
     return next;
   };
+  // Телефон и Telegram витрин: пишутся PATCH, читаются по «Показать»; у кортежа есть сразу
+  const contacts = new Map<string, { phone: string | null; telegram: string | null }>(
+    seeded ? [[CAR_LISTING_ID, { ...CAR_CONTACTS }]] : [],
+  );
+  const contactsOf = (id: string) => contacts.get(id) ?? { phone: null, telegram: null };
   const requests = seeded ? [REQUEST, carRequest(REQUEST)] : [REQUEST];
   if (signedIn)
     await page.addInitScript(
@@ -836,10 +893,21 @@ export async function mockStaffApi(
         const fields = patchCategoryFields(listing, input as unknown as Record<string, unknown>);
         if (!fields.ok) return fail(route, 422, "invalid_input", fields.errors);
         const patch = Object.fromEntries(EDITABLE.filter((k) => k in input).map((k) => [k, input[k]]));
+        // Telegram: имя, @имя или t.me/имя → имя без @; null — убрать; плохое — 422 у поля
+        const stored = contactsOf(listing.id);
+        let telegram = stored.telegram;
+        if (input.telegram === null) telegram = null;
+        else if (typeof input.telegram === "string") {
+          telegram = normalizeTelegram(input.telegram);
+          if (telegram === null) return fail(route, 422, "invalid_input", ["telegram"]);
+        }
+        const phone = typeof input.phone === "string" ? input.phone.replace(/\s+/g, "") : stored.phone;
+        contacts.set(listing.id, { phone, telegram });
         const next = replace({
           ...fields.listing,
           ...patch,
           hasPhone: listing.hasPhone || typeof input.phone === "string",
+          hasTelegram: telegram !== null,
           version: listing.version + 1,
         });
         const saved: ListingSaveResult = { ...next, sentForModeration: [] };
@@ -879,6 +947,16 @@ export async function mockStaffApi(
         const to = applied.days.at(-1) ?? from;
         return json(route, 200, availabilityOf(listing, calendar, from, to));
       }
+      if (action === "phone" && method === "POST") {
+        // Телефон и Telegram одним чтением; у витрины без номера в тесте — условный
+        state.reveals.push(listing.id);
+        const stored = contactsOf(listing.id);
+        const revealed: RevealedListingContacts = {
+          phone: listing.hasPhone ? (stored.phone ?? "+998900000001") : null,
+          telegram: stored.telegram,
+        };
+        return json(route, 200, revealed);
+      }
       if (action && method === "POST" && ["submit", "publish"].includes(action)) {
         state.actions.push(action);
         const blockers = action === "submit" ? listing.blockers.review : listing.blockers.active;
@@ -913,7 +991,11 @@ export async function mockStaffApi(
     }
     if (key === `GET /staff/revisions/${REVISION_ID}`) return json(route, 200, REVISION);
     if (key === "GET /staff/clients") {
-      const list: ClientList = { total: 1, items: [CLIENT_ITEM] };
+      state.queries.push(`clients?${url.searchParams}`);
+      const items = [CLIENT_ITEM, ...OTHER_CLIENTS].filter(
+        (c) => url.searchParams.get("blocked") !== "1" || c.blocked,
+      );
+      const list: ClientList = { total: items.length, items };
       return json(route, 200, list);
     }
     if (key === `GET /staff/clients/${CLIENT_ID}`) return json(route, 200, CLIENT);
@@ -947,6 +1029,42 @@ export async function mockStaffApi(
         items: [VENDOR_METRICS],
       };
       return json(route, 200, list);
+    }
+    if (key === "GET /staff/metrics/contacts") {
+      state.queries.push(`contacts?${url.searchParams}`);
+      const category = url.searchParams.get("category");
+      const vendor = { id: VENDOR_ID, name: "Lola" };
+      const rows: ContactMetrics["items"][number][] = [
+        {
+          listing: {
+            id: REQUEST.listing.id,
+            name: REQUEST.listing.name,
+            status: "active",
+            categoryCode: "hall",
+          },
+          vendor,
+          opens: 48,
+          phone: 21,
+          telegram: 9,
+        },
+        {
+          listing: { id: CAR_LISTING_ID, name: "Oq kortej", status: "active", categoryCode: "car" },
+          vendor,
+          opens: 17,
+          phone: 6,
+          telegram: 7,
+        },
+        {
+          listing: { id: PHOTO_QUEUE_LISTING_ID, name: "Bogʻ zali", status: "active", categoryCode: "hall" },
+          vendor,
+          opens: 5,
+          phone: 1,
+          telegram: 0,
+        },
+      ];
+      const items = rows.filter((row) => !category || row.listing.categoryCode === category);
+      const stats: ContactMetrics = { days: 30, category, items };
+      return json(route, 200, stats);
     }
     if (key === `GET /staff/metrics/vendors/${VENDOR_ID}`) {
       const stats: VendorResponseStats = { days: 30, vendor: VENDOR_METRICS, listings: [] };

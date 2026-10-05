@@ -19,6 +19,7 @@ import { isApiError, isNotFound } from "../api/errors";
 import { categoryName, catText, clientCategory } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
 import { categoryHref } from "../components/Categories";
+import { ContactButton } from "../components/ContactSheet";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
@@ -29,7 +30,6 @@ import {
   addDays,
   formatDayMonth,
   formatMoney,
-  formatPhone,
   formatPrice,
   formatPriceFrom,
   isIsoDate,
@@ -39,7 +39,6 @@ import {
   phoneDigits,
   qtyQuestion,
   tashkentToday,
-  telHref,
   weekdayMon,
 } from "../format";
 import { useAsync, useDocumentTitle } from "../hooks";
@@ -281,10 +280,8 @@ function Sent({ listing, created }: { listing: ListingDetail; created: RequestCr
         <Icon name="warnD" size={20} />
         <p>{t.sentConfirm}</p>
       </div>
-      <a className="btn btn-primary wide" href={telHref(listing.phone)}>
-        <Icon name="phone" size={17} />
-        {t.sentCall} {formatPhone(listing.phone)}
-      </a>
+      {/* Подтвердить дату — звонком или в Telegram: те же контакты, что на витрине */}
+      <ContactButton slug={listing.slug} name={listing.name} className="btn btn-primary wide" />
       <div className="callout">
         <Icon name="clockD" size={20} />
         <p>{t.sentTimer}</p>
@@ -1024,24 +1021,18 @@ function DraftSummary({ listing }: { listing: ListingDetail }) {
   );
 }
 
+/** Гостю без входа: связаться с исполнителем можно и так — контакты без заявки */
 function ContactCard({ listing }: { listing: ListingDetail }) {
   const { t } = useLang();
-  const phone = formatPhone(listing.phone);
   return (
     <section className="section contact" aria-labelledby="guest-venue">
       <h2 className="section-title" id="guest-venue">
         {listing.name}
       </h2>
       <div className="contact-row">
-        <a className="contact-phone" href={telHref(listing.phone)}>
-          {phone}
-        </a>
-        <a className="btn btn-secondary" href={telHref(listing.phone)}>
-          <Icon name="phone" size={17} />
-          {t.sentCall}
-        </a>
+        <p className="muted small">{t.callNote}</p>
+        <ContactButton slug={listing.slug} name={listing.name} />
       </div>
-      <p className="muted small">{t.callNote}</p>
     </section>
   );
 }

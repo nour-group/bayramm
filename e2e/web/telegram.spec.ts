@@ -1,6 +1,6 @@
 import { expect, test } from "../support/offline";
 import { clickBackButton, clickMainButton, fakeTelegram, telegramState } from "../support/telegram";
-import { isDesktop, LISTINGS, open, PATHS, prepare, T, VENUE } from "../support/web";
+import { isDesktop, LISTINGS, open, openContacts, PATHS, prepare, T, VENUE } from "../support/web";
 
 /* Клиент внутри Telegram (поддельный WebApp) и в обычном браузере: ссылка на площадку,
    безопасные зоны, кнопки Telegram, путь к заявке без Telegram. */
@@ -20,8 +20,11 @@ test.describe("внутри Telegram", () => {
 
     await expect(page).toHaveURL(PATHS.venue(venue.slug));
     await expect(page.locator(".venue-head h1")).toHaveText(venue.name);
-    // Телефон — и здесь до заявки (на телефоне — раздел «Телефон», на компьютере — карточка справа)
-    await expect(page.locator(`a.contact-phone[href="tel:${venue.phone}"]:visible`)).toHaveCount(1);
+    // Контакты — и здесь до заявки: «Связаться» открывает окно с номером
+    const contacts = await openContacts(page);
+    await expect(contacts.locator(`a[href="tel:${venue.phone}"]`)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(contacts).toHaveCount(0);
 
     // Своя кнопка заявки не рисуется: её место — главная кнопка Telegram с тем же текстом
     await expect
@@ -102,7 +105,7 @@ test.describe("внутри Telegram", () => {
 });
 
 test.describe("вне Telegram", () => {
-  test("заявка ведёт в бота на эту же площадку, телефон остаётся на экране", async ({ page }) => {
+  test("заявка ведёт в бота на эту же площадку, «Связаться» остаётся на экране", async ({ page }) => {
     await prepare(page);
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1", { guest: true });
     // SDK нет — своя кнопка заявки на месте
@@ -114,8 +117,9 @@ test.describe("вне Telegram", () => {
     await expect(bot).toHaveAttribute("href", `https://t.me/${DEMO_BOT}?startapp=vendor_${VENUE.slug}`);
     await expect(bot).toHaveAttribute("target", "_blank");
     await expect(bot).toHaveAttribute("rel", /noopener/);
-    // Формы и согласий без входа нет; позвонить можно
+    // Формы и согласий без входа нет; связаться можно
     await expect(page.locator("form.request")).toHaveCount(0);
-    await expect(page.locator(`a[href="tel:${VENUE.phone}"]`).first()).toBeVisible();
+    const contacts = await openContacts(page);
+    await expect(contacts.locator(`a[href="tel:${VENUE.phone}"]`)).toBeVisible();
   });
 });

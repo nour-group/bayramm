@@ -9,6 +9,7 @@
 
 import type {
   CategoryMetrics,
+  ContactMetrics,
   ListingMetrics,
   ListingStatus,
   OpsQueues,
@@ -194,6 +195,40 @@ export async function loadListings(trx: Tx, vendorId: string, days: number): Pro
       categoryCode: row.category_code,
     },
     ...responseView(row),
+  }));
+}
+
+interface ContactRow {
+  listing_id: string;
+  listing_name: string;
+  listing_status: ListingStatus;
+  category_code: string;
+  vendor_id: string;
+  vendor_name: string;
+  opens: number;
+  phone: number;
+  telegram: number;
+}
+
+/** У каких витрин чаще открывают контакты за последние days дней (app.metrics_contacts) */
+export async function loadContacts(
+  trx: Tx,
+  days: number,
+  category: string | null,
+): Promise<ContactMetrics["items"]> {
+  const { rows } = await sql<ContactRow>`
+    select * from app.metrics_contacts(${days}::int, ${category}::text)`.execute(trx);
+  return rows.map((row) => ({
+    listing: {
+      id: row.listing_id,
+      name: row.listing_name,
+      status: row.listing_status,
+      categoryCode: row.category_code,
+    },
+    vendor: { id: row.vendor_id, name: row.vendor_name },
+    opens: row.opens,
+    phone: row.phone,
+    telegram: row.telegram,
   }));
 }
 

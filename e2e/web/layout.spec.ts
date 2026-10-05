@@ -98,7 +98,7 @@ test.describe("лендинг в браузере", () => {
     const params = new URL(page.url()).searchParams;
     expect(params.get("date")).toBe(day);
     expect(params.get("guests")).toBe("150");
-    expect(params.get("category")).toBeNull();
+    expect(params.get("category")).toBe("hall");
     // Каталог применил фильтры: поле гостей заполнено, отметки на дату у карточек
     const filters = page.locator(".catalog .filters");
     await expect(filters.getByRole("spinbutton")).toHaveValue("150");
@@ -124,7 +124,8 @@ test.describe("лендинг в браузере", () => {
     await page.goto(`/?date=${date}&guests=200&lang=uz`);
     await expect(page).toHaveURL(`${PATHS.catalog}?date=${date}&guests=200`);
     await expect(page.locator("html")).toHaveAttribute("lang", "uz");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(T.uz.catTitle(T.uz.catName.hall));
+    // Без раздела — весь каталог: «Barchasi»
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(T.uz.catAllTitle);
   });
 
   test("шапка гостя: каталог и сохранённое, «Войти»; логотип — на лендинг", async ({ page }) => {
@@ -170,7 +171,7 @@ test.describe("компьютер (1280)", () => {
   }) => {
     await prepare(page);
     await at(page, 1280);
-    await open(page, PATHS.catalog, ".card");
+    await open(page, PATHS.category("hall"), ".card");
     await expect(page.locator("nav.site-nav")).toBeVisible();
     await expect(page.locator("nav.tabs")).toBeHidden();
     // У залов есть фильтры по полям витрины (парковка, кухня, доступность) — колонкой слева
@@ -184,7 +185,7 @@ test.describe("компьютер (1280)", () => {
     await expectNoOverflow(page, "каталог 1280");
   });
 
-  test("площадка: карточка справа — цена, телефон и заявка видны и после прокрутки", async ({ page }) => {
+  test("площадка: карточка справа — цена, «Связаться» и заявка видны и после прокрутки", async ({ page }) => {
     await prepare(page);
     await at(page, 1280, 800);
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1", { guest: true });
@@ -192,12 +193,12 @@ test.describe("компьютер (1280)", () => {
     const gallery = await page.locator(".gallery").boundingBox();
     const card = await side.boundingBox();
     expect(gallery && card && card.x > gallery.x + gallery.width).toBe(true);
-    const phone = side.locator(`a.bar-phone[href="tel:${VENUE.phone}"]`);
-    await expect(phone).toBeInViewport();
+    const contact = side.getByRole("button", { name: `${ru.contactBtn}: ${VENUE.name}` });
+    await expect(contact).toBeInViewport();
     await expect(side.getByRole("link", { name: ru.pfReq })).toBeInViewport();
-    // Прокрутили к календарю — карточка прилипла под шапкой, номер на экране
+    // Прокрутили к календарю — карточка прилипла под шапкой, «Связаться» на экране
     await page.locator(".ui-cal").scrollIntoViewIfNeeded();
-    await expect(phone).toBeInViewport();
+    await expect(contact).toBeInViewport();
     // Фото листают и кнопками
     const next = page.getByRole("button", { name: ru.galleryNext });
     await expect(page.getByRole("button", { name: ru.galleryPrev })).toBeDisabled();
@@ -252,9 +253,9 @@ test.describe("планшет (768)", () => {
 
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1");
     await expect(page.getByRole("button", { name: ru.galleryNext })).toBeVisible();
-    // Панель с заявкой — у низа экрана, номер — в разделе «Телефон»
+    // Панель с заявкой — у низа экрана, «Связаться» — и в разделе контактов
     await expect(page.locator(".venue-bar")).toBeInViewport();
-    await expect(page.locator(`.contact a.contact-phone[href="tel:${VENUE.phone}"]`)).toBeVisible();
+    await expect(page.locator(".contact").getByRole("button", { name: ru.contactBtn })).toBeVisible();
     await expectNoOverflow(page, "площадка 768");
   });
 });

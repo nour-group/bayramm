@@ -38,12 +38,16 @@ const phoneFailure: Failure = { ok: false, status: 422, code: "invalid_input", d
 
 export function TeamPage() {
   const { loaded, reload, set } = useLoad<TeamList>("/staff/team");
+  // На телефоне форма приглашения — на весь экран: сначала те, кто в команде, приглашение — ниже
+  const phone = usePhone();
+  const invite = <InviteForm onDone={set} />;
   return (
     <div className="stack">
-      <InviteForm onDone={set} />
+      {phone ? null : invite}
       <LoadedView loaded={loaded} onRetry={reload}>
         {(list) => <Members list={list} onChange={set} />}
       </LoadedView>
+      {phone ? invite : null}
     </div>
   );
 }

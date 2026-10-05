@@ -113,6 +113,20 @@ describe("listCatalog", () => {
     expect(query?.sql).not.toMatch(/promo|premium|rating|paid|tier|service_allowed/);
   });
 
+  it("category=all — все включённые категории: без отбора по категории, загрузка на дату — по каждой", async () => {
+    const fake = fakeDb();
+    await listCatalog(fake.db, parseCatalogQuery({ category: ["all"], date: ["2026-10-03"] }));
+    const query = fake.queries.find(isCatalog);
+    expect(query?.sql).not.toContain('"l"."category_code" = $');
+    expect(query?.sql).toContain("cross join lateral app.catalog_day_load(c.code, $");
+    expect(query?.sql).toContain('"cat"."enabled" = $');
+    expect(query?.parameters).not.toContain("all");
+  });
+
+  it("category=all не берёт фильтров полей витрины — они у каждой категории свои", () => {
+    expect(() => parseCatalogQuery({ category: ["all"], "a.stage": ["1"] })).toThrow();
+  });
+
   it("guests отсекает по cap_max (у категорий без вместимости — нет); date не отсекает", async () => {
     const fake = fakeDb();
     await listCatalog(fake.db, parseCatalogQuery({ guests: ["300"], date: ["2026-10-03"] }));
@@ -233,7 +247,7 @@ describe("getListingDetail", () => {
     expect(fake.queries.some((q) => q.sql.includes("listing_services"))).toBe(false);
   });
 
-  it("телефон — через pii.read_listing_phone; услуги — из одобренных; занятость — [сегодня, +366 дней): весь горизонт даты каталога", async () => {
+  it("контакты — только какие есть (pii.listing_contact_kinds), без значений; услуги — из одобренных; занятость — [сегодня, +366 дней)", async () => {
     const service = {
       id: ID(91),
       listing_id: ID(1),
@@ -270,7 +284,7 @@ describe("getListingDetail", () => {
             attributes: { kitchen: "own", unknown: 1, parking_spaces: "много" },
             video_links: [],
             parallel_capacity: 1,
-            phone: "+998000000123",
+            contact_channels: ["phone", "telegram"],
           },
         ];
       }
@@ -291,7 +305,8 @@ describe("getListingDetail", () => {
     });
     const detail = await getListingDetail(fake.db, "hall-1", null, "2026-09-29");
 
-    expect(fake.queries.find(isCatalog)?.sql).toContain('pii.read_listing_phone("l"."id")');
+    expect(fake.queries.find(isCatalog)?.sql).toContain('pii.listing_contact_kinds("l"."id")');
+    expect(fake.queries.find(isCatalog)?.sql).not.toContain("read_listing_phone");
     expect(fake.queries.find((q) => q.sql.includes("app.listing_busy"))?.parameters).toEqual([
       ID(1),
       "2026-09-29",
@@ -301,7 +316,7 @@ describe("getListingDetail", () => {
     expect(services.every((q) => q.parameters.includes("active"))).toBe(true);
     expect(detail).toMatchObject({
       id: ID(1),
-      phone: "+998000000123",
+      contactChannels: ["phone", "telegram"],
       description: { ru: "Описание", uz: "" },
       address: { ru: "Адрес", uz: "Manzil" },
       // Только известные конфигурации и прошедшие проверку
@@ -344,7 +359,7 @@ describe("getListingDetail", () => {
               description_uz: "",
               address_ru: "",
               address_uz: "",
-              phone: null,
+              contact_channels: [],
             },
           ]
         : [],

@@ -55,13 +55,47 @@ const transferCheckbox = () =>
   byText<HTMLLabelElement>("label.consent-check", /Разрешаю передать/)?.querySelector("input") ?? null;
 
 describe("правила продукта", () => {
-  it("телефон и кнопка звонка видны до заявки, и гостю тоже", async () => {
+  it("контакты до заявки, и гостю тоже: «Связаться» открывает телефон и Telegram, нажатия считаются", async () => {
     const { api } = await mount({ path: VENUE_PATH, identity: "guest" });
+    const mock = api as ReturnType<typeof createMockApi>;
     await waitFor(() => document.querySelector("h1")?.textContent === VENUE.name, "карточка площадки");
-    const calls = [...document.querySelectorAll<HTMLAnchorElement>(`a[href="tel:${VENUE.phone}"]`)];
-    expect(calls.length).toBeGreaterThanOrEqual(2);
-    expect(text()).toContain("+998 00 000 00 01");
-    expect((api as ReturnType<typeof createMockApi>).created).toHaveLength(0);
+    // Номер в карточке не лежит: его отдаёт окно «Связаться» — в блоке контактов и в панели
+    expect(document.querySelector(`a[href="tel:${VENUE.phone}"]`)).toBeNull();
+    const buttons = [
+      ...document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="dialog"]'),
+    ].filter((b) => /Связаться/.test(b.textContent ?? ""));
+    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    await click(buttons[0] ?? null);
+    const call = await waitFor(
+      () => document.querySelector<HTMLAnchorElement>(`[role="dialog"] a[href="tel:${VENUE.phone}"]`),
+      "телефон в окне",
+    );
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("+998 00 000 00 01");
+    expect(mock.contactEvents).toEqual([{ slug: VENUE.slug, action: "open", signedIn: false }]);
+    call.addEventListener("click", (event) => event.preventDefault());
+    await click(call);
+    expect(mock.contactEvents.at(-1)).toEqual({ slug: VENUE.slug, action: "phone", signedIn: false });
+    expect(mock.created).toHaveLength(0);
+  });
+
+  it("у витрины с Telegram — в окне и он: выбор за клиентом", async () => {
+    const venue = LISTINGS.find((l) => l.telegram);
+    if (!venue) throw new Error("нет демо-витрины с Telegram");
+    const { api } = await mount({ path: `/venue/${venue.slug}` });
+    await waitFor(() => document.querySelector("h1")?.textContent === venue.name, "карточка площадки");
+    await click(document.querySelector(".contact button"));
+    const tg = await waitFor(
+      () => document.querySelector<HTMLAnchorElement>('[role="dialog"] a[href^="https://t.me/"]'),
+      "Telegram в окне",
+    );
+    expect(tg.getAttribute("href")).toBe(`https://t.me/${venue.telegram}`);
+    expect(document.querySelector(`[role="dialog"] a[href="tel:${venue.phone}"]`)).not.toBeNull();
+    tg.addEventListener("click", (event) => event.preventDefault());
+    await click(tg);
+    expect((api as ReturnType<typeof createMockApi>).contactEvents.map((e) => e.action)).toEqual([
+      "open",
+      "telegram",
+    ]);
   });
 
   it("«заявка, не бронь»: ни на одном экране обоих языков нет «брон»", async () => {
@@ -191,8 +225,8 @@ describe("заявка от начала до конца", () => {
     });
     // Уведомления не отмечали — их согласия в заявке нет
     expect(created[0]).not.toHaveProperty("notifyConsentId");
-    // После отправки звонок — первым делом, черновик стёрт
-    expect(document.querySelector(`.sent a[href="tel:${VENUE.phone}"]`)).not.toBeNull();
+    // После отправки связаться — первым делом, черновик стёрт
+    expect(byText(".sent button", "Связаться")).not.toBeNull();
     expect(window.sessionStorage.getItem(`bayramm.web.draft.${VENUE.slug}`)).toBeNull();
   });
 
@@ -273,7 +307,7 @@ describe("заявка от начала до конца", () => {
     expect(api.created).toHaveLength(1);
   });
 
-  it("вне Telegram — понятная ссылка в бота на эту площадку, телефон на месте", async () => {
+  it("вне Telegram — понятная ссылка в бота на эту площадку, контакты на месте", async () => {
     await mount({ path: FORM_PATH, identity: "guest" });
     const link = await waitFor(
       () => document.querySelector<HTMLAnchorElement>('a[href^="https://t.me/"]'),
@@ -282,7 +316,25 @@ describe("заявка от начала до конца", () => {
     expect(link.getAttribute("href")).toBe(`https://t.me/bayramm_demo_bot?startapp=vendor_${VENUE.slug}`);
     expect(link.textContent).toContain("Открыть в Telegram");
     expect(document.querySelector("form")).toBeNull();
-    await waitFor(() => document.querySelector(`a[href="tel:${VENUE.phone}"]`), "телефон площадки");
+    await waitFor(() => byText(".contact button", "Связаться"), "контакты площадки");
+  });
+});
+
+describe("дата из календаря витрины", () => {
+  it("выбрали день в календаре витрины — «Оставить заявку» открывает форму с этой датой", async () => {
+    await mount({ path: VENUE_PATH });
+    await waitFor(() => document.querySelector("h1")?.textContent === VENUE.name, "карточка площадки");
+    expect(text()).toContain("Выберите день в календаре — он перейдёт в заявку.");
+    await click(calendarDay("15 окт"));
+    await waitFor(
+      () => new URLSearchParams(window.location.search).get("date") === "2026-10-15",
+      "дата в адресе витрины",
+    );
+    const cta = byText<HTMLAnchorElement>(".venue-bar a", "Оставить заявку");
+    expect(cta?.getAttribute("href")).toBe(`${FORM_PATH}?date=2026-10-15`);
+    await click(cta);
+    await waitFor(() => transferCheckbox(), "форма заявки");
+    expect(field("Дата события")?.textContent).toContain("15 окт");
   });
 });
 
@@ -301,7 +353,7 @@ describe("занятая дата", () => {
       expect(query.get("guests")).toBe("120");
     }
     expect(byText<HTMLAnchorElement>("a", "Кто свободен 8 окт")?.getAttribute("href")).toBe(
-      `/catalog?date=${BUSY_DAY}`,
+      `/catalog?category=hall&date=${BUSY_DAY}`,
     );
     // Кнопка заявки — без занятой даты: день выбирают в форме
     const cta = byText<HTMLAnchorElement>(".venue-bar a", "Заявка на другую дату");

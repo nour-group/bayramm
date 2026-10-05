@@ -5,9 +5,11 @@ import type {
   ClientRequest,
   ClientRequests,
   ConsentTexts,
+  ContactChannel,
   CreateRequest,
   Dictionaries,
   ListingCards,
+  ListingContacts,
   ListingDetail,
   Locale,
   RequestCreated,
@@ -66,9 +68,16 @@ export interface ClientApi {
   dictionaries(signal?: AbortSignal): Promise<Dictionaries>;
   /** Категории каталога с числом витрин (GET /catalog/categories); пустые клиент не показывает */
   catalogCategories(signal?: AbortSignal): Promise<CatalogCategories>;
-  /** Выдача категории (без category — залы); фильтры по полям витрины — query.filters (a.*) */
+  /** Выдача категории (без category у API — залы, весь каталог — category=all); фильтры по полям витрины — query.filters (a.*) */
   catalog(query: CatalogQuery, signal?: AbortSignal): Promise<CatalogPage>;
   listing(slug: string, signal?: AbortSignal): Promise<ListingDetail>;
+  /**
+   * «Связаться»: телефон и Telegram витрины — до заявки и без входа; сервер считает открытие
+   * (без клиента). signedIn — вошёл ли человек, для счётчиков
+   */
+  listingContacts(slug: string, signedIn: boolean): Promise<ListingContacts>;
+  /** Выбрал «Позвонить» или «Написать в Telegram» — только счётчик; ошибки не важны */
+  contactChoice(slug: string, channel: ContactChannel, signedIn: boolean): void;
   consentTexts(locale: Locale, signal?: AbortSignal): Promise<ConsentTexts>;
   bot(signal?: AbortSignal): Promise<BotInfo>;
   /** Карточки опубликованных площадок по id (избранное гостя); остальных в ответе нет */

@@ -411,7 +411,7 @@ describe("заявки: заметки и «связались»", () => {
 });
 
 describe("клиенты", () => {
-  it("поиск — по номеру заявки и id; по имени — ничего; модератору — 403", async () => {
+  it("поиск — по номеру заявки и id; по имени — ничего; в списке — имя, вход, последняя заявка; модератору — 403", async () => {
     const byNo = await ok<ClientList>(api("manager", "GET", `/staff/clients?q=${ra.no}`));
     expect(byNo.items.map((c) => c.id)).toEqual([clientA]);
     expect(byNo.items[0]).toMatchObject({ ref: `C-${clientA.slice(0, 8)}`, requests: 2, blocked: false });
@@ -419,8 +419,11 @@ describe("клиенты", () => {
     expect(byRef.items.map((c) => c.id)).toContain(clientA);
     const byName = await ok<ClientList>(api("manager", "GET", "/staff/clients?q=Ops%20Client"));
     expect(byName).toEqual({ total: 0, items: [] });
-    // В списке — только псевдоним: ни имени, ни телефона
-    expect(JSON.stringify(byNo)).not.toContain("Ops Client");
+    // В списке — чтобы узнать человека: имя и буква фамилии, чем входит, последняя заявка;
+    // телефона нет
+    expect(byNo.items[0]?.displayName?.startsWith("Ops Client")).toBe(true);
+    expect(Array.isArray(byNo.items[0]?.signIn)).toBe(true);
+    expect([Number(ra.no), Number(rc.no)]).toContain(byNo.items[0]?.lastRequest?.publicNo);
     expect(JSON.stringify(byNo)).not.toContain(clientPhone.slice(4));
     expect(await status(api("moderator", "GET", "/staff/clients"))).toBe(403);
   });

@@ -2,7 +2,7 @@
    сообщения об ошибках, «показать телефон». Цвета — только токены (styles.css). */
 
 import { formatUzPhone } from "@bayramm/shared";
-import type { ListingStatus, PublishBlocker } from "@bayramm/shared/api/staff";
+import type { ListingStatus, PublishBlocker, RevealedListingContacts } from "@bayramm/shared/api/staff";
 import { Dialog } from "@bayramm/ui/react";
 import {
   createContext,
@@ -466,6 +466,93 @@ export function PhoneReveal({ label, load }: PhoneRevealProps) {
           </button>
         </>
       )}
+      {reveal.state === "error" && (
+        <span className="field-error" role="alert">
+          {apiErrorText(reveal.code)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+type ContactsReveal =
+  | { state: "hidden" }
+  | { state: "loading" }
+  | { state: "shown"; contacts: RevealedListingContacts }
+  | { state: "error"; code: string };
+
+interface ContactsRevealProps {
+  hasPhone: boolean;
+  hasTelegram: boolean;
+  /** Одно чтение открывает оба значения: в журнал доступа к ПДн — одна запись */
+  load: () => Promise<Result<RevealedListingContacts>>;
+}
+
+/**
+ * Контакты витрины для клиентов — телефон и Telegram: скрыты, пока не нажали «Показать»
+ * (одной кнопкой — оба); телефон — ссылка tel:, Telegram — ссылка на t.me
+ */
+export function ContactsReveal({ hasPhone, hasTelegram, load }: ContactsRevealProps) {
+  const [reveal, setReveal] = useState<ContactsReveal>({ state: "hidden" });
+  const onShow = useCallback(async () => {
+    setReveal({ state: "loading" });
+    const result = await load();
+    setReveal(result.ok ? { state: "shown", contacts: result.data } : { state: "error", code: result.code });
+  }, [load]);
+  const shown = reveal.state === "shown" ? reveal.contacts : null;
+
+  return (
+    <div className="contacts-reveal">
+      <div className="phone-row">
+        <span className="phone-label">{t.listingFields.phone}</span>
+        {shown ? (
+          shown.phone ? (
+            <a className="phone-value" href={`tel:${shown.phone}`}>
+              {formatUzPhone(shown.phone)}
+            </a>
+          ) : (
+            <span className="muted">{t.notSet}</span>
+          )
+        ) : hasPhone ? (
+          <span className="phone-mask">
+            <span aria-hidden="true">+998 •• ••• •• ••</span>
+            <span className="visually-hidden">{t.hidden}</span>
+          </span>
+        ) : (
+          <span className="muted">{t.phoneMissing}</span>
+        )}
+      </div>
+      <div className="phone-row">
+        <span className="phone-label">{t.telegramLabel}</span>
+        {shown ? (
+          shown.telegram ? (
+            <a
+              className="phone-value"
+              href={`https://t.me/${shown.telegram}`}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              @{shown.telegram}
+            </a>
+          ) : (
+            <span className="muted">{t.notSet}</span>
+          )
+        ) : hasTelegram ? (
+          <span className="phone-mask">
+            <span aria-hidden="true">@••••••••</span>
+            <span className="visually-hidden">{t.hidden}</span>
+          </span>
+        ) : (
+          <span className="muted">{t.telegramMissing}</span>
+        )}
+      </div>
+      {shown === null && (hasPhone || hasTelegram) ? (
+        <div>
+          <button type="button" className="btn btn-sm" onClick={onShow} disabled={reveal.state === "loading"}>
+            {t.contactsShow}
+          </button>
+        </div>
+      ) : null}
       {reveal.state === "error" && (
         <span className="field-error" role="alert">
           {apiErrorText(reveal.code)}

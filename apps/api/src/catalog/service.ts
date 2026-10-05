@@ -7,8 +7,9 @@
 //   · в каталоге — только активные витрины включённой категории с ценой «от» (из
 //     одобренных услуг), вместимостью — если категория её требует (залы) — и не
 //     меньше чем минимум фото категории (не меньше 3) готовых одобренных фото;
-//   · без category — залы, как в v0.1; фильтры по полям витрины (a.*) — из
-//     конфигурации категории, значения — параметрами запроса (@>, jsonb_path_exists);
+//   · без category — залы, как в v0.1; category=all — все включённые категории; фильтры по
+//     полям витрины (a.*) — из конфигурации категории, значения — параметрами запроса (@>,
+//     jsonb_path_exists);
 //   · guests отсекает витрины, где cap_max меньше (у категорий без вместимости — нет);
 //     date не отсекает — занятые в этот день целиком идут в конце при любой сортировке,
 //     частично занятые (режим parts) — среди свободных, с пометкой;
@@ -18,8 +19,9 @@
 //     за мероприятие (comparablePriceUzs в @bayramm/shared/api): с числом гостей —
 //     примерная сумма на это число, без него — цена за гостя (цена за мероприятие,
 //     делённая на cap_max с округлением вверх); без вместимости — цена как есть;
-//   · телефон витрины отдаётся в карточке до заявки — listingPhone (db/pii):
-//     у активного листинга он публичен.
+//   · контакты витрины (телефон, Telegram) — по кнопке «Связаться», до заявки и без входа:
+//     POST …/contact (revealListingContacts в db/pii — с событием «открыли»); в карточке —
+//     только какие каналы есть (listingContactKinds).
 
 import type {
   BusyParts,
@@ -42,10 +44,10 @@ import { type AttributeFilter, categoryConfig, readAttributes } from "@bayramm/s
 import { type RawBuilder, sql } from "kysely";
 import { GUEST, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
-import { listingPhone } from "../db/pii";
+import { type ListingContactValues, listingContactKinds, revealListingContacts } from "../db/pii";
 import { type ServiceRow, selectServices, serviceView } from "../listing-services/store";
 import { addDays } from "../time";
-import { type CatalogCursor, type CatalogParams, encodeCursor } from "./query";
+import { ALL_CATEGORIES, type CatalogCursor, type CatalogParams, encodeCursor } from "./query";
 
 /** Правило продукта «Фото обязательны»: меньше трёх — не публикуется (у категории бывает больше) */
 export const MIN_PUBLIC_PHOTOS = 3;
@@ -172,11 +174,17 @@ interface DayLoadRow {
   load: DateLoad;
 }
 
-/** Загрузка витрин категории на дату; без категории — пустое соединение */
+/**
+ * Загрузка витрин категории на дату; «all» — по каждой включённой категории тем же запросом
+ * (app.catalog_day_load на категорию); без категории — пустое соединение
+ */
 function dayLoadRelation(source: DayLoadSource): RawBuilder<DayLoadRow> {
-  return source.date !== null && source.category !== null
-    ? sql<DayLoadRow>`app.catalog_day_load(${source.category}, ${source.date}::date)`
-    : sql<DayLoadRow>`(select null::uuid as listing_id, null::text as load where false)`;
+  if (source.date === null || source.category === null)
+    return sql<DayLoadRow>`(select null::uuid as listing_id, null::text as load where false)`;
+  if (source.category === ALL_CATEGORIES)
+    return sql<DayLoadRow>`(select d.listing_id, d.load from app.categories c
+      cross join lateral app.catalog_day_load(c.code, ${source.date}::date) d where c.enabled)`;
+  return sql<DayLoadRow>`app.catalog_day_load(${source.category}, ${source.date}::date)`;
 }
 
 function loadOn(source: DayLoadSource): RawBuilder<DateLoad> {
@@ -351,7 +359,7 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
   const rows = await withActor(db, GUEST, (trx) =>
     publicListings(trx, source)
       .select(key.as("sort_key"))
-      .where("l.category_code", "=", category)
+      .$if(category !== ALL_CATEGORIES, (qb) => qb.where("l.category_code", "=", category))
       .$if(district !== null, (qb) => qb.where("l.district_code", "=", district as string))
       .$if(guests !== null, (qb) =>
         qb.where(sql<boolean>`(l.cap_max is null or l.cap_max >= ${guests as number})`),
@@ -503,13 +511,13 @@ export async function getListingDetail(
         "l.attributes",
         "l.video_links",
         "l.parallel_capacity",
-        // Телефон активного листинга публичен (правило «телефон виден сразу»)
-        listingPhone("l.id").as("phone"),
+        // Какие контакты есть — без самих значений: они по «Связаться» (POST …/contact)
+        listingContactKinds("l.id").as("contact_channels"),
       ])
       .where("l.slug", "=", slug)
       .executeTakeFirst();
     if (row === undefined) return null;
-    if (row.phone === null) {
+    if (!row.contact_channels.includes("phone")) {
       // Опубликовать листинг без телефона база не даёт (listing_publish_blockers)
       console.error("catalog: active listing without public phone", { listingId: row.id });
       return null;
@@ -540,9 +548,52 @@ export async function getListingDetail(
       services,
       parallelCapacity: row.parallel_capacity,
       photos: photos.flatMap((p) => photo(p.storage_key, p.width, p.height) ?? []),
-      phone: row.phone,
+      contactChannels: row.contact_channels,
       busyDates: busy.busyDates,
       busyParts: busy.busyParts,
     } satisfies ListingDetail;
+  });
+}
+
+// ── контакты витрины ───────────────────────────────────────────────────────
+
+/**
+ * POST /catalog/listings/:slug/contact { action: "open" }: контакты опубликованной витрины и
+ * событие «открыли» (без клиента); null — нет такой опубликованной
+ */
+export function openListingContacts(
+  db: Db,
+  slug: string,
+  source: "tma" | "web",
+  signedIn: boolean,
+): Promise<ListingContactValues | null> {
+  return withActor(db, GUEST, async (trx) => {
+    const listing = await trx
+      .selectFrom("app.listings")
+      .select("id")
+      .where("slug", "=", slug)
+      .where("status", "=", "active")
+      .executeTakeFirst();
+    return listing === undefined ? null : revealListingContacts(trx, listing.id, source, signedIn);
+  });
+}
+
+/**
+ * { action: "phone" | "telegram" }: клиент выбрал канал — событие без клиента. false — нет такой
+ * опубликованной витрины
+ */
+export function recordContactChoice(
+  db: Db,
+  slug: string,
+  channel: "phone" | "telegram",
+  source: "tma" | "web",
+  signedIn: boolean,
+): Promise<boolean> {
+  return withActor(db, GUEST, async (trx) => {
+    const { rows } = await sql<{ recorded: boolean }>`
+      select app.record_contact_event(l.id, ${channel}::text, ${source}::text, ${signedIn}::boolean) as recorded
+      from app.listings l where l.slug = ${slug} and l.status = 'active'
+    `.execute(trx);
+    return rows[0]?.recorded === true;
   });
 }

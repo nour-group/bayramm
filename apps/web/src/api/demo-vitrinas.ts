@@ -16,6 +16,16 @@ import { addDays } from "../format";
    подарков). Названия вымышленные, телефоны — в несуществующем коде +998 00. Цены «от»
    считаются так же, как у сервера: самая низкая цена услуг, входящих в цену «от». */
 
+/**
+ * Демо-витрина: карточка, как её отдаёт API, и её контакты — их API отдаёт только по «Связаться»
+ * (POST …/contact); демо-API — так же (mock.ts)
+ */
+export type DemoListing = ListingDetail & { readonly phone: string; readonly telegram: string | null };
+
+/** Telegram демо-витрины — у каждой второй: имя из адреса страницы (lola-zali → lola_zali) */
+export const demoTelegram = (slug: string, n: number): string | null =>
+  n % 2 === 0 ? slug.replace(/-/g, "_") : null;
+
 /** UUID из числа — формат как у Postgres; тот же вид, что у демо-залов (mock.ts) */
 export const demoUuid = (kind: number, n: number) =>
   `00000000-0000-4000-8${kind}00-${n.toString(16).padStart(12, "0")}`;
@@ -534,7 +544,7 @@ const DESCRIPTION: Localized = {
 const FIRST = 101;
 
 /** Демо-витрины категорий; занятость считается от today, чтобы календарь был живой */
-export function demoVitrinas(today: string): ListingDetail[] {
+export function demoVitrinas(today: string): DemoListing[] {
   return SPECS.map((spec, i) => {
     const n = FIRST + i;
     const id = demoUuid(1, n);
@@ -595,9 +605,11 @@ export function demoVitrinas(today: string): ListingDetail[] {
       services,
       parallelCapacity: spec.parallelCapacity ?? 1,
       photos,
+      contactChannels: demoTelegram(spec.slug, n) ? ["phone", "telegram"] : ["phone"],
       phone: `+998000000${String(n).padStart(3, "0")}`,
+      telegram: demoTelegram(spec.slug, n),
       busyDates: (spec.busy ?? []).map((offset) => addDays(today, offset)).sort(),
       busyParts: busyParts.sort((a, b) => a.date.localeCompare(b.date)),
-    } satisfies ListingDetail;
+    } satisfies DemoListing;
   });
 }

@@ -8,10 +8,12 @@ import {
   horizontalOverflow,
   isDesktop,
   open,
+  openContacts,
   PATHS,
   prepare,
   T,
   TODAY,
+  VENUE,
   vitrina,
 } from "../support/web";
 
@@ -285,7 +287,9 @@ test.describe("категории в Telegram", () => {
     await expect(page.locator(".landing, .site-footer")).toHaveCount(0);
     await page.locator(".cards .card-link").first().click();
     await expect(page.locator(".venue-head h1")).toHaveText(CAR.name);
-    await expect(page.locator(`a.contact-phone[href="tel:${CAR.phone}"]:visible`)).toHaveCount(1);
+    const contacts = await openContacts(page);
+    await expect(contacts.locator(`a[href="tel:${CAR.phone}"]`)).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect
       .poll(async () => (await telegramState(page)).main)
       .toEqual({ text: ru.pfReq, visible: true });
@@ -293,5 +297,48 @@ test.describe("категории в Telegram", () => {
     await expect(page).toHaveURL((url) => url.pathname === PATHS.request(CAR.slug));
     // Дата из каталога — в форме
     await expect(fieldOf(page, ru.rqDate)).toContainText(ru.dayMonth(8, "окт"));
+  });
+});
+
+test.describe("каталог «Все» и дата с витрины", () => {
+  test("каталог без раздела — «Все»: витрины всех разделов с подписью раздела, переключение туда и обратно", async ({
+    page,
+  }) => {
+    await prepare(page);
+    await open(page, PATHS.catalog, ".card", { guest: true });
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catAllTitle);
+    const chips = page.locator(".cat-switch a");
+    await expect(chips.first()).toHaveText(ru.catAll);
+    await expect(chips.first()).toHaveAttribute("aria-current", "page");
+    // Карточка называет свой раздел: в общей выдаче иначе не понять, зал это или кортеж
+    await expect(page.locator(".cards .card").first()).toContainText(
+      new RegExp(Object.values(ru.catName).join("|")),
+    );
+    await chips.filter({ hasText: ru.catName.car }).click();
+    await expect(page).toHaveURL((url) => url.pathname === PATHS.catalog && url.search === "?category=car");
+    await expect(page.locator(".cards .card")).toHaveCount(3);
+    await chips.first().click();
+    await expect(page).toHaveURL((url) => url.pathname === PATHS.catalog && url.search === "");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catAllTitle);
+  });
+
+  test("день из календаря витрины — в форме заявки", async ({ page }) => {
+    await prepare(page);
+    await open(page, PATHS.venue(VENUE.slug), ".venue-head h1");
+    // Свободный день этого месяца: календарь витрины открыт на нём
+    const day = [14, 15, 16, 17, 18, 19, 20]
+      .map((n) => addDays(TODAY, n))
+      .find((d) => !VENUE.busyDates.includes(d));
+    if (!day) throw new Error("нет свободного дня у демо-зала");
+    await page
+      .locator(".venue .ui-cal button.ui-cal-day:not([aria-disabled])")
+      .filter({ hasText: new RegExp(`^${Number(day.slice(8))}$`) })
+      .first()
+      .click();
+    await expect(page).toHaveURL((url) => url.searchParams.get("date") === day);
+    const cta = page.locator(".venue-bar").getByRole("link", { name: ru.pfReq });
+    await expect(cta).toHaveAttribute("href", `${PATHS.request(VENUE.slug)}?date=${day}`);
+    await cta.click();
+    await expect(fieldOf(page, ru.rqDate)).toContainText(formatDayMonth(day, ru));
   });
 });

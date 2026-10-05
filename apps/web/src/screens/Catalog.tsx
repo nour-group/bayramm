@@ -1,7 +1,7 @@
 import type { CatalogSort } from "@bayramm/shared/api";
 import { DateField, Dialog, NumberStepper, Select } from "@bayramm/ui/react";
 import { useEffect, useId, useRef, useState } from "react";
-import { categoryName, clientCategory, hasCalendar, hasCapacity, hasDistrict } from "../categories";
+import { categoryName, hasCalendar, hasCapacity, hasDistrict } from "../categories";
 import { AttrFiltersForm } from "../components/AttrFilters";
 import { useCalendarTexts } from "../components/Calendar";
 import { CategorySwitch } from "../components/Categories";
@@ -15,6 +15,7 @@ import { hrefFor, useNav } from "../router";
 import {
   busyLast,
   type CatalogFilters,
+  catalogCategory,
   DATE_HORIZON_DAYS,
   DEFAULT_SORT,
   filtersQuery,
@@ -28,7 +29,8 @@ import {
 } from "./catalog-feed";
 import { attrFilterCount, filterSpecs } from "./catalog-filters";
 
-/* Каталог раздела (/catalog?category=…): заголовок, переключатель разделов, фильтры, порядок и
+/* Каталог: весь (/catalog — раздел «Все») или раздел (/catalog?category=…): заголовок,
+   переключатель разделов, фильтры, порядок и
    сетка карточек. Всё — в адресе. Фильтры — одним блоком «Фильтры»: на телефоне и планшете
    дата (гости и район — где они есть) над выдачей, поля витрины — в шторке «Фильтры»; на
    компьютере весь блок — колонкой слева, прилипает при прокрутке. */
@@ -98,22 +100,23 @@ export function Catalog() {
   const { query, navigate } = useNav();
   const today = tashkentToday(now());
   const filters = readFilters(query, today);
-  const category = clientCategory(filters.category);
-  const specs = filterSpecs(category);
+  // null — «Все»: разделы вперемешку, фильтров раздела (гости, район, поля витрины) нет
+  const category = catalogCategory(filters.category);
+  const specs = category ? filterSpecs(category) : [];
   const feed = useCatalogFeed(api, filters);
   const calendarTexts = useCalendarTexts();
   const ids = useId();
   const sentinel = useRef<HTMLDivElement>(null);
   const filtersButton = useRef<HTMLButtonElement>(null);
   const [sheet, setSheet] = useState(false);
-  const name = categoryName(category.code, t, lang) ?? category.code;
-  const title = t.catTitle(name);
+  const name = category ? (categoryName(category.code, t, lang) ?? category.code) : t.catAll;
+  const title = category ? t.catTitle(name) : t.catAllTitle;
   useDocumentTitle(title);
 
   const setFilters = (patch: Partial<CatalogFilters>) =>
     navigate(hrefFor({ name: "catalog" }, filtersQuery({ ...filters, ...patch })), { replace: true });
   const reset = () =>
-    navigate(hrefFor({ name: "catalog" }, filtersQuery(noFiltersIn(category.code))), { replace: true });
+    navigate(hrefFor({ name: "catalog" }, filtersQuery(noFiltersIn(filters.category))), { replace: true });
 
   // Подгрузка при прокрутке к концу. IntersectionObserver есть не везде — тогда кнопка
   const { loadMore } = feed;
@@ -129,7 +132,9 @@ export function Catalog() {
 
   const districts = dicts.status === "ready" ? dicts.data.districts : [];
   const items = busyLast(feed.items);
-  const sorts = sortsOf(category.code);
+  const sorts = sortsOf(filters.category);
+  const capacity = category !== null && hasCapacity(category);
+  const district = category !== null && hasDistrict(category);
   const extra = attrFilterCount(filters.attrs);
   const side = specs.length > 0;
   const filtered = hasFilters(filters);
@@ -137,7 +142,8 @@ export function Catalog() {
   // категорий единицы разные (за час и за мероприятие) — просим смотреть на подпись
   const priceSort = filters.sort !== "capacity_desc";
   const units = new Set(items.map((i) => i.priceUnit));
-  const hallUnits = units.has("per_guest") && units.has("per_event");
+  // В «Все» единицы разных разделов — только подпись у суммы
+  const hallUnits = category !== null && units.has("per_guest") && units.has("per_event");
   const sortHint = !priceSort
     ? null
     : hallUnits
@@ -170,9 +176,9 @@ export function Catalog() {
     cutting.length > 0
       ? {
           title: filters.guests !== null ? t.emptyGuestsH(filters.guests) : t.emptyH,
-          text: hasCapacity(category) ? t.emptyHint : t.emptyHintCat,
+          text: capacity ? t.emptyHint : t.emptyHintCat,
         }
-      : { title: t.catSoonH(name), text: t.catSoonP };
+      : { title: category ? t.catSoonH(name) : t.catAllSoonH, text: t.catSoonP };
   const loaded = feed.status !== "loading" && feed.status !== "error";
   // Кнопка шторки показывает, сколько нашлось (пока выдача грузится — просто «Показать»)
   const apply = loaded ? t.filtersShowN(items.length, feed.hasMore) : t.filtersApply;
@@ -186,7 +192,7 @@ export function Catalog() {
         <p className="muted small">{t.catalogNote}</p>
       </div>
 
-      <CategorySwitch current={category.code} date={filters.date} />
+      <CategorySwitch current={filters.category} date={filters.date} />
 
       <div className={side ? "catalog-body has-side" : "catalog-body"}>
         <section className="filters-panel" aria-labelledby={`${ids}-filters`}>
@@ -194,7 +200,7 @@ export function Catalog() {
           <h2 className="section-title filters-title" id={`${ids}-filters`}>
             {t.moreFilters}
           </h2>
-          <div className={hasCapacity(category) || hasDistrict(category) ? "filters" : "filters solo"}>
+          <div className={capacity || district ? "filters" : "filters solo"}>
             <div className="field">
               <label className="field-label" htmlFor={`${ids}-date`}>
                 {t.fDate}
@@ -212,10 +218,10 @@ export function Catalog() {
                 onChange={(date) => setFilters({ date })}
               />
             </div>
-            {hasCapacity(category) ? (
+            {capacity ? (
               <GuestsField value={filters.guests} onCommit={(guests) => setFilters({ guests })} />
             ) : null}
-            {hasDistrict(category) ? (
+            {district ? (
               <div className="field">
                 <label className="field-label" htmlFor={`${ids}-district`}>
                   {t.fDistrict}
@@ -237,10 +243,10 @@ export function Catalog() {
             ) : null}
           </div>
           {/* Без календаря (цветы, торты, подарки) дата не отсекает — она уйдёт в заявку */}
-          {filters.date && !hasCalendar(category) ? (
+          {filters.date && category && !hasCalendar(category) ? (
             <p className="muted small date-note">{t.leadDateNote}</p>
           ) : null}
-          {side ? (
+          {side && category ? (
             <div className="filters-side">
               <AttrFiltersForm
                 category={category}
@@ -332,6 +338,7 @@ export function Catalog() {
                     eager={i < EAGER_CARDS}
                     priority={i === 0}
                     sizes={side ? CARD_PHOTO_SIZES_SIDE : CARD_PHOTO_SIZES}
+                    showCategory={category === null}
                   />
                 </li>
               ))}
@@ -372,11 +379,13 @@ export function Catalog() {
           </>
         }
       >
-        <AttrFiltersForm
-          category={category}
-          attrs={filters.attrs}
-          onChange={(attrs) => setFilters({ attrs })}
-        />
+        {category ? (
+          <AttrFiltersForm
+            category={category}
+            attrs={filters.attrs}
+            onChange={(attrs) => setFilters({ attrs })}
+          />
+        ) : null}
       </Dialog>
     </div>
   );

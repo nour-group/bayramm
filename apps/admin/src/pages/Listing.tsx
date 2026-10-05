@@ -7,7 +7,7 @@
    (@bayramm/shared/categories).
 
    Каждое сказано один раз: категория — плашкой в шапке и блоком «Категория» (сменить),
-   телефон для заявок — блоком формы («Показать» и «Сменить номер» вместе). У каждого пункта
+   телефон и Telegram для клиентов — блоком формы («Показать» и поля для новых значений вместе). У каждого пункта
    «чего не хватает» — переход туда, где он заполняется: услуги, фото, поля формы; проверка
    вендора (договор, СТИР…) — одной строкой со ссылкой на страницу вендора. */
 
@@ -19,7 +19,7 @@ import type {
   ListingStatus,
   PendingRevision,
   PublishBlocker,
-  RevealedPhone,
+  RevealedListingContacts,
   StaffDictionaries,
   VendorDetail,
 } from "@bayramm/shared/api/staff";
@@ -246,10 +246,11 @@ function CategoryListing({
     },
     [api, listing.id, listing.version, onChange, onReload],
   );
-  const loadPhone = useCallback(async () => {
-    const result = await api.post<RevealedPhone>(`/staff/listings/${listing.id}/phone`, {});
-    return result.ok ? ({ ok: true, data: result.data.phone } as const) : result;
-  }, [api, listing.id]);
+  // Телефон и Telegram — одним чтением (одна запись в журнале доступа к ПДн)
+  const loadContacts = useCallback(
+    () => api.post<RevealedListingContacts>(`/staff/listings/${listing.id}/phone`, {}),
+    [api, listing.id],
+  );
 
   const showReview = listing.status === "lead" || listing.status === "draft" || listing.status === "rejected";
   // Минимум фото — у категории (не меньше трёх) и в настройках платформы: больший из двух
@@ -264,7 +265,6 @@ function CategoryListing({
       <div className="listing-head">
         <p className="sub">
           <Link to={{ name: "vendor", id: listing.vendor.id }}>{vendorLabel(listing.vendor)}</Link>
-          {" · "}/{listing.slug}
         </p>
         <p>
           <CategoryChip code={listing.categoryCode} /> <StatusPill status={listing.status} />
@@ -344,7 +344,7 @@ function CategoryListing({
           readOnly={!can("listings.write")}
           moderated={moderated}
           onDirtyChange={setDirty}
-          phone={{ has: listing.hasPhone, load: loadPhone }}
+          contacts={{ hasPhone: listing.hasPhone, hasTelegram: listing.hasTelegram, load: loadContacts }}
         />
       </div>
     </div>
@@ -728,10 +728,11 @@ function History({ listing }: { listing: ListingDetail }) {
         <ol className="history">
           {listing.history.map((entry) => (
             <li key={`${entry.at}-${entry.to}`}>
-              <span className="sub">{formatMoment(entry.at)}</span>{" "}
+              <span className="sub">
+                {formatMoment(entry.at)} · {entry.actorName ?? t.historyBy[entry.actorKind]}
+              </span>
               {entry.from ? `${t.status[entry.from]} → ` : ""}
               <strong>{t.status[entry.to]}</strong>
-              <span className="sub"> · {entry.actorName ?? t.historyBy[entry.actorKind]}</span>
               {entry.reason && <p className="reason">{entry.reason}</p>}
             </li>
           ))}

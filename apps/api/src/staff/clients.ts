@@ -1,7 +1,8 @@
-// Клиенты в панели оператора. Клиент — псевдоним (id), имя из Telegram видно
-// только на странице одного клиента; телефон — только администратору, с
-// причиной и записью в журнал доступа к ПДн. Поиск — по id (или его началу) и
-// номеру заявки; по имени и телефону не ищем, выгрузки базы клиентов нет.
+// Клиенты в панели оператора. В списке — чтобы человека можно было узнать: имя из Telegram и
+// первая буква фамилии, чем входит (без значений), последняя заявка; полное имя и username —
+// на странице клиента; телефон — только администратору, с причиной и записью в журнал
+// доступа к ПДн. Поиск — по id (или его началу) и номеру заявки; по имени и телефону не ищем,
+// выгрузки базы клиентов нет.
 //
 //   GET  /staff/clients?q=&blocked=1&limit=&offset=   список, новые сверху (не больше 50 за раз)
 //   GET  /staff/clients/:id                           клиент, его заявки, журнал согласий
@@ -57,6 +58,20 @@ export function parseClientQuery(
 const selectClients = (trx: Tx) =>
   trx
     .selectFrom("app.clients as c")
+    .leftJoin(clientProfilesAs("cp"), "cp.client_id", "c.id")
+    .leftJoinLateral(
+      (eb) =>
+        eb
+          .selectFrom("app.requests as r")
+          .innerJoin("app.listings as l", "l.id", "r.listing_id")
+          .select(["r.public_no", "r.status", "l.name as listing_name"])
+          .whereRef("r.client_id", "=", "c.id")
+          .orderBy("r.created_at", "desc")
+          .orderBy("r.id")
+          .limit(1)
+          .as("lr"),
+      (j) => j.onTrue(),
+    )
     .select([
       "c.id",
       "c.created_at",
@@ -64,11 +79,26 @@ const selectClients = (trx: Tx) =>
       "c.locale",
       "c.blocked_at",
       "c.deleted_at",
+      "cp.first_name as display_first",
+      "cp.last_name as display_last",
+      "lr.public_no as last_no",
+      "lr.status as last_status",
+      "lr.listing_name as last_listing",
       sql<number>`(select count(*)::int from app.requests r where r.client_id = c.id)`.as("requests"),
       sql<Date | null>`(select max(r.created_at) from app.requests r where r.client_id = c.id)`.as(
         "last_request_at",
       ),
+      sql<("telegram" | "phone")[]>`array(select distinct i.kind::text from app.account_identities i
+        where i.account_id = c.account_id order by 1 desc)`.as("sign_in"),
     ]);
+
+/** «Азиза К.»: имя из Telegram и первая буква фамилии; без имени — null */
+export function clientDisplayName(first: string | null, last: string | null): string | null {
+  const name = first?.trim() ?? "";
+  const initial = last?.trim().charAt(0) ?? "";
+  if (name === "") return initial === "" ? null : `${initial.toUpperCase()}.`;
+  return initial === "" ? name : `${name} ${initial.toUpperCase()}.`;
+}
 
 type ClientRow = Awaited<ReturnType<ReturnType<typeof selectClients>["executeTakeFirstOrThrow"]>>;
 
@@ -76,6 +106,12 @@ function itemView(row: ClientRow): ClientListItem {
   return {
     id: row.id,
     ref: clientRef(row.id),
+    displayName: row.deleted_at === null ? clientDisplayName(row.display_first, row.display_last) : null,
+    signIn: row.sign_in,
+    lastRequest:
+      row.last_no === null || row.last_status === null || row.last_listing === null
+        ? null
+        : { publicNo: num(row.last_no), listingName: row.last_listing, status: row.last_status },
     createdAt: iso(row.created_at),
     lastSeenAt: iso(row.last_seen_at),
     locale: row.locale,

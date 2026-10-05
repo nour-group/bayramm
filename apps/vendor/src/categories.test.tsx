@@ -352,7 +352,8 @@ describe("витрины", () => {
     // Пилюль, уходящих за край экрана, больше нет: выбор — список с названием и категорией
     expect(container.querySelector(".vitrina-pills")).toBeNull();
     const trigger = container.querySelector(".vitrina-select button");
-    expect(container.querySelector(".vitrina-select label")?.textContent).toBe("Витрина");
+    // Подпись — действие, а не слово «Витрина»: на экране «Витрина» оно повторило бы заголовок
+    expect(container.querySelector(".vitrina-select label")?.textContent).toBe("Выберите витрину");
     expect(trigger?.textContent).toContain("Lola zali · Площадка / Тойхона");
     await click(trigger);
     expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
@@ -776,12 +777,13 @@ describe("карточка по категории", () => {
     expect(todos.map((li) => li.querySelector(".todo-text")?.textContent)).toEqual([
       "Добавьте услугу с ценой",
       "Загрузите фото: есть 0 из 3",
-      "Заполните данные витрины: Команда, Готовый материал через, дней",
+      // Подписи через «;»: у одной из них единица уже через запятую
+      "Заполните данные витрины: Команда; Готовый материал через, дней",
     ]);
     expect(todos.map((li) => li.querySelector("button")?.firstChild?.textContent)).toEqual([
       "К услугам",
       "К фото",
-      "Предложить изменения",
+      "Заполнить",
     ]);
     // «Данные витрины» — кнопкой чек-листа: форма предложения открыта, фокус — на первом поле
     await click(todos[2]?.querySelector("button"));
@@ -838,7 +840,7 @@ describe("чек-лист готовности", () => {
       missingAttributes: ["service_area"],
     };
     const todos = vendorTodos(card, categoryConfig("car"), vendorDict.ru, "ru", go);
-    expect(todos.map((todo) => todo.action?.label)).toEqual(["К услугам", "Предложить изменения"]);
+    expect(todos.map((todo) => todo.action?.label)).toEqual(["К услугам", "Заполнить"]);
     expect(todos[1]?.lines).toEqual([
       "Напишите описание на русском и узбекском",
       "Заполните данные витрины: Где работает",

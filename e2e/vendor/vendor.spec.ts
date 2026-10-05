@@ -174,6 +174,8 @@ test.describe("кабинет", () => {
     await expect(cards.first()).toContainText("Азиза");
     // Телефона клиента в списке нет — только в карточке
     await expect(page.locator(".rq-list a[href^='tel:']")).toHaveCount(0);
+    // Витрина одна — заявка не называет ни её, ни категорию
+    await expect(page.locator(".rq-list .rq-vitrina, .rq-list .chip-cat")).toHaveCount(0);
     await expectNoAxeViolations(page, "входящие");
     await expectHitAreas(page, "входящие", CONTROLS);
 
@@ -183,6 +185,9 @@ test.describe("кабинет", () => {
     const phone = page.locator("a.btn-phone");
     await expect(phone).toHaveAttribute("href", "tel:+998001234567");
     await expect(page.getByText("Нужен детский стол")).toBeVisible();
+    await expect(page.locator(".request .fact-vitrina")).toHaveCount(0);
+    // Открытие заявки в истории — «Просмотрена», а не название статуса «Ждёт ответа»
+    await expect(page.locator(".history-status")).toHaveText([t.st_new, t.histViewed]);
     await expectNoAxeViolations(page, "карточка заявки");
     await expectHitAreas(page, "карточка заявки", CONTROLS);
 
@@ -309,6 +314,10 @@ test.describe("кабинет", () => {
     await expect(page.getByText("Lola zali").first()).toBeVisible();
     const text = await page.locator("main").innerText();
     expect(text).not.toMatch(/★|рейтинг|reyting|отзыв|sharh|брон|bron/i);
+    // Изменения витрины — над фото: предложение на проверке и отказ видны без прокрутки вниз
+    const proposal = await page.locator("section.proposal").boundingBox();
+    const photos = await page.locator("section[aria-labelledby='photos-title']").boundingBox();
+    expect(proposal?.y ?? Number.POSITIVE_INFINITY).toBeLessThan(photos?.y ?? 0);
     await expectNoAxeViolations(page, "площадка");
     await expectHitAreas(page, "площадка", CONTROLS);
     expect(api.unexpected).toEqual([]);
@@ -626,7 +635,7 @@ test.describe("витрины в разных категориях", () => {
     await expectHitAreas(page, "витрина: чек-лист готовности", CONTROLS);
     await expectNoOverflow(page, "витрина: чек-лист готовности");
     // «Данные витрины» — форма предложения открывается, фокус — в первом поле
-    await ready.getByRole("button", { name: t.proposalStart }).first().click();
+    await ready.getByRole("button", { name: t.toFill }).first().click();
     await expect(page.locator("form.proposal-form input").first()).toBeFocused();
     // «Добавьте услугу с ценой» — в «Услуги» той же витрины
     await ready.getByRole("button", { name: t.toServices }).click();

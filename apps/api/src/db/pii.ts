@@ -71,6 +71,14 @@ export function hasListingPhone(column: string): RawBuilder<boolean> {
 }
 
 /**
+ * Какие контакты витрины вписаны — phone, telegram — без самих значений (pii.listing_contact_kinds).
+ * Карточка клиента (какие кнопки в «Связаться»), панель (что заполнено)
+ */
+export function listingContactKinds(column: string): RawBuilder<("phone" | "telegram")[]> {
+  return sql<("phone" | "telegram")[]>`pii.listing_contact_kinds(${sql.ref(column)})`;
+}
+
+/**
  * Телефон листинга по столбцу с его id, без причины: у активного — публичный (без
  * журнала), у остальных — только владельцу, с записью в журнал. Каталог (гость), кабинет вендора
  */
@@ -114,6 +122,42 @@ export function readListingPhone(trx: Tx, listingId: string, reason: string | nu
     trx,
     sql<PhoneRow>`select pii.read_listing_phone(${listingId}::uuid, ${reason}::text) as phone`,
   );
+}
+
+/** Контакты витрины для клиентов: телефон и Telegram (имя без @) */
+export interface ListingContactValues {
+  readonly phone: string | null;
+  readonly telegram: string | null;
+}
+
+/**
+ * Клиент нажал «Связаться»: контакты опубликованной витрины и событие open — одним вызовом
+ * (pii.reveal_listing_contacts; без события контактов не прочитать). null — витрина не
+ * опубликована или её нет. Каталог (гость или клиент)
+ */
+export async function revealListingContacts(
+  trx: Tx,
+  listingId: string,
+  source: "tma" | "web",
+  signedIn: boolean,
+): Promise<ListingContactValues | null> {
+  const { rows } = await sql<ListingContactValues>`
+    select phone, telegram from pii.reveal_listing_contacts(${listingId}::uuid, ${source}::text, ${signedIn}::boolean)
+  `.execute(trx);
+  const row = rows[0];
+  return row === undefined ? null : { phone: row.phone, telegram: row.telegram };
+}
+
+/** Телефон и Telegram витрины с причиной (неопубликованной — в журнал). Панель оператора */
+export async function readListingContacts(
+  trx: Tx,
+  listingId: string,
+  reason: string | null,
+): Promise<ListingContactValues> {
+  const { rows } = await sql<ListingContactValues>`
+    select phone, telegram from pii.read_listing_contacts(${listingId}::uuid, ${reason}::text)
+  `.execute(trx);
+  return { phone: rows[0]?.phone ?? null, telegram: rows[0]?.telegram ?? null };
 }
 
 /** Телефон входа пользователя вендора (в журнал). Панель оператора */
@@ -201,6 +245,24 @@ export async function saveListingPhone(trx: Tx, listingId: string, phone: string
       .values({ listing_id: listingId, public_phone: phone })
       .execute();
   }
+}
+
+/**
+ * Telegram витрины для клиентов (имя без @) рядом с телефоном; null — убрать. Строки контактов
+ * без телефона не бывает — false: сначала телефон. Панель оператора
+ */
+export async function saveListingTelegram(
+  trx: Tx,
+  listingId: string,
+  telegram: string | null,
+): Promise<boolean> {
+  const updated = await trx
+    .updateTable("pii.listing_contacts")
+    .set({ public_telegram: telegram })
+    .where("listing_id", "=", listingId)
+    .returning("listing_id")
+    .executeTakeFirst();
+  return updated !== undefined || telegram === null;
 }
 
 /** Профиль нового пользователя вендора: телефон входа и ФИО. Панель оператора */

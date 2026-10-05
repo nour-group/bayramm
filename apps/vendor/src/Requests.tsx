@@ -127,10 +127,12 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
           {textOf(t, `occ_${item.occasionCode}`)} · {formatDate(item.eventDate, t, true)}
           {item.dayPart ? ` · ${partName(t, item.dayPart).toLowerCase()}` : ""}
         </span>
-        <span className="rq-vitrina">
-          <span className="chip chip-cat">{categoryName(lang, item.listing.categoryCode)}</span>
-          {showListing ? <span className="rq-vitrina-name">{item.listing.name}</span> : null}
-        </span>
+        {showListing ? (
+          <span className="rq-vitrina">
+            <span className="chip chip-cat">{categoryName(lang, item.listing.categoryCode)}</span>
+            <span className="rq-vitrina-name">{item.listing.name}</span>
+          </span>
+        ) : null}
         <span className="rq-facts">
           {item.guests === null ? null : (
             <span>

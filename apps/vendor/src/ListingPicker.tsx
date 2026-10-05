@@ -31,7 +31,7 @@ interface ListingPickerProps {
   readonly line?: boolean;
   /** Подпись варианта «все витрины» (входящие); нет — выбрать можно только одну */
   readonly allLabel?: string;
-  /** Имя группы для диктора: «Витрина», «Заявки какой витрины» */
+  /** Подпись выбора и имя группы для диктора: «Выберите витрину», «Заявки какой витрины» */
   readonly label?: string;
 }
 
@@ -44,7 +44,7 @@ export function ListingPicker({
   inSidebar = false,
   line = true,
   allLabel,
-  label = t.listingPicker,
+  label = t.pickListing,
 }: ListingPickerProps) {
   const id = useId();
   const current = listings.find((listing) => listing.id === value);

@@ -38,6 +38,10 @@ describe("ссылки на экраны клиента", () => {
     expect(clientCatalogPath({ date: "2026-12-12", guests: 200, district: "chilonzor" })).toBe(
       "/?date=2026-12-12&guests=200&district=chilonzor",
     );
+    // Залы — явно: каталог без категории — все разделы
+    expect(clientCatalogPath({ category: "hall", date: "2026-12-12" })).toBe(
+      "/?category=hall&date=2026-12-12",
+    );
     expect(clientCatalogPath({ date: "2026-12-12", guests: null, district: null })).toBe("/?date=2026-12-12");
     expect(clientCatalogPath({})).toBe("/");
   });

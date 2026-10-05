@@ -368,7 +368,7 @@ export const uz: Dict = {
   photoOf: (name: string, n: number, total: number) => `${name}, ${total} tadan ${n}-surat`,
   address: "Manzil",
   capacity: "Sigʻim",
-  callNote: "Toʻgʻridan-toʻgʻri qoʻngʻiroq qiling — raqam soʻrovsiz ham koʻrinadi.",
+  callNote: "Telefon va Telegram — bir bosishda, soʻrovsiz va kirishsiz.",
   rqName: "Sizga qanday murojaat qilaylik",
   rqPhoneHint: "+998 dan keyin 9 ta raqam",
   errRequired: "Bu maydonni toʻldiring",
@@ -710,4 +710,19 @@ export const uz: Dict = {
   emptyGuestsH: (n: number) => `${n} mehmon uchun hech kim topilmadi`,
   emptyActive: "Natijani hozir cheklayapti:",
   dropFilter: (label: string) => `Filtrni olib tashlash: ${label}`,
+  // «Связаться»: контакты витрины — по нажатию, до заявки и без входа
+  contactBtn: "Bogʻlanish",
+  contactH: "Hamkor bilan bogʻlanish",
+  contactP: "Toʻgʻridan-toʻgʻri qoʻngʻiroq qiling yoki yozing — soʻrov va kirish shart emas.",
+  contactCall: "Qoʻngʻiroq qilish",
+  contactTg: "Telegramda yozish",
+  contactErr: "Kontaktlarni olib boʻlmadi. Qayta urinib koʻring.",
+  // календарь витрины: выбранный день уходит в заявку
+  calPickHint: "Taqvimda kunni tanlang — u soʻrovga oʻtadi.",
+  // раздел каталога «Все»
+  catAll: "Barchasi",
+  catAllTitle: "Katalog: bayram uchun hammasi",
+  metaCatalogAllDesc:
+    "Toshkentda bayram uchun hammasi: toʻyxonalar, kortejlar, foto, tortlar va boshqalar — narxlar, boʻsh kunlar va hamkorlar kontaktlari.",
+  catAllSoonH: "Katalog tez orada toʻldiriladi",
 };

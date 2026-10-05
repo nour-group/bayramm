@@ -106,11 +106,13 @@ function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup, cat
     case "home":
       return { title: t.metaHomeTitle, description: t.metaHomeDesc };
     case "catalog": {
-      // У каждой категории — своя страница каталога; залы — без параметра. Название — как в
-      // приложении (глоссарий клиента): заголовок вкладки не меняется после загрузки
-      const code = isCategoryParam(category) ? category : DEFAULT_CATEGORY;
-      const name = categoryName(code, t, lang) ?? code;
-      return code === DEFAULT_CATEGORY
+      // У каждой категории — своя страница каталога; без параметра — весь каталог («Все»).
+      // Название — как в приложении (глоссарий клиента): заголовок вкладки не меняется после
+      // загрузки
+      if (!isCategoryParam(category))
+        return { title: site(t.catAllTitle), description: t.metaCatalogAllDesc };
+      const name = categoryName(category, t, lang) ?? category;
+      return category === DEFAULT_CATEGORY
         ? { title: site(t.catTitle(name)), description: t.metaCatalogDesc }
         : { title: site(t.catTitle(name)), description: t.metaCatDesc(name) };
     }

@@ -121,8 +121,10 @@ export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc";
 
 /**
  * GET /catalog/listings — параметры строки запроса. Всё необязательно.
- * category — код категории; без него — залы (hall), как в v0.1: у разных категорий разные
- * единицы цены, общей выдачи нет.
+ * category — код категории; без него — залы (hall), как в v0.1 (старые сборки клиента).
+ * category=all — все включённые категории одной выдачей (раздел «Все»): фильтров полей витрины,
+ * гостей и района там нет (они у каждой категории свои), «вместительнее» — тоже; цены разных
+ * единиц сравниваются как есть, подпись единицы — у каждой карточки.
  * guests — отсекает витрины с вместимостью в гостях (cap_max) меньше; у категорий без
  * вместимости не отсекает. date — не отсекает, а опускает занятые в этот день целиком в конец
  * выдачи (при любой сортировке); частично занятые (режим parts: занята часть дня) — среди
@@ -272,12 +274,40 @@ export interface ListingDetail extends ListingCard {
   readonly parallelCapacity: number;
   /** Готовые и одобренные фото; обложка первой */
   readonly photos: readonly Photo[];
-  /** Публичный телефон площадки. Отдаётся до заявки — правило продукта */
-  readonly phone: string;
-  /** Занятые целиком даты на ближайшие 180 дней, по возрастанию */
+  /**
+   * Как связаться: телефон и/или Telegram вписаны (самих значений здесь нет). Контакты — по
+   * кнопке «Связаться», до всякой заявки и без входа (правило продукта): POST …/contact
+   */
+  readonly contactChannels: readonly ContactChannel[];
+  /** Занятые целиком даты на весь срок выбора даты (366 дней), по возрастанию */
   readonly busyDates: readonly string[];
-  /** Частично занятые даты на ближайшие 180 дней (режим parts), по возрастанию */
+  /** Частично занятые даты на тот же срок (режим parts), по возрастанию */
   readonly busyParts: readonly BusyParts[];
+}
+
+// ── контакты витрины ───────────────────────────────────────────────────────
+
+export type ContactChannel = "phone" | "telegram";
+
+/**
+ * POST /catalog/listings/:slug/contact — клиент нажал «Связаться» или выбрал канал. Без входа.
+ *   { action: "open" }                → 200 ListingContacts: контакты (и событие «открыли»);
+ *   { action: "phone" | "telegram" }  → 204: выбрал «Позвонить» / «Написать в Telegram».
+ * signedIn — вошёл ли человек (для счётчиков: клиента событие не хранит). Источник — заголовок
+ * X-Bayramm-Source, как у заявок. Неопубликованная витрина — 404; чаще 30 раз в минуту с
+ * одного адреса — 429 rate_limited
+ */
+export type ContactAction = "open" | ContactChannel;
+
+export interface ContactEventInput {
+  readonly action: ContactAction;
+  readonly signedIn: boolean;
+}
+
+/** Контакты витрины: телефон +998…, Telegram — имя без @ (ссылка — https://t.me/<имя>) */
+export interface ListingContacts {
+  readonly phone: string | null;
+  readonly telegram: string | null;
 }
 
 // ── согласия ───────────────────────────────────────────────────────────────
@@ -406,7 +436,7 @@ export function clientRequestPath(requestId: string): string {
 
 /** Фильтры каталога в адресе; пустые не пишутся */
 export interface CatalogLinkFilters {
-  /** Категория; залы (hall) — без параметра, как в v0.1 */
+  /** Категория (залы — тоже явно: каталог без неё — все разделы) */
   readonly category?: string | null;
   readonly date?: string | null;
   readonly guests?: number | null;
@@ -415,5 +445,5 @@ export interface CatalogLinkFilters {
 
 /** Каталог с фильтрами — «похожие» на заявку: та же категория и дата, столько же гостей, тот же район */
 export function clientCatalogPath({ category, date, guests, district }: CatalogLinkFilters): string {
-  return `/${queryString({ category: category === "hall" ? null : category, date, guests, district })}`;
+  return `/${queryString({ category, date, guests, district })}`;
 }

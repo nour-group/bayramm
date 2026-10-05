@@ -19,8 +19,10 @@
    по одному; новое фото ждёт модератора. Удаление — через подтверждение. Порядок и обложку
    выбирает команда.
 
-   На компьютере — две колонки: фото слева, сведения карточки справа; правки — ниже во всю
-   ширину, поля формы парами (RU рядом с UZ). */
+   Порядок: чек-лист (если витрина не на сайте), изменения (предложение на проверке, отказ с
+   причиной и кнопка «Предложить» — до фото, а не после двух экранов сведений), затем фото и
+   сведения. На компьютере — две колонки: фото слева, сведения справа; изменения над ними во
+   всю ширину, поля формы парами (RU рядом с UZ). */
 
 import { isImageError } from "@bayramm/media";
 import { compressForUpload } from "@bayramm/media/browser";
@@ -314,7 +316,8 @@ export function vendorTodos(
   const blockers = new Set(listing.blockers);
   const todos: Todo[] = [];
   const toServices = { label: t.toServices, run: go.services };
-  const propose = { label: t.proposalStart, run: go.propose };
+  // Форма изменений — блок прямо под чек-листом со своей «Предложить изменения»: тут другая подпись
+  const propose = { label: t.toFill, run: go.propose };
   if (blockers.has("price")) todos.push({ key: "price", lines: [t.todoPrice], action: toServices });
   if (blockers.has("packages")) {
     const list =
@@ -336,7 +339,8 @@ export function vendorTodos(
   if (blockers.has("attributes") || listing.missingAttributes.length > 0) {
     const list =
       category && listing.missingAttributes.length > 0
-        ? listing.missingAttributes.map((key) => attributeLabel(lang, category, key)).join(", ")
+        ? // «;»: у подписи бывает единица через запятую («Готовый материал через, дней»)
+          listing.missingAttributes.map((key) => attributeLabel(lang, category, key)).join("; ")
         : t.blocker_attributes;
     todos.push({ key: "attributes", lines: [fill(t.todoAttributes, { list })], action: propose });
   }
@@ -568,6 +572,11 @@ function VenueCard({ listing, t, lang, owner, showName, vendorCode, navigate, on
 
       <Readiness listing={listing} category={category} t={t} lang={lang} owner={owner} go={go} />
 
+      {/* Изменения — сразу под чек-листом: предложение на проверке, отказ с причиной и сама
+        кнопка «Предложить» не прячутся под фото и сведениями (на телефоне — через два экрана).
+        Ключ — витрина: при смене витрины форма и предложения — заново */}
+      <Proposal key={listing.id} listing={listing} t={t} lang={lang} owner={owner} openSignal={propose} />
+
       <div className="venue-grid">
         {/* Ключ — витрина: галочка и ошибки загрузки другой витрины не переносятся.
           Не тот же, что у Proposal: ключи соседей в одном родителе обязаны различаться */}
@@ -662,9 +671,6 @@ function VenueCard({ listing, t, lang, owner, showName, vendorCode, navigate, on
           </div>
         </div>
       </div>
-
-      {/* Ключ — витрина: при смене витрины форма и предложения — заново */}
-      <Proposal key={listing.id} listing={listing} t={t} lang={lang} owner={owner} openSignal={propose} />
     </article>
   );
 }

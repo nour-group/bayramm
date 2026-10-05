@@ -227,6 +227,15 @@ export interface AppConsentTexts {
   version: number;
 }
 
+export interface AppContactEvents {
+  action: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<Int8>;
+  listing_id: string;
+  signed_in: boolean;
+  source: AppSource;
+}
+
 export interface AppDistricts {
   code: string;
   name_ru: string;
@@ -654,6 +663,10 @@ export interface PiiClientProfiles {
 export interface PiiListingContacts {
   listing_id: string;
   public_phone: string;
+  /**
+   * Telegram витрины для клиентов (имя без @); читать — pii.read_listing_contacts / reveal_listing_contacts
+   */
+  public_telegram: string | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -711,6 +724,7 @@ export interface DB {
   "app.consent_texts": AppConsentTexts;
   "app.consents": AppConsents;
   "app.consents_current": AppConsentsCurrent;
+  "app.contact_events": AppContactEvents;
   "app.districts": AppDistricts;
   "app.favorites": AppFavorites;
   "app.hub_codes": AppHubCodes;

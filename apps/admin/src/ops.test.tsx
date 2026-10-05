@@ -6,6 +6,7 @@ import type {
   AuditList,
   ClientDetail,
   ClientList,
+  ClientListItem,
   ListingList,
   OutboxHealth,
   RevisionDetail,
@@ -20,6 +21,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { detailText } from "./pages/Audit";
 import { tokenStore } from "./session";
 import { t } from "./texts";
 
@@ -339,6 +341,9 @@ describe("заявка: работа с заявкой", () => {
 const CLIENT: ClientDetail = {
   id: CLIENT_ID,
   ref: "C-1a2b3c4d",
+  displayName: "Aziza T.",
+  signIn: ["telegram", "phone"],
+  lastRequest: { publicNo: 1001, listingName: "Oqsaroy Hall", status: "new" },
   createdAt: "2026-09-01T06:00:00.000Z",
   lastSeenAt: "2026-09-28T06:00:00.000Z",
   locale: "uz",
@@ -374,27 +379,61 @@ const CLIENT: ClientDetail = {
 };
 
 describe("клиенты", () => {
-  it("список — только псевдонимы; поиск уходит как q", async () => {
-    const list: ClientList = {
-      total: 1,
-      items: [
-        {
-          id: CLIENT_ID,
-          ref: "C-1a2b3c4d",
-          createdAt: CLIENT.createdAt,
-          lastSeenAt: null,
-          locale: "uz",
-          blocked: true,
-          deleted: false,
-          requests: 3,
-          lastRequestAt: null,
-        },
-      ],
+  const ITEM: ClientListItem = {
+    id: CLIENT_ID,
+    ref: "C-1a2b3c4d",
+    displayName: "Aziza T.",
+    signIn: ["telegram", "phone"],
+    lastRequest: { publicNo: 1001, listingName: "Oqsaroy Hall", status: "contacted" },
+    createdAt: CLIENT.createdAt,
+    lastSeenAt: null,
+    locale: "uz",
+    blocked: true,
+    deleted: false,
+    requests: 3,
+    lastRequestAt: "2026-09-28T18:00:00.000Z",
+  };
+
+  it("список — человек, а не код: имя, вход, язык, последняя заявка; код — мелко; поиск уходит как q", async () => {
+    const nameless: ClientListItem = {
+      ...ITEM,
+      id: "00000000-0000-0000-0000-00000000c002",
+      ref: "C-7b21d0aa",
+      displayName: null,
+      signIn: ["phone"],
+      lastRequest: null,
+      blocked: false,
+      requests: 0,
+      lastRequestAt: null,
     };
+    const gone: ClientListItem = {
+      ...nameless,
+      id: "00000000-0000-0000-0000-00000000c003",
+      ref: "C-c4e8f517",
+      signIn: [],
+      deleted: true,
+    };
+    const list: ClientList = { total: 3, items: [ITEM, nameless, gone] };
     mockApi(staff("manager", MANAGER), { "GET /api/staff/clients": json(list) });
     await mount("/clients");
-    expect(text()).toContain("C-1a2b3c4d");
-    expect(text()).toContain(t.clientBlocked);
+    // Главная подпись и ссылка — имя; код клиента остаётся рядом, но не вместо имени
+    const link = (name: string) =>
+      [...container.querySelectorAll("a.row-link")].find((a) => a.textContent === name);
+    expect(link("Aziza T.")?.getAttribute("href")).toBe(`/clients/${CLIENT_ID}`);
+    expect(link("C-1a2b3c4d")).toBeUndefined();
+    expect(link(t.clientNoName)).toBeDefined();
+    expect(link(t.clientAccountDeleted)).toBeDefined();
+    const rows = [...container.querySelectorAll("tbody tr")].map((tr) => tr.textContent ?? "");
+    expect(rows[0]).toContain("C-1a2b3c4d");
+    expect(rows[0]).toContain("Telegram, телефон");
+    expect(rows[0]).toContain(t.locales.uz);
+    expect(rows[0]).toContain(`${t.requestNo(1001)} · Oqsaroy Hall`);
+    expect(rows[0]).toContain(t.requestStatus.contacted);
+    expect(rows[0]).toContain(t.clientBlocked);
+    expect(rows[1]).toContain("Телефон");
+    expect(rows[1]).toContain(t.clientNoRequests);
+    expect(rows[2]).toContain(t.signInNone);
+    expect(rows[2]).toContain(t.clientDeleted);
     const search = container.querySelector("input[type=search]");
     await type(search, "1001");
     await click(button(t.search));
@@ -412,7 +451,10 @@ describe("клиенты", () => {
       [`POST /api/staff/clients/${CLIENT_ID}/block`]: json(blocked),
     });
     await mount(`/clients/${CLIENT_ID}`);
-    expect(container.querySelector("h1")?.textContent).toContain("C-1a2b3c4d");
+    // Заголовок — имя из профиля; код клиента и способы входа — на странице, но не вместо имени
+    expect(container.querySelector("h1")?.textContent).toBe("Aziza");
+    expect(container.querySelector(".client-ref")?.textContent).toBe("C-1a2b3c4d");
+    expect(text()).toContain("Telegram, телефон");
     expect(text()).toContain("Aziza");
     expect(text()).toContain(t.consentPurposes.request_transfer);
     // Менеджеру телефон клиента не показывается
@@ -516,8 +558,71 @@ describe("журнал", () => {
     expect(url).toContain("type=listing");
     expect(url).toContain(`object=${LISTING_ID}`);
     expect(text()).toContain(t.auditActions["listing.update"]);
-    expect(text()).toContain("fields: name, price_from_uzs");
+    // Имена полей и ключи — словами; UUID вендора в подробностях не показываем
+    expect(text()).toContain(
+      `${t.auditDetailKeys.fields}: ${t.auditFields.name}, ${t.auditFields.price_from_uzs}`,
+    );
+    expect(text()).not.toContain(VENDOR_ID);
+    expect(text()).not.toContain("price_from_uzs");
     expect(container.querySelector(`a[href="/listings/${LISTING_ID}"]`)).not.toBeNull();
+  });
+
+  it("код действия людям не показываем; незнакомое действие — как записано", async () => {
+    const odd: AuditList = {
+      total: 2,
+      items: [
+        ...LIST.items,
+        { ...LIST.items[0], id: "2", action: "something.new", detail: {} } as AuditList["items"][number],
+      ],
+    };
+    mockApi(staff("admin", ADMIN), { "GET /api/staff/audit": json(odd) });
+    await mount("/audit");
+    expect(text()).toContain(t.auditActions["listing.update"]);
+    expect(text()).not.toContain("listing.update");
+    expect(text()).toContain("something.new");
+  });
+
+  it("подробности словами: ключи, поля, статусы; UUID не показываем", () => {
+    expect(
+      detailText({
+        fields: ["name", "unknown_col"],
+        from: "draft",
+        to: "review",
+        recipients: 2,
+        vendor_id: VENDOR_ID,
+        extra: { a: 1 },
+      }),
+    ).toBe(
+      [
+        `${t.auditDetailKeys.fields}: ${t.auditFields.name}, unknown_col`,
+        `${t.auditDetailKeys.from}: ${t.status.draft}`,
+        `${t.auditDetailKeys.to}: ${t.status.review}`,
+        `${t.auditDetailKeys.recipients}: 2`,
+        'extra: {"a":1}',
+      ].join(" · "),
+    );
+    expect(detailText({ vendor_id: VENDOR_ID })).toBe("");
+  });
+
+  it("действие в фильтре — группа («Заявки»), на сервер уходит начало кода; свой код из ссылки — тоже вариант", async () => {
+    mockApi(staff("admin", ADMIN), { "GET /api/staff/audit": json(LIST) });
+    await mount("/audit?action=listing.");
+    const select = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")].find((b) =>
+        b.textContent?.includes(label),
+      );
+    expect(select(t.auditActionGroups["listing."] ?? "")).toBeDefined();
+    // В поле нет подсказки с кодом, как раньше (listing.)
+    expect(container.querySelector("input[placeholder='listing.']")).toBeNull();
+    await click(select(t.auditActionGroups["listing."] ?? ""));
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find(
+        (o) => o.textContent === t.auditActionGroups["request."],
+      ),
+    );
+    await click(button(t.auditApply));
+    expect(calls.at(-1)?.url).toContain("action=request.");
+    expect(window.location.search).toBe("?action=request.");
   });
 
   it("вкладка «Просмотры телефонов» — журнал доступа к ПДн", async () => {

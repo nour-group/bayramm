@@ -354,6 +354,26 @@ describe("заявки", () => {
     expect(container.textContent).toContain("Мы обещаем клиенту ответ за 12 часов");
   });
 
+  it("витрина одна — список и карточка заявки её не называют: ни категории, ни имени", async () => {
+    await mount("/requests");
+    expect(container.querySelector(".rq")).not.toBeNull();
+    expect(container.querySelector(".rq-vitrina, .rq .chip-cat")).toBeNull();
+    await click(container.querySelector(".rq") ?? undefined);
+    expect(heading()).toBe("Заявка № 1001");
+    expect(container.querySelector(".fact-vitrina, .request .chip-cat")).toBeNull();
+    expect(container.querySelector(".facts")?.textContent).not.toContain("Test Hall");
+  });
+
+  it("история: открытие заявки — «Просмотрена», а не «Ждёт ответа» (так назван статус)", async () => {
+    await mount(`/requests/${REQUEST_ID}`);
+    expect([...container.querySelectorAll(".history-status")].map((el) => el.textContent)).toEqual([
+      "Новая",
+      "Просмотрена",
+    ]);
+    // Статус рядом с заголовком — прежний
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Ждёт ответа");
+  });
+
   it("просроченная — пометка «Просрочено» и сколько сверх срока", async () => {
     const created = Date.now() - 14 * HOUR;
     routes["GET /api/vendor/requests"] = () => ({
@@ -909,6 +929,21 @@ describe("площадка", () => {
     expect(
       container.querySelector('input:not([type="checkbox"]):not([type="file"]), textarea, select'),
     ).toBeNull();
+  });
+
+  it("изменения витрины — выше фото и сведений; «проверит команда» сказано один раз", async () => {
+    await mount("/card");
+    const proposal = container.querySelector(".proposal");
+    const grid = container.querySelector(".venue-grid");
+    expect(proposal).not.toBeNull();
+    // Предложение на проверке, отказ с причиной и «Предложить» — не двумя экранами ниже фото
+    expect(
+      proposal && grid && proposal.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(container.querySelector(".proposal .note")?.textContent).toBe(
+      "Предложить можно: название, описание, данные витрины и ссылки на видео.",
+    );
+    expect(container.textContent?.match(/проверяет команда|его проверит/g) ?? []).toHaveLength(1);
   });
 
   it("фото: предупреждение про лица на виду, без галочки файлы не выбрать; загрузка — после сжатия, с подтверждением", async () => {
