@@ -77,6 +77,8 @@ export function Inbox({
     [id, tab, onTab],
   );
 
+  // Витрина одна — на какой из них заявка, не вопрос: ни имени, ни категории
+  const showListing = listings.length > 1;
   const list = (
     <Requests
       {...screen}
@@ -97,7 +99,14 @@ export function Inbox({
 
   if (!split) {
     return id ? (
-      <RequestDetail key={id} id={id} navigate={navigate} headingRef={headingRef} {...screen} />
+      <RequestDetail
+        key={id}
+        id={id}
+        navigate={navigate}
+        headingRef={headingRef}
+        showListing={showListing}
+        {...screen}
+      />
     ) : (
       list
     );
@@ -113,6 +122,7 @@ export function Inbox({
             id={id}
             navigate={navigate}
             headingRef={headingRef}
+            showListing={showListing}
             split
             onChanged={changed}
             onLoaded={loaded}

@@ -7,9 +7,11 @@ import {
   type ClientRequests,
   type ClientSource,
   type ConsentTexts,
+  type ContactEventInput,
   type CreateRequest,
   type Dictionaries,
   type ListingCards,
+  type ListingContacts,
   type ListingDetail,
   type Locale,
   type RequestCreated,
@@ -49,6 +51,8 @@ interface CallOptions {
   /** Откуда заявка: tma — Mini App в Telegram (заголовок CLIENT_SOURCE_HEADER) */
   readonly source?: ClientSource;
   readonly signal?: AbortSignal | undefined;
+  /** Запрос дойдёт, даже если страница уходит (звонок, переход в Telegram) */
+  readonly keepalive?: boolean;
 }
 
 function url(base: string, path: string, query: CallOptions["query"]): string {
@@ -61,7 +65,7 @@ function url(base: string, path: string, query: CallOptions["query"]): string {
 }
 
 async function call<T>(fetchFn: Fetch, base: string, path: string, options: CallOptions = {}): Promise<T> {
-  const { method = "GET", query, body, auth, signal, source } = options;
+  const { method = "GET", query, body, auth, signal, source, keepalive } = options;
   const target = url(base, path, query);
 
   for (let attempt = 0; ; attempt++) {
@@ -78,6 +82,7 @@ async function call<T>(fetchFn: Fetch, base: string, path: string, options: Call
         body: body === undefined ? undefined : JSON.stringify(body),
         signal,
         credentials: "omit",
+        ...(keepalive ? { keepalive } : {}),
         // Личные данные не кладём в кэш браузера
         cache: auth ? "no-store" : "default",
       });
@@ -153,6 +158,20 @@ export function createHttpApi({
         limit: query.limit,
       }),
     listing: (slug, signal) => get<ListingDetail>(`/catalog/listings/${encodeURIComponent(slug)}`, signal),
+    listingContacts: (slug, signedIn) =>
+      call<ListingContacts>(fetchFn, base, `/catalog/listings/${encodeURIComponent(slug)}/contact`, {
+        method: "POST",
+        body: { action: "open", signedIn } satisfies ContactEventInput,
+        source,
+      }),
+    contactChoice: (slug, channel, signedIn) => {
+      void call<void>(fetchFn, base, `/catalog/listings/${encodeURIComponent(slug)}/contact`, {
+        method: "POST",
+        body: { action: channel, signedIn } satisfies ContactEventInput,
+        source,
+        keepalive: true,
+      }).catch(() => {});
+    },
     consentTexts: (locale: Locale, signal) => get<ConsentTexts>("/consent-texts", signal, { locale }),
     bot: (signal) => get<BotInfo>("/telegram/bot", signal),
     listingCards: (ids, signal) =>

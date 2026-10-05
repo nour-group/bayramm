@@ -4,10 +4,13 @@ import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
 import type { PhoneProof } from "../api/types";
 import { useLang, useServices } from "../context";
-import { formatPhone, PHONE_PREFIX, phoneDigits } from "../format";
+import { formatPhone, maskPhoneDigits, PHONE_PREFIX, phoneDigits } from "../format";
 import { HumanCheck, type HumanCheckHandle } from "./HumanCheck";
 
 /* Вход и добавление телефона кодом из сообщения: номер → «Получить код» → код → «Войти».
+   Номер — одно поле после неизменного +998, цифры группируются по мере ввода (вставка целиком,
+   с 998 и без, тоже понятна); «Получить код» — когда набраны все 9 цифр. Код — тоже одно
+   настоящее поле (вставка, автозаполнение из SMS, диктор), поверх — шесть клеток для глаз.
    Код генерирует сервер и шлёт провайдер (Telegram Gateway); чаще раза в минуту не
    попросить, пять неверных попыток — код сгорает. Что делать с кодом, решает onCode:
    войти (хаб) или добавить телефон к аккаунту (профиль).
@@ -82,6 +85,9 @@ interface PhoneCodeProps {
   readonly human?: HumanProof | null;
 }
 
+/** Цифр в коде из сообщения */
+const CODE_LENGTH = 6;
+
 type Step =
   | { readonly kind: "phone" }
   | { readonly kind: "code"; readonly phone: string; readonly until: number };
@@ -154,7 +160,7 @@ export function PhoneCode({ onCode, submitLabel, human = null }: PhoneCodeProps)
     event.preventDefault();
     if (step.kind !== "code") return;
     const clean = code.replace(/\D/g, "");
-    if (clean.length !== 6) {
+    if (clean.length !== CODE_LENGTH) {
       setError(t.authErrCode);
       return;
     }
@@ -185,11 +191,11 @@ export function PhoneCode({ onCode, submitLabel, human = null }: PhoneCodeProps)
               type="tel"
               inputMode="numeric"
               autoComplete="tel-national"
-              aria-label={t.authPhoneLabel}
+              placeholder="90 123 45 67"
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? `${id}-error` : undefined}
               value={digits}
-              onChange={(event) => setDigits(event.target.value)}
+              onChange={(event) => setDigits(maskPhoneDigits(phoneDigits(event.target.value)))}
             />
           </div>
         </div>
@@ -199,7 +205,11 @@ export function PhoneCode({ onCode, submitLabel, human = null }: PhoneCodeProps)
             {error}
           </p>
         ) : null}
-        <button type="submit" className="btn btn-secondary wide" disabled={busy}>
+        <button
+          type="submit"
+          className="btn btn-secondary wide"
+          disabled={busy || phoneDigits(digits).length !== 9}
+        >
           {t.authSendCode}
         </button>
       </form>
@@ -215,19 +225,33 @@ export function PhoneCode({ onCode, submitLabel, human = null }: PhoneCodeProps)
         <label className="fld-label" htmlFor={`${id}-code`}>
           {t.authCodeLabel}
         </label>
-        <input
-          id={`${id}-code`}
-          ref={codeInput}
-          className="field-input code-input"
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={7}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${id}-error` : undefined}
-          value={code}
-          onChange={(event) => setCode(event.target.value)}
-        />
+        <div className="otp">
+          <input
+            id={`${id}-code`}
+            ref={codeInput}
+            className="field-input otp-input"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${id}-error` : undefined}
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, CODE_LENGTH))}
+          />
+          {/* Клетки — только картинка: читает и вводит одно поле над ними. Следующая клетка
+              подсвечена, пока поле в фокусе */}
+          <span className="otp-cells" aria-hidden="true">
+            {Array.from({ length: CODE_LENGTH }, (_, i) => (
+              <span
+                // biome-ignore lint/suspicious/noArrayIndexKey: клетки по номеру цифры, порядок постоянный
+                key={i}
+                className={i === Math.min(code.length, CODE_LENGTH - 1) ? "otp-cell is-next" : "otp-cell"}
+              >
+                {code[i] ?? ""}
+              </span>
+            ))}
+          </span>
+        </div>
       </div>
       {error ? (
         <p className="fld-error" id={`${id}-error`} role="alert">

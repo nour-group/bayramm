@@ -85,7 +85,8 @@ describe("лендинг (/ в браузере)", () => {
       "Декор и оформление",
     ]);
     expect(tiles.map((a) => a.getAttribute("href"))[1]).toBe("/catalog?category=car");
-    expect(tiles[0]?.getAttribute("href")).toBe("/catalog");
+    // Залы — раздел, как остальные: каталог без раздела — «Все»
+    expect(tiles[0]?.getAttribute("href")).toBe("/catalog?category=hall");
     const soon = tiles
       .filter((a) => a.querySelector(".cat-soon"))
       .map((a) => a.querySelector(".cat-tile-name")?.textContent);
@@ -151,7 +152,7 @@ describe("лендинг (/ в браузере)", () => {
     await type(form.querySelector("input"), "120");
     await click(byText("form.ln-search button", "Показать"));
     await waitFor(() => window.location.pathname === "/catalog", "каталог");
-    expect(window.location.search).toBe("?guests=120");
+    expect(window.location.search).toBe("?category=hall&guests=120");
     await waitFor(() => document.querySelectorAll(".catalog .card").length > 0, "выдача");
     expect(field("Гости")?.value).toBe("120");
   });

@@ -1,5 +1,6 @@
 import { apiPath, type FetcherLike, proxyToApi } from "./api-proxy";
 import { cacheControlFor, isMissingAsset, missingAsset } from "./cache-headers";
+import { httpsRedirect } from "./https";
 import { contentSecurityPolicy, type SecurityOptions, withSecurityHeaders } from "./security-headers";
 
 /** Привязки воркера статического приложения */
@@ -44,7 +45,7 @@ function checkPaths(name: string, paths: readonly string[]): readonly string[] {
  * `run_worker_first: true` (иначе /api/* и HTML обойдут воркер) и
  * `not_found_handling: "single-page-application"` (фолбэк SPA делает ASSETS).
  *
- * Порядок: before → /api/* в API без префикса → статика с заголовками безопасности и
+ * Порядок: http:// → https:// (https.ts) → before → /api/* в API без префикса → статика с заголовками безопасности и
  * кэша (cache-headers.ts: файлы сборки — год, страницы — со сверкой).
  */
 export function createSiteWorker(options: SiteWorkerOptions = {}) {
@@ -55,6 +56,10 @@ export function createSiteWorker(options: SiteWorkerOptions = {}) {
   return {
     async fetch(request: Request, env: SiteEnv): Promise<Response> {
       const url = new URL(request.url);
+
+      // По http — только редирект: ни страницы, ни API (на своём компьютере и в dev — можно)
+      const insecure = options.dev ? null : httpsRedirect(request);
+      if (insecure) return insecure;
 
       const early = options.before?.(url);
       if (early) return early;

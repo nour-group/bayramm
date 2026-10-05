@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HSTS } from "./https";
 import {
   contentSecurityPolicy,
   PERMISSIONS_POLICY,
@@ -146,6 +147,11 @@ describe("securityHeaders", () => {
     expect(headers["Referrer-Policy"]).toBe(REFERRER_POLICY);
     expect(headers["Permissions-Policy"]).toBe(PERMISSIONS_POLICY);
     expect(headers["X-Frame-Options"]).toBe("DENY");
+    expect(headers["Strict-Transport-Security"]).toBe(HSTS);
+  });
+
+  it("сервер разработки (http) — без Strict-Transport-Security", () => {
+    expect(securityHeaders({ dev: true })).not.toHaveProperty("Strict-Transport-Security");
   });
 
   it("Permissions-Policy запрещает камеру, микрофон, геолокацию и оплату", () => {

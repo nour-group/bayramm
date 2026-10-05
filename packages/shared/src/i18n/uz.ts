@@ -330,7 +330,8 @@ export const uz: Dict = {
   anyDistrict: "barcha tumanlar",
   s_capacity: "Avval sigʻimi kattaroq",
   resetFilters: "Filtrlarni tozalash",
-  emptyHint: "Boshqa sana, kamroq mehmon yoki boshqa tumanni tanlab koʻring.",
+  emptyHint:
+    "Kamroq mehmon yoki boshqa tumanni tanlab koʻring — yoki quyidagi filtrlardan birini olib tashlang.",
   loadMore: "Yana koʻrsatish",
   done: "Tayyor",
   clearField: "Tozalash",
@@ -367,7 +368,7 @@ export const uz: Dict = {
   photoOf: (name: string, n: number, total: number) => `${name}, ${total} tadan ${n}-surat`,
   address: "Manzil",
   capacity: "Sigʻim",
-  callNote: "Toʻgʻridan-toʻgʻri qoʻngʻiroq qiling — raqam soʻrovsiz ham koʻrinadi.",
+  callNote: "Telefon va Telegram — bir bosishda, soʻrovsiz va kirishsiz.",
   rqName: "Sizga qanday murojaat qilaylik",
   rqPhoneHint: "+998 dan keyin 9 ta raqam",
   errRequired: "Bu maydonni toʻldiring",
@@ -391,9 +392,9 @@ export const uz: Dict = {
   errBlocked: "Bu hisobdan soʻrov yuborish cheklangan. Bizga yozing.",
   errDailyLimit: "Bugun bu hisobdan juda koʻp soʻrov yuborildi. Ertaga urinib koʻring.",
   errConsentOutdated: "Rozilik matni yangilandi. Uni oʻqib, qayta belgilang.",
-  tgOnlyH: "Soʻrovlar — Telegram orqali",
+  tgOnlyH: "Soʻrov — kirgandan keyin",
   tgOnlyP:
-    "Hamkor javob berishi uchun Bayramm ilovasini Telegramda oching: hisobingiz orqali kirasiz, parol kerak emas.",
+    "Hamkor sizga javob berishi va soʻrov holatini koʻrishingiz uchun kiring. Eng qulayi — Telegramda: hisobingiz orqali, parolsiz.",
   openInTg: "Telegramda ochish",
   tgUnavailable: "Bot havolasini olib boʻlmadi. Keyinroq urinib koʻring.",
   signInFailed: "Telegram orqali kirib boʻlmadi. Ilovani yopib, qayta oching.",
@@ -548,7 +549,7 @@ export const uz: Dict = {
   lnStepH: [
     "Kerakli narsa va sanani tanlang",
     "Qoʻngʻiroq qiling yoki soʻrov qoldiring",
-    "Toʻgʻridan-toʻgʻri kelishing",
+    "Hamkor bilan toʻgʻridan-toʻgʻri kelishing",
   ],
   lnStepP: [
     "Katalog narxlarni koʻrsatadi va sizning kuningizda kim boʻshligini belgilaydi.",
@@ -558,7 +559,7 @@ export const uz: Dict = {
   lnPromH: "Vaʼdalarimiz",
   lnPromT: ["Siz uchun bepul", "Narx darhol koʻrinadi", "Soʻrovsiz telefon", "12 soatda javob"],
   lnPromP: [
-    "Na komissiya, na soʻrov uchun toʻlov. Pul Bayramm orqali oʻtmaydi.",
+    "Komissiya ham, soʻrov uchun toʻlov ham yoʻq. Pul Bayramm orqali oʻtmaydi.",
     "Har bir hamkorning boshlangʻich narxi koʻrsatilgan. Narxsiz katalogga chiqilmaydi.",
     "Hamkor raqami uning sahifasida ochiq: soʻrovsiz ham qoʻngʻiroq qiling.",
     "Hamkor 12 soatda javob bermasa — shu sanaga oʻxshashlarini koʻrsatamiz.",
@@ -606,7 +607,7 @@ export const uz: Dict = {
   filterAtMost: "koʻpi bilan",
   filterAll: "Belgilanganlarning hammasi bor hamkorlarni koʻrsatamiz.",
   sortHintUnits: "Hamkorlarda narx birligi har xil — summa yonidagi yozuvga qarang.",
-  emptyHintCat: "Boshqa sanani tanlang yoki filtrlarning bir qismini olib tashlang.",
+  emptyHintCat: "Quyidagi filtrlardan birini olib tashlang — natija darhol yangilanadi.",
   leadDateNote:
     "Bu yerda oldindan buyurtma qilinadi, bandlik taqvimi yoʻq: sanani soʻrovda koʻrsatasiz, muddatni hamkor tasdiqlaydi.",
   dayPartial: (date: string) => `${date} — qisman band`,
@@ -690,4 +691,38 @@ export const uz: Dict = {
   calByVendor: "Taqvimni hamkor yuritadi.",
   leadNoteFrom: (n: number, date: string) =>
     `Kamida ${n} kun oldin buyurtma qilinadi: eng yaqin sana — ${date}.`,
+  // занятая дата: витрина и форма заявки
+  busyDayH: (date: string) => `${date} hamkor band`,
+  busyDayP: "Boshqa kunni tanlang yoki shu sanada kim boʻshligini koʻring.",
+  busyNearby: "Eng yaqin boʻsh kunlar",
+  busyOthers: (date: string) => `${date} kim boʻsh`,
+  reqOtherDate: "Boshqa sanaga soʻrov",
+  errDateBusy: "Bu kuni hamkor band — boshqa sanani tanlang",
+  rqDateWasBusy: (date: string) => `${date} hamkorda band — boshqa sanani tanlang.`,
+  // вход перед заявкой: гость сайта узнаёт о нём до кнопки, а не после
+  reqGuestNote: (phone: boolean): string =>
+    phone
+      ? "Soʻrov bepul. Uni kirgandan keyin yuborasiz — Telegram yoki telefon raqami orqali: shunda hamkor sizga javob bera oladi."
+      : "Soʻrov bepul. Uni Telegram orqali kirgandan keyin yuborasiz: shunda hamkor sizga javob bera oladi.",
+  rqDraftH: "Soʻrovga nima ketadi",
+  rqDraftNote: "Shu varaqda saytga kirsangiz, tanlaganlaringiz shaklda qoladi.",
+  // пустая выдача: что именно её отсекает
+  emptyGuestsH: (n: number) => `${n} mehmon uchun hech kim topilmadi`,
+  emptyActive: "Natijani hozir cheklayapti:",
+  dropFilter: (label: string) => `Filtrni olib tashlash: ${label}`,
+  // «Связаться»: контакты витрины — по нажатию, до заявки и без входа
+  contactBtn: "Bogʻlanish",
+  contactH: "Hamkor bilan bogʻlanish",
+  contactP: "Toʻgʻridan-toʻgʻri qoʻngʻiroq qiling yoki yozing — soʻrov va kirish shart emas.",
+  contactCall: "Qoʻngʻiroq qilish",
+  contactTg: "Telegramda yozish",
+  contactErr: "Kontaktlarni olib boʻlmadi. Qayta urinib koʻring.",
+  // календарь витрины: выбранный день уходит в заявку
+  calPickHint: "Taqvimda kunni tanlang — u soʻrovga oʻtadi.",
+  // раздел каталога «Все»
+  catAll: "Barchasi",
+  catAllTitle: "Katalog: bayram uchun hammasi",
+  metaCatalogAllDesc:
+    "Toshkentda bayram uchun hammasi: toʻyxonalar, kortejlar, foto, tortlar va boshqalar — narxlar, boʻsh kunlar va hamkorlar kontaktlari.",
+  catAllSoonH: "Katalog tez orada toʻldiriladi",
 };

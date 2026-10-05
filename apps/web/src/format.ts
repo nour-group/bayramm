@@ -198,6 +198,13 @@ export function phoneDigits(input: string): string {
   return digits.slice(0, 9);
 }
 
+/** Цифры номера по мере ввода — группами, как номер пишут и диктуют: «94 116 28 13» */
+export function maskPhoneDigits(digits: string): string {
+  return [digits.slice(0, 2), digits.slice(2, 5), digits.slice(5, 7), digits.slice(7, 9)]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function isPhoneDigits(digits: string): boolean {
   return /^\d{9}$/.test(digits);
 }

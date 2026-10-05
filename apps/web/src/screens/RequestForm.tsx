@@ -19,6 +19,7 @@ import { isApiError, isNotFound } from "../api/errors";
 import { categoryName, catText, clientCategory } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
 import { categoryHref } from "../components/Categories";
+import { ContactButton } from "../components/ContactSheet";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
@@ -29,16 +30,15 @@ import {
   addDays,
   formatDayMonth,
   formatMoney,
-  formatPhone,
   formatPrice,
   formatPriceFrom,
   isIsoDate,
+  maskPhoneDigits,
   metaLine,
   PHONE_PREFIX,
   phoneDigits,
   qtyQuestion,
   tashkentToday,
-  telHref,
   weekdayMon,
 } from "../format";
 import { useAsync, useDocumentTitle } from "../hooks";
@@ -55,6 +55,7 @@ import {
   type DraftService,
   type DraftValue,
   detailFields,
+  draftServiceIds,
   EMPTY_DRAFT,
   EVENT_MAX_DAYS_AHEAD,
   type Field,
@@ -96,6 +97,8 @@ function sendErrorText(error: unknown, t: Dict, capMax: number): string {
       return t.venueGoneP;
     case "lead_time_too_short":
       return t.errLeadServer;
+    case "date_busy":
+      return t.errDateBusy;
     case "invalid_request":
       return t.errForm;
     default:
@@ -104,10 +107,26 @@ function sendErrorText(error: unknown, t: Dict, capMax: number): string {
 }
 
 /** Поля из ответа 400/422 (details.hours, guests, eventDate…) — ошибки под полями формы */
-function serverFieldErrors(error: unknown, draft: Draft, t: Dict): Partial<Record<Field, string>> {
+function serverFieldErrors(
+  error: unknown,
+  draft: Draft,
+  category: CategoryConfig,
+  t: Dict,
+): Partial<Record<Field, string>> {
   if (!isApiError(error)) return {};
   const out: Partial<Record<Field, string>> = {};
   if (error.code === "lead_time_too_short") out.date = t.errLeadServer;
+  // Занятость сверил сервер (витрина во вкладке устарела): занят день или выбранная часть дня
+  if (error.code === "date_busy") {
+    if (error.details.includes("details.start_time")) {
+      const start = draft.values.start_time;
+      out["d.start_time"] =
+        typeof start === "string" && start
+          ? t.errPartBusy(t.dayPartName(dayPartOf(category, start)))
+          : t.errInvalid;
+    } else out.date = t.errDateBusy;
+    return out;
+  }
   for (const path of error.details) {
     const [head = "", key, index, sub] = path.split(".");
     if (head === "guests") out.guests = t.errGuests;
@@ -261,10 +280,8 @@ function Sent({ listing, created }: { listing: ListingDetail; created: RequestCr
         <Icon name="warnD" size={20} />
         <p>{t.sentConfirm}</p>
       </div>
-      <a className="btn btn-primary wide" href={telHref(listing.phone)}>
-        <Icon name="phone" size={17} />
-        {t.sentCall} {formatPhone(listing.phone)}
-      </a>
+      {/* Подтвердить дату — звонком или в Telegram: те же контакты, что на витрине */}
+      <ContactButton slug={listing.slug} name={listing.name} className="btn btn-primary wide" />
       <div className="callout">
         <Icon name="clockD" size={20} />
         <p>{t.sentTimer}</p>
@@ -561,7 +578,9 @@ function Form({
   const { t, lang } = useLang();
   const { query, navigate, back } = useNav();
   const today = tashkentToday(now());
-  const busy = useMemo(() => new Set(listing.busyDates), [listing.busyDates]);
+  // Занятые дни витрины и те, что сервер назвал занятыми при отправке (витрина во вкладке устарела)
+  const [lateBusy, setLateBusy] = useState<readonly string[]>([]);
+  const busy = useMemo(() => new Set([...listing.busyDates, ...lateBusy]), [listing.busyDates, lateBusy]);
   const user = webApp?.initDataUnsafe.user;
   const telegramName = user ? [user.first_name, user.last_name].filter(Boolean).join(" ") : "";
   const [draft, setDraft] = useState<Draft>(() =>
@@ -670,7 +689,11 @@ function Form({
         return;
       }
       setSendError(sendErrorText(error, t, listing.capMax ?? MAX_GUESTS));
-      setServerErrors(serverFieldErrors(error, draft, t));
+      setServerErrors(serverFieldErrors(error, draft, category, t));
+      // День занят целиком — в календаре формы он тоже станет занятым
+      const sentDate = draft.date;
+      if (isApiError(error) && error.code === "date_busy" && error.details.includes("eventDate") && sentDate)
+        setLateBusy((days) => [...days, sentDate]);
       // Текст согласия сменился на сервере: перечитываем, галочки ставятся заново
       if (isApiError(error) && error.code === "consent_text_not_current") onConsentsOutdated();
     } finally {
@@ -681,8 +704,12 @@ function Form({
   const dateLabel = (date: string) => `${formatDayMonth(date, t)}, ${t.weekdaysMon[weekdayMon(date)] ?? ""}`;
   // Подсказка у даты: срок заказа или что в этот день уже занято по частям
   const dateParts = draft.date ? (listing.busyParts.find((p) => p.date === draft.date)?.parts ?? []) : [];
-  const dateHint =
-    lead > 0
+  // Пришли с занятой датой (из каталога или витрины): её в форме нет — говорим почему
+  const asked = query.get("date");
+  const askedBusy = draft.date === null && isIsoDate(asked) && busy.has(asked) ? asked : null;
+  const dateHint = askedBusy
+    ? t.rqDateWasBusy(formatDayMonth(askedBusy, t))
+    : lead > 0
       ? t.leadNoteFrom(lead, formatDayMonth(minDate, t))
       : hasDayParts(category) && dateParts.length > 0
         ? t.partsTaken(dateParts.map((part) => t.dayPartName(part)).join(", "))
@@ -865,11 +892,7 @@ function Form({
             value={draft.phone}
             aria-invalid={errors.phone ? true : undefined}
             aria-describedby={describedBy(fieldId("phone"), errors.phone, true)}
-            onChange={(event) => update({ phone: event.target.value })}
-            onBlur={() => {
-              const digits = phoneDigits(draft.phone);
-              if (digits.length === 9) update({ phone: formatPhone(`${PHONE_PREFIX}${digits}`).slice(5) });
-            }}
+            onChange={(event) => update({ phone: maskPhoneDigits(phoneDigits(event.target.value)) })}
           />
         </div>
       </Fld>
@@ -952,24 +975,64 @@ function Form({
   );
 }
 
+/**
+ * Гость ещё не вошёл: что уже выбрано — услуги с витрины, дата и гости из адреса. Войдёт на сайте
+ * в этой вкладке (хаб вернёт сюда же) — всё это будет в форме: черновик живёт во вкладке
+ */
+function DraftSummary({ listing }: { listing: ListingDetail }) {
+  const { now } = useServices();
+  const { t, lang } = useLang();
+  const { query } = useNav();
+  const today = tashkentToday(now());
+  const category = categoryConfig(listing.categoryCode) ?? clientCategory(listing.categoryCode);
+  const date = query.get("date");
+  const day = isIsoDate(date) && date > today && !listing.busyDates.includes(date) ? date : null;
+  const guests = category.requestForm.guests === "hidden" ? null : parseGuests(query.get("guests"));
+  const ids = draftServiceIds(listing.slug);
+  const services = listing.services.filter((service) => ids.includes(service.id));
+  if (day === null && guests === null && services.length === 0) return null;
+  return (
+    <section className="section" aria-labelledby="rq-draft">
+      <h2 className="section-title" id="rq-draft">
+        {t.rqDraftH}
+      </h2>
+      <dl className="facts">
+        {day ? (
+          <div>
+            <dt>{t.rqDate}</dt>
+            <dd>{formatDayMonth(day, t)}</dd>
+          </div>
+        ) : null}
+        {guests !== null ? (
+          <div>
+            <dt>{t.rqG}</dt>
+            <dd>{guests}</dd>
+          </div>
+        ) : null}
+        {services.length > 0 ? (
+          <div>
+            <dt>{t.svcTitle}</dt>
+            <dd>{services.map((service) => pick(service.name, lang)).join(", ")}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <p className="muted small">{t.rqDraftNote}</p>
+    </section>
+  );
+}
+
+/** Гостю без входа: связаться с исполнителем можно и так — контакты без заявки */
 function ContactCard({ listing }: { listing: ListingDetail }) {
   const { t } = useLang();
-  const phone = formatPhone(listing.phone);
   return (
     <section className="section contact" aria-labelledby="guest-venue">
       <h2 className="section-title" id="guest-venue">
         {listing.name}
       </h2>
       <div className="contact-row">
-        <a className="contact-phone" href={telHref(listing.phone)}>
-          {phone}
-        </a>
-        <a className="btn btn-secondary" href={telHref(listing.phone)}>
-          <Icon name="phone" size={17} />
-          {t.sentCall}
-        </a>
+        <p className="muted small">{t.callNote}</p>
+        <ContactButton slug={listing.slug} name={listing.name} />
       </div>
-      <p className="muted small">{t.callNote}</p>
     </section>
   );
 }
@@ -1005,6 +1068,7 @@ export function RequestForm({ slug }: { slug: string }) {
     return (
       <div className="screen">
         <TelegramCta slug={slug} headingLevel={1} />
+        {listing.status === "ready" ? <DraftSummary listing={listing.data} /> : null}
         {listing.status === "ready" ? <ContactCard listing={listing.data} /> : null}
       </div>
     );

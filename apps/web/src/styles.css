@@ -653,6 +653,27 @@ textarea.field-input {
   margin-top: 4px;
 }
 
+/* Пустая выдача: что её ограничивает — каждое убирается по одному; затем «Сбросить фильтры» */
+.empty-filters {
+  display: grid;
+  justify-items: center;
+  gap: var(--gap-9);
+}
+
+.empty-cuts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cut-chip {
+  padding: 0 14px;
+}
+
 /* Категории каталога — чипы-ссылки лентой вбок (обе оси явно, ловушка №2); кольцо фокуса —
    внутри, снаружи его обрезал бы край ленты. У правого края лента гаснет: видно, что дальше
    есть ещё разделы (с планшета чипы — в несколько строк, ниже) */
@@ -669,8 +690,8 @@ textarea.field-input {
   overflow-y: hidden;
   list-style: none;
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to left, transparent, black 24px);
-  mask-image: linear-gradient(to left, transparent, black 24px);
+  -webkit-mask-image: linear-gradient(to left, transparent, black 40px);
+  mask-image: linear-gradient(to left, transparent, black 40px);
 }
 
 .cat-switch li {
@@ -870,30 +891,25 @@ textarea.field-input {
   font-size: var(--fs-13-5);
 }
 
-/* Сердечко «Сохранить»: рисунок 36px в углу фото, зона нажатия 44px — невидимым слоем.
-   Своё правило, а не в общем списке с position: relative (ловушка №8) */
+/* Сердечко «Сохранить»: кнопка 44px в углу фото — и видимая, и зона нажатия (на фото её ищут
+   глазами, мелкий круг теряется). Своё правило, а не в общем списке с position: relative
+   (ловушка №8) */
 .fav-btn {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 10px;
+  right: 10px;
   z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: var(--hit-min);
+  height: var(--hit-min);
   padding: 0;
   border: 1px solid var(--rule);
   border-radius: var(--r-999);
   background: var(--white);
   color: var(--plum);
   cursor: pointer;
-}
-
-.fav-btn::after {
-  content: "";
-  position: absolute;
-  inset: -5px;
 }
 
 /* На странице площадки — в строке с названием */
@@ -991,6 +1007,30 @@ textarea.field-input {
   color: var(--coral);
 }
 
+/* Дата из фильтра занята: что делать — другой день рядом или кто свободен в эту дату */
+.busy-day {
+  margin-top: 12px;
+}
+
+.busy-day-text {
+  display: grid;
+  gap: var(--gap-5);
+  min-width: 0;
+}
+
+.busy-alts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.busy-alts .btn {
+  padding: 0 14px;
+}
+
 .contact {
   padding: 16px;
   border: 1px solid var(--rule);
@@ -1002,7 +1042,16 @@ textarea.field-input {
   margin-top: 8px;
 }
 
-.contact-row {
+/* Окно «Связаться»: номер и Telegram крупно, рядом — кнопка канала */
+.contact-ways {
+  display: grid;
+  gap: var(--gap-12);
+  margin: 12px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contact-ways li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1010,16 +1059,35 @@ textarea.field-input {
   gap: var(--gap-9);
 }
 
-.contact-phone {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--hit-min);
+.contact-way-value {
   color: var(--plum);
   font-family: var(--font-display);
   font-size: var(--fs-19);
   font-weight: 600;
-  text-decoration: none;
   white-space: nowrap;
+}
+
+.contact-sheet-name {
+  margin-top: 0;
+}
+
+.contact-error {
+  display: grid;
+  gap: var(--gap-9);
+  justify-items: start;
+  margin: 12px 0;
+}
+
+.cal-pick-hint {
+  margin-bottom: 8px;
+}
+
+.contact-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
 }
 
 .packages {
@@ -1272,9 +1340,8 @@ textarea.field-input {
   display: contents;
 }
 
-/* Номер и подпись «Позвонить» в панели — только в карточке на компьютере: на телефоне
-   номер — в разделе «Телефон» выше, а звонок — кнопка-иконка */
-.bar-phone,
+/* Подпись «Связаться» в панели — только в карточке на компьютере: на телефоне — кнопка-иконка,
+   раздел «Связаться» — выше */
 .call-label {
   display: none;
 }
@@ -2255,6 +2322,20 @@ textarea.field-input {
   color: var(--coral);
 }
 
+/* Язык строкой: «Язык: Русский · Oʻzbekcha» — другой язык ссылкой-кнопкой */
+.footer-lang {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  font-size: var(--fs-13-5);
+}
+
+.footer-lang [aria-current] {
+  font-weight: 700;
+}
+
 .footer-copy {
   margin-top: 12px;
 }
@@ -2485,9 +2566,53 @@ textarea.field-input {
   justify-content: space-between;
   gap: var(--gap-12);
 }
-.code-input {
-  letter-spacing: 0.3em;
+/* Код из сообщения: одно настоящее поле поверх шести клеток. Поле прозрачное, но в фокусе —
+   его кольцо вокруг всех клеток; цифры рисуют клетки */
+.otp {
+  position: relative;
+  max-width: 336px;
+}
+
+.otp-cells {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--gap-7);
+  pointer-events: none;
+}
+
+.otp-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-11);
+  background: var(--white);
+  color: var(--ink);
+  font-size: var(--fs-19);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
+}
+
+.otp:focus-within .otp-cell.is-next {
+  border-color: var(--plum);
+  box-shadow: inset 0 0 0 1px var(--plum);
+}
+
+.otp-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border-color: transparent;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+}
+
+.otp-input::selection {
+  background: transparent;
 }
 .roles,
 .methods {
@@ -2817,7 +2942,7 @@ textarea.field-input {
     margin-top: 8px;
   }
 
-  /* Номер — в карточке справа: второй раз в описании он не нужен */
+  /* «Связаться» — в карточке справа: второй раз в описании он не нужен */
   .venue .contact {
     display: none;
   }
@@ -2844,14 +2969,6 @@ textarea.field-input {
 
   .venue-bar .bar-price .unit {
     font-size: var(--fs-13-5);
-  }
-
-  .venue-bar .unit-phone {
-    display: none;
-  }
-
-  .bar-phone {
-    display: inline-flex;
   }
 
   .venue-bar .icon-btn.call {

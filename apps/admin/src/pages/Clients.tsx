@@ -1,8 +1,10 @@
-/* Клиенты: список — только псевдонимы (C-…), поиск по номеру заявки или коду клиента;
-   по имени и телефону не ищем, выгрузки нет. Клиент: имя из Telegram, заявки, журнал
-   согласий, блокировка с причиной; телефон — только администратору и с причиной. */
+/* Клиенты: список — человек, а не код: имя из Telegram («Азиза К.»; нет имени — «Без имени» или
+   «Аккаунт удалён»), чем входит, язык, заявки и последняя из них; код клиента (C-…) — мелко
+   вторым текстом: по нему и по номеру заявки ищут (по имени и телефону не ищем, выгрузки нет).
+   Клиент: имя из Telegram, заявки, журнал согласий, блокировка с причиной; телефон — только
+   администратору и с причиной. */
 
-import type { ClientDetail, ClientList, RevealedPhone } from "@bayramm/shared/api/staff";
+import type { ClientDetail, ClientList, ClientListItem, RevealedPhone } from "@bayramm/shared/api/staff";
 import { Dialog, SearchField, Switch } from "@bayramm/ui/react";
 import { useCallback, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
@@ -27,6 +29,32 @@ function ClientState({ client }: { client: { blocked: boolean; deleted: boolean 
   if (client.blocked) return <Pill tone="warn">{t.clientBlocked}</Pill>;
   if (client.deleted) return <Pill tone="muted">{t.clientDeleted}</Pill>;
   return <Pill tone="outline">{t.clientActive}</Pill>;
+}
+
+type Person = Pick<ClientListItem, "displayName" | "deleted">;
+
+/** Как назвать клиента: имя из Telegram; нет имени — по причине (удалил аккаунт или вошёл без Telegram) */
+export function clientName(client: Person): string {
+  return client.displayName ?? (client.deleted ? t.clientAccountDeleted : t.clientNoName);
+}
+
+/** «Telegram, телефон» — чем входил (без самих значений) */
+export function signInText(signIn: ClientListItem["signIn"]): string {
+  const kinds = signIn.map((kind) => t.signInKinds[kind] ?? kind);
+  const text = kinds.join(", ");
+  return text === "" ? t.signInNone : text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** Последняя заявка клиента: № · витрина и статус плашкой; заявок нет — словами */
+function LastRequest({ client }: { client: ClientListItem }) {
+  const last = client.lastRequest;
+  if (!last) return <span className="muted">{t.clientNoRequests}</span>;
+  return (
+    <>
+      {t.requestNo(last.publicNo)} · {last.listingName}{" "}
+      <Pill tone="outline">{t.requestStatus[last.status]}</Pill>
+    </>
+  );
 }
 
 export function ClientsPage() {
@@ -112,20 +140,29 @@ export function ClientsPage() {
                   <li key={client.id} className="rcard rcard-tap">
                     <div className="rcard-head">
                       <Link to={{ name: "client", id: client.id }} className="rcard-link">
-                        {client.ref}
+                        {clientName(client)}
                       </Link>
                       <ClientState client={client} />
                     </div>
+                    <p className="rcard-meta">{client.ref}</p>
                     <dl className="rcard-facts">
-                      <dt>{t.colSince}</dt>
-                      <dd>{formatMoment(client.createdAt)}</dd>
-                      <dt>{t.colLastSeen}</dt>
-                      <dd>{formatMoment(client.lastSeenAt)}</dd>
+                      <dt>{t.clientSignIn}</dt>
+                      <dd>{signInText(client.signIn)}</dd>
+                      <dt>{t.clientLocale}</dt>
+                      <dd>{t.locales[client.locale] ?? client.locale}</dd>
                       <dt>{t.colRequests}</dt>
                       <dd>
                         {client.requests}
                         {client.lastRequestAt ? ` · ${formatMoment(client.lastRequestAt)}` : ""}
                       </dd>
+                      <dt>{t.colLastRequest}</dt>
+                      <dd>
+                        <LastRequest client={client} />
+                      </dd>
+                      <dt>{t.colSince}</dt>
+                      <dd>{formatMoment(client.createdAt)}</dd>
+                      <dt>{t.colLastSeen}</dt>
+                      <dd>{formatMoment(client.lastSeenAt)}</dd>
                     </dl>
                   </li>
                 ))}
@@ -139,9 +176,10 @@ export function ClientsPage() {
                   <thead>
                     <tr>
                       <th scope="col">{t.colClient}</th>
+                      <th scope="col">{t.colSignIn}</th>
+                      <th scope="col">{t.colRequests}</th>
                       <th scope="col">{t.colSince}</th>
                       <th scope="col">{t.colLastSeen}</th>
-                      <th scope="col">{t.colRequests}</th>
                       <th scope="col">{t.colState}</th>
                     </tr>
                   </thead>
@@ -150,17 +188,22 @@ export function ClientsPage() {
                       <tr key={client.id}>
                         <td>
                           <Link to={{ name: "client", id: client.id }} className="row-link">
-                            {client.ref}
+                            {clientName(client)}
                           </Link>
+                          <span className="sub">{client.ref}</span>
+                        </td>
+                        <td>
+                          {signInText(client.signIn)}
+                          <span className="sub">{t.locales[client.locale] ?? client.locale}</span>
+                        </td>
+                        <td>
+                          {client.requests}
+                          <span className="sub">
+                            <LastRequest client={client} />
+                          </span>
                         </td>
                         <td>{formatMoment(client.createdAt)}</td>
                         <td>{formatMoment(client.lastSeenAt)}</td>
-                        <td>
-                          {client.requests}
-                          {client.lastRequestAt && (
-                            <span className="sub">{formatMoment(client.lastRequestAt)}</span>
-                          )}
-                        </td>
                         <td>
                           <ClientState client={client} />
                         </td>
@@ -188,7 +231,13 @@ export function ClientPage({ id }: { id: string }) {
 }
 
 function ClientView({ client, onChange }: { client: ClientDetail; onChange: (c: ClientDetail) => void }) {
-  useEntityTitle(`${t.views.client} ${client.ref}`);
+  // Заголовок — человек; код клиента — мелко под ним (по нему ищут и переписываются)
+  const profileName = client.profile
+    ? [client.profile.firstName, client.profile.lastName].filter(Boolean).join(" ")
+    : "";
+  useEntityTitle(
+    profileName || client.displayName || (client.deleted ? t.clientDeletedTitle : t.clientNoNameTitle),
+  );
   const { api } = useSession();
   const can = useCan();
   const loadPhone = useCallback(
@@ -198,14 +247,13 @@ function ClientView({ client, onChange }: { client: ClientDetail; onChange: (c: 
     },
     [api, client.id],
   );
-  const name = client.profile
-    ? [client.profile.firstName, client.profile.lastName].filter(Boolean).join(" ") || t.none
-    : null;
+  const name = client.profile ? profileName || t.none : null;
 
   return (
     <div className="stack">
       <p className="pills">
         <ClientState client={client} />
+        <span className="client-ref">{client.ref}</span>
       </p>
       <div className="columns">
         <div className="stack">
@@ -221,6 +269,8 @@ function ClientView({ client, onChange }: { client: ClientDetail; onChange: (c: 
                   <dd>{client.profile?.username ? `@${client.profile.username}` : t.none}</dd>
                 </>
               )}
+              <dt>{t.clientSignIn}</dt>
+              <dd>{signInText(client.signIn)}</dd>
               <dt>{t.colSince}</dt>
               <dd>{formatMoment(client.createdAt)}</dd>
               <dt>{t.colLastSeen}</dt>
@@ -279,7 +329,7 @@ function ClientView({ client, onChange }: { client: ClientDetail; onChange: (c: 
                     <strong>{t.consentActions[consent.action]}</strong> ·{" "}
                     {t.consentPurposes[consent.purpose] ?? consent.purpose}
                     <span className="sub">
-                      {t.consentVersion(consent.textVersion)} · {consent.source}
+                      {t.consentVersion(consent.textVersion)} · {t.sources[consent.source] ?? consent.source}
                       {consent.listing ? ` · ${consent.listing.name}` : ""}
                     </span>
                   </li>

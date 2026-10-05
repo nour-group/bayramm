@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./https": "./src/https.ts",
     "./testing": "./src/testing.ts"
   },
   "dependencies": {

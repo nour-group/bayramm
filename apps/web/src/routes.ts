@@ -104,7 +104,13 @@ export const CATEGORY_CODES = [
 ] as const;
 export type ClientCategoryCode = (typeof CATEGORY_CODES)[number];
 
-/** Категория каталога без параметра category — залы, как у API */
+/**
+ * Каталог без параметра category — все разделы одной выдачей («Все»); у API — category=all.
+ * Залы, как и остальные разделы, — ?category=hall
+ */
+export const ALL_CATEGORIES = "all";
+
+/** Раздел по умолчанию там, где нужен один (подбор на лендинге): залы */
 export const DEFAULT_CATEGORY: ClientCategoryCode = "hall";
 
 export const isCategoryParam = (value: string | null | undefined): value is ClientCategoryCode =>
@@ -130,12 +136,11 @@ export function legacyCatalogHref(pathname: string, search: string): string | nu
 
 /**
  * Адрес страницы для поисковиков (canonical): путь без фильтров; у каталога — с категорией
- * (у каждой категории своя страница), залы — без параметра
+ * (у каждой категории своя страница), весь каталог — без параметра
  */
 export function canonicalHref(match: Match, query: URLSearchParams): string {
   const category = query.get("category");
-  if (match.name === "catalog" && isCategoryParam(category) && category !== DEFAULT_CATEGORY)
-    return hrefFor(match, { category });
+  if (match.name === "catalog" && isCategoryParam(category)) return hrefFor(match, { category });
   return hrefFor(match);
 }
 

@@ -12,6 +12,7 @@ import {
   isDesktop,
   LISTINGS,
   open,
+  openContacts,
   PATHS,
   prepare,
   SCREENS,
@@ -42,33 +43,40 @@ async function fillRequest(page: Page, comment: string) {
   await form.locator("textarea").fill(comment);
 }
 
-test.describe("телефон виден сразу", () => {
+test.describe("контакты до заявки", () => {
   for (const who of ["гость в браузере", "Telegram"] as const) {
-    test(`${who}: номер и «Позвонить» на площадке — до всякой заявки`, async ({ page }) => {
-      await expectPhoneFirst(page, VENUE, who);
+    test(`${who}: «Связаться» на площадке — номер до всякой заявки`, async ({ page }) => {
+      await expectContactsFirst(page, VENUE, who);
     });
   }
 
   // Каждая категория — гостю; в Telegram — кортеж (части дня, своя главная кнопка)
-  test("гость в браузере: номер и «Позвонить» на витрине каждой категории — до всякой заявки", async ({
+  test("гость в браузере: «Связаться» на витрине каждой категории — номер до всякой заявки", async ({
     page,
   }) => {
     test.slow();
     for (const listing of CATEGORY_VITRINAS.slice(1))
-      await expectPhoneFirst(page, listing, "гость в браузере");
+      await expectContactsFirst(page, listing, "гость в браузере");
   });
 
-  test("Telegram: номер на витрине кортежа — до всякой заявки", async ({ page }) => {
+  test("Telegram: «Связаться» на витрине кортежа — номер до всякой заявки", async ({ page }) => {
     const car = CATEGORY_VITRINAS.find((l) => l.categoryCode === "car") ?? VENUE;
-    await expectPhoneFirst(page, car, "Telegram");
+    await expectContactsFirst(page, car, "Telegram");
   });
 });
 
 /** Страницы, где часы и Telegram уже подготовлены (prepare — один раз на страницу) */
 const prepared = new WeakSet<Page>();
 
-/** Номер и «Позвонить» на витрине — сразу, на экране без прокрутки, без формы на пути */
-async function expectPhoneFirst(page: Page, venue: ListingDetail, who: "гость в браузере" | "Telegram") {
+/**
+ * «Связаться» на витрине — сразу, на экране без прокрутки, без формы и входа на пути: окно с
+ * номером (и Telegram, если он есть) открывается одним нажатием
+ */
+async function expectContactsFirst(
+  page: Page,
+  venue: ListingDetail & { readonly phone: string; readonly telegram: string | null },
+  who: "гость в браузере" | "Telegram",
+) {
   if (!prepared.has(page)) {
     prepared.add(page);
     await prepare(page);
@@ -76,22 +84,22 @@ async function expectPhoneFirst(page: Page, venue: ListingDetail, who: "гост
   }
   await open(page, PATHS.venue(venue.slug), ".venue-head h1", { guest: who !== "Telegram" });
 
-  const tel = `tel:${venue.phone}`;
   const desktop = isDesktop(page);
-  // Телефон: на телефоне — раздел «Телефон» под названием, на компьютере — карточка справа
-  const number = page.locator(
-    desktop ? `.venue-side a.bar-phone[href="${tel}"]` : `.contact a.contact-phone[href="${tel}"]`,
-  );
-  await expect(number).toBeVisible();
-  await expect(number).toBeInViewport();
-  await expect(number).toHaveText(formatPhone(venue.phone));
-  if (!desktop) await expect(page.locator(`.contact a.btn[href="${tel}"]`)).toContainText(ru.sentCall);
-  // Кнопка звонка — в панели внизу (на компьютере — в карточке), на экране без прокрутки
-  const barCall = page.locator(`.venue-bar a.call[href="${tel}"]`);
+  // Номера в карточке нет: он — в окне «Связаться»
+  await expect(page.locator(`a[href="tel:${venue.phone}"]`)).toHaveCount(0);
+  // Кнопка: на телефоне — раздел контактов под названием и иконка в панели внизу, на компьютере —
+  // карточка справа; везде — на экране без прокрутки
+  const barCall = page.locator(".venue-bar button.call");
   await expect(barCall).toBeVisible();
   await expect(barCall).toBeInViewport();
-  if (desktop) await expect(barCall).toContainText(ru.sentCall);
-  // Цена в панели не уходит под кнопку звонка: рядом с ней на телефоне, над ней — на компьютере
+  await expect(barCall).toHaveAccessibleName(`${ru.contactBtn}: ${venue.name}`);
+  if (desktop) await expect(barCall).toContainText(ru.contactBtn);
+  else {
+    const section = page.locator(".contact").getByRole("button", { name: ru.contactBtn });
+    await expect(section).toBeVisible();
+    await expect(section).toBeInViewport();
+  }
+  // Цена в панели не уходит под кнопку: рядом с ней на телефоне, над ней — на компьютере
   const priceBox = await page.locator(".venue-bar .bar-price b").boundingBox();
   const callBox = await barCall.boundingBox();
   expect(priceBox && callBox).toBeTruthy();
@@ -102,8 +110,19 @@ async function expectPhoneFirst(page: Page, venue: ListingDetail, who: "гост
   expect(
     await page.locator(".venue-bar .bar-price b").evaluate((el) => el.scrollWidth <= el.clientWidth),
   ).toBe(true);
-  // Ни формы, ни согласий на пути к номеру нет
+
+  const dialog = await openContacts(page);
+  await expect(dialog.locator(`a[href="tel:${venue.phone}"]`)).toContainText(ru.contactCall);
+  await expect(dialog).toContainText(formatPhone(venue.phone));
+  if (venue.telegram) {
+    const tg = dialog.locator(`a[href="https://t.me/${venue.telegram}"]`);
+    await expect(tg).toContainText(ru.contactTg);
+    await expect(tg).toHaveAttribute("rel", /noopener/);
+  } else await expect(dialog.locator('a[href^="https://t.me/"]')).toHaveCount(0);
+  // Ни формы, ни согласий, ни входа на пути к номеру нет
   await expect(page.locator("form.request")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
 }
 
 test.describe("тексты экранов", () => {
@@ -304,7 +323,7 @@ test.describe("занятые на дату", () => {
       expect(busy.length, "в демо-данных есть занятые на эту дату").toBeGreaterThan(0);
       await prepare(page);
       const query = sort === "price_asc" ? "" : `&sort=${sort}`;
-      await open(page, `${PATHS.catalog}?date=${BUSY_DAY}${query}`, ".card");
+      await open(page, `${PATHS.category("hall")}&date=${BUSY_DAY}${query}`, ".card");
       const cards = page.locator(".cards .card");
       await loadAll(page, cards, LISTINGS.length);
 

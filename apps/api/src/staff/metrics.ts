@@ -5,12 +5,14 @@
 //   GET /staff/metrics/categories?days=30             сводка по категориям за последние N дней
 //   GET /staff/metrics/vendors?days=30&category=      ответы вендоров за последние N дней
 //   GET /staff/metrics/vendors/:id?days=30            вендор и его площадки (с категориями)
+//   GET /staff/metrics/contacts?days=30&category=     у каких витрин чаще открывают контакты
 //
 // category — код категории из конфигурации (@bayramm/shared/categories): только заявки витрин
 // этой категории; пусто — все; неизвестный — 422 invalid_input ["category"].
 
 import type {
   CategoryMetricsList,
+  ContactMetrics,
   MetricsOverview,
   VendorMetricsList,
   VendorResponseStats,
@@ -26,6 +28,7 @@ import {
   DAYS_DEFAULT,
   DAYS_MAX,
   loadCategories,
+  loadContacts,
   loadListings,
   loadQueues,
   loadVendors,
@@ -94,5 +97,13 @@ metrics.get("/vendors/:id", requirePermission("metrics.read"), async (c) => {
     if (vendor === undefined) throw notFound();
     return { days, vendor, listings: await loadListings(trx, id, days) };
   });
+  return c.json(body);
+});
+
+metrics.get("/contacts", requirePermission("metrics.read"), async (c) => {
+  const days = intParam(c.req.query("days"), "days", DAYS_DEFAULT, DAYS_MAX);
+  const category = categoryParam(c.req.query("category"));
+  const items = await withActor(c.var.db, staffOf(c), (trx) => loadContacts(trx, days, category));
+  const body: ContactMetrics = { days, category, items };
   return c.json(body);
 });

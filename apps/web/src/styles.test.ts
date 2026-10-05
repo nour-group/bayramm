@@ -128,26 +128,19 @@ describe("styles.css клиента", () => {
       expect(css.indexOf(selector), selector).toBeGreaterThan(hover);
   });
 
-  it.each([
-    ".btn",
-    ".icon-btn",
-    ".link-btn",
-    ".lang button",
-    ".field-input",
-    ".contact-phone",
-    ".brand",
-    ".skip",
-  ])("%s: зона нажатия не меньше 44px", (selector) => {
-    expect(declarationsOf(selector)).toMatch(
-      /min-height:\s*(var\(--hit-min\)|4[4-9]px|5\dpx)|height:\s*var\(--hit-min\)/,
-    );
-  });
+  it.each([".btn", ".icon-btn", ".link-btn", ".lang button", ".field-input", ".brand", ".skip"])(
+    "%s: зона нажатия не меньше 44px",
+    (selector) => {
+      expect(declarationsOf(selector)).toMatch(
+        /min-height:\s*(var\(--hit-min\)|4[4-9]px|5\dpx)|height:\s*var\(--hit-min\)/,
+      );
+    },
+  );
 
-  it(".fav-btn: рисунок 36px, зона нажатия 44px+ — невидимым слоем (::after)", () => {
+  it(".fav-btn: кнопка 44px — и видимая, и зона нажатия", () => {
     const body = declarationsOf(".fav-btn");
-    const size = Number(/width:\s*(\d+)px/.exec(body)?.[1]);
-    const inset = Number(/inset:\s*-(\d+)px/.exec(declarationsOf(".fav-btn::after"))?.[1]);
-    expect(size + 2 * inset).toBeGreaterThanOrEqual(44);
+    expect(body).toMatch(/width:\s*var\(--hit-min\)/);
+    expect(body).toMatch(/height:\s*var\(--hit-min\)/);
     // Своё правило: в общем списке с position: relative сердечко уехало бы в поток (ловушка №8)
     const shared = rules.filter((rule) => rule.selectors.includes(".fav-btn") && rule.selectors.length > 1);
     expect(shared).toEqual([]);

@@ -6,6 +6,7 @@ import {
   type ClientConsentPurpose,
   type ClientRequest,
   type ConsentText,
+  type ContactAction,
   type CreateRequest,
   comparablePriceUzs,
   type DateLoad,
@@ -13,6 +14,7 @@ import {
   type Dictionaries,
   FAVORITES_MAX,
   type ListingCard,
+  type ListingContacts,
   type ListingDetail,
   type Locale,
   type RequestDetails,
@@ -33,7 +35,10 @@ import {
   validateRequestDetails,
 } from "@bayramm/shared/categories";
 import { addDays, tashkentToday } from "../format";
-import { demoUuid, demoVitrinas } from "./demo-vitrinas";
+import { type DemoListing, demoTelegram, demoUuid, demoVitrinas } from "./demo-vitrinas";
+
+export type { DemoListing } from "./demo-vitrinas";
+
 import { ApiError } from "./errors";
 import type { ClientApi, PhoneProof } from "./types";
 
@@ -108,7 +113,7 @@ const CAPACITY = [120, 200, 250, 300, 350, 400, 500, 600, 800, 1000];
 const uuid = demoUuid;
 
 /** Демо-залы; занятые даты считаются от today, чтобы календарь всегда был живой */
-export function demoListings(today: string): ListingDetail[] {
+export function demoListings(today: string): DemoListing[] {
   return NAMES.map((name, i) => {
     const id = uuid(1, i + 1);
     const capMax = CAPACITY[i % CAPACITY.length] ?? 300;
@@ -165,15 +170,17 @@ export function demoListings(today: string): ListingDetail[] {
       })),
       parallelCapacity: 1,
       photos,
+      contactChannels: demoTelegram(SLUGS[i] ?? `zal-${i + 1}`, i + 1) ? ["phone", "telegram"] : ["phone"],
       phone: `+998000000${String(i + 1).padStart(3, "0")}`,
+      telegram: demoTelegram(SLUGS[i] ?? `zal-${i + 1}`, i + 1),
       busyDates: [...new Set(busyDates)].sort(),
       busyParts: [],
-    } satisfies ListingDetail;
+    } satisfies DemoListing;
   });
 }
 
 /** Все демо-витрины: залы и остальные категории (api/demo-vitrinas.ts) */
-export function allDemoListings(today: string): ListingDetail[] {
+export function allDemoListings(today: string): DemoListing[] {
   return [...demoListings(today), ...demoVitrinas(today)];
 }
 
@@ -450,7 +457,7 @@ export interface MockOptions {
   /** Задержка ответа, мс: в разработке видно состояния загрузки; в тестах 0 */
   readonly latencyMs?: number;
   readonly now?: () => number;
-  readonly listings?: readonly ListingDetail[];
+  readonly listings?: readonly DemoListing[];
   readonly requests?: readonly ClientRequest[];
   readonly botUsername?: string;
   /** Ответ на любой вызов — эта ошибка (проверка экранов ошибок) */
@@ -502,6 +509,12 @@ export interface MockApi extends ClientApi {
   readonly phoneProofs: PhoneProof[];
   /** Избранное аккаунта сейчас */
   readonly favoriteIds: () => readonly string[];
+  /** «Связаться»: открытия контактов и выбранные каналы — как их считает сервер */
+  readonly contactEvents: {
+    readonly slug: string;
+    readonly action: ContactAction;
+    readonly signedIn: boolean;
+  }[];
 }
 
 const DEMO_CREATED = "2026-09-01T09:00:00.000Z";
@@ -524,6 +537,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
   );
   const requests: ClientRequest[] = [...(options.requests ?? [])];
   const created: CreateRequest[] = [];
+  const contactEvents: MockApi["contactEvents"] = [];
   const latency = options.latencyMs ?? 0;
   let me: ClientMe = { ...DEMO_ME, ...options.me };
   let deleted = false;
@@ -601,6 +615,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
     codesSent,
     phoneProofs,
     favoriteIds: () => favoriteIds,
+    contactEvents,
     dictionaries: (signal) => respond("dictionaries", signal, () => DEMO_DICTIONARIES),
 
     catalogCategories: (signal) =>
@@ -620,8 +635,10 @@ export function createMockApi(options: MockOptions = {}): MockApi {
 
     catalog: (query: CatalogQuery, signal) =>
       respond("catalog", signal, (): CatalogPage => {
-        // Без категории — залы, как у сервера; фильтры по полям витрины — по её описанию
+        // Без категории — залы, как у сервера; all — все разделы; фильтры по полям витрины — по
+        // описанию категории
         const category = query.category ?? "hall";
+        const all = category === "all";
         const config = categoryConfig(category);
         const filterParams = Object.fromEntries(
           Object.entries(query.filters ?? {}).map(([name, value]) => [name, [value]]),
@@ -637,7 +654,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const limit = Math.min(50, Math.max(1, query.limit ?? 20));
         const offset = Number(query.cursor ?? 0) || 0;
         const rows = listings
-          .filter((l) => l.categoryCode === category)
+          .filter((l) => all || l.categoryCode === category)
           .filter((l) => filters.every((f) => matchesAttributeFilter(l.attributes, f)))
           .filter((l) => !query.district || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax === null || l.capMax >= query.guests)
@@ -659,11 +676,25 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       }),
 
     listing: (slug, signal) =>
-      respond("listing", signal, () => {
+      respond("listing", signal, (): ListingDetail => {
         const listing = listings.find((l) => l.slug === slug);
         if (!listing) throw new ApiError(404, "not_found");
-        return listing;
+        // Контактов в карточке нет — они по «Связаться», как у сервера
+        const { phone: _phone, telegram: _telegram, ...detail } = listing;
+        return detail;
       }),
+
+    listingContacts: (slug, signedIn) =>
+      respond("listingContacts", undefined, (): ListingContacts => {
+        const listing = listings.find((l) => l.slug === slug);
+        if (!listing) throw new ApiError(404, "not_found");
+        contactEvents.push({ slug, action: "open", signedIn });
+        return { phone: listing.phone, telegram: listing.telegram };
+      }),
+
+    contactChoice: (slug, channel, signedIn) => {
+      contactEvents.push({ slug, action: channel, signedIn });
+    },
 
     listingCards: (ids, signal) =>
       respond("listingCards", signal, () => ({
@@ -722,6 +753,12 @@ export function createMockApi(options: MockOptions = {}): MockApi {
             r.listing.id === body.listingId && r.eventDate === body.eventDate && ACTIVE.includes(r.status),
         );
         if (duplicate) throw new ApiError(409, "duplicate_request", duplicate.id);
+        // Занятый день или часть дня — как в API (requests/service.ts, assertDateFree)
+        if (demoDayLoad(listing, body.eventDate) === "busy")
+          throw new ApiError(409, "date_busy", undefined, undefined, ["eventDate"]);
+        const takenParts = listing.busyParts.find((p) => p.date === body.eventDate)?.parts ?? [];
+        if (dayPart !== null && takenParts.includes(dayPart))
+          throw new ApiError(409, "date_busy", undefined, undefined, ["details.start_time"]);
         created.push(body);
         const createdAt = now();
         const request: ClientRequest = {

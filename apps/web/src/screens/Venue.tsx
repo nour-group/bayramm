@@ -4,6 +4,8 @@ import { type UIEvent, useEffect, useMemo, useRef, useState } from "react";
 import { isNotFound } from "../api/errors";
 import { categoryIcon, categoryName, clientCategory, DAY_PART_ORDER, hasCalendar } from "../categories";
 import { Calendar } from "../components/Calendar";
+import { categoryHref } from "../components/Categories";
+import { ContactButton } from "../components/ContactSheet";
 import { FavoriteButton } from "../components/FavoriteButton";
 import { Link } from "../components/Link";
 import { dayLoadChip } from "../components/ListingCard";
@@ -15,14 +17,12 @@ import { canSignIn, pick, useDictionaries, useLang, useServices } from "../conte
 import {
   addDays,
   formatDayMonth,
-  formatPhone,
   formatPrice,
   formatPriceFrom,
   formatQty,
   isIsoDate,
   metaLine,
   tashkentToday,
-  telHref,
 } from "../format";
 import { useAsync, useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
@@ -30,7 +30,14 @@ import { hrefFor, useNav } from "../router";
 import { preloadScreens } from "../screens";
 import { useMainButton } from "../telegram";
 import { DATE_HORIZON_DAYS, parseGuests } from "./catalog-feed";
-import { draftServiceIds, loadDraft, toggleDraftService } from "./request-draft";
+import {
+  draftServiceIds,
+  firstDate,
+  leadDaysOf,
+  loadDraft,
+  nearbyFreeDays,
+  toggleDraftService,
+} from "./request-draft";
 import { suggestedQty } from "./request-estimate";
 import { attributeView, dayPartWindow, listingLeadDays, safeVideoLinks } from "./venue-attributes";
 
@@ -165,17 +172,22 @@ function ServiceItem({
   );
 }
 
-/** Занятость по модели категории: календарь дня, части дня, слот или срок заказа */
+/**
+ * Занятость по модели категории: календарь дня, части дня, слот или срок заказа. День в
+ * календаре выбирается: он становится датой страницы (?date=) и уходит в заявку
+ */
 function Availability({
   listing,
   category,
   filterDate,
   today,
+  onPick,
 }: {
   listing: ListingDetail;
   category: CategoryConfig;
   filterDate: string | null;
   today: string;
+  onPick: (date: string) => void;
 }) {
   const { t } = useLang();
   const busy = useMemo(() => new Set(listing.busyDates), [listing.busyDates]);
@@ -218,13 +230,16 @@ function Availability({
       <h2 className="section-title" id="venue-calendar">
         {t.pfCal}
       </h2>
+      <p className="muted small cal-pick-hint">{t.calPickHint}</p>
       <Calendar
         label={t.pfCal}
-        min={today}
+        // Как в форме заявки: с завтра или со срока заказа витрины — иначе выбранный день там пропал бы
+        min={firstDate(today, leadDaysOf(listing, []))}
         max={addDays(today, DATE_HORIZON_DAYS)}
         busy={busy}
         partial={parts ? partial : undefined}
         selected={filterDate}
+        onSelect={onPick}
       />
       {parts && filterDate && !busy.has(filterDate) ? (
         <div className="parts-day">
@@ -268,6 +283,81 @@ function Availability({
   );
 }
 
+/**
+ * Дата из фильтра занята: не «оставить заявку», а выбрать другой день — ближайшие свободные
+ * рядом — или посмотреть, кто свободен в эту дату (каталог раздела на неё)
+ */
+function BusyDay({
+  listing,
+  day,
+  today,
+  guests,
+}: {
+  listing: ListingDetail;
+  day: string;
+  today: string;
+  guests: number | null;
+}) {
+  const { t } = useLang();
+  const nearby = useMemo(
+    () =>
+      nearbyFreeDays(new Set(listing.busyDates), day, {
+        first: firstDate(today, listingLeadDays(listing) ?? 0),
+        last: addDays(today, DATE_HORIZON_DAYS),
+      }),
+    [listing, day, today],
+  );
+  const label = formatDayMonth(day, t);
+  return (
+    <div className="callout callout-warn busy-day">
+      <Icon name="warnD" size={20} />
+      <div className="busy-day-text">
+        <p>
+          <b>{t.busyDayH(label)}</b>
+        </p>
+        <p>{t.busyDayP}</p>
+        {nearby.length > 0 ? (
+          <>
+            <p className="muted small">{t.busyNearby}</p>
+            <ul className="busy-alts">
+              {nearby.map((date) => (
+                <li key={date}>
+                  <Link
+                    className="btn btn-secondary"
+                    href={hrefFor({ name: "venue", slug: listing.slug }, { date, guests })}
+                    replace
+                  >
+                    {formatDayMonth(date, t)}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+        <Link className="link-btn" href={categoryHref(listing.categoryCode, day)}>
+          {t.busyOthers(label)}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Пометка над кнопкой заявки. Гостю сайта — сразу, что отправить заявку можно после входа и чем
+ * войти (телефон — только когда вход по нему включён), а не после нажатия
+ */
+function RequestNote() {
+  const { api, identity } = useServices();
+  const { t } = useLang();
+  const guest = !canSignIn(identity);
+  const methods = useAsync(guest ? "auth-methods" : "auth-methods:skip", (signal) =>
+    guest ? api.authMethods(signal) : Promise.resolve(null),
+  );
+  const text =
+    guest && methods.status === "ready" && methods.data ? t.reqGuestNote(methods.data.phone) : t.requestNote;
+  return <p className="bar-note">{text}</p>;
+}
+
 function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHref: string }) {
   const { api, identity, webApp, now } = useServices();
   const { t, lang } = useLang();
@@ -279,7 +369,6 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
   const filterDate = isIsoDate(date) && date >= today ? date : null;
   const [picked, setPicked] = useState<readonly string[]>(() => draftServiceIds(listing.slug));
   const price = formatPriceFrom(listing.priceFromUzs, listing.priceUnit, t);
-  const phone = formatPhone(listing.phone);
   const district = districtName(listing.districtCode);
   const capacity =
     listing.capMax === null
@@ -301,7 +390,13 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         ? ("partial" as const)
         : ("free" as const);
   })();
-  const chip = filterDate && load ? dayLoadChip(load, filterDate, t) : null;
+  // Занятый день — не пометкой, а блоком с другими днями (BusyDay); свободный и частично — пометкой
+  const busyDay = load === "busy" ? filterDate : null;
+  const chip = filterDate && load && load !== "busy" ? dayLoadChip(load, filterDate, t) : null;
+  const guests = parseGuests(query.get("guests"));
+  // На занятый день заявку не подать: кнопка ведёт в форму без даты — день выбирают там
+  const reqHref = busyDay ? hrefFor({ name: "request", slug: listing.slug }, { guests }) : requestHref;
+  const reqLabel = busyDay ? t.reqOtherDate : t.pfReq;
 
   const toggle = (service: PublicService) =>
     setPicked(
@@ -310,9 +405,9 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
 
   // В Telegram «Оставить заявку» — его главная кнопка внизу; в браузере — своя в панели
   const nativeMain = useMainButton(webApp, {
-    text: t.pfReq,
+    text: reqLabel,
     visible: true,
-    onClick: () => navigate(requestHref),
+    onClick: () => navigate(reqHref),
   });
 
   // Форма заявки — следующий экран: её кусок сборки (и тексты согласий — у вошедшего, в кэш
@@ -342,22 +437,18 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         </p>
         {chip ? <p className={chip.tone}>{chip.text}</p> : null}
       </div>
+      {busyDay ? <BusyDay listing={listing} day={busyDay} today={today} guests={guests} /> : null}
 
-      {/* Телефон виден сразу, до заявки — правило продукта */}
-      <section className="section contact" aria-labelledby="venue-phone">
-        <h2 className="section-title" id="venue-phone">
-          {t.rqPhone}
+      {/* Контакты — до заявки и без входа, по «Связаться» (правило продукта): телефон и
+          Telegram в окне, открытия считает сервер */}
+      <section className="section contact" aria-labelledby="venue-contact">
+        <h2 className="section-title" id="venue-contact">
+          {t.contactH}
         </h2>
         <div className="contact-row">
-          <a className="contact-phone" href={telHref(listing.phone)}>
-            {phone}
-          </a>
-          <a className="btn btn-secondary" href={telHref(listing.phone)}>
-            <Icon name="phone" size={17} />
-            {t.sentCall}
-          </a>
+          <p className="muted small">{t.callNote}</p>
+          <ContactButton slug={listing.slug} name={listing.name} />
         </div>
-        <p className="muted small">{t.callNote}</p>
       </section>
 
       {listing.services.length > 0 ? (
@@ -457,38 +548,48 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         </section>
       ) : null}
 
-      <Availability listing={listing} category={category} filterDate={filterDate} today={today} />
+      <Availability
+        listing={listing}
+        category={category}
+        filterDate={filterDate}
+        today={today}
+        onPick={(day) =>
+          navigate(hrefFor({ name: "venue", slug: listing.slug }, { date: day, guests }), { replace: true })
+        }
+      />
 
-      {/* Цена, телефон и заявка: на телефоне — панель внизу экрана, на компьютере — карточка
-          справа, прилипает при прокрутке. Номер в ней виден сразу — правило продукта. Пометка
+      {/* Цена, «Связаться» и заявка: на телефоне — панель внизу экрана, на компьютере — карточка
+          справа, прилипает при прокрутке. Контакты — в одно нажатие, до заявки. Пометка
           о заявке — над панелью (на телефоне она прилипает к низу, пометка — в конце страницы),
           в карточке справа — под кнопками */}
       <div className="venue-side">
-        <p className="bar-note">{t.requestNote}</p>
+        <RequestNote />
         <div className="action-bar venue-bar">
           <div className="bar-price">
             <b>{price.amount}</b>
-            <span className={price.unit ? "unit" : "unit unit-phone"}>{price.unit ?? phone}</span>
+            {price.unit ? <span className="unit">{price.unit}</span> : null}
             {picked.length > 0 ? <span className="bar-chosen">{t.svcChosenN(picked.length)}</span> : null}
           </div>
-          <a className="contact-phone bar-phone" href={telHref(listing.phone)}>
-            {phone}
-          </a>
-          <a className="icon-btn call" href={telHref(listing.phone)} aria-label={`${t.sentCall}: ${phone}`}>
+          <ContactButton
+            slug={listing.slug}
+            name={listing.name}
+            className="icon-btn call"
+            ariaLabel={`${t.contactBtn}: ${listing.name}`}
+          >
             <Icon name="phone" size={20} />
             <span className="call-label" aria-hidden="true">
-              {t.sentCall}
+              {t.contactBtn}
             </span>
-          </a>
+          </ContactButton>
           {nativeMain ? null : (
             <Link
               className="btn btn-primary"
-              href={requestHref}
+              href={reqHref}
               onPointerEnter={preloadRequest}
               onTouchStart={preloadRequest}
               onFocus={preloadRequest}
             >
-              {t.pfReq}
+              {reqLabel}
             </Link>
           )}
         </div>

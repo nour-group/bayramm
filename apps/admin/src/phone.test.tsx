@@ -3,11 +3,13 @@
 // «назад» (своей или Telegram), списки карточками, фильтры в шторке, действия — в панели
 // внизу. Ширина — подменённый matchMedia (как у телефона 390px).
 import type {
+  ClientList,
   MetricsOverview,
   StaffDictionaries,
   StaffMe,
   StaffRequestDetail,
   StaffRequestList,
+  TeamList,
 } from "@bayramm/shared/api/staff";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -366,6 +368,104 @@ describe("телефон: экраны", () => {
     ]);
     await click([...(bar?.querySelectorAll("button") ?? [])][1]);
     expect(dialog()?.querySelector("textarea")).not.toBeNull();
+  });
+});
+
+describe("телефон: читаемость списков", () => {
+  it("клиенты — карточками: имя ссылкой, код мелко, вход и последняя заявка словами", async () => {
+    const list: ClientList = {
+      total: 1,
+      items: [
+        {
+          id: "dddddddd-0000-0000-0000-000000000001",
+          ref: "C-1a2b3c4d",
+          displayName: "Азиза К.",
+          signIn: ["telegram", "phone"],
+          lastRequest: { publicNo: 1001, listingName: "Oqsaroy Hall", status: "contacted" },
+          createdAt: "2026-09-01T06:00:00.000Z",
+          lastSeenAt: "2026-09-28T06:00:00.000Z",
+          locale: "ru",
+          blocked: false,
+          deleted: false,
+          requests: 2,
+          lastRequestAt: "2026-09-28T18:00:00.000Z",
+        },
+      ],
+    };
+    mockApi(ADMIN, { "GET /api/staff/clients": json(list) });
+    await mount("/clients");
+    const card = container.querySelector(".rcard");
+    expect(card?.querySelector("a.rcard-link")?.textContent).toBe("Азиза К.");
+    expect(card?.querySelector(".rcard-meta")?.textContent).toBe("C-1a2b3c4d");
+    const facts = card?.querySelector(".rcard-facts")?.textContent ?? "";
+    expect(facts).toContain("Telegram, телефон");
+    expect(facts).toContain(t.locales.ru);
+    expect(facts).toContain(`${t.requestNo(1001)} · Oqsaroy Hall`);
+    expect(facts).toContain(t.requestStatus.contacted);
+  });
+
+  it("фильтры заявок: у каждой группы переключателей — видимый заголовок", async () => {
+    mockApi(ADMIN);
+    await mount("/requests");
+    await click([...container.querySelectorAll("button")].find((b) => b.textContent === t.filters));
+    const titles = [...(dialog()?.querySelectorAll(".sheet-group") ?? [])];
+    expect(titles.map((el) => el.textContent)).toEqual([t.colDue, t.colCategory]);
+    for (const title of titles)
+      expect(dialog()?.querySelector(`[role=radiogroup][aria-labelledby="${title.id}"]`)).not.toBeNull();
+  });
+
+  it("команда: на телефоне сначала сотрудники, приглашение — ниже; на компьютере — наоборот", async () => {
+    const team: TeamList = {
+      items: [
+        {
+          id: "00000000-0000-0000-0000-00000000a001",
+          displayName: "Test Admin",
+          username: "test_admin",
+          invitedBy: "telegram",
+          role: "admin",
+          active: true,
+          accepted: true,
+          linked: true,
+          linkedAt: "2026-09-01T06:00:00.000Z",
+          createdAt: "2026-09-01T06:00:00.000Z",
+          self: true,
+        },
+      ],
+    };
+    mockApi(ADMIN, { "GET /api/staff/team": json(team) });
+    await mount("/team");
+    const order = () =>
+      [...container.querySelectorAll(".stack > *")].map((el) =>
+        el.matches("form.fs") ? "invite" : el.matches(".rcards") ? "list" : null,
+      );
+    expect(order().filter(Boolean)).toEqual(["list", "invite"]);
+    act(() => root.unmount());
+    container.remove();
+    screenWidth(1280);
+    await mount("/team");
+    expect(order().filter(Boolean)).toEqual(["invite"]);
+  });
+
+  it("заявка: источник — словами; клиент и телефоны вендора выше истории везде, где нет двух колонок", async () => {
+    const order = () =>
+      [...container.querySelectorAll("section.panel")].map((el) => el.getAttribute("aria-labelledby"));
+    mockApi(ADMIN);
+    for (const width of [390, 800]) {
+      screenWidth(width);
+      await mount(`/requests/${REQUEST_ID}`);
+      expect(container.querySelector(".columns")).toBeNull();
+      const ids = order();
+      expect(ids.indexOf("client-title"), `${width}px`).toBeGreaterThan(-1);
+      expect(ids.indexOf("client-title")).toBeLessThan(ids.indexOf("history-title"));
+      expect(ids.indexOf("vendor-phones-title")).toBeLessThan(ids.indexOf("timeline-title"));
+      expect(container.textContent).toContain(`${t.source}${t.sources.tma}`);
+      expect(container.textContent).not.toContain(`${t.source}tma`);
+      act(() => root.unmount());
+      container.remove();
+    }
+    screenWidth(1280);
+    await mount(`/requests/${REQUEST_ID}`);
+    expect(container.querySelector(".columns")).not.toBeNull();
   });
 });
 

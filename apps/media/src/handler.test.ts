@@ -87,6 +87,7 @@ describe("вариант фото", () => {
     expect(res.headers.get("cache-control")).toBe(CACHE_VARIANT);
     expect(res.headers.get("vary")).toBe("Accept");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("strict-transport-security")).toBe("max-age=31536000");
     expect(res.headers.get("etag")).toBe('"abc"');
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]));
   });
@@ -130,6 +131,14 @@ describe("чего не бывает — 404 без похода в хранил
       expect(calls).toHaveLength(0);
     });
   }
+
+  it("по http — 301 на https, без похода в хранилище", async () => {
+    const { fetcher, calls } = fakeFetch(() => imageResponse("image/webp"));
+    const res = await createMediaHandler(fetcher)(new Request(`http://media.bayramm.uz/640/${KEY}`), ENV);
+    expect(res.status).toBe(301);
+    expect(res.headers.get("location")).toBe(`https://media.bayramm.uz/640/${KEY}`);
+    expect(calls).toHaveLength(0);
+  });
 
   it("кроме GET и HEAD — 405", async () => {
     const { fetcher, calls } = fakeFetch(() => imageResponse("image/webp"));

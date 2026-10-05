@@ -1006,9 +1006,11 @@ body {
   left: 8px;
 }
 
-/* Удалить фото — под снимком во всю ширину плитки, а не поверх него */
+/* Удалить фото — под снимком во всю ширину плитки, а не поверх него. Рамка нейтральная, красным
+   — только слово: четыре красных контура подряд перебивали сами фото и главное действие экрана */
 .photo-delete {
   width: 100%;
+  border-color: var(--rule);
 }
 
 /* Лица на фото: предупреждение на виду всегда, акцент — полосой слева, текст — ink на lilac */
@@ -1647,8 +1649,8 @@ body {
   color: var(--muted);
   font-size: var(--fs-13-5);
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .fact-sub {
@@ -1927,6 +1929,11 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--gap-3);
+}
+
+/* Подряд идущие «да/нет» — плотнее: зона нажатия у каждой и так 44px */
+.attr-flag + .attr-flag {
+  margin-top: calc(var(--gap-3) - var(--gap-12));
 }
 
 .video-field {
@@ -2413,6 +2420,29 @@ body {
   /* Кнопка начала правок — по содержимому, а не на всю ширину раздела */
   .proposal-start {
     align-self: flex-start;
+  }
+
+  /* Действия услуги — по содержимому: две кнопки на пол-экрана каждая перебивали саму услугу */
+  .svc-actions .btn {
+    flex: 0 0 auto;
+  }
+
+  /* Поля витрины в правке — парами (число, список, да/нет); списки, группы и тексты — во всю
+     ширину. Подряд идущие «да/нет» в паре — на одной строке, без сжатия по вертикали */
+  .attr-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--gap-12);
+  }
+
+  .attr-form > fieldset,
+  .attr-form > .form-grid {
+    grid-column: 1 / -1;
+  }
+
+  .attr-form > .attr-flag + .attr-flag {
+    margin-top: 0;
   }
 }
 

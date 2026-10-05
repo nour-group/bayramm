@@ -2,12 +2,15 @@
    с отчётами бота: ответ площадки (не «связались» от команды), в срок, какие заявки в расчёте
    доли. Здесь — очереди команды, сводка по категориям за 30 дней, таблица по неделям и вендоры
    за 30 дней с сортировкой по доле ответов в срок; фильтр категории — у недель и вендоров
-   (на телефоне — в шторке). На странице вендора — его ответы по витринам с категориями
-   (VendorResponsePanel). Полосы — классами: CSP не пускает встроенные стили. */
+   (на телефоне — в шторке). Ниже вендоров — «Контакты витрин»: у каких витрин чаще открывают
+   контакты и звонят или пишут в Telegram (те же 30 дней и тот же фильтр категории). На странице
+   вендора — его ответы по витринам с категориями (VendorResponsePanel). Полосы — классами:
+   CSP не пускает встроенные стили. */
 
 import type {
   CategoryMetrics,
   CategoryMetricsList,
+  ContactMetrics,
   ListingMetrics,
   MetricsOverview,
   OpsQueues,
@@ -21,7 +24,7 @@ import { Dialog, RadioGroup, Select } from "@bayramm/ui/react";
 import { useState } from "react";
 import { useLoad } from "../api";
 import { CategoryChip, categoryName, categoryOptions } from "../categories";
-import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel } from "../format";
+import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel, weekNumber } from "../format";
 import { usePhone } from "../layout";
 import { t } from "../texts";
 import { ActiveFilter, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
@@ -94,6 +97,7 @@ export function MetricsPage() {
           }
         </LoadedView>
       </section>
+      <ContactsSection category={category} />
     </div>
   );
 }
@@ -108,10 +112,12 @@ function CategoryFilter({
 }) {
   const phone = usePhone();
   const [open, setOpen] = useState(false);
-  const hint =
-    category === null ? null : (
-      <p className="muted small">{t.metricsCategoryFilter(categoryName(category))}</p>
-    );
+  // Что именно фильтр сужает — всегда словами: он стоит между сводкой по категориям и неделями
+  const hint = (
+    <p className="muted small">
+      {category === null ? t.metricsFilterScope : t.metricsCategoryFilter(categoryName(category))}
+    </p>
+  );
   if (!phone)
     return (
       <div className="stack">
@@ -205,7 +211,7 @@ function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
               <p className="rcard-title">{formatWeek(week.weekStart)}</p>
               {week.partial && <Pill tone="outline">{t.weekNow}</Pill>}
             </div>
-            <p className="rcard-meta">{week.weekLabel}</p>
+            <p className="rcard-meta">{weekNumber(week.weekLabel)}</p>
             <Rate stats={week} />
             <dl className="rcard-facts">
               <dt>{t.colRequests}</dt>
@@ -250,7 +256,7 @@ function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
               <th scope="row" className="row-head">
                 {formatWeek(week.weekStart)}
                 <span className="sub">
-                  {week.weekLabel} {week.partial && <Pill tone="outline">{t.weekNow}</Pill>}
+                  {weekNumber(week.weekLabel)} {week.partial && <Pill tone="outline">{t.weekNow}</Pill>}
                 </span>
               </th>
               <td>
@@ -533,6 +539,97 @@ function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
               <td>{row.slaBreaches}</td>
               <td>{row.agreed}</td>
               <td>{formatMoment(row.lastRequestAt)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── контакты витрин ────────────────────────────────────────────────────────
+
+type ContactRow = ContactMetrics["items"][number];
+
+/** Контакты витрин за 30 дней: сколько раз открыли окно контактов, позвонили, написали в Telegram */
+function ContactsSection({ category }: { category: string | null }) {
+  const query = new URLSearchParams({ days: "30" });
+  if (category !== null) query.set("category", category);
+  const { loaded, reload } = useLoad<ContactMetrics>(`/staff/metrics/contacts?${query}`);
+  return (
+    <section className="stack" aria-labelledby="contacts-metrics-title">
+      <h2 id="contacts-metrics-title" className="section-title">
+        {t.metricsContacts}
+      </h2>
+      <p className="muted small">{t.metricsContactsHint}</p>
+      <LoadedView loaded={loaded} onRetry={reload}>
+        {(data) =>
+          data.items.length === 0 ? (
+            <p className="empty">{t.metricsContactsEmpty}</p>
+          ) : (
+            <ContactTable items={data.items} />
+          )
+        }
+      </LoadedView>
+    </section>
+  );
+}
+
+function ContactTable({ items }: { items: readonly ContactRow[] }) {
+  const phone = usePhone();
+  if (phone)
+    return (
+      <ul className="rcards">
+        {items.map((row) => (
+          <li key={row.listing.id} className="rcard rcard-tap">
+            <div className="rcard-head">
+              <Link to={{ name: "listing", id: row.listing.id }} className="rcard-link">
+                {row.listing.name}
+              </Link>
+              <StatusPill status={row.listing.status} />
+            </div>
+            <p className="rcard-meta">
+              <CategoryChip code={row.listing.categoryCode} /> {row.vendor.name}
+            </p>
+            <dl className="rcard-facts">
+              <dt>{t.colContactOpens}</dt>
+              <dd>{row.opens}</dd>
+              <dt>{t.colContactPhone}</dt>
+              <dd>{row.phone}</dd>
+              <dt>{t.colContactTelegram}</dt>
+              <dd>{row.telegram}</dd>
+            </dl>
+          </li>
+        ))}
+      </ul>
+    );
+  return (
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th scope="col">{t.listings}</th>
+            <th scope="col">{t.colContactOpens}</th>
+            <th scope="col">{t.colContactPhone}</th>
+            <th scope="col">{t.colContactTelegram}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((row) => (
+            <tr key={row.listing.id}>
+              <th scope="row" className="row-head">
+                <Link to={{ name: "listing", id: row.listing.id }} className="row-link">
+                  {row.listing.name}
+                </Link>{" "}
+                <StatusPill status={row.listing.status} />
+                <span className="sub">
+                  <CategoryChip code={row.listing.categoryCode} />{" "}
+                  <Link to={{ name: "vendor", id: row.vendor.id }}>{row.vendor.name}</Link>
+                </span>
+              </th>
+              <td>{row.opens}</td>
+              <td>{row.phone}</td>
+              <td>{row.telegram}</td>
             </tr>
           ))}
         </tbody>

@@ -1,5 +1,5 @@
 import { type Dict, dictionaries, type Lang } from "@bayramm/shared";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { allDemoListings, demoListings } from "../../apps/web/src/api/mock";
 import { addDays } from "../../apps/web/src/format";
 
@@ -12,7 +12,7 @@ export const NOW = new Date("2026-10-01T07:00:00Z");
 export const TODAY = "2026-10-01";
 /** Через неделю: каждая третья демо-площадка на эту дату занята */
 export const BUSY_DAY = addDays(TODAY, 7);
-/** Демо-залы: каталог без категории — это они */
+/** Демо-залы: раздел каталога «Залы» (`/catalog?category=hall`); без категории — «Все» */
 export const LISTINGS = demoListings(TODAY);
 /** Все демо-витрины: залы и по три в каждой включённой категории */
 export const ALL_LISTINGS = allDemoListings(TODAY);
@@ -39,6 +39,13 @@ export const VENUE =
     throw new Error("нет демо-площадок");
   })();
 
+/** Второй демо-зал: у него и телефон, и Telegram (api/demo-vitrinas.ts, demoTelegram) */
+export const SECOND_VENUE =
+  LISTINGS[1] ??
+  (() => {
+    throw new Error("нет второй демо-площадки");
+  })();
+
 export const T: Readonly<Record<Lang, Dict>> = dictionaries;
 export const LANG_KEY = "bayramm.web.lang";
 
@@ -48,7 +55,8 @@ export const PATHS = {
   catalog: "/catalog",
   venue: (slug: string) => `/venue/${slug}`,
   /** Каталог категории; залы — без параметра */
-  category: (code: string) => (code === "hall" ? "/catalog" : `/catalog?category=${code}`),
+  /** Раздел каталога; без параметра — «Все» */
+  category: (code: string) => `/catalog?category=${code}`,
   request: (slug: string) => `/venue/${slug}/request`,
   favorites: "/favorites",
   requests: "/requests",
@@ -120,6 +128,22 @@ export async function open(page: Page, path: string, ready?: string, { guest }: 
   // приложение сменит его своей отрисовкой (иначе нажатие уйдёт в пустоту)
   await page.locator("[data-prerendered]").waitFor({ state: "detached" });
   if (ready) await page.locator(ready).first().waitFor();
+}
+
+/**
+ * Открыть окно «Связаться» на витрине: видимая кнопка — раздел контактов на телефоне или
+ * карточка справа на компьютере; возвращает окно
+ */
+export async function openContacts(page: Page): Promise<Locator> {
+  await page
+    .getByRole("button", { name: T.ru.contactBtn })
+    .or(page.getByRole("button", { name: T.uz.contactBtn }))
+    .locator("visible=true")
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog");
+  await dialog.locator('a[href^="tel:"]').waitFor();
+  return dialog;
 }
 
 /** Видимый текст экрана и то, что читает диктор: подписи, подсказки, alt, title */

@@ -268,6 +268,14 @@ export interface RevealedPhone {
   readonly phone: string | null;
 }
 
+/**
+ * POST /staff/listings/:id/phone { reason? } → контакты витрины для клиентов: телефон и Telegram
+ * (имя без @). Чтение — в журнал доступа к ПДн, как у телефона
+ */
+export interface RevealedListingContacts extends RevealedPhone {
+  readonly telegram: string | null;
+}
+
 // ── карточки (листинги) ────────────────────────────────────────────────────
 
 export interface ListingListItem extends ListingBrief {
@@ -354,6 +362,8 @@ export interface ListingDetail {
   readonly updatedAt: string;
   /** Телефон для заявок вписан (сам номер — только через «показать») */
   readonly hasPhone: boolean;
+  /** Telegram для клиентов вписан (имя — только через «показать», вместе с телефоном) */
+  readonly hasTelegram: boolean;
   readonly photos: readonly StaffPhoto[];
   /** Чего не хватает: для отправки на проверку и для публикации */
   readonly blockers: {
@@ -411,6 +421,11 @@ export interface ListingInput {
   readonly capMin?: number | null;
   readonly capMax?: number | null;
   readonly phone?: string | null;
+  /**
+   * Telegram витрины для клиентов: имя пользователя или канала (5–32 знака, латиница, цифры, _;
+   * с @ или ссылкой t.me/… — тоже понимаем), null — убрать. 422 invalid_input ["telegram"]
+   */
+  readonly telegram?: string | null;
   readonly attributes?: Readonly<Record<string, AttributeValue | null>>;
   readonly videoLinks?: readonly string[];
   readonly parallelCapacity?: number;
@@ -737,8 +752,21 @@ export interface RequestNoteInput {
 
 export interface ClientListItem {
   readonly id: string;
-  /** Короткая ссылка: C- и первые 8 символов id */
+  /** Короткая ссылка: C- и первые 8 символов id — для поиска и переписки, не для глаз */
   readonly ref: string;
+  /**
+   * Как показать клиента в списке: имя из Telegram и первая буква фамилии («Азиза К.»);
+   * null — имени нет (аккаунт удалён или вход без Telegram)
+   */
+  readonly displayName: string | null;
+  /** Чем входил: Telegram и/или телефон (без самих значений) */
+  readonly signIn: readonly ("telegram" | "phone")[];
+  /** Последняя заявка: номер, витрина и статус; null — заявок нет */
+  readonly lastRequest: {
+    readonly publicNo: number;
+    readonly listingName: string;
+    readonly status: RequestStatus;
+  } | null;
   readonly createdAt: string;
   readonly lastSeenAt: string | null;
   readonly locale: "ru" | "uz";
@@ -1202,6 +1230,29 @@ export interface ListingMetrics extends ResponseStats {
     readonly status: ListingStatus;
     readonly categoryCode: string;
   };
+}
+
+/**
+ * GET /staff/metrics/contacts?days=30&category= (1–366): у каких витрин чаще открывают контакты
+ * («Связаться» на витрине и после заявки) — без клиентов, только числа. opens — открыли окно
+ * контактов, phone / telegram — нажали «Позвонить» / «Написать в Telegram». Сверху — больше
+ * открытий; не больше 50 витрин. 422 invalid_input ["days"] | ["category"]
+ */
+export interface ContactMetrics {
+  readonly days: number;
+  readonly category: string | null;
+  readonly items: readonly {
+    readonly listing: {
+      readonly id: string;
+      readonly name: string;
+      readonly status: ListingStatus;
+      readonly categoryCode: string;
+    };
+    readonly vendor: { readonly id: string; readonly name: string };
+    readonly opens: number;
+    readonly phone: number;
+    readonly telegram: number;
+  }[];
 }
 
 /** GET /staff/metrics/vendors/:id?days=30 — вендор и его площадки; 404 — нет такого вендора */

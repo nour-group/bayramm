@@ -59,6 +59,23 @@ function category(code: string): CategoryConfig {
   return found;
 }
 
+/** Контакты кортежа, которые панель показывает по «Показать» (остальные витрины — свои, из PATCH) */
+export const CAR_CONTACTS = { phone: "+998901112233", telegram: "oq_kortej" } as const;
+
+/**
+ * Telegram витрины, как его понимает сервер (apps/api/src/staff/input.ts): «@имя», «имя» или ссылка
+ * t.me/имя → имя без @ (5–32 знака, латиница, цифры и «_», с буквы, не на «_»); иначе null
+ */
+export function normalizeTelegram(value: string): string | null {
+  const name = value
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^(www\.)?(t\.me|telegram\.me)\//i, "")
+    .replace(/^@/, "")
+    .replace(/\/$/, "");
+  return /^[A-Za-z][A-Za-z0-9_]{3,30}[A-Za-z0-9]$/.test(name) ? name : null;
+}
+
 const BASE_REVIEW: readonly PublishBlocker[] = ["price", "descriptions", "phone", "photos"];
 const CHECKLIST: readonly PublishBlocker[] = ["contract", "stir", "contacts", "pd_consent"];
 
@@ -118,6 +135,7 @@ export function emptyListing(id: string, categoryCode: string, name: string, slu
     createdAt: iso,
     updatedAt: iso,
     hasPhone: false,
+    hasTelegram: false,
     attributes: {},
     missingAttributes: [],
     videoLinks: [],
@@ -170,6 +188,7 @@ export function seededListings(): ListingDetail[] {
       descriptionRu: "Кортеж",
       descriptionUz: "Kortej",
       hasPhone: true,
+      hasTelegram: true,
       parallelCapacity: 2,
       attributes: {
         fleet: [{ model: "Chevrolet Malibu", class: "sedan", color: "white", seats: 4 }],

@@ -35,15 +35,14 @@ const ru = {
   gateLoading: "Входим в кабинет…",
   gateOutsideTitle: "Войдите в кабинет",
   gateOutsideText:
-    "Войдите через сайт Bayramm — через Telegram или по номеру, который вы дали менеджеру. Или откройте кабинет из нашего бота.",
+    "Вход — через сайт Bayramm: по Telegram или по номеру, который вы дали менеджеру. Или откройте кабинет из нашего бота.",
   // …Telegram — когда входа по телефону на сайте нет (GET /auth/methods → phone: false)
-  gateOutsideTextTelegram:
-    "Войдите через сайт Bayramm — через Telegram. Или откройте кабинет из нашего бота.",
+  gateOutsideTextTelegram: "Вход — через сайт Bayramm, по Telegram. Или откройте кабинет из нашего бота.",
   gateNotLinkedTitle: "Сначала привяжите номер",
   gateNotLinkedText:
-    "Этот аккаунт ещё не связан с кабинетом партнёра. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm, или войдите по этому номеру на сайте.",
+    "Этот аккаунт ещё не связан с кабинетом партнёра. Откройте бота, нажмите «Я партнёр» и поделитесь номером телефона, который вы дали менеджеру Bayramm, или войдите по этому номеру на сайте.",
   gateNotLinkedTextBot:
-    "Этот аккаунт ещё не связан с кабинетом партнёра. Откройте бота и поделитесь номером телефона, который вы дали менеджеру Bayramm.",
+    "Этот аккаунт ещё не связан с кабинетом партнёра. Откройте бота, нажмите «Я партнёр» и поделитесь номером телефона, который вы дали менеджеру Bayramm.",
   gateDisabledTitle: "Доступ отключён",
   gateDisabledText: "Свяжитесь с вашим менеджером Bayramm.",
   gateExpiredTitle: "Сессия закончилась",
@@ -175,6 +174,8 @@ const ru = {
   by_vendor_user: "вы",
   by_staff: "менеджер",
   by_system: "система",
+  // в истории заявка «Ждёт ответа» (st_viewed) читалась бы как действие того, кто её открыл
+  histViewed: "Просмотрена",
   actionFailed: "Не удалось сохранить. Попробуйте ещё раз.",
   staleStatus: "Статус заявки уже изменился — показываем актуальный.",
   err_network: "Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.",
@@ -231,6 +232,8 @@ const ru = {
   calendarConflict: "Календарь изменили — обновили. Проверьте и отметьте ещё раз.",
   tz: "Время ташкентское.",
   listingPicker: "Витрина",
+  // подпись выбора витрины: на экране «Витрина» слово «Витрина» над выбором повторило бы заголовок
+  pickListing: "Выберите витрину",
   noListings: "Витрины ещё нет",
   noListingsText:
     "Её заводит менеджер Bayramm. Как только он это сделает, здесь появятся витрина, услуги и календарь.",
@@ -344,6 +347,8 @@ const ru = {
   todoTeam: "Сделает команда Bayramm: {list}",
   todoOwner: "Пункты выполняет владелец кабинета.",
   toPhotos: "К фото",
+  // пункт чек-листа ведёт к форме изменений прямо под ним — «Предложить изменения» там уже есть
+  toFill: "Заполнить",
   blocker_price: "услуга с ценой",
   blocker_capacity: "вместимость",
   blocker_district: "район",
@@ -359,8 +364,7 @@ const ru = {
 
   // правки карточки (предложение → проверка командой)
   proposalTitle: "Изменения витрины",
-  proposalLead:
-    "Название, описание, данные витрины и ссылки на видео меняются предложением — команда Bayramm его проверит.",
+  proposalLead: "Предложить можно: название, описание, данные витрины и ссылки на видео.",
   proposalStart: "Предложить изменения",
   proposalPending: "Предложение на проверке с {date}. Клиенты пока видят прежнюю версию витрины.",
   proposalByTeam:
@@ -579,9 +583,9 @@ const uz: VendorDict = {
   gateOutsideTextTelegram: "Bayramm sayti orqali Telegram bilan kiring. Yoki kabinetni botimizdan oching.",
   gateNotLinkedTitle: "Avval raqamni ulang",
   gateNotLinkedText:
-    "Bu hisob hali hamkor kabinetiga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing yoki saytda shu raqam bilan kiring.",
+    "Bu hisob hali hamkor kabinetiga ulanmagan. Botni oching, «Men hamkorman» tugmasini bosing va Bayramm menejeriga bergan telefon raqamingizni ulashing yoki saytda shu raqam bilan kiring.",
   gateNotLinkedTextBot:
-    "Bu hisob hali hamkor kabinetiga ulanmagan. Botni oching va Bayramm menejeriga bergan telefon raqamingizni ulashing.",
+    "Bu hisob hali hamkor kabinetiga ulanmagan. Botni oching, «Men hamkorman» tugmasini bosing va Bayramm menejeriga bergan telefon raqamingizni ulashing.",
   gateDisabledTitle: "Kirish oʻchirilgan",
   gateDisabledText: "Bayramm menejeringiz bilan bogʻlaning.",
   gateExpiredTitle: "Sessiya tugadi",
@@ -709,6 +713,7 @@ const uz: VendorDict = {
   by_vendor_user: "siz",
   by_staff: "menejer",
   by_system: "tizim",
+  histViewed: "Koʻrildi",
   actionFailed: "Saqlab boʻlmadi. Qayta urinib koʻring.",
   staleStatus: "Soʻrov holati allaqachon oʻzgargan — joriy holatini koʻrsatyapmiz.",
   err_network: "Server bilan aloqa yoʻq. Internetni tekshiring va qayta urinib koʻring.",
@@ -765,6 +770,7 @@ const uz: VendorDict = {
   calendarConflict: "Taqvim oʻzgartirildi — yangiladik. Tekshiring va qayta belgilang.",
   tz: "Vaqt Toshkent boʻyicha.",
   listingPicker: "Vitrina",
+  pickListing: "Vitrinani tanlang",
   noListings: "Hali vitrina yoʻq",
   noListingsText:
     "Uni Bayramm menejeri qoʻshadi. U qoʻshgach, bu yerda vitrina, xizmatlar va taqvim paydo boʻladi.",
@@ -878,6 +884,7 @@ const uz: VendorDict = {
   todoTeam: "Bayramm jamoasi bajaradi: {list}",
   todoOwner: "Bandlarni kabinet egasi bajaradi.",
   toPhotos: "Fotolarga",
+  toFill: "Toʻldirish",
   blocker_price: "narxli xizmat",
   blocker_capacity: "sigʻim",
   blocker_district: "tuman",
@@ -892,8 +899,7 @@ const uz: VendorDict = {
   blocker_pd_consent: "maʼlumotlarni qayta ishlashga rozilik",
 
   proposalTitle: "Vitrinadagi oʻzgarishlar",
-  proposalLead:
-    "Nom, tavsif, vitrina maʼlumotlari va video havolalari taklif orqali oʻzgaradi — Bayramm jamoasi uni tekshiradi.",
+  proposalLead: "Taklif qilish mumkin: nom, tavsif, vitrina maʼlumotlari va video havolalari.",
   proposalStart: "Oʻzgarish taklif qilish",
   proposalPending:
     "Taklif {date} dan beri tekshiruvda. Mijozlar hozircha vitrinaning avvalgi koʻrinishini koʻradi.",

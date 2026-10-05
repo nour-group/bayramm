@@ -84,7 +84,7 @@ function RequestItem({
   const similarHref = hrefFor(
     { name: "catalog" },
     {
-      category: hall ? null : category,
+      category,
       date: request.eventDate,
       guests: hall ? request.guests : null,
       district: hall ? request.listing.districtCode : null,

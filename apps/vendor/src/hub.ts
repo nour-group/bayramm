@@ -1,5 +1,6 @@
 import { type AuthMethods, VENDOR_HEADER } from "@bayramm/shared/api/account";
 import { newPkce } from "@bayramm/shared/pkce";
+import { initialLang } from "./lang";
 
 /* Вход в кабинет вне Telegram — через хаб входа на сайте Bayramm, без второго входа:
      1. кабинет создаёт verifier и state (PKCE S256), помнит их в хранилище вкладки и ведёт
@@ -114,6 +115,8 @@ export async function startHub(): Promise<boolean> {
   hub.searchParams.set("app", "vendor");
   hub.searchParams.set("state", state);
   hub.searchParams.set("challenge", challenge);
+  // Хаб — на языке кабинета (сайт берёт ?lang= как выбор языка)
+  hub.searchParams.set("lang", initialLang());
   browser.assign(hub.href);
   return true;
 }

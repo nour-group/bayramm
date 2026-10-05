@@ -154,6 +154,21 @@ export class Input {
     return phone;
   }
 
+  /**
+   * Telegram пользователя или канала: «name», «@name», «t.me/name», «https://t.me/name» → «name»
+   * (5–32 знака, латиница, цифры, _, с буквы, не на _). Пусто — null (убрать)
+   */
+  telegram(key: string): string | null | undefined {
+    const value = this.text(key, { max: 200 });
+    if (value === undefined || value === null) return value;
+    const name = normalizeTelegram(value);
+    if (name === null) {
+      this.fail(key);
+      return undefined;
+    }
+    return name;
+  }
+
   /** Строка по шаблону (после обрезки пробелов) */
   pattern(key: string, re: RegExp, required = false): string | null | undefined {
     const value = this.text(key, { max: 200, required });
@@ -216,4 +231,17 @@ export function paging(query: (key: string) => string | undefined, maxLimit = 10
 /** Строка поиска для ILIKE: спецсимволы шаблона экранированы */
 export function likePattern(query: string): string {
   return `%${query.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+const TELEGRAM_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{3,30}[A-Za-z0-9]$/;
+
+/** Имя Telegram из того, как его вписали: @name, t.me/name, https://t.me/name; иначе null */
+export function normalizeTelegram(raw: string): string | null {
+  const name = raw
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^(www\.)?(t\.me|telegram\.me)\//i, "")
+    .replace(/^@/, "")
+    .replace(/\/$/, "");
+  return TELEGRAM_NAME_RE.test(name) ? name : null;
 }

@@ -29,6 +29,27 @@ describe("каталог: отказ до базы", () => {
     expect(await error(res)).toMatchObject({ code: "invalid_request", details: ["date"] });
   });
 
+  it("«Связаться»: слаг не того вида — 404, тело без action или signedIn — 400; ответ не кэшируется", async () => {
+    const post = (slug: string, body: unknown) =>
+      call(`/catalog/listings/${slug}/contact`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: typeof body === "string" ? body : JSON.stringify(body),
+      });
+    expect((await post("Not_A_Slug", { action: "open", signedIn: false })).res.status).toBe(404);
+    for (const [body, details] of [
+      [{}, ["action", "signedIn"]],
+      [{ action: "call", signedIn: false }, ["action"]],
+      [{ action: "open", signedIn: "yes" }, ["signedIn"]],
+      ["not json", ["action", "signedIn"]],
+      [{ action: "open", signedIn: true, pad: "x".repeat(300) }, ["action", "signedIn"]],
+    ] as const) {
+      const { res } = await post("hall-one", body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(await error(res)).toMatchObject({ code: "invalid_request", details });
+    }
+  });
+
   it("тексты согласий: неизвестная локаль — 400", async () => {
     const { res } = await call("/consent-texts?locale=en");
     expect(res.status).toBe(400);

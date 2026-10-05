@@ -4,6 +4,7 @@
 // его странице, пауза напоминаний в настройках. API — подменённый fetch
 import type {
   CategoryMetricsList,
+  ContactMetrics,
   MetricsOverview,
   StaffDictionaries,
   StaffMe,
@@ -138,6 +139,32 @@ const CATEGORY_METRICS: CategoryMetricsList = {
       clients: 0,
       p90ResponseMinutes: null,
       agreedRate: null,
+    },
+  ],
+};
+
+const CONTACTS: ContactMetrics = {
+  days: 30,
+  category: null,
+  items: [
+    {
+      listing: { id: LISTING_ID, name: "Oqsaroy Hall", status: "active", categoryCode: "hall" },
+      vendor: { id: VENDOR_A, name: "Hall V101" },
+      opens: 48,
+      phone: 21,
+      telegram: 9,
+    },
+    {
+      listing: {
+        id: "bbbbbbbb-0000-0000-0000-000000000002",
+        name: "Oq kortej",
+        status: "review",
+        categoryCode: "car",
+      },
+      vendor: { id: VENDOR_C, name: "Hall V103" },
+      opens: 5,
+      phone: 0,
+      telegram: 2,
     },
   ],
 };
@@ -299,6 +326,90 @@ describe("раздел «Метрики»", () => {
     // Сводка по категориям от фильтра не зависит
     expect(calls.filter((c) => c.url.startsWith("/api/staff/metrics/categories"))).toHaveLength(1);
     expect(text()).toContain(t.metricsCategoryFilter(categoryName("car")));
+  });
+
+  it("«Контакты витрин»: за 30 дней, витрина — ссылкой; открыли, позвонить, Telegram — числами", async () => {
+    mockApi(MODERATOR, {
+      "GET /api/staff/metrics": json(OVERVIEW),
+      "GET /api/staff/metrics/vendors": json(VENDORS),
+      "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
+      "GET /api/staff/metrics/contacts": json(CONTACTS),
+    });
+    await mount("/metrics");
+    expect(calls.some((c) => c.url === "/api/staff/metrics/contacts?days=30")).toBe(true);
+    const section = container.querySelector("section[aria-labelledby='contacts-metrics-title']");
+    expect(section?.querySelector("h2")?.textContent).toBe(t.metricsContacts);
+    const rows = [...(section?.querySelectorAll("tbody tr") ?? [])];
+    expect(rows).toHaveLength(2);
+    // Как пришло с сервера: чаще открывают — сверху
+    expect(rows[0]?.querySelector("a.row-link")?.getAttribute("href")).toBe(`/listings/${LISTING_ID}`);
+    expect([...(rows[0]?.querySelectorAll("td") ?? [])].map((td) => td.textContent)).toEqual([
+      "48",
+      "21",
+      "9",
+    ]);
+    expect(rows[0]?.textContent).toContain(categoryName("hall"));
+    expect(rows[0]?.textContent).toContain("Hall V101");
+    expect(rows[1]?.textContent).toContain(t.status.review);
+    expect([...(section?.querySelectorAll("th[scope=col]") ?? [])].map((th) => th.textContent)).toEqual([
+      t.listings,
+      t.colContactOpens,
+      t.colContactPhone,
+      t.colContactTelegram,
+    ]);
+  });
+
+  it("«Контакты витрин»: фильтр категории уходит и в них; нет контактов — пустое состояние", async () => {
+    mockApi(MODERATOR, {
+      "GET /api/staff/metrics": json(OVERVIEW),
+      "GET /api/staff/metrics/vendors": json(VENDORS),
+      "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
+      "GET /api/staff/metrics/contacts": (body) =>
+        calls.at(-1)?.url.includes("category=car")
+          ? json({ ...CONTACTS, category: "car", items: [] })(body)
+          : json(CONTACTS)(body),
+    });
+    await mount("/metrics");
+    // До выбора — подпись говорит, что фильтр сужает и контакты
+    expect(text()).toContain(t.metricsFilterScope);
+    await click(container.querySelector("button[aria-haspopup=listbox]"));
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === categoryName("car")),
+    );
+    expect(calls.some((c) => c.url === "/api/staff/metrics/contacts?days=30&category=car")).toBe(true);
+    const section = container.querySelector("section[aria-labelledby='contacts-metrics-title']");
+    expect(section?.querySelector(".empty")?.textContent).toBe(t.metricsContactsEmpty);
+    expect(section?.querySelector("table")).toBeNull();
+  });
+
+  it("не ответили контакты — остальные блоки на месте, у блока своя ошибка с «Повторить»", async () => {
+    mockApi(MODERATOR, {
+      "GET /api/staff/metrics": json(OVERVIEW),
+      "GET /api/staff/metrics/vendors": json(VENDORS),
+      "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
+      "GET /api/staff/metrics/contacts": json({ error: { code: "internal_error" } }, 500),
+    });
+    await mount("/metrics");
+    expect(vendorOrder()).toEqual(["V103", "V101", "V102"]);
+    const section = container.querySelector("section[aria-labelledby='contacts-metrics-title']");
+    expect(section?.querySelector("[role=alert]")).not.toBeNull();
+    expect([...(section?.querySelectorAll("button") ?? [])].some((b) => b.textContent === t.retry)).toBe(
+      true,
+    );
+  });
+
+  it("недели — «неделя N», а не ISO-метка", async () => {
+    mockApi(MODERATOR, {
+      "GET /api/staff/metrics": json(OVERVIEW),
+      "GET /api/staff/metrics/vendors": json(VENDORS),
+      "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
+      "GET /api/staff/metrics/contacts": json(CONTACTS),
+    });
+    await mount("/metrics");
+    const weeks = container.querySelector("section[aria-labelledby='weekly-title']")?.textContent ?? "";
+    expect(weeks).toContain(t.weekNumber(39));
+    expect(weeks).toContain(t.weekNumber(40));
+    expect(weeks).not.toContain("W39");
   });
 
   it("без права metrics.read раздела нет в навигации", async () => {

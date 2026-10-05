@@ -1,5 +1,6 @@
 export { API_PREFIX, apiPath, type FetcherLike, proxyToApi } from "./api-proxy";
 export { CACHE_IMMUTABLE, CACHE_NONE, CACHE_REVALIDATE, CACHE_STATIC } from "./cache-headers";
+export { HSTS, httpsRedirect, isLoopback } from "./https";
 export {
   contentSecurityPolicy,
   PERMISSIONS_POLICY,

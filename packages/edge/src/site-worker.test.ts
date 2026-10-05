@@ -54,6 +54,34 @@ describe("createSiteWorker", () => {
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
+  it("по http — редирект на https раньше всего: ни статики, ни API", async () => {
+    const { env } = setup();
+    const worker = createSiteWorker({ before: () => new Response("before") });
+    const page = await worker.fetch(new Request("http://app.example/catalog?x=1"), env);
+    expect(page.status).toBe(301);
+    expect(page.headers.get("location")).toBe("https://app.example/catalog?x=1");
+    const api = await worker.fetch(new Request("http://app.example/api/requests", { method: "POST" }), env);
+    expect(api.status).toBe(308);
+    expect(api.headers.get("location")).toBe("https://app.example/api/requests");
+    expect(env.ASSETS.requests).toEqual([]);
+    expect(env.API.requests).toEqual([]);
+  });
+
+  it("сервер разработки и свой компьютер — по http без редиректа", async () => {
+    const { env } = setup();
+    const dev = createSiteWorker({ dev: true });
+    expect((await dev.fetch(new Request("http://app.example/"), env)).status).toBe(200);
+    const local = createSiteWorker();
+    const res = await local.fetch(new Request("http://localhost:8787/"), env);
+    expect(res.status).toBe(200);
+  });
+
+  it("страницы и файлы — со Strict-Transport-Security", async () => {
+    const { get } = setup();
+    expect((await get("/")).headers.get("strict-transport-security")).toBe("max-age=31536000");
+    expect((await get("/assets/index.js")).headers.get("strict-transport-security")).toBe("max-age=31536000");
+  });
+
   it("before отвечает раньше API и статики", async () => {
     const { env, get } = setup({
       before: (url) => (url.pathname === "/old" ? Response.redirect(`${ORIGIN}/new`, 301) : null),

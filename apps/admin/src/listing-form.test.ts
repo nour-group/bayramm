@@ -40,6 +40,7 @@ const listing = (categoryCode: string, extra: Partial<ListingDetail> = {}): List
   createdAt: "2026-10-01T07:00:00Z",
   updatedAt: "2026-10-01T07:00:00Z",
   hasPhone: false,
+  hasTelegram: false,
   attributes: {},
   missingAttributes: [],
   videoLinks: [],
@@ -113,6 +114,33 @@ describe("правка витрины — только изменённое", ()
     const before = formState(listing("photo"), photo);
     const now = { ...before, videos: ["https://youtu.be/dQw4w9WgXcQ", ""] };
     expect(listingBody(photo, now, before)).toEqual({ videoLinks: ["https://youtu.be/dQw4w9WgXcQ"] });
+  });
+});
+
+describe("телефон и Telegram для клиентов", () => {
+  const hall = cfg("hall");
+
+  it("пишутся только вписанные: пустые поля не уходят, Telegram — как вписали (разбирает сервер)", () => {
+    const before = formState(listing("hall"), hall);
+    expect(listingBody(hall, before, before)).toEqual({});
+    const now = {
+      ...before,
+      values: { ...before.values, phone: " +998 90 111 22 33 ", telegram: " t.me/Lola_Hall " },
+    };
+    expect(listingBody(hall, now, before)).toEqual({
+      phone: "+998 90 111 22 33",
+      telegram: "t.me/Lola_Hall",
+    });
+  });
+
+  it("«Убрать Telegram» — null, и он важнее вписанного", () => {
+    const before = formState(listing("hall", { hasTelegram: true }), hall);
+    expect(before.clearTelegram).toBe(false);
+    const cleared = { ...before, clearTelegram: true };
+    expect(listingBody(hall, cleared, before)).toEqual({ telegram: null });
+    expect(
+      listingBody(hall, { ...cleared, values: { ...cleared.values, telegram: "@lola_hall" } }, before),
+    ).toEqual({ telegram: null });
   });
 });
 

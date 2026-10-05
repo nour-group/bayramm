@@ -7,7 +7,7 @@
 //   PATCH /staff/listings/:id                                   правка (version обязателен)
 //   POST  /staff/listings/:id/submit | publish | suspend | reject | draft   { version, reason? }
 //   POST  /staff/listings/:id/category { categoryCode, version } сменить категорию (пока нет заявок)
-//   POST  /staff/listings/:id/phone  { reason? }                телефон для заявок (в журнал)
+//   POST  /staff/listings/:id/phone  { reason? }                телефон и Telegram для клиентов (в журнал)
 //
 // Жизненный цикл и правила публикации — в базе (listings_before_update,
 // app.listing_publish_blockers): API только выбирает шаги и переводит ошибки.
@@ -31,6 +31,7 @@ import type {
   ListingSaveResult,
   ListingStatus,
   PendingRevision,
+  RevealedListingContacts,
   RevisionField,
   StaffPermission,
   StaffPhoto,
@@ -49,7 +50,13 @@ import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
 import { roleActorKind, type Tx, withActor } from "../db/actor";
-import { hasListingPhone, readListingPhone, saveListingPhone, staffName } from "../db/pii";
+import {
+  listingContactKinds,
+  readListingContacts,
+  saveListingPhone,
+  saveListingTelegram,
+  staffName,
+} from "../db/pii";
 import type { Json } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound, versionConflict } from "../errors";
@@ -120,7 +127,7 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       "v.id as vendor_id",
       "v.public_code",
       "v.name as vendor_name",
-      hasListingPhone("l.id").as("has_phone"),
+      listingContactKinds("l.id").as("contact_kinds"),
       blockers("l.id", "review").as("blockers_review"),
       blockers("l.id", "active").as("blockers_active"),
     ])
@@ -189,7 +196,8 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
     version: row.version,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
-    hasPhone: row.has_phone,
+    hasPhone: row.contact_kinds.includes("phone"),
+    hasTelegram: row.contact_kinds.includes("telegram"),
     photos: await loadPhotos(trx, id),
     blockers: { review: row.blockers_review, active: row.blockers_active },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
@@ -364,6 +372,8 @@ interface ListingFields {
 interface ParsedListing {
   fields: ListingFields;
   phone: string | null | undefined;
+  /** Telegram витрины для клиентов (имя без @); undefined — не трогать, null — убрать */
+  telegram: string | null | undefined;
   /** Правка полей витрины как пришла — проверяется по категории (categoryFields) */
   attributes: unknown;
   /** Ссылки на видео как пришли — проверяются по категории */
@@ -395,6 +405,7 @@ function parseListing(input: Input, creating: boolean): ParsedListing {
   return {
     fields,
     phone: input.phone("phone"),
+    telegram: input.telegram("telegram"),
     attributes: input.peek("attributes"),
     videoLinks: input.peek("videoLinks"),
   };
@@ -455,9 +466,14 @@ export function staffServiceActor(role: StaffActorRole, listingStatus: ListingSt
 
 type StaffActorRole = ReturnType<typeof staffOf>["role"];
 
-/** Телефон для заявок — не столбец карточки: пишет saveListingPhone */
+/**
+ * Телефон и Telegram для клиентов — не столбцы карточки: пишут saveListingPhone и
+ * saveListingTelegram. Telegram — рядом с телефоном: без телефона его некуда записать (422)
+ */
 async function savePhone(trx: Tx, listingId: string, parsed: ParsedListing): Promise<void> {
   if (parsed.phone !== undefined) await saveListingPhone(trx, listingId, parsed.phone);
+  if (parsed.telegram !== undefined && !(await saveListingTelegram(trx, listingId, parsed.telegram)))
+    throw invalidInput(["telegram"]);
 }
 
 // ── создать ─────────────────────────────────────────────────────────────────
@@ -598,7 +614,7 @@ async function proposeModerated(
   }
 
   // Сразу — немодерируемое: адрес, район, вместимость, поля витрины, ссылки на видео,
-  // одновременные заказы, телефон, адрес страницы
+  // одновременные заказы, телефон и Telegram, адрес страницы
   const direct: ListingFields = {
     slug: fields.slug,
     district_code: fields.district_code,
@@ -612,6 +628,7 @@ async function proposeModerated(
     direct: {
       fields: definedOnly(direct),
       phone: parsed.phone,
+      telegram: parsed.telegram,
       attributes: parsed.attributes,
       videoLinks: parsed.videoLinks,
     },
@@ -786,10 +803,10 @@ listings.post("/:id/category", requirePermission("listings.write"), limitJson, a
 listings.post("/:id/phone", requirePermission("vendor_phones.read"), limitJson, async (c) => {
   const id = pathId(c.req.param("id"));
   const reason = await readReason(c.req.raw);
-  const phone = await withActor(c.var.db, staffOf(c), async (trx) => {
+  const contacts = await withActor(c.var.db, staffOf(c), async (trx) => {
     const exists = await trx.selectFrom("app.listings").select("id").where("id", "=", id).executeTakeFirst();
     if (!exists) throw notFound();
-    return readListingPhone(trx, id, reason);
+    return readListingContacts(trx, id, reason);
   });
-  return c.json({ phone });
+  return c.json(contacts satisfies RevealedListingContacts);
 });

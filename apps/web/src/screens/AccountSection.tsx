@@ -39,7 +39,7 @@ function useAppLink(bot: string | null) {
 }
 
 function Roles({ me, methods }: { me: Me; methods: AuthMethods | null }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const via = useAppLink(methods?.telegram.bot ?? null);
   const vendors = me.roles.vendors;
   if (methods === null || (vendors.length === 0 && me.roles.staff === null)) return null;
@@ -48,7 +48,7 @@ function Roles({ me, methods }: { me: Me; methods: AuthMethods | null }) {
     <div className="roles">
       <h3 className="sub-title">{t.accRoles}</h3>
       {vendors.length > 0 ? (
-        <a className="row-link" href={`${apps.vendor}/?signin=1`} onClick={via("cabinet")}>
+        <a className="row-link" href={`${apps.vendor}/?signin=1&lang=${lang}`} onClick={via("cabinet")}>
           <Icon name="hall" size={20} />
           <span>
             <b>{t.accVendor}</b>

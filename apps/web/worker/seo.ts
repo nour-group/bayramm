@@ -1,7 +1,7 @@
 import type { FetcherLike } from "@bayramm/edge";
 import { LANGS } from "@bayramm/shared";
 import type { CatalogCategories, CatalogPage, ListingDetail } from "@bayramm/shared/api";
-import { CATEGORY_CODES, DEFAULT_CATEGORY, hrefFor, matchRoute } from "../src/routes";
+import { CATEGORY_CODES, hrefFor, matchRoute } from "../src/routes";
 import { escapeHtml, PRODUCTION_HOST, type VenueLookup } from "./meta";
 
 /* robots.txt, sitemap.xml и данные площадки для разметки её страницы. Всё из API по
@@ -84,13 +84,13 @@ export async function lookupVenue(
 
 /**
  * Категории с опубликованными витринами (GET /catalog/categories), только известные клиенту;
- * API не ответило — только залы (страница каталога по умолчанию есть всегда)
+ * API не ответило — ни одной (каталог «Все» в карте есть всегда)
  */
 async function liveCategories(api: FetcherLike, origin: string): Promise<string[]> {
   const res = await api.fetch(
     new Request(`${origin}/catalog/categories`, { headers: { accept: "application/json" } }),
   );
-  if (!res.ok) return [DEFAULT_CATEGORY];
+  if (!res.ok) return [];
   const body = (await res.json()) as CatalogCategories;
   return (body.items ?? [])
     .filter((c) => c.listings > 0 && (CATEGORY_CODES as readonly string[]).includes(c.code))
@@ -143,9 +143,9 @@ export async function sitemapXml(api: FetcherLike | undefined, url: URL): Promis
   const build = async () => {
     const pages = [hrefFor({ name: "home" }), hrefFor({ name: "catalog" }), hrefFor({ name: "docs" })];
     // API не ответило — карта без категорий и витрин, но страницы сайта в ней есть
-    const categories = api ? await liveCategories(api, url.origin).catch(() => [DEFAULT_CATEGORY]) : [];
-    for (const category of categories)
-      if (category !== DEFAULT_CATEGORY) pages.push(hrefFor({ name: "catalog" }, { category }));
+    const categories = api ? await liveCategories(api, url.origin).catch(() => []) : [];
+    // Каталог без параметра — все разделы; у каждого раздела, и у залов, — своя страница
+    for (const category of categories) pages.push(hrefFor({ name: "catalog" }, { category }));
     // Страниц выдачи на категорию — поровну, всего не больше SITEMAP_PAGES
     const perCategory = Math.max(1, Math.floor(SITEMAP_PAGES / Math.max(1, categories.length)));
     for (const category of categories) {

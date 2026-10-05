@@ -10,6 +10,8 @@
 //                                                                       ставит routes/ops.ts)
 //   POST /requests  — по IP                 RATE_LIMIT_REQUESTS_IP     20 в минуту
 //                   — по актору (клиенту)   RATE_LIMIT_REQUESTS_ACTOR   5 в минуту
+//   POST /catalog/listings/*/contact — по IP RATE_LIMIT_CONTACTS_IP    30 в минуту: контакты
+//                                            витрин не выкачать скриптом
 //
 // Лимиты по IP ставит mountRateLimits до маршрутов — до базы и проверки сессии.
 // Ключ — HMAC(ID_HASH_KEY, IP) (auth/ip.ts): адрес не уходит даже в счётчик.
@@ -31,7 +33,11 @@ import { ApiError } from "./errors";
 /** Окно всех лимитов (simple.period в wrangler.jsonc) — оно же Retry-After */
 export const RATE_LIMIT_PERIOD_SECONDS = 60;
 
-export type RateLimitBinding = "RATE_LIMIT_AUTH_IP" | "RATE_LIMIT_REQUESTS_IP" | "RATE_LIMIT_REQUESTS_ACTOR";
+export type RateLimitBinding =
+  | "RATE_LIMIT_AUTH_IP"
+  | "RATE_LIMIT_REQUESTS_IP"
+  | "RATE_LIMIT_REQUESTS_ACTOR"
+  | "RATE_LIMIT_CONTACTS_IP";
 
 export const rateLimited = () => new ApiError(429, "rate_limited", "Too many requests");
 
@@ -95,4 +101,5 @@ export function mountRateLimits(app: Hono<AppEnv>): void {
   // Добавление способа входа проверяет те же подписи и коды, что и вход
   app.on("POST", "/me/identities/*", limitByIp("RATE_LIMIT_AUTH_IP"));
   app.on("POST", "/requests", limitByIp("RATE_LIMIT_REQUESTS_IP"));
+  app.on("POST", "/catalog/listings/:slug/contact", limitByIp("RATE_LIMIT_CONTACTS_IP"));
 }

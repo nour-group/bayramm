@@ -26,7 +26,7 @@ import { type FormEvent, Fragment, useCallback, useId, useRef, useState } from "
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { CategoryChip, categoryName, categoryOptions, partWindow } from "../categories";
 import { formatDay, formatMoment, formatPrice, formatSum, vendorLabel } from "../format";
-import { usePhone } from "../layout";
+import { useLayout, usePhone } from "../layout";
 import { t } from "../texts";
 import {
   ActionBar,
@@ -96,6 +96,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
   const [q, setQ] = useState("");
   const [query, setQuery] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterId = useId();
   const params = new URLSearchParams({ limit: "100" });
   if (sla) params.set("sla", sla);
   if (category) params.set("category", category);
@@ -168,9 +169,12 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
             </>
           }
         >
+          <p className="sheet-group" id={`${filterId}-sla`}>
+            {t.colDue}
+          </p>
           <RadioGroup<SlaFilter | "all">
             variant="row"
-            label={t.colDue}
+            aria-labelledby={`${filterId}-sla`}
             value={sla ?? "all"}
             onChange={(value) => setSla(value === "all" ? null : value)}
             options={SLA_FILTERS.map((filter) => ({
@@ -179,9 +183,12 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
               ...(filter && list ? { hint: t.requestsCount(filterCount(list, filter)) } : {}),
             }))}
           />
+          <p className="sheet-group" id={`${filterId}-category`}>
+            {t.colCategory}
+          </p>
           <RadioGroup<string>
             variant="row"
-            label={t.colCategory}
+            aria-labelledby={`${filterId}-category`}
             value={category ?? "all"}
             onChange={(value) => setCategory(value === "all" ? null : value)}
             options={[{ value: "all", label: t.allCategories }, ...categoryOptions()]}
@@ -221,10 +228,10 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                       <SlaPill sla={request.sla} />
                     </div>
                     <p className="rcard-meta">
-                      {t.requestStatus[request.status]} · {formatMoment(request.createdAt)}
+                      {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
                     </p>
                     <dl className="rcard-facts">
-                      <dt>{t.colVendor}</dt>
+                      <dt>{t.colListing}</dt>
                       <dd>
                         <CategoryChip code={request.listing.categoryCode} /> {request.listing.name} ·{" "}
                         {vendorLabel(request.vendor)}
@@ -251,7 +258,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                   <thead>
                     <tr>
                       <th scope="col">{t.colRequest}</th>
-                      <th scope="col">{t.colVendor}</th>
+                      <th scope="col">{t.colListing}</th>
                       <th scope="col">{t.colEvent}</th>
                       <th scope="col">{t.colDue}</th>
                     </tr>
@@ -264,7 +271,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                             {t.requestNo(request.publicNo)}
                           </Link>
                           <span className="sub">
-                            {t.requestStatus[request.status]} · {formatMoment(request.createdAt)}
+                            {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
                           </span>
                         </td>
                         <td>
@@ -341,7 +348,8 @@ function RequestView({
     },
     [api, request.id],
   );
-  const phone = usePhone();
+  // Две колонки — только на компьютере: уже них клиент и телефоны вендора не должны уезжать вниз
+  const stacked = useLayout() !== "desktop";
   const category = categoryConfig(request.listing.categoryCode);
   const district = (code: string) => dictionaries?.districts.find((d) => d.code === code)?.nameRu;
   const details = <RequestDetails category={category} request={request} district={district} />;
@@ -353,9 +361,12 @@ function RequestView({
   const facts = (
     <section className="panel" aria-label={t.views.request}>
       <dl className="dl">
+        <dt>{t.colListing}</dt>
+        <dd>
+          <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
+        </dd>
         <dt>{t.colVendor}</dt>
         <dd>
-          <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link> ·{" "}
           <Link to={{ name: "vendor", id: request.vendor.id }}>{vendorLabel(request.vendor)}</Link>
         </dd>
         <dt>{t.colCategory}</dt>
@@ -396,7 +407,7 @@ function RequestView({
           </>
         )}
         <dt>{t.source}</dt>
-        <dd>{request.source}</dd>
+        <dd>{t.sources[request.source] ?? request.source}</dd>
       </dl>
     </section>
   );
@@ -406,10 +417,11 @@ function RequestView({
       <ol className="history">
         {request.history.map((entry) => (
           <li key={`${entry.at}-${entry.to}`}>
-            <span className="sub">{formatMoment(entry.at)}</span>{" "}
+            <span className="sub">
+              {formatMoment(entry.at)} · {t.historyBy[entry.actorKind]}
+            </span>
             {entry.from ? `${t.requestStatus[entry.from]} → ` : ""}
             <strong>{t.requestStatus[entry.to]}</strong>
-            <span className="sub"> · {t.historyBy[entry.actorKind]}</span>
             {entry.reason && <p className="reason">{entry.reason}</p>}
           </li>
         ))}
@@ -459,8 +471,8 @@ function RequestView({
         <SlaPill sla={request.sla} /> <Pill tone="outline">{t.requestStatus[request.status]}</Pill>
       </p>
       {can("requests.write") && <RequestActions request={request} onChange={onChange} />}
-      {phone ? (
-        // Телефон: сначала главное — данные заявки, клиент, как дозвониться вендору
+      {stacked ? (
+        // Телефон и планшет: сначала главное — данные заявки, клиент, как дозвониться вендору
         <>
           {facts}
           {details}

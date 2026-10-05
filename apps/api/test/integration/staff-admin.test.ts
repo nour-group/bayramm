@@ -12,9 +12,11 @@ import { trimTrailingSlashes } from "@bayramm/shared";
 import type { ListingService } from "@bayramm/shared/api/services";
 import type {
   Availability,
+  ContactMetrics,
   ListingDetail,
   ListingList,
   ListingSaveResult,
+  RevealedListingContacts,
   RevisionList,
   StaffDictionaries,
   StaffMe,
@@ -282,6 +284,39 @@ describe("вендор → карточка → проверка → публи�
       ),
     ).toMatchObject({ status: 409, code: "version_conflict" });
     listing = edited;
+  });
+
+  it("Telegram для клиентов — рядом с телефоном: @ и ссылка t.me понимаются, показ — вместе с номером", async () => {
+    expect(
+      await error(
+        api("manager", "PATCH", `/staff/listings/${listing.id}`, {
+          version: listing.version,
+          telegram: "not a name",
+        }),
+      ),
+    ).toMatchObject({ status: 422, code: "invalid_input", details: ["telegram"] });
+    listing = await ok<ListingDetail>(
+      api("manager", "PATCH", `/staff/listings/${listing.id}`, {
+        version: listing.version,
+        telegram: "https://t.me/humo_hall",
+      }),
+    );
+    expect(listing).toMatchObject({ hasPhone: true, hasTelegram: true });
+    const contacts = await ok<RevealedListingContacts>(
+      api("admin", "POST", `/staff/listings/${listing.id}/phone`, { reason: "проверка" }),
+    );
+    expect(contacts.telegram).toBe("humo_hall");
+    expect(contacts.phone).toMatch(/^\+998\d{9}$/);
+  });
+
+  it("контакты витрин в метриках: только числа; неверный период — 422", async () => {
+    const body = await ok<ContactMetrics>(api("moderator", "GET", "/staff/metrics/contacts?days=30"));
+    expect(body).toMatchObject({ days: 30, category: null });
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(await error(api("moderator", "GET", "/staff/metrics/contacts?days=0"))).toMatchObject({
+      status: 422,
+      details: ["days"],
+    });
   });
 
   it("без фото на проверку не уйти: 422 publish_blocked со списком", async () => {

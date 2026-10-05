@@ -54,6 +54,7 @@ const is = {
     q.sql.startsWith('select "id", "vendor_id", "category_code", "attributes" from "app"."listings"'),
   duplicate: (q: RecordedQuery) => q.sql.startsWith('select "id" from "app"."requests"'),
   occasion: (q: RecordedQuery) => q.sql.includes('from "app"."occasions"'),
+  busy: (q: RecordedQuery) => q.sql.includes("app.listing_busy"),
   texts: (q: RecordedQuery) => q.sql.includes('from "app"."consent_texts"'),
   consent: (q: RecordedQuery) => q.sql.startsWith('insert into "app"."consents"'),
   request: (q: RecordedQuery) => q.sql.startsWith('insert into "app"."requests"'),
@@ -64,6 +65,7 @@ interface Script {
   listing?: unknown[];
   duplicate?: unknown[][];
   occasion?: unknown[];
+  busy?: unknown[];
   texts?: unknown[];
   requestError?: Error;
 }
@@ -75,6 +77,7 @@ function scriptedDb(script: Script = {}) {
       return script.listing ?? [{ id: LISTING, vendor_id: VENDOR, category_code: "hall", attributes: {} }];
     if (is.duplicate(q)) return duplicates.shift() ?? [];
     if (is.occasion(q)) return script.occasion ?? [{ code: "toy" }];
+    if (is.busy(q)) return script.busy ?? [];
     if (is.texts(q)) return script.texts ?? [{ id: TRANSFER, purpose: "request_transfer" }];
     if (is.consent(q)) return [{ id: CONSENT }];
     if (is.request(q)) {
@@ -103,7 +106,18 @@ describe("createRequest", () => {
     expect(fake.queries[0]?.parameters).toEqual(["client", CLIENT.id, ""]);
 
     const steps = fake.queries.slice(1).map((q) => Object.entries(is).find(([, test]) => test(q))?.[0]);
-    expect(steps).toEqual(["listing", "duplicate", "occasion", "texts", "consent", "request", "contacts"]);
+    expect(steps).toEqual([
+      "listing",
+      "duplicate",
+      "occasion",
+      "busy",
+      "texts",
+      "consent",
+      "request",
+      "contacts",
+    ]);
+    // Занятость дня заявки — та же функция, что у каталога и календаря витрины
+    expect(fake.queries.find(is.busy)?.parameters).toEqual([LISTING, "2026-10-03", "2026-10-03"]);
 
     const consent = fake.queries.find(is.consent);
     expect(consent?.parameters).toEqual([
@@ -192,6 +206,19 @@ describe("createRequest", () => {
   it("прочие ошибки базы летят дальше (их переводит handleError)", async () => {
     const fake = scriptedDb({ requestError: pgError("BR014") });
     await expect(createRequest(fake.db, CLIENT, input, "web")).rejects.toMatchObject({ code: "BR014" });
+  });
+
+  it("день занят — 409 date_busy по дате, ничего не пишется", async () => {
+    const fake = scriptedDb({ busy: [{ parts: ["all"] }] });
+    const err = await rejection(() => createRequest(fake.db, CLIENT, input, "web"));
+    expect(err).toMatchObject({ status: 409, code: "date_busy", details: ["eventDate"] });
+    expect(fake.queries.some((q) => q.sql.startsWith("insert"))).toBe(false);
+    expect(fake.log.at(-1)).toBe("rollback");
+  });
+
+  it("занята другая часть дня (у зала частей нет) — заявка проходит", async () => {
+    const fake = scriptedDb({ busy: [{ parts: ["evening"] }] });
+    await expect(createRequest(fake.db, CLIENT, input, "web")).resolves.toMatchObject({ status: "new" });
   });
 
   it("неизвестный повод — 400 до записи", async () => {

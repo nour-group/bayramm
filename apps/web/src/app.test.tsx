@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api/errors";
-import { createMockApi, demoRequests } from "./api/mock";
+import { allDemoListings, createMockApi, demoRequests } from "./api/mock";
 import { LANG_KEY } from "./context";
 import { browser } from "./hub";
 import {
@@ -16,6 +16,7 @@ import {
   mount,
   NOW,
   settle,
+  TODAY,
   text,
   waitFor,
 } from "./test/harness";
@@ -35,7 +36,7 @@ if (!VENUE) throw new Error("нет демо-площадки");
 
 describe("каталог", () => {
   it("фильтры живут в адресе и уходят в запрос", async () => {
-    await mount({ path: "/catalog?guests=200&district=chilonzor" });
+    await mount({ path: "/catalog?category=hall&guests=200&district=chilonzor" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const guests = field("Гости");
     expect(guests?.value).toBe("200");
@@ -46,7 +47,25 @@ describe("каталог", () => {
 
     await choose(district, "все районы");
     await waitFor(() => !window.location.search.includes("district"), "район снят");
-    expect(window.location.search).toBe("?guests=200");
+    expect(window.location.search).toBe("?category=hall&guests=200");
+  });
+
+  it("«Все» — раздел по умолчанию: первый в переключателе, карточки подписаны разделом", async () => {
+    await mount({ path: "/catalog", mock: { listings: allDemoListings(TODAY) } });
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
+    expect(document.querySelector("h1")?.textContent).toBe("Каталог: всё для праздника");
+    const chips = [...document.querySelectorAll<HTMLAnchorElement>(".cat-switch a")];
+    expect(chips[0]?.textContent).toBe("Все");
+    expect(chips[0]?.getAttribute("aria-current")).toBe("page");
+    expect(chips.find((c) => c.textContent === "Залы и тойханы")?.getAttribute("href")).toBe(
+      "/catalog?category=hall",
+    );
+    // Разделы вперемешку: у карточки — раздел; фильтров раздела (гости, район) нет
+    expect(document.querySelector(".card-meta")?.textContent).toMatch(
+      /Залы|Кортежи|Фото|Торты|Цветы|Подарки|Декор/,
+    );
+    expect(field("Гости")).toBeNull();
+    expect(field("Район")).toBeNull();
   });
 
   it("лента догружается по курсору, без повторов", async () => {
@@ -72,22 +91,36 @@ describe("каталог", () => {
   });
 
   it("пусто — объяснение и сброс фильтров", async () => {
-    await mount({ path: "/catalog?guests=5000" });
-    await waitFor(() => byText("h2", "Никого не нашли"), "пустое состояние");
+    await mount({ path: "/catalog?category=hall&guests=5000&district=chilonzor" });
+    await waitFor(() => byText("h2", "Для 5000 гостей никого не нашли"), "пустое состояние");
+    // Сброс — один, в пустом состоянии: в колонке фильтров второго нет
+    expect(document.querySelectorAll(".filters-reset")).toHaveLength(0);
     await click(byText(".state-empty button", "Сбросить фильтры"));
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки после сброса");
-    expect(window.location.search).toBe("");
+    // Сброс — внутри раздела: раздел остаётся
+    expect(window.location.search).toBe("?category=hall");
+  });
+
+  it("пусто — названо, что мешает; этот фильтр убирается один, остальные остаются", async () => {
+    await mount({ path: "/catalog?category=hall&guests=5000&date=2026-10-15" });
+    await waitFor(() => byText("h2", "Для 5000 гостей никого не нашли"), "пустое состояние");
+    // Дата не отсекает (занятые лишь уходят в конец) — её в списке нет
+    const chips = [...document.querySelectorAll<HTMLButtonElement>(".state-empty .cut-chip")];
+    expect(chips.map((chip) => chip.getAttribute("aria-label"))).toEqual(["Убрать фильтр: Гости: 5000"]);
+    await click(chips[0]);
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки без фильтра гостей");
+    expect(window.location.search).toBe("?category=hall&date=2026-10-15");
   });
 
   it("исполнителей ещё нет — «скоро», как у любого раздела, без сброса фильтров", async () => {
-    await mount({ mock: { listings: [] } });
+    await mount({ path: "/catalog?category=hall", mock: { listings: [] } });
     await waitFor(() => byText("h2", "«Залы и тойханы» — скоро в каталоге"), "пустой каталог без фильтров");
     expect(document.body.textContent).not.toContain("Никого не нашли");
     expect(document.body.textContent).not.toContain("Сбросить фильтры");
   });
 
   it("выпадающие списки — свои: кнопка со списком и стрелкой, системных select нет", async () => {
-    await mount();
+    await mount({ path: "/catalog?category=hall" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "каталог");
     expect(document.querySelector("select")).toBeNull();
     const lists = [...document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="listbox"]')];
@@ -95,7 +128,7 @@ describe("каталог", () => {
     for (const list of lists) expect(list.querySelector(".ui-select-caret")).not.toBeNull();
     // Порядок: выбор в списке уходит в адрес
     await choose(document.querySelector(".sort button"), "Сначала вместительнее");
-    await waitFor(() => window.location.search === "?sort=capacity_desc", "порядок в адресе");
+    await waitFor(() => window.location.search === "?category=hall&sort=capacity_desc", "порядок в адресе");
   });
 
   it("дата — из своего календаря: день уходит в адрес, «Без даты» сбрасывает", async () => {
@@ -114,7 +147,7 @@ describe("каталог", () => {
   });
 
   it("цены за гостя и за мероприятие: с гостями — примерная сумма на них и подсказка", async () => {
-    await mount({ path: "/catalog?guests=200" });
+    await mount({ path: "/catalog?category=hall&guests=200" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const cards = [...document.querySelectorAll(".card")];
     const perGuest = cards.find((c) => c.textContent?.includes("за гостя"));
@@ -126,19 +159,19 @@ describe("каталог", () => {
     );
     cleanup();
 
-    await mount({ path: "/catalog" });
+    await mount({ path: "/catalog?category=hall" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     expect(document.querySelector(".card-estimate")).toBeNull();
     expect(document.querySelector(".sort-hint")?.textContent).toContain("делим на вместимость");
     cleanup();
 
-    await mount({ path: "/catalog?sort=capacity_desc" });
+    await mount({ path: "/catalog?category=hall&sort=capacity_desc" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     expect(document.querySelector(".sort-hint")).toBeNull();
   });
 
   it("карточка ведёт на площадку и передаёт дату и гостей", async () => {
-    await mount({ path: "/catalog?date=2026-10-20&guests=100" });
+    await mount({ path: "/catalog?category=hall&date=2026-10-20&guests=100" });
     const link = await waitFor(() => document.querySelector<HTMLAnchorElement>(".card-link"), "карточка");
     expect(link.getAttribute("href")).toMatch(/^\/venue\/[a-z0-9-]+\?date=2026-10-20&guests=100$/);
   });
@@ -246,7 +279,7 @@ describe("мои заявки", () => {
     const similar = items[1]?.querySelector<HTMLAnchorElement>(".req-breached a");
     const listing = LISTINGS[1];
     expect(similar?.getAttribute("href")).toBe(
-      `/catalog?date=${requests[1]?.eventDate}&guests=${requests[1]?.guests}&district=${listing?.districtCode}`,
+      `/catalog?category=hall&date=${requests[1]?.eventDate}&guests=${requests[1]?.guests}&district=${listing?.districtCode}`,
     );
     expect(items[2]?.textContent).toContain("ответили за 2 ч 15 мин");
     expect(items[3]?.textContent).toContain("Причина: дата занята");

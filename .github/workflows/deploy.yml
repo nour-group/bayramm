@@ -206,8 +206,30 @@ jobs:
             echo "::error::POST https://$api/ops/demo без ключа ответил HTTP $code, ожидался 401 или 404"; exit 1
           fi
 
+          # Только HTTPS (packages/edge/src/https.ts): по http — постоянный редирект на тот же адрес
+          # с https, по https — Strict-Transport-Security. У каждого воркера: сайт, кабинет, панель,
+          # API и media
+          for url in "$host/catalog" "$vendor/" "$admin/login" "$api/health" "$media/640/$missing"; do
+            got=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors -o /dev/null -w '%{http_code} %{redirect_url}' "http://$url")
+            if [ "$got" != "301 https://$url" ]; then
+              echo "::error::http://$url ответил «$got», ожидался 301 на https://$url"; exit 1
+            fi
+            if ! curl -sS --retry 5 --retry-delay 3 --retry-all-errors -D - -o /dev/null "https://$url" | grep -qiE '^strict-transport-security: *max-age=[1-9]'; then
+              echo "::error::https://$url отдаёт ответ без Strict-Transport-Security"; exit 1
+            fi
+          done
+
           if true; then
             body=$(curl -sS --retry 5 --retry-delay 3 --retry-all-errors "https://$host/api/health")
             echo "$body"
             echo "$body" | jq -e --arg sha "${GITHUB_SHA::7}" '.ok and .db == "ok" and .sha == $sha' >/dev/null
           fi
+
+      # Чек-лист выпуска (.github/scripts/release-check.sh): в production нет демо-витрин и
+      # демо-телефонов, тестового бота и черновиков юридических текстов. Последним шагом: воркеры
+      # уже выложены, красный шаг значит «выпуск ещё не готов», а не «выкладка сломана»
+      - name: Release checklist
+        if: matrix.target == 'production'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: bash .github/scripts/release-check.sh bayramm.uz

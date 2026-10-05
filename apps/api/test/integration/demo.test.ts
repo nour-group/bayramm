@@ -237,7 +237,14 @@ describe("seed", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as ListingDetail;
     expect(body.name).toBe(venue.name);
-    expect(body.phone).toBe(venue.phone);
+    // Телефон — по «Связаться», до заявки и без входа
+    expect(body.contactChannels).toEqual(["phone"]);
+    const contacts = await call(`/catalog/listings/${venue.slug}/contact`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "open", signedIn: false }),
+    });
+    expect(await contacts.json()).toEqual({ phone: venue.phone, telegram: null });
     expect(body.photos).toHaveLength(3);
     expect(body.description.ru.startsWith("Демонстрационная карточка")).toBe(true);
     expect(body.busyDates).toEqual(venue.busyDays.map((offset) => addDays(tashkentToday(), offset)));

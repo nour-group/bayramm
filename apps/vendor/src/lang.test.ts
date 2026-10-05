@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { initialLang, saveLang } from "./lang";
+import { initialLang, saveLang, takeLangParam } from "./lang";
 
 const prefer = (...languages: string[]) =>
   vi.spyOn(window.navigator, "languages", "get").mockReturnValue(languages);
@@ -45,5 +45,30 @@ describe("язык кабинета до входа", () => {
     });
     expect(initialLang()).toBe("uz");
     expect(() => saveLang("ru")).not.toThrow();
+  });
+});
+
+describe("язык из ссылки с сайта (?lang=)", () => {
+  it("важнее браузерного и сохранённого; запоминается, из адреса убирается", () => {
+    prefer("ru");
+    saveLang("ru");
+    window.history.replaceState(null, "", "/calendar?signin=1&lang=uz#x");
+    takeLangParam();
+    expect(initialLang()).toBe("uz");
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      "/calendar?signin=1#x",
+    );
+    expect(window.localStorage.getItem("bayramm.vendor.lang")).toBe("uz");
+    // Выбрал другой язык в кабинете — он и остаётся
+    saveLang("ru");
+    expect(initialLang()).toBe("ru");
+  });
+
+  it("чужое значение — убирается, язык как обычно", () => {
+    prefer("uz");
+    window.history.replaceState(null, "", "/?lang=en");
+    takeLangParam();
+    expect(window.location.search).toBe("");
+    expect(initialLang()).toBe("uz");
   });
 });

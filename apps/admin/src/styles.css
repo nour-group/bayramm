@@ -663,6 +663,12 @@ html.in-telegram body {
   min-width: 0;
 }
 
+/* Абзац прямо в стопке: промежуток задаёт gap, а не поля браузера (иначе 12px превращаются в
+   30–45px между заголовком, подсказкой и таблицей) */
+.stack > p {
+  margin: 0;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -704,6 +710,8 @@ html.in-telegram body {
   justify-content: center;
   /* Кнопка-стрелка «←» тоже не уже 44px */
   min-width: var(--hit-min);
+  /* Длинная подпись переносится, а не вылезает за панель на 320px */
+  max-width: 100%;
   min-height: var(--hit-min);
   padding: 0 16px;
   border: 1px solid var(--rule);
@@ -713,8 +721,8 @@ html.in-telegram body {
   font-family: inherit;
   font-size: var(--fs-14);
   font-weight: 700;
+  text-align: center;
   text-decoration: none;
-  white-space: nowrap;
   cursor: pointer;
   transition: background-color var(--t1) var(--ease-soft);
 }
@@ -1213,6 +1221,10 @@ textarea.input {
   gap: var(--gap-9);
   min-height: var(--hit-min);
   margin: 0;
+}
+
+.phone-row + .phone-row {
+  margin-top: var(--gap-12);
 }
 
 .phone-label {
@@ -2514,7 +2526,12 @@ textarea.input {
     background: transparent;
   }
 
-  /* Телефон: подпись — строкой выше, маска и «Показать» — рядом под ней */
+  /* Телефон: подпись — строкой выше, маска и «Показать» — рядом под ней; подпись ближе к своему
+     значению, чем к предыдущему (иначе «Основной» читается подписью первого номера) */
+  .phone-row {
+    row-gap: 0;
+  }
+
   .phone-label {
     flex-basis: 100%;
     min-width: 0;
@@ -2638,4 +2655,37 @@ textarea.input {
 /* Нажатие пальцем на карточку-ссылку — отклик сразу */
 .rcard-tap:active {
   background: var(--paper);
+}
+
+/* Код клиента (C-…) мелко рядом с состоянием: по нему ищут, но не он главный */
+.client-ref {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Контакты витрины: строки телефона и Telegram, одна кнопка «Показать» под ними */
+.contacts-reveal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-12);
+  margin-bottom: 12px;
+}
+
+.contacts-reveal .phone-row + .phone-row {
+  margin-top: 0;
+}
+
+/* Заголовок группы переключателей в шторке фильтров: без него две группы подряд сливаются */
+.sheet-group {
+  margin: 16px 0 8px;
+  color: var(--plum);
+  font-size: var(--fs-14);
+  font-weight: 800;
+}
+
+.sheet-group:first-child {
+  margin-top: 0;
 }

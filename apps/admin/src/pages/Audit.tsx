@@ -1,5 +1,7 @@
 /* Журнал: действия в панели и просмотры телефонов — только чтение. Записи пишет база;
-   в подробностях — коды, id и имена полей, как записано (значений ПДн там нет).
+   в подробностях — ключи и имена полей словами, где они известны (значений ПДн там нет), id
+   (UUID) не показываются: объект — ссылкой в своей колонке. Действие в фильтре — группой
+   («Витрины», «Заявки»): на сервер уходит начало кода (listing.).
    Фильтры — в адресе страницы (?type=&object=…): ссылку можно переслать. */
 
 import type {
@@ -27,6 +29,18 @@ type FilterKey = (typeof FILTER_KEYS)[number];
 type Filters = Partial<Record<FilterKey, string>>;
 
 const ACTOR_KINDS = ["staff", "vendor_user", "client", "account", "system"] as const;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Статусы витрины и роли — «было → стало» в подробностях */
+const STATE_WORDS: Readonly<Record<string, string>> = { ...t.status, ...t.roles };
+
+/** Группы действий и, если в ссылке своё начало кода, — оно тоже (как записано) */
+function actionOptions(current: string | undefined) {
+  const known = Object.entries(t.auditActionGroups).map(([value, label]) => ({ value, label }));
+  const extra = current && !(current in t.auditActionGroups) ? [{ value: current, label: current }] : [];
+  return [{ value: "", label: t.auditActionAny }, ...known, ...extra];
+}
 
 const dayName = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 
@@ -258,15 +272,13 @@ function FilterForm({ tab, draft, onDraft, dictionaries, onApply, onReset }: Fil
         </FilterField>
         {tab === "actions" && (
           <FilterField id={`${id}-action`} label={t.auditAction}>
-            <input
+            <Select
               id={`${id}-action`}
               className="input"
+              label={t.auditAction}
               value={draft.action ?? ""}
-              maxLength={60}
-              autoComplete="off"
-              enterKeyHint="search"
-              placeholder="listing."
-              onChange={(event) => set("action")(event.target.value)}
+              onChange={set("action")}
+              options={actionOptions(draft.action)}
             />
           </FilterField>
         )}
@@ -298,8 +310,7 @@ function FilterField({ id, label, children }: { id: string; label: string; child
 
 /** Ссылка на объект, у которого в панели есть страница */
 function objectView(type: string, id: string): View | null {
-  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
-  if (!uuid) return null;
+  if (!UUID.test(id)) return null;
   switch (type) {
     case "listing":
       return { name: "listing", id };
@@ -344,15 +355,24 @@ function ObjectRef({
   );
 }
 
-function detailText(detail: Readonly<Record<string, unknown>>): string {
+/** Значение подробности словами: имена полей и статусы — по словарям, UUID не показываем */
+function detailValue(key: string, value: unknown): string | null {
+  if (typeof value === "string" && UUID.test(value)) return null;
+  if (Array.isArray(value))
+    return value
+      .map((item) => (key === "fields" ? (t.auditFields[String(item)] ?? String(item)) : item))
+      .join(", ");
+  if (typeof value === "object" && value !== null) return JSON.stringify(value);
+  const raw = String(value);
+  return key === "from" || key === "to" ? (STATE_WORDS[raw] ?? raw) : raw;
+}
+
+/** «поля: название, цена от · было: Черновик»; пусто — когда показывать нечего */
+export function detailText(detail: Readonly<Record<string, unknown>>): string {
   return Object.entries(detail)
-    .map(([key, value]) => {
-      const shown = Array.isArray(value)
-        ? value.join(", ")
-        : typeof value === "object" && value !== null
-          ? JSON.stringify(value)
-          : String(value);
-      return `${key}: ${shown}`;
+    .flatMap(([key, value]) => {
+      const shown = detailValue(key, value);
+      return shown === null ? [] : [`${t.auditDetailKeys[key] ?? key}: ${shown}`];
     })
     .join(" · ");
 }
@@ -415,8 +435,6 @@ function ActionList({ path, offset, onPage, phone }: ListProps) {
                   </p>
                   <p className="rcard-title">{t.auditActions[entry.action] ?? entry.action}</p>
                   <dl className="rcard-facts">
-                    <dt>{t.colAction}</dt>
-                    <dd>{entry.action}</dd>
                     <dt>{t.colObject}</dt>
                     <dd>
                       <ObjectRef type={entry.objectType} id={entry.objectId} labels={t.auditTypes} inline />
@@ -447,10 +465,7 @@ function ActionList({ path, offset, onPage, phone }: ListProps) {
                     <tr key={entry.id}>
                       <td>{formatMoment(entry.at)}</td>
                       <td>{actorText(entry)}</td>
-                      <td>
-                        {t.auditActions[entry.action] ?? entry.action}
-                        <span className="sub">{entry.action}</span>
-                      </td>
+                      <td>{t.auditActions[entry.action] ?? entry.action}</td>
                       <td>
                         <ObjectRef type={entry.objectType} id={entry.objectId} labels={t.auditTypes} />
                       </td>
@@ -523,10 +538,7 @@ function PiiList({ path, offset, onPage, phone }: ListProps) {
                       <td>
                         <ObjectRef type={entry.subjectKind} id={entry.subjectId} labels={t.piiSubjects} />
                       </td>
-                      <td>
-                        {t.piiPurposes[entry.purpose] ?? entry.purpose}
-                        <span className="sub">{entry.purpose}</span>
-                      </td>
+                      <td>{t.piiPurposes[entry.purpose] ?? entry.purpose}</td>
                       <td className="detail-cell">{entry.reason ?? t.none}</td>
                     </tr>
                   ))}

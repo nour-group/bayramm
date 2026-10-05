@@ -2,7 +2,18 @@ import type { Dict } from "@bayramm/shared";
 import type { Page } from "@playwright/test";
 import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
 import { expect, test } from "../support/offline";
-import { BUSY_DAY, horizontalOverflow, open, PATHS, prepare, sections, T, VENUE } from "../support/web";
+import {
+  BUSY_DAY,
+  horizontalOverflow,
+  open,
+  openContacts,
+  PATHS,
+  prepare,
+  SECOND_VENUE,
+  sections,
+  T,
+  VENUE,
+} from "../support/web";
 
 /* Доступность и раскладка каждого главного экрана клиента: axe без серьёзных нарушений,
    кольцо фокуса, зона нажатия, ни одного пикселя горизонтальной прокрутки. */
@@ -76,7 +87,7 @@ const SCREENS: readonly Screen[] = [
   },
   {
     name: "каталог: список районов",
-    path: PATHS.catalog,
+    path: PATHS.category("hall"),
     ready: ".card",
     setup: async (page) => {
       await page.locator(".filters button[aria-haspopup=listbox]").click();
@@ -84,6 +95,16 @@ const SCREENS: readonly Screen[] = [
     },
   },
   { name: "площадка", path: PATHS.venue(VENUE.slug), ready: ".venue-head h1" },
+  {
+    // Окно «Связаться»: номер и Telegram (у второго зала есть оба)
+    name: "площадка: окно «Связаться»",
+    path: PATHS.venue(SECOND_VENUE.slug),
+    ready: ".venue-head h1",
+    setup: async (page) => {
+      await openContacts(page);
+      await page.getByRole("dialog").locator('a[href^="https://t.me/"]').waitFor();
+    },
+  },
   { name: "каталог кортежа на дату", path: `/catalog?category=car&date=${BUSY_DAY}`, ready: ".card .chip" },
   {
     name: "каталог фото: фильтры",
@@ -223,7 +244,7 @@ test.describe("доступность", () => {
   }) => {
     // Узбекский: названия районов латиницей — буквы печатаются настоящими keydown
     await prepare(page, { lang: "uz" });
-    await open(page, PATHS.catalog, ".card");
+    await open(page, PATHS.category("hall"), ".card");
     const scrollY = () => page.evaluate(() => window.scrollY);
     const activeOption = () =>
       page.evaluate(() => {

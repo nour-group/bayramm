@@ -221,7 +221,7 @@ function Featured() {
 
 function PartnerBlock() {
   const { api } = useServices();
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const methods = useAsync("auth-methods", (signal) => api.authMethods(signal));
   const vendor = methods.status === "ready" ? methods.data.apps.vendor : null;
 
@@ -238,9 +238,10 @@ function PartnerBlock() {
         <p className="muted small">{t.lnPartnerNote}</p>
       </div>
       {/* Кабинет — другое приложение, полной загрузкой. Без ?signin=1: вне Telegram без входа
-          он сначала объясняет, что это и как получить доступ, и уже оттуда — вход через хаб */}
+          он сначала объясняет, что это и как получить доступ, и уже оттуда — вход через хаб.
+          ?lang= — кабинет на том же языке, что сайт */}
       {vendor ? (
-        <a className="btn btn-secondary" href={`${vendor}/`}>
+        <a className="btn btn-secondary" href={`${vendor}/?lang=${lang}`}>
           {t.accVendor}
         </a>
       ) : null}

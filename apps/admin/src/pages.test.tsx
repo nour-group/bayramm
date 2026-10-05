@@ -116,6 +116,7 @@ const LISTING: ListingDetail = {
   createdAt: "2026-09-29T06:00:00.000Z",
   updatedAt: "2026-09-29T06:00:00.000Z",
   hasPhone: true,
+  hasTelegram: false,
   attributes: {},
   missingAttributes: [],
   videoLinks: [],
@@ -461,6 +462,152 @@ describe("карточка", () => {
     const headings = [...container.querySelectorAll("h2")].map((h) => h.textContent);
     expect(headings.filter((h) => h === t.listingSections.phone)).toHaveLength(1);
     expect(container.querySelector(`input[value="${categoryName("hall")}"]`)).toBeNull();
+  });
+});
+
+describe("карточка: телефон и Telegram для клиентов", () => {
+  const AVAILABILITY = `/api/staff/listings/${LISTING_ID}/availability`;
+  const day = json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 });
+  const field = (label: string) =>
+    [...container.querySelectorAll<HTMLInputElement>("input")].find(
+      (input) => input.labels?.[0]?.textContent === label,
+    );
+  const base = (listing = LISTING) => ({
+    [`GET /api/staff/listings/${LISTING_ID}`]: json(listing),
+    [`GET ${AVAILABILITY}`]: day,
+  });
+
+  it("скрыты до «Показать»: одно чтение открывает оба, имя Telegram — ссылкой на t.me", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      ...base({ ...LISTING, hasTelegram: true }),
+      [`POST /api/staff/listings/${LISTING_ID}/phone`]: json({
+        phone: "+998901112233",
+        telegram: "lola_hall",
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    const reveal = container.querySelector(".contacts-reveal") as HTMLElement;
+    expect(reveal.textContent).not.toContain("lola_hall");
+    expect(reveal.textContent).not.toContain("123");
+    expect(calls.some((c) => c.url.endsWith("/phone"))).toBe(false);
+
+    await act(async () => button(t.contactsShow)?.click());
+    await settle();
+    expect(calls.filter((c) => c.url.endsWith("/phone"))).toHaveLength(1);
+    expect(reveal.textContent).toContain("+998 90 111 22 33");
+    expect(reveal.querySelector<HTMLAnchorElement>("a[href^='https://t.me/']")?.textContent).toBe(
+      "@lola_hall",
+    );
+    // «Показать» после чтения не нужна
+    expect(button(t.contactsShow)).toBeUndefined();
+  });
+
+  it("Telegram не вписан: так и сказано, кнопки «Убрать» нет; вписанное уходит как есть вместе с версией", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      ...base(),
+      [`PATCH /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        hasTelegram: true,
+        version: 8,
+        sentForModeration: [],
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(container.querySelector(".contacts-reveal")?.textContent).toContain(t.telegramMissing);
+    expect([...container.querySelectorAll("label")].some((l) => l.textContent === t.telegramRemove)).toBe(
+      false,
+    );
+    const telegram = field(t.telegramChange);
+    if (!telegram) throw new Error("нет поля Telegram");
+    expect(telegram.value).toBe("");
+    await type(telegram, "t.me/Lola_Hall");
+    await act(async () => button(t.save)?.click());
+    await settle();
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+      telegram: "t.me/Lola_Hall",
+      version: 7,
+    });
+    // Сохранили — в форме Telegram уже «вписан»: пустое поле его не меняет
+    expect(container.querySelector(".contacts-reveal")?.textContent).not.toContain(t.telegramMissing);
+    expect(field(t.telegramChange)?.value).toBe("");
+  });
+
+  it("после сохранения открытые контакты закрываются: показанное было до правки", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      ...base({ ...LISTING, hasTelegram: true }),
+      [`POST /api/staff/listings/${LISTING_ID}/phone`]: json({
+        phone: "+998901112233",
+        telegram: "old_name",
+      }),
+      [`PATCH /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        hasTelegram: true,
+        version: 8,
+        sentForModeration: [],
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    await act(async () => button(t.contactsShow)?.click());
+    await settle();
+    expect(container.querySelector(".contacts-reveal")?.textContent).toContain("old_name");
+    const telegram = field(t.telegramChange);
+    if (!telegram) throw new Error("нет поля Telegram");
+    await type(telegram, "new_name");
+    await act(async () => button(t.save)?.click());
+    await settle();
+    expect(container.querySelector(".contacts-reveal")?.textContent).not.toContain("old_name");
+    expect(button(t.contactsShow)).toBeDefined();
+  });
+
+  it("плохое имя: ошибка под полем словами, введённое остаётся", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      ...base(),
+      [`PATCH /api/staff/listings/${LISTING_ID}`]: json(
+        { error: { code: "invalid_input", message: "invalid_input", details: ["telegram"] } },
+        422,
+      ),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    const telegram = field(t.telegramChange);
+    if (!telegram) throw new Error("нет поля Telegram");
+    await type(telegram, "ab");
+    await act(async () => button(t.save)?.click());
+    await settle();
+    expect(container.querySelector(".field-error")?.textContent).toBe(t.listingFieldErrors.telegram);
+    expect(field(t.telegramChange)?.value).toBe("ab");
+  });
+
+  it("«Убрать Telegram» — null в теле; поле на это время закрыто", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      ...base({ ...LISTING, hasTelegram: true }),
+      [`PATCH /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        hasTelegram: false,
+        version: 8,
+        sentForModeration: [],
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    const remove = [...container.querySelectorAll<HTMLInputElement>("input[type=checkbox]")].find(
+      (input) => input.labels?.[0]?.textContent === t.telegramRemove,
+    );
+    if (!remove) throw new Error("нет «Убрать Telegram»");
+    await act(async () => remove.click());
+    expect(field(t.telegramChange)?.disabled).toBe(true);
+    await act(async () => button(t.save)?.click());
+    await settle();
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ telegram: null, version: 7 });
+    expect(container.querySelector(".contacts-reveal")?.textContent).toContain(t.telegramMissing);
+  });
+
+  it("только просмотр: показать можно, полей для новых значений нет", async () => {
+    mockApi(staff("moderator", ["catalog.read", "vendor_phones.read"]), {
+      ...base({ ...LISTING, hasTelegram: true }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(button(t.contactsShow)).toBeDefined();
+    expect(field(t.telegramChange)).toBeUndefined();
+    expect(field(t.phoneChange)).toBeUndefined();
   });
 });
 

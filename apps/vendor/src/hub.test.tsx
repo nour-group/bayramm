@@ -129,6 +129,8 @@ describe("хаб входа из кабинета", () => {
     const hub = new URL(assigned[0] ?? "");
     expect(hub.origin + hub.pathname).toBe("https://bayramm.example/auth");
     expect(hub.searchParams.get("app")).toBe("vendor");
+    // Хаб — на языке кабинета (тесты — по-русски)
+    expect(hub.searchParams.get("lang")).toBe("ru");
     const pending = JSON.parse(window.sessionStorage.getItem("bayramm.vendor.hub") ?? "{}");
     expect(pending.state).toBe(hub.searchParams.get("state"));
     expect(pending.back).toBe("/calendar");

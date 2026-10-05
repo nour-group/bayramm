@@ -118,8 +118,8 @@ describe("разметка страниц", () => {
   it("?lang=ru — русская версия: язык страницы, тексты и canonical на неё саму", async () => {
     const { body } = await setup().html(`${PROD}/catalog?lang=ru&date=2026-10-20`);
     expect(body).toContain('<html lang="ru"');
-    // Название раздела — как в приложении (глоссарий клиента): вкладка не меняется после загрузки
-    expect(title(body)).toBe("Залы и тойханы в Ташкенте · Bayramm");
+    // Каталог без раздела — все разделы; заголовок — как в приложении: вкладка не меняется после загрузки
+    expect(title(body)).toBe("Каталог: всё для праздника · Bayramm");
     expect(metaContent(body, "property", "og:locale")).toBe("ru_RU");
     // Фильтры в canonical не попадают
     expect(canonical(body)).toBe(`${PROD}/catalog?lang=ru`);
@@ -137,11 +137,12 @@ describe("разметка страниц", () => {
       ["uz", `${PROD}/catalog?category=car&amp;lang=uz`],
       ["x-default", `${PROD}/catalog?category=car`],
     ]);
-    // Неизвестная категория и залы — общая страница каталога
-    for (const category of ["spaceships", "hall"]) {
-      const other = await setup().html(`${PROD}/catalog?category=${category}`);
-      expect(canonical(other.body), category).toBe(`${PROD}/catalog`);
-    }
+    // Залы — тоже свой раздел; неизвестная категория — общая страница каталога
+    const hall = await setup().html(`${PROD}/catalog?category=hall&lang=ru`);
+    expect(title(hall.body)).toBe("Залы и тойханы в Ташкенте · Bayramm");
+    expect(canonical(hall.body)).toBe(`${PROD}/catalog?category=hall&amp;lang=ru`);
+    const other = await setup().html(`${PROD}/catalog?category=spaceships`);
+    expect(canonical(other.body)).toBe(`${PROD}/catalog`);
   });
 
   it("витрина: в описании — категория и цена с единицей", async () => {
@@ -282,6 +283,7 @@ describe("robots.txt и sitemap.xml", () => {
       `${PROD}/`,
       `${PROD}/catalog`,
       `${PROD}/docs`,
+      `${PROD}/catalog?category=hall`,
       `${PROD}/catalog?category=car`,
       `${PROD}/venue/${LOLA.slug}`,
       `${PROD}/venue/${SECOND.slug}`,

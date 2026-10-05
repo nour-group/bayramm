@@ -190,12 +190,13 @@ describe("витрина категории", () => {
       "день 11:00–17:00свободно",
       "вечер 17:00–24:00занято",
     ]);
-    // Календарь: частично занятые дни помечены и названы для диктора
-    const partial = [...document.querySelectorAll(".ui-cal-day.is-partial .ui-sr-only")].map(
-      (d) => d.textContent,
+    // Календарь: частично занятые дни помечены и названы для диктора; день можно выбрать —
+    // он уйдёт в заявку
+    const partial = [...document.querySelectorAll(".ui-cal-day.is-partial")].map((d) =>
+      d.getAttribute("aria-label"),
     );
     expect(partial).toEqual(["8 окт, частично занято: вечер", "10 окт, частично занято: утро, день"]);
-    expect(document.querySelector(".ui-cal-day.is-busy .ui-sr-only")?.textContent).toBe("13 окт, занято");
+    expect(document.querySelector(".ui-cal-day.is-busy")?.getAttribute("aria-label")).toBe("13 окт, занято");
     expect(text(document.querySelector(".ui-cal-legend") as HTMLElement)).toContain("частично занято");
   });
 
@@ -245,16 +246,23 @@ describe("витрина категории", () => {
     expect(text(document.querySelector(".svcs") as HTMLElement)).toContain("заказ за 7 дней");
   });
 
-  it("телефон виден сразу у витрины каждой категории — и гостю", async () => {
+  it("контакты у витрины каждой категории — до заявки и гостю: «Связаться» открывает телефон", async () => {
     for (const category of CLIENT_CATEGORIES) {
-      const listing = ALL.find((l) => l.categoryCode === category.code) as ListingDetail;
+      const listing = ALL.find((l) => l.categoryCode === category.code);
+      if (!listing) throw new Error(category.code);
       const { unmount } = await mount({
         path: `/venue/${listing.slug}`,
         identity: "guest",
         mock: { listings: ALL },
       });
       await waitFor(() => document.querySelector("h1")?.textContent === listing.name, listing.slug);
-      expect(document.querySelector(`.contact a[href="tel:${listing.phone}"]`), category.code).not.toBeNull();
+      // В карточке номера нет — он в окне «Связаться»
+      expect(document.querySelector(`a[href="tel:${listing.phone}"]`), category.code).toBeNull();
+      await click(document.querySelector(".contact button"));
+      await waitFor(
+        () => document.querySelector(`[role="dialog"] a[href="tel:${listing.phone}"]`),
+        category.code,
+      );
       expect(document.querySelector("form.request")).toBeNull();
       unmount();
     }

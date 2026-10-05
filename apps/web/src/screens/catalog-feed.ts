@@ -3,14 +3,15 @@ import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAbort } from "../api/errors";
 import type { ClientApi } from "../api/types";
-import { clientCategory, hasCapacity, hasDistrict } from "../categories";
+import { CLIENT_CATEGORIES, hasCapacity, hasDistrict } from "../categories";
 import { addDays, isIsoDate } from "../format";
-import { DEFAULT_CATEGORY } from "../routes";
+import { ALL_CATEGORIES } from "../routes";
 import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
 
 /* Фильтры каталога живут в адресе (?category=&date=&guests=&district=&sort=&a.<поле>=):
    ссылка «похожие» из «Моих заявок», кнопки бота и «назад» из карточки возвращают ту же
-   выдачу. Гости и район — только у категорий, где они есть (вместимость у залов, район у
+   выдачу. Без category — все разделы одной выдачей («Все»): там только дата и порядок по
+   цене. Гости и район — только у категорий, где они есть (вместимость у залов, район у
    залов и студий); порядок «вместительнее» — только у залов. */
 
 export const SORTS = ["price_asc", "price_desc", "capacity_desc"] as const satisfies readonly CatalogSort[];
@@ -24,7 +25,7 @@ export const DATE_HORIZON_DAYS = 365;
 export const PAGE_SIZE = 20;
 
 export interface CatalogFilters {
-  /** Код категории каталога; залы — по умолчанию */
+  /** Код категории каталога; ALL_CATEGORIES — все разделы (по умолчанию) */
   readonly category: string;
   readonly date: string | null;
   readonly guests: number | null;
@@ -35,7 +36,7 @@ export interface CatalogFilters {
 }
 
 export const NO_FILTERS: CatalogFilters = {
-  category: DEFAULT_CATEGORY,
+  category: ALL_CATEGORIES,
   date: null,
   guests: null,
   district: null,
@@ -46,9 +47,15 @@ export const NO_FILTERS: CatalogFilters = {
 /** Без фильтров, но в той же категории (сброс фильтров) */
 export const noFiltersIn = (category: string): CatalogFilters => ({ ...NO_FILTERS, category });
 
+/** Раздел каталога по коду; «все» и неизвестный — null */
+export const catalogCategory = (code: string | null | undefined) =>
+  CLIENT_CATEGORIES.find((c) => c.code === code) ?? null;
+
 /** Порядки выдачи категории: «вместительнее» — только где есть вместимость */
-export const sortsOf = (category: string): readonly CatalogSort[] =>
-  hasCapacity(clientCategory(category)) ? SORTS : SORTS.filter((s) => s !== "capacity_desc");
+export const sortsOf = (category: string): readonly CatalogSort[] => {
+  const config = catalogCategory(category);
+  return config && hasCapacity(config) ? SORTS : SORTS.filter((s) => s !== "capacity_desc");
+};
 
 export function parseGuests(value: string | null): number | null {
   if (!value || !/^\d{1,5}$/.test(value.trim())) return null;
@@ -61,25 +68,28 @@ export function parseGuests(value: string | null): number | null {
  * (иначе API ответил бы 400 вместо выдачи)
  */
 export function readFilters(query: URLSearchParams, today: string): CatalogFilters {
-  const category = clientCategory(query.get("category"));
+  // Неизвестный раздел — весь каталог, а не ошибка
+  const category = catalogCategory(query.get("category"));
+  const code = category?.code ?? ALL_CATEGORIES;
   const date = query.get("date");
   const district = query.get("district");
   const sort = query.get("sort");
   return {
-    category: category.code,
+    category: code,
     date: isIsoDate(date) && date >= today && date <= addDays(today, DATE_HORIZON_DAYS) ? date : null,
-    guests: hasCapacity(category) ? parseGuests(query.get("guests")) : null,
+    guests: category && hasCapacity(category) ? parseGuests(query.get("guests")) : null,
     // Код района — как проверяет API: иначе 400 вместо выдачи
-    district: hasDistrict(category) && district && /^[a-z_]{2,30}$/.test(district) ? district : null,
-    sort: sortsOf(category.code).find((s) => s === sort && s !== DEFAULT_SORT) ?? null,
-    attrs: readAttrFilters(category, query),
+    district:
+      category && hasDistrict(category) && district && /^[a-z_]{2,30}$/.test(district) ? district : null,
+    sort: sortsOf(code).find((s) => s === sort && s !== DEFAULT_SORT) ?? null,
+    attrs: category ? readAttrFilters(category, query) : NO_ATTRS,
   };
 }
 
-/** Параметры адреса каталога; залы — без category, пустые не пишутся (hrefFor) */
+/** Параметры адреса каталога; весь каталог — без category, пустые не пишутся (hrefFor) */
 export function filtersQuery(filters: CatalogFilters): Record<string, string | number | null> {
   return {
-    category: filters.category === DEFAULT_CATEGORY ? null : filters.category,
+    category: filters.category === ALL_CATEGORIES ? null : filters.category,
     date: filters.date,
     guests: filters.guests,
     district: filters.district,
@@ -149,7 +159,8 @@ function keepSnapshot(api: ClientApi, key: string, items: readonly ListingCard[]
 /** Запрос выдачи по фильтрам каталога */
 export function catalogQuery(filters: CatalogFilters): CatalogQuery {
   return {
-    category: filters.category === DEFAULT_CATEGORY ? undefined : filters.category,
+    // Раздел — всегда явно (у API без него — залы, для старых сборок); весь каталог — all
+    category: filters.category,
     filters: Object.keys(filters.attrs).length > 0 ? filters.attrs : undefined,
     date: filters.date ?? undefined,
     guests: filters.guests ?? undefined,

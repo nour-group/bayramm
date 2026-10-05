@@ -1,9 +1,8 @@
-import type { ListingDetail } from "@bayramm/shared/api";
 import type { TelegramWebApp } from "@bayramm/tg/webapp";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { App } from "../App";
-import { createMockApi, demoListings, type MockOptions } from "../api/mock";
+import { createMockApi, type DemoListing, demoListings, type MockOptions } from "../api/mock";
 import type { ClientApi } from "../api/types";
 import type { Identity, Services } from "../context";
 
@@ -16,7 +15,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 /** 1 октября 2026, 12:00 по Ташкенту */
 export const NOW = Date.parse("2026-10-01T07:00:00Z");
 export const TODAY = "2026-10-01";
-export const LISTINGS: readonly ListingDetail[] = demoListings(TODAY);
+export const LISTINGS: readonly DemoListing[] = demoListings(TODAY);
 
 export interface Mounted {
   readonly container: HTMLElement;

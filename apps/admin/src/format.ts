@@ -77,6 +77,12 @@ export function formatWeek(weekStart: string): string {
   return `${shortDay.format(start)} – ${shortDay.format(end)}`;
 }
 
+/** «2026-W40» → «неделя 40»: ISO-метка людям не нужна, даты недели уже в заголовке */
+export function weekNumber(label: string): string {
+  const n = Number(/W(\d{1,2})$/.exec(label)?.[1]);
+  return Number.isInteger(n) && n > 0 ? t.weekNumber(n) : label;
+}
+
 // ── фото ───────────────────────────────────────────────────────────────────
 
 /** Воркер media того же окружения, что и панель: по адресу панели */

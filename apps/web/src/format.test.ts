@@ -11,6 +11,7 @@ import {
   formatPriceFrom,
   hoursLeft,
   isIsoDate,
+  maskPhoneDigits,
   metaLine,
   phoneDigits,
   tashkentToday,
@@ -111,6 +112,14 @@ describe("телефоны", () => {
     ["0012345678901", "001234567"],
   ])("%s → %s", (input, digits) => {
     expect(phoneDigits(input)).toBe(digits);
+  });
+
+  it("номер по мере ввода — группами 2-3-2-2", () => {
+    expect(
+      ["", "9", "94", "941", "94116", "941162", "9411628", "94116281", "941162813"].map(maskPhoneDigits),
+    ).toEqual(["", "9", "94", "94 1", "94 116", "94 116 2", "94 116 28", "94 116 28 1", "94 116 28 13"]);
+    // Вставили номер целиком, с кодом страны — те же группы
+    expect(maskPhoneDigits(phoneDigits("+998 94 116-28-13"))).toBe("94 116 28 13");
   });
 
   it("вывод и ссылка для звонка", () => {

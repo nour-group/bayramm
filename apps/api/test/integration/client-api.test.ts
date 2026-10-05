@@ -129,7 +129,7 @@ beforeAll(async () => {
       BUSY_DAY,
       listings.mid.id,
       addDays(today, 10),
-      addDays(today, 200), // дальше 180 дней — в карточку не попадает
+      addDays(today, 380), // дальше горизонта даты каталога (BUSY_DAYS_AHEAD) — в карточку не попадает
     ],
   );
   // Прошлое — тоже не попадает. Отметить прошедший день база не даёт никому
@@ -394,7 +394,8 @@ describe("GET /catalog/listings/:slug", () => {
       priceFromUzs: 100_000,
       description: { ru: "Описание", uz: "Tavsif" },
       address: { ru: "Адрес", uz: "Manzil" },
-      phone: "+998000000777",
+      // Контакты — по «Связаться», здесь только какие есть
+      contactChannels: ["phone"],
       busyDates: [addDays(today, 10)],
       busyOnDate: null,
       photoCount: 3,
@@ -419,6 +420,50 @@ describe("GET /catalog/listings/:slug", () => {
       [listings.mid.id],
     );
     expect(after.rows[0].n).toBe(before.rows[0].n);
+  });
+
+  it("«Связаться»: контакты опубликованной — по нажатию, события без клиента; черновик — 404", async () => {
+    const contact = (slug: string, body: unknown, source?: string) =>
+      call(`/catalog/listings/${slug}/contact`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(source ? { "X-Bayramm-Source": source } : {}) },
+        body: JSON.stringify(body),
+      });
+    const events = async () =>
+      (
+        await admin.query(
+          "select action, source::text as source, signed_in from app.contact_events where listing_id = $1 order by id",
+          [listings.mid.id],
+        )
+      ).rows;
+    const before = (await events()).length;
+
+    const open = await contact(listings.mid.slug, { action: "open", signedIn: false }, "tma");
+    expect(open.status).toBe(200);
+    expect(open.headers.get("cache-control")).toBe("no-store");
+    expect(await open.json()).toEqual({ phone: "+998000000777", telegram: null });
+    const pick = await contact(listings.mid.slug, { action: "phone", signedIn: true });
+    expect(pick.status).toBe(204);
+    expect((await events()).slice(before)).toEqual([
+      { action: "open", source: "tma", signed_in: false },
+      { action: "phone", source: "web", signed_in: true },
+    ]);
+
+    expect((await contact(listings.draft.slug, { action: "open", signedIn: false })).status).toBe(404);
+    expect((await contact(listings.draft.slug, { action: "telegram", signedIn: false })).status).toBe(404);
+    expect(await events()).toHaveLength(before + 2);
+    // В журнал доступа к ПДн публичный контакт не пишется, в событиях клиента нет
+    const { rows } = await admin.query(
+      "select column_name from information_schema.columns where table_schema = 'app' and table_name = 'contact_events'",
+    );
+    expect(rows.map((r) => r.column_name).sort()).toEqual([
+      "action",
+      "created_at",
+      "id",
+      "listing_id",
+      "signed_in",
+      "source",
+    ]);
   });
 
   it("?date — занятость на этот день", async () => {
