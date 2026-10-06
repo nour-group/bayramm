@@ -135,13 +135,17 @@ export function accountOf(c: Context<AppEnv>): AccountActor {
  * и аккаунту без роли клиента — 403; заблокированному клиенту — 403 client_blocked.
  * Актор запроса дальше — клиент.
  */
-export function requireClient(c: Context<AppEnv>): { actor: ClientActor; sessionId: string } {
+export function requireClient(
+  c: Context<AppEnv>,
+  options: { readonly allowBlocked?: boolean } = {},
+): { actor: ClientActor; sessionId: string } {
   const current = c.get("actor");
   const session = requireAccountSession(c);
   if (current?.kind === "client") return { actor: current, sessionId: session.id };
   const client = session.client;
   if (client === null || client.deleted) throw forbidden();
-  if (client.blocked) throw clientBlocked();
+  // Права на свои данные (выгрузка, отзыв согласия) у заблокированного остаются — allowBlocked
+  if (client.blocked && options.allowBlocked !== true) throw clientBlocked();
   const actor: ClientActor = { kind: "client", id: client.id };
   c.set("actor", actor);
   return { actor, sessionId: session.id };

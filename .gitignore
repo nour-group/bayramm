@@ -40,3 +40,4 @@ prototypes/client/mob-*.png
 
 # Приватные документы (клон nour-group/bayramm-internal) — никогда не в публичный репозиторий
 internal/
+.playwright-mcp/

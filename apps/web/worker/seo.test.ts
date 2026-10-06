@@ -257,7 +257,11 @@ describe("browserLang", () => {
 describe("robots.txt и sitemap.xml", () => {
   it("robots.txt: боевой домен — всё, кроме личного, и карта сайта; staging — ничего", async () => {
     const { get } = setup();
-    const prod = await (await get(`${PROD}/robots.txt`)).text();
+    const res = await get(`${PROD}/robots.txt`);
+    // Те же заголовки безопасности, что у страниц
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("strict-transport-security")).toBe("max-age=31536000");
+    const prod = await res.text();
     expect(prod).toContain("Allow: /");
     for (const path of ["/auth", "/profile", "/requests", "/favorites", "/venue/*/request"])
       expect(prod).toContain(`Disallow: ${path}\n`);

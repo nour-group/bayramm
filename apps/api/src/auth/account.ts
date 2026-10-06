@@ -19,8 +19,12 @@ import { generateToken, hashToken, phoneHash, telegramIdHash } from "./crypto";
 // на медленную сеть и повтор, дольше подписанные данные не принимаем
 export const INIT_DATA_MAX_AGE_SECONDS = 60 * 60;
 // Виджет подписывает данные в момент нажатия «Войти», браузер сразу несёт их сюда.
-// Данные виджета проходят через адресную строку — короткое окно ограничивает повтор
-export const WIDGET_MAX_AGE_SECONDS = 10 * 60;
+// Данные виджета проходят через адресную строку (и логи запросов сайта) — короткое окно
+// ограничивает повтор: две минуты хватает и медленной сети
+export const WIDGET_MAX_AGE_SECONDS = 2 * 60;
+// Вход сотрудника из Mini App панели — сразу при открытии: initData старше 10 минут для сессии
+// сотрудника не принимаем (утёкшая initData не даёт панель на час)
+export const STAFF_INIT_DATA_MAX_AGE_SECONDS = 10 * 60;
 export const ACCOUNT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 // Свежее доказательство: для сессии сотрудника, кода хаба панели и добавления способа входа
 export const RECENT_PROOF_SECONDS = 12 * 60 * 60;
@@ -58,10 +62,12 @@ export interface TelegramProof {
 const invalidTelegram = () => new ApiError(401, "unauthorized", "Invalid Telegram login data");
 
 /** initData Mini App → доказательство; подпись не сошлась или устарела — 401 */
-export async function verifyWebApp(env: Secrets, initData: string): Promise<TelegramProof> {
-  const verified = await verifyInitData(initData, env.TELEGRAM_BOT_TOKEN, {
-    maxAgeSeconds: INIT_DATA_MAX_AGE_SECONDS,
-  });
+export async function verifyWebApp(
+  env: Secrets,
+  initData: string,
+  maxAgeSeconds = INIT_DATA_MAX_AGE_SECONDS,
+): Promise<TelegramProof> {
+  const verified = await verifyInitData(initData, env.TELEGRAM_BOT_TOKEN, { maxAgeSeconds });
   if (!verified.ok) {
     // Причина — только в лог: клиенту хватит 401
     console.warn("auth: initData rejected", verified.reason);

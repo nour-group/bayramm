@@ -36,6 +36,13 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       TARGET: ${{ matrix.target }}
     steps:
+      # Production — только из main или тега v*: запуск вручную из другой ветки сюда не дойдёт
+      # (ветки и теги ограничивает и сам GitHub Environment production)
+      - name: Production only from main or a v* tag
+        if: matrix.target == 'production' && github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "::error::production выкладывается только из main или тега v* (сейчас: $GITHUB_REF)"
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

@@ -183,6 +183,9 @@ test.describe("фото: отказ с причиной", () => {
       t.photoDeclineReason(PHOTO_DECLINE_REASON),
     ]);
     expect(api.photoDecisions.some((d) => d.photoId === PHOTO_DECLINED_ID)).toBe(false);
+    // Фокус на заголовке блока прокрутил страницу: под липкой панелью «Сохранить» поля axe считает
+    // перекрытыми. Проверка — с начала страницы, как её открывают
+    await page.evaluate(() => window.scrollTo(0, 0));
     await expectFits(page, "фото: после отказа");
     expect(api.unexpected).toEqual([]);
   });

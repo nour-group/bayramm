@@ -106,7 +106,10 @@ function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup, cat
         return { title: site(t.catAllTitle), description: t.metaCatalogAllDesc };
       const name = categoryName(category, t, lang) ?? category;
       // Что есть в разделе — та же строка, что на плитке лендинга и в шапке каталога
-      return { title: site(t.catTitle(name)), description: t.metaCatDesc(name, categoryDesc(category, t) ?? name) };
+      return {
+        title: site(t.catTitle(name)),
+        description: t.metaCatDesc(name, categoryDesc(category, t) ?? name),
+      };
     }
     case "docs":
       return { title: site(t.meDocs), description: t.metaDocsDesc };

@@ -149,7 +149,11 @@ photos.post("/:id/photos/:photoId/moderation", requirePermission("photos.moderat
   const input = new Input(await readBody(c.req.raw));
   const decision = input.oneOf("decision", ["approved", "declined"] as const, true);
   // Отказ — с причиной: партнёр видит её у фото и знает, что переснять
-  const reason = input.text("reason", { max: PHOTO_REASON_MAX, multiline: true, required: decision === "declined" });
+  const reason = input.text("reason", {
+    max: PHOTO_REASON_MAX,
+    multiline: true,
+    required: decision === "declined",
+  });
   input.done();
   if (!decision) throw invalidInput(["decision"]);
 

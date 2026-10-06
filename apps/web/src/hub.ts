@@ -28,6 +28,7 @@ export const AUTH_PATH = ROUTES.auth;
 const HUB_KEY = "bayramm.hub.request";
 const RETURN_KEY = "bayramm.hub.return";
 const LINK_KEY = "bayramm.hub.link";
+const WIDGET_KEY = "bayramm.hub.widget";
 
 const isHubApp = (value: unknown): value is HubApp => HUB_APPS.includes(value as HubApp);
 
@@ -66,6 +67,40 @@ export function takeReturn(fallback = "/profile"): string {
   const path = safeReturn(sessionGet(RETURN_KEY));
   sessionRemove(RETURN_KEY);
   return path ?? fallback;
+}
+
+/** Ключ возврата виджета: 16 случайных байт в base64url */
+export const WIDGET_NONCE_RE = /^[A-Za-z0-9_-]{22,64}$/;
+
+function newNonce(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return btoa(String.fromCharCode(...bytes))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * Куда виджет вернёт браузер: /auth/telegram/<ключ>. Ключ знает только эта вкладка (хранилище
+ * вкладки): подписанную ссылку возврата чужого входа нельзя подсунуть — иначе по ней человек
+ * молча вошёл бы в чужой аккаунт или подключил бы к своему чужой Telegram
+ */
+export function widgetReturnPath(): string {
+  let nonce = sessionGet(WIDGET_KEY);
+  if (nonce === null || !WIDGET_NONCE_RE.test(nonce)) {
+    nonce = newNonce();
+    sessionSet(WIDGET_KEY, nonce);
+  }
+  return `${ROUTES.authTelegram}/${nonce}`;
+}
+
+/** Возврат виджета — в ту же вкладку, что его показала: ключ в пути совпал. Ключ одноразовый */
+export function takeWidgetReturn(pathname: string): boolean {
+  const expected = sessionGet(WIDGET_KEY);
+  sessionRemove(WIDGET_KEY);
+  const prefix = `${ROUTES.authTelegram}/`;
+  const got = pathname.startsWith(prefix) ? pathname.slice(prefix.length).replace(/\/+$/, "") : null;
+  return expected !== null && WIDGET_NONCE_RE.test(expected) && got === expected;
 }
 
 /** Профиль → «Подключить Telegram»: виджет вернёт на /auth/telegram, там — добавить, а не войти */

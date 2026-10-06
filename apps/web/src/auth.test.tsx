@@ -9,12 +9,14 @@ import { LANG_KEY } from "./context";
 import {
   authHref,
   browser,
+  isTelegramLink,
   loadHubRequest,
   parseHubRequest,
   readWidgetFields,
   safeReturn,
   saveReturn,
   startTelegramLink,
+  widgetReturnPath,
 } from "./hub";
 import {
   byText,
@@ -180,7 +182,7 @@ describe("хаб входа /auth", () => {
     const mock = api();
     const signIn = vi.spyOn(mock, "signInWidget");
     await mount({
-      path: "/auth/telegram?id=42&first_name=Aziza&auth_date=1&hash=ab",
+      path: `${widgetReturnPath()}?id=42&first_name=Aziza&auth_date=1&hash=ab`,
       identity: "guest",
       api: mock,
     });
@@ -191,6 +193,27 @@ describe("хаб входа /auth", () => {
   });
 });
 
+describe("чужая ссылка возврата виджета (вход по подсунутой ссылке)", () => {
+  it("без ключа этой вкладки — объяснение, ни входа, ни подключения", async () => {
+    const mock = api();
+    const signIn = vi.spyOn(mock, "signInWidget");
+    const link = vi.spyOn(mock, "linkTelegram");
+    startTelegramLink();
+    // Ключ чужой вкладки: путь правильный, ключ — не наш
+    await mount({
+      path: "/auth/telegram/AAAAAAAAAAAAAAAAAAAAAA?id=42&first_name=Aziza&auth_date=1&hash=ab",
+      identity: "site",
+      api: mock,
+    });
+    await waitFor(() => text().includes("Ссылка для входа устарела"), "объяснение");
+    expect(signIn).not.toHaveBeenCalled();
+    expect(link).not.toHaveBeenCalled();
+    expect(window.location.search).toBe("");
+    // Флаг подключения тоже снят: следующая чужая ссылка его не использует
+    expect(isTelegramLink()).toBe(false);
+  });
+});
+
 describe("подключить Telegram", () => {
   it("виджет вернул данные — способ добавлен, назад в профиль без перезагрузки", async () => {
     const mock = api();
@@ -198,7 +221,7 @@ describe("подключить Telegram", () => {
     startTelegramLink();
     saveReturn("/profile");
     await mount({
-      path: "/auth/telegram?id=42&first_name=Aziza&auth_date=1&hash=ab",
+      path: `${widgetReturnPath()}?id=42&first_name=Aziza&auth_date=1&hash=ab`,
       identity: "site",
       api: mock,
     });

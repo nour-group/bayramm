@@ -63,7 +63,9 @@ media — параметр `imageOrigins: mediaImageOrigins(dev)` (только 
 для виджета входа Telegram: опция `telegramLoginPaths` пускает его скрипт и фрейм
 `oauth.telegram.org` только на этих путях — у сайта это хаб `/auth`, больше нигде. Колбэк
 `data-onauth` виджет исполняет через `eval`, поэтому хаб берёт данные через редирект
-`data-auth-url` (`/auth/telegram`). Так же `turnstilePaths` пускает скрипт и фрейм
+`data-auth-url` (`/auth/telegram/<ключ вкладки>`: ключ — в хранилище вкладки, `widgetReturnPath` в
+`apps/web/src/hub.ts`; чужую ссылку возврата экран не примет — иначе по подсунутой ссылке человек
+вошёл бы в чужой аккаунт). Данные виджета живут 2 минуты, initData для входа сотрудника — 10. Так же `turnstilePaths` пускает скрипт и фрейм
 `challenges.cloudflare.com` (проверка «не робот») — у сайта тоже только на `/auth`. Панель —
 ещё и Mini App: `telegramWebApp` и `frameAncestors: ["https://web.telegram.org"]`.
 Кэш статики — там же (`packages/edge/src/cache-headers.ts`): `/assets/*` (имя с хэшем, в том
@@ -100,7 +102,8 @@ includeSubDomains и preload — каждый поддомен ставит ег
 Код на телефон просит человек (`apps/api/src/auth/turnstile.ts`): с секретом
 `TURNSTILE_SECRET_KEY` `POST /auth/phone/send` из браузера принимает только токен Cloudflare
 Turnstile (виджет — в хабе, ключ `TURNSTILE_SITE_KEY` отдаёт `GET /auth/methods`), Mini App —
-свою `initData`. Siteverify — с `remoteip`, `idempotency_key`, action `phone_code` и сайтом
+свою `initData`, и только вместе с сессией аккаунта того же пользователя Telegram (initData получит
+любой бот-аккаунт) и не чаще `RATE_LIMIT_OTP_ACCOUNT` на аккаунт. Siteverify — с `remoteip`, `idempotency_key`, action `phone_code` и сайтом
 окружения (`WEB_APP_URL`); сбой — отказ (503). Без секрета проверки нет. Поэтому телефон к
 аккаунту на сайте добавляется в хабе (`/auth?link=phone`), в Mini App — прямо в профиле.
 
@@ -173,8 +176,9 @@ API и в GitHub Environment). В @BotFather вручную — только `/s
 
 Лимиты частоты — привязки Workers Rate Limiting (`ratelimits` в
 `apps/api/wrangler.jsonc`, `apps/api/src/ratelimit.ts`): `POST /auth/*` по
-HMAC от IP, `POST /requests` по IP и по клиенту, `POST /catalog/listings/:slug/contact` по IP;
-превышение — 429
+HMAC от IP, `POST /requests` по IP и по клиенту, `POST /catalog/listings/:slug/contact` по IP,
+код на телефон из Mini App — по аккаунту; IPv6 считается сетью /64 (`limitAddress` в `auth/ip.ts`, и
+у лимита кодов в базе); превышение — 429
 `rate_limited` с `Retry-After`. Привязки не наследуются окружениями, у каждого
 окружения свои `namespace_id` (проверяет `config.test.ts`).
 
@@ -186,7 +190,7 @@ HMAC от IP, `POST /requests` по IP и по клиенту, `POST /catalog/li
 суток; за запуск — ограниченно, в лог — только числа. Отдельный Cron Trigger не заводить — их мало на
 бесплатном тарифе. Права клиента на свои данные — `GET /me/export`,
 `POST /me/consents/withdraw`, `DELETE /me` (функции `app.client_*`, только над
-собой).
+собой); выгрузка и отзыв согласия — и заблокированному клиенту (`requireClient` с `allowBlocked`).
 
 Избранное («Сохранённое», вкладка клиента): у вошедшего — `app.favorites` (строки видит только
 сам клиент; добавляют только `app.client_favorite_add` и `app.client_favorites_merge`, не
@@ -215,9 +219,12 @@ HMAC от IP, `POST /requests` по IP и по клиенту, `POST /catalog/li
 `00000000-0000-4000-8000-de…` — с заявками и фото. Вне staging и без секрета `DEMO_SEED_KEY` — 404.
 Чего в production быть не должно, проверяет чек-лист выпуска `.github/scripts/release-check.sh`
 (последний шаг выкладки production; вручную — `bash .github/scripts/release-check.sh bayramm.uz`):
-демо-витрины и телефоны +998 00 в каталоге, тестовый бот, черновики согласий («ЧЕРНОВИК» /
+демо-витрины в каталоге, тестовый бот, вход по телефону без Turnstile, черновики согласий («ЧЕРНОВИК» /
 «QORALAMA», `supabase/demo/*.draft.sql`) и отсутствие действующих текстов трёх целей клиента; с
-`SUPABASE_DB_URL` — ещё и база (черновики у целей вендора, строки демо-диапазона).
+`SUPABASE_DB_URL` — ещё и база (черновики у целей вендора, строки демо-диапазона, телефоны +998 00 у
+опубликованных витрин — в карточке их нет). Production выкладывается только из `main` или тега `v*`;
+у всех воркеров `workers_dev` и `preview_urls` выключены (только свои домены); ответы `/staff/*`,
+как и кабинета, — `no-store`.
 
 Метрики запуска («заявка → ответ площадки за 12 часов») считает только база:
 факты заявки — представление `app.request_metric_facts`, суммы — функции
@@ -552,7 +559,11 @@ cd prototypes/admin  && pnpm test   # дымовые тесты панели о�
 календаря. Каждое объяснение — один раз на экран. Ошибка API — словами по коду (`errors.ts`,
 `err_<код>` в словаре; код без текста роняет `i18n.test.ts`), «Повторить» — только где поможет.
 Несохранённое — как в панели (`unsaved.tsx`: форма услуги, предложение, причина отказа, заказов
-одновременно; уход, смена витрины, «назад» браузера и Telegram — «Уйти без сохранения?»). Подмена
+одновременно; уход, смена витрины, «назад» браузера и Telegram — «Уйти без сохранения?»). Что ждёт
+партнёра после решений команды — `attention` у витрин в `GET /vendor/me` (отклонённые услуги, фото и
+последнее предложение; считается запросом, у сотрудника площадки — нули): значки у «Витрины» и
+«Услуг», как у входящих; причина отказа — у фото, история решений по предложениям — по кнопке; «первым
+ответил менеджер Bayramm» — у заявки, где `firstResponseBy` = staff. Подмена
 API в e2e: `listings: "many"` — зал, кортеж, фото и видео, торты.
 
 ### Клиент: маршруты, раскладка, лендинг
@@ -760,6 +771,10 @@ title, description, canonical, hreflang (`?lang=`), Open Graph (`public/og.png`,
 В коде API схема `pii` (таблицы и функции `read_*`) упоминается только в
 `apps/api/src/db/pii.ts`: новое чтение или запись ПДн — правка этого модуля.
 Упоминание в любом другом файле `src` роняет тест `db/pii.test.ts`.
+
+Журнал действий, журнал доступа к ПДн и недоставленные уведомления в панели — с подписями объектов
+и людей (витрина, вендор, заявка №, клиент `C-…`, сотрудник, партнёр; `apps/api/src/staff/labels.ts`,
+имена — через `db/pii.ts`), без телефонов; список заявок — с именем, которое клиент указал в заявке.
 
 ---
 

@@ -46,6 +46,7 @@ export function makeEnv(overrides: Partial<Env> = {}): Env {
     RATE_LIMIT_REQUESTS_IP: allowAllLimiter(),
     RATE_LIMIT_REQUESTS_ACTOR: allowAllLimiter(),
     RATE_LIMIT_CONTACTS_IP: allowAllLimiter(),
+    RATE_LIMIT_OTP_ACCOUNT: allowAllLimiter(),
     ...overrides,
   };
 }

@@ -50,6 +50,7 @@ export function CategorySwitch({ current, date }: { current: string; date: strin
   const list = useRef<HTMLUListElement>(null);
   // Открытый раздел — в поле зрения ленты: на телефоне двенадцатый раздел иначе за краем.
   // Только по горизонтали и только своей ленты (scrollLeft): страницу не двигаем (ловушки №3, №5)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: докручиваем, когда сменился раздел или список чипов
   useLayoutEffect(() => {
     const strip = list.current;
     const chip = strip?.querySelector<HTMLElement>('a[aria-current="page"]');

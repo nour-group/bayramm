@@ -1278,13 +1278,19 @@ describe("что ждёт партнёра", () => {
     const client = await createClient();
     const staffReq = await createRequest(client, A.listingId, days(44));
     // «Связались» — отметка сотрудника из панели: переход под актором staff
-    await admin.query("begin");
-    await admin.query(
-      "select set_config('app.actor_kind', 'staff', true), set_config('app.actor_id', $1, true)",
-      [randomUUID()],
-    );
-    await admin.query("update app.requests set status = 'contacted' where id = $1", [staffReq.id]);
-    await admin.query("commit");
+    try {
+      await admin.query("begin");
+      await admin.query(
+        "select set_config('app.actor_kind', 'staff', true), set_config('app.actor_id', $1, true)",
+        [randomUUID()],
+      );
+      await admin.query("update app.requests set status = 'contacted' where id = $1", [staffReq.id]);
+      await admin.query("commit");
+    } catch (err) {
+      // Не оставлять соединение в оборванной транзакции: за этим тестом идут остальные
+      await admin.query("rollback").catch(() => {});
+      throw err;
+    }
 
     const page = (await (
       await call("/vendor/requests?tab=active", bearer(A.token))

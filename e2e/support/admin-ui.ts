@@ -16,10 +16,7 @@ export async function pick(page: Page, label: string, option: string, scope = pa
 }
 
 /** Новая витрина вендору: категория и название → страница витрины (LISTING_ID) */
-export async function createVitrina(
-  page: Page,
-  { category = "Тойхона", name = "Navruz zali" } = {},
-) {
+export async function createVitrina(page: Page, { category = "Тойхона", name = "Navruz zali" } = {}) {
   await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
   await pick(page, t.categoryFirst, category);
   await page.getByLabel(t.vitrinaName, { exact: true }).fill(name);

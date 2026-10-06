@@ -1,7 +1,7 @@
 // Кабинет вендора: всё под /vendor — только с сессией аккаунта партнёра
 // (POST /auth/telegram { app: "vendor" } или хаб входа). Контракт — @bayramm/shared/api/vendor.
 //
-//   GET    /vendor/me                              → 200 VendorMe
+//   GET    /vendor/me                              → 200 VendorMe (у витрин — attention: что ждёт партнёра)
 //   PATCH  /vendor/me                  { locale }  → 200 VendorMe
 //   GET    /vendor/requests?tab=&cursor=&limit=&listingId= → 200 VendorRequestPage
 //   GET    /vendor/requests/:id                    → 200 VendorRequestDetail (new → viewed)

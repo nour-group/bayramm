@@ -20,12 +20,18 @@
   "env": {
     "staging": {
       "name": "bayramm-web-staging",
+      // Только свой домен: ни *.workers.dev, ни preview-адресов версий (как у панели)
+      "workers_dev": false,
+      "preview_urls": false,
       "routes": [{ "pattern": "staging.bayramm.uz", "custom_domain": true }],
       "services": [{ "binding": "API", "service": "bayramm-api-staging" }],
       "vars": { "SEARCH_INDEXING": "off" }
     },
     "production": {
       "name": "bayramm-web",
+      // Только свой домен: ни *.workers.dev, ни preview-адресов версий (как у панели)
+      "workers_dev": false,
+      "preview_urls": false,
       "routes": [{ "pattern": "bayramm.uz", "custom_domain": true }],
       "services": [{ "binding": "API", "service": "bayramm-api" }],
       "vars": { "SEARCH_INDEXING": "off" }
