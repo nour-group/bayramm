@@ -1,10 +1,16 @@
 name: Demo data (staging)
 
-# Демо-витрины на staging для показа: seed — завести три вымышленных зала и по витрине в
-# каждой включённой категории (вендор, карточка, фото, услуги, поля витрины, занятость;
-# опубликованы теми же шагами, что в панели), reset — убрать всё демо вместе с заявками на них. Только вручную и только staging: маршрут
-# POST /ops/demo есть лишь там (apps/api/src/routes/ops.ts). Оба режима можно запускать
+# Демо-витрины на staging для показа: seed — завести три вымышленных зала и по две витрины в
+# каждой другой включённой категории (вендор, карточка, фото, услуги, поля витрины, занятость;
+# опубликованы теми же шагами, что в панели), reset — убрать всё демо вместе с заявками на
+# них, reseed — reset и seed подряд (seed не меняет уже заведённое: новые тексты и фото —
+# только так), check — только проверка. Только вручную и только staging: маршрут
+# POST /ops/demo есть лишь там (apps/api/src/routes/ops.ts). Режимы можно запускать
 # сколько угодно раз: seed заводит только то, чего нет, reset убирает только демо.
+#
+# После seed, reseed и в режиме check — проверка в браузере (e2e/staging, Chromium на
+# телефоне и компьютере): лендинг, каждый раздел и каждая витрина, фото с воркера media,
+# «Связаться», узбекский, занятый день.
 #
 # Фото рисует шаг ниже (apps/api/scripts/demo-photos.ts, sharp) — в репозитории их нет.
 # Ключ — секрет DEMO_SEED_KEY в GitHub Environment staging и тот же — в воркере API staging.
@@ -12,9 +18,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "seed — завести демо-витрины, reset — убрать всё демо"
+        description: "seed — завести демо-витрины, reseed — убрать и завести заново, reset — убрать всё демо, check — только проверить"
         type: choice
-        options: [seed, reset]
+        options: [seed, reseed, reset, check]
         default: seed
 
 permissions:
@@ -27,8 +33,9 @@ concurrency:
 jobs:
   demo:
     name: Demo ${{ inputs.mode }} (staging)
+    if: inputs.mode != 'check'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment:
       name: staging
       url: https://staging.bayramm.uz
@@ -36,13 +43,13 @@ jobs:
       MODE: ${{ inputs.mode }}
       API: https://api-staging.bayramm.uz
     steps:
-      - if: inputs.mode == 'seed'
+      - if: inputs.mode != 'reset'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - if: inputs.mode == 'seed'
+      - if: inputs.mode != 'reset'
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-      - if: inputs.mode == 'seed'
+      - if: inputs.mode != 'reset'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
@@ -50,11 +57,11 @@ jobs:
 
       # Только API и его пакеты: sharp для фото
       - name: Install
-        if: inputs.mode == 'seed'
+        if: inputs.mode != 'reset'
         run: pnpm install --frozen-lockfile --filter @bayramm/api...
 
       - name: Draw demo photos
-        if: inputs.mode == 'seed'
+        if: inputs.mode != 'reset'
         run: pnpm --filter @bayramm/api demo:photos "$RUNNER_TEMP/demo-photos"
 
       - name: POST /ops/demo (${{ inputs.mode }})
@@ -95,7 +102,15 @@ jobs:
             exit 1
           }
 
-          if [ "$MODE" = seed ]; then
+          # reseed: сначала убрать всё демо — seed заведёт заново с новыми текстами и фото
+          if [ "$MODE" = reseed ]; then
+            post -F mode=reset
+            removed=$(jq -r '"Убрано перед seed — карточек: \(.removed.listings), фото: \(.removed.photos)."' demo.json)
+            echo "$removed"
+            printf '%s\n\n' "$removed" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$MODE" = seed ] || [ "$MODE" = reseed ]; then
             # По витрине за запрос — каждый вызов воркера короткий. Фото — по три на витрину, по порядку
             photos=("$RUNNER_TEMP"/demo-photos/demo-*.webp)
             totals='{"active":0,"vendors":0,"listings":0,"photos":0,"busyDays":0,"published":0}'
@@ -120,3 +135,47 @@ jobs:
           fi
           echo "$summary"
           printf '### Demo data (staging): %s\n\n%s\n' "$MODE" "$summary" >> "$GITHUB_STEP_SUMMARY"
+
+  # Проверка в браузере: как демо-витрины видит человек на сайте staging. Без секретов —
+  # сайт публичный; «Связаться» открывается у первой витрины раздела (лимит 30 в минуту)
+  check:
+    name: Check staging in the browser
+    needs: demo
+    if: ${{ !cancelled() && inputs.mode != 'reset' && (needs.demo.result == 'success' || needs.demo.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STAGING_URL: https://staging.bayramm.uz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(pnpm --filter @bayramm/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Cache Chromium
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - name: Install Chromium
+        run: pnpm --filter @bayramm/e2e exec playwright install --with-deps --only-shell chromium
+      # Выдача каталога кэшируется на 30 секунд (+60 stale): после seed — подождать
+      - name: Wait for catalog cache
+        if: inputs.mode != 'check'
+        run: sleep 90
+      - name: Staging check (phone and desktop)
+        run: pnpm --filter @bayramm/e2e exec playwright test -c playwright.staging.config.ts
+      - name: Upload report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-check
+          path: e2e/test-results/staging
+          retention-days: 7
