@@ -337,7 +337,7 @@ select results_eq(
   $$values ('cake', 'draft', 'vendor.listing_add')$$,
   'черновиком, с записью в журнале вендора');
 select throws_ok(
-  $$select app.staff_add_listing('aaaaaaaa-0000-0000-0000-000000000001', 'zags', 'Zags', 'test-zags')$$,
+  $$select app.staff_add_listing('aaaaaaaa-0000-0000-0000-000000000001', 'music', 'Music', 'test-music')$$,
   '23514', null, 'только во включённой категории');
 select throws_ok(
   $$select app.staff_set_listing_category('aaaaaaaa-0000-0000-0000-000000000201', 'decor')$$,

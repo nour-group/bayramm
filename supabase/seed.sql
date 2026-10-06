@@ -21,7 +21,7 @@ declare
   v_sla        int := app.setting_int('sla_hours');
 begin
   if v_categories <> 14
-     or v_enabled is distinct from array['cake', 'car', 'decor', 'flowers', 'gifts', 'hall', 'photo', 'studio']
+     or v_enabled is distinct from array['attire', 'cake', 'car', 'decor', 'flowers', 'food', 'gifts', 'hall', 'photo', 'restaurant', 'studio', 'zags']
      or v_occasions <> 5
      or v_districts <> 12 or v_sla is distinct from 12 then
     raise exception 'справочники не совпадают с ожидаемыми: категорий %, включены %, поводов %, районов %, sla_hours %',

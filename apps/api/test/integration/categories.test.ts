@@ -271,7 +271,7 @@ describe("панель: вендор в нескольких категория�
     ).toEqual({ status: 422, code: "invalid_input", details: ["categoryCode"] });
     // Выключенная категория — нет; модератор витрин не заводит
     expect(
-      await error(api("manager", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "zags" })),
+      await error(api("manager", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "music" })),
     ).toMatchObject({ status: 422 });
     expect(
       (await api("moderator", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "cake" }))

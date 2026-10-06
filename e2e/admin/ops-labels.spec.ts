@@ -131,8 +131,8 @@ test.describe("фото: отказ с причиной", () => {
       .locator(".photo")
       .nth(n - 1);
     if (isPhone(page)) {
-      // Имя кнопки — «Ещё», пробел и скрытое для глаз «: Фото n»
-      await photo.getByRole("button", { name: new RegExp(`${t.more}\\s*: ${t.photoN(n)}$`) }).click();
+      // Имя кнопки — «Ещё» и скрытое для глаз «: Фото n»; у кнопок порядка в имени «Ещё» нет
+      await photo.getByRole("button", { name: t.more }).click();
       await page
         .getByRole("dialog", { name: t.photoN(n) })
         .getByRole("button", { name: t.decline, exact: true })

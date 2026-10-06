@@ -936,11 +936,9 @@ test.describe("витрины в разных категориях", () => {
 });
 
 test.describe("что ждёт партнёра после решений команды", () => {
-  /** Значок раздела на панели разделов: число и слова для диктора */
+  /** Значок раздела на панели разделов: число и слова для диктора (имя ссылки — раздел и значок) */
   const badge = (page: Page, name: string) =>
-    sections(page)
-      .getByRole("link", { name: new RegExp(`^${name}`) })
-      .locator(".nav-count");
+    sections(page).getByRole("link", { name }).locator(".nav-count");
 
   test("значки у «Витрины» и «Услуг»: слова для диктора; удалил фото и предложил заново — значок убавляется", async ({
     page,
