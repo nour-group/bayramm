@@ -86,7 +86,7 @@ test.describe("лендинг → каталог категории", () => {
   test("плитка категории — её каталог; фильтры по полям витрины: колонка или шторка", async ({ page }) => {
     await prepare(page);
     await open(page, PATHS.home, ".cat-grid", { guest: true });
-    await expect(page.locator(".cat-tile")).toHaveCount(8);
+    await expect(page.locator(".cat-tile")).toHaveCount(12);
     // Чисел витрин нет; «скоро» — только у пустых (в демо пустых нет)
     await expect(page.locator(".cat-soon")).toHaveCount(0);
     await page.locator(".cat-tile").filter({ hasText: "Кортеж" }).click();
@@ -320,6 +320,16 @@ test.describe("каталог «Все» и дата с витрины", () => {
     await chips.first().click();
     await expect(page).toHaveURL((url) => url.pathname === PATHS.catalog && url.search === "");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catAllTitle);
+  });
+
+  test("открытый раздел виден в ленте разделов — и последний из двенадцати", async ({ page }) => {
+    await prepare(page);
+    await open(page, PATHS.category("decor"), ".card", { guest: true });
+    const current = page.locator(".cat-switch a[aria-current=page]");
+    await expect(current).toHaveText(ru.catName.decor);
+    await expect(current).toBeInViewport();
+    // Страница от этого не прокрутилась
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
   });
 
   test("день из календаря витрины — в форме заявки", async ({ page }) => {

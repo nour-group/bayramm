@@ -121,7 +121,7 @@ test.describe("работа сотрудника", () => {
     await page.getByRole("button", { name: t.createVitrina }).click();
     await expect(page.locator(".field-error")).toHaveText(t.categoryRequired);
     expect(api.vitrinas).toEqual([]);
-    await pick(page, t.categoryFirst, "Площадка / Тойхона");
+    await pick(page, t.categoryFirst, "Тойхона");
     await page.getByLabel(t.vitrinaName, { exact: true }).fill("Navruz zali");
     await page.getByRole("button", { name: t.createVitrina }).click();
     await expect(page).toHaveURL(`/listings/${LISTING_ID}`);

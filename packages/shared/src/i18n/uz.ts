@@ -532,9 +532,7 @@ export const uz: Dict = {
   docsLead: "Amaldagi rozilik matnlari — soʻrov shaklida belgilaydiganlaringiz bilan bir xil.",
   metaHomeTitle: "Bayramm — Toshkentda bayram uchun hammasi",
   metaHomeDesc:
-    "Toshkentdagi zallar, kortejlar, foto va video, studiyalar, gullar, tortlar, sovgʻalar va dekor — narxlari va bandlik taqvimi bilan. Hamkor telefoni darhol koʻrinadi, soʻrov bepul, javob — 12 soat ichida.",
-  metaCatalogDesc:
-    "Toshkent toʻyxonalari: sana, mehmonlar soni va tumanni tanlang — narxlar, boʻsh sanalar va telefonlarni koʻrasiz.",
+    "Toshkentdagi FHDYo, toʻyxonalar, kortejlar, foto va video, studiyalar, restoranlar, gul doʻkonlari, toʻy kiyimlari, sovgʻalar, katering, tortlar va dekor — narxlari va bandlik taqvimi bilan. Hamkor kontaktlari darhol, soʻrov bepul, javob — 12 soat ichida.",
   metaVenueDesc: (facts: string) => `${facts}. Telefon va bandlik taqvimi — sahifada, soʻrov bepul.`,
   metaDocsDesc: "Bayramm rozilik matnlari va soʻrov qanday ishlashi.",
   lnKicker: "Toshkentda bayram uchun hammasi",
@@ -557,11 +555,11 @@ export const uz: Dict = {
     "Shartlar va toʻlovni hamkor bilan kelishasiz — Bayramm hisob-kitobda qatnashmaydi.",
   ],
   lnPromH: "Vaʼdalarimiz",
-  lnPromT: ["Siz uchun bepul", "Narx darhol koʻrinadi", "Soʻrovsiz telefon", "12 soatda javob"],
+  lnPromT: ["Siz uchun bepul", "Narx darhol koʻrinadi", "Soʻrovsiz kontaktlar", "12 soatda javob"],
   lnPromP: [
     "Komissiya ham, soʻrov uchun toʻlov ham yoʻq. Pul Bayramm orqali oʻtmaydi.",
     "Har bir hamkorning boshlangʻich narxi koʻrsatilgan. Narxsiz katalogga chiqilmaydi.",
-    "Hamkor raqami uning sahifasida ochiq: soʻrovsiz ham qoʻngʻiroq qiling.",
+    "Hamkor telefoni va Telegrami — sahifasidagi «Bogʻlanish» tugmasida, soʻrovsiz va kirishsiz.",
     "Hamkor 12 soatda javob bermasa — shu sanaga oʻxshashlarini koʻrsatamiz.",
   ],
   lnPartnerH: "Bayram xizmatlarini taklif qilasizmi?",
@@ -619,6 +617,8 @@ export const uz: Dict = {
   partsUpcoming: "Yaqin qisman band kunlar",
   partsNote: "Buyurtmalar ertalab, kunduzi va kechqurunga olinadi: qisman band kunni ham tanlash mumkin.",
   slotNote: "Vaqt va necha soat kerakligini soʻrovda koʻrsatasiz.",
+  // у слота без часов (ЗАГС: церемония идёт сколько идёт) — только время
+  slotTimeNote: "Vaqtni soʻrovda koʻrsatasiz.",
   leadTitle: "Buyurtma muddati",
   leadNote: (n: number) => `Bayramdan kamida ${n} kun oldin buyurtma qilinadi.`,
   leadNoteAny: "Buyurtma muddatini hamkordan aniqlang.",
@@ -666,21 +666,40 @@ export const uz: Dict = {
   savedApp: "Saqlandi. Roʻyxat — «Saqlanganlar» boʻlimida.",
   savedGuest: "Saqlandi. Roʻyxat — sahifa tepasidagi «Saqlanganlar» boʻlimida, kirish shart emas.",
   lnCatsH: "Nimalarni topish mumkin",
-  metaCatDesc: (name: string) =>
-    `${name} — Toshkent: boshlangʻich narxlar, boʻsh sanalar va hamkorlar telefonlari. Soʻrov bepul, javob — 12 soat ichida.`,
+  metaCatDesc: (name: string, what: string) =>
+    `${what}. ${name} — Toshkent: boshlangʻich narxlar, boʻsh sanalar va hamkorlar kontaktlari, soʻrov bepul.`,
   // меню сайта для гостя (шторка из шапки на телефоне и планшете)
   menu: "Menyu",
   // ── глоссарий клиента (glossary.ts): короткие названия разделов каталога, без косых черт.
   // У кабинета и панели — свои названия из @bayramm/shared/categories (cat_*)
   catName: {
+    zags: "FHDYo",
     hall: "Toʻyxonalar",
     car: "Kortejlar",
-    studio: "Fotostudiyalar",
-    flowers: "Gullar",
     photo: "Foto va video",
-    cake: "Tortlar va shirinliklar",
+    studio: "Studiyalar",
+    restaurant: "Restoranlar",
+    flowers: "Gul doʻkonlari",
+    attire: "Toʻy kiyimlari",
     gifts: "Sovgʻalar",
+    food: "Katering",
+    cake: "Tortlar va shirinliklar",
     decor: "Dekor va bezak",
+  },
+  // Что есть в разделе — одной строкой: плитки лендинга, шапка каталога раздела, описание для поисковиков
+  catDesc: {
+    zags: "Nikohni rasmiy roʻyxatdan oʻtkazish — navbat, hujjatlar, tantanali marosim zali",
+    hall: "Toʻy va osh uchun banket zali — sigʻimi, menyusi va sanasi boʻyicha tanlanadi",
+    car: "Toʻy mashinalari va bezatilgan avtomobillar — kelin-kuyovni olib yurish uchun",
+    photo: "Toʻy kunini suratga olish va videoga yozish, montaj bilan tayyor rolik",
+    studio: "Love story va toʻy fotosessiyalari uchun studiya, dekor va yoritish bilan",
+    restaurant: "Fotiha, qiz bazmi, kichik bazmlar uchun restoran va kafe zallari",
+    flowers: "Kelin guldastasi, mashina va zal bezagi uchun gullar",
+    attire: "Kelinlik koʻylagi va kuyov kostyumi — sotuv va ijaraga",
+    gifts: "Mehmonlarga esdalik sovgʻalar, bonbonyerka va quda sovgʻalari",
+    food: "Taom va osh tashkil qilish — oʻz joyingizda, ofitsiant va jihozlar bilan",
+    cake: "Toʻy tortlari, bento va milliy shirinliklar",
+    decor: "Toʻr, zal, kirish va fotozonani bezash",
   },
   catalogNote: "Narxlarni hamkorlarning oʻzi koʻrsatadi, ustamasiz.",
   filtersShowN: (n: number, more: boolean) =>

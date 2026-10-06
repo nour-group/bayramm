@@ -1,5 +1,6 @@
 /* Уведомления: здоровье очереди бота — сколько ждёт, сколько не доставлено и почему.
-   Получатель — только вид и начало id; повторить недоставленное — администратор. */
+   Получатель — подпись (имя пользователя кабинета или вендор, имя сотрудника, код клиента),
+   вид и начало id; телефонов нет. Повторить недоставленное — администратор. */
 
 import type { OutboxDeadItem, OutboxHealth, OutboxStatus } from "@bayramm/shared/api/staff";
 import { useState } from "react";
@@ -10,6 +11,32 @@ import { t } from "../texts";
 import { ErrorText, Link, LoadedView } from "../ui";
 
 const COUNTS: readonly OutboxStatus[] = ["pending", "sending", "failed", "dead", "sent"];
+
+/** Получатель: главное — кто («Иван П.»), под ним — вид и начало id; без подписи главное — вид */
+function recipientOf(item: OutboxDeadItem): { main: string; sub: string } {
+  const kind = t.recipientKinds[item.recipientKind] ?? item.recipientKind;
+  const ref = item.recipientRef ? `${item.recipientRef}…` : "";
+  return item.recipientLabel
+    ? { main: item.recipientLabel, sub: [kind, ref].filter(Boolean).join(" · ") }
+    : { main: kind, sub: ref };
+}
+
+/** В одну строку — карточка на телефоне */
+function recipientLine(item: OutboxDeadItem): string {
+  const { main, sub } = recipientOf(item);
+  return sub ? `${main} · ${sub}` : main;
+}
+
+/** Ячейка таблицы: кто — и под ним вид и начало id */
+function RecipientCell({ item }: { item: OutboxDeadItem }) {
+  const { main, sub } = recipientOf(item);
+  return (
+    <>
+      {main}
+      {sub && <span className="sub">{sub}</span>}
+    </>
+  );
+}
 
 export function NotificationsPage() {
   const { loaded, reload, set } = useLoad<OutboxHealth>("/staff/outbox");
@@ -95,10 +122,7 @@ function DeadTable({
               )}
               <dl className="rcard-facts">
                 <dt>{t.colRecipient}</dt>
-                <dd>
-                  {t.recipientKinds[item.recipientKind] ?? item.recipientKind}
-                  {item.recipientRef ? ` · ${item.recipientRef}…` : ""}
-                </dd>
+                <dd>{recipientLine(item)}</dd>
                 <dt>{t.colAttempts}</dt>
                 <dd>{item.attempts}</dd>
                 <dt>{t.colWhen}</dt>
@@ -162,8 +186,7 @@ function DeadTable({
                   </span>
                 </td>
                 <td>
-                  {t.recipientKinds[item.recipientKind] ?? item.recipientKind}
-                  {item.recipientRef && <span className="sub">{item.recipientRef}…</span>}
+                  <RecipientCell item={item} />
                 </td>
                 <td>{item.attempts}</td>
                 <td className="error-cell">{item.error ?? t.none}</td>

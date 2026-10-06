@@ -93,13 +93,17 @@ export function screenOf(match: Match | null, inTelegram: boolean): Match | null
  * оболочка и воркер, описание категорий с подписями ей не нужно. Сверяет categories.test.ts
  */
 export const CATEGORY_CODES = [
+  "zags",
   "hall",
   "car",
-  "studio",
-  "flowers",
   "photo",
-  "cake",
+  "studio",
+  "restaurant",
+  "flowers",
+  "attire",
   "gifts",
+  "food",
+  "cake",
   "decor",
 ] as const;
 export type ClientCategoryCode = (typeof CATEGORY_CODES)[number];

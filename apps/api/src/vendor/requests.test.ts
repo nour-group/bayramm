@@ -41,6 +41,7 @@ function row(patch: Record<string, unknown> = {}) {
     created_at: new Date("2026-10-01T08:00:00Z"),
     sla_due_at: new Date("2026-10-01T20:00:00Z"),
     first_response_at: null,
+    first_response_by: null,
     sla_breached: false,
     decline_note: null,
     contact_name: "Client",
@@ -241,9 +242,40 @@ describe("listRequests", () => {
         budgetMaxUzs: null,
         createdAt: "2026-10-01T08:00:00.000Z",
         sla: { dueAt: "2026-10-01T20:00:00.000Z", firstResponseAt: null, breached: false },
+        firstResponseBy: null,
         contactName: "Client",
       },
     ]);
+  });
+
+  it("кто ответил первым — в списке и в карточке: менеджер Bayramm отличим от партнёра", async () => {
+    const answered = new Date("2026-10-01T09:00:00Z");
+    const byStaff = row({
+      status: "contacted",
+      first_response_at: answered,
+      first_response_by: "staff",
+    });
+    const fake = dbWith(byStaff, (q) => (q.sql.includes("group by") ? [] : null));
+    const page = await listRequests(fake.db, ACTOR, {
+      tab: "active",
+      listingId: null,
+      after: null,
+      limit: 20,
+    });
+    expect(page.items[0]?.firstResponseBy).toBe("staff");
+    expect(page.items[0]?.sla.firstResponseAt).toBe(answered.toISOString());
+
+    const detail = await getRequest(dbWith(byStaff).db, ACTOR, REQUEST_ID);
+    expect(detail.firstResponseBy).toBe("staff");
+    const byVendor = row({
+      status: "contacted",
+      first_response_at: answered,
+      first_response_by: "vendor_user",
+    });
+    expect((await getRequest(dbWith(byVendor).db, ACTOR, REQUEST_ID)).firstResponseBy).toBe("vendor_user");
+    // Первый ответ читается из столбца базы, а не выводится из журнала статусов
+    const list = fake.queries.find(isItemQuery);
+    expect(list?.sql).toContain('"r"."first_response_by"');
   });
 
   it("строк больше страницы — курсор на последнюю заявку страницы", async () => {

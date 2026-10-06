@@ -567,7 +567,7 @@ function ContactsSection({ category }: { category: string | null }) {
           data.items.length === 0 ? (
             <p className="empty">{t.metricsContactsEmpty}</p>
           ) : (
-            <ContactTable items={data.items} />
+            <ContactTable items={data.items} days={data.days} />
           )
         }
       </LoadedView>
@@ -575,7 +575,20 @@ function ContactsSection({ category }: { category: string | null }) {
   );
 }
 
-function ContactTable({ items }: { items: readonly ContactRow[] }) {
+/**
+ * Открытия к предыдущему такому же периоду: «+4 · было 8» — знак и число видны без цвета, диктору
+ * то же словами (на сколько больше или меньше и сколько было)
+ */
+function OpensChange({ row, days }: { row: ContactRow; days: number }) {
+  return (
+    <span className="sub">
+      <span aria-hidden="true">{t.opensChange(row.opens, row.opensPrev)}</span>
+      <span className="visually-hidden">{t.opensChangeSpoken(row.opens, row.opensPrev, days)}</span>
+    </span>
+  );
+}
+
+function ContactTable({ items, days }: { items: readonly ContactRow[]; days: number }) {
   const phone = usePhone();
   if (phone)
     return (
@@ -593,7 +606,10 @@ function ContactTable({ items }: { items: readonly ContactRow[] }) {
             </p>
             <dl className="rcard-facts">
               <dt>{t.colContactOpens}</dt>
-              <dd>{row.opens}</dd>
+              <dd>
+                {row.opens}
+                <OpensChange row={row} days={days} />
+              </dd>
               <dt>{t.colContactPhone}</dt>
               <dd>{row.phone}</dd>
               <dt>{t.colContactTelegram}</dt>
@@ -627,7 +643,10 @@ function ContactTable({ items }: { items: readonly ContactRow[] }) {
                   <Link to={{ name: "vendor", id: row.vendor.id }}>{row.vendor.name}</Link>
                 </span>
               </th>
-              <td>{row.opens}</td>
+              <td>
+                {row.opens}
+                <OpensChange row={row} days={days} />
+              </td>
               <td>{row.phone}</td>
               <td>{row.telegram}</td>
             </tr>

@@ -75,7 +75,18 @@ export const listings = new Hono<AppEnv>();
 export async function loadPhotos(trx: Tx, listingId: string): Promise<StaffPhoto[]> {
   const rows = await trx
     .selectFrom("app.photos")
-    .select(["id", "storage_key", "width", "height", "bytes", "sort", "is_cover", "moderation", "created_at"])
+    .select([
+      "id",
+      "storage_key",
+      "width",
+      "height",
+      "bytes",
+      "sort",
+      "is_cover",
+      "moderation",
+      "moderation_reason",
+      "created_at",
+    ])
     .where("listing_id", "=", listingId)
     .where("deleted_at", "is", null)
     .where("status", "=", "ready")
@@ -91,6 +102,7 @@ export async function loadPhotos(trx: Tx, listingId: string): Promise<StaffPhoto
     sort: row.sort,
     isCover: row.is_cover,
     moderation: row.moderation === "withdrawn" ? "declined" : row.moderation,
+    declineReason: row.moderation === "declined" ? row.moderation_reason : null,
     createdAt: iso(row.created_at),
   }));
 }

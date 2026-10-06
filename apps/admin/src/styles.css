@@ -1353,6 +1353,13 @@ textarea.input {
   gap: var(--gap-5);
 }
 
+/* Причина отказа под отклонённым фото: текст партнёра длинный и в узкой клетке переносится целиком */
+.photo-reason {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
 /* Загрузка: галочка «нет лиц» и FileDrop во всю ширину панели */
 .upload {
   display: flex;

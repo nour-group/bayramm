@@ -7,7 +7,8 @@
 //          X-No-Faces: 1 — сотрудник подтвердил, что лиц на фото нет
 //   PUT    /staff/listings/:id/photos/order      { ids }       порядок
 //   POST   /staff/listings/:id/photos/:photoId/cover           обложка (и первой в порядке)
-//   POST   /staff/listings/:id/photos/:photoId/moderation { decision }  одобрить / отклонить
+//   POST   /staff/listings/:id/photos/:photoId/moderation { decision, reason? }  одобрить / отклонить:
+//          отказ — с причиной (1–500 знаков), её видит партнёр в кабинете
 //   DELETE /staff/listings/:id/photos/:photoId                 удалить
 //
 // Все, кроме загрузки, отвечают списком фото карточки в новом порядке.
@@ -29,6 +30,9 @@ import { loadPhotos } from "./listings";
 import { iso, pathId } from "./shared";
 
 export const photos = new Hono<AppEnv>();
+
+/** Причина отказа по фото — как в базе (app.photos.moderation_reason) */
+export const PHOTO_REASON_MAX = 500;
 
 // Сам файл — до 10 МБ; запас на случай, если клиент пришлёт чуть больше: точный
 // предел проверяет assertUploadable и отвечает понятной ошибкой
@@ -72,6 +76,7 @@ photos.post("/:id/photos", requirePermission("listings.write"), limitUpload, asy
     sort: photo.sort,
     isCover: false,
     moderation: photo.moderation === "withdrawn" ? "declined" : photo.moderation,
+    declineReason: null,
     createdAt: iso(new Date()),
   };
   return c.json(body, 201);
@@ -143,13 +148,20 @@ photos.post("/:id/photos/:photoId/moderation", requirePermission("photos.moderat
   const ids = photoIds(c);
   const input = new Input(await readBody(c.req.raw));
   const decision = input.oneOf("decision", ["approved", "declined"] as const, true);
+  // Отказ — с причиной: партнёр видит её у фото и знает, что переснять
+  const reason = input.text("reason", { max: PHOTO_REASON_MAX, multiline: true, required: decision === "declined" });
   input.done();
   if (!decision) throw invalidInput(["decision"]);
 
   const list = await withActor(c.var.db, staffOf(c), async (trx) => {
     await photoOf(trx, ids.listing, ids.photo);
-    // У опубликованной карточки одобренных фото не станет меньше минимума — триггер
-    await trx.updateTable("app.photos").set({ moderation: decision }).where("id", "=", ids.photo).execute();
+    // У опубликованной карточки одобренных фото не станет меньше минимума — триггер.
+    // Причина живёт только у отклонённого (photos_guard стирает её при другом решении)
+    await trx
+      .updateTable("app.photos")
+      .set({ moderation: decision, moderation_reason: decision === "declined" ? (reason ?? null) : null })
+      .where("id", "=", ids.photo)
+      .execute();
     return loadPhotos(trx, ids.listing);
   });
   return c.json(list);

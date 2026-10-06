@@ -51,6 +51,8 @@ interface VitrinaSpec {
   readonly slug: string;
   readonly name: string;
   readonly district?: string;
+  /** Вместимость в гостях [от, до] — у категорий с вместимостью (рестораны) */
+  readonly cap?: readonly [number, number];
   readonly attributes: ListingAttributes;
   readonly services: readonly ServiceSpec[];
   readonly videoLinks?: readonly string[];
@@ -533,6 +535,348 @@ const SPECS: readonly VitrinaSpec[] = [
       { type: "table_decor", price: 250_000, unit: "per_table", minQty: 8 },
     ],
   },
+  // ── ЗАГС: день в календаре, время церемонии — в заявке ──
+  {
+    category: "zags",
+    slug: "visol-saroyi",
+    name: "Visol saroyi",
+    district: "mirzo_ulugbek",
+    attributes: {
+      zags_kind: "palace",
+      ceremony_capacity: 80,
+      document_help: true,
+      foreign_citizens: true,
+      ceremony_langs: ["uz", "ru"],
+      parking: true,
+      working_hours: "09:00–18:00",
+    },
+    services: [
+      {
+        type: "solemn_ceremony",
+        price: 1_200_000,
+        unit: "per_event",
+        includes: {
+          ru: "Зал на 80 гостей, музыка на входе, регистратор",
+          uz: "80 mehmonlik zal, kirishda musiqa, roʻyxatga oluvchi",
+        },
+        options: [
+          { code: "music", price: 800_000, unit: "per_event" },
+          { code: "photographer", price: 1_000_000, unit: "per_event" },
+          { code: "champagne", price: 150_000, unit: "per_item" },
+        ],
+      },
+      { type: "simple_registration", price: 300_000, unit: "per_event" },
+      { type: "documents_help", price: 400_000, unit: "per_event" },
+    ],
+    busy: [5, 12, 19],
+  },
+  {
+    category: "zags",
+    slug: "baxt-nikoh-uyi",
+    name: "Baxt nikoh uyi",
+    district: "chilonzor",
+    attributes: {
+      zags_kind: "registry",
+      ceremony_capacity: 30,
+      document_help: true,
+      ceremony_langs: ["uz"],
+      working_hours: "09:00–17:00",
+    },
+    services: [
+      { type: "simple_registration", price: 250_000, unit: "per_event" },
+      { type: "solemn_ceremony", price: 700_000, unit: "per_event" },
+      { type: "date_appointment", price: 150_000, unit: "per_event" },
+    ],
+    busy: [3, 10],
+  },
+  {
+    category: "zags",
+    slug: "ikki-yurak",
+    name: "Ikki yurak",
+    district: "yunusobod",
+    attributes: {
+      zags_kind: "agency",
+      offsite: true,
+      document_help: true,
+      foreign_citizens: true,
+      ceremony_langs: ["uz", "ru", "en"],
+    },
+    services: [
+      {
+        type: "offsite_ceremony",
+        price: 4_500_000,
+        unit: "per_event",
+        options: [
+          { code: "arch", price: 1_500_000, unit: "per_item" },
+          { code: "decor", price: 2_000_000, unit: "per_event" },
+          { code: "music", price: 800_000, unit: "per_event" },
+        ],
+      },
+      { type: "documents_help", price: 500_000, unit: "per_event" },
+      { type: "foreign_registration", price: 1_500_000, unit: "per_event" },
+    ],
+    busy: [8],
+  },
+  // ── рестораны: части дня, несколько залов одновременно, вместимость ──
+  {
+    category: "restaurant",
+    slug: "ipak-restoran",
+    name: "Ipak restoran",
+    district: "yakkasaroy",
+    cap: [10, 120],
+    attributes: {
+      cuisine: ["national", "european", "oriental"],
+      events: ["fotiha", "girls_party", "engagement", "birthday", "family"],
+      private_rooms: 3,
+      alcohol: "not_allowed",
+      live_music: true,
+      kids_room: true,
+      parking: true,
+      accessible: true,
+    },
+    services: [
+      {
+        type: "banquet_menu",
+        price: 220_000,
+        unit: "per_guest",
+        minQty: 10,
+        options: [
+          { code: "extra_dish", price: 40_000, unit: "per_guest" },
+          { code: "music", price: 1_500_000, unit: "per_event" },
+        ],
+      },
+      { type: "fotiha_menu", price: 150_000, unit: "per_guest", minQty: 10 },
+      { type: "girls_party", price: 180_000, unit: "per_guest", minQty: 10 },
+      { type: "private_room", price: 300_000, unit: "per_hour", minQty: 2 },
+    ],
+    parallelCapacity: 3,
+    busy: [14],
+    parts: [
+      [4, ["evening"]],
+      [6, ["day"]],
+    ],
+  },
+  {
+    category: "restaurant",
+    slug: "zarafshon-kafe",
+    name: "Zarafshon kafe",
+    district: "shayxontohur",
+    cap: [8, 60],
+    attributes: {
+      cuisine: ["national"],
+      events: ["fotiha", "girls_party", "family"],
+      private_rooms: 2,
+      alcohol: "not_allowed",
+      parking: true,
+    },
+    services: [
+      { type: "fotiha_menu", price: 120_000, unit: "per_guest", minQty: 8 },
+      { type: "banquet_menu", price: 160_000, unit: "per_guest", minQty: 8 },
+      { type: "kids_menu", price: 60_000, unit: "per_guest" },
+    ],
+    parallelCapacity: 2,
+    busy: [9],
+    parts: [[2, ["day"]]],
+  },
+  {
+    category: "restaurant",
+    slug: "osiyo-lounge",
+    name: "Osiyo Lounge",
+    district: "mirobod",
+    cap: [20, 200],
+    attributes: {
+      cuisine: ["asian", "european", "mixed"],
+      events: ["birthday", "corporate", "engagement"],
+      alcohol: "allowed",
+      live_music: true,
+      accessible: true,
+    },
+    services: [
+      {
+        type: "banquet_menu",
+        price: 320_000,
+        unit: "per_guest",
+        minQty: 20,
+        options: [{ code: "cake", price: 900_000, unit: "per_event" }],
+      },
+      { type: "private_room", price: 2_000_000, unit: "per_event" },
+    ],
+    parts: [[11, ["evening"]]],
+  },
+  // ── свадебные наряды: календаря нет, срок заказа ──
+  {
+    category: "attire",
+    slug: "kelin-salon",
+    name: "Kelin salon",
+    district: "chilonzor",
+    attributes: {
+      attire_for: ["bride", "groom"],
+      deal_kinds: ["sale", "rent", "tailoring"],
+      national_dress: true,
+      alterations: true,
+      fitting_room: true,
+      size_range: "40–56",
+      lead_days: 14,
+      working_hours: "10:00–20:00",
+    },
+    services: [
+      {
+        type: "dress_rent",
+        price: 2_500_000,
+        unit: "per_item",
+        includes: { ru: "Платье, чехол, химчистка после", uz: "Koʻylak, gʻilof, keyin kimyoviy tozalash" },
+        options: [
+          { code: "veil", price: 300_000, unit: "per_item" },
+          { code: "alterations", price: 400_000, unit: "per_item" },
+          { code: "shoes", price: 350_000, unit: "per_item" },
+        ],
+      },
+      { type: "dress_sale", price: 9_000_000, unit: "per_item" },
+      { type: "suit_rent", price: 1_200_000, unit: "per_set" },
+      { type: "tailoring", price: 12_000_000, unit: "per_item", leadDays: 45 },
+    ],
+    videoLinks: ["https://www.instagram.com/reel/demoKelinSalon1/"],
+  },
+  {
+    category: "attire",
+    slug: "kuyov-style",
+    name: "Kuyov Style",
+    district: "yunusobod",
+    attributes: {
+      attire_for: ["groom", "family"],
+      deal_kinds: ["sale", "rent"],
+      alterations: true,
+      fitting_room: true,
+      size_range: "44–62",
+      lead_days: 3,
+    },
+    services: [
+      {
+        type: "suit_rent",
+        price: 900_000,
+        unit: "per_set",
+        options: [{ code: "shoes", price: 250_000, unit: "per_item" }],
+      },
+      {
+        type: "suit_sale",
+        price: 4_500_000,
+        unit: "per_set",
+        options: [{ code: "alterations", price: 300_000, unit: "per_item" }],
+      },
+      { type: "accessories", price: 200_000, unit: "per_item" },
+    ],
+  },
+  {
+    category: "attire",
+    slug: "atlas-libos",
+    name: "Atlas libos",
+    district: "shayxontohur",
+    attributes: {
+      attire_for: ["bride", "family"],
+      deal_kinds: ["rent", "tailoring"],
+      national_dress: true,
+      alterations: true,
+      lead_days: 21,
+    },
+    services: [
+      { type: "national_outfit", price: 1_800_000, unit: "per_item" },
+      { type: "tailoring", price: 6_000_000, unit: "per_item", leadDays: 30 },
+      { type: "accessories", price: 300_000, unit: "per_item" },
+    ],
+  },
+  // ── кейтеринг: части дня, бригады одновременно ──
+  {
+    category: "food",
+    slug: "dasturxon-katering",
+    name: "Dasturxon katering",
+    attributes: {
+      cuisine: ["national", "european"],
+      min_guests: 30,
+      max_guests: 800,
+      on_site_cooking: true,
+      waiters: true,
+      furniture: true,
+      tasting: true,
+      certificates: true,
+      service_area: "tashkent_region",
+    },
+    services: [
+      {
+        type: "banquet_catering",
+        price: 180_000,
+        unit: "per_guest",
+        minQty: 30,
+        options: [
+          { code: "waiters", price: 600_000, unit: "per_event" },
+          { code: "furniture", price: 25_000, unit: "per_guest" },
+        ],
+      },
+      {
+        type: "morning_plov",
+        price: 60_000,
+        unit: "per_guest",
+        minQty: 50,
+        options: [{ code: "tent", price: 1_500_000, unit: "per_event" }],
+      },
+      { type: "fotiha_table", price: 120_000, unit: "per_guest", minQty: 20 },
+    ],
+    parallelCapacity: 2,
+    busy: [16],
+    parts: [
+      [5, ["morning"]],
+      [9, ["evening"]],
+    ],
+  },
+  {
+    category: "food",
+    slug: "qozon-osh-markazi",
+    name: "Qozon osh markazi",
+    attributes: {
+      cuisine: ["national"],
+      min_guests: 50,
+      max_guests: 2000,
+      on_site_cooking: true,
+      service_area: "tashkent",
+    },
+    services: [
+      {
+        type: "morning_plov",
+        price: 45_000,
+        unit: "per_guest",
+        minQty: 100,
+        includes: {
+          ru: "Плов в казане на месте, лепёшки, салат",
+          uz: "Joyida qozonda osh, non, salat",
+        },
+      },
+      { type: "waiter_service", price: 400_000, unit: "per_event" },
+    ],
+    parallelCapacity: 3,
+    parts: [
+      [3, ["morning"]],
+      [10, ["morning"]],
+    ],
+  },
+  {
+    category: "food",
+    slug: "furshet-pro",
+    name: "Furshet Pro",
+    attributes: {
+      cuisine: ["european", "mixed"],
+      min_guests: 20,
+      max_guests: 300,
+      waiters: true,
+      furniture: true,
+      tasting: true,
+      service_area: "tashkent",
+    },
+    services: [
+      { type: "buffet", price: 140_000, unit: "per_guest", minQty: 20 },
+      { type: "equipment_rent", price: 15_000, unit: "per_guest" },
+      { type: "waiter_service", price: 150_000, unit: "per_hour", minQty: 4 },
+    ],
+    busy: [6, 13],
+  },
 ];
 
 const DESCRIPTION: Localized = {
@@ -592,8 +936,8 @@ export function demoVitrinas(today: string): DemoListing[] {
       districtCode: spec.district ?? null,
       priceFromUzs: from.priceUzs,
       priceUnit: from.priceUnit,
-      capMin: null,
-      capMax: null,
+      capMin: spec.cap?.[0] ?? null,
+      capMax: spec.cap?.[1] ?? null,
       cover: photos[0] ?? null,
       photoCount: photos.length,
       busyOnDate: null,

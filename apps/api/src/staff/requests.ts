@@ -4,7 +4,7 @@
 //
 //   GET  /staff/requests?status=&sla=&category=&q=&limit=&offset=   список: сначала без ответа;
 //        sla=late — очередь просроченных и нарушенных, самый давний срок первым;
-//        category — заявки витрин этой категории
+//        category — заявки витрин этой категории; contactName — имя из заявки, чья она
 //   GET  /staff/requests/:id                              заявка, история, срок ответа по
 //        шагам (timeline), заметки
 //   POST /staff/requests/:id/client-phone  { reason }     телефон клиента — только
@@ -37,6 +37,7 @@ import {
   notifiableVendorUsers,
   readListingPhone,
   readRequestPhone,
+  requestContactName,
   requestContactsAs,
   staffName,
   staffNameByText,
@@ -121,6 +122,8 @@ const selectRequests = (trx: Tx) =>
       "v.public_code",
       "v.name as vendor_name",
       slaState.as("sla"),
+      // Чья заявка: имя из неё (в списке нужно, чтобы узнать клиента); телефон не читается
+      requestContactName("r.id").as("contact_name"),
       // Одно напоминание — одно событие, даже если получателей несколько
       sql<number>`(select count(distinct (o.kind, o.created_at))::int from app.outbox o
                    where o.request_id = r.id and o.kind in (${sql.join(REMINDER_KINDS)}))`.as("reminders"),
@@ -142,6 +145,7 @@ function itemView(row: RequestRow) {
     guests: row.guests,
     dayPart: row.day_part,
     createdAt: iso(row.created_at),
+    contactName: row.contact_name,
     listing: { id: row.listing_id, name: row.listing_name, categoryCode: row.category_code },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
     reminders: row.reminders,
@@ -226,7 +230,6 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
       "r.first_viewed_at",
       "r.sla_breached_at",
       "r.source",
-      "rc.contact_name",
       "rc.comment",
       "rc.purged_at",
       sql<boolean>`r.status in ('new', 'viewed') and r.first_response_at is null`.as("awaiting"),
@@ -316,7 +319,6 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
     firstViewedAt: iso(row.first_viewed_at),
     slaBreachedAt: iso(row.sla_breached_at),
     source: row.source,
-    contactName: row.purged_at ? null : row.contact_name,
     comment: row.purged_at ? null : row.comment,
     contactPurged: row.purged_at !== null,
     history: history.map((h) => ({

@@ -1,5 +1,5 @@
 // Демо-витрины staging: вымышленные вендоры, у каждого — витрина в своей категории
-// (три зала и по одной в каждой приоритетной категории v0.2). Их заводит и убирает
+// (три зала и по одной в каждой включённой категории). Их заводит и убирает
 // POST /ops/demo (routes/ops.ts), только на staging.
 //
 // Всё, что видит клиент, помечено: название начинается с «Демо-» и «Demo», описание —
@@ -515,6 +515,211 @@ Toʻr, kirish, stollar va fotozonani bezash: klassik, milliy va zamonaviy uslubd
       { offset: 6, part: "morning" },
       { offset: 20, part: "evening" },
     ],
+  },
+  {
+    ...base(11),
+    vendorName: "Демо-вендор «Дастурхон»",
+    legalName: "Демо Дастурхон (вымышленное юрлицо)",
+    category: "food",
+    slug: "demo-katering-dasturxon",
+    name: "Демо-кейтеринг «Дастурхон» · Demo katering «Dasturxon»",
+    districtCode: "olmazor",
+    addressRu: "Ташкент, Алмазар — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Olmazor — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Утренний плов в казане на месте, банкет и фуршет у вас дома, во дворе или в офисе. Официанты, столы, стулья и посуда — наши. Две бригады: утренний плов и вечерний банкет в один день.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Nahorgi osh qozonda joyida, uyingizda, hovlida yoki ofisda banket va furshet. Ofitsiantlar, stol, stul va idish-tovoq — bizdan. Ikki brigada: bir kunda nahorgi osh va kechki banket.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 2,
+    attributes: {
+      cuisine: ["national", "european"],
+      min_guests: 30,
+      max_guests: 800,
+      on_site_cooking: true,
+      waiters: true,
+      furniture: true,
+      tasting: true,
+      certificates: true,
+      service_area: "tashkent_region",
+    },
+    services: [
+      {
+        type: "banquet_catering",
+        priceUzs: 180_000,
+        priceUnit: "per_guest",
+        minQty: 30,
+        options: [
+          { code: "waiters", priceUzs: 600_000, priceUnit: "per_event" },
+          { code: "furniture", priceUzs: 25_000, priceUnit: "per_guest" },
+        ],
+      },
+      {
+        type: "morning_plov",
+        priceUzs: 60_000,
+        priceUnit: "per_guest",
+        minQty: 50,
+        options: [{ code: "tent", priceUzs: 1_500_000, priceUnit: "per_event" }],
+      },
+      { type: "fotiha_table", priceUzs: 120_000, priceUnit: "per_guest", minQty: 20 },
+    ],
+    busyDays: [12],
+    busyParts: [
+      { offset: 5, part: "morning" },
+      { offset: 9, part: "evening" },
+    ],
+  },
+  {
+    ...base(12),
+    vendorName: "Демо-вендор «Ипак»",
+    legalName: "Демо Ипак (вымышленное юрлицо)",
+    category: "restaurant",
+    slug: "demo-restoran-ipak",
+    name: "Демо-ресторан «Ипак» · Demo restoran «Ipak»",
+    districtCode: "yakkasaroy",
+    addressRu: "Ташкент, Яккасарай — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Yakkasaroy — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Ресторан для фотихи, девичника и семейных праздников: общий зал на 120 гостей и три отдельных зала. Национальная, европейская и восточная кухня, живая музыка по вечерам, детская комната.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Fotiha, qiz bazmi va oilaviy bayramlar uchun restoran: 120 mehmonlik umumiy zal va uchta alohida zal. Milliy, Yevropa va Sharq taomlari, kechqurun jonli musiqa, bolalar xonasi.`,
+    capMin: 10,
+    capMax: 120,
+    parallelCapacity: 3,
+    attributes: {
+      cuisine: ["national", "european", "oriental"],
+      events: ["fotiha", "girls_party", "engagement", "birthday", "family"],
+      private_rooms: 3,
+      alcohol: "not_allowed",
+      live_music: true,
+      kids_room: true,
+      parking: true,
+      accessible: true,
+    },
+    services: [
+      {
+        type: "banquet_menu",
+        priceUzs: 220_000,
+        priceUnit: "per_guest",
+        minQty: 10,
+        options: [
+          { code: "extra_dish", priceUzs: 40_000, priceUnit: "per_guest" },
+          { code: "music", priceUzs: 1_500_000, priceUnit: "per_event" },
+        ],
+      },
+      { type: "fotiha_menu", priceUzs: 150_000, priceUnit: "per_guest", minQty: 10 },
+      { type: "girls_party", priceUzs: 180_000, priceUnit: "per_guest", minQty: 10 },
+      { type: "private_room", priceUzs: 300_000, priceUnit: "per_hour", minQty: 2 },
+    ],
+    busyDays: [7, 21],
+    busyParts: [
+      { offset: 3, part: "day" },
+      { offset: 10, part: "evening" },
+    ],
+  },
+  {
+    ...base(13),
+    vendorName: "Демо-вендор «Келин»",
+    legalName: "Демо Келин (вымышленное юрлицо)",
+    category: "attire",
+    slug: "demo-libos-kelin",
+    name: "Демо-салон «Келин» · Demo salon «Kelin»",
+    districtCode: "chilonzor",
+    addressRu: "Ташкент, Чиланзар — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Chilonzor — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Свадебные платья и костюмы жениха — продажа, прокат и пошив, национальные наряды для келин салом. Примерочная и подгонка по фигуре в салоне, размеры 40–56.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Kelinlik koʻylaklari va kuyov kostyumlari — sotuv, ijara va tikish, kelin salom uchun milliy liboslar. Salonda kiyib koʻrish xonasi va qomatga moslash, oʻlchamlar 40–56.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      attire_for: ["bride", "groom"],
+      deal_kinds: ["sale", "rent", "tailoring"],
+      national_dress: true,
+      alterations: true,
+      fitting_room: true,
+      delivery: false,
+      size_range: "40–56",
+      lead_days: 14,
+      working_hours: "10:00–20:00",
+    },
+    services: [
+      {
+        type: "dress_rent",
+        priceUzs: 2_500_000,
+        priceUnit: "per_item",
+        options: [
+          { code: "veil", priceUzs: 300_000, priceUnit: "per_item" },
+          { code: "alterations", priceUzs: 400_000, priceUnit: "per_item" },
+        ],
+      },
+      { type: "dress_sale", priceUzs: 9_000_000, priceUnit: "per_item" },
+      { type: "suit_rent", priceUzs: 1_200_000, priceUnit: "per_set" },
+      { type: "national_outfit", priceUzs: 1_800_000, priceUnit: "per_item" },
+      { type: "tailoring", priceUzs: 12_000_000, priceUnit: "per_item", leadDays: 45 },
+    ],
+    busyDays: [],
+    busyParts: [],
+  },
+  {
+    ...base(14),
+    vendorName: "Демо-вендор «Висол»",
+    legalName: "Демо Висол (вымышленное юрлицо)",
+    category: "zags",
+    slug: "demo-fhdyo-visol",
+    name: "Демо-ЗАГС «Висол» · Demo FHDYo «Visol»",
+    districtCode: "mirzo_ulugbek",
+    addressRu: "Ташкент, Мирзо-Улугбек — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Mirzo Ulugʻbek — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Торжественная регистрация брака в зале на 60 гостей и выездные церемонии. Поможем с документами и записью на дату, регистрируем и с иностранными гражданами. Церемония — на узбекском или русском.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+60 mehmonlik zalda tantanali nikoh marosimi va koʻchma marosimlar. Hujjatlar va sanaga yozdirishda yordam beramiz, chet el fuqarolari bilan ham nikohdan oʻtkazamiz. Marosim — oʻzbek yoki rus tilida.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      zags_kind: "palace",
+      ceremony_capacity: 60,
+      offsite: true,
+      document_help: true,
+      foreign_citizens: true,
+      ceremony_langs: ["uz", "ru"],
+      parking: true,
+      working_hours: "09:00–18:00",
+    },
+    services: [
+      {
+        type: "solemn_ceremony",
+        priceUzs: 1_200_000,
+        priceUnit: "per_event",
+        options: [
+          { code: "music", priceUzs: 800_000, priceUnit: "per_event" },
+          { code: "photographer", priceUzs: 1_000_000, priceUnit: "per_event" },
+        ],
+      },
+      { type: "simple_registration", priceUzs: 300_000, priceUnit: "per_event" },
+      {
+        type: "offsite_ceremony",
+        priceUzs: 4_500_000,
+        priceUnit: "per_event",
+        options: [{ code: "arch", priceUzs: 1_500_000, priceUnit: "per_item" }],
+      },
+      { type: "documents_help", priceUzs: 400_000, priceUnit: "per_event" },
+    ],
+    busyDays: [4, 11, 18],
+    busyParts: [],
   },
 ];
 

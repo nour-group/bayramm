@@ -7,6 +7,7 @@ import type {
   PartBookings,
   RequestTab,
   ServiceChanges,
+  VendorAttention,
   VendorCalendar,
   VendorCalendarChange,
   VendorListing,
@@ -47,7 +48,15 @@ import { APPS, accountMe, BOT, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from 
    услуги) меняет только владелец кабинета — сотруднику площадки (role: "member") 403
    vendor_owner_required. Услуги проверяются теми же правилами (validateServiceInput); правка
    услуги на витрине опубликованной карточки — предложением. Фото — по правилу категории:
-   no_people — X-No-Faces, portfolio — X-No-Faces или X-Photo-Consent. */
+   no_people — X-No-Faces, portfolio — X-No-Faces или X-Photo-Consent.
+
+   Отказы команды (declined: true): у зала отклонённое фото с причиной, отклонённая услуга и
+   история решений по предложениям (решённых больше пяти). Значки «требует внимания» в
+   GET /vendor/me считаются из этого состояния теми же правилами, что в API (vendor/profile.ts):
+   отклонённые услуги, отклонённые фото, последнее предложение партнёра отклонено — поэтому
+   после удаления фото или нового предложения значок меняется. У сотрудника площадки — нули.
+   Первый ответ менеджера (staffReply: true): заявка «связались», которую отметил сотрудник
+   (firstResponseBy: "staff"). */
 
 export const NOW = new Date("2026-10-01T07:00:00Z");
 const HOUR = 3_600_000;
@@ -65,6 +74,8 @@ export const REQUEST_NEW = "00000000-0000-4000-8300-000000000001";
 export const REQUEST_LATE = "00000000-0000-4000-8300-000000000002";
 /** Заявка на кортеж: вечер, поля категории и выбранная услуга с дополнением (listings: "many") */
 export const REQUEST_CAR = "00000000-0000-4000-8300-000000000003";
+/** Заявка, на которую первым ответил менеджер Bayramm (staffReply: true) */
+export const REQUEST_STAFF = "00000000-0000-4000-8300-000000000004";
 export const SERVICE_CAR = "00000000-0000-4000-8800-000000000001";
 const SERVICE_CAR_OPTION = "00000000-0000-4000-8900-000000000001";
 
@@ -141,28 +152,33 @@ function item(
     budgetMaxUzs: 50_000_000,
     createdAt: at(hoursAgo),
     sla: { dueAt: due(hoursAgo), firstResponseAt: null, breached: hoursAgo > 12 },
+    firstResponseBy: null,
     contactName: "Азиза",
     ...overrides,
   };
 }
 
-const HALL_REF: VendorListingRef = {
+const NO_ATTENTION: VendorAttention = { services: 0, photos: 0, proposals: 0 };
+type ListingBase = Omit<VendorListingRef, "attention">;
+const HALL_REF: ListingBase = {
   id: LISTING_ID,
   name: "Lola zali",
   status: "active",
   categoryCode: "hall",
 };
-const MANY_REFS: readonly VendorListingRef[] = [
+const MANY_REFS: readonly ListingBase[] = [
   HALL_REF,
   { id: CAR_ID, name: "Kortej Premium", status: "active", categoryCode: "car" },
   { id: PHOTO_ID, name: "Kadr Studio", status: "draft", categoryCode: "photo" },
   { id: CAKE_ID, name: "Shirin Tort", status: "active", categoryCode: "cake" },
 ];
 
+/** GET /vendor/me: attention считает вызывающий по состоянию витрины (без него — нули) */
 export function vendorMe(
   locale: "ru" | "uz" = "ru",
   role: VendorRole = "owner",
   listings: "one" | "many" = "one",
+  attention: (listingId: string) => VendorAttention = () => NO_ATTENTION,
 ): VendorMe {
   return {
     user: { id: "00000000-0000-4000-8200-000000000001", locale, fullName: "Шахло Каримова", role },
@@ -171,7 +187,11 @@ export function vendorMe(
       code: VENDOR_MEMBERSHIP.code,
       name: VENDOR_MEMBERSHIP.name ?? "",
     },
-    listings: listings === "many" ? MANY_REFS : [HALL_REF],
+    listings: (listings === "many" ? MANY_REFS : [HALL_REF]).map((ref) => ({
+      ...ref,
+      // Исправляет владелец: у сотрудника площадки значков нет
+      attention: role === "owner" ? attention(ref.id) : NO_ATTENTION,
+    })),
   };
 }
 
@@ -180,11 +200,13 @@ const photoOf = (
   moderation: VendorPhoto["moderation"],
   isCover = false,
   listingId = LISTING_ID,
+  declineReason: string | null = null,
 ): VendorPhoto => ({
   id: `00000000-0000-4000-8500-${String(n).padStart(12, "0")}`,
   width: 1600,
   height: 1067,
   moderation,
+  declineReason: moderation === "declined" ? declineReason : null,
   isCover,
   src: `${PHOTO}/640/listings/${listingId}/p${n}.webp`,
   srcSet: `${PHOTO}/320/listings/${listingId}/p${n}.webp 320w, ${PHOTO}/640/listings/${listingId}/p${n}.webp 640w`,
@@ -371,6 +393,10 @@ export interface VendorApiOptions {
   readonly role?: VendorRole;
   /** Витрины: одна (зал) или несколько в разных категориях */
   readonly listings?: "one" | "many";
+  /** Отказы команды по залу: фото с причиной, услуга, предложения (см. шапку файла) */
+  readonly declined?: boolean;
+  /** Заявка, на которую первым ответил менеджер Bayramm */
+  readonly staffReply?: boolean;
 }
 
 /** Значения услуги из формы (validateServiceInput) → поля услуги, как их вернул бы API */
@@ -428,6 +454,8 @@ export async function mockVendorApi(
     match = isApi,
     role = "owner",
     listings: listingMode = "one",
+    declined = false,
+    staffReply = false,
   }: VendorApiOptions = {},
 ): Promise<VendorApi> {
   const many = listingMode === "many";
@@ -488,6 +516,53 @@ export async function mockVendorApi(
     });
     car?.bookings.push({ day: "2026-10-24", part: "evening", count: 1 });
   }
+  if (declined) {
+    // Отказы команды по залу: фото с причиной, отклонённая услуга и история решений (новые первыми)
+    state.photos.push(photoOf(5, "declined", false, LISTING_ID, "На фото виден человек"));
+    state.services.get(LISTING_ID)?.push(
+      svc({
+        id: "00000000-0000-4000-8800-000000000013",
+        type: "other",
+        name: { ru: "Фуршет", uz: "Furshet" },
+        customName: true,
+        status: "rejected",
+        sort: 2,
+        decision: { outcome: "declined", reason: "Укажите, что входит в цену", at: at(20) },
+      }),
+    );
+    const decidedRevision = (
+      n: number,
+      status: "approved" | "declined",
+      hoursAgo: number,
+      reason: string | null,
+      payload: ListingRevisionPayload,
+    ): VendorRevision => ({
+      id: `00000000-0000-4000-8700-0000000000a${n}`,
+      status,
+      submittedAt: at(hoursAgo + 2),
+      decidedAt: at(hoursAgo),
+      decisionReason: reason,
+      payload,
+      byTeam: false,
+    });
+    hallRevisions.push(
+      decidedRevision(1, "declined", 30, "Название не как на вывеске", { name: "Lola Grand" }),
+      decidedRevision(2, "approved", 100, null, { description_ru: "Зал на 300 гостей, своя кухня." }),
+      decidedRevision(3, "declined", 200, "Описание без контактов", { description_uz: "Katta zal" }),
+      decidedRevision(4, "approved", 300, null, { attributes: { parking_spaces: 80 } }),
+      decidedRevision(5, "approved", 400, null, { video_links: [] }),
+      decidedRevision(6, "declined", 500, "Слишком длинное название", { name: "Lola Grand Palace Hall" }),
+    );
+  }
+  /** Что ждёт партнёра на витрине — те же правила, что у API (vendor/profile.ts) */
+  const attentionOf = (id: string): VendorAttention => {
+    const last = state.revisionsOf.get(id)?.[0];
+    return {
+      services: (state.services.get(id) ?? []).filter((s) => s.status === "rejected").length,
+      photos: (photosOf.get(id) ?? []).filter((p) => p.moderation === "declined").length,
+      proposals: last?.status === "declined" && !last.byTeam ? 1 : 0,
+    };
+  };
   let photoNo = 30;
   let serviceNo = 100;
   let locale: "ru" | "uz" = "ru";
@@ -556,6 +631,23 @@ export async function mockVendorApi(
       history: [{ status: "new", at: at(2), by: "client" }],
     });
   }
+  if (staffReply) {
+    // «Связались» отметил менеджер Bayramm из панели: первый ответ — не партнёра
+    requests.set(REQUEST_STAFF, {
+      ...item(REQUEST_STAFF, 1040, 5, {
+        status: "contacted",
+        contactName: "Нодира",
+        sla: { dueAt: due(5), firstResponseAt: at(4), breached: false },
+        firstResponseBy: "staff",
+      }),
+      declineNote: null,
+      contact: { name: "Нодира", phone: "+998005550001", comment: null },
+      history: [
+        { status: "new", at: at(5), by: "client" },
+        { status: "contacted", at: at(4), by: "staff" },
+      ],
+    });
+  }
   state.busy.set("2026-10-10", { day: "2026-10-10", source: "vendor", requestId: null });
   state.busy.set("2026-10-17", { day: "2026-10-17", source: "staff", requestId: null });
 
@@ -612,10 +704,10 @@ export async function mockVendorApi(
       );
     if (key === "POST /auth/logout") return route.fulfill({ status: 204 });
 
-    if (key === "GET /vendor/me") return json(route, 200, vendorMe(locale, role, listingMode));
+    if (key === "GET /vendor/me") return json(route, 200, vendorMe(locale, role, listingMode, attentionOf));
     if (key === "PATCH /vendor/me") {
       locale = (request.postDataJSON() as { locale: "ru" | "uz" }).locale;
-      return json(route, 200, vendorMe(locale, role, listingMode));
+      return json(route, 200, vendorMe(locale, role, listingMode, attentionOf));
     }
     if (key === "GET /vendor/requests") {
       const tab = (url.searchParams.get("tab") ?? "new") as RequestTab;
@@ -658,6 +750,8 @@ export async function mockVendorApi(
           status: body.status,
           declineReason: body.declineReason ?? null,
           sla: { ...current.sla, firstResponseAt: current.sla.firstResponseAt ?? NOW.toISOString() },
+          // Первый ответ остаётся за тем, кто ответил первым (так база не даёт его менять)
+          firstResponseBy: current.sla.firstResponseAt ? current.firstResponseBy : "vendor_user",
           history: [...current.history, { status: body.status, at: NOW.toISOString(), by: "vendor_user" }],
         };
         requests.set(id, next);

@@ -48,7 +48,7 @@ test.describe("лендинг в браузере", () => {
     await expect(page.locator(".ln-cards .card")).toHaveCount(4);
     expect(await columns(page, ".ln-cards")).toBe(4);
     // Разделы перечислены один раз — сеткой: ни второго переключателя у витрин, ни «весь раздел»
-    await expect(page.locator(".landing .cat-tile")).toHaveCount(8);
+    await expect(page.locator(".landing .cat-tile")).toHaveCount(12);
     await expect(page.locator(".landing .cat-chip, .landing .ln-head-link")).toHaveCount(0);
     for (const title of [ru.lnVenuesH, ru.lnHowH, ru.lnPromH, ru.lnPartnerH, ru.lnFaqH])
       await expect(page.getByRole("heading", { level: 2, name: title })).toBeVisible();

@@ -454,7 +454,12 @@ describe("панель: вендор в нескольких категория�
 describe("клиент: категории, фильтры, карточка, заявка", () => {
   it("категории каталога — включённые, с числом витрин", async () => {
     const body = await ok<CatalogCategories>(call("/catalog/categories"));
-    expect(body.items.map((c) => c.code)).toEqual(CATEGORIES.filter((c) => c.enabled).map((c) => c.code));
+    // В порядке показа (sort), а не кодов
+    expect(body.items.map((c) => c.code)).toEqual(
+      CATEGORIES.filter((c) => c.enabled)
+        .sort((a, b) => a.sort - b.sort)
+        .map((c) => c.code),
+    );
     expect(body.items.find((c) => c.code === "car")?.listings).toBeGreaterThanOrEqual(1);
   });
 

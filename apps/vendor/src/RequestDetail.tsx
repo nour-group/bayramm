@@ -246,6 +246,17 @@ export function RequestDetail({
         <StatusChip status={status} late={late} t={t} />
       </div>
       {awaitsAnswer(request) ? <SlaTimer item={request} t={t} now={now} /> : null}
+      {request.firstResponseBy === "staff" ? (
+        // Кто ответил первым — факт, без оценок; все переходы — в истории ниже
+        <p className="notice staff-reply">
+          <Icon name="info" size={17} />
+          <span>
+            {request.sla.firstResponseAt
+              ? `${t.firstByStaff} · ${formatMoment(request.sla.firstResponseAt, t, now)}`
+              : t.firstByStaff}
+          </span>
+        </p>
+      ) : null}
 
       <dl className="facts">
         <div>

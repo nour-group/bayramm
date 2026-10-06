@@ -1,5 +1,6 @@
 // Здоровье очереди уведомлений (app.outbox): сколько ждёт отправки, сколько не
-// доставлено и почему. Получатель — только вид и начало id, payload не отдаём:
+// доставлено и почему. Получатель — вид, начало id и подпись (имя пользователя кабинета или
+// вендор, имя сотрудника, код клиента; labels.ts), без телефонов; payload не отдаём:
 // в нём id, а текст сообщения собирается при отправке.
 //
 //   GET  /staff/outbox              счётчики и недоставленные (dead), новые сверху
@@ -14,6 +15,7 @@ import type { AppEnv } from "../env";
 import { notFound } from "../errors";
 import { outboxKick } from "../notify/kick";
 import { requirePermission } from "./access";
+import { loadLabels } from "./labels";
 import { iso, num, pathId } from "./shared";
 
 export const outbox = new Hono<AppEnv>();
@@ -60,6 +62,10 @@ async function loadHealth(trx: Tx): Promise<OutboxHealth> {
     .limit(DEAD_LIMIT)
     .execute();
 
+  const labels = await loadLabels(
+    trx,
+    dead.map((row) => ({ type: row.recipient_kind, id: row.recipient_id })),
+  );
   const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0])) as Record<OutboxStatus, number>;
   for (const row of counts) byStatus[row.status] = row.n;
   return {
@@ -72,6 +78,7 @@ async function loadHealth(trx: Tx): Promise<OutboxHealth> {
         kind: row.kind,
         recipientKind: roleActorKind(row.recipient_kind),
         recipientRef: row.recipient_id ? row.recipient_id.slice(0, 8) : null,
+        recipientLabel: labels.get(row.recipient_kind, row.recipient_id),
         attempts: row.attempts,
         error: row.last_error ? row.last_error.slice(0, ERROR_MAX) : null,
         createdAt: iso(row.created_at),

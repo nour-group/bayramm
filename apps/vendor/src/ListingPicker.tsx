@@ -11,6 +11,8 @@
 import type { VendorListingRef } from "@bayramm/shared/api/vendor";
 import { Select } from "@bayramm/ui/react";
 import { useId } from "react";
+import { AttentionLine, attentionLine } from "./AttentionLine";
+import type { AttentionMark } from "./attention";
 import { categoryName } from "./category";
 import type { VendorDict } from "./i18n";
 import { Icon } from "./icons";
@@ -33,6 +35,8 @@ interface ListingPickerProps {
   readonly allLabel?: string;
   /** Подпись выбора и имя группы для диктора: «Выберите витрину», «Заявки какой витрины» */
   readonly label?: string;
+  /** Раздел со значком: у витрин, где партнёра ждут отказы команды, — «требует внимания: N» */
+  readonly mark?: AttentionMark;
 }
 
 export function ListingPicker({
@@ -45,6 +49,7 @@ export function ListingPicker({
   line = true,
   allLabel,
   label = t.pickListing,
+  mark,
 }: ListingPickerProps) {
   const id = useId();
   const current = listings.find((listing) => listing.id === value);
@@ -60,11 +65,12 @@ export function ListingPicker({
   }
 
   const options = [
-    ...(allLabel ? [{ value: ALL, name: allLabel, category: null }] : []),
+    ...(allLabel ? [{ value: ALL, name: allLabel, category: null, attention: null }] : []),
     ...listings.map((listing) => ({
       value: listing.id,
       name: listing.name,
       category: categoryName(lang, listing.categoryCode),
+      attention: attentionLine(listing, mark, t),
     })),
   ];
   const selected = value ?? (allLabel ? ALL : null);
@@ -83,6 +89,7 @@ export function ListingPicker({
           >
             <span className="vitrina-name">{option.name}</span>
             {option.category ? <span className="vitrina-cat">{option.category}</span> : null}
+            <AttentionLine text={option.attention} />
           </button>
         ))}
       </div>
@@ -101,7 +108,7 @@ export function ListingPicker({
         icon={<Icon name="hall" size={17} />}
         options={options.map((option) => ({
           value: option.value,
-          label: option.category ? `${option.name} · ${option.category}` : option.name,
+          label: [option.name, option.category, option.attention].filter(Boolean).join(" · "),
         }))}
         onChange={(picked) => onChange(picked === ALL ? null : picked)}
       />

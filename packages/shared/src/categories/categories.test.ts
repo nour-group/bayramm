@@ -109,9 +109,33 @@ describe("конфигурация категорий", () => {
       "cake",
       "gifts",
       "decor",
+      "food",
+      "restaurant",
+      "attire",
+      "zags",
     ]);
     for (const c of CATEGORIES.filter((x) => !x.enabled))
       expect(c.services.map((s) => s.code)).toEqual(["other"]);
+  });
+
+  it("порядок показа — путь пары: ЗАГС, тойхона, кортеж, фото и видео, студия, ресторан, цветы…", () => {
+    const shown = CATEGORIES.filter((c) => c.enabled)
+      .sort((a, b) => a.sort - b.sort)
+      .map((c) => c.code);
+    expect(shown).toEqual([
+      "zags",
+      "hall",
+      "car",
+      "photo",
+      "studio",
+      "restaurant",
+      "flowers",
+      "attire",
+      "gifts",
+      "food",
+      "cake",
+      "decor",
+    ]);
   });
 
   it("режим занятости по категориям; части дня — только у parts", () => {
@@ -127,6 +151,10 @@ describe("конфигурация категорий", () => {
       cake: "lead",
       gifts: "lead",
       decor: "parts",
+      food: "parts",
+      restaurant: "parts",
+      attire: "lead",
+      zags: "slot",
     });
     for (const c of CATEGORIES) {
       expect(AVAILABILITY_MODES).toContain(c.availability);

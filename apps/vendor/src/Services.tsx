@@ -731,6 +731,8 @@ interface ServicesProps extends ScreenProps {
   readonly role: VendorRole;
   /** Выбор витрины — в боковой панели (компьютер) */
   readonly inSidebar: boolean;
+  /** Партнёр изменил услуги: значки «требует внимания» в разделах — заново */
+  readonly onChanged?: () => void;
 }
 
 type Editing = { readonly id: string | null } | null;
@@ -745,6 +747,7 @@ export function Services({
   onListing,
   role,
   inSidebar,
+  onChanged,
 }: ServicesProps) {
   const [listing, reload, setListing, refresh] = useLoad<VendorListing>(listingId, (key) => api.listing(key));
   const owner = role === "owner";
@@ -782,7 +785,8 @@ export function Services({
 
   const quietly = useCallback(async () => {
     if (!(await refresh())) reload();
-  }, [refresh, reload]);
+    onChanged?.();
+  }, [refresh, reload, onChanged]);
 
   const replace = (saved: ListingService) =>
     setListing((current) => {
@@ -888,6 +892,7 @@ export function Services({
         t={t}
         lang={lang}
         inSidebar={inSidebar}
+        mark="services"
       />
       <p className="promise">
         <Icon name="info" size={17} />

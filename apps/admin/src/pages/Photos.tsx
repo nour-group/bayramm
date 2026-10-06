@@ -1,5 +1,6 @@
 /* Фото карточки: загрузка (сжатие в браузере, без метаданных), порядок, обложка,
-   решение модератора, удаление (через подтверждение). Подтверждение — по правилу фото
+   решение модератора (отказ — только с причиной: её видит партнёр, она подписана у отклонённого
+   фото), удаление (через подтверждение). Подтверждение — по правилу фото
    категории: «без людей» (площадка, кортеж, цветы, торты, подарки, декор) — на фото нет лиц
    (X-No-Faces); портфолио (фото и видео, студия) — люди на фото согласны на публикацию
    (X-Photo-Consent) или лиц нет. Предупреждение всегда на виду, без подтверждения файлы не
@@ -14,17 +15,20 @@ import type { StaffPhoto } from "@bayramm/shared/api/staff";
 import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
 import type { PhotoPolicy } from "@bayramm/shared/categories";
 import { Checkbox, ConfirmSheet, FileDrop, RadioGroup } from "@bayramm/ui/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
 import { photoSrc, photoSrcSet } from "../format";
 import { Icon } from "../icons";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
-import { ErrorText, type MenuAction, OverflowMenu, Pill } from "../ui";
+import { ConfirmForm, ErrorText, type MenuAction, OverflowMenu, PhoneSheet, Pill } from "../ui";
 
 /** Форматы фото; на телефоне — любое фото: так точно предлагают и камеру, и галерею (HEIC — по расширению) */
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
 const ACCEPT_PHONE = "image/*,.heic,.heif";
+
+/** Причина отказа по фото — не длиннее, чем принимает сервер */
+const REASON_MAX = 500;
 
 /** Что подтвердил сотрудник о выбранных фото (портфолио) */
 type PhotoAck = "consent" | "no_faces";
@@ -55,6 +59,10 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState<StaffPhoto | null>(null);
+  // Фото, которое отклоняют, и его номер в ряду; форма причины — шторка на телефоне, на месте шире
+  const [declining, setDeclining] = useState<{ photo: StaffPhoto; n: number } | null>(null);
+  const declineReturn = useRef<HTMLElement | null>(null);
+  const declineTitle = useRef<HTMLHeadingElement>(null);
   const phone = usePhone();
   const editable = can("listings.write");
   const moderates = can("photos.moderate");
@@ -113,8 +121,44 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
   };
 
   const cover = (photo: StaffPhoto) => void act(() => api.post(`${base}/${photo.id}/cover`));
-  const decide = (photo: StaffPhoto, decision: "approved" | "declined") =>
-    void act(() => api.post(`${base}/${photo.id}/moderation`, { decision }));
+  const approve = (photo: StaffPhoto) =>
+    void act(() => api.post(`${base}/${photo.id}/moderation`, { decision: "approved" }));
+  // Отказ без причины сервер не примет (422): сначала спрашиваем её, а фокус вернётся на ту
+  // кнопку, с которой начали («Отклонить» у фото — она у нажатия; «Ещё» — где фокус после меню)
+  const startDecline = (photo: StaffPhoto, index: number, opener?: HTMLElement) => {
+    const focused = document.activeElement;
+    declineReturn.current = opener ?? (focused instanceof HTMLElement ? focused : null);
+    setFailure(null);
+    setDeclining({ photo, n: index + 1 });
+  };
+  const decline = async (reason: string): Promise<Failure | null> => {
+    if (!declining) return null;
+    const result = await api.post(`${base}/${declining.photo.id}/moderation`, {
+      decision: "declined",
+      reason,
+    });
+    if (!result.ok) return result;
+    // Фото решено — кнопки «Отклонить» у него больше нет: на компьютере фокус — на заголовок блока
+    // (на телефоне шторка вернёт его на «Ещё», она остаётся)
+    if (!phone) declineReturn.current = null;
+    setDeclining(null);
+    onChanged();
+    return null;
+  };
+  // На компьютере форма — под рядом фото, далеко от кнопки: фокус — на её заголовок, а когда форма
+  // закрылась, — обратно на кнопку «Отклонить» (после решения — на заголовок «Фото»)
+  const wasDeclining = useRef(false);
+  useEffect(() => {
+    if (phone) return;
+    if (declining) {
+      wasDeclining.current = true;
+      declineTitle.current?.focus();
+    } else if (wasDeclining.current) {
+      wasDeclining.current = false;
+      const back = declineReturn.current;
+      (back?.isConnected ? back : document.getElementById("photos-title"))?.focus();
+    }
+  }, [declining, phone]);
 
   const remove = async () => {
     if (!removing) return;
@@ -129,10 +173,10 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
       ? [{ key: "cover", label: t.makeCover, icon: "star" as const, disabled: busy, run: () => cover(photo) }]
       : []),
     ...(moderates && photo.moderation !== "approved"
-      ? [{ key: "approve", label: t.approve, disabled: busy, run: () => decide(photo, "approved") }]
+      ? [{ key: "approve", label: t.approve, disabled: busy, run: () => approve(photo) }]
       : []),
     ...(moderates && photo.moderation !== "declined"
-      ? [{ key: "decline", label: t.decline, disabled: busy, run: () => decide(photo, "declined") }]
+      ? [{ key: "decline", label: t.decline, disabled: busy, run: () => startDecline(photo, index) }]
       : []),
     ...(editable
       ? [
@@ -186,6 +230,9 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
                   {t.moderationStates[photo.moderation]}
                 </Pill>
               </div>
+              {photo.moderation === "declined" && photo.declineReason && (
+                <p className="muted small photo-reason">{t.photoDeclineReason(photo.declineReason)}</p>
+              )}
               {phone ? (
                 <div className="photo-actions">
                   {editable && (
@@ -257,7 +304,7 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
                       type="button"
                       className="btn btn-sm"
                       disabled={busy}
-                      onClick={() => decide(photo, "approved")}
+                      onClick={() => approve(photo)}
                     >
                       {t.approve}
                     </button>
@@ -267,7 +314,7 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
                       type="button"
                       className="btn btn-sm"
                       disabled={busy}
-                      onClick={() => decide(photo, "declined")}
+                      onClick={(event) => startDecline(photo, index, event.currentTarget)}
                     >
                       {t.decline}
                     </button>
@@ -288,6 +335,34 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
           ))}
         </ol>
       )}
+
+      <PhoneSheet
+        open={declining !== null}
+        title={t.declinePhotoTitle(declining?.n ?? 0)}
+        onClose={() => setDeclining(null)}
+        returnFocus={declineReturn}
+      >
+        {declining && (
+          <div className="decline-photo">
+            {!phone && (
+              <h3 ref={declineTitle} tabIndex={-1} className="sub-title">
+                {t.declinePhotoTitle(declining.n)}
+              </h3>
+            )}
+            <ConfirmForm
+              key={declining.photo.id}
+              hint={t.declinePhotoHint(declining.n)}
+              label={t.reason}
+              required
+              danger
+              maxLength={REASON_MAX}
+              submitLabel={t.declinePhoto}
+              onSubmit={decline}
+              onCancel={() => setDeclining(null)}
+            />
+          </div>
+        )}
+      </PhoneSheet>
 
       {editable && photos.length < maxPhotos && (
         <div className="upload">

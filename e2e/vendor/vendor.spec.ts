@@ -13,6 +13,7 @@ import {
   REQUEST_CAR,
   REQUEST_LATE,
   REQUEST_NEW,
+  REQUEST_STAFF,
   SERVICE_CAR,
   type SignIn,
 } from "../support/vendor-api";
@@ -56,10 +57,12 @@ async function start(
     signIn = "ok" as SignIn,
     role = "owner" as VendorRole,
     listings = "one" as "one" | "many",
+    declined = false,
+    staffReply = false,
   } = {},
 ) {
   await page.clock.setFixedTime(NOW);
-  const api = await mockVendorApi(page, { signIn, role, listings });
+  const api = await mockVendorApi(page, { signIn, role, listings, declined, staffReply });
   if (telegram) await fakeTelegram(page);
   return api;
 }
@@ -927,6 +930,221 @@ test.describe("витрины в разных категориях", () => {
         await expect(page.locator(".status-line, .skeleton")).toHaveCount(0);
         await expectNoOverflow(page, `${width}px ${path} ${vitrina ?? ""}`);
         await expectHitAreas(page, `${width}px ${path} ${vitrina ?? ""}`, CONTROLS);
+      }
+    }
+  });
+});
+
+test.describe("что ждёт партнёра после решений команды", () => {
+  /** Значок раздела на панели разделов: число и слова для диктора */
+  const badge = (page: Page, name: string) =>
+    sections(page)
+      .getByRole("link", { name: new RegExp(`^${name}`) })
+      .locator(".nav-count");
+
+  test("значки у «Витрины» и «Услуг»: слова для диктора; удалил фото и предложил заново — значок убавляется", async ({
+    page,
+  }) => {
+    const api = await start(page, { declined: true });
+    await page.goto("/requests");
+    await expect(heading(page)).toHaveText(t.requests);
+    // «Витрина» — отклонённое фото и отклонённое предложение; «Услуги» — отклонённая услуга
+    await expect(badge(page, t.card)).toHaveText("2");
+    await expect(badge(page, t.services)).toHaveText("1");
+    await expect(badge(page, t.calendar)).toHaveCount(0);
+    await expect(
+      sections(page).getByRole("link", { name: `${t.card} ${fill(t.attentionCount, { n: 2 })}` }),
+    ).toBeVisible();
+    await expect(
+      sections(page).getByRole("link", { name: `${t.services} ${fill(t.attentionCount, { n: 1 })}` }),
+    ).toBeVisible();
+    await expectNoAxeViolations(page, "значки разделов");
+    await expectHitAreas(page, "значки разделов", CONTROLS);
+
+    // Фото: причина модератора под снимком и что делать дальше
+    await sections(page)
+      .getByRole("link", { name: new RegExp(`^${t.card}`) })
+      .click();
+    await expect(heading(page)).toHaveText(t.card);
+    const section = page.locator("section[aria-labelledby='photos-title']");
+    const decline = section.locator(".photo-decline");
+    await expect(decline).toHaveCount(1);
+    await expect(decline).toContainText(fill(t.photoDeclinedReason, { reason: "На фото виден человек" }));
+    await expect(decline).toContainText(t.photoDeclinedNext);
+    await expectNoAxeViolations(page, "площадка: отклонённое фото");
+    await expectHitAreas(page, "площадка: отклонённое фото", CONTROLS);
+
+    await section.getByRole("button", { name: fill(t.photoDeleteLabel, { n: 5 }) }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: t.photoDelete, exact: true }).click();
+    await expect(section.locator(".photo-decline")).toHaveCount(0);
+    expect(api.photos.some((p) => p.moderation === "declined")).toBe(false);
+    // Значок пересчитан по свежему GET /vendor/me: осталось отклонённое предложение
+    await expect(badge(page, t.card)).toHaveText("1");
+
+    // Новое предложение — прежний отказ ждать больше не нужно
+    await page.getByRole("button", { name: t.proposalStart, exact: true }).click();
+    const form = page.locator("form.proposal-form");
+    await form.getByLabel(t.nameLabel, { exact: true }).fill("Lola zali Grand");
+    await form.getByRole("button", { name: t.proposalSubmit }).click();
+    await expect(page.getByText(t.proposalSent)).toBeVisible();
+    await expect(badge(page, t.card)).toHaveCount(0);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("история предложений: свёрнута; открыл — последние пять решений, у отказов причина", async ({
+    page,
+  }) => {
+    const api = await start(page, { declined: true });
+    await page.goto("/card");
+    await expect(heading(page)).toHaveText(t.card);
+    const toggle = page.locator("button.disclosure");
+    await expect(toggle).toHaveAccessibleName(`${t.proposalHistory} 5`);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator(".revlog")).toHaveCount(0);
+    await expectNoAxeViolations(page, "предложения: история свёрнута");
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const rows = page.locator(".revlog li");
+    await expect(rows).toHaveCount(5);
+    await expect(rows.first()).toContainText(t.revDeclined);
+    await expect(rows.first()).toContainText(fill(t.reasonLine, { reason: "Название не как на вывеске" }));
+    await expect(rows.first()).toContainText(fill(t.revFields, { fields: t.nameLabel }));
+    await expect(rows.nth(1)).toContainText(t.revApproved);
+    await expect(rows.nth(1)).toContainText(fill(t.revFields, { fields: t.descriptionRuLabel }));
+    // Шестое решение — старше пяти: его в истории нет
+    await expect(page.locator(".revlog")).not.toContainText("Слишком длинное название");
+    await expectNoAxeViolations(page, "предложения: история открыта");
+    await expectHitAreas(page, "предложения: история открыта", CONTROLS);
+    await expectNoOverflow(page, "предложения: история открыта");
+
+    await toggle.click();
+    await expect(page.locator(".revlog")).toHaveCount(0);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("услуги: отклонённая — с причиной команды; значок «Услуг» — число таких", async ({ page }) => {
+    await start(page, { declined: true });
+    await page.goto("/services");
+    await expect(heading(page)).toHaveText(t.services);
+    await expect(page.locator(".svc-declined")).toContainText(
+      fill(t.svcDeclined, { reason: "Укажите, что входит в цену" }),
+    );
+    await expect(badge(page, t.services)).toHaveText("1");
+    await expectNoAxeViolations(page, "услуги: отклонённая");
+  });
+
+  test("сотрудник площадки: значков нет — исправляет владелец", async ({ page }) => {
+    await start(page, { declined: true, role: "member" });
+    await page.goto("/requests");
+    await expect(heading(page)).toHaveText(t.requests);
+    await expect(badge(page, t.card)).toHaveCount(0);
+    await expect(badge(page, t.services)).toHaveCount(0);
+    await page.goto("/card");
+    await expect(heading(page)).toHaveText(t.card);
+    // Причина отказа видна и ему, а призыва удалить и загрузить новое — нет
+    await expect(page.locator(".photo-decline")).toContainText(
+      fill(t.photoDeclinedReason, { reason: "На фото виден человек" }),
+    );
+    await expect(page.locator(".photo-decline-next")).toHaveCount(0);
+  });
+
+  test("несколько витрин: значок раздела — по всем, у витрины в выборе — слова «требует внимания»", async ({
+    page,
+  }) => {
+    await start(page, { declined: true, listings: "many" });
+    await page.goto("/services");
+    await expect(heading(page)).toHaveText(t.services);
+    const words = fill(t.attentionCount, { n: 1 });
+    if (isDesktop(page)) {
+      const side = page.locator(".side-vitrinas");
+      await expect(side.getByRole("button", { name: /Lola zali/ })).toContainText(words);
+      await expect(side.getByRole("button", { name: /Kortej Premium/ })).not.toContainText(words);
+    } else {
+      await page.locator("main .vitrina-select").getByRole("button").click();
+      await expect(page.getByRole("option", { name: /Lola zali/ })).toContainText(words);
+      await expect(page.getByRole("option", { name: /Kortej Premium/ })).not.toContainText(words);
+      await page.keyboard.press("Escape");
+    }
+    await expectNoAxeViolations(page, "услуги: витрины с отказами");
+  });
+
+  test("первым ответил менеджер Bayramm: строка в списке и в карточке заявки, история прежняя", async ({
+    page,
+  }) => {
+    const api = await start(page, { staffReply: true });
+    await page.goto("/requests");
+    await expect(heading(page)).toHaveText(t.requests);
+    await page.locator(".pills .pill", { hasText: t.tabActive }).click();
+    const card = page.locator(".rq", { hasText: "Нодира" });
+    await expect(card.locator(".rq-staff")).toHaveText(t.firstByStaff);
+    // Заявки, где ответил не менеджер, строки не несут
+    await expect(page.locator(".rq-staff")).toHaveCount(1);
+    await expectNoAxeViolations(page, "заявки: ответил менеджер");
+
+    await card.click();
+    await expect(requestTitle(page)).toContainText("1040");
+    const note = page.locator(".staff-reply");
+    await expect(note).toContainText(t.firstByStaff);
+    await expect(page.locator(".history li")).toHaveCount(2);
+    await expect(page.locator(".history li").nth(1)).toContainText(vendorDict.ru.by_staff);
+    await expectNoAxeViolations(page, "заявка: ответил менеджер");
+    await expectHitAreas(page, "заявка: ответил менеджер", CONTROLS);
+    // Партнёр продолжил работу — первый ответ остаётся за менеджером
+    await page.getByRole("button", { name: t.actDeal }).click();
+    await expect(note).toContainText(t.firstByStaff);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("телефон: значки на панели не ломают подписи и не выходят за край на 320px, на обоих языках", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "нижняя панель — телефон");
+    await start(page, { declined: true });
+    for (const width of [320, 360, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const lang of ["ru", "uz"] as const) {
+        await page.goto("/account");
+        await expect(heading(page)).toBeVisible();
+        await page.locator(".top .lang button", { hasText: lang.toUpperCase() }).click();
+        await expect(heading(page)).toHaveText(vendorDict[lang].account);
+        // «Витрина» и «Услуги»: значок «Заявок» появляется, когда загружен список заявок
+        await expect(page.locator(".tabbar .nav-count")).toHaveCount(2);
+        const clipped = await page.$$eval(".tabbar .nav-label", (labels) =>
+          labels.filter((el) => el.scrollWidth > el.clientWidth + 0.5).map((el) => el.textContent),
+        );
+        expect(clipped, `${width}px ${lang}`).toEqual([]);
+        // Значок целиком в окне и в своей пятой части панели
+        const outside = await page.$$eval(".tabbar .tab", (tabs) =>
+          tabs.flatMap((tab) => {
+            const box = tab.getBoundingClientRect();
+            const mark = tab.querySelector(".nav-count")?.getBoundingClientRect();
+            if (!mark) return [];
+            const inside =
+              mark.left >= box.left - 0.5 && mark.right <= box.right + 0.5 && mark.right <= window.innerWidth;
+            return inside ? [] : [tab.textContent];
+          }),
+        );
+        expect(outside, `${width}px ${lang}: значок вне вкладки`).toEqual([]);
+        await expectNoOverflow(page, `${width}px ${lang} значки`);
+      }
+    }
+  });
+
+  test("экраны с отказами на 320–1440px: без прокрутки вбок, всё нажимаемое — от 44px", async ({ page }) => {
+    test.skip(!isDesktop(page), "ширины перебирает один проект");
+    test.setTimeout(120_000);
+    await start(page, { declined: true, staffReply: true, listings: "many" });
+    for (const width of [320, 390, 768, 1024, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const path of ["/card", "/services", "/requests", `/requests/${REQUEST_STAFF}`]) {
+        await page.goto(path);
+        await heading(page).waitFor();
+        if (path === "/card") await page.locator("button.disclosure").click();
+        await expect(page.locator(".status-line, .skeleton")).toHaveCount(0);
+        await expectNoOverflow(page, `${width}px ${path}`);
+        await expectHitAreas(page, `${width}px ${path}`, CONTROLS);
+        await expect(sections(page)).toBeVisible();
       }
     }
   });

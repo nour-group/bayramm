@@ -615,6 +615,15 @@ textarea.field-input {
   margin-top: 4px;
 }
 
+/* Что в разделе — под заголовком каталога раздела */
+.cat-lead {
+  max-width: 640px;
+  margin-top: 6px;
+  color: var(--ink);
+  font-size: var(--fs-14);
+  line-height: 1.45;
+}
+
 /* Блок «Фильтры»: на телефоне и планшете — дата (гости, район) над выдачей, поля витрины —
    в шторке; на компьютере — колонка слева (ниже, @media 1024px). Его заголовок виден только
    колонкой; диктору — всегда */
@@ -2030,9 +2039,20 @@ textarea.field-input {
   color: var(--plum);
 }
 
-/* У пустого раздела под названием — «скоро»: значок по центру обеих строк */
-.cat-tile.is-soon .cat-tile-ico {
-  grid-row: span 2;
+/* Название, что в разделе и «скоро» — столбцом справа от значка */
+.cat-tile-text {
+  display: grid;
+  justify-items: start;
+  gap: var(--gap-3);
+  min-width: 0;
+}
+
+/* Что в разделе — с планшета (ниже, в @media): на телефоне плитки в два столбца, строке тесно */
+.cat-tile-desc {
+  display: none;
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+  line-height: 1.4;
 }
 
 /* Длинное слово («Fotostudiyalar») переносится, а не вылезает за плитку */
@@ -2053,9 +2073,6 @@ textarea.field-input {
     row-gap: var(--gap-7);
   }
 
-  .cat-tile.is-soon .cat-tile-ico {
-    grid-row: auto;
-  }
 }
 
 .cat-soon {
@@ -2679,6 +2696,16 @@ textarea.field-input {
 /* ---------- планшет: колонка 720px по центру (.main), нижняя панель на месте ---------- */
 
 @media (min-width: 768px) {
+  /* У плитки раздела — что в нём; плитка выравнивается по верху */
+  .cat-tile {
+    align-items: start;
+    padding: 14px;
+  }
+
+  .cat-tile-desc {
+    display: block;
+  }
+
   /* Галерея — в рамке, а не от края до края; листать можно и кнопками */
   .gallery {
     margin: 0;

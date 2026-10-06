@@ -55,29 +55,40 @@ const service = (listing: ListingDetail, type: string): PublicService => {
 };
 
 describe("категории клиента", () => {
-  it("в каталоге — включённые по порядку; неизвестная и выключенная — залы", () => {
+  it("в каталоге — включённые по порядку показа (путь пары); неизвестная и выключенная — залы", () => {
     expect(CLIENT_CATEGORIES.map((c) => c.code)).toEqual([
+      "zags",
       "hall",
       "car",
-      "studio",
-      "flowers",
       "photo",
-      "cake",
+      "studio",
+      "restaurant",
+      "flowers",
+      "attire",
       "gifts",
+      "food",
+      "cake",
       "decor",
     ]);
-    expect(clientCategory("food").code).toBe("hall");
+    expect(clientCategory("music").code).toBe("hall");
     expect(clientCategory(null).code).toBe("hall");
     expect(clientCategory("cake").code).toBe("cake");
   });
 
-  it("вместимость — у залов, район — у залов и студий, календаря нет у срока заказа", () => {
-    expect(CLIENT_CATEGORIES.filter(hasCapacity).map((c) => c.code)).toEqual(["hall"]);
-    expect(CLIENT_CATEGORIES.filter(hasDistrict).map((c) => c.code)).toEqual(["hall", "studio"]);
+  it("вместимость — у залов и ресторанов, район — где к ним едут, календаря нет у срока заказа", () => {
+    expect(CLIENT_CATEGORIES.filter(hasCapacity).map((c) => c.code)).toEqual(["hall", "restaurant"]);
+    expect(CLIENT_CATEGORIES.filter(hasDistrict).map((c) => c.code)).toEqual([
+      "zags",
+      "hall",
+      "studio",
+      "restaurant",
+      "attire",
+    ]);
     expect(CLIENT_CATEGORIES.filter((c) => !hasCalendar(c)).map((c) => c.code)).toEqual([
       "flowers",
-      "cake",
+      "attire",
       "gifts",
+      "cake",
     ]);
   });
 });
@@ -401,13 +412,17 @@ describe("демо-API по контракту категорий", () => {
     const api = createMockApi({ now, listings: ALL });
     const categories = await api.catalogCategories();
     expect(categories.items.map((c) => [c.code, c.listings])).toEqual([
+      ["zags", 3],
       ["hall", 24],
       ["car", 3],
-      ["studio", 3],
-      ["flowers", 3],
       ["photo", 3],
-      ["cake", 3],
+      ["studio", 3],
+      ["restaurant", 3],
+      ["flowers", 3],
+      ["attire", 3],
       ["gifts", 3],
+      ["food", 3],
+      ["cake", 3],
       ["decor", 3],
     ]);
     expect((await api.catalog({ limit: 50 })).items.every((c) => c.categoryCode === "hall")).toBe(true);

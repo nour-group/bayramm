@@ -38,7 +38,7 @@ describe("пререндер лендинга", () => {
       // Сетка категорий — все включённые, ссылками в каталог категории; «скоро» — только после API
       for (const code of ["car", "studio", "flowers", "photo", "cake", "gifts", "decor"])
         expect(html).toContain(`href="/catalog?category=${code}"`);
-      expect(html.match(/class="cat-tile"/g)).toHaveLength(8);
+      expect(html.match(/class="cat-tile"/g)).toHaveLength(12);
       expect(html).not.toContain("cat-soon");
       // Разделы — один раз: сеткой (названия из глоссария клиента), без второго списка у витрин
       for (const name of Object.values(t.catName)) expect(html).toContain(`class="cat-tile-name">${name}<`);

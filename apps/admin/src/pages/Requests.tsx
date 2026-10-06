@@ -1,5 +1,6 @@
 /* Заявки: без ответа — сверху, ближайший срок первым; «Требуют действия» — очередь
-   просроченных; фильтр по категории витрины. Заявка: данные, что нужно клиенту по форме
+   просроченных; фильтр по категории витрины; в списке — чья заявка (имя, которое вписал клиент;
+   удалено по сроку хранения — «—»). Заявка: данные, что нужно клиенту по форме
    категории (часть дня, часы, машины, вес, выбранные услуги с добавками — как были при
    подаче), срок ответа по шагам, работа с заявкой (напомнить вендору, «связались»), заметки
    команды, история; телефоны — скрыты до «Показать» (в журнал). */
@@ -231,6 +232,8 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                       {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
                     </p>
                     <dl className="rcard-facts">
+                      <dt>{t.colClient}</dt>
+                      <dd>{request.contactName ?? t.none}</dd>
                       <dt>{t.colListing}</dt>
                       <dd>
                         <CategoryChip code={request.listing.categoryCode} /> {request.listing.name} ·{" "}
@@ -258,6 +261,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                   <thead>
                     <tr>
                       <th scope="col">{t.colRequest}</th>
+                      <th scope="col">{t.colClient}</th>
                       <th scope="col">{t.colListing}</th>
                       <th scope="col">{t.colEvent}</th>
                       <th scope="col">{t.colDue}</th>
@@ -274,6 +278,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
                             {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
                           </span>
                         </td>
+                        <td>{request.contactName ?? t.none}</td>
                         <td>
                           <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
                           <span className="sub">

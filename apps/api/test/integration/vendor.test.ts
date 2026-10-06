@@ -480,6 +480,8 @@ describe("заявки вендора A", () => {
       occasionCode: "toy",
       contactName: "Client Test",
       listing: { id: A.listingId, name: "Test Hall A" },
+      // Ответа ещё нет: ни времени, ни того, кто ответил
+      firstResponseBy: null,
     });
     expect(Date.parse(item.sla.dueAt) - Date.parse(item.createdAt)).toBe(12 * 3600 * 1000);
     expect(item.sla).toMatchObject({ firstResponseAt: null, breached: false });
@@ -564,6 +566,7 @@ describe("заявки вендора A", () => {
     const item = (await contacted.json()) as VendorRequestItem;
     expect(item.status).toBe("contacted");
     expect(item.sla.firstResponseAt).not.toBeNull();
+    expect(item.firstResponseBy).toBe("vendor_user");
 
     // Повтор того же действия — не ошибка
     expect((await call(`/vendor/requests/${ra1.id}`, patch(A.token, { status: "contacted" }))).status).toBe(
@@ -1125,6 +1128,183 @@ describe("правка, предложенная командой", () => {
       [id],
     );
     expect(still[0]?.status).toBe("pending");
+  });
+});
+
+// ── что ждёт партнёра: значки разделов, причины отказов, первый ответ менеджера ─
+
+describe("что ждёт партнёра", () => {
+  let member: { token: string };
+
+  const me = async (token: string) => (await (await call("/vendor/me", bearer(token))).json()) as VendorMe;
+  /** Значки витрины, как их получает кабинет в GET /vendor/me */
+  const attention = async (listingId: string, token = A.token) =>
+    (await me(token)).listings.find((l) => l.id === listingId)?.attention;
+  const ZERO = { services: 0, photos: 0, proposals: 0 };
+  const proposeUrl = () => `/vendor/listings/${A.draftId}/revisions`;
+  const post = (token: string, body: unknown): RequestInit => ({
+    method: "POST",
+    headers: { ...json, Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+
+  beforeAll(async () => {
+    const userId = randomUUID();
+    const telegram = vendorTelegramUser();
+    await admin.query(
+      `insert into app.vendor_users (id, vendor_id, phone_hash, tg_user_hash, tg_linked_at, role)
+       values ($1, $2, $3, $4, now(), 'member')`,
+      [userId, A.accountId, randomBytes(32), tgIdHash(telegram.id)],
+    );
+    await admin.query(
+      "insert into pii.vendor_user_profiles (vendor_user_id, phone, full_name) values ($1, '+998000000113', 'Staff A2')",
+      [userId],
+    );
+    member = { token: await vendorToken(telegram) };
+  });
+
+  it("витрина без отказов — нули; последнее предложение зала отклонено — это одна вещь, ждущая партнёра", async () => {
+    // Зал: в «правках карточки» выше последнее предложение партнёра отклонили, нового нет
+    expect(await attention(A.listingId)).toEqual({ services: 0, photos: 0, proposals: 1 });
+    expect(await attention(A.draftId)).toEqual(ZERO);
+    expect(await attention(B.listingId, B.token)).toMatchObject({ services: 0, photos: 0 });
+  });
+
+  it("предложение: отклонённое считается, пока нет нового; новое открытое, отзыв и предложение команды — нет", async () => {
+    const first = (await (
+      await call(proposeUrl(), post(A.token, { name: "Draft A Grand" }))
+    ).json()) as VendorRevision;
+    expect(await attention(A.draftId)).toEqual(ZERO);
+    await admin.query(
+      "update app.listing_revisions set status = 'declined', decision_reason = 'Название не как на вывеске' where id = $1",
+      [first.id],
+    );
+    expect(await attention(A.draftId)).toEqual({ ...ZERO, proposals: 1 });
+
+    // Партнёр отправил новое — прежний отказ ждать больше не нужно
+    const second = (await (
+      await call(proposeUrl(), post(A.token, { name: "Draft A Grand Hall" }))
+    ).json()) as VendorRevision;
+    expect(await attention(A.draftId)).toEqual(ZERO);
+    // Отозвал — и это его решение: последнее предложение не отклонено
+    expect((await call(`${proposeUrl()}/${second.id}/withdraw`, as(A.token, "POST"))).status).toBe(200);
+    expect(await attention(A.draftId)).toEqual(ZERO);
+
+    // Предложение команды (submitted_by — не пользователь вендора) партнёру чинить нечего:
+    // база ставит автора при вставке, а решение по нему — модератор
+    const { rows } = await admin.query<{ id: string }>(
+      `insert into app.listing_revisions (listing_id, payload, base_version)
+       select id, '{"description_ru": "Описание от команды"}', version from app.listings where id = $1
+       returning id`,
+      [A.draftId],
+    );
+    await admin.query(
+      "update app.listing_revisions set status = 'declined', decision_reason = 'Не подходит' where id = $1",
+      [rows[0]?.id],
+    );
+    const team = (await (await call(proposeUrl(), bearer(A.token))).json()) as VendorRevisionList;
+    expect(team.items[0]).toMatchObject({ id: rows[0]?.id, status: "declined", byTeam: true });
+    expect(await attention(A.draftId)).toEqual(ZERO);
+  });
+
+  it("фото: отклонённое — с причиной модератора и в значке, пока партнёр его не удалил", async () => {
+    const photo = async (moderation: string) => {
+      const { rows } = await admin.query<{ id: string }>(
+        `insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
+                                 sort, no_faces_ack)
+         values ($1, 'ready', $2, $3, 'image/webp', 1000, 1600, 1200, $4, 5, true) returning id`,
+        [A.draftId, moderation, `listings/${A.draftId}/${randomUUID()}.webp`, randomBytes(32)],
+      );
+      return rows[0]?.id as string;
+    };
+    const pending = await photo("pending");
+    const declined = await photo("pending");
+    // Причину пишет модератор вместе с решением (под актором system, как в базе)
+    await admin.query(
+      "update app.photos set moderation = 'declined', moderation_reason = 'На фото виден человек' where id = $1",
+      [declined],
+    );
+    expect(await attention(A.draftId)).toEqual({ ...ZERO, photos: 1 });
+
+    const listing = (await (
+      await call(`/vendor/listings/${A.draftId}`, bearer(A.token))
+    ).json()) as VendorListing;
+    expect(listing.photos.map((p) => [p.id, p.moderation, p.declineReason]).sort()).toEqual(
+      [
+        [pending, "pending", null],
+        [declined, "declined", "На фото виден человек"],
+      ].sort(),
+    );
+
+    // Сотрудник площадки отклонённое видит, но чинить не может — значка у него нет
+    expect(await attention(A.draftId, member.token)).toEqual(ZERO);
+    expect((await me(member.token)).listings.map((l) => l.attention)).toEqual([ZERO, ZERO]);
+
+    expect(
+      (await call(`/vendor/listings/${A.draftId}/photos/${declined}`, as(A.token, "DELETE"))).status,
+    ).toBe(204);
+    expect(await attention(A.draftId)).toEqual(ZERO);
+  });
+
+  it("услуги: отклонённые считаются по одной; удалил или отправил снова — число убывает", async () => {
+    // Отказ команды по новой услуге: услуга rejected с причиной (решает модератор, здесь — под system)
+    const rejected = async (type: string) => {
+      const { rows } = await admin.query<{ id: string }>(
+        `insert into app.listing_services (listing_id, category_code, service_type, status, price_uzs, price_unit,
+                                           decision, decision_reason, decided_at)
+         values ($1, 'hall', $2, 'rejected', 100000, 'per_guest', 'declined', 'Цена не сходится с залом', now())
+         returning id`,
+        [A.draftId, type],
+      );
+      return rows[0]?.id as string;
+    };
+    const one = await rejected("banquet_weekday");
+    const two = await rejected("banquet_weekend");
+    expect(await attention(A.draftId)).toEqual({ ...ZERO, services: 2 });
+    expect(await attention(A.draftId, member.token)).toEqual(ZERO);
+
+    expect((await call(`/vendor/listings/${A.draftId}/services/${one}`, as(A.token, "DELETE"))).status).toBe(
+      204,
+    );
+    expect(await attention(A.draftId)).toEqual({ ...ZERO, services: 1 });
+    // Отправил отклонённую снова — она на проверке, ждать от партнёра больше нечего
+    expect(
+      (await call(`/vendor/listings/${A.draftId}/services/${two}/submit`, as(A.token, "POST"))).status,
+    ).toBe(200);
+    expect(await attention(A.draftId)).toEqual(ZERO);
+  });
+
+  it("первый ответ — менеджер Bayramm: список и карточка заявки называют, кто ответил", async () => {
+    const client = await createClient();
+    const staffReq = await createRequest(client, A.listingId, days(44));
+    // «Связались» — отметка сотрудника из панели: переход под актором staff
+    await admin.query("begin");
+    await admin.query(
+      "select set_config('app.actor_kind', 'staff', true), set_config('app.actor_id', $1, true)",
+      [randomUUID()],
+    );
+    await admin.query("update app.requests set status = 'contacted' where id = $1", [staffReq.id]);
+    await admin.query("commit");
+
+    const page = (await (
+      await call("/vendor/requests?tab=active", bearer(A.token))
+    ).json()) as VendorRequestPage;
+    const listed = page.items.find((r) => r.id === staffReq.id);
+    expect(listed?.firstResponseBy).toBe("staff");
+    expect(listed?.sla.firstResponseAt).not.toBeNull();
+
+    const detail = (await (
+      await call(`/vendor/requests/${staffReq.id}`, bearer(A.token))
+    ).json()) as VendorRequestDetail;
+    expect(detail.firstResponseBy).toBe("staff");
+    expect(detail.history.map((h) => [h.status, h.by])).toEqual([
+      ["new", "system"],
+      ["contacted", "staff"],
+    ]);
+
+    // Партнёр продолжает работу: первый ответ остаётся за тем, кто ответил первым
+    const deal = await call(`/vendor/requests/${staffReq.id}`, patch(A.token, { status: "deal" }));
+    expect(((await deal.json()) as VendorRequestItem).firstResponseBy).toBe("staff");
   });
 });
 

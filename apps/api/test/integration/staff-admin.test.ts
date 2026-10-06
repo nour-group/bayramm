@@ -16,6 +16,7 @@ import type {
   ListingDetail,
   ListingList,
   ListingSaveResult,
+  PiiAccessList,
   RevealedListingContacts,
   RevisionList,
   StaffDictionaries,
@@ -128,13 +129,17 @@ describe("GET /staff/me и справочники", () => {
     const dict = await ok<StaffDictionaries>(api("manager", "GET", "/staff/dictionaries"));
     expect(dict.districts).toHaveLength(12);
     expect(dict.categories.filter((c) => c.enabled).map((c) => c.code)).toEqual([
+      "zags",
       "hall",
       "car",
-      "studio",
-      "flowers",
       "photo",
-      "cake",
+      "studio",
+      "restaurant",
+      "flowers",
+      "attire",
       "gifts",
+      "food",
+      "cake",
       "decor",
     ]);
     expect(dict.settings.minPhotos).toBeGreaterThanOrEqual(3);
@@ -571,13 +576,30 @@ describe("вендор → карточка → проверка → публи�
     expect(item?.photos.pending).toBe(1);
     expect(queue.items.every((l) => l.status === "active" && l.photos.pending > 0)).toBe(true);
 
-    await ok(
+    // Отказ без причины — нет: партнёр должен знать, что переснять
+    expect(
+      await error(
+        api("moderator", "POST", `/staff/listings/${listing.id}/photos/${photoId}/moderation`, {
+          decision: "declined",
+        }),
+      ),
+    ).toMatchObject({ status: 422, details: ["reason"] });
+    const photos = await ok<StaffPhoto[]>(
       api("moderator", "POST", `/staff/listings/${listing.id}/photos/${photoId}/moderation`, {
         decision: "declined",
+        reason: "  Размыто — нужен кадр при свете  ",
       }),
     );
+    expect(photos.find((p) => p.id === photoId)?.declineReason).toBe("Размыто — нужен кадр при свете");
     const after = await ok<ListingList>(api("moderator", "GET", "/staff/listings?photos=pending&limit=100"));
     expect(after.items.map((l) => l.id)).not.toContain(listing.id);
+    // Одобрили — причины нет
+    const approved = await ok<StaffPhoto[]>(
+      api("moderator", "POST", `/staff/listings/${listing.id}/photos/${photoId}/moderation`, {
+        decision: "approved",
+      }),
+    );
+    expect(approved.find((p) => p.id === photoId)?.declineReason).toBeNull();
   });
 
   it("снять отметку чек-листа нельзя, пока карточка опубликована", async () => {
@@ -749,7 +771,14 @@ describe("вендор → карточка → проверка → публи�
     it("список: срок ответа идёт; модератору заявки недоступны", async () => {
       const list = await ok<StaffRequestList>(api("manager", "GET", "/staff/requests?sla=waiting"));
       const item = list.items.find((r) => r.id === requestId);
-      expect(item).toMatchObject({ status: "new", sla: "waiting", listing: { id: listing.id } });
+      // Чья заявка — имя из неё; телефона в списке нет
+      expect(item).toMatchObject({
+        status: "new",
+        sla: "waiting",
+        contactName: "Client",
+        listing: { id: listing.id },
+      });
+      expect(JSON.stringify(list)).not.toContain(clientPhone.slice(4));
       expect(list.counts.waiting).toBeGreaterThanOrEqual(1);
       expect((await api("moderator", "GET", "/staff/requests")).status).toBe(403);
     });
@@ -784,6 +813,13 @@ describe("вендор → карточка → проверка → публи�
       expect(rows).toEqual([
         { actor_kind: "staff", purpose: "staff_reveal", reason: "Клиент просит перезвонить" },
       ]);
+      // В журнале панели — чья заявка словами, номера нет
+      const detail = await ok<StaffRequestDetail>(api("manager", "GET", `/staff/requests/${requestId}`));
+      const pii = await ok<PiiAccessList>(api("admin", "GET", `/staff/audit/pii?object=${requestId}`));
+      expect(pii.items).toMatchObject([
+        { subjectKind: "request_contact", subjectLabel: `№${detail.publicNo}`, purpose: "staff_reveal" },
+      ]);
+      expect(JSON.stringify(pii)).not.toContain(clientPhone.slice(4));
     });
 
     it("кому звонить: телефоны вендора и карточки", async () => {

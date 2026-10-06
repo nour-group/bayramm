@@ -275,7 +275,9 @@ function Availability({
         <Icon name="info" size={14} />
         <span>
           {parts ? `${t.partsNote} ` : ""}
-          {category.availability === "slot" ? `${t.slotNote} ` : ""}
+          {category.availability === "slot"
+            ? `${category.requestForm.fields.some((f) => f.key === "hours") ? t.slotNote : t.slotTimeNote} `
+            : ""}
           {t.calByVendor}
         </span>
       </p>

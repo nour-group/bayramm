@@ -1,5 +1,6 @@
 import type { CatalogCategory } from "@bayramm/shared/api";
-import { CLIENT_CATEGORIES, categoryIcon, categoryName } from "../categories";
+import { useLayoutEffect, useRef } from "react";
+import { CLIENT_CATEGORIES, categoryDesc, categoryIcon, categoryName } from "../categories";
 import { useLang, useServices } from "../context";
 import { type AsyncResult, useAsync } from "../hooks";
 import { Icon } from "../icons";
@@ -46,9 +47,20 @@ export function CategorySwitch({ current, date }: { current: string; date: strin
   const { t, lang } = useLang();
   const state = useCatalogCategories();
   const shown = CLIENT_CATEGORIES.filter((c) => c.code === current || listingsIn(state, c.code) !== false);
+  const list = useRef<HTMLUListElement>(null);
+  // Открытый раздел — в поле зрения ленты: на телефоне двенадцатый раздел иначе за краем.
+  // Только по горизонтали и только своей ленты (scrollLeft): страницу не двигаем (ловушки №3, №5)
+  useLayoutEffect(() => {
+    const strip = list.current;
+    const chip = strip?.querySelector<HTMLElement>('a[aria-current="page"]');
+    if (!strip || !chip || strip.scrollWidth <= strip.clientWidth) return;
+    const left = chip.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft || left + chip.offsetWidth > strip.scrollLeft + strip.clientWidth)
+      strip.scrollLeft = Math.max(0, left - (strip.clientWidth - chip.offsetWidth) / 2);
+  }, [current, shown.length]);
   return (
     <nav className="cat-switch" aria-label={t.catSwitch}>
-      <ul>
+      <ul ref={list}>
         <li>
           <Link
             className="cat-chip"
@@ -95,8 +107,12 @@ export function CategoryGrid({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
               <span className="cat-tile-ico" aria-hidden="true">
                 <Icon name={categoryIcon(category.code)} size={24} />
               </span>
-              <Name className="cat-tile-name">{categoryName(category.code, t, lang)}</Name>
-              {soon ? <span className="cat-soon">{t.catSoon}</span> : null}
+              <div className="cat-tile-text">
+                <Name className="cat-tile-name">{categoryName(category.code, t, lang)}</Name>
+                {/* Что в разделе — с планшета: на телефоне плитки в два столбца, строке там тесно */}
+                <span className="cat-tile-desc">{categoryDesc(category.code, t)}</span>
+                {soon ? <span className="cat-soon">{t.catSoon}</span> : null}
+              </div>
             </Link>
           </li>
         );

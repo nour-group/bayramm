@@ -14,7 +14,7 @@ import {
 const FACTS: RequestFacts = {
   no: "1001",
   listing: "Test Hall",
-  category: "Площадка / Тойхона",
+  category: "Тойхона",
   date: "12.10.2026",
   guests: 200,
   occasion: "Свадьба",

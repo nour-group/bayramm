@@ -7,6 +7,8 @@
    место под подпись занято — список не прыгает. */
 
 import type { VendorListingRef } from "@bayramm/shared/api/vendor";
+import { AttentionLine, attentionLine } from "./AttentionLine";
+import type { AttentionMark } from "./attention";
 import type { VendorDict } from "./i18n";
 import { CATEGORY_KIT, usePart } from "./screens";
 
@@ -19,10 +21,12 @@ interface SideVitrinasProps {
   readonly lang: "ru" | "uz";
   /** Входящие: вариант «все витрины» сверху */
   readonly allLabel?: string;
+  /** Раздел со значком: у витрин, где партнёра ждут отказы команды, — «требует внимания: N» */
+  readonly mark?: AttentionMark;
 }
 
 /** Витрина одна — выбирать нечего, блока нет */
-export function SideVitrinas({ listings, value, onChange, t, lang, allLabel }: SideVitrinasProps) {
+export function SideVitrinas({ listings, value, onChange, t, lang, allLabel, mark }: SideVitrinasProps) {
   const kit = usePart(CATEGORY_KIT);
   if (listings.length < 2) return null;
   return (
@@ -51,6 +55,7 @@ export function SideVitrinas({ listings, value, onChange, t, lang, allLabel }: S
         >
           <span className="vitrina-name">{listing.name}</span>
           <span className="vitrina-cat">{kit ? kit.categoryName(lang, listing.categoryCode) : ""}</span>
+          <AttentionLine text={attentionLine(listing, mark, t)} />
         </button>
       ))}
     </div>

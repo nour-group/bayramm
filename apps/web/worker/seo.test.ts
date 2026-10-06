@@ -139,7 +139,11 @@ describe("разметка страниц", () => {
     ]);
     // Залы — тоже свой раздел; неизвестная категория — общая страница каталога
     const hall = await setup().html(`${PROD}/catalog?category=hall&lang=ru`);
-    expect(title(hall.body)).toBe("Залы и тойханы в Ташкенте · Bayramm");
+    expect(title(hall.body)).toBe("Тойханы в Ташкенте · Bayramm");
+    // Описание раздела — та же строка, что на плитке лендинга
+    expect(metaContent(hall.body, "name", "description")).toContain(
+      "Банкетные залы для свадьбы и плова — по вместимости, меню и свободной дате.",
+    );
     expect(canonical(hall.body)).toBe(`${PROD}/catalog?category=hall&amp;lang=ru`);
     const other = await setup().html(`${PROD}/catalog?category=spaceships`);
     expect(canonical(other.body)).toBe(`${PROD}/catalog`);

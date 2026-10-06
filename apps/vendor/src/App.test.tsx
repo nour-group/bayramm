@@ -2,9 +2,11 @@
 import { ImageError } from "@bayramm/media";
 import { type CompressedPhoto, compressForUpload } from "@bayramm/media/browser";
 import type {
+  VendorAttention,
   VendorCalendar,
   VendorCalendarChange,
   VendorListing,
+  VendorListingRef,
   VendorMe,
   VendorPhoto,
   VendorRequestDetail,
@@ -17,8 +19,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { attentionOf, attentionTotals, mergeListings } from "./attention";
 import { tashkentToday } from "./format";
 import { forgetAuthMethods } from "./hub";
+import { vendorDict } from "./i18n";
+import { decidedRevisions, revisionFields } from "./Proposal";
 
 // Сжатие фото — канвас браузера, которого в jsdom нет: подменено в test-setup.ts
 
@@ -29,10 +34,16 @@ const REQUEST_ID = "eeeeeeee-0000-0000-0000-0000000000a1";
 const LISTING_ID = "aaaaaaaa-0000-0000-0000-000000000101";
 const HOUR = 3600 * 1000;
 
-const me = (locale: "ru" | "uz" = "ru", role: VendorRole = "owner"): VendorMe => ({
+const NO_ATTENTION: VendorAttention = { services: 0, photos: 0, proposals: 0 };
+
+const me = (
+  locale: "ru" | "uz" = "ru",
+  role: VendorRole = "owner",
+  attention: VendorAttention = NO_ATTENTION,
+): VendorMe => ({
   user: { id: "aaaaaaaa-0000-0000-0000-000000000011", locale, fullName: "Manager", role },
   vendor: { id: "aaaaaaaa-0000-0000-0000-000000000001", code: "V101", name: "Test LLC" },
-  listings: [{ id: LISTING_ID, name: "Test Hall", status: "active", categoryCode: "hall" }],
+  listings: [{ id: LISTING_ID, name: "Test Hall", status: "active", categoryCode: "hall", attention }],
 });
 
 function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
@@ -52,6 +63,7 @@ function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
     budgetMaxUzs: 60_000_000,
     createdAt: new Date(created).toISOString(),
     sla: { dueAt: new Date(created + 12 * HOUR).toISOString(), firstResponseAt: null, breached: false },
+    firstResponseBy: null,
     contactName: "Dilnoza",
     ...patch,
   };
@@ -864,6 +876,7 @@ describe("площадка", () => {
     width: 1600,
     height: 1200,
     moderation,
+    declineReason: moderation === "declined" ? "На фото виден человек" : null,
     isCover: n === 1,
     src: `https://media.example/640/p${n}.webp`,
     srcSet: `https://media.example/320/p${n}.webp 320w`,
@@ -919,7 +932,7 @@ describe("площадка", () => {
     expect(container.textContent?.match(/«Услуги»|из услуг/g) ?? []).toEqual([]);
     expect(byText<HTMLAnchorElement>(".venue a", "К услугам")?.getAttribute("href")).toBe("/services");
     expect(container.querySelector(".venue .packages")).toBeNull();
-    expect(container.querySelector(".venue .chip-cat")?.textContent).toBe("Площадка / Тойхона");
+    expect(container.querySelector(".venue .chip-cat")?.textContent).toBe("Тойхона");
     expect(container.textContent).toContain("Эти данные меняет менеджер Bayramm — назовите ему код V101.");
     expect(container.textContent).toContain("от 150 000 сум за гостя");
     expect(container.textContent).toContain("50–300 гостей");
@@ -1233,5 +1246,284 @@ describe("сессия кончилась в браузере", () => {
     expect(heading()).toBe("Сессия закончилась");
     expect(container.textContent).toContain("Войдите снова — через сайт Bayramm.");
     expect(byText("button", "Войти")).toBeDefined();
+  });
+});
+
+describe("что ждёт партнёра", () => {
+  const listingPath = `/api/vendor/listings/${LISTING_ID}`;
+  const REJECTED: VendorAttention = { services: 2, photos: 1, proposals: 1 };
+  const tab = (href: string) => container.querySelector(`nav.tabbar a[href="${href}"]`);
+  const mePath = "/api/vendor/me";
+  const meReads = () => calls.filter((c) => c.method === "GET" && c.path === mePath);
+  const decided = (n: number, patch: Partial<VendorRevision> = {}): VendorRevision =>
+    revision({
+      id: `cccccccc-0000-0000-0000-${String(n).padStart(12, "0")}`,
+      status: "declined",
+      submittedAt: new Date(Date.now() - n * 86_400_000).toISOString(),
+      decidedAt: new Date(Date.now() - n * 86_400_000 + 3_600_000).toISOString(),
+      decisionReason: `Причина ${n}`,
+      payload: { name: "New Hall" },
+      ...patch,
+    });
+  const photoOf = (
+    n: number,
+    moderation: VendorPhoto["moderation"],
+    declineReason: string | null = null,
+  ) => ({
+    id: `dddddddd-0000-0000-0000-${String(n).padStart(12, "0")}`,
+    width: 1600,
+    height: 1200,
+    moderation,
+    declineReason,
+    isCover: n === 1,
+    src: `https://media.example/640/p${n}.webp`,
+    srcSet: `https://media.example/320/p${n}.webp 320w`,
+  });
+
+  beforeEach(() => {
+    insideTelegram();
+    routes[`GET ${listingPath}`] = () => ({ body: LISTING });
+    routes[`GET ${listingPath}/revisions`] = () => ({ body: { items: [] } });
+  });
+
+  it("значки у «Витрины» и «Услуг»: число отказов и слова для диктора; у остальных разделов их нет", async () => {
+    routes[`GET ${mePath}`] = () => ({ body: me("ru", "owner", REJECTED) });
+    await mount("/requests");
+    // «Витрина» — фото и предложение (1 + 1), «Услуги» — отклонённые услуги
+    expect(tab("/card")?.querySelector(".nav-count")?.textContent).toBe("2");
+    expect(tab("/card")?.querySelector(".sr-only")?.textContent).toBe("требует внимания: 2");
+    expect(tab("/services")?.querySelector(".nav-count")?.textContent).toBe("2");
+    expect(tab("/services")?.querySelector(".sr-only")?.textContent).toBe("требует внимания: 2");
+    // Число — текстом, а не только цветом; значок «Заявок» прежний — новые заявки
+    expect(tab("/card")?.querySelector(".nav-count")?.getAttribute("aria-hidden")).toBe("true");
+    expect(tab("/requests")?.querySelector(".sr-only")?.textContent).toBe("новых: 1");
+    expect(tab("/calendar")?.querySelector(".nav-count")).toBeNull();
+    expect(tab("/account")?.querySelector(".nav-count")).toBeNull();
+  });
+
+  it("отказов нет — значков у «Витрины» и «Услуг» нет", async () => {
+    await mount("/requests");
+    expect(container.querySelectorAll("nav.tabbar .nav-count")).toHaveLength(1);
+    expect(tab("/card")?.querySelector(".nav-count")).toBeNull();
+    expect(tab("/services")?.querySelector(".nav-count")).toBeNull();
+  });
+
+  it("узбекский: «eʼtibor talab qiladi»", async () => {
+    routes[`GET ${mePath}`] = () => ({ body: me("uz", "owner", { services: 3, photos: 0, proposals: 0 }) });
+    await mount("/requests");
+    expect(tab("/services")?.querySelector(".sr-only")?.textContent).toBe("eʼtibor talab qiladi: 3");
+    expect(tab("/card")?.querySelector(".nav-count")).toBeNull();
+  });
+
+  it("партнёр удалил отклонённое фото — значок пересчитан по свежему GET /vendor/me", async () => {
+    let photos = [
+      photoOf(1, "approved"),
+      photoOf(2, "approved"),
+      photoOf(3, "declined", "На фото виден человек"),
+    ];
+    routes[`GET ${listingPath}`] = () => ({ body: { ...LISTING, photos } });
+    routes[`GET ${mePath}`] = () => ({
+      body: me("ru", "owner", {
+        services: 0,
+        photos: photos.filter((p) => p.moderation === "declined").length,
+        proposals: 0,
+      }),
+    });
+    routes[`DELETE ${listingPath}/photos/${photoOf(3, "declined").id}`] = () => {
+      photos = photos.filter((p) => p.moderation !== "declined");
+      return { status: 204 };
+    };
+    await mount("/card");
+    expect(tab("/card")?.querySelector(".nav-count")?.textContent).toBe("1");
+    const before = meReads().length;
+
+    await click(container.querySelector('button[aria-label="Удалить фото 3"]') ?? undefined);
+    const confirm = [
+      ...(document.querySelector('[role="alertdialog"]')?.querySelectorAll("button") ?? []),
+    ].find((b) => b.textContent === "Удалить");
+    await click(confirm);
+    expect(meReads().length).toBeGreaterThan(before);
+    expect(tab("/card")?.querySelector(".nav-count")).toBeNull();
+  });
+
+  it("вошёл в раздел — значки перечитаны: команда могла решить, пока партнёр был в другом месте", async () => {
+    let attention: VendorAttention = NO_ATTENTION;
+    routes[`GET ${mePath}`] = () => ({ body: me("ru", "owner", attention) });
+    await mount("/requests");
+    expect(tab("/services")?.querySelector(".nav-count")).toBeNull();
+    expect(meReads()).toHaveLength(1);
+
+    attention = { services: 1, photos: 0, proposals: 0 };
+    await click(tab("/services") ?? undefined);
+    expect(meReads()).toHaveLength(2);
+    expect(tab("/services")?.querySelector(".nav-count")?.textContent).toBe("1");
+    // Календарь значков не показывает и ничего не перечитывает
+    await click(tab("/calendar") ?? undefined);
+    expect(meReads()).toHaveLength(2);
+  });
+
+  it("отклонённое фото: причина модератора под снимком и что делать; без причины — просто «отклонено»", async () => {
+    routes[`GET ${listingPath}`] = () => ({
+      body: {
+        ...LISTING,
+        photos: [
+          photoOf(1, "approved"),
+          photoOf(2, "declined", "На фото виден человек"),
+          photoOf(3, "declined", null),
+          photoOf(4, "pending"),
+        ],
+      },
+    });
+    await mount("/card");
+    const tiles = [...container.querySelectorAll(".photos li")];
+    expect(tiles[0]?.querySelector(".photo-decline")).toBeNull();
+    expect(tiles[1]?.querySelector(".photo-decline")?.textContent).toBe(
+      "Отклонено: На фото виден человекУдалите это фото и загрузите новое.",
+    );
+    expect(tiles[2]?.querySelector(".photo-decline")?.textContent).toBe(
+      "Отклонено командой Bayramm.Удалите это фото и загрузите новое.",
+    );
+    expect(tiles[3]?.querySelector(".photo-decline")).toBeNull();
+  });
+
+  it("отклонённое фото глазами сотрудника площадки: причина есть, призыва удалить нет", async () => {
+    routes[`GET ${mePath}`] = () => ({ body: me("ru", "member") });
+    routes[`GET ${listingPath}`] = () => ({
+      body: { ...LISTING, photos: [photoOf(1, "approved"), photoOf(2, "declined", "Нет лиц — но размыто")] },
+    });
+    await mount("/card");
+    expect(container.querySelector(".photo-decline")?.textContent).toBe("Отклонено: Нет лиц — но размыто");
+    expect(container.querySelector(".photo-decline-next")).toBeNull();
+  });
+
+  it("история предложений: свёрнута; открыл — последние пять решений с датой, причиной и полями", async () => {
+    const items = [
+      decided(1, { payload: { name: "New Hall", description_uz: "Yangi", attributes: { stage: true } } }),
+      decided(2, { status: "approved", decisionReason: null, payload: { video_links: [] } }),
+      decided(3, { byTeam: true }),
+      decided(4),
+      decided(5),
+      decided(6),
+      decided(7),
+      revision({ id: "cccccccc-0000-0000-0000-0000000000aa", status: "withdrawn" }),
+    ];
+    routes[`GET ${listingPath}/revisions`] = () => ({ body: { items } });
+    await mount("/card");
+    const toggle = byText<HTMLButtonElement>("button", "История предложений");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle?.querySelector(".count")?.textContent).toBe("5");
+    expect(container.querySelector(".revlog")).toBeNull();
+
+    await click(toggle);
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    const rows = [...container.querySelectorAll(".revlog li")];
+    expect(rows).toHaveLength(5);
+    expect(rows[0]?.textContent).toContain("Отклонено");
+    expect(rows[0]?.textContent).toContain("Что менялось: Название, Описание на узбекском, Данные витрины");
+    expect(rows[0]?.textContent).toContain("Причина: Причина 1");
+    expect(rows[1]?.textContent).toContain("Одобрено");
+    expect(rows[1]?.textContent).toContain("Что менялось: Видео");
+    expect(rows[1]?.textContent).not.toContain("Причина");
+    expect(rows[2]?.textContent).toContain("Предложила команда Bayramm");
+    // Шестое решённое и отозванное — не в истории
+    expect(container.querySelector(".revlog")?.textContent).not.toContain("Причина 6");
+
+    await click(toggle);
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector(".revlog")).toBeNull();
+  });
+
+  it("решений ещё не было — истории нет; открытое предложение и отозванное в неё не попадают", async () => {
+    routes[`GET ${listingPath}/revisions`] = () => ({
+      body: {
+        items: [revision(), revision({ id: "cccccccc-0000-0000-0000-0000000000ab", status: "withdrawn" })],
+      },
+    });
+    await mount("/card");
+    expect(container.querySelector(".proposal-pending")).not.toBeNull();
+    expect(byText("button", "История предложений")).toBeUndefined();
+  });
+
+  it("первым ответил менеджер Bayramm — так и сказано в списке и в карточке заявки", async () => {
+    const answered = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const byStaff = {
+      status: "contacted" as const,
+      firstResponseBy: "staff" as const,
+      sla: { ...item().sla, firstResponseAt: answered },
+    };
+    routes["GET /api/vendor/requests"] = () => ({ body: page([item(byStaff)]) });
+    routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({ body: detail(byStaff) });
+    await mount("/requests");
+    expect(container.querySelector(".rq .rq-staff")?.textContent).toBe("Первым ответил менеджер Bayramm");
+
+    await click(container.querySelector(".rq") ?? undefined);
+    expect(container.querySelector(".staff-reply")?.textContent).toMatch(
+      /^Первым ответил менеджер Bayramm · \d\d:\d\d$/,
+    );
+    // История переходов — прежняя
+    expect(container.querySelectorAll(".history li").length).toBeGreaterThan(0);
+  });
+
+  it("ответил сам партнёр или ответа ещё нет — строки про менеджера нет", async () => {
+    routes["GET /api/vendor/requests"] = () => ({
+      body: page([item({ status: "contacted", firstResponseBy: "vendor_user" }), item({ id: "x" })]),
+    });
+    routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({
+      body: detail({ status: "contacted", firstResponseBy: "vendor_user" }),
+    });
+    await mount("/requests");
+    expect(container.querySelector(".rq-staff")).toBeNull();
+    await click(container.querySelector(".rq") ?? undefined);
+    expect(container.querySelector(".staff-reply")).toBeNull();
+  });
+});
+
+describe("значки и история: чистые функции", () => {
+  const ref = (id: string, attention: VendorAttention): VendorListingRef => ({
+    id,
+    name: id,
+    status: "active",
+    categoryCode: "hall",
+    attention,
+  });
+
+  it("значок раздела — сумма по всем витринам: «Витрина» — фото и предложение, «Услуги» — услуги", () => {
+    const listings = [
+      ref("a", { services: 2, photos: 1, proposals: 1 }),
+      ref("b", { services: 1, photos: 0, proposals: 0 }),
+    ];
+    expect(attentionTotals(listings)).toEqual({ card: 2, services: 3 });
+    expect(attentionTotals([])).toEqual({ card: 0, services: 0 });
+    expect(attentionOf({ services: 4, photos: 2, proposals: 1 }, "card")).toBe(3);
+  });
+
+  it("mergeListings: ничего не изменилось — тот же массив (экраны не перечитываются зря)", () => {
+    const current = [ref("a", NO_ATTENTION)];
+    expect(mergeListings(current, [ref("a", NO_ATTENTION)])).toBe(current);
+    const fresh = [ref("a", { services: 1, photos: 0, proposals: 0 })];
+    expect(mergeListings(current, fresh)).toBe(fresh);
+    expect(mergeListings(current, [])).toEqual([]);
+  });
+
+  it("revisionFields: подписи полей в порядке показа; неизвестных ключей нет — пусто", () => {
+    const t = vendorDict.ru;
+    expect(revisionFields({ video_links: [], name: "X", description_ru: "Y" }, t)).toEqual([
+      "Название",
+      "Описание на русском",
+      "Видео",
+    ]);
+    expect(revisionFields({}, t)).toEqual([]);
+  });
+
+  it("decidedRevisions: только одобренные и отклонённые, не больше пяти, порядок сохранён", () => {
+    const rev = (n: number, status: VendorRevision["status"]) => revision({ id: String(n), status });
+    const items = [
+      rev(1, "pending"),
+      rev(2, "declined"),
+      rev(3, "withdrawn"),
+      rev(4, "approved"),
+      ...[5, 6, 7, 8, 9].map((n) => rev(n, "declined")),
+    ];
+    expect(decidedRevisions(items).map((r) => r.id)).toEqual(["2", "4", "5", "6", "7"]);
   });
 });
