@@ -312,6 +312,35 @@ describe("заявка: работа с заявкой", () => {
     expect(text()).toContain("Перезвонить в 18:00");
   });
 
+  it("список: чья заявка — отдельный столбец с именем; удалённое по сроку хранения — прочерк", async () => {
+    const counts = {
+      waiting: 0,
+      overdue: 2,
+      breached: 0,
+      answered: 0,
+      answered_late: 0,
+      ops_contacted: 0,
+      closed: 0,
+    };
+    mockApi(staff("manager", MANAGER), {
+      "GET /api/staff/requests": json({
+        total: 2,
+        items: [
+          REQUEST,
+          { ...REQUEST, id: "cccccccc-0000-0000-0000-000000000002", publicNo: 1002, contactName: null },
+        ],
+        counts,
+      }),
+    });
+    await mount("/requests");
+    const heads = [...container.querySelectorAll("thead th")].map((th) => th.textContent);
+    expect(heads).toEqual([t.colRequest, t.colClient, t.colListing, t.colEvent, t.colDue]);
+    const names = [...container.querySelectorAll("tbody tr")].map(
+      (row) => row.querySelectorAll("td")[1]?.textContent,
+    );
+    expect(names).toEqual(["Client", t.none]);
+  });
+
   it("список: очередь «Требуют действия» — sla=late, счётчик — просроченные и нарушенные", async () => {
     mockApi(staff("manager", MANAGER), {
       "GET /api/staff/requests": json({
@@ -499,6 +528,7 @@ const HEALTH: OutboxHealth = {
       kind: "vendor.request_new",
       recipientKind: "vendor_user",
       recipientRef: "aaaaaaaa",
+      recipientLabel: "Иван П.",
       attempts: 8,
       error: "api 403: Forbidden: bot was blocked by the user",
       createdAt: "2026-09-29T05:00:00.000Z",
@@ -516,7 +546,21 @@ describe("уведомления", () => {
     expect(stats).toContain(`2${t.outboxCounts.pending}`);
     expect(text()).toContain("bot was blocked by the user");
     expect(text()).toContain(t.noticeKinds["vendor.request_new"]);
+    // Получатель — кто он словами, под этим — вид и начало id
+    const cell = container.querySelector("tbody td:nth-child(2)");
+    expect(cell?.firstChild?.textContent).toBe("Иван П.");
+    expect(cell?.querySelector(".sub")?.textContent).toBe(`${t.recipientKinds.vendor_user} · aaaaaaaa…`);
     expect(button(t.retry)).toBeUndefined();
+  });
+
+  it("получатель без подписи (удалён) — вид и начало id, как раньше", async () => {
+    const [first] = HEALTH.dead;
+    const gone: OutboxHealth = { ...HEALTH, dead: first ? [{ ...first, recipientLabel: null }] : [] };
+    mockApi(staff("manager", MANAGER), { "GET /api/staff/outbox": json(gone) });
+    await mount("/notifications");
+    const cell = container.querySelector("tbody td:nth-child(2)");
+    expect(cell?.firstChild?.textContent).toBe(t.recipientKinds.vendor_user);
+    expect(cell?.querySelector(".sub")?.textContent).toBe("aaaaaaaa…");
   });
 
   it("администратор повторяет недоставленное", async () => {
@@ -545,6 +589,7 @@ describe("журнал", () => {
         action: "listing.update",
         objectType: "listing",
         objectId: LISTING_ID,
+        objectLabel: "Oqsaroy Hall",
         detail: { fields: ["name", "price_from_uzs"], vendor_id: VENDOR_ID },
         source: "admin",
       },
@@ -564,7 +609,49 @@ describe("журнал", () => {
     );
     expect(text()).not.toContain(VENDOR_ID);
     expect(text()).not.toContain("price_from_uzs");
-    expect(container.querySelector(`a[href="/listings/${LISTING_ID}"]`)).not.toBeNull();
+    // Объект — названием витрины, ссылкой на неё, а не началом UUID
+    const link = container.querySelector(`a[href="/listings/${LISTING_ID}"]`);
+    expect(link?.textContent).toBe("Oqsaroy Hall");
+    expect(text()).not.toContain(LISTING_ID.slice(0, 8));
+  });
+
+  it("нет подписи (витрины уже нет) — короткий id; партнёр и клиент — по имени и виду", async () => {
+    const entry = LIST.items[0] as AuditList["items"][number];
+    const odd: AuditList = {
+      total: 3,
+      items: [
+        { ...entry, id: "2", objectLabel: null },
+        {
+          ...entry,
+          id: "3",
+          actorKind: "vendor_user",
+          actor: { id: ME_ID, name: "Иван П." },
+          objectType: "request",
+          objectId: REQUEST_ID,
+          objectLabel: "№1001",
+        },
+        {
+          ...entry,
+          id: "4",
+          actorKind: "client",
+          actor: { id: ME_ID, name: "C-00000000" },
+          objectType: "setting",
+          objectId: "sla_hours",
+          objectLabel: null,
+        },
+      ],
+    };
+    mockApi(staff("admin", ADMIN), { "GET /api/staff/audit": json(odd) });
+    await mount("/audit");
+    const rows = [...container.querySelectorAll("tbody tr")];
+    const cells = (row: Element | undefined) => [...(row?.querySelectorAll("td") ?? [])];
+    expect(cells(rows[0])[3]?.textContent).toBe(`${t.auditTypes.listing}${LISTING_ID.slice(0, 8)}…`);
+    expect(cells(rows[1])[1]?.textContent).toBe(`Иван П. · ${t.historyBy.vendor_user}`);
+    expect(cells(rows[1])[3]?.textContent).toBe(`${t.auditTypes.request}№1001`);
+    expect(container.querySelector(`a[href="/requests/${REQUEST_ID}"]`)?.textContent).toBe("№1001");
+    expect(cells(rows[2])[1]?.textContent).toBe(`C-00000000 · ${t.historyBy.client}`);
+    // Настройка — без страницы и без подписи: ключ как есть
+    expect(cells(rows[2])[3]?.textContent).toBe(`${t.auditTypes.setting}sla_hours`);
   });
 
   it("код действия людям не показываем; незнакомое действие — как записано", async () => {
@@ -638,6 +725,7 @@ describe("журнал", () => {
             actor: { id: ME_ID, name: "Test admin" },
             subjectKind: "request_contact",
             subjectId: REQUEST_ID,
+            subjectLabel: "№1001",
             field: "phone",
             purpose: "staff_reveal",
             reason: "Клиент просит перезвонить",
@@ -649,6 +737,8 @@ describe("журнал", () => {
     await click(button(t.auditTabs.pii));
     expect(calls.at(-1)?.url).toContain("/api/staff/audit/pii");
     expect(text()).toContain("Клиент просит перезвонить");
+    // Чей телефон — «№1001» ссылкой на заявку, а не начало UUID
+    expect(container.querySelector(`a[href="/requests/${REQUEST_ID}"]`)?.textContent).toBe("№1001");
     expect(window.location.search).toBe("?tab=pii");
   });
 });

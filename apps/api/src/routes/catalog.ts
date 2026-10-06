@@ -22,6 +22,7 @@ import {
   type ListingContacts,
 } from "@bayramm/shared/api";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { dateParam, invalidRequest, parseCatalogQuery, single } from "../catalog/query";
 import {
   getListingCards,
@@ -33,7 +34,7 @@ import {
 } from "../catalog/service";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
-import { notFound } from "../errors";
+import { ApiError, notFound } from "../errors";
 import { parseIdsQuery } from "../favorites/service";
 import { tashkentToday } from "../time";
 import { clientSource } from "./requests";
@@ -90,6 +91,11 @@ catalog.get("/listings/:slug", async (c) => {
 const CONTACT_ACTIONS: readonly ContactAction[] = ["open", "phone", "telegram"];
 /** Тело — два поля; больше не читаем */
 const CONTACT_BODY_MAX = 256;
+// Предел тела — до чтения: большой запрос гостя не читается в память целиком
+const limitContactBody = bodyLimit({
+  maxSize: CONTACT_BODY_MAX,
+  onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),
+});
 
 /** { action, signedIn } — иначе 400 invalid_request с именами полей */
 async function readContactInput(req: Request): Promise<{ action: ContactAction; signedIn: boolean }> {
@@ -109,7 +115,7 @@ async function readContactInput(req: Request): Promise<{ action: ContactAction; 
   return { action, signedIn: record.signedIn as boolean };
 }
 
-catalog.post("/listings/:slug/contact", async (c) => {
+catalog.post("/listings/:slug/contact", limitContactBody, async (c) => {
   const slug = c.req.param("slug");
   if (!SLUG_RE.test(slug)) throw notFound();
   const { action, signedIn } = await readContactInput(c.req.raw);

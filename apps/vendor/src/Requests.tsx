@@ -146,6 +146,12 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
           </span>
         </span>
         {details ? <span className="rq-details">{details}</span> : null}
+        {item.firstResponseBy === "staff" ? (
+          <span className="rq-staff">
+            <Icon name="info" size={14} />
+            {t.firstByStaff}
+          </span>
+        ) : null}
         {awaitsAnswer(item) ? <SlaTimer item={item} t={t} now={now} /> : null}
       </a>
     </li>

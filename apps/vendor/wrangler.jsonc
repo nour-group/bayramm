@@ -15,11 +15,17 @@
   "env": {
     "staging": {
       "name": "bayramm-vendor-staging",
+      // Только свой домен: ни *.workers.dev, ни preview-адресов версий (как у панели)
+      "workers_dev": false,
+      "preview_urls": false,
       "routes": [{ "pattern": "vendor-staging.bayramm.uz", "custom_domain": true }],
       "services": [{ "binding": "API", "service": "bayramm-api-staging" }]
     },
     "production": {
       "name": "bayramm-vendor",
+      // Только свой домен: ни *.workers.dev, ни preview-адресов версий (как у панели)
+      "workers_dev": false,
+      "preview_urls": false,
       "routes": [{ "pattern": "vendor.bayramm.uz", "custom_domain": true }],
       "services": [{ "binding": "API", "service": "bayramm-api" }]
     }

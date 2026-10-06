@@ -31,6 +31,12 @@ const ICONS: Readonly<Record<(typeof CATEGORY_CODES)[number], IconName>> = {
   cake: "cake",
   gifts: "gift",
   decor: "decor",
+  // Свидетельство о браке — регистрация и документы
+  zags: "certificate",
+  restaurant: "forkKnife",
+  attire: "dress",
+  // Казан — утренний плов и банкет на выезде
+  food: "cookingPot",
 };
 
 export const categoryIcon = (code: string): IconName =>
@@ -43,7 +49,7 @@ export function clientCategory(code: string | null | undefined): CategoryConfig 
   return CLIENT_CATEGORIES.find((c) => c.code === code) ?? DEFAULT;
 }
 
-export { categoryName } from "./category-names";
+export { categoryDesc, categoryName } from "./category-names";
 
 /** Подпись из словаря категорий (поля, варианты, услуги, опции) */
 export const catText = (lang: Lang, key: CategoryTextKey): string => categoryText(lang, key);

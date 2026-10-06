@@ -11,6 +11,7 @@ import {
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VendorChooser } from "./Account";
 import { ApiFailure, accountMe, api, setUnauthorizedHandler, signIn, tokenStore } from "./api";
+import { type AttentionMark, attentionTotals, mergeListings } from "./attention";
 import { Gate, type GateKind } from "./Gate";
 import { CALLBACK_PATH, chooseVendor, finishHub, SIGNIN_PARAM, startHub } from "./hub";
 import { fill, LANG_NAMES, type VendorDict, vendorDict } from "./i18n";
@@ -195,36 +196,58 @@ interface SectionsProps {
   readonly navigate: Navigate;
   /** Новых заявок (из последнего ответа списка); null — ещё не знаем */
   readonly fresh: number | null;
+  /** Что ждёт партнёра в «Витрине» и «Услугах»: отказы команды по всем витринам (GET /vendor/me) */
+  readonly attention: Readonly<Record<AttentionMark, number>>;
   readonly className: string;
   readonly linkClass: string;
 }
 
+/**
+ * Значок у раздела: число (на глаз) и слова для диктора — число одно и то же, цвет не
+ * единственный признак. «Заявки» — новые, «Витрина» и «Услуги» — отказы, которые партнёру
+ * нужно исправить
+ */
+function sectionBadge(
+  item: Section,
+  t: VendorDict,
+  fresh: number | null,
+  attention: SectionsProps["attention"],
+): { readonly count: number; readonly words: string } | null {
+  if (item === "requests") return fresh ? { count: fresh, words: fill(t.newCount, { n: fresh }) } : null;
+  if (item === "card" || item === "services") {
+    const count = attention[item];
+    return count > 0 ? { count, words: fill(t.attentionCount, { n: count }) } : null;
+  }
+  return null;
+}
+
 /** Разделы кабинета: нижняя панель телефона, колонка планшета, боковая панель компьютера */
-function Sections({ t, section, navigate, fresh, className, linkClass }: SectionsProps) {
+function Sections({ t, section, navigate, fresh, attention, className, linkClass }: SectionsProps) {
   return (
     <nav className={className} aria-label={t.sections}>
-      {NAV.map((item) => (
-        <NavLink
-          key={item}
-          to={{ route: item }}
-          current={section === item}
-          navigate={navigate}
-          className={linkClass}
-        >
-          <span className="nav-icon">
-            <Icon name={NAV_ICON[item]} size={24} />
-            {item === "requests" && fresh ? (
-              <span className="nav-count" aria-hidden="true">
-                {fresh > 99 ? "99+" : fresh}
-              </span>
-            ) : null}
-          </span>
-          <span className="nav-label">{t[item]}</span>
-          {item === "requests" && fresh ? (
-            <span className="sr-only">{fill(t.newCount, { n: fresh })}</span>
-          ) : null}
-        </NavLink>
-      ))}
+      {NAV.map((item) => {
+        const badge = sectionBadge(item, t, fresh, attention);
+        return (
+          <NavLink
+            key={item}
+            to={{ route: item }}
+            current={section === item}
+            navigate={navigate}
+            className={linkClass}
+          >
+            <span className="nav-icon">
+              <Icon name={NAV_ICON[item]} size={24} />
+              {badge ? (
+                <span className="nav-count" aria-hidden="true">
+                  {badge.count > 99 ? "99+" : badge.count}
+                </span>
+              ) : null}
+            </span>
+            <span className="nav-label">{t[item]}</span>
+            {badge ? <span className="sr-only">{badge.words}</span> : null}
+          </NavLink>
+        );
+      })}
     </nav>
   );
 }
@@ -357,8 +380,31 @@ function Cabinet() {
   const uiTexts = useMemo(() => ({ close: t.close, clear: t.clear }), [t]);
   const screenProps = { t, lang, headingRef } as const;
   const onCounts = useCallback((counts: Readonly<Record<RequestTab, number>>) => setFresh(counts.new), []);
+  // Значки «Витрины» и «Услуг» — из GET /vendor/me. Партнёр что-то исправил (удалил фото, отправил
+  // услугу или предложение) или зашёл в раздел, где команда могла решить, — перечитываем тихо:
+  // не вышло — значки прежние, экран на месте
+  const refreshAttention = useCallback(() => {
+    void api
+      .me()
+      .then((fresh) =>
+        setAuth((current) => {
+          if (current.kind !== "ready") return current;
+          const listings = mergeListings(current.me.listings, fresh.listings);
+          return listings === current.me.listings ? current : { ...current, me: { ...current.me, listings } };
+        }),
+      )
+      .catch(() => {});
+  }, []);
+  const lastSection = useRef(section);
+  const signedIn = auth.kind === "ready";
+  useEffect(() => {
+    if (lastSection.current === section) return;
+    lastSection.current = section;
+    if (signedIn && (section === "card" || section === "services")) refreshAttention();
+  }, [section, signedIn, refreshAttention]);
   // Заявки одной витрины — только когда витрин несколько и выбрана одна
   const listings = ready?.me.listings ?? [];
+  const attention = useMemo(() => attentionTotals(listings), [listings]);
   const inboxFilter = scope === "listing" && listings.length > 1 ? listingId : null;
   const filterInbox = useCallback(
     (id: string | null) =>
@@ -441,6 +487,7 @@ function Cabinet() {
             role={auth.me.user.role}
             inSidebar={layout === "desktop"}
             navigate={navigate}
+            onChanged={refreshAttention}
           />
         )}
       </Lazy>
@@ -456,6 +503,7 @@ function Cabinet() {
             onListing={chooseListing}
             role={auth.me.user.role}
             inSidebar={layout === "desktop"}
+            onChanged={refreshAttention}
           />
         )}
       </Lazy>
@@ -510,6 +558,7 @@ function Cabinet() {
                 section={section}
                 navigate={navigate}
                 fresh={fresh}
+                attention={attention}
                 className="side-nav"
                 linkClass="side-link"
               />
@@ -518,6 +567,7 @@ function Cabinet() {
                 value={section === "requests" ? inboxFilter : listingId}
                 onChange={section === "requests" ? filterInbox : (id) => id && chooseListing(id)}
                 allLabel={section === "requests" ? t.allListings : undefined}
+                mark={section === "card" || section === "services" ? section : undefined}
                 t={t}
                 lang={lang}
               />
@@ -543,6 +593,7 @@ function Cabinet() {
               section={section}
               navigate={navigate}
               fresh={fresh}
+              attention={attention}
               className="rail"
               linkClass="rail-link"
             />
@@ -559,6 +610,7 @@ function Cabinet() {
               section={section}
               navigate={navigate}
               fresh={fresh}
+              attention={attention}
               className="tabbar"
               linkClass="tab"
             />

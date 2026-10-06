@@ -1,7 +1,7 @@
 import type { CatalogSort } from "@bayramm/shared/api";
 import { DateField, Dialog, NumberStepper, Select } from "@bayramm/ui/react";
 import { useEffect, useId, useRef, useState } from "react";
-import { categoryName, hasCalendar, hasCapacity, hasDistrict } from "../categories";
+import { categoryDesc, categoryName, hasCalendar, hasCapacity, hasDistrict } from "../categories";
 import { AttrFiltersForm } from "../components/AttrFilters";
 import { useCalendarTexts } from "../components/Calendar";
 import { CategorySwitch } from "../components/Categories";
@@ -189,6 +189,8 @@ export function Catalog() {
         <h1 className="screen-title" tabIndex={-1}>
           {title}
         </h1>
+        {/* Что в разделе — та же строка, что на плитке лендинга */}
+        {category ? <p className="cat-lead">{categoryDesc(category.code, t)}</p> : null}
         <p className="muted small">{t.catalogNote}</p>
       </div>
 

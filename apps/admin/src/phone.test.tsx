@@ -337,6 +337,9 @@ describe("телефон: экраны", () => {
     const card = container.querySelector(".rcard");
     expect(card?.querySelector("a.rcard-link")?.getAttribute("href")).toBe(`/requests/${REQUEST_ID}`);
     expect(card?.textContent).toContain(t.sla.overdue);
+    // Чья заявка — имя клиента первой строкой фактов
+    expect(card?.querySelector(".rcard-facts dt")?.textContent).toBe(t.colClient);
+    expect(card?.querySelector(".rcard-facts dd")?.textContent).toBe("Client");
   });
 
   it("фильтры — в шторке: выбор уходит на сервер, кнопка говорит «Фильтры (1)», снять — одним нажатием", async () => {

@@ -87,6 +87,26 @@ export interface VendorListingRef {
   readonly name: string;
   readonly status: ListingStatus;
   readonly categoryCode: string;
+  /** Что здесь ждёт действия партнёра — числа для значков разделов кабинета */
+  readonly attention: VendorAttention;
+}
+
+/**
+ * Что на витрине ждёт действия партнёра. Считает база по тому, что уже решила команда, и
+ * пересчитывается на каждый GET /vendor/me: партнёр исправил — число уменьшилось.
+ *   · services  — отклонённые услуги (status rejected): исправить и отправить снова или удалить;
+ *                 предложение правки активной услуги, которое отклонили, не считается — услуга
+ *                 на витрине как была;
+ *   · photos    — отклонённые фото, которые ещё в кабинете: удалить и загрузить новые;
+ *   · proposals — 1, если последнее предложение изменений витрины (подал партнёр) отклонено и
+ *                 нового открытого нет; иначе 0.
+ * Исправляет всё это только владелец кабинета (vendor/access.ts), поэтому у сотрудника
+ * площадки (role member) везде нули — значков, которые он не может убрать, у него нет
+ */
+export interface VendorAttention {
+  readonly services: number;
+  readonly photos: number;
+  readonly proposals: number;
 }
 
 /** GET /vendor/me → 200; PATCH /vendor/me { locale } → 200 VendorMe */
@@ -103,7 +123,7 @@ export interface VendorMe {
     readonly code: string;
     readonly name: string | null;
   };
-  /** Витрины вендора, старые первыми — для переключателя витрин в кабинете */
+  /** Витрины вендора, старые первыми — для переключателя витрин и значков разделов в кабинете */
   readonly listings: readonly VendorListingRef[];
 }
 
@@ -154,6 +174,13 @@ export interface VendorRequestItem {
   readonly budgetMaxUzs: number | null;
   readonly createdAt: string;
   readonly sla: RequestSla;
+  /**
+   * Кто ответил первым (первый переход в «связались», «договорились» или отказ):
+   * vendor_user — партнёр, staff — менеджер Bayramm (отметил «связались» вместо партнёра),
+   * system, client — как в истории; null — ответа ещё нет. Совпадает с sla.firstResponseAt:
+   * оба null или оба заполнены
+   */
+  readonly firstResponseBy: HistoryActor | null;
   /** Имя клиента — только пока действует согласие; иначе null */
   readonly contactName: string | null;
 }
@@ -326,6 +353,8 @@ export interface VendorPhoto {
   readonly width: number;
   readonly height: number;
   readonly moderation: "pending" | "approved" | "declined";
+  /** Почему модератор отклонил фото; null — не отклонено или причина не записана */
+  readonly declineReason: string | null;
   readonly isCover: boolean;
   /** Вариант 640 px с воркера media */
   readonly src: string;
@@ -461,7 +490,8 @@ export interface VendorRevision {
 }
 
 /**
- * GET /vendor/listings/:id/revisions → 200: последние предложения, новые первыми.
+ * GET /vendor/listings/:id/revisions → 200: последние 10 предложений, новые первыми. Решённые
+ *   (approved, declined — с причиной отказа) — история решений: кабинет показывает последние пять.
  * POST /vendor/listings/:id/revisions ListingRevisionPayload → 201 VendorRevision.
  *   В правку попадают только поля, которые отличаются от карточки; ничего не
  *   изменилось — 422 no_changes; неверные поля — 422 invalid_input (details — ключи,

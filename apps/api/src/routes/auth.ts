@@ -29,7 +29,7 @@
 // каждое обращение (legacyEndpoint). Когда обращений не станет — удалить.
 
 import type { OtpSent } from "@bayramm/shared/api/account";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { sql } from "kysely";
 import {
@@ -42,9 +42,9 @@ import {
   verifyWebApp,
   verifyWidget,
 } from "../auth/account";
-import { phoneHash } from "../auth/crypto";
+import { phoneHash, telegramIdHash } from "../auth/crypto";
 import { exchangeHubCode, issueHubCode, parseHubCodeRequest, parseHubExchange } from "../auth/hub";
-import { clientIp, requestIpHash } from "../auth/ip";
+import { clientIp, requestLimitIpHash } from "../auth/ip";
 import {
   generateOtpCode,
   normalizeOtpCode,
@@ -64,7 +64,8 @@ import { SYSTEM, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
-import { ApiError } from "../errors";
+import { ApiError, unauthorized } from "../errors";
+import { allowed, rateLimited } from "../ratelimit";
 import { BOT_USERNAME_RE, botUsername, defaultCache } from "../telegram/bot-info";
 import { telegramClient } from "../telegram/client";
 
@@ -210,32 +211,50 @@ interface IssueRow {
 }
 
 /**
- * Код на телефон просит человек, а не скрипт (с TURNSTILE_SECRET_KEY): Mini App — своей
- * initData (подпись Telegram; неверная — 401, как у входа), браузер — токеном Turnstile
- * из хаба. Без секрета проверки нет. Выбор — по телу: initData есть — это Mini App
+ * Код на телефон просит человек, а не скрипт (с TURNSTILE_SECRET_KEY): браузер — токеном
+ * Turnstile из хаба, Mini App — своей initData. initData любой бот-аккаунт Telegram получит сам,
+ * поэтому она засчитывается только вместе с сессией аккаунта того же пользователя Telegram (в
+ * Mini App телефон добавляют из профиля, уже войдя) и не чаще RATE_LIMIT_OTP_ACCOUNT на аккаунт.
+ * Без секрета проверки нет. Выбор — по телу: initData есть — это Mini App
  */
-async function assertHuman(env: Env, headers: Headers, body: Readonly<Record<string, unknown>>) {
+async function assertHuman(c: Context<AppEnv>, body: Readonly<Record<string, unknown>>) {
+  const env = c.env;
   if (!turnstileEnabled(env)) return;
-  if (body.initData !== undefined) {
-    await verifyWebApp(env, initDataOf(body));
+  if (body.initData === undefined) {
+    await verifyTurnstile(env, { token: body.turnstileToken, remoteIp: clientIp(c.req.raw.headers) });
     return;
   }
-  await verifyTurnstile(env, { token: body.turnstileToken, remoteIp: clientIp(headers) });
+  const session = c.get("session");
+  if (session?.kind !== "account") throw unauthorized();
+  const proof = await verifyWebApp(env, initDataOf(body));
+  const tgHash = await telegramIdHash(env.ID_HASH_KEY, proof.user.id);
+  const own = await withActor(c.var.db, SYSTEM, (trx) =>
+    trx
+      .selectFrom("app.account_identities")
+      .select("id")
+      .where("account_id", "=", session.accountId)
+      .where("kind", "=", "telegram")
+      .where("value_hash", "=", tgHash)
+      .executeTakeFirst(),
+  );
+  if (own === undefined) throw unauthorized();
+  if (!(await allowed(c, "RATE_LIMIT_OTP_ACCOUNT", `otp:${session.accountId}`))) throw rateLimited();
 }
 
-auth.post("/phone/send", limitBody, async (c) => {
+auth.post("/phone/send", limitBody, authenticate, async (c) => {
   const sender = otpSenderFor(c.env);
   if (sender === null) throw phoneUnavailable();
   const input = await readJsonObject(c.req.raw);
   const phone = phoneOf(input);
   // До базы: без проверки код не выдаётся и не считается в лимитах номера
-  await assertHuman(c.env, c.req.raw.headers, input);
+  await assertHuman(c, input);
 
   const code = generateOtpCode();
   const [phoneH, codeH, ipH] = await Promise.all([
     phoneHash(c.env.ID_HASH_KEY, phone),
     otpCodeHash(c.env.ID_HASH_KEY, phone, code),
-    requestIpHash(c.req.raw.headers, c.env.ID_HASH_KEY),
+    // Лимит кодов на адрес — по сети /64 для IPv6 (limitAddress)
+    requestLimitIpHash(c.req.raw.headers, c.env.ID_HASH_KEY),
   ]);
   const issued = await withActor(c.var.db, SYSTEM, async (trx) => {
     const { rows } = await sql<IssueRow>`

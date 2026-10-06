@@ -251,6 +251,8 @@ describe("отказы во входе", () => {
     const requestsRes = await call("/requests", bearer(oldToken));
     expect(requestsRes.status).toBe(403);
     expect(((await requestsRes.json()) as { error: { code: string } }).error.code).toBe("client_blocked");
+    // Права на свои данные остаются: выгрузка — да
+    expect((await call("/me/export", bearer(oldToken))).status).toBe(200);
   });
 });
 

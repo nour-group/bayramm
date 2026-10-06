@@ -57,7 +57,7 @@ describe("каталог", () => {
     const chips = [...document.querySelectorAll<HTMLAnchorElement>(".cat-switch a")];
     expect(chips[0]?.textContent).toBe("Все");
     expect(chips[0]?.getAttribute("aria-current")).toBe("page");
-    expect(chips.find((c) => c.textContent === "Залы и тойханы")?.getAttribute("href")).toBe(
+    expect(chips.find((c) => c.textContent === "Тойханы")?.getAttribute("href")).toBe(
       "/catalog?category=hall",
     );
     // Разделы вперемешку: у карточки — раздел; фильтров раздела (гости, район) нет
@@ -114,7 +114,7 @@ describe("каталог", () => {
 
   it("исполнителей ещё нет — «скоро», как у любого раздела, без сброса фильтров", async () => {
     await mount({ path: "/catalog?category=hall", mock: { listings: [] } });
-    await waitFor(() => byText("h2", "«Залы и тойханы» — скоро в каталоге"), "пустой каталог без фильтров");
+    await waitFor(() => byText("h2", "«Тойханы» — скоро в каталоге"), "пустой каталог без фильтров");
     expect(document.body.textContent).not.toContain("Никого не нашли");
     expect(document.body.textContent).not.toContain("Сбросить фильтры");
   });

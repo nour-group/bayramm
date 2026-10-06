@@ -126,7 +126,7 @@ describe("избранное вошедшего", () => {
     const metas = [...document.querySelectorAll(".card .card-meta")].map((el) => el.textContent);
     // Раздел — коротким названием из глоссария клиента, как в каталоге
     expect(metas[0]).toBe("Кортежи");
-    expect(metas[1]).toContain("Залы и тойханы");
+    expect(metas[1]).toContain("Тойханы");
     // Цена кортежа — с единицей: за час
     expect(document.querySelector(".card .card-price")?.textContent).toContain("за час");
   });

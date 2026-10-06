@@ -118,9 +118,9 @@ async function createVendor(label: string, linked: boolean) {
       [userId, vendorId, randomBytes(32), randomBytes(32)],
     );
     await admin.query(
-      `insert into pii.vendor_user_profiles (vendor_user_id, phone, telegram_user_id, telegram_chat_id)
-       values ($1, '+998000000111', $2, $2)`,
-      [userId, 6_000_000_000 + randomInt(0, 999_999_999)],
+      `insert into pii.vendor_user_profiles (vendor_user_id, phone, telegram_user_id, telegram_chat_id, full_name)
+       values ($1, '+998000000111', $2, $2, $3)`,
+      [userId, 6_000_000_000 + randomInt(0, 999_999_999), `Ops Partner ${label} ${tag}`],
     );
   }
   await admin.query(
@@ -298,6 +298,9 @@ describe("заявки: очередь просроченных и срок от
     expect(list.items.map((r) => r.id)).toContain(ra.id);
     expect(list.items.map((r) => r.id)).not.toContain(rb.id);
     expect(list.items.every((r) => r.sla === "overdue" || r.sla === "breached")).toBe(true);
+    // Чья заявка — имя, которое клиент вписал; телефона в списке нет
+    expect(list.items.find((r) => r.id === ra.id)?.contactName).toBe("Ops Client");
+    expect(JSON.stringify(list)).not.toContain("+998000000301");
     const due = list.items.map((r) => r.slaDueAt);
     expect([...due].sort()).toEqual(due);
     expect(await status(api("moderator", "GET", "/staff/requests?sla=late"))).toBe(403);
@@ -455,9 +458,12 @@ describe("клиенты", () => {
         subjectKind: "client",
         purpose: "staff_reveal",
         reason: "Жалоба вендора",
-        actor: { id: staffIds.admin },
+        // Чей телефон — словами (код клиента), кто читал — по имени; самого номера в ответе нет
+        subjectLabel: `C-${clientA.slice(0, 8)}`,
+        actor: { id: staffIds.admin, name: `Ops admin ${tag}` },
       },
     ]);
+    expect(JSON.stringify(pii)).not.toContain(clientPhone.slice(4));
   });
 
   it("блокировка: с причиной; заблокированный клиент не входит; снятие возвращает доступ", async () => {
@@ -528,6 +534,9 @@ describe("уведомления", () => {
       request: { id: ra.id, publicNo: ra.no },
     });
     expect(dead?.recipientRef).toHaveLength(8);
+    // Получатель — имя пользователя кабинета; телефона в ответе нет
+    expect(dead?.recipientLabel).toBe(`Ops Partner A ${tag}`);
+    expect(JSON.stringify(health)).not.toContain("+998000000111");
     expect(JSON.stringify(health)).not.toContain("payload");
     expect(await status(api("moderator", "GET", "/staff/outbox"))).toBe(403);
   });
@@ -560,6 +569,7 @@ describe("журнал действий", () => {
       {
         action: "request.remind",
         actor: { id: staffIds.manager, name: `Ops manager ${tag}` },
+        objectLabel: `№${ra.no}`,
         detail: { recipients: 1 },
       },
     ]);
@@ -567,6 +577,46 @@ describe("журнал действий", () => {
     expect(ofRc.items.map((e) => e.action).sort()).toEqual(["request.update", "request_note.create"]);
     expect(JSON.stringify(ofRc)).not.toMatch(/отпуске|Созвонились/);
     expect(await status(api("manager", "GET", "/staff/audit"))).toBe(403);
+  });
+
+  it("подписи: объект словами, актор — партнёр или клиент; удалённого объекта нет — подпись пустая", async () => {
+    // Строки от имени партнёра и клиента в журнал пишет база (триггеры кабинета и бота); в тесте
+    // они вставлены под postgres, как и остальные данные
+    await admin.query(
+      `insert into app.audit_log (actor_kind, actor_id, action, object_type, object_id, detail, source)
+       values ('vendor_user', $1, 'listing.update', 'listing', $2, '{}', 'vendor_cabinet'),
+              ('client', $3, 'request.update', 'request', $4, '{}', 'tma'),
+              ('staff', $5, 'vendor.update', 'vendor', $6, '{}', 'admin'),
+              ('staff', $5, 'listing.update', 'listing', $4, '{}', 'admin')`,
+      [A.userId, A.listingId, clientA, ra.id, staffIds.manager, A.vendorId],
+    );
+    const byPartner = await ok<AuditList>(
+      api("admin", "GET", `/staff/audit?actorKind=vendor_user&object=${A.listingId}`),
+    );
+    expect(byPartner.items).toMatchObject([
+      {
+        actorKind: "vendor_user",
+        actor: { id: A.userId, name: `Ops Partner A ${tag}` },
+        objectType: "listing",
+        objectLabel: `Ops Hall A ${tag}`,
+      },
+    ]);
+    const byClient = await ok<AuditList>(
+      api("admin", "GET", `/staff/audit?actorKind=client&object=${ra.id}`),
+    );
+    expect(byClient.items).toMatchObject([
+      { actor: { id: clientA, name: `C-${clientA.slice(0, 8)}` }, objectLabel: `№${ra.no}` },
+    ]);
+    const ofVendor = await ok<AuditList>(
+      api("admin", "GET", `/staff/audit?type=vendor&object=${A.vendorId}&actorKind=staff`),
+    );
+    expect(ofVendor.items[0]).toMatchObject({ objectLabel: `Ops Vendor A ${tag}` });
+    // Объект с таким id не витрина — подписи нет, панель покажет короткий id
+    const gone = await ok<AuditList>(api("admin", "GET", `/staff/audit?type=listing&object=${ra.id}`));
+    expect(gone.items).toMatchObject([{ objectId: ra.id, objectLabel: null }]);
+    // Виды без названия (настройка) — без подписи, а не ошибка
+    const settings = await ok<AuditList>(api("admin", "GET", "/staff/audit?type=setting&limit=5"));
+    expect(settings.items.every((e) => e.objectLabel === null)).toBe(true);
   });
 
   it("фильтры: сотрудник, начало кода действия, дни; неверный фильтр — 422 с именем", async () => {
@@ -750,6 +800,8 @@ describe("команда", () => {
       "staff.telegram_claim",
     ]);
     expect(audit.items[2]?.detail).toEqual({ from: "manager", to: "moderator" });
+    // Сотрудник-объект — по имени
+    expect(audit.items.every((e) => e.objectLabel === `Ops extra ${tag}`)).toBe(true);
   });
 });
 

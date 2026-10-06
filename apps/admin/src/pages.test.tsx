@@ -58,7 +58,7 @@ const staff = (role: StaffMe["role"], permissions: StaffMe["permissions"]): Staf
 });
 
 const DICT: StaffDictionaries = {
-  categories: [{ code: "hall", nameRu: "Площадка / Тойхона", nameUz: "Maydon / Toʻyxona", enabled: true }],
+  categories: [{ code: "hall", nameRu: "Тойхона", nameUz: "Toʻyxona", enabled: true }],
   districts: [{ code: "chilonzor", nameRu: "Чиланзар", nameUz: "Chilonzor" }],
   occasions: [{ code: "toy", nameRu: "Свадьба", nameUz: "Toʻy" }],
   staff: [],
@@ -333,7 +333,7 @@ describe("вендоры", () => {
     });
     await mount(`/vendors/${VENDOR_ID}`);
     expect([...container.querySelectorAll(".cat-chip")].map((chip) => chip.textContent)).toEqual([
-      "Площадка / Тойхона",
+      "Тойхона",
       "Кортеж",
     ]);
     expect(text()).toMatch(/300\s000\sсум за час/);
@@ -433,6 +433,209 @@ describe("карточка", () => {
     // Модератор решает по фото, но не загружает их
     expect(text()).toContain(t.approve);
     expect(text()).not.toContain(t.addPhotos);
+  });
+
+  it("фото: «Отклонить» спрашивает причину — без неё не отправить; причина видна под отклонённым фото", async () => {
+    const photo = (n: number, extra: Record<string, unknown> = {}) => ({
+      id: `dddddddd-0000-0000-0000-00000000000${n}`,
+      key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-00000000000${n}.webp`,
+      width: 1600,
+      height: 1200,
+      bytes: 1000,
+      sort: n,
+      isCover: false,
+      moderation: "pending" as const,
+      declineReason: null,
+      createdAt: "2026-09-29T06:00:00.000Z",
+      ...extra,
+    });
+    const photos = [
+      photo(1),
+      photo(2, { moderation: "declined", declineReason: "Размыто — нужен кадр при свете" }),
+      photo(3),
+    ];
+    const moderation = (n: number) =>
+      `POST /api/staff/listings/${LISTING_ID}/photos/${photo(n).id}/moderation`;
+    mockApi(staff("moderator", ["catalog.read", "photos.moderate"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({ ...LISTING, status: "review", photos }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 1,
+      }),
+      [moderation(1)]: json(photos),
+      [moderation(3)]: json(photos),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    // Причина отказа — под отклонённым фото, у остальных её нет
+    expect([...container.querySelectorAll(".photo-reason")].map((p) => p.textContent)).toEqual([
+      t.photoDeclineReason("Размыто — нужен кадр при свете"),
+    ]);
+
+    // «Отклонить» у первого фото: форма причины, отправить без причины нельзя
+    const decline = [...container.querySelectorAll("button")].filter((b) => b.textContent === t.decline);
+    expect(decline).toHaveLength(2);
+    await act(async () => decline[0]?.click());
+    // Форма — под рядом фото: фокус сразу на её заголовке
+    expect(document.activeElement?.textContent).toBe(t.declinePhotoTitle(1));
+    const submit = button(t.declinePhoto);
+    expect(submit?.disabled).toBe(true);
+    expect(container.querySelector(".decline-photo")?.textContent).toContain(t.declinePhotoHint(1));
+    expect(calls.some((c) => c.url.endsWith("/moderation"))).toBe(false);
+    await type(
+      container.querySelector<HTMLTextAreaElement>(".decline-photo textarea") as HTMLTextAreaElement,
+      "  Лицо в кадре  ",
+    );
+    expect(submit?.disabled).toBe(false);
+    await act(async () => submit?.click());
+    await settle();
+    expect(calls.filter((c) => c.url.endsWith("/moderation")).map((c) => c.body)).toEqual([
+      { decision: "declined", reason: "Лицо в кадре" },
+    ]);
+    // Форма закрылась; кнопки «Отклонить» у решённого фото больше нет — фокус на заголовке блока
+    expect(container.querySelector(".decline-photo")).toBeNull();
+    expect(document.activeElement?.id).toBe("photos-title");
+
+    // «Одобрить» — без причины
+    const approve = [...container.querySelectorAll("button")].filter((b) => b.textContent === t.approve);
+    await act(async () => approve[1]?.click());
+    await settle();
+    expect(calls.filter((c) => c.url.endsWith("/moderation")).at(-1)?.body).toEqual({
+      decision: "approved",
+    });
+  });
+
+  it("фото на телефоне: «Отклонить» — в «Ещё», причина — в шторке; отправка уходит с причиной", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => {
+      const max = /max-width:\s*(\d+)px/.exec(query);
+      return {
+        matches: max ? 390 <= Number(max[1]) : false,
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      };
+    });
+    const photo = {
+      id: "dddddddd-0000-0000-0000-000000000001",
+      key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-000000000001.webp`,
+      width: 1600,
+      height: 1200,
+      bytes: 1000,
+      sort: 0,
+      isCover: false,
+      moderation: "pending" as const,
+      declineReason: null,
+      createdAt: "2026-09-29T06:00:00.000Z",
+    };
+    mockApi(staff("moderator", ["catalog.read", "photos.moderate"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({ ...LISTING, status: "review", photos: [photo] }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 1,
+      }),
+      [`POST /api/staff/listings/${LISTING_ID}/photos/${photo.id}/moderation`]: json([photo]),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
+    await act(async () => container.querySelector<HTMLElement>(".photo .btn-more")?.click());
+    await settle();
+    const item = [...(dialog()?.querySelectorAll<HTMLButtonElement>(".menu-item") ?? [])].find(
+      (b) => b.textContent === t.decline,
+    );
+    await act(async () => item?.click());
+    await settle();
+    // Шторка с полем причины; без текста кнопка неактивна
+    const sheet = dialog();
+    expect(sheet?.textContent).toContain(t.declinePhotoHint(1));
+    const submit = [...(sheet?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+      (b) => b.textContent === t.declinePhoto,
+    );
+    expect(submit?.disabled).toBe(true);
+    await type(sheet?.querySelector("textarea") as HTMLTextAreaElement, "Нужен кадр без людей");
+    expect(submit?.disabled).toBe(false);
+    await act(async () => submit?.click());
+    await settle();
+    expect(calls.filter((c) => c.url.endsWith("/moderation")).map((c) => c.body)).toEqual([
+      { decision: "declined", reason: "Нужен кадр без людей" },
+    ]);
+    expect(dialog()).toBeNull();
+  });
+
+  it("отказ по фото: «Отмена» возвращает фокус на «Отклонить» у этого фото, запроса нет", async () => {
+    const photo = {
+      id: "dddddddd-0000-0000-0000-000000000001",
+      key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-000000000001.webp`,
+      width: 1600,
+      height: 1200,
+      bytes: 1000,
+      sort: 0,
+      isCover: false,
+      moderation: "pending" as const,
+      declineReason: null,
+      createdAt: "2026-09-29T06:00:00.000Z",
+    };
+    mockApi(staff("moderator", ["catalog.read", "photos.moderate"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({ ...LISTING, status: "review", photos: [photo] }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 1,
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    const opener = button(t.decline);
+    await act(async () => opener?.click());
+    await type(
+      container.querySelector<HTMLTextAreaElement>(".decline-photo textarea") as HTMLTextAreaElement,
+      "Передумали",
+    );
+    await act(async () => button(t.cancel)?.click());
+    await settle();
+    expect(container.querySelector(".decline-photo")).toBeNull();
+    expect(document.activeElement).toBe(button(t.decline));
+    expect(calls.some((c) => c.url.endsWith("/moderation"))).toBe(false);
+  });
+
+  it("отказ по фото: сервер не принял без причины — слова, форма остаётся", async () => {
+    const photo = {
+      id: "dddddddd-0000-0000-0000-000000000001",
+      key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-000000000001.webp`,
+      width: 1600,
+      height: 1200,
+      bytes: 1000,
+      sort: 0,
+      isCover: false,
+      moderation: "pending" as const,
+      declineReason: null,
+      createdAt: "2026-09-29T06:00:00.000Z",
+    };
+    mockApi(staff("moderator", ["catalog.read", "photos.moderate"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({ ...LISTING, status: "review", photos: [photo] }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 1,
+      }),
+      [`POST /api/staff/listings/${LISTING_ID}/photos/${photo.id}/moderation`]: json(
+        { error: { code: "invalid_input", message: "x", details: ["reason"] } },
+        422,
+      ),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    await act(async () => button(t.decline)?.click());
+    await type(
+      container.querySelector<HTMLTextAreaElement>(".decline-photo textarea") as HTMLTextAreaElement,
+      "Размыто",
+    );
+    await act(async () => button(t.declinePhoto)?.click());
+    await settle();
+    expect(container.querySelector(".decline-photo .field-error")?.textContent).toBe(t.api.reason_required);
+    expect(container.querySelector(".decline-photo")).not.toBeNull();
   });
 
   it("пункт «чего не хватает» ведёт к блоку, где он заполняется; телефон и категория — по одному разу", async () => {

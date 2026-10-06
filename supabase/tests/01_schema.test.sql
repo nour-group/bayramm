@@ -13,8 +13,9 @@ select set_eq(
   '14 категорий с кодами продукта (packages/shared/src/categories)');
 select set_eq(
   'select code from app.categories where enabled',
-  array['hall', 'car', 'studio', 'flowers', 'photo', 'cake', 'gifts', 'decor'],
-  'в v0.2 включены залы и семь приоритетных категорий');
+  array['zags', 'hall', 'car', 'photo', 'studio', 'restaurant', 'flowers', 'attire', 'gifts', 'food', 'cake',
+        'decor'],
+  'включены двенадцать категорий пути пары; музыка и аниматоры — выключены');
 select set_eq(
   'select code from app.occasions',
   array['toy', 'beshik', 'bd', 'corp', 'small'],

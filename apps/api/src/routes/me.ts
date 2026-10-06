@@ -254,7 +254,8 @@ me.post("/identities/phone", limitBody, async (c) => {
 
 // Выгрузка своих данных — файлом, без кэширования (в ответе ПДн)
 me.get("/export", async (c) => {
-  const { actor } = requireClient(c);
+  // Выгрузка своих данных — и заблокированному: это его право, а не услуга площадки
+  const { actor } = requireClient(c, { allowBlocked: true });
   const doc = await withActor(c.var.db, actor, async (trx) => {
     const { rows } = await sql<{ doc: ClientDataExport }>`select app.client_export() as doc`.execute(trx);
     return rows[0]?.doc;
@@ -270,7 +271,8 @@ me.get("/export", async (c) => {
 
 // Отзыв согласия. Нечего отзывать — 200 { withdrawn: false }: повтор безопасен
 me.post("/consents/withdraw", limitBody, async (c) => {
-  const { actor } = requireClient(c);
+  // Отозвать согласие можно и заблокированному
+  const { actor } = requireClient(c, { allowBlocked: true });
   const { purpose, listingId } = parseWithdrawConsent(await readJson(c.req.raw));
   const source = clientSource(c.req.header(CLIENT_SOURCE_HEADER));
   const ipHash = await requestIpHash(c.req.raw.headers, c.env.ID_HASH_KEY);

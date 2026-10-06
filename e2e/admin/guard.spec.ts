@@ -105,7 +105,7 @@ test("перезагрузка с правками — окно браузера
 test("сохранили — уход без вопроса", async ({ page }) => {
   await start(page);
   await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-  await pick(page, t.categoryFirst, "Площадка / Тойхона");
+  await pick(page, t.categoryFirst, "Тойхона");
   await nameField(page).fill("Navruz zali");
   // «Создать витрину» — форма сохранена: переход на неё без вопроса
   await page.getByRole("button", { name: t.createVitrina }).click();

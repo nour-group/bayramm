@@ -193,6 +193,15 @@ function Photos({ listing, portfolio, t, owner, onChanged }: PhotosProps) {
                   {photo.moderation === "declined" ? t.photoDeclined : t.photoPending}
                 </span>
               ) : null}
+              {photo.moderation === "declined" ? (
+                // Причина модератора — прямо под снимком; что делать дальше — только владельцу
+                <p className="photo-decline">
+                  {photo.declineReason
+                    ? fill(t.photoDeclinedReason, { reason: photo.declineReason })
+                    : t.photoDeclinedNoReason}
+                  {owner ? <span className="photo-decline-next">{t.photoDeclinedNext}</span> : null}
+                </p>
+              ) : null}
               {owner ? (
                 <button
                   type="button"
@@ -464,6 +473,8 @@ interface VenueProps extends ScreenProps {
   /** Выбор витрины — в боковой панели (компьютер) */
   readonly inSidebar?: boolean;
   readonly navigate: Navigate;
+  /** Партнёр изменил витрину (фото, предложение): значки «требует внимания» в разделах — заново */
+  readonly onChanged?: () => void;
 }
 
 export function Venue({
@@ -477,12 +488,14 @@ export function Venue({
   role,
   inSidebar = false,
   navigate,
+  onChanged,
 }: VenueProps) {
   const [listing, reload, , refresh] = useLoad<VendorListing>(listingId, (id) => api.listing(id));
   const owner = role === "owner";
   // Тихо, чтобы список ошибок загрузки и фокус остались; не вышло — обычная загрузка с повтором
   const refreshListing = async () => {
     if (!(await refresh())) reload();
+    onChanged?.();
   };
 
   if (listings.length === 0 || !listingId) {
@@ -508,6 +521,7 @@ export function Venue({
         lang={lang}
         inSidebar={inSidebar}
         line={false}
+        mark="card"
       />
       <p className="promise">
         <Icon name="info" size={17} />
@@ -526,6 +540,7 @@ export function Venue({
           vendorCode={vendorCode}
           navigate={navigate}
           onChanged={refreshListing}
+          onProposal={onChanged}
         />
       ) : null}
     </section>
@@ -542,9 +557,21 @@ interface VenueCardProps {
   readonly vendorCode: string;
   readonly navigate: Navigate;
   readonly onChanged: () => Promise<void>;
+  /** Предложение изменений отправлено или отозвано */
+  readonly onProposal?: () => void;
 }
 
-function VenueCard({ listing, t, lang, owner, showName, vendorCode, navigate, onChanged }: VenueCardProps) {
+function VenueCard({
+  listing,
+  t,
+  lang,
+  owner,
+  showName,
+  vendorCode,
+  navigate,
+  onChanged,
+  onProposal,
+}: VenueCardProps) {
   const category = categoryConfig(listing.categoryCode);
   const fields = category?.listingFields ?? ["guest_capacity", "district"];
   // Кнопка чек-листа «Предложить изменения»: растёт — форма предложения открывается
@@ -575,7 +602,15 @@ function VenueCard({ listing, t, lang, owner, showName, vendorCode, navigate, on
       {/* Изменения — сразу под чек-листом: предложение на проверке, отказ с причиной и сама
         кнопка «Предложить» не прячутся под фото и сведениями (на телефоне — через два экрана).
         Ключ — витрина: при смене витрины форма и предложения — заново */}
-      <Proposal key={listing.id} listing={listing} t={t} lang={lang} owner={owner} openSignal={propose} />
+      <Proposal
+        key={listing.id}
+        listing={listing}
+        t={t}
+        lang={lang}
+        owner={owner}
+        openSignal={propose}
+        onChanged={onProposal}
+      />
 
       <div className="venue-grid">
         {/* Ключ — витрина: галочка и ошибки загрузки другой витрины не переносятся.

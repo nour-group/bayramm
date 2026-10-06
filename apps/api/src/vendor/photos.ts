@@ -43,6 +43,7 @@ export async function uploadPhoto(
       width: photo.width,
       height: photo.height,
       moderation: photo.moderation,
+      moderation_reason: null,
       is_cover: false,
     },
     media,

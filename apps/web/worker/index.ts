@@ -1,4 +1,4 @@
-import { createSiteWorker, httpsRedirect } from "@bayramm/edge";
+import { createSiteWorker, httpsRedirect, withSecurityHeaders } from "@bayramm/edge";
 import { mediaImageOrigins } from "@bayramm/media";
 import { matchRoute } from "../src/routes";
 import { taklifnomaRedirect } from "./legacy";
@@ -73,18 +73,25 @@ export default {
     if (insecure) return insecure;
     const url = new URL(request.url);
     const read = request.method === "GET" || request.method === "HEAD";
+    // robots.txt и карта сайта — с теми же заголовками безопасности (HSTS, nosniff), что у страниц
     if (read && url.pathname === "/robots.txt")
-      return new Response(robotsTxt(url, indexingAllowed(url, env.SEARCH_INDEXING)), {
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      });
+      return withSecurityHeaders(
+        new Response(robotsTxt(url, indexingAllowed(url, env.SEARCH_INDEXING)), {
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        }),
+        { dev },
+      );
     // Карта сайта — только когда поисковиков пускают (как robots.txt); иначе её нет
     if (read && url.pathname === "/sitemap.xml")
-      return indexingAllowed(url, env.SEARCH_INDEXING)
-        ? sitemapXml(env.API, url)
-        : new Response("Not found", {
-            status: 404,
-            headers: { "Content-Type": "text/plain; charset=utf-8" },
-          });
+      return withSecurityHeaders(
+        indexingAllowed(url, env.SEARCH_INDEXING)
+          ? await sitemapXml(env.API, url)
+          : new Response("Not found", {
+              status: 404,
+              headers: { "Content-Type": "text/plain; charset=utf-8" },
+            }),
+        { dev },
+      );
     if (read && isPagePath(url.pathname) && !taklifnomaRedirect(url)) return page(request, env, url);
     return site.fetch(request, env);
   },

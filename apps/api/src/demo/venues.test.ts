@@ -87,7 +87,8 @@ describe("демо-витрины: метка и диапазон id", () => {
     );
     expect(script).toContain(`demo_prefix="${DEMO_ID_PREFIX}"`);
     expect(script).toContain('"$slug" == demo-*');
-    expect(script).toContain('startswith("+99800")');
+    // Телефоны витрин — в базе (в карточке их нет: их открывает «Связаться»)
+    expect(script).toContain("c.public_phone like '+99800%'");
     for (const venue of DEMO_VENUES) expect(venue.phone.startsWith("+99800")).toBe(true);
   });
 

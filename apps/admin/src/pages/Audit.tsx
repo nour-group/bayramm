@@ -1,6 +1,7 @@
 /* Журнал: действия в панели и просмотры телефонов — только чтение. Записи пишет база;
    в подробностях — ключи и имена полей словами, где они известны (значений ПДн там нет), id
-   (UUID) не показываются: объект — ссылкой в своей колонке. Действие в фильтре — группой
+   (UUID) не показываются: объект — ссылкой в своей колонке, подписанной словами (название
+   витрины, «№1051», код клиента, имя), а нет подписи — коротким id. Действие в фильтре — группой
    («Витрины», «Заявки»): на сервер уходит начало кода (listing.).
    Фильтры — в адресе страницы (?type=&object=…): ссылку можно переслать. */
 
@@ -313,8 +314,10 @@ function objectView(type: string, id: string): View | null {
   if (!UUID.test(id)) return null;
   switch (type) {
     case "listing":
+    case "listing_contact":
       return { name: "listing", id };
     case "vendor":
+    case "vendor_contact":
       return { name: "vendor", id };
     case "request":
     case "request_contact":
@@ -329,18 +332,22 @@ function objectView(type: string, id: string): View | null {
 function ObjectRef({
   type,
   id,
+  label,
   labels,
   inline = false,
 }: {
   type: string;
   id: string;
+  /** Объект словами от сервера; null — подписи нет (удалён, вид без названия): показываем короткий id */
+  label: string | null;
   labels: Record<string, string>;
   /** В строку (карточка на телефоне), а не второй строкой ячейки */
   inline?: boolean;
 }) {
   const view = objectView(type, id);
   const short = id.length > 13 ? `${id.slice(0, 8)}…` : id;
-  const ref = view ? <Link to={view}>{short}</Link> : short;
+  const shown = label ?? short;
+  const ref = view ? <Link to={view}>{shown}</Link> : shown;
   if (inline)
     return (
       <>
@@ -377,9 +384,11 @@ export function detailText(detail: Readonly<Record<string, unknown>>): string {
     .join(" · ");
 }
 
+/** Кто: сотрудник — по имени, партнёр и клиент — «имя · вендор», «C-… · клиент»; без подписи — вид и короткий id */
 function actorText(entry: { actorKind: string; actor: { id: string; name: string | null } | null }) {
-  if (entry.actor?.name) return entry.actor.name;
   const kind = t.historyBy[entry.actorKind] ?? entry.actorKind;
+  if (entry.actor?.name)
+    return entry.actorKind === "staff" ? entry.actor.name : `${entry.actor.name} · ${kind}`;
   return entry.actor ? `${kind} ${entry.actor.id.slice(0, 8)}…` : kind;
 }
 
@@ -437,7 +446,13 @@ function ActionList({ path, offset, onPage, phone }: ListProps) {
                   <dl className="rcard-facts">
                     <dt>{t.colObject}</dt>
                     <dd>
-                      <ObjectRef type={entry.objectType} id={entry.objectId} labels={t.auditTypes} inline />
+                      <ObjectRef
+                        type={entry.objectType}
+                        id={entry.objectId}
+                        label={entry.objectLabel}
+                        labels={t.auditTypes}
+                        inline
+                      />
                     </dd>
                     <dt>{t.colDetail}</dt>
                     <dd className="detail-cell">{detailText(entry.detail) || t.none}</dd>
@@ -467,7 +482,12 @@ function ActionList({ path, offset, onPage, phone }: ListProps) {
                       <td>{actorText(entry)}</td>
                       <td>{t.auditActions[entry.action] ?? entry.action}</td>
                       <td>
-                        <ObjectRef type={entry.objectType} id={entry.objectId} labels={t.auditTypes} />
+                        <ObjectRef
+                          type={entry.objectType}
+                          id={entry.objectId}
+                          label={entry.objectLabel}
+                          labels={t.auditTypes}
+                        />
                       </td>
                       <td className="detail-cell">{detailText(entry.detail) || t.none}</td>
                     </tr>
@@ -505,6 +525,7 @@ function PiiList({ path, offset, onPage, phone }: ListProps) {
                       <ObjectRef
                         type={entry.subjectKind}
                         id={entry.subjectId}
+                        label={entry.subjectLabel}
                         labels={t.piiSubjects}
                         inline
                       />
@@ -536,7 +557,12 @@ function PiiList({ path, offset, onPage, phone }: ListProps) {
                       <td>{formatMoment(entry.at)}</td>
                       <td>{actorText(entry)}</td>
                       <td>
-                        <ObjectRef type={entry.subjectKind} id={entry.subjectId} labels={t.piiSubjects} />
+                        <ObjectRef
+                          type={entry.subjectKind}
+                          id={entry.subjectId}
+                          label={entry.subjectLabel}
+                          labels={t.piiSubjects}
+                        />
                       </td>
                       <td>{t.piiPurposes[entry.purpose] ?? entry.purpose}</td>
                       <td className="detail-cell">{entry.reason ?? t.none}</td>

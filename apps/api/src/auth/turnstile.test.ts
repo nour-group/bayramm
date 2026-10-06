@@ -204,13 +204,12 @@ describe("POST /auth/phone/send с проверкой «не робот»", () =
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("Mini App: подписанная initData проходит без токена — дальше база", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+  it("Mini App: подписанная initData без сессии аккаунта — 401: её получит любой бот-аккаунт", async () => {
     const fetch = vi.spyOn(globalThis, "fetch");
     const initData = await initDataFor({ id: 100000001, first_name: "Test" }, { botToken: BOT_TOKEN });
     const { res } = await send({ phone: "+998001234567", initData });
-    // Базы в юнит-тестах нет: запрос дошёл до выдачи кода (500), а не остановлен проверкой
-    expect(res.status).toBe(500);
+    // Ни Turnstile, ни кода: initData засчитывается только с сессией того же пользователя Telegram
+    expect(res.status).toBe(401);
     expect(fetch).not.toHaveBeenCalled();
   });
 

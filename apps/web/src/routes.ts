@@ -42,6 +42,8 @@ export type Tab = (typeof TABS)[number];
 const SLUG = "([a-z0-9-]{1,64})";
 const VENUE_RE = new RegExp(`^/venue/${SLUG}$`);
 const REQUEST_RE = new RegExp(`^/venue/${SLUG}/request$`);
+// Возврат виджета Telegram с ключом вкладки (hub.ts, widgetReturnPath)
+const AUTH_TELEGRAM_RE = /^\/auth\/telegram\/[A-Za-z0-9_-]{22,64}$/;
 
 const STATIC: Readonly<Record<string, Match>> = {
   [ROUTES.home]: { name: "home" },
@@ -63,6 +65,7 @@ export function matchRoute(pathname: string): Match | null {
   if (venue) return { name: "venue", slug: venue };
   const request = REQUEST_RE.exec(path)?.[1];
   if (request) return { name: "request", slug: request };
+  if (AUTH_TELEGRAM_RE.test(path)) return { name: "authTelegram" };
   return null;
 }
 
@@ -93,13 +96,17 @@ export function screenOf(match: Match | null, inTelegram: boolean): Match | null
  * оболочка и воркер, описание категорий с подписями ей не нужно. Сверяет categories.test.ts
  */
 export const CATEGORY_CODES = [
+  "zags",
   "hall",
   "car",
-  "studio",
-  "flowers",
   "photo",
-  "cake",
+  "studio",
+  "restaurant",
+  "flowers",
+  "attire",
   "gifts",
+  "food",
+  "cake",
   "decor",
 ] as const;
 export type ClientCategoryCode = (typeof CATEGORY_CODES)[number];

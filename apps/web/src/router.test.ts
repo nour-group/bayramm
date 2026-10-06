@@ -190,7 +190,7 @@ describe("каталог категории в адресе", () => {
   it("неизвестная или выключенная категория — весь каталог; чужие фильтры отброшены, свои — проверены", () => {
     const read = (search: string) => readFilters(new URLSearchParams(search), "2026-10-01");
     expect(read("?category=spaceships").category).toBe("all");
-    expect(read("?category=food").category).toBe("all");
+    expect(read("?category=music").category).toBe("all");
     expect(read("").category).toBe("all");
     expect(read("?sort=capacity_desc&a.stage=1")).toMatchObject({ sort: null, attrs: {} });
     expect(read("?category=photo&sort=capacity_desc").sort).toBeNull();

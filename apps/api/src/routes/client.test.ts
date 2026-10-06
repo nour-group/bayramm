@@ -42,12 +42,15 @@ describe("каталог: отказ до базы", () => {
       [{ action: "call", signedIn: false }, ["action"]],
       [{ action: "open", signedIn: "yes" }, ["signedIn"]],
       ["not json", ["action", "signedIn"]],
-      [{ action: "open", signedIn: true, pad: "x".repeat(300) }, ["action", "signedIn"]],
     ] as const) {
       const { res } = await post("hall-one", body);
       expect(res.status, JSON.stringify(body)).toBe(400);
       expect(await error(res)).toMatchObject({ code: "invalid_request", details });
     }
+    // Длинное тело не читается вовсе — 413 до разбора
+    const big = await post("hall-one", { action: "open", signedIn: true, pad: "x".repeat(300) });
+    expect(big.res.status).toBe(413);
+    expect(await error(big.res)).toMatchObject({ code: "payload_too_large" });
   });
 
   it("тексты согласий: неизвестная локаль — 400", async () => {

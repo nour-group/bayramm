@@ -12,6 +12,8 @@
 //                   — по актору (клиенту)   RATE_LIMIT_REQUESTS_ACTOR   5 в минуту
 //   POST /catalog/listings/*/contact — по IP RATE_LIMIT_CONTACTS_IP    30 в минуту: контакты
 //                                            витрин не выкачать скриптом
+//   POST /auth/phone/send из Mini App — по аккаунту RATE_LIMIT_OTP_ACCOUNT 3 в минуту
+//                                            (ставит routes/auth.ts: initData вместо Turnstile)
 //
 // Лимиты по IP ставит mountRateLimits до маршрутов — до базы и проверки сессии.
 // Ключ — HMAC(ID_HASH_KEY, IP) (auth/ip.ts): адрес не уходит даже в счётчик.
@@ -37,7 +39,8 @@ export type RateLimitBinding =
   | "RATE_LIMIT_AUTH_IP"
   | "RATE_LIMIT_REQUESTS_IP"
   | "RATE_LIMIT_REQUESTS_ACTOR"
-  | "RATE_LIMIT_CONTACTS_IP";
+  | "RATE_LIMIT_CONTACTS_IP"
+  | "RATE_LIMIT_OTP_ACCOUNT";
 
 export const rateLimited = () => new ApiError(429, "rate_limited", "Too many requests");
 
@@ -49,7 +52,7 @@ function tooManyRequests(c: Context<AppEnv>): Response {
 }
 
 /** true — пропустить; false — лимит исчерпан. Сбой привязки — пропустить. */
-async function allowed(c: Context<AppEnv>, binding: RateLimitBinding, key: string): Promise<boolean> {
+export async function allowed(c: Context<AppEnv>, binding: RateLimitBinding, key: string): Promise<boolean> {
   const limiter = c.env[binding] as RateLimit | undefined;
   if (limiter === undefined) {
     console.error("ratelimit: нет привязки", binding);
@@ -63,10 +66,14 @@ async function allowed(c: Context<AppEnv>, binding: RateLimitBinding, key: strin
   }
 }
 
-/** Лимит по IP. Без CF-Connecting-IP (локально, в тестах) не применяется. */
+/**
+ * Лимит по IP. Без CF-Connecting-IP (локально, в тестах) не применяется; на staging и в production
+ * заголовок ставит Cloudflare — его нет, значит лимиты по IP молча выключены: пишем в лог
+ */
 export function limitByIp(binding: RateLimitBinding): MiddlewareHandler<AppEnv> {
   return createMiddleware<AppEnv>(async (c, next) => {
     const ip = clientIp(c.req.raw.headers);
+    if (ip === null && c.env.APP_ENV !== "local") console.error("ratelimit: нет CF-Connecting-IP", binding);
     if (ip !== null && !(await allowed(c, binding, `ip:${await ipKey(c.env.ID_HASH_KEY, ip)}`))) {
       return tooManyRequests(c);
     }

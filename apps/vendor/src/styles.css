@@ -561,6 +561,28 @@ body {
   gap: var(--gap-5);
 }
 
+/* Первым ответил менеджер Bayramm: факт строкой в карточке заявки */
+.rq-staff,
+.staff-reply {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--gap-7);
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.rq-staff .icon,
+.staff-reply .icon {
+  flex: none;
+  margin-top: 2px;
+}
+
+.staff-reply {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-14);
+}
+
 /* Счётчик 12 часов */
 .sla {
   display: flex;
@@ -771,6 +793,67 @@ body {
 
 .history-meta {
   color: var(--muted-lt);
+}
+
+/* История предложений: свёрнута, кнопка — как «ghost», стрелка поворачивается при открытии */
+.proposal-history {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.disclosure {
+  align-self: flex-start;
+  gap: var(--gap-7);
+}
+
+.disclosure .icon {
+  transition: transform var(--t1) var(--ease-soft);
+}
+
+.disclosure-open .icon {
+  transform: rotate(90deg);
+}
+
+.revlog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.revlog li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+  font-size: var(--fs-14);
+  overflow-wrap: anywhere;
+}
+
+.revlog-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5) var(--gap-9);
+}
+
+.revlog-head time {
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.revlog-line {
+  color: var(--ink);
+}
+
+.revlog-team {
+  color: var(--muted);
 }
 
 /* Календарь */
@@ -1011,6 +1094,21 @@ body {
 .photo-delete {
   width: 100%;
   border-color: var(--rule);
+}
+
+/* Отклонённое фото: причина модератора и что делать — под снимком, ink и muted на белом */
+.photo-decline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-13-5);
+  overflow-wrap: anywhere;
+}
+
+.photo-decline-next {
+  color: var(--muted);
 }
 
 /* Лица на фото: предупреждение на виду всегда, акцент — полосой слева, текст — ink на lilac */
@@ -1566,6 +1664,24 @@ body {
 .vitrina-cat {
   font-size: var(--fs-12-5);
   font-weight: 600;
+}
+
+/* «Требует внимания» у витрины в выборе: цвет от кнопки (на выбранной — свои пары), слова и иконка;
+   строка переносится — в узкой пилюле её не обрезать */
+.vitrina-attn {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--gap-5);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.vitrina-attn .icon {
+  flex: none;
+  margin-top: 2px;
 }
 
 /* Какая витрина на экране: витрина одна или выбор — в боковой панели */

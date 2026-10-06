@@ -1,17 +1,10 @@
 import { isListingPhotoKey, mediaUrl } from "@bayramm/media";
 import { type Dict, dictionaries, LANGS, type Lang } from "@bayramm/shared";
 import type { ListingDetail } from "@bayramm/shared/api";
-import { categoryName } from "../src/category-names";
+import { categoryDesc, categoryName } from "../src/category-names";
 import { formatPriceFrom } from "../src/format";
 import { mediaEnvFor } from "../src/media";
-import {
-  canonicalHref,
-  DEFAULT_CATEGORY,
-  isCategoryParam,
-  isIndexable,
-  type Match,
-  matchRoute,
-} from "../src/routes";
+import { canonicalHref, isCategoryParam, isIndexable, type Match, matchRoute } from "../src/routes";
 
 /* Разметка страницы для поисковиков и превью ссылок (Telegram, соцсети): заголовок,
    описание, canonical, языковые версии, Open Graph — на сервере, в HTML первой загрузки.
@@ -112,9 +105,11 @@ function texts(match: Match | null, t: Dict, lang: Lang, venue: VenueLookup, cat
       if (!isCategoryParam(category))
         return { title: site(t.catAllTitle), description: t.metaCatalogAllDesc };
       const name = categoryName(category, t, lang) ?? category;
-      return category === DEFAULT_CATEGORY
-        ? { title: site(t.catTitle(name)), description: t.metaCatalogDesc }
-        : { title: site(t.catTitle(name)), description: t.metaCatDesc(name) };
+      // Что есть в разделе — та же строка, что на плитке лендинга и в шапке каталога
+      return {
+        title: site(t.catTitle(name)),
+        description: t.metaCatDesc(name, categoryDesc(category, t) ?? name),
+      };
     }
     case "docs":
       return { title: site(t.meDocs), description: t.metaDocsDesc };

@@ -74,18 +74,21 @@ if categories=$(get "/catalog/categories"); then
       [ -z "$cursor" ] && break
     done
   done
-  for slug in "${slugs[@]}"; do
-    if ! detail=$(get "/catalog/listings/$slug"); then
-      fail "GET $base/catalog/listings/$slug не ответил"
-      continue
-    fi
-    if jq -e '(.phone // "") | gsub("[^0-9+]"; "") | startswith("+99800")' <<<"$detail" >/dev/null; then
-      fail "у витрины $slug телефон с кодом оператора 00 — номер демо-витрины, а не настоящий"
-    fi
-  done
+  # Телефоны витрин в карточке больше не отдаются (их открывает «Связаться» и считает событием) —
+  # демо-номера +998 00 ищет проверка базы ниже
   echo "витрин в каталоге: ${#slugs[@]}"
 else
   fail "GET $base/catalog/categories не ответил"
+fi
+
+# ── вход по телефону ────────────────────────────────────────────────────────
+# Код на телефон без проверки «не робот» — открытая дверь для рассылки кодов за наш счёт
+if methods=$(get "/auth/methods"); then
+  if jq -e '.phone == true and (.turnstileSiteKey // null) == null' <<<"$methods" >/dev/null; then
+    fail "вход по телефону включён без Turnstile: задайте TURNSTILE_SECRET_KEY и TURNSTILE_SITE_KEY API"
+  fi
+else
+  fail "GET $base/auth/methods не ответил"
 fi
 
 # ── бот окружения ───────────────────────────────────────────────────────────
@@ -108,11 +111,14 @@ if [ -n "${SUPABASE_DB_URL:-}" ]; then
         where (t.body like 'ЧЕРНОВИК%' or t.body like 'QORALAMA%')
           and t.published_at <= now() and (t.retired_at is null or t.retired_at > now())),
       (select count(*) from app.vendor_accounts where id::text like '$demo_prefix%'),
-      (select count(*) from app.listings where id::text like '$demo_prefix%')"); then
-    read -r drafts vendors listings <<<"$row"
+      (select count(*) from app.listings where id::text like '$demo_prefix%'),
+      (select count(*) from pii.listing_contacts c join app.listings l on l.id = c.listing_id
+        where l.status = 'active' and c.public_phone like '+99800%')"); then
+    read -r drafts vendors listings demo_phones <<<"$row"
     [ "$drafts" != 0 ] && fail "в базе действующих черновиков согласий: $drafts (вывести из оборота — supabase/demo/*.draft.sql)"
     [ "$vendors" != 0 ] && fail "в базе демо-вендоров: $vendors (app.demo_purge())"
     [ "$listings" != 0 ] && fail "в базе демо-витрин: $listings (app.demo_purge())"
+    [ "$demo_phones" != 0 ] && fail "у опубликованных витрин телефонов с кодом оператора 00 (демо): $demo_phones"
   else
     fail "запрос к базе не прошёл"
   fi

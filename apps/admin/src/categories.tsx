@@ -15,7 +15,9 @@ import {
 } from "@bayramm/shared/categories";
 
 /** Категории, в которых можно завести витрину, — в порядке показа */
-export const ENABLED_CATEGORIES: readonly CategoryConfig[] = CATEGORIES.filter((c) => c.enabled);
+export const ENABLED_CATEGORIES: readonly CategoryConfig[] = CATEGORIES.filter((c) => c.enabled).sort(
+  (a, b) => a.sort - b.sort,
+);
 
 /** Название категории по-русски; неизвестный код — сам код */
 export function categoryName(code: string): string {

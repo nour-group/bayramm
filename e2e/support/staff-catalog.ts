@@ -10,6 +10,7 @@ import type {
   PublishBlocker,
   ServiceQueue,
   ServiceQueueItem,
+  StaffPhoto,
   StaffRequestDetail,
   StaffRole,
 } from "@bayramm/shared/api/staff";
@@ -46,6 +47,13 @@ export const CAR_REQUEST_ID = "00000000-0000-4000-8300-000000000c01";
 export const BRIDE_CAR_ID = "00000000-0000-4000-8b00-000000000001";
 export const LIMOUSINE_ID = "00000000-0000-4000-8b00-000000000002";
 const CHAMPAGNE_ID = "00000000-0000-4000-8c00-000000000001";
+/** Фото витрины «Kadr studio»: два ждут решения, третье отклонено с причиной */
+export const PHOTO_PENDING_ID = "00000000-0000-4000-8d00-000000000001";
+export const PHOTO_PENDING_2_ID = "00000000-0000-4000-8d00-000000000002";
+export const PHOTO_DECLINED_ID = "00000000-0000-4000-8d00-000000000003";
+/** Причина отказа длинная и в одно слово подряд: в двух колонках на 320px текст переносится, а не растягивает страницу */
+export const PHOTO_DECLINE_REASON =
+  "Размыто — нужен кадр при дневном свете, без людей на заднем плане и без https://example.com/очень-длинная-ссылка-на-исходник";
 /** День с договорённостью на вечер у кортежа (одна из двух машин занята) */
 export const BOOKED_DAY = "2026-10-10";
 
@@ -175,6 +183,28 @@ function service(
   };
 }
 
+/** Фото витрины для подмены API: файл не грузится (картинок в тесте нет), решение — по полям */
+function stubPhoto(
+  listingId: string,
+  id: string,
+  sort: number,
+  moderation: StaffPhoto["moderation"],
+  declineReason: string | null = null,
+): StaffPhoto {
+  return {
+    id,
+    key: `listings/${listingId}/${id}.webp`,
+    width: 1600,
+    height: 1200,
+    bytes: 120_000,
+    sort,
+    isCover: sort === 0,
+    moderation,
+    declineReason,
+    createdAt: iso,
+  };
+}
+
 /** Витрины вендора в категориях, кроме зала: кортеж (опубликован), фото и видео, торты */
 export function seededListings(): ListingDetail[] {
   const car = emptyListing(CAR_LISTING_ID, "car", "Oq kortej", "oq-kortej");
@@ -219,7 +249,14 @@ export function seededListings(): ListingDetail[] {
         }),
       ],
     }),
-    photo,
+    refresh({
+      ...photo,
+      photos: [
+        stubPhoto(PHOTO_LISTING_ID, PHOTO_PENDING_ID, 0, "pending"),
+        stubPhoto(PHOTO_LISTING_ID, PHOTO_PENDING_2_ID, 1, "pending"),
+        stubPhoto(PHOTO_LISTING_ID, PHOTO_DECLINED_ID, 2, "declined", PHOTO_DECLINE_REASON),
+      ],
+    }),
     refresh({
       ...cake,
       attributes: { cake_kinds: ["wedding"], lead_days: 3 },

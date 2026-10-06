@@ -25,13 +25,24 @@ export function vitrina(slug: string) {
 }
 
 /** По одной витрине каждой включённой категории — первая в её демо-данных */
-export const CATEGORY_VITRINAS = ["hall", "car", "studio", "flowers", "photo", "cake", "gifts", "decor"].map(
-  (code) => {
-    const listing = ALL_LISTINGS.find((l) => l.categoryCode === code);
-    if (!listing) throw new Error(`нет демо-витрины категории ${code}`);
-    return listing;
-  },
-);
+export const CATEGORY_VITRINAS = [
+  "hall",
+  "car",
+  "studio",
+  "flowers",
+  "photo",
+  "cake",
+  "gifts",
+  "decor",
+  "zags",
+  "restaurant",
+  "attire",
+  "food",
+].map((code) => {
+  const listing = ALL_LISTINGS.find((l) => l.categoryCode === code);
+  if (!listing) throw new Error(`нет демо-витрины категории ${code}`);
+  return listing;
+});
 
 export const VENUE =
   LISTINGS[0] ??

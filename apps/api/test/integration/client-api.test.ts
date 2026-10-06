@@ -184,19 +184,25 @@ describe("GET /dictionaries", () => {
   it("включённые категории, 12 районов и 5 поводов на двух языках; ETag и кэш", async () => {
     const res = await call("/dictionaries");
     const body = await json<Dictionaries>(res, 200);
+    // Путь пары: ЗАГС, тойхона, кортеж, фото и видео… — порядок показа (sort)
     expect(body.categories.map((c) => c.code)).toEqual([
+      "zags",
       "hall",
       "car",
-      "studio",
-      "flowers",
       "photo",
-      "cake",
+      "studio",
+      "restaurant",
+      "flowers",
+      "attire",
       "gifts",
+      "food",
+      "cake",
       "decor",
     ]);
-    expect(body.categories[0]).toEqual({
+    expect(body.categories[0]).toEqual({ code: "zags", name: { ru: "ЗАГС", uz: "FHDYo" } });
+    expect(body.categories[1]).toEqual({
       code: "hall",
-      name: { ru: "Площадка / Тойхона", uz: "Maydon / Toʻyxona" },
+      name: { ru: "Тойхона", uz: "Toʻyxona" },
     });
     expect(body.districts).toHaveLength(12);
     expect(body.districts[0]).toEqual({ code: "yunusobod", name: { ru: "Юнусабад", uz: "Yunusobod" } });

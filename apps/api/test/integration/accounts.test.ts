@@ -21,6 +21,7 @@ import {
   deleteAccounts,
   ID_HASH_KEY,
   inviteStaff,
+  loginToken,
   makeEnv,
   newStaffUsername,
   newTelegramUser,
@@ -556,7 +557,8 @@ describe("код из сообщения: проверка «не робот» (
     passThroughOnException: () => {},
     props: {},
   } as unknown as ExecutionContext;
-  const send = (body: Record<string, unknown>) => app.request("/auth/phone/send", json(body), env(), ctx);
+  const send = (body: Record<string, unknown>, token?: string) =>
+    app.request("/auth/phone/send", token === undefined ? json(body) : withToken(token, body), env(), ctx);
   const issued = async (phone: string) =>
     (await admin.query("select 1 from app.otp_codes where phone_hash = $1", [phoneHash(phone)])).rowCount;
   // siteverify отвечает за сайт окружения (WEB_APP_URL — localhost) и действие phone_code
@@ -592,12 +594,20 @@ describe("код из сообщения: проверка «не робот» (
     expect(await issued(phone)).toBe(0);
   });
 
-  it("Mini App: подписанная initData вместо токена — код отправлен, siteverify не зовётся", async () => {
+  it("Mini App: initData вместо токена — только с сессией того же Telegram; код отправлен, siteverify не зовётся", async () => {
     vi.spyOn(console, "info").mockImplementation(() => {});
+    const user = newTelegramUser();
+    const token = await loginToken(user);
+    const stranger = await loginToken(newTelegramUser());
     const verify = vi.spyOn(globalThis, "fetch");
     const phone = randomPhone();
-    const initData = await initDataFor(newTelegramUser(), { botToken: BOT_TOKEN });
-    expect((await send({ phone, initData })).status).toBe(200);
+    const initData = await initDataFor(user, { botToken: BOT_TOKEN });
+    // initData получит любой аккаунт Telegram: без своей сессии она проверку не заменяет
+    expect(await errorOf(send({ phone, initData }))).toEqual({ status: 401, code: "unauthorized" });
+    expect(await errorOf(send({ phone, initData }, stranger))).toEqual({ status: 401, code: "unauthorized" });
+    expect(await issued(phone)).toBe(0);
+
+    expect((await send({ phone, initData }, token)).status).toBe(200);
     expect(await issued(phone)).toBe(1);
     expect(verify).not.toHaveBeenCalled();
   });

@@ -179,7 +179,8 @@ test.describe("тексты категорий", () => {
     test(`${lang}: каталог, витрина и форма каждой категории — без «брони», рейтингов и отзывов`, async ({
       page,
     }) => {
-      test.slow();
+      // Двенадцать разделов × три экрана: тройного времени (test.slow) уже мало
+      test.setTimeout(180_000);
       await prepare(page, { lang });
       // Тексты из описания категорий (поля, услуги, опции, варианты) — тоже по правилам продукта
       for (const listing of CATEGORY_VITRINAS.slice(1)) {
@@ -310,11 +311,16 @@ test.describe("занятые на дату", () => {
   /** Долистать выдачу до конца: подгрузка по прокрутке или «Показать ещё» */
   async function loadAll(page: Page, cards: Locator, total: number) {
     await expect(async () => {
-      const more = page.getByRole("button", { name: ru.loadMore });
-      if (await more.isVisible()) await more.click();
-      else await page.locator(".sentinel").scrollIntoViewIfNeeded();
+      // Сначала — сколько уже есть: догрузили всё — метки подгрузки больше нет, ждать её нельзя
+      if ((await cards.count()) < total) {
+        const more = page.getByRole("button", { name: ru.loadMore });
+        const sentinel = page.locator(".sentinel");
+        // Кнопка может исчезнуть, пока жмём (подгрузка по прокрутке успела раньше): попытку не ждать долго
+        if (await more.isVisible()) await more.click({ timeout: 2_000 });
+        else if ((await sentinel.count()) > 0) await sentinel.scrollIntoViewIfNeeded({ timeout: 2_000 });
+      }
       expect(await cards.count()).toBe(total);
-    }).toPass({ timeout: 15_000 });
+    }).toPass({ timeout: 20_000 });
   }
 
   for (const [sort, order] of Object.entries(ORDERS)) {

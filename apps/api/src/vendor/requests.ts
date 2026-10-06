@@ -173,6 +173,7 @@ function requestsOf(trx: Tx, actor: VendorActor) {
       "r.created_at",
       "r.sla_due_at",
       "r.first_response_at",
+      "r.first_response_by",
       sql<boolean>`r.sla_breached_at is not null or coalesce(r.first_response_at, now()) > r.sla_due_at`.as(
         "sla_breached",
       ),
@@ -207,6 +208,8 @@ function toItem(row: ItemRow): VendorRequestItem {
       firstResponseAt: row.first_response_at?.toISOString() ?? null,
       breached: row.sla_breached === true,
     },
+    // Ответ — всегда роль (партнёр, менеджер, система), аккаунта в заявке нет
+    firstResponseBy: row.first_response_by === null ? null : roleActorKind(row.first_response_by),
     contactName: row.contact_name,
   };
 }

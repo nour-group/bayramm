@@ -102,6 +102,8 @@ const ru = {
   loadMore: "Показать ещё",
   // счётчик новых у раздела «Заявки» — для диктора
   newCount: "новых: {n}",
+  // значок у разделов «Витрина» и «Услуги» (и у витрины в выборе): отказы команды, которые ждут партнёра
+  attentionCount: "требует внимания: {n}",
   // компьютер: список и карточка рядом, заявка ещё не выбрана
   pickRequest: "Выберите заявку",
   pickRequestText: "Она откроется здесь: телефон клиента, детали и что ответить.",
@@ -176,6 +178,8 @@ const ru = {
   by_system: "система",
   // в истории заявка «Ждёт ответа» (st_viewed) читалась бы как действие того, кто её открыл
   histViewed: "Просмотрена",
+  // первым на заявку ответил менеджер Bayramm: «связались» отметил он, а не партнёр
+  firstByStaff: "Первым ответил менеджер Bayramm",
   actionFailed: "Не удалось сохранить. Попробуйте ещё раз.",
   staleStatus: "Статус заявки уже изменился — показываем актуальный.",
   err_network: "Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.",
@@ -286,6 +290,9 @@ const ru = {
   photos: "Фото",
   photoPending: "на проверке",
   photoDeclined: "отклонено",
+  photoDeclinedReason: "Отклонено: {reason}",
+  photoDeclinedNoReason: "Отклонено командой Bayramm.",
+  photoDeclinedNext: "Удалите это фото и загрузите новое.",
   noPhotos: "Фото пока нет",
   photosLimits:
     "Для публикации — не меньше {min} фото, всего до {max}. Порядок и обложку выбирает команда Bayramm.",
@@ -379,6 +386,12 @@ const ru = {
   proposalNoChanges: "Вы ничего не изменили.",
   proposalInvalid: "Проверьте выделенные поля.",
   proposalPendingExists: "Предложение уже на проверке: дождитесь решения или отзовите его.",
+  // история решений по предложениям: свёрнута под основным блоком
+  proposalHistory: "История предложений",
+  revApproved: "Одобрено",
+  revDeclined: "Отклонено",
+  revFields: "Что менялось: {fields}",
+  revTeam: "Предложила команда Bayramm",
   nameLabel: "Название",
   priceUnitLabel: "Цена указана",
   descriptionRuLabel: "Описание на русском",
@@ -644,6 +657,7 @@ const uz: VendorDict = {
   emptyClosedText: "Bu yerda kelishuvlar, rad etilgan va mijoz qaytarib olgan soʻrovlar boʻladi.",
   loadMore: "Yana koʻrsatish",
   newCount: "yangi: {n}",
+  attentionCount: "eʼtibor talab qiladi: {n}",
   pickRequest: "Soʻrovni tanlang",
   pickRequestText: "U shu yerda ochiladi: mijoz telefoni, tafsilotlar va nima javob berish.",
   notLiveDraft: "«{name}» hali saytda yoʻq — u boʻyicha soʻrovlar kelmaydi.",
@@ -714,6 +728,7 @@ const uz: VendorDict = {
   by_staff: "menejer",
   by_system: "tizim",
   histViewed: "Koʻrildi",
+  firstByStaff: "Birinchi boʻlib Bayramm menejeri javob berdi",
   actionFailed: "Saqlab boʻlmadi. Qayta urinib koʻring.",
   staleStatus: "Soʻrov holati allaqachon oʻzgargan — joriy holatini koʻrsatyapmiz.",
   err_network: "Server bilan aloqa yoʻq. Internetni tekshiring va qayta urinib koʻring.",
@@ -823,6 +838,9 @@ const uz: VendorDict = {
   photos: "Foto",
   photoPending: "tekshiruvda",
   photoDeclined: "rad etilgan",
+  photoDeclinedReason: "Rad etildi: {reason}",
+  photoDeclinedNoReason: "Bayramm jamoasi rad etdi.",
+  photoDeclinedNext: "Bu fotoni oʻchirib, yangisini yuklang.",
   noPhotos: "Hozircha foto yoʻq",
   photosLimits:
     "Eʼlon qilish uchun kamida {min} ta foto, jami {max} tagacha. Tartib va muqovani Bayramm jamoasi tanlaydi.",
@@ -915,6 +933,11 @@ const uz: VendorDict = {
   proposalNoChanges: "Siz hech narsani oʻzgartirmadingiz.",
   proposalInvalid: "Belgilangan maydonlarni tekshiring.",
   proposalPendingExists: "Taklif allaqachon tekshiruvda: qarorni kuting yoki uni qaytarib oling.",
+  proposalHistory: "Takliflar tarixi",
+  revApproved: "Tasdiqlandi",
+  revDeclined: "Rad etildi",
+  revFields: "Nimalar oʻzgargan: {fields}",
+  revTeam: "Bayramm jamoasi taklif qilgan",
   nameLabel: "Nomi",
   priceUnitLabel: "Narx hisobi",
   descriptionRuLabel: "Ruscha tavsif",

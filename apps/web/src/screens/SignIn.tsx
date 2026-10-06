@@ -21,6 +21,7 @@ import {
   saveReturn,
   startTelegramLink,
   takeReturn,
+  takeWidgetReturn,
 } from "../hub";
 import { Icon } from "../icons";
 import { useNav } from "../router";
@@ -261,14 +262,16 @@ export function TelegramCallback() {
     if (done.current) return;
     done.current = true;
     const fields = readWidgetFields(window.location.search);
+    // Возврат — по ключу этой вкладки: подсунутую ссылку чужого входа не принимаем
+    const ours = takeWidgetReturn(window.location.pathname);
     // Подписанные данные — не в истории вкладки
     window.history.replaceState(window.history.state, "", AUTH_PATH);
-    if (fields === null) {
+    const linking = isTelegramLink();
+    clearTelegramLink();
+    if (fields === null || !ours) {
       setError(t.authBadLink);
       return;
     }
-    const linking = isTelegramLink();
-    clearTelegramLink();
     const run = linking
       ? api.linkTelegram({ widget: fields }).then((next) => {
           replaceMe(next);

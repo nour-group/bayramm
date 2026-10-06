@@ -1,6 +1,7 @@
 // Журнал действий (app.audit_log) и журнал доступа к ПДн (app.pii_access_log) —
 // только чтение. Оба пишет база: триггеры и функции, API строк не добавляет.
-// В журнале действий — коды, id и имена полей, как записано; значений ПДн там нет.
+// В журнале действий — коды, id и имена полей, как записано; значений ПДн там нет. К id
+// добавлены подписи (labels.ts): объект и актор словами, чей телефон читали — без номеров.
 //
 //   GET /staff/audit?actor=&actorKind=&type=&object=&action=&from=&to=&limit=&offset=
 //   GET /staff/audit/pii?actor=&actorKind=&type=&object=&action=&from=&to=&limit=&offset=
@@ -24,7 +25,8 @@ import type { AppEnv } from "../env";
 import { addDays, isIsoDate } from "../vendor/dates";
 import { requirePermission } from "./access";
 import { invalidInput, isUuid, paging } from "./input";
-import { iso, staffName } from "./shared";
+import { type Labels, loadLabels } from "./labels";
+import { iso } from "./shared";
 
 export const audit = new Hono<AppEnv>();
 
@@ -101,8 +103,13 @@ export function parseFilters(query: (key: string) => string | undefined): AuditF
 // День по Ташкенту → момент его начала
 const tashkentStart = (day: string) => sql<Date>`(${day}::date::timestamp at time zone 'Asia/Tashkent')`;
 
-/** Имя сотрудника-актора (строка журнала — под псевдонимом a); для остальных — null */
-const actorName = sql<string | null>`case when a.actor_kind = 'staff' then ${staffName("a.actor_id")} end`;
+/** Актор строки журнала: id и подпись (сотрудник, пользователь кабинета, клиент); система — null */
+function actorOf(
+  labels: Labels,
+  row: { actor_kind: ActorKind; actor_id: string | null },
+): AuditEntry["actor"] {
+  return row.actor_id !== null ? { id: row.actor_id, name: labels.get(row.actor_kind, row.actor_id) } : null;
+}
 
 const total = sql<number>`(count(*) over ())::int`;
 
@@ -123,7 +130,6 @@ audit.get("/", requirePermission("audit.read"), async (c) => {
         "a.object_id",
         "a.detail",
         "a.source",
-        actorName.as("actor_name"),
         total.as("total"),
       ]);
     if (filters.actor) query = query.where("a.actor_id", "=", filters.actor);
@@ -139,6 +145,10 @@ audit.get("/", requirePermission("audit.read"), async (c) => {
       .limit(limit)
       .offset(offset)
       .execute();
+    const labels = await loadLabels(trx, [
+      ...rows.map((row) => ({ type: row.object_type, id: row.object_id })),
+      ...rows.map((row) => ({ type: row.actor_kind, id: row.actor_id })),
+    ]);
     return {
       total: rows[0]?.total ?? 0,
       items: rows.map(
@@ -146,10 +156,11 @@ audit.get("/", requirePermission("audit.read"), async (c) => {
           id: String(row.id),
           at: iso(row.at),
           actorKind: row.actor_kind,
-          actor: row.actor_id !== null ? { id: row.actor_id, name: row.actor_name } : null,
+          actor: actorOf(labels, row),
           action: row.action,
           objectType: row.object_type,
           objectId: row.object_id,
+          objectLabel: labels.get(row.object_type, row.object_id),
           detail:
             typeof row.detail === "object" && row.detail !== null && !Array.isArray(row.detail)
               ? row.detail
@@ -181,7 +192,6 @@ audit.get("/pii", requirePermission("audit.read"), async (c) => {
         "a.field",
         "a.purpose",
         "a.reason",
-        actorName.as("actor_name"),
         total.as("total"),
       ]);
     if (filters.actor) query = query.where("a.actor_id", "=", filters.actor);
@@ -197,6 +207,10 @@ audit.get("/pii", requirePermission("audit.read"), async (c) => {
       .limit(limit)
       .offset(offset)
       .execute();
+    const labels = await loadLabels(trx, [
+      ...rows.map((row) => ({ type: row.subject_kind, id: row.subject_id })),
+      ...rows.map((row) => ({ type: row.actor_kind, id: row.actor_id })),
+    ]);
     return {
       total: rows[0]?.total ?? 0,
       items: rows.map(
@@ -204,9 +218,10 @@ audit.get("/pii", requirePermission("audit.read"), async (c) => {
           id: String(row.id),
           at: iso(row.at),
           actorKind: row.actor_kind,
-          actor: row.actor_id !== null ? { id: row.actor_id, name: row.actor_name } : null,
+          actor: actorOf(labels, row),
           subjectKind: row.subject_kind,
           subjectId: row.subject_id,
+          subjectLabel: labels.get(row.subject_kind, row.subject_id),
           field: row.field,
           purpose: row.purpose,
           reason: row.reason,

@@ -18,8 +18,8 @@ import sharp from "sharp";
 
 export const DEMO_PHOTO_WIDTH = 1280;
 export const DEMO_PHOTO_HEIGHT = 853;
-/** По три на каждую из десяти демо-витрин (src/demo/venues.ts: DEMO_PHOTO_COUNT) */
-export const DEMO_PHOTO_FILES = 30;
+/** По три на каждую из четырнадцати демо-витрин (src/demo/venues.ts: DEMO_PHOTO_COUNT) */
+export const DEMO_PHOTO_FILES = 42;
 const QUALITY = 70;
 
 // Пары цветов градиента — из палитры бренда (packages/ui/src/tokens.ts)

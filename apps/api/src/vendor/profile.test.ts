@@ -41,20 +41,76 @@ describe("профиль", () => {
     }
   });
 
-  it("GET /vendor/me: пользователь, вендор, листинги вендора сессии", async () => {
-    const fake = fakeDb((q) => {
-      if (q.sql.includes('from "app"."vendor_users"')) return [meRow];
+  /** Запрос значков: у него «count(*)» подзапросами по услугам, фото и предложениям витрины */
+  const isAttention = (q: { sql: string }) => q.sql.includes("from app.listing_services s");
+
+  const meDb = (user: Record<string, unknown>, counts: Record<string, unknown> = {}) =>
+    fakeDb((q) => {
+      if (q.sql.includes('from "app"."vendor_users"')) return [user];
+      if (isAttention(q)) return [{ id: LISTING_ID, services: 0, photos: 0, proposals: 0, ...counts }];
       if (q.sql.includes('from "app"."listings"'))
-        return [{ id: LISTING_ID, name: "Hall", status: "active" }];
+        return [{ id: LISTING_ID, name: "Hall", status: "active", category_code: "hall" }];
       return [];
     });
+
+  it("GET /vendor/me: пользователь, вендор, листинги вендора сессии", async () => {
+    const fake = meDb(meRow);
     expect(await getMe(fake.db, ACTOR)).toEqual({
       user: { id: ACTOR.id, locale: "uz", fullName: "Manager", role: "owner" },
       vendor: { id: ACTOR.vendorId, code: "V101", name: "Test LLC" },
-      listings: [{ id: LISTING_ID, name: "Hall", status: "active" }],
+      listings: [
+        {
+          id: LISTING_ID,
+          name: "Hall",
+          status: "active",
+          categoryCode: "hall",
+          attention: { services: 0, photos: 0, proposals: 0 },
+        },
+      ],
     });
-    const listings = fake.queries.find((q) => q.sql.includes('from "app"."listings"'));
+    const listings = fake.queries.find((q) => q.sql.includes('from "app"."listings"') && !isAttention(q));
     expect(listings?.parameters).toEqual([ACTOR.vendorId]);
+  });
+
+  it("GET /vendor/me: владелец — числа «ждёт действия» по каждой витрине, считает база", async () => {
+    const other = "aaaaaaaa-0000-0000-0000-000000000102";
+    const fake = fakeDb((q) => {
+      if (q.sql.includes('from "app"."vendor_users"')) return [meRow];
+      if (isAttention(q))
+        return [
+          // Драйвер отдаёт int4 числом, но bigint и строку тоже читаем как число
+          { id: LISTING_ID, services: 2, photos: "1", proposals: 1 },
+          { id: other, services: 0, photos: 0, proposals: 0 },
+        ];
+      if (q.sql.includes('from "app"."listings"'))
+        return [
+          { id: LISTING_ID, name: "Hall", status: "active", category_code: "hall" },
+          { id: other, name: "Cars", status: "draft", category_code: "car" },
+        ];
+      return [];
+    });
+    const me = await getMe(fake.db, ACTOR);
+    expect(me.listings.map((l) => l.attention)).toEqual([
+      { services: 2, photos: 1, proposals: 1 },
+      { services: 0, photos: 0, proposals: 0 },
+    ]);
+    const counted = fake.queries.find(isAttention);
+    // Только свой вендор; правила — отклонённые услуги, отклонённые фото в кабинете, последнее
+    // предложение партнёра отклонено
+    expect(counted?.parameters).toEqual([ACTOR.vendorId]);
+    expect(counted?.sql).toContain("s.status = 'rejected'");
+    expect(counted?.sql).toContain("p.moderation = 'declined' and p.deleted_at is null");
+    expect(counted?.sql).toContain("order by r.submitted_at desc, r.id limit 1");
+    expect(counted?.sql).toContain("last.status = 'declined'");
+    expect(counted?.sql).toContain("from app.vendor_users u where u.id = last.submitted_by");
+  });
+
+  it("GET /vendor/me: сотрудник площадки — нули, и база для них ничего не считает", async () => {
+    const fake = meDb({ ...meRow, role: "member" }, { services: 3, photos: 3, proposals: 1 });
+    const me = await getMe(fake.db, { ...ACTOR, role: "member" });
+    expect(me.user.role).toBe("member");
+    expect(me.listings[0]?.attention).toEqual({ services: 0, photos: 0, proposals: 0 });
+    expect(fake.queries.some(isAttention)).toBe(false);
   });
 
   it("смена языка — только своей учётки", async () => {
@@ -124,7 +180,34 @@ describe("getListing", () => {
         ];
       if (q.sql.includes("app.photos") || q.sql.includes('"app"."photos"'))
         return [
-          { id: "p1", storage_key: KEY, width: 1600, height: 1200, moderation: "pending", is_cover: true },
+          {
+            id: "p1",
+            storage_key: KEY,
+            width: 1600,
+            height: 1200,
+            moderation: "pending",
+            moderation_reason: null,
+            is_cover: true,
+          },
+          {
+            id: "p2",
+            storage_key: KEY,
+            width: 1600,
+            height: 1200,
+            moderation: "declined",
+            moderation_reason: "На фото виден человек",
+            is_cover: false,
+          },
+          // Причина осталась от прошлого отказа, а фото уже одобрено — партнёру её не показываем
+          {
+            id: "p3",
+            storage_key: KEY,
+            width: 1600,
+            height: 1200,
+            moderation: "approved",
+            moderation_reason: "Прошлый отказ",
+            is_cover: false,
+          },
         ];
       return [];
     });
@@ -144,15 +227,37 @@ describe("getListing", () => {
       photoLimits: { min: 3, max: 10 },
     });
     expect(result).not.toHaveProperty("packages");
+    const variants = {
+      src: `https://media-staging.bayramm.uz/640/${KEY}`,
+      srcSet: [320, 640, 960].map((w) => `https://media-staging.bayramm.uz/${w}/${KEY} ${w}w`).join(", "),
+    };
     expect(result.photos).toEqual([
       {
         id: "p1",
         width: 1600,
         height: 1200,
         moderation: "pending",
+        declineReason: null,
         isCover: true,
-        src: `https://media-staging.bayramm.uz/640/${KEY}`,
-        srcSet: [320, 640, 960].map((w) => `https://media-staging.bayramm.uz/${w}/${KEY} ${w}w`).join(", "),
+        ...variants,
+      },
+      {
+        id: "p2",
+        width: 1600,
+        height: 1200,
+        moderation: "declined",
+        declineReason: "На фото виден человек",
+        isCover: false,
+        ...variants,
+      },
+      {
+        id: "p3",
+        width: 1600,
+        height: 1200,
+        moderation: "approved",
+        declineReason: null,
+        isCover: false,
+        ...variants,
       },
     ]);
     const main = fake.queries.find((q) => q.sql.includes('from "app"."listings"'));

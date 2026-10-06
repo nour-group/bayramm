@@ -14,7 +14,14 @@ import { sql } from "kysely";
 import { type StaffRole, SYSTEM, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { forbidden } from "../errors";
-import { reauthRequired, type SignInSource, signInTelegram, verifyWebApp, verifyWidget } from "./account";
+import {
+  reauthRequired,
+  type SignInSource,
+  STAFF_INIT_DATA_MAX_AGE_SECONDS,
+  signInTelegram,
+  verifyWebApp,
+  verifyWidget,
+} from "./account";
 import { generateToken, hashToken } from "./crypto";
 
 export interface StaffSession {
@@ -83,7 +90,12 @@ async function signInAndElevate(
 
 /** Панель как Mini App: initData из кнопки бота (POST /auth/staff/webapp) */
 export async function signInStaffWebApp(db: Db, env: Secrets, initData: string): Promise<StaffSession> {
-  return signInAndElevate(db, env, await verifyWebApp(env, initData), "admin");
+  return signInAndElevate(
+    db,
+    env,
+    await verifyWebApp(env, initData, STAFF_INIT_DATA_MAX_AGE_SECONDS),
+    "admin",
+  );
 }
 
 /** @deprecated Виджет входа Telegram на домене панели (устаревший POST /auth/staff/telegram) */

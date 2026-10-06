@@ -1,0 +1,98 @@
+-- Откат 20261006100000_categories_wedding_path.sql: ЗАГС, ресторан, наряды и кейтеринг — снова
+-- заготовки только с «другой услугой», названия и порядок — как в 20261001120100. Только для
+-- локальной разработки и проверки в CI (up → down → up)
+
+delete from app.service_types
+ where category_code in ('food', 'restaurant', 'attire', 'zags') and code <> 'other';
+
+-- categories-seed:begin (pnpm --filter @bayramm/shared categories:sql)
+insert into app.categories (code, name_ru, name_uz, enabled, sort, availability_mode, photo_policy,
+                            min_photos, max_video_links, required_fields, required_attributes,
+                            required_services) values
+  ('hall', 'Площадка / Тойхона', 'Maydon / Toʻyxona', true, 1, 'day'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, array['guest_capacity', 'district']::text[], '{}'::text[], array['banquet_weekday', 'banquet_weekend']::text[]),
+  ('car', 'Кортеж', 'Kortej', true, 2, 'parts'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], array['fleet', 'service_area']::text[], '{}'::text[]),
+  ('studio', 'Фотостудия', 'Fotostudiya', true, 3, 'slot'::app.availability_mode, 'portfolio'::app.photo_policy, 3, 3, array['district']::text[], array['area_m2', 'zones_count']::text[], '{}'::text[]),
+  ('flowers', 'Цветы', 'Gullar', true, 4, 'lead'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], array['flower_kinds', 'lead_days']::text[], '{}'::text[]),
+  ('photo', 'Фото и видео', 'Foto va video', true, 5, 'parts'::app.availability_mode, 'portfolio'::app.photo_policy, 3, 3, '{}'::text[], array['team', 'delivery_days']::text[], '{}'::text[]),
+  ('cake', 'Торты и сладости', 'Tort va shirinliklar', true, 6, 'lead'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], array['cake_kinds', 'lead_days']::text[], '{}'::text[]),
+  ('gifts', 'Подарки', 'Sovgʻalar', true, 7, 'lead'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], array['gift_kinds', 'min_batch', 'lead_days']::text[], '{}'::text[]),
+  ('decor', 'Декор / Оформление', 'Dekor / Bezak', true, 8, 'parts'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], array['styles']::text[], '{}'::text[]),
+  ('food', 'Стол / Кейтеринг', 'Dasturxon / Ketering', false, 9, 'day'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], '{}'::text[], '{}'::text[]),
+  ('restaurant', 'Рестораны', 'Restoranlar', false, 10, 'day'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], '{}'::text[], '{}'::text[]),
+  ('attire', 'Свадебная одежда', 'Toʻy liboslari', false, 11, 'lead'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], '{}'::text[], '{}'::text[]),
+  ('music', 'Музыка / Ведущий', 'Musiqa / Boshlovchi', false, 12, 'day'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], '{}'::text[], '{}'::text[]),
+  ('kids', 'Аниматоры', 'Animatorlar', false, 13, 'day'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], '{}'::text[], '{}'::text[]),
+  ('zags', 'ЗАГС', 'FHDYo', false, 14, 'day'::app.availability_mode, 'no_people'::app.photo_policy, 3, 0, '{}'::text[], '{}'::text[], '{}'::text[])
+on conflict (code) do update set
+  name_ru = excluded.name_ru, name_uz = excluded.name_uz, enabled = excluded.enabled,
+  sort = excluded.sort, availability_mode = excluded.availability_mode,
+  photo_policy = excluded.photo_policy, min_photos = excluded.min_photos,
+  max_video_links = excluded.max_video_links, required_fields = excluded.required_fields,
+  required_attributes = excluded.required_attributes, required_services = excluded.required_services;
+
+insert into app.service_types (category_code, code, name_ru, name_uz, units, tier, in_price_from,
+                               free_name, sort, options) values
+  ('hall', 'banquet_weekday', 'Банкет — будни', 'Banket — ish kunlari', array['per_guest', 'per_event']::app.price_unit[], 'base'::app.service_tier, true, false, 1, '[{"code":"extra_dish","name_ru":"Дополнительное блюдо","name_uz":"Qoʻshimcha taom","unit":"per_guest"},{"code":"drinks","name_ru":"Напитки","name_uz":"Ichimliklar","unit":"per_guest"},{"code":"cake","name_ru":"Торт","name_uz":"Tort","unit":"per_event"}]'::jsonb),
+  ('hall', 'banquet_weekend', 'Банкет — выходные', 'Banket — dam olish kunlari', array['per_guest', 'per_event']::app.price_unit[], 'base'::app.service_tier, true, false, 2, '[{"code":"extra_dish","name_ru":"Дополнительное блюдо","name_uz":"Qoʻshimcha taom","unit":"per_guest"},{"code":"drinks","name_ru":"Напитки","name_uz":"Ichimliklar","unit":"per_guest"},{"code":"cake","name_ru":"Торт","name_uz":"Tort","unit":"per_event"}]'::jsonb),
+  ('hall', 'morning_plov', 'Утренний плов', 'Nahorgi osh', array['per_guest']::app.price_unit[], 'extra'::app.service_tier, false, false, 3, '[]'::jsonb),
+  ('hall', 'fotiha_hall', 'Малый зал: фотиха, девичник', 'Kichik zal: fotiha, qiz bazmi', array['per_guest', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, false, 4, '[]'::jsonb),
+  ('hall', 'hall_rent', 'Аренда зала без угощения', 'Zal ijarasi (taomsiz)', array['per_event']::app.price_unit[], 'extra'::app.service_tier, false, false, 5, '[{"code":"decor","name_ru":"Оформление","name_uz":"Bezak","unit":"per_event"},{"code":"sound","name_ru":"Звук","name_uz":"Ovoz tizimi","unit":"per_event"},{"code":"stage","name_ru":"Сцена","name_uz":"Sahna","unit":"per_event"}]'::jsonb),
+  ('hall', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_guest', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 6, '[]'::jsonb),
+  ('car', 'bride_car', 'Машина для молодожёнов', 'Kelin-kuyov mashinasi', array['per_hour']::app.price_unit[], 'base'::app.service_tier, true, false, 1, '[{"code":"flower_decor","name_ru":"Украшение живыми цветами","name_uz":"Jonli gullar bilan bezash","unit":"per_event"},{"code":"extra_hour","name_ru":"Дополнительный час","name_uz":"Qoʻshimcha soat","unit":"per_hour"},{"code":"champagne","name_ru":"Шампанское и вода","name_uz":"Shampan va suv","unit":"per_item"}]'::jsonb),
+  ('car', 'motorcade', 'Кортеж из нескольких машин', 'Bir nechta mashinadan kortej', array['per_hour']::app.price_unit[], 'extra'::app.service_tier, true, false, 2, '[{"code":"decor","name_ru":"Оформление","name_uz":"Bezak","unit":"per_event"},{"code":"coordinator","name_ru":"Координатор","name_uz":"Koordinator","unit":"per_event"}]'::jsonb),
+  ('car', 'limousine', 'Лимузин', 'Limuzin', array['per_hour']::app.price_unit[], 'extra'::app.service_tier, true, false, 3, '[{"code":"photo_stops","name_ru":"Остановки для фотосессии","name_uz":"Fotosessiya uchun toʻxtashlar","unit":"per_event"}]'::jsonb),
+  ('car', 'retro_car', 'Ретро-автомобиль', 'Retro mashina', array['per_hour', 'per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 4, '[{"code":"photo_stops","name_ru":"Остановки для фотосессии","name_uz":"Fotosessiya uchun toʻxtashlar","unit":"per_event"}]'::jsonb),
+  ('car', 'guest_transfer', 'Трансфер гостей (минивэн, автобус)', 'Mehmonlar transferi (miniven, avtobus)', array['per_hour', 'per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 5, '[]'::jsonb),
+  ('car', 'car_decor', 'Украшение машины', 'Mashina bezagi', array['per_item']::app.price_unit[], 'extra'::app.service_tier, false, false, 6, '[{"code":"fresh_flowers","name_ru":"Живые цветы","name_uz":"Jonli gullar","unit":"per_item"}]'::jsonb),
+  ('car', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_hour', 'per_event', 'per_item']::app.price_unit[], 'extra'::app.service_tier, false, true, 7, '[]'::jsonb),
+  ('studio', 'studio_rent', 'Аренда студии', 'Studiya ijarasi', array['per_hour']::app.price_unit[], 'base'::app.service_tier, true, false, 1, '[{"code":"extra_hour","name_ru":"Дополнительный час","name_uz":"Qoʻshimcha soat","unit":"per_hour"},{"code":"extra_zone","name_ru":"Дополнительная зона","name_uz":"Qoʻshimcha zona","unit":"per_hour"}]'::jsonb),
+  ('studio', 'love_story_package', 'Пакет Love story', 'Love story paketi', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 2, '[{"code":"makeup","name_ru":"Макияж","name_uz":"Grim","unit":"per_event"},{"code":"outfit_rent","name_ru":"Прокат образа","name_uz":"Libos ijarasi","unit":"per_event"}]'::jsonb),
+  ('studio', 'pre_wedding_shoot', 'Предсвадебная фотосессия', 'Toʻy oldi fotosessiyasi', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 3, '[]'::jsonb),
+  ('studio', 'family_shoot', 'Семейная фотосессия, бешик-той', 'Oilaviy fotosessiya, beshik toʻyi', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 4, '[]'::jsonb),
+  ('studio', 'makeup_hair', 'Макияж и причёска в студии', 'Studiyada grim va soch turmagi', array['per_event']::app.price_unit[], 'extra'::app.service_tier, false, false, 5, '[]'::jsonb),
+  ('studio', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_hour', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 6, '[]'::jsonb),
+  ('flowers', 'bridal_bouquet', 'Букет невесты', 'Kelin guldastasi', array['per_item']::app.price_unit[], 'base'::app.service_tier, true, false, 1, '[{"code":"toss_bouquet","name_ru":"Дублёр букета для броска","name_uz":"Otish uchun dubl guldasta","unit":"per_item"}]'::jsonb),
+  ('flowers', 'boutonniere', 'Бутоньерка', 'Butonyerka', array['per_item']::app.price_unit[], 'extra'::app.service_tier, false, false, 2, '[]'::jsonb),
+  ('flowers', 'car_flower_decor', 'Цветы на машину', 'Mashina uchun gullar', array['per_set']::app.price_unit[], 'extra'::app.service_tier, true, false, 3, '[]'::jsonb),
+  ('flowers', 'hall_flower_decor', 'Цветочное оформление зала и тора', 'Zal va toʻrni gul bilan bezash', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 4, '[{"code":"arch","name_ru":"Арка","name_uz":"Arka","unit":"per_item"},{"code":"flower_wall","name_ru":"Цветочная стена","name_uz":"Gul devor","unit":"per_item"}]'::jsonb),
+  ('flowers', 'flower_arch', 'Цветочная арка', 'Gul arka', array['per_item']::app.price_unit[], 'extra'::app.service_tier, true, false, 5, '[]'::jsonb),
+  ('flowers', 'table_compositions', 'Композиции на столы', 'Stol kompozitsiyalari', array['per_table']::app.price_unit[], 'extra'::app.service_tier, true, false, 6, '[]'::jsonb),
+  ('flowers', 'gift_bouquet', 'Подарочный букет', 'Sovgʻa guldastasi', array['per_item']::app.price_unit[], 'extra'::app.service_tier, true, false, 7, '[{"code":"delivery","name_ru":"Доставка","name_uz":"Yetkazib berish","unit":"per_event"}]'::jsonb),
+  ('flowers', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_item', 'per_set', 'per_event', 'per_table']::app.price_unit[], 'extra'::app.service_tier, false, true, 8, '[]'::jsonb),
+  ('photo', 'photo_shoot', 'Фотосъёмка в день свадьбы', 'Toʻy kuni fotosuratga olish', array['per_hour', 'per_event']::app.price_unit[], 'base'::app.service_tier, true, false, 1, '[{"code":"extra_hour","name_ru":"Дополнительный час","name_uz":"Qoʻshimcha soat","unit":"per_hour"},{"code":"second_photographer","name_ru":"Второй фотограф","name_uz":"Ikkinchi fotograf","unit":"per_event"},{"code":"photobook","name_ru":"Фотокнига","name_uz":"Fotokitob","unit":"per_item"}]'::jsonb),
+  ('photo', 'videography', 'Видеосъёмка', 'Videoga olish', array['per_hour', 'per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 2, '[{"code":"second_camera","name_ru":"Вторая камера","name_uz":"Ikkinchi kamera","unit":"per_event"},{"code":"extra_hour","name_ru":"Дополнительный час","name_uz":"Qoʻshimcha soat","unit":"per_hour"}]'::jsonb),
+  ('photo', 'drone', 'Съёмка с дрона', 'Dron bilan suratga olish', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 3, '[]'::jsonb),
+  ('photo', 'love_story', 'Love story (фото или видео)', 'Love story (foto yoki video)', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 4, '[{"code":"studio_rent","name_ru":"Аренда студии","name_uz":"Studiya ijarasi","unit":"per_hour"}]'::jsonb),
+  ('photo', 'same_day_edit', 'Клип в тот же день', 'Shu kunning oʻzida klip', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 5, '[]'::jsonb),
+  ('photo', 'morning_plov_shoot', 'Съёмка утреннего плова, фотихи', 'Nahorgi osh, fotihani suratga olish', array['per_hour', 'per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 6, '[]'::jsonb),
+  ('photo', 'photobook', 'Фотокнига', 'Fotokitob', array['per_item']::app.price_unit[], 'extra'::app.service_tier, false, false, 7, '[]'::jsonb),
+  ('photo', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_hour', 'per_event', 'per_item']::app.price_unit[], 'extra'::app.service_tier, false, true, 8, '[]'::jsonb),
+  ('cake', 'wedding_cake', 'Свадебный торт', 'Toʻy torti', array['per_kg']::app.price_unit[], 'base'::app.service_tier, true, false, 1, '[{"code":"tier","name_ru":"Дополнительный ярус","name_uz":"Qoʻshimcha qavat","unit":"per_item"},{"code":"figure","name_ru":"Фигурка","name_uz":"Haykalcha","unit":"per_item"},{"code":"fresh_flowers","name_ru":"Живые цветы","name_uz":"Jonli gullar","unit":"per_event"},{"code":"delivery","name_ru":"Доставка","name_uz":"Yetkazib berish","unit":"per_event"}]'::jsonb),
+  ('cake', 'bento', 'Бенто и маленькие торты', 'Bento va kichik tortlar', array['per_item']::app.price_unit[], 'extra'::app.service_tier, true, false, 2, '[]'::jsonb),
+  ('cake', 'candy_bar', 'Кэнди-бар', 'Shirinlik stoli (candy bar)', array['per_guest', 'per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 3, '[{"code":"decor","name_ru":"Оформление","name_uz":"Bezak","unit":"per_event"},{"code":"table","name_ru":"Стол","name_uz":"Stol","unit":"per_event"}]'::jsonb),
+  ('cake', 'pastries', 'Выпечка и национальные сладости', 'Pishiriqlar va milliy shirinliklar', array['per_kg', 'per_item']::app.price_unit[], 'extra'::app.service_tier, true, false, 4, '[]'::jsonb),
+  ('cake', 'tasting', 'Дегустация', 'Degustatsiya', array['per_event']::app.price_unit[], 'extra'::app.service_tier, false, false, 5, '[]'::jsonb),
+  ('cake', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_kg', 'per_item', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 6, '[]'::jsonb),
+  ('gifts', 'bonbonniere', 'Бонбоньерки для гостей', 'Mehmonlar uchun esdalik (bonbonyerka)', array['per_item']::app.price_unit[], 'base'::app.service_tier, true, false, 1, '[{"code":"name_print","name_ru":"Имена и дата на упаковке","name_uz":"Qadoqda ismlar va sana","unit":"per_item"}]'::jsonb),
+  ('gifts', 'in_law_gift_set', 'Подарки сватам (набор)', 'Quda sovgʻalari (toʻplam)', array['per_set']::app.price_unit[], 'extra'::app.service_tier, true, false, 2, '[{"code":"special_packaging","name_ru":"Особая упаковка","name_uz":"Maxsus qadoq","unit":"per_set"}]'::jsonb),
+  ('gifts', 'couple_gift_set', 'Подарочный набор для молодожёнов', 'Kelin-kuyov uchun sovgʻa toʻplami', array['per_set']::app.price_unit[], 'extra'::app.service_tier, true, false, 3, '[]'::jsonb),
+  ('gifts', 'corporate_gifts', 'Корпоративные подарки', 'Korporativ sovgʻalar', array['per_item']::app.price_unit[], 'extra'::app.service_tier, true, false, 4, '[{"code":"logo","name_ru":"Логотип","name_uz":"Logotip","unit":"per_item"}]'::jsonb),
+  ('gifts', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_item', 'per_set']::app.price_unit[], 'extra'::app.service_tier, false, true, 5, '[]'::jsonb),
+  ('decor', 'stage_decor', 'Оформление тора (места молодожёнов)', 'Toʻr (kelin-kuyov joyi) bezagi', array['per_event']::app.price_unit[], 'base'::app.service_tier, true, false, 1, '[{"code":"flower_wall","name_ru":"Цветочная стена","name_uz":"Gul devor","unit":"per_event"},{"code":"lighting","name_ru":"Подсветка","name_uz":"Yoritish","unit":"per_event"}]'::jsonb),
+  ('decor', 'full_hall_package', 'Оформление зала под ключ', 'Zalni toʻliq bezash', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 2, '[]'::jsonb),
+  ('decor', 'table_decor', 'Оформление столов', 'Stollarni bezash', array['per_table']::app.price_unit[], 'extra'::app.service_tier, true, false, 3, '[]'::jsonb),
+  ('decor', 'entrance_arch', 'Входная арка, фотозона', 'Kirish arkasi, fotozona', array['per_item', 'per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 4, '[]'::jsonb),
+  ('decor', 'lighting_effects', 'Свет и сценические эффекты', 'Yorugʻlik va sahna effektlari', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 5, '[{"code":"smoke","name_ru":"Тяжёлый дым","name_uz":"Ogʻir tutun","unit":"per_event"},{"code":"confetti","name_ru":"Конфетти","name_uz":"Konfetti","unit":"per_event"}]'::jsonb),
+  ('decor', 'morning_plov_decor', 'Оформление утреннего плова, фотихи', 'Nahorgi osh, fotiha bezagi', array['per_event']::app.price_unit[], 'extra'::app.service_tier, true, false, 6, '[]'::jsonb),
+  ('decor', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_event', 'per_table', 'per_item']::app.price_unit[], 'extra'::app.service_tier, false, true, 7, '[]'::jsonb),
+  ('food', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_guest', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 1, '[]'::jsonb),
+  ('restaurant', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_guest', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 1, '[]'::jsonb),
+  ('attire', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_item', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 1, '[]'::jsonb),
+  ('music', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_hour', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 1, '[]'::jsonb),
+  ('kids', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_hour', 'per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 1, '[]'::jsonb),
+  ('zags', 'other', 'Другая услуга', 'Boshqa xizmat', array['per_event']::app.price_unit[], 'extra'::app.service_tier, false, true, 1, '[]'::jsonb)
+on conflict (category_code, code) do update set
+  name_ru = excluded.name_ru, name_uz = excluded.name_uz, units = excluded.units,
+  tier = excluded.tier, in_price_from = excluded.in_price_from, free_name = excluded.free_name,
+  sort = excluded.sort, options = excluded.options, enabled = true;
+-- categories-seed:end

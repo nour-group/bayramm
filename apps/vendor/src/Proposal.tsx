@@ -5,6 +5,9 @@
    предложение на площадку: пока оно на проверке — его видно здесь, его можно отозвать;
    решение (одобрено или отказ с причиной) — тоже здесь.
 
+   История решений — под основным блоком, свёрнута («История предложений»): последние пять
+   решённых предложений — когда, что решили, какие поля менялись и почему отказали.
+
    Предлагать и отзывать может только владелец кабинета: сотрудник площадки видит, что
    предложено и что решили, но без формы и кнопок. Предложение, которое внёс менеджер Bayramm
    (byTeam), партнёр не отзывает — по нему решает модератор.
@@ -20,7 +23,7 @@ import type {
   VendorRevision,
   VendorRevisionList,
 } from "@bayramm/shared/api/vendor";
-import { DESCRIPTION_MAX } from "@bayramm/shared/api/vendor";
+import { DESCRIPTION_MAX, REVISION_KEYS } from "@bayramm/shared/api/vendor";
 import {
   type AttributeDraft,
   type AttributeDrafts,
@@ -40,6 +43,7 @@ import { ApiFailure, api } from "./api";
 import { errorText as apiErrorText } from "./errors";
 import { formatMoment } from "./format";
 import { fill, type VendorDict } from "./i18n";
+import { Icon } from "./icons";
 import { LoadError, Loading } from "./ui";
 import { useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
@@ -401,6 +405,83 @@ function ProposalForm({ listing, t, lang, onSent, onPendingExists, onCancel }: F
   );
 }
 
+// ── история решений ────────────────────────────────────────────────────────
+
+/** Сколько решённых предложений показывает история */
+export const HISTORY_SHOWN = 5;
+
+/** Решённые предложения (одобрено или отклонено), новые первыми, не больше HISTORY_SHOWN */
+export function decidedRevisions(items: readonly VendorRevision[]): VendorRevision[] {
+  return items.filter((r) => r.status === "approved" || r.status === "declined").slice(0, HISTORY_SHOWN);
+}
+
+/** Какие поля менялись: названия из словаря в порядке показа; нет известных ключей — пусто */
+export function revisionFields(payload: ListingRevisionPayload, t: VendorDict): string[] {
+  const label: Readonly<Record<(typeof REVISION_KEYS)[number], string>> = {
+    name: t.nameLabel,
+    description_ru: t.descriptionRuLabel,
+    description_uz: t.descriptionUzLabel,
+    attributes: t.attributesTitle,
+    video_links: t.videoTitle,
+  };
+  return REVISION_KEYS.filter((key) => payload[key] !== undefined).map((key) => label[key]);
+}
+
+/**
+ * «История предложений»: свёрнута, пока партнёр не откроет. Кнопка с aria-expanded (не
+ * <details>: в кабинете такого контрола нет, кнопки и свёртки — свои)
+ */
+function ProposalHistory({ items, t }: { items: readonly VendorRevision[]; t: VendorDict }) {
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const decided = decidedRevisions(items);
+  if (decided.length === 0) return null;
+  return (
+    <div className="proposal-history">
+      <button
+        type="button"
+        className={`btn btn-ghost disclosure${open ? " disclosure-open" : ""}`}
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name="next" size={14} />
+        {t.proposalHistory}
+        <span className="count">{decided.length}</span>
+      </button>
+      {open ? (
+        <ol className="revlog" id={listId}>
+          {decided.map((revision) => {
+            const approved = revision.status === "approved";
+            const fields = revisionFields(revision.payload, t);
+            return (
+              <li key={revision.id}>
+                <span className="revlog-head">
+                  <span className={`chip chip-${approved ? "done" : "off"}`}>
+                    {approved ? t.revApproved : t.revDeclined}
+                  </span>
+                  {revision.decidedAt ? (
+                    <time dateTime={revision.decidedAt}>{formatMoment(revision.decidedAt, t)}</time>
+                  ) : null}
+                </span>
+                {fields.length > 0 ? (
+                  <span className="revlog-line">{fill(t.revFields, { fields: fields.join(", ") })}</span>
+                ) : null}
+                {!approved && revision.decisionReason ? (
+                  <span className="revlog-line">
+                    {fill(t.reasonLine, { reason: revision.decisionReason })}
+                  </span>
+                ) : null}
+                {revision.byTeam ? <span className="revlog-line revlog-team">{t.revTeam}</span> : null}
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
+    </div>
+  );
+}
+
 // ── раздел целиком ─────────────────────────────────────────────────────────
 
 interface ProposalProps {
@@ -414,9 +495,11 @@ interface ProposalProps {
    * если предложение уже на проверке, — показывается оно)
    */
   readonly openSignal?: number;
+  /** Предложение отправлено или отозвано: значок «требует внимания» у раздела — заново */
+  readonly onChanged?: () => void;
 }
 
-export function Proposal({ listing, t, lang, owner, openSignal = 0 }: ProposalProps) {
+export function Proposal({ listing, t, lang, owner, openSignal = 0, onChanged }: ProposalProps) {
   const [revisions, reload, setRevisions] = useLoad<VendorRevisionList>(listing.id, (key) =>
     api.revisions(key),
   );
@@ -474,6 +557,7 @@ export function Proposal({ listing, t, lang, owner, openSignal = 0 }: ProposalPr
         replace(await api.withdrawRevision(listing.id, pending.id));
         setConfirming(false);
         setSent(false);
+        onChanged?.();
       } catch (err) {
         // По предложению уже решили или его внесла команда — показать, как есть
         if (
@@ -488,6 +572,7 @@ export function Proposal({ listing, t, lang, owner, openSignal = 0 }: ProposalPr
       }
     };
 
+    const history = <ProposalHistory items={items} t={t} />;
     if (pending) {
       const date = formatMoment(pending.submittedAt, t);
       // Предложение менеджера Bayramm решает модератор: партнёр его не отзывает
@@ -531,6 +616,7 @@ export function Proposal({ listing, t, lang, owner, openSignal = 0 }: ProposalPr
               />
             </>
           ) : null}
+          {history}
         </>
       );
     }
@@ -553,6 +639,7 @@ export function Proposal({ listing, t, lang, owner, openSignal = 0 }: ProposalPr
               refocus.current = "title";
               setEditing(false);
               setSent(true);
+              onChanged?.();
             }}
             onPendingExists={reload}
             onCancel={() => edit(false)}
@@ -565,6 +652,7 @@ export function Proposal({ listing, t, lang, owner, openSignal = 0 }: ProposalPr
             </button>
           </>
         )}
+        {history}
       </>
     );
   };

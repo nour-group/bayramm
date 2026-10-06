@@ -110,6 +110,7 @@ function appWith(fake: FakeDb) {
     c.json({ actor: c.var.actor, sessionId: c.var.sessionId, kind: c.var.session?.kind }),
   );
   app.get("/private", (c) => c.json(requireClient(c)));
+  app.get("/own-data", (c) => c.json(requireClient(c, { allowBlocked: true })));
   app.get("/account", (c) => c.json(accountOf(c)));
   app.post("/logout", (c) => c.json({ sessionId: requireSession(c).session.id }));
   app.get("/staff", requireStaff(), (c) => c.json(staffOf(c)));
@@ -222,6 +223,11 @@ describe("requireClient", () => {
     const res = await get(clientSession({ clientBlocked: true }), "/private");
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: { code: "client_blocked", message: "Account is blocked" } });
+  });
+
+  it("allowBlocked (права на свои данные) — заблокированному тоже актор клиента", async () => {
+    const res = await get(clientSession({ clientBlocked: true }), "/own-data");
+    expect(await res.json()).toEqual({ actor: { kind: "client", id: CLIENT_ID }, sessionId: SESSION_ID });
   });
 
   it("аккаунт без роли клиента или с удалённой — 403", async () => {

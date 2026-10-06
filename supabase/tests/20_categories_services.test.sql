@@ -16,8 +16,8 @@ update pii.vendor_user_profiles set telegram_chat_id = 9101, telegram_user_id = 
 select results_eq(
   $$select code, availability_mode::text, photo_policy::text from app.categories
      where code in ('hall', 'car', 'studio', 'flowers', 'photo') order by sort$$,
-  $$values ('hall', 'day', 'no_people'), ('car', 'parts', 'no_people'), ('studio', 'slot', 'portfolio'),
-           ('flowers', 'lead', 'no_people'), ('photo', 'parts', 'portfolio')$$,
+  $$values ('hall', 'day', 'no_people'), ('car', 'parts', 'no_people'), ('photo', 'parts', 'portfolio'),
+           ('studio', 'slot', 'portfolio'), ('flowers', 'lead', 'no_people')$$,
   'режим занятости и правило фото — из конфигурации');
 select is_empty(
   $$select c.code from app.categories c
@@ -337,7 +337,7 @@ select results_eq(
   $$values ('cake', 'draft', 'vendor.listing_add')$$,
   'черновиком, с записью в журнале вендора');
 select throws_ok(
-  $$select app.staff_add_listing('aaaaaaaa-0000-0000-0000-000000000001', 'zags', 'Zags', 'test-zags')$$,
+  $$select app.staff_add_listing('aaaaaaaa-0000-0000-0000-000000000001', 'music', 'Music', 'test-music')$$,
   '23514', null, 'только во включённой категории');
 select throws_ok(
   $$select app.staff_set_listing_category('aaaaaaaa-0000-0000-0000-000000000201', 'decor')$$,

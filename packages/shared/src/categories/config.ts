@@ -97,6 +97,9 @@ const FLOWER_KINDS = choices("flowers", ["live", "artificial"]);
 const DECOR_STYLES = choices("decor_style", ["classic", "national", "modern", "rustic", "minimal"]);
 const FILLINGS = choices("filling", ["chocolate", "vanilla", "berry", "fruit", "nut", "caramel", "cheese"]);
 const GIFT_KINDS = choices("gift_kind", ["bonbonniere", "in_law", "couple", "corporate", "souvenirs"]);
+const CUISINES = choices("cuisine", ["national", "european", "oriental", "asian", "mixed"]);
+const ATTIRE_FOR = choices("attire_for", ["bride", "groom", "family"]);
+const ATTIRE_DEALS = choices("attire_deal", ["sale", "rent", "tailoring"]);
 
 // ── общие поля ──────────────────────────────────────────────────────────────
 
@@ -181,7 +184,7 @@ const hall: CategoryConfig = {
   code: "hall",
   label: "cat_hall",
   enabled: true,
-  sort: 1,
+  sort: 2,
   availability: "day",
   photoPolicy: "no_people",
   minPhotos: 3,
@@ -250,7 +253,7 @@ const car: CategoryConfig = {
   code: "car",
   label: "cat_car",
   enabled: true,
-  sort: 2,
+  sort: 3,
   // Несколько машин — несколько заказов в день: утром, днём и вечером
   availability: "parts",
   photoPolicy: "no_people",
@@ -350,7 +353,7 @@ const studio: CategoryConfig = {
   code: "studio",
   label: "cat_studio",
   enabled: true,
-  sort: 3,
+  sort: 5,
   availability: "slot",
   photoPolicy: "portfolio",
   minPhotos: 3,
@@ -415,7 +418,7 @@ const flowers: CategoryConfig = {
   code: "flowers",
   label: "cat_flowers",
   enabled: true,
-  sort: 4,
+  sort: 7,
   availability: "lead",
   photoPolicy: "no_people",
   minPhotos: 3,
@@ -477,7 +480,7 @@ const photo: CategoryConfig = {
   code: "photo",
   label: "cat_photo",
   enabled: true,
-  sort: 5,
+  sort: 4,
   // Утром — нахорги ош, днём — ЗАГС и фотосессия, вечером — свадьба
   availability: "parts",
   photoPolicy: "portfolio",
@@ -563,7 +566,7 @@ const cake: CategoryConfig = {
   code: "cake",
   label: "cat_cake",
   enabled: true,
-  sort: 6,
+  sort: 11,
   availability: "lead",
   photoPolicy: "no_people",
   minPhotos: 3,
@@ -640,7 +643,7 @@ const gifts: CategoryConfig = {
   code: "gifts",
   label: "cat_gifts",
   enabled: true,
-  sort: 7,
+  sort: 9,
   availability: "lead",
   photoPolicy: "no_people",
   minPhotos: 3,
@@ -702,7 +705,7 @@ const decor: CategoryConfig = {
   code: "decor",
   label: "cat_decor",
   enabled: true,
-  sort: 8,
+  sort: 12,
   // Утренний плов и вечерняя свадьба — разные заказы одной команды
   availability: "parts",
   photoPolicy: "no_people",
@@ -767,6 +770,342 @@ const decor: CategoryConfig = {
   requiredServices: [],
 };
 
+const zags: CategoryConfig = {
+  code: "zags",
+  label: "cat_zags",
+  enabled: true,
+  sort: 1,
+  // Церемонии идут по времени: календарь дней, время — в заявке (как у студии)
+  availability: "slot",
+  photoPolicy: "no_people",
+  minPhotos: 3,
+  recommendedPhotos: 6,
+  maxVideoLinks: 0,
+  // Куда ехать на церемонию — район обязателен
+  listingFields: ["district"],
+  attributes: [
+    {
+      key: "zags_kind",
+      label: "attr_zags_kind",
+      type: "enum",
+      options: choices("zags_kind", ["palace", "registry", "agency"]),
+      required: true,
+      filter: "any",
+    },
+    {
+      key: "ceremony_capacity",
+      label: "attr_ceremony_capacity",
+      type: "int",
+      min: 1,
+      max: 1000,
+      required: false,
+      filter: "min",
+    },
+    flag("offsite", "attr_offsite", true),
+    flag("document_help", "attr_document_help", true),
+    flag("foreign_citizens", "attr_foreign_citizens", true),
+    {
+      key: "ceremony_langs",
+      label: "attr_ceremony_langs",
+      type: "multi",
+      options: choices("lang", ["uz", "ru", "en"]),
+      required: false,
+    },
+    flag("parking", "attr_parking"),
+    {
+      key: "working_hours",
+      label: "attr_working_hours",
+      type: "text",
+      maxLength: 40,
+      localized: false,
+      required: false,
+    },
+  ],
+  requestForm: {
+    guests: "optional",
+    fields: [
+      {
+        key: "ceremony_kind",
+        label: "rf_ceremony_kind",
+        type: "enum",
+        options: choices("ceremony", ["solemn", "simple", "offsite"]),
+        required: true,
+      },
+      startTime(false),
+      { key: "foreign_partner", label: "rf_foreign_partner", type: "bool", required: false },
+      servicesField(false),
+    ],
+  },
+  services: [
+    service("zags", "solemn_ceremony", {
+      units: ["per_event"],
+      tier: "base",
+      options: [opt("music", "per_event"), opt("photographer", "per_event"), opt("champagne", "per_item")],
+    }),
+    service("zags", "simple_registration", { units: ["per_event"] }),
+    service("zags", "offsite_ceremony", {
+      units: ["per_event"],
+      options: [opt("arch", "per_item"), opt("decor", "per_event"), opt("music", "per_event")],
+    }),
+    service("zags", "documents_help", { units: ["per_event"], inPriceFrom: false }),
+    service("zags", "date_appointment", { units: ["per_event"], inPriceFrom: false }),
+    service("zags", "foreign_registration", { units: ["per_event"], inPriceFrom: false }),
+    other(["per_event"]),
+  ],
+  requiredServices: [],
+};
+
+const restaurant: CategoryConfig = {
+  code: "restaurant",
+  label: "cat_restaurant",
+  enabled: true,
+  sort: 6,
+  // Фотиха днём, девичник вечером; отдельных залов несколько — заказов одновременно
+  availability: "parts",
+  photoPolicy: "no_people",
+  minPhotos: 3,
+  recommendedPhotos: 6,
+  maxVideoLinks: 0,
+  listingFields: ["guest_capacity", "district"],
+  attributes: [
+    {
+      key: "cuisine",
+      label: "attr_cuisine",
+      type: "multi",
+      options: CUISINES,
+      required: true,
+      filter: "any",
+    },
+    {
+      key: "events",
+      label: "attr_rest_events",
+      type: "multi",
+      options: choices("rest_event", [
+        "fotiha",
+        "girls_party",
+        "engagement",
+        "birthday",
+        "family",
+        "corporate",
+      ]),
+      required: true,
+      filter: "any",
+    },
+    {
+      key: "private_rooms",
+      label: "attr_private_rooms",
+      type: "int",
+      min: 0,
+      max: 50,
+      required: false,
+      filter: "min",
+    },
+    {
+      key: "alcohol",
+      label: "attr_alcohol",
+      type: "enum",
+      options: choices("alcohol", ["allowed", "bring_own", "not_allowed"]),
+      required: false,
+    },
+    flag("live_music", "attr_live_music", true),
+    flag("kids_room", "attr_kids_room", true),
+    flag("parking", "attr_parking"),
+    flag("accessible", "attr_accessible", true),
+  ],
+  requestForm: {
+    guests: "required",
+    fields: [
+      startTime(true),
+      { key: "private_room", label: "rf_private_room", type: "bool", required: false },
+      servicesField(false),
+    ],
+  },
+  services: [
+    service("restaurant", "banquet_menu", {
+      units: ["per_guest"],
+      tier: "base",
+      options: [
+        opt("extra_dish", "per_guest"),
+        opt("drinks", "per_guest"),
+        opt("cake", "per_event"),
+        opt("music", "per_event"),
+      ],
+    }),
+    service("restaurant", "fotiha_menu", { units: ["per_guest", "per_table"] }),
+    service("restaurant", "girls_party", {
+      units: ["per_guest", "per_event"],
+      options: [opt("decor", "per_event"), opt("music", "per_event")],
+    }),
+    service("restaurant", "private_room", {
+      units: ["per_hour", "per_event"],
+      inPriceFrom: false,
+      options: [opt("decor", "per_event"), opt("sound", "per_event")],
+    }),
+    service("restaurant", "kids_menu", { units: ["per_guest"], inPriceFrom: false }),
+    other(["per_guest", "per_event", "per_hour"]),
+  ],
+  // Цена «за гостя» есть у каждого ресторана — её и сравнивают
+  requiredServices: ["banquet_menu"],
+};
+
+const attire: CategoryConfig = {
+  code: "attire",
+  label: "cat_attire",
+  enabled: true,
+  sort: 8,
+  // Платье подгоняют или шьют заранее: календаря нет, срок заказа
+  availability: "lead",
+  // Платья — на моделях и невестах: люди на фото с их согласия
+  photoPolicy: "portfolio",
+  minPhotos: 3,
+  recommendedPhotos: 8,
+  maxVideoLinks: 3,
+  // Примерка — в салоне: район обязателен
+  listingFields: ["district"],
+  attributes: [
+    {
+      key: "attire_for",
+      label: "attr_attire_for",
+      type: "multi",
+      options: ATTIRE_FOR,
+      required: true,
+      filter: "any",
+    },
+    {
+      key: "deal_kinds",
+      label: "attr_attire_deals",
+      type: "multi",
+      options: ATTIRE_DEALS,
+      required: true,
+      filter: "any",
+    },
+    flag("national_dress", "attr_national_dress", true),
+    flag("alterations", "attr_alterations", true),
+    flag("fitting_room", "attr_fitting_room"),
+    flag("delivery", "attr_delivery"),
+    {
+      key: "size_range",
+      label: "attr_size_range",
+      type: "text",
+      maxLength: 40,
+      localized: false,
+      required: false,
+    },
+    leadDays(120),
+    {
+      key: "working_hours",
+      label: "attr_working_hours",
+      type: "text",
+      maxLength: 40,
+      localized: false,
+      required: false,
+    },
+  ],
+  requestForm: {
+    guests: "hidden",
+    fields: [
+      { key: "attire_for", label: "rf_attire_for", type: "enum", options: ATTIRE_FOR, required: true },
+      { key: "deal", label: "rf_attire_deal", type: "enum", options: ATTIRE_DEALS, required: true },
+      { key: "size", label: "rf_size", type: "int", min: 30, max: 80, required: false },
+      servicesField(false),
+    ],
+  },
+  services: [
+    service("attire", "dress_rent", {
+      units: ["per_item"],
+      tier: "base",
+      options: [opt("veil", "per_item"), opt("alterations", "per_item"), opt("shoes", "per_item")],
+    }),
+    service("attire", "dress_sale", {
+      units: ["per_item"],
+      tier: "base",
+      options: [opt("veil", "per_item"), opt("alterations", "per_item")],
+    }),
+    service("attire", "suit_rent", { units: ["per_set"], options: [opt("shoes", "per_item")] }),
+    service("attire", "suit_sale", { units: ["per_set"], options: [opt("alterations", "per_item")] }),
+    service("attire", "national_outfit", { units: ["per_item", "per_set"] }),
+    service("attire", "tailoring", { units: ["per_item"] }),
+    service("attire", "accessories", { units: ["per_item"], inPriceFrom: false }),
+    other(["per_item", "per_set", "per_event"]),
+  ],
+  requiredServices: [],
+};
+
+const food: CategoryConfig = {
+  code: "food",
+  label: "cat_food",
+  enabled: true,
+  sort: 10,
+  // Утренний плов и вечерний банкет — разные заказы; бригад бывает несколько
+  availability: "parts",
+  photoPolicy: "no_people",
+  minPhotos: 3,
+  recommendedPhotos: 6,
+  maxVideoLinks: 0,
+  listingFields: [],
+  attributes: [
+    {
+      key: "cuisine",
+      label: "attr_cuisine",
+      type: "multi",
+      options: CUISINES,
+      required: true,
+      filter: "any",
+    },
+    {
+      key: "min_guests",
+      label: "attr_min_guests",
+      type: "int",
+      min: 1,
+      max: 5000,
+      required: true,
+      filter: "max",
+    },
+    { key: "max_guests", label: "attr_max_guests", type: "int", min: 1, max: 10000, required: false },
+    flag("on_site_cooking", "attr_on_site_cooking", true),
+    flag("waiters", "attr_waiters", true),
+    flag("furniture", "attr_furniture", true),
+    flag("tasting", "attr_tasting"),
+    flag("certificates", "attr_certificates"),
+    serviceArea(true),
+  ],
+  requestForm: {
+    guests: "required",
+    fields: [
+      startTime(true),
+      {
+        key: "place",
+        label: "rf_cater_place",
+        type: "enum",
+        options: choices("cater_place", ["home", "yard", "office", "outdoor", "venue"]),
+        required: false,
+      },
+      { key: "event_district", label: "rf_event_district", type: "district", required: false },
+      { key: "need_waiters", label: "rf_need_waiters", type: "bool", required: false },
+      { key: "need_furniture", label: "rf_need_furniture", type: "bool", required: false },
+      servicesField(false),
+    ],
+  },
+  services: [
+    service("food", "banquet_catering", {
+      units: ["per_guest"],
+      tier: "base",
+      options: [opt("waiters", "per_event"), opt("furniture", "per_guest"), opt("drinks", "per_guest")],
+    }),
+    service("food", "morning_plov", {
+      units: ["per_guest", "per_kg"],
+      tier: "base",
+      options: [opt("waiters", "per_event"), opt("furniture", "per_guest"), opt("tent", "per_event")],
+    }),
+    service("food", "buffet", { units: ["per_guest"] }),
+    service("food", "fotiha_table", { units: ["per_guest", "per_table"] }),
+    service("food", "waiter_service", { units: ["per_hour", "per_event"], inPriceFrom: false }),
+    service("food", "equipment_rent", { units: ["per_guest", "per_event"], inPriceFrom: false }),
+    other(["per_guest", "per_event", "per_kg"]),
+  ],
+  requiredServices: [],
+};
+
 /**
  * Следующий этап: в каталоге выключены, у вендора — только «другая услуга». Поля витрины,
  * формы и каталог услуг добавятся вместе с включением категории
@@ -782,7 +1121,7 @@ function later(
     label,
     enabled: false,
     sort,
-    availability: code === "attire" ? "lead" : "day",
+    availability: "day",
     photoPolicy: "no_people",
     minPhotos: 3,
     recommendedPhotos: 6,
@@ -795,7 +1134,7 @@ function later(
   };
 }
 
-/** Все категории в порядке показа */
+/** Все категории — в порядке кодов (CATEGORY_CODES); порядок показа — sort */
 export const CATEGORIES: readonly CategoryConfig[] = [
   hall,
   car,
@@ -805,10 +1144,10 @@ export const CATEGORIES: readonly CategoryConfig[] = [
   cake,
   gifts,
   decor,
-  later("food", "cat_food", 9, ["per_guest", "per_event"]),
-  later("restaurant", "cat_restaurant", 10, ["per_guest", "per_event"]),
-  later("attire", "cat_attire", 11, ["per_item", "per_event"]),
-  later("music", "cat_music", 12, ["per_hour", "per_event"]),
-  later("kids", "cat_kids", 13, ["per_hour", "per_event"]),
-  later("zags", "cat_zags", 14, ["per_event"]),
+  food,
+  restaurant,
+  attire,
+  later("music", "cat_music", 13, ["per_hour", "per_event"]),
+  later("kids", "cat_kids", 14, ["per_hour", "per_event"]),
+  zags,
 ];

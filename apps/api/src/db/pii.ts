@@ -65,6 +65,16 @@ export function notifiableVendorUsers(vendorColumn: string): RawBuilder<number> 
       and u.tg_linked_at is not null and p.telegram_chat_id is not null)`;
 }
 
+/**
+ * Имя, которое клиент вписал в заявку, по столбцу с id заявки: чья она. null — контакта нет
+ * или он удалён по сроку хранения. Телефон не читается. Панель оператора
+ */
+export function requestContactName(column: string): RawBuilder<string | null> {
+  return sql<
+    string | null
+  >`(select case when c.purged_at is null then c.contact_name end from pii.request_contacts c where c.request_id = ${sql.ref(column)})`;
+}
+
 /** Есть ли у листинга телефон для заявок — сам номер не читается. Панель оператора */
 export function hasListingPhone(column: string): RawBuilder<boolean> {
   return sql<boolean>`exists (select 1 from pii.listing_contacts c where c.listing_id = ${sql.ref(column)})`;
@@ -84,6 +94,36 @@ export function listingContactKinds(column: string): RawBuilder<("phone" | "tele
  */
 export function listingPhone(column: string): RawBuilder<string | null> {
   return sql<string | null>`pii.read_listing_phone(${sql.ref(column)})`;
+}
+
+// ── имена пачкой: подписи в журналах и уведомлениях ─────────────────────────
+// Один запрос на страницу, а не на строку; телефонов не читают
+
+/** Имена сотрудников по id: id → имя (нет профиля — нет в карте). Панель оператора: журналы, уведомления */
+export async function staffNames(trx: Tx, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await trx
+    .selectFrom("pii.staff_profiles")
+    .select(["staff_id", "display_name"])
+    .where("staff_id", "in", [...ids])
+    .execute();
+  return new Map(rows.map((row) => [row.staff_id, row.display_name]));
+}
+
+/**
+ * ФИО пользователей кабинета по id: id → ФИО (нет профиля или ФИО не вписано — нет в карте).
+ * Панель оператора: журналы, уведомления
+ */
+export async function vendorUserNames(trx: Tx, ids: readonly string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await trx
+    .selectFrom("pii.vendor_user_profiles")
+    .select(["vendor_user_id", "full_name"])
+    .where("vendor_user_id", "in", [...ids])
+    .execute();
+  const names = new Map<string, string>();
+  for (const row of rows) if (row.full_name !== null) names.set(row.vendor_user_id, row.full_name);
+  return names;
 }
 
 // ── чтение телефонов (журнал доступа пишет база) ────────────────────────────

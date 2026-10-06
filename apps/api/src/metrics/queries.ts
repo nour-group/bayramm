@@ -208,6 +208,7 @@ interface ContactRow {
   opens: number;
   phone: number;
   telegram: number;
+  opens_prev: number;
 }
 
 /** У каких витрин чаще открывают контакты за последние days дней (app.metrics_contacts) */
@@ -229,6 +230,7 @@ export async function loadContacts(
     opens: row.opens,
     phone: row.phone,
     telegram: row.telegram,
+    opensPrev: row.opens_prev,
   }));
 }
 

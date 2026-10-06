@@ -83,6 +83,7 @@ describe("ratelimits в wrangler.jsonc API", () => {
     "RATE_LIMIT_REQUESTS_IP",
     "RATE_LIMIT_REQUESTS_ACTOR",
     "RATE_LIMIT_CONTACTS_IP",
+    "RATE_LIMIT_OTP_ACCOUNT",
   ];
 
   interface Limit {

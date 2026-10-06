@@ -568,14 +568,15 @@ export function openListingContacts(
   signedIn: boolean,
 ): Promise<ListingContactValues | null> {
   return withActor(db, GUEST, async (trx) => {
-    const listing = await trx
-      .selectFrom("app.listings")
-      .select("id")
-      .where("slug", "=", slug)
-      .where("status", "=", "active")
-      .executeTakeFirst();
-    return listing === undefined ? null : revealListingContacts(trx, listing.id, source, signedIn);
+    const id = await visibleListingId(trx, slug);
+    return id === null ? null : revealListingContacts(trx, id, source, signedIn);
   });
+}
+
+/** id витрины, которую видно в каталоге (те же условия, что у выдачи и карточки); нет — null */
+async function visibleListingId(trx: Tx, slug: string): Promise<string | null> {
+  const row = await publicListings(trx, NO_DATE).where("l.slug", "=", slug).executeTakeFirst();
+  return row?.id ?? null;
 }
 
 /**
@@ -590,9 +591,10 @@ export function recordContactChoice(
   signedIn: boolean,
 ): Promise<boolean> {
   return withActor(db, GUEST, async (trx) => {
+    const id = await visibleListingId(trx, slug);
+    if (id === null) return false;
     const { rows } = await sql<{ recorded: boolean }>`
-      select app.record_contact_event(l.id, ${channel}::text, ${source}::text, ${signedIn}::boolean) as recorded
-      from app.listings l where l.slug = ${slug} and l.status = 'active'
+      select app.record_contact_event(${id}::uuid, ${channel}::text, ${source}::text, ${signedIn}::boolean) as recorded
     `.execute(trx);
     return rows[0]?.recorded === true;
   });

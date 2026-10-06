@@ -153,6 +153,7 @@ const CONTACTS: ContactMetrics = {
       opens: 48,
       phone: 21,
       telegram: 9,
+      opensPrev: 40,
     },
     {
       listing: {
@@ -165,6 +166,7 @@ const CONTACTS: ContactMetrics = {
       opens: 5,
       phone: 0,
       telegram: 2,
+      opensPrev: 9,
     },
   ],
 };
@@ -343,11 +345,19 @@ describe("раздел «Метрики»", () => {
     expect(rows).toHaveLength(2);
     // Как пришло с сервера: чаще открывают — сверху
     expect(rows[0]?.querySelector("a.row-link")?.getAttribute("href")).toBe(`/listings/${LISTING_ID}`);
-    expect([...(rows[0]?.querySelectorAll("td") ?? [])].map((td) => td.textContent)).toEqual([
-      "48",
-      "21",
-      "9",
-    ]);
+    const cells = [...(rows[0]?.querySelectorAll("td") ?? [])];
+    // Число — первым узлом ячейки; изменение к предыдущим 30 дням — под ним
+    expect(cells.map((td) => td.firstChild?.textContent)).toEqual(["48", "21", "9"]);
+    // Рост — со знаком и «было»; диктору то же словами: смысл не держится на цвете
+    expect(cells[0]?.querySelector("[aria-hidden='true']")?.textContent).toBe("+8 · было 40");
+    expect(cells[0]?.querySelector(".visually-hidden")?.textContent).toBe(
+      "На 8 больше, чем за предыдущие 30 дней: тогда было 40.",
+    );
+    const fall = rows[1]?.querySelector("td");
+    expect(fall?.querySelector("[aria-hidden='true']")?.textContent).toBe("−4 · было 9");
+    expect(fall?.querySelector(".visually-hidden")?.textContent).toBe(
+      "На 4 меньше, чем за предыдущие 30 дней: тогда было 9.",
+    );
     expect(rows[0]?.textContent).toContain(categoryName("hall"));
     expect(rows[0]?.textContent).toContain("Hall V101");
     expect(rows[1]?.textContent).toContain(t.status.review);
@@ -357,6 +367,14 @@ describe("раздел «Метрики»", () => {
       t.colContactPhone,
       t.colContactTelegram,
     ]);
+  });
+
+  it("изменение открытий: рост, спад и «без изменений» — знаком и словами", () => {
+    expect(t.opensChange(12, 8)).toBe("+4 · было 8");
+    expect(t.opensChange(3, 10)).toBe("−7 · было 10");
+    expect(t.opensChange(0, 0)).toBe("без изменений · было 0");
+    expect(t.opensChange(5, 0)).toBe("+5 · было 0");
+    expect(t.opensChangeSpoken(7, 7, 30)).toBe("Столько же, сколько за предыдущие 30 дней: 7.");
   });
 
   it("«Контакты витрин»: фильтр категории уходит и в них; нет контактов — пустое состояние", async () => {

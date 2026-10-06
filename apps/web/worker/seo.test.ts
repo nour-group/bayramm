@@ -139,7 +139,11 @@ describe("разметка страниц", () => {
     ]);
     // Залы — тоже свой раздел; неизвестная категория — общая страница каталога
     const hall = await setup().html(`${PROD}/catalog?category=hall&lang=ru`);
-    expect(title(hall.body)).toBe("Залы и тойханы в Ташкенте · Bayramm");
+    expect(title(hall.body)).toBe("Тойханы в Ташкенте · Bayramm");
+    // Описание раздела — та же строка, что на плитке лендинга
+    expect(metaContent(hall.body, "name", "description")).toContain(
+      "Банкетные залы для свадьбы и плова — по вместимости, меню и свободной дате.",
+    );
     expect(canonical(hall.body)).toBe(`${PROD}/catalog?category=hall&amp;lang=ru`);
     const other = await setup().html(`${PROD}/catalog?category=spaceships`);
     expect(canonical(other.body)).toBe(`${PROD}/catalog`);
@@ -253,7 +257,11 @@ describe("browserLang", () => {
 describe("robots.txt и sitemap.xml", () => {
   it("robots.txt: боевой домен — всё, кроме личного, и карта сайта; staging — ничего", async () => {
     const { get } = setup();
-    const prod = await (await get(`${PROD}/robots.txt`)).text();
+    const res = await get(`${PROD}/robots.txt`);
+    // Те же заголовки безопасности, что у страниц
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("strict-transport-security")).toBe("max-age=31536000");
+    const prod = await res.text();
     expect(prod).toContain("Allow: /");
     for (const path of ["/auth", "/profile", "/requests", "/favorites", "/venue/*/request"])
       expect(prod).toContain(`Disallow: ${path}\n`);

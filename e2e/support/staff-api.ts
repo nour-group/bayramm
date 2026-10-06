@@ -14,6 +14,7 @@ import type {
   ListingSaveResult,
   MetricsOverview,
   OutboxHealth,
+  PiiAccessList,
   PublishBlocker,
   RevealedListingContacts,
   RevisionDetail,
@@ -64,7 +65,11 @@ export {
   CAR_LISTING_ID,
   CAR_REQUEST_ID,
   LIMOUSINE_ID,
+  PHOTO_DECLINE_REASON,
+  PHOTO_DECLINED_ID,
   PHOTO_LISTING_ID,
+  PHOTO_PENDING_2_ID,
+  PHOTO_PENDING_ID,
 } from "./staff-catalog";
 
 /* API панели оператора в памяти теста: page.route перехватывает /api/* до сети.
@@ -133,7 +138,7 @@ export const STAFF: StaffMe = staffOf("admin");
 
 const DICTIONARIES: StaffDictionaries = {
   categories: [
-    { code: "hall", nameRu: "Площадка / Тойхона", nameUz: "Maydon / Toʻyxona", enabled: true },
+    { code: "hall", nameRu: "Тойхона", nameUz: "Toʻyxona", enabled: true },
     { code: "car", nameRu: "Кортеж", nameUz: "Kortej", enabled: true },
   ],
   districts: [
@@ -448,6 +453,7 @@ const OUTBOX: OutboxHealth = {
       kind: "vendor.request_new",
       recipientKind: "vendor_user",
       recipientRef: "00000000",
+      recipientLabel: "Бахтиёр Рашидов",
       attempts: 8,
       error: "api 403: Forbidden: bot was blocked by the user",
       createdAt: iso,
@@ -468,8 +474,76 @@ const AUDIT: AuditList = {
       action: "request.remind",
       objectType: "request",
       objectId: REQUEST_ID,
+      objectLabel: "№1051",
       detail: { recipients: 1 },
       source: "admin",
+    },
+    {
+      id: "2",
+      at: iso,
+      actorKind: "vendor_user",
+      actor: { id: "00000000-0000-4000-8400-0000000000a1", name: "Бахтиёр Рашидов" },
+      action: "listing.update",
+      objectType: "listing",
+      objectId: LISTING_ID,
+      objectLabel: "Lola zali",
+      detail: { fields: ["name"] },
+      source: "vendor_cabinet",
+    },
+    {
+      id: "3",
+      at: iso,
+      actorKind: "client",
+      actor: { id: "00000000-0000-4000-8200-000000000001", name: "C-00000000" },
+      action: "request.update",
+      objectType: "request",
+      objectId: REQUEST_ID,
+      objectLabel: "№1051",
+      detail: {},
+      source: "tma",
+    },
+    {
+      id: "4",
+      at: iso,
+      actorKind: "staff",
+      actor: { id: STAFF.id, name: STAFF.displayName },
+      action: "listing.update",
+      objectType: "listing",
+      objectId: "00000000-0000-4000-8100-0000000000ff",
+      objectLabel: null,
+      detail: { fields: ["name"] },
+      source: "admin",
+    },
+  ],
+};
+
+/** Кто читал телефоны: чей телефон — словами, номеров нет */
+const PII_AUDIT: PiiAccessList = {
+  total: 2,
+  items: [
+    {
+      id: "1",
+      at: iso,
+      actorKind: "staff",
+      actor: { id: STAFF.id, name: STAFF.displayName },
+      subjectKind: "request_contact",
+      subjectId: REQUEST_ID,
+      subjectLabel: "№1051",
+      field: "phone",
+      purpose: "staff_reveal",
+      reason: "Клиент просит перезвонить",
+    },
+    {
+      id: "2",
+      at: iso,
+      actorKind: "vendor_user",
+      actor: { id: "00000000-0000-4000-8400-0000000000a1", name: "Бахтиёр Рашидов" },
+      subjectKind: "request_contact",
+      subjectId: REQUEST_ID,
+      subjectLabel: null,
+      field: "phone",
+      purpose: "request_inbox",
+      reason: null,
     },
   ],
 };
@@ -596,6 +670,8 @@ export interface StaffApi {
   readonly actions: string[];
   /** Правки занятых дней: тело PUT …/availability (с версией календаря) */
   readonly calendar: AvailabilityInput[];
+  /** Решения по фото: POST …/photos/:id/moderation — какое фото и тело (отказ — с причиной) */
+  readonly photoDecisions: { readonly listingId: string; readonly photoId: string; readonly body: unknown }[];
   /** Входы: как Mini App (initData) и повышения сессии аккаунта до сотрудника */
   readonly webapp: string[];
   readonly elevated: number;
@@ -656,6 +732,7 @@ export async function mockStaffApi(
     reveals: [],
     actions: [],
     calendar: [],
+    photoDecisions: [],
     webapp: [],
     get elevated() {
       return elevated;
@@ -879,6 +956,31 @@ export async function mockStaffApi(
         return route.fulfill({ status: 204 });
       }
     }
+    // Решение по фото: отказ — только с причиной (1–500 знаков), как на сервере; ответ — фото витрины
+    const photoMatch = /^\/staff\/listings\/([0-9a-f-]{36})\/photos\/([0-9a-f-]{36})\/moderation$/.exec(path);
+    if (photoMatch?.[1] && photoMatch[2] && method === "POST") {
+      const owner = listings.find((l) => l.id === photoMatch[1]);
+      const current = owner?.photos.find((p) => p.id === photoMatch[2]);
+      if (!owner || !current) return fail(route, 404, "not_found");
+      const body = request.postDataJSON() as { decision?: unknown; reason?: unknown };
+      state.photoDecisions.push({ listingId: owner.id, photoId: current.id, body });
+      if (body.decision !== "approved" && body.decision !== "declined")
+        return fail(route, 422, "invalid_input", ["decision"]);
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (body.decision === "declined" && (reason === "" || reason.length > 500))
+        return fail(route, 422, "invalid_input", ["reason"]);
+      const photos = owner.photos.map((p) =>
+        p.id === current.id
+          ? {
+              ...p,
+              moderation: body.decision as "approved" | "declined",
+              declineReason: body.decision === "declined" ? reason : null,
+            }
+          : p,
+      );
+      replace({ ...owner, photos });
+      return json(route, 200, photos);
+    }
     const listingMatch = /^\/staff\/listings\/([0-9a-f-]{36})(?:\/(\w+))?$/.exec(path);
     if (listingMatch?.[1]) {
       const listing = listings.find((l) => l.id === listingMatch[1]);
@@ -1001,7 +1103,7 @@ export async function mockStaffApi(
     if (key === `GET /staff/clients/${CLIENT_ID}`) return json(route, 200, CLIENT);
     if (key === "GET /staff/outbox") return json(route, 200, OUTBOX);
     if (key === "GET /staff/audit") return json(route, 200, AUDIT);
-    if (key === "GET /staff/audit/pii") return json(route, 200, { total: 0, items: [] });
+    if (key === "GET /staff/audit/pii") return json(route, 200, PII_AUDIT);
     if (key === "GET /staff/team") return json(route, 200, TEAM);
     if (key === "GET /staff/settings") return json(route, 200, SETTINGS);
     if (key === "GET /staff/metrics")
@@ -1046,6 +1148,7 @@ export async function mockStaffApi(
           opens: 48,
           phone: 21,
           telegram: 9,
+          opensPrev: 40,
         },
         {
           listing: { id: CAR_LISTING_ID, name: "Oq kortej", status: "active", categoryCode: "car" },
@@ -1053,6 +1156,7 @@ export async function mockStaffApi(
           opens: 17,
           phone: 6,
           telegram: 7,
+          opensPrev: 17,
         },
         {
           listing: { id: PHOTO_QUEUE_LISTING_ID, name: "Bogʻ zali", status: "active", categoryCode: "hall" },
@@ -1060,6 +1164,7 @@ export async function mockStaffApi(
           opens: 5,
           phone: 1,
           telegram: 0,
+          opensPrev: 9,
         },
       ];
       const items = rows.filter((row) => !category || row.listing.categoryCode === category);

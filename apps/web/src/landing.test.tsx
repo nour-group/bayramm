@@ -34,7 +34,7 @@ describe("лендинг (/ в браузере)", () => {
     expect([...document.querySelectorAll(".ln-promise h3")].map((h) => h.textContent)).toEqual([
       "Бесплатно для вас",
       "Цена видна сразу",
-      "Телефон без заявки",
+      "Контакты без заявки",
       "Ответ за 12 часов",
     ]);
     // Вопросы — только о том, чего нет в шагах и обещаниях: цена и 12 часов там уже сказаны
@@ -64,7 +64,7 @@ describe("лендинг (/ в браузере)", () => {
       "Зал, кортеж, фото, торт — с ценой и телефоном сразу",
     );
     // Чисел витрин нет нигде; пустые категории честно помечены
-    await waitFor(() => document.querySelectorAll(".cat-soon").length === 8, "пометки «скоро»");
+    await waitFor(() => document.querySelectorAll(".cat-soon").length === 12, "пометки «скоро»");
     expect(document.querySelector(".cat-soon")?.textContent).toBe("скоро");
   });
 
@@ -74,28 +74,41 @@ describe("лендинг (/ в браузере)", () => {
     await waitFor(() => document.querySelectorAll(".cat-soon").length > 0, "категории из API");
     const tiles = [...document.querySelectorAll<HTMLAnchorElement>(".cat-tile")];
     // Названия — короткие, из глоссария клиента (без косых черт)
+    // Путь пары: ЗАГС, тойхона, кортеж, фото и видео, студия, ресторан…
     expect(tiles.map((a) => a.querySelector(".cat-tile-name")?.textContent)).toEqual([
-      "Залы и тойханы",
+      "ЗАГС",
+      "Тойханы",
       "Кортежи",
-      "Фотостудии",
-      "Цветы",
       "Фото и видео",
-      "Торты и сладости",
+      "Студии",
+      "Рестораны",
+      "Цветы",
+      "Свадебные наряды",
       "Подарки",
+      "Кейтеринг",
+      "Торты и сладости",
       "Декор и оформление",
     ]);
-    expect(tiles.map((a) => a.getAttribute("href"))[1]).toBe("/catalog?category=car");
+    expect(tiles.map((a) => a.getAttribute("href"))[2]).toBe("/catalog?category=car");
     // Залы — раздел, как остальные: каталог без раздела — «Все»
-    expect(tiles[0]?.getAttribute("href")).toBe("/catalog?category=hall");
+    expect(tiles[1]?.getAttribute("href")).toBe("/catalog?category=hall");
+    // Что в разделе — строкой у плитки (видна с планшета)
+    expect(tiles[0]?.querySelector(".cat-tile-desc")?.textContent).toBe(
+      "Регистрация брака: запись на дату, документы, зал для торжественной церемонии",
+    );
     const soon = tiles
       .filter((a) => a.querySelector(".cat-soon"))
       .map((a) => a.querySelector(".cat-tile-name")?.textContent);
     expect(soon).toEqual([
-      "Фотостудии",
-      "Цветы",
+      "ЗАГС",
       "Фото и видео",
-      "Торты и сладости",
+      "Студии",
+      "Рестораны",
+      "Цветы",
+      "Свадебные наряды",
       "Подарки",
+      "Кейтеринг",
+      "Торты и сладости",
       "Декор и оформление",
     ]);
     expect(document.body.textContent).not.toMatch(/\d+\s+(витрин|вендор)/);
@@ -109,7 +122,7 @@ describe("лендинг (/ в браузере)", () => {
     const categories = [...document.querySelectorAll(".ln-cards .card")].map(
       (card) => card.querySelector(".card-meta")?.textContent?.split("\u00a0· ")[0],
     );
-    expect(categories).toEqual(["Залы и тойханы", "Кортежи", "Фотостудии", "Цветы"]);
+    expect(categories).toEqual(["ЗАГС", "Тойханы", "Кортежи", "Фото и видео"]);
     for (const name of cards()) expect(all.map((l) => l.name)).toContain(name);
     // Разделы на лендинге перечислены один раз — сеткой; у витрин ни переключателя, ни «весь раздел»
     expect(document.querySelectorAll(".ln-venues .cat-chip, .ln-venues .ln-head-link")).toHaveLength(0);
@@ -131,7 +144,7 @@ describe("лендинг (/ в браузере)", () => {
     const categories = [...document.querySelectorAll(".ln-cards .card-meta")].map(
       (meta) => meta.textContent?.split("\u00a0· ")[0],
     );
-    expect(categories).toEqual(["Залы и тойханы", "Торты и сладости", "Залы и тойханы", "Торты и сладости"]);
+    expect(categories).toEqual(["Тойханы", "Торты и сладости", "Тойханы", "Торты и сладости"]);
   });
 
   it("выдача не загрузилась — блок залов просто не показываем", async () => {
@@ -148,7 +161,7 @@ describe("лендинг (/ в браузере)", () => {
     await mount({ path: "/", identity: "guest" });
     await waitFor(() => document.querySelector("form.ln-search"), "подбор");
     const form = document.querySelector("form.ln-search") as HTMLFormElement;
-    expect(form.querySelector('button[aria-haspopup="listbox"]')?.textContent).toContain("Залы и тойханы");
+    expect(form.querySelector('button[aria-haspopup="listbox"]')?.textContent).toContain("Тойханы");
     await type(form.querySelector("input"), "120");
     await click(byText("form.ln-search button", "Показать"));
     await waitFor(() => window.location.pathname === "/catalog", "каталог");

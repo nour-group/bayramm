@@ -420,6 +420,10 @@ export interface AppPhotos {
   moderated_at: Timestamp | null;
   moderated_by: string | null;
   moderation: Generated<AppModerationStatus>;
+  /**
+   * Причина отказа модератора — только у отклонённого фото; партнёр видит её в кабинете
+   */
+  moderation_reason: string | null;
   no_faces_ack: Generated<boolean>;
   /**
    * Загрузивший подтвердил согласие людей на фото — только у категорий с правилом portfolio

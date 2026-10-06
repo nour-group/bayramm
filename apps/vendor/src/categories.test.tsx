@@ -34,11 +34,13 @@ const SVC = "bbbbbbbb-0000-0000-0000-000000000001";
 const OPT = "bbbbbbbb-0000-0000-0000-0000000000f1";
 const HOUR = 3600 * 1000;
 
+const NONE = { services: 0, photos: 0, proposals: 0 };
+
 const REFS: VendorListingRef[] = [
-  { id: HALL, name: "Lola zali", status: "active", categoryCode: "hall" },
-  { id: CAR, name: "Kortej Premium", status: "active", categoryCode: "car" },
-  { id: PHOTO, name: "Kadr Studio", status: "draft", categoryCode: "photo" },
-  { id: CAKE, name: "Shirin Tort", status: "active", categoryCode: "cake" },
+  { id: HALL, name: "Lola zali", status: "active", categoryCode: "hall", attention: NONE },
+  { id: CAR, name: "Kortej Premium", status: "active", categoryCode: "car", attention: NONE },
+  { id: PHOTO, name: "Kadr Studio", status: "draft", categoryCode: "photo", attention: NONE },
+  { id: CAKE, name: "Shirin Tort", status: "active", categoryCode: "cake", attention: NONE },
 ];
 
 const me = (role: VendorRole = "owner"): VendorMe => ({
@@ -168,6 +170,7 @@ function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
     budgetMaxUzs: 3_000_000,
     createdAt: new Date(created).toISOString(),
     sla: { dueAt: new Date(created + 12 * HOUR).toISOString(), firstResponseAt: null, breached: false },
+    firstResponseBy: null,
     contactName: "Dilnoza",
     ...patch,
   };
@@ -327,7 +330,7 @@ describe("витрины", () => {
     const side = container.querySelector(".side-vitrinas");
     const buttons = [...(side?.querySelectorAll("button") ?? [])];
     expect(buttons.map((b) => b.textContent)).toEqual([
-      "Lola zaliПлощадка / Тойхона",
+      "Lola zaliТойхона",
       "Kortej PremiumКортеж",
       "Kadr StudioФото и видео",
       "Shirin TortТорты и сладости",
@@ -354,10 +357,10 @@ describe("витрины", () => {
     const trigger = container.querySelector(".vitrina-select button");
     // Подпись — действие, а не слово «Витрина»: на экране «Витрина» оно повторило бы заголовок
     expect(container.querySelector(".vitrina-select label")?.textContent).toBe("Выберите витрину");
-    expect(trigger?.textContent).toContain("Lola zali · Площадка / Тойхона");
+    expect(trigger?.textContent).toContain("Lola zali · Тойхона");
     await click(trigger);
     expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
-      "Lola zali · Площадка / Тойхона",
+      "Lola zali · Тойхона",
       "Kortej Premium · Кортеж",
       "Kadr Studio · Фото и видео",
       "Shirin Tort · Торты и сладости",
@@ -371,7 +374,7 @@ describe("витрины", () => {
     routes["GET /api/vendor/me"] = () => ({ body: { ...me("owner"), listings: REFS.slice(0, 2) } });
     await mount("/card");
     const pills = [...container.querySelectorAll(".vitrina-pills-two button")];
-    expect(pills.map((p) => p.textContent)).toEqual(["Lola zaliПлощадка / Тойхона", "Kortej PremiumКортеж"]);
+    expect(pills.map((p) => p.textContent)).toEqual(["Lola zaliТойхона", "Kortej PremiumКортеж"]);
     expect(container.querySelector(".vitrina-select")).toBeNull();
     // Выбор называет витрину — заголовка с её именем второй раз нет
     expect(container.querySelector(".venue-name")).toBeNull();
@@ -941,5 +944,76 @@ describe("календарь по модели занятости", () => {
     expect(calls.some((c) => c.path.startsWith(`/api/vendor/listings/${CAKE}/calendar`))).toBe(false);
     await click(byText(".lead-panel a", "К услугам"));
     expect(heading()).toBe("Услуги");
+  });
+});
+
+describe("«требует внимания» у витрин", () => {
+  // Кортеж: две отклонённые услуги; студия: отклонённое фото и предложение; зал и торты — чисто
+  const withAttention = () =>
+    REFS.map((ref) =>
+      ref.id === CAR
+        ? { ...ref, attention: { services: 2, photos: 0, proposals: 0 } }
+        : ref.id === PHOTO
+          ? { ...ref, attention: { services: 0, photos: 1, proposals: 1 } }
+          : ref,
+    );
+  const marks = () =>
+    [...container.querySelectorAll(".side-vitrina")].map(
+      (b) => b.querySelector(".vitrina-attn")?.textContent ?? "",
+    );
+
+  beforeEach(() => {
+    routes["GET /api/vendor/me"] = () => ({ body: { ...me("owner"), listings: withAttention() } });
+  });
+
+  it("компьютер: значок раздела — по всем витринам, у витрин — где именно; на «Услугах» одни, на «Витрине» другие", async () => {
+    resize(1280);
+    await mount("/services");
+    const link = (href: string) => container.querySelector(`.side-nav a[href="${href}"]`);
+    expect(link("/services")?.querySelector(".nav-count")?.textContent).toBe("2");
+    expect(link("/card")?.querySelector(".nav-count")?.textContent).toBe("2");
+    expect(link("/calendar")?.querySelector(".nav-count")).toBeNull();
+    expect(marks()).toEqual(["", "требует внимания: 2", "", ""]);
+
+    await click(byText("nav.side-nav a", "Витрина"));
+    expect(heading()).toBe("Витрина");
+    expect(marks()).toEqual(["", "", "требует внимания: 2", ""]);
+
+    // Календарь и заявки витрин не помечают: там значка нет
+    await click(byText("nav.side-nav a", "Календарь"));
+    expect(marks()).toEqual(["", "", "", ""]);
+  });
+
+  it("телефон: в списке выбора витрины — слова «требует внимания» только у тех, где они есть", async () => {
+    await mount("/services");
+    await click(container.querySelector(".vitrina-select button"));
+    expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
+      expect.stringMatching(/^Lola zali · [^·]+$/),
+      expect.stringMatching(/^Kortej Premium · [^·]+ · требует внимания: 2$/),
+      expect.stringMatching(/^Kadr Studio · [^·]+$/),
+      expect.stringMatching(/^Shirin Tort · [^·]+$/),
+    ]);
+  });
+
+  it("телефон, две витрины: под названием пилюли — строка со словами, а не только цвет", async () => {
+    routes["GET /api/vendor/me"] = () => ({
+      body: { ...me("owner"), listings: withAttention().filter((l) => l.id !== PHOTO && l.id !== CAKE) },
+    });
+    await mount("/services");
+    const pills = [...container.querySelectorAll(".vitrina-pills-two button")];
+    expect(pills.map((p) => p.querySelector(".vitrina-attn")?.textContent ?? "")).toEqual([
+      "",
+      "требует внимания: 2",
+    ]);
+  });
+
+  it("сотрудник площадки: у него нули — значков нет нигде", async () => {
+    resize(1280);
+    routes["GET /api/vendor/me"] = () => ({
+      body: { ...me("member"), listings: REFS },
+    });
+    await mount("/services");
+    expect(container.querySelector(".side-nav .nav-count")).toBeNull();
+    expect(container.querySelector(".vitrina-attn")).toBeNull();
   });
 });

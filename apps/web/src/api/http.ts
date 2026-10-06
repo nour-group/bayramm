@@ -227,8 +227,14 @@ export function createHttpApi({
     authMethods: (signal) => get<AuthMethods>("/auth/methods", signal),
     signInWidget: (widget, locale) =>
       call<SessionToken>(fetchFn, base, "/auth/widget", { method: "POST", body: { widget, locale } }),
+    // Из Mini App (initData вместо Turnstile) — с сессией: сервер засчитывает initData только
+    // вместе с аккаунтом того же пользователя Telegram
     sendPhoneCode: (phone, proof = {}) =>
-      call<OtpSent>(fetchFn, base, "/auth/phone/send", { method: "POST", body: { phone, ...proof } }),
+      call<OtpSent>(fetchFn, base, "/auth/phone/send", {
+        method: "POST",
+        body: { phone, ...proof },
+        ...(proof.initData !== undefined ? { auth: session } : {}),
+      }),
     verifyPhoneCode: (phone, code, locale) =>
       call<SessionToken>(fetchFn, base, "/auth/phone/verify", {
         method: "POST",

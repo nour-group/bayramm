@@ -312,6 +312,8 @@ export interface StaffPhoto {
   readonly sort: number;
   readonly isCover: boolean;
   readonly moderation: PhotoModeration;
+  /** Причина отказа — у отклонённого (её видит партнёр в кабинете); иначе null */
+  readonly declineReason: string | null;
   readonly createdAt: string;
 }
 
@@ -479,7 +481,8 @@ export interface ListingActionInput {
  *
  * PUT    /staff/listings/:id/photos/order { ids }          → StaffPhoto[]
  * POST   /staff/listings/:id/photos/:photoId/cover         → StaffPhoto[]
- * POST   /staff/listings/:id/photos/:photoId/moderation { decision } → StaffPhoto[]
+ * POST   /staff/listings/:id/photos/:photoId/moderation { decision, reason? } → StaffPhoto[] —
+ *         отказ (declined) только с причиной, 1–500 знаков; без неё 422 invalid_input ["reason"]
  * DELETE /staff/listings/:id/photos/:photoId               → StaffPhoto[]
  */
 export interface PhotoOrderInput {
@@ -488,6 +491,8 @@ export interface PhotoOrderInput {
 
 export interface PhotoModerationInput {
   readonly decision: "approved" | "declined";
+  /** Причина отказа: обязательна при declined, её видит партнёр в кабинете; у approved не нужна */
+  readonly reason?: string;
 }
 
 // ── занятость ──────────────────────────────────────────────────────────────
@@ -641,6 +646,8 @@ export interface StaffRequestItem {
   /** Часть дня (режим parts); null — у категории её нет */
   readonly dayPart: DayPart | null;
   readonly createdAt: string;
+  /** Имя, которое клиент вписал в заявку — чья она; null — удалено по сроку хранения или не вписано */
+  readonly contactName: string | null;
   readonly listing: { readonly id: string; readonly name: string; readonly categoryCode: string };
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
   /** Сколько раз вендору напоминали (автоматически и сотрудники) */
@@ -677,8 +684,7 @@ export interface StaffRequestDetail extends StaffRequestItem {
   readonly firstViewedAt: string | null;
   readonly slaBreachedAt: string | null;
   readonly source: string;
-  /** Имя и комментарий клиента из заявки; null — удалены по сроку хранения */
-  readonly contactName: string | null;
+  /** Комментарий клиента из заявки; null — удалён по сроку хранения (имя — contactName) */
   readonly comment: string | null;
   readonly contactPurged: boolean;
   /** Поля заявки категории (выбранные услуги — как были при подаче) */
@@ -852,6 +858,11 @@ export interface OutboxDeadItem {
   readonly recipientKind: "client" | "vendor_user" | "staff" | "system";
   /** Первые 8 символов id получателя — найти, не раскрывая лишнего */
   readonly recipientRef: string | null;
+  /**
+   * Кто получатель словами: пользователь кабинета — его имя или название вендора, сотрудник —
+   * имя, клиент — код C-…; null — получателя нет или он удалён. Телефонов здесь не бывает
+   */
+  readonly recipientLabel: string | null;
   readonly attempts: number;
   /** Причина последней неудачи: код и ответ Telegram, без ПДн */
   readonly error: string | null;
@@ -884,12 +895,21 @@ export interface AuditEntry {
   readonly id: string;
   readonly at: string;
   readonly actorKind: ActorKind;
-  /** Сотрудник — с именем; остальные — только id (или null — система) */
+  /**
+   * Кто действовал. name: сотрудник — его имя, пользователь кабинета — его имя или название
+   * вендора, клиент — код C-…; null — имени нет или актора уже нет. null — система
+   */
   readonly actor: { readonly id: string; readonly name: string | null } | null;
   /** listing.update, request.remind, staff.invite … */
   readonly action: string;
   readonly objectType: string;
   readonly objectId: string;
+  /**
+   * Объект словами: название витрины или вендора, «№1051» заявки, код клиента C-…, имя
+   * сотрудника или пользователя кабинета; null — у вида объекта нет названия (настройка,
+   * уведомление) или объекта уже нет: тогда показывают короткий id
+   */
+  readonly objectLabel: string | null;
   /** Как записано: коды, id и имена полей — без значений ПДн */
   readonly detail: Readonly<Record<string, unknown>>;
   readonly source: string | null;
@@ -909,10 +929,16 @@ export interface PiiAccessEntry {
   readonly id: string;
   readonly at: string;
   readonly actorKind: ActorKind;
+  /** Как в AuditEntry: сотрудник, пользователь кабинета или клиент — с подписью */
   readonly actor: { readonly id: string; readonly name: string | null } | null;
   /** client, request_contact, vendor_contact, vendor_user, listing_contact */
   readonly subjectKind: string;
   readonly subjectId: string;
+  /**
+   * Чей телефон словами: код клиента C-…, «№1051» заявки, название вендора или витрины, имя
+   * пользователя кабинета; null — субъекта уже нет. Самого номера здесь нет
+   */
+  readonly subjectLabel: string | null;
   readonly field: string;
   /** staff_reveal, request_inbox, self … */
   readonly purpose: string;
@@ -1252,6 +1278,8 @@ export interface ContactMetrics {
     readonly opens: number;
     readonly phone: number;
     readonly telegram: number;
+    /** Открытия за предыдущий такой же период — растёт интерес или падает */
+    readonly opensPrev: number;
   }[];
 }
 

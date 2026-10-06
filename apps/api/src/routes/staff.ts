@@ -67,6 +67,13 @@ export const staff = new Hono<AppEnv>();
 
 staff.use(database, authenticate, requireStaff());
 
+// Ответы панели — с именами клиентов, заявками и открытыми телефонами: ни браузеру, ни прокси их
+// не хранить (как у кабинета)
+staff.use(async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-store");
+});
+
 staff.get("/me", async (c) => {
   const actor = staffOf(c);
   const row = await withActor(c.var.db, actor, (trx) =>

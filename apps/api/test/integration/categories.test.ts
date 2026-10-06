@@ -117,21 +117,24 @@ describe("сид категорий и каталога услуг = @bayramm/sh
               required_attributes, required_services
          from app.categories order by sort, code`,
     );
+    // В порядке показа (sort): в конфигурации категории перечислены не по нему
     expect(rows).toEqual(
-      CATEGORIES.map((c) => ({
-        code: c.code,
-        name_ru: categoriesRu[c.label],
-        name_uz: categoriesUz[c.label],
-        enabled: c.enabled,
-        sort: c.sort,
-        availability: c.availability,
-        photo_policy: c.photoPolicy,
-        min_photos: c.minPhotos,
-        max_video_links: c.maxVideoLinks,
-        required_fields: [...c.listingFields],
-        required_attributes: requiredAttributeKeys(c),
-        required_services: [...c.requiredServices],
-      })),
+      [...CATEGORIES]
+        .sort((a, b) => a.sort - b.sort)
+        .map((c) => ({
+          code: c.code,
+          name_ru: categoriesRu[c.label],
+          name_uz: categoriesUz[c.label],
+          enabled: c.enabled,
+          sort: c.sort,
+          availability: c.availability,
+          photo_policy: c.photoPolicy,
+          min_photos: c.minPhotos,
+          max_video_links: c.maxVideoLinks,
+          required_fields: [...c.listingFields],
+          required_attributes: requiredAttributeKeys(c),
+          required_services: [...c.requiredServices],
+        })),
     );
   });
 
@@ -271,7 +274,7 @@ describe("панель: вендор в нескольких категория�
     ).toEqual({ status: 422, code: "invalid_input", details: ["categoryCode"] });
     // Выключенная категория — нет; модератор витрин не заводит
     expect(
-      await error(api("manager", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "zags" })),
+      await error(api("manager", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "music" })),
     ).toMatchObject({ status: 422 });
     expect(
       (await api("moderator", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "cake" }))
@@ -454,7 +457,12 @@ describe("панель: вендор в нескольких категория�
 describe("клиент: категории, фильтры, карточка, заявка", () => {
   it("категории каталога — включённые, с числом витрин", async () => {
     const body = await ok<CatalogCategories>(call("/catalog/categories"));
-    expect(body.items.map((c) => c.code)).toEqual(CATEGORIES.filter((c) => c.enabled).map((c) => c.code));
+    // В порядке показа (sort), а не кодов
+    expect(body.items.map((c) => c.code)).toEqual(
+      CATEGORIES.filter((c) => c.enabled)
+        .sort((a, b) => a.sort - b.sort)
+        .map((c) => c.code),
+    );
     expect(body.items.find((c) => c.code === "car")?.listings).toBeGreaterThanOrEqual(1);
   });
 
