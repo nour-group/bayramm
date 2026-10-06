@@ -58,10 +58,14 @@ const config = (venue: DemoVenue) => {
 };
 
 describe("демо-витрины: метка и диапазон id", () => {
-  it("три зала и по витрине в каждой включённой категории; id — в демо-диапазоне, без повторов", () => {
-    expect(DEMO_VENUES.filter((v) => v.category === "hall")).toHaveLength(3);
-    const enabled = CATEGORIES.filter((c) => c.enabled && c.code !== "hall").map((c) => c.code);
-    expect(DEMO_VENUES.filter((v) => v.category !== "hall").map((v) => v.category)).toEqual(enabled);
+  it("три зала и по две витрины в каждой другой включённой категории; id — в демо-диапазоне, без повторов", () => {
+    for (const category of CATEGORIES) {
+      const expected = !category.enabled ? 0 : category.code === "hall" ? 3 : 2;
+      expect(
+        DEMO_VENUES.filter((v) => v.category === category.code),
+        category.code,
+      ).toHaveLength(expected);
+    }
     const ids = DEMO_VENUES.flatMap((v) => [v.vendorId, v.listingId]);
     for (const id of ids) {
       expect(id).toMatch(UUID_RE);

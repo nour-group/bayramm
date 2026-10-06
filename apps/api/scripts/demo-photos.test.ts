@@ -2,9 +2,11 @@
 // лёгкие и все разные (у одной карточки два одинаковых фото база не примет)
 import { createHash } from "node:crypto";
 import { assertUploadable } from "@bayramm/media";
+import { CATEGORIES } from "@bayramm/shared/categories";
 import { describe, expect, it } from "vitest";
-import { DEMO_PHOTO_COUNT } from "../src/demo/venues";
+import { DEMO_PHOTO_COUNT, DEMO_VENUES } from "../src/demo/venues";
 import {
+  DEMO_PHOTO_CATEGORIES,
   DEMO_PHOTO_FILES,
   DEMO_PHOTO_HEIGHT,
   DEMO_PHOTO_WIDTH,
@@ -17,6 +19,13 @@ const MAX_BYTES = 60 * 1024;
 describe("демо-фото", () => {
   it("столько, сколько ждёт POST /ops/demo: по три на витрину", () => {
     expect(DEMO_PHOTO_FILES).toBe(DEMO_PHOTO_COUNT);
+  });
+
+  it("сюжеты есть у каждой включённой категории и у каждой категории демо-витрин", () => {
+    for (const category of CATEGORIES.filter((c) => c.enabled)) {
+      expect(DEMO_PHOTO_CATEGORIES, category.code).toContain(category.code);
+    }
+    for (const venue of DEMO_VENUES) expect(DEMO_PHOTO_CATEGORIES, venue.slug).toContain(venue.category);
   });
 
   it("WebP без метаданных нужного размера, не больше 60 КБ, все разные", async () => {
@@ -33,8 +42,8 @@ describe("демо-фото", () => {
     }
     const digests = photos.map((bytes) => createHash("sha256").update(bytes).digest("hex"));
     expect(new Set(digests).size).toBe(photos.length);
-    // Четыре десятка WebP через sharp: на занятом раннере CI дольше 5 секунд по умолчанию
-  }, 30_000);
+    // Семь десятков WebP через sharp: на занятом раннере CI дольше 5 секунд по умолчанию
+  }, 120_000);
 
   it("рисунок — только линии и заливки: без текста, шрифтов и внешних ссылок", () => {
     for (let i = 0; i < DEMO_PHOTO_FILES; i++) {

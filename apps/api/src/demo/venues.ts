@@ -1,5 +1,6 @@
 // Демо-витрины staging: вымышленные вендоры, у каждого — витрина в своей категории
-// (три зала и по одной в каждой включённой категории). Их заводит и убирает
+// (три зала и по две в каждой другой включённой категории — каталог раздела не из одной
+// карточки). Их заводит и убирает
 // POST /ops/demo (routes/ops.ts), только на staging.
 //
 // Всё, что видит клиент, помечено: название начинается с «Демо-» и «Demo», описание —
@@ -111,11 +112,19 @@ const banquet = (
   type: "banquet_weekday" | "banquet_weekend",
   priceUzs: number,
   priceUnit: PriceUnit,
+  includes?: DemoService["includes"],
 ): DemoService => ({
   type,
   priceUzs,
   priceUnit,
+  ...(includes === undefined ? {} : { includes }),
 });
+
+/** Что входит в банкет залов «Анор» и «Чинор» — одно меню */
+const BANQUET_MENU = {
+  ru: "Закуски, салаты, два горячих, плов, фрукты, чай",
+  uz: "Gazaklar, salatlar, ikki xil issiq taom, osh, mevalar, choy",
+} as const;
 
 export const DEMO_VENUES: readonly DemoVenue[] = [
   {
@@ -139,8 +148,8 @@ export const DEMO_VENUES: readonly DemoVenue[] = [
     parallelCapacity: 1,
     attributes: { halls_count: 1, parking_spaces: 80, kitchen: "own", stage: true, bride_room: true },
     services: [
-      banquet("banquet_weekday", 180_000, "per_guest"),
-      banquet("banquet_weekend", 220_000, "per_guest"),
+      banquet("banquet_weekday", 180_000, "per_guest", BANQUET_MENU),
+      banquet("banquet_weekend", 220_000, "per_guest", BANQUET_MENU),
     ],
     busyDays: [3, 10, 11, 24, 38, 52],
     busyParts: [],
@@ -166,9 +175,17 @@ Toʻy va nahorgi osh uchun 100–500 mehmonga moʻljallangan katta zal. Ikki qav
     parallelCapacity: 1,
     attributes: { halls_count: 2, parking_spaces: 120, kitchen: "own", air_conditioning: true },
     services: [
-      banquet("banquet_weekday", 150_000, "per_guest"),
-      banquet("banquet_weekend", 190_000, "per_guest"),
-      { type: "morning_plov", priceUzs: 90_000, priceUnit: "per_guest" },
+      banquet("banquet_weekday", 150_000, "per_guest", BANQUET_MENU),
+      banquet("banquet_weekend", 190_000, "per_guest", BANQUET_MENU),
+      {
+        type: "morning_plov",
+        priceUzs: 90_000,
+        priceUnit: "per_guest",
+        includes: {
+          ru: "Плов, салаты, лепёшки, чай, сладости",
+          uz: "Osh, salatlar, non, choy, shirinliklar",
+        },
+      },
     ],
     busyDays: [4, 5, 18, 19, 33, 47],
     busyParts: [],
@@ -194,8 +211,14 @@ Tugʻilgan kun, beshik toʻyi va korporativlar uchun 30–150 mehmonga moʻljall
     parallelCapacity: 1,
     attributes: { halls_count: 1, kitchen: "both", accessible: true },
     services: [
-      banquet("banquet_weekday", 18_000_000, "per_event"),
-      banquet("banquet_weekend", 24_000_000, "per_event"),
+      banquet("banquet_weekday", 18_000_000, "per_event", {
+        ru: "Зал, обслуживание, оформление и меню на 30 гостей",
+        uz: "Zal, xizmat koʻrsatish, bezak va 30 mehmonga menyu",
+      }),
+      banquet("banquet_weekend", 24_000_000, "per_event", {
+        ru: "Зал, обслуживание, оформление и меню на 30 гостей",
+        uz: "Zal, xizmat koʻrsatish, bezak va 30 mehmonga menyu",
+      }),
     ],
     busyDays: [6, 13, 20, 27, 41, 55],
     busyParts: [],
@@ -720,6 +743,669 @@ Kelinlik koʻylaklari va kuyov kostyumlari — sotuv, ijara va tikish, kelin sal
     ],
     busyDays: [4, 11, 18],
     busyParts: [],
+  },
+  // ── вторые витрины категорий: другой район, цена и набор услуг ──────────────
+  {
+    ...base(15),
+    vendorName: "Демо-вендор «Бахт»",
+    legalName: "Демо Бахт (вымышленное юрлицо)",
+    category: "zags",
+    slug: "demo-fhdyo-baxt",
+    name: "Демо-ЗАГС «Бахт» · Demo FHDYo «Baxt»",
+    districtCode: "yunusobod",
+    addressRu: "Ташкент, Юнусабад — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Yunusobod — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Уютный зал регистрации на 30 гостей: простая и торжественная регистрация, запись на удобную дату и помощь с документами. Для гостей — комната ожидания, у входа — место для фото. Церемония — на узбекском, русском или английском.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+30 mehmonlik shinam nikoh zali: oddiy va tantanali roʻyxatdan oʻtkazish, qulay sanaga yozdirish va hujjatlarga yordam. Mehmonlar uchun kutish xonasi, kirish oldida suratga tushish joyi bor. Marosim — oʻzbek, rus yoki ingliz tilida.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      zags_kind: "registry",
+      ceremony_capacity: 30,
+      document_help: true,
+      foreign_citizens: true,
+      ceremony_langs: ["uz", "ru", "en"],
+      working_hours: "09:00–17:00",
+    },
+    services: [
+      {
+        type: "solemn_ceremony",
+        priceUzs: 800_000,
+        priceUnit: "per_event",
+        includes: { ru: "Зал на 30 гостей, музыка, поздравление", uz: "30 mehmonlik zal, musiqa, tabrik" },
+        options: [{ code: "photographer", priceUzs: 700_000, priceUnit: "per_event" }],
+      },
+      {
+        type: "simple_registration",
+        priceUzs: 250_000,
+        priceUnit: "per_event",
+        includes: { ru: "Регистрация и свидетельство", uz: "Roʻyxatdan oʻtkazish va guvohnoma" },
+      },
+      { type: "date_appointment", priceUzs: 150_000, priceUnit: "per_event" },
+      { type: "documents_help", priceUzs: 300_000, priceUnit: "per_event" },
+      {
+        type: "foreign_registration",
+        priceUzs: 1_500_000,
+        priceUnit: "per_event",
+        includes: {
+          ru: "Перевод документов и переводчик на церемонии",
+          uz: "Hujjatlar tarjimasi va marosimda tarjimon",
+        },
+      },
+    ],
+    busyDays: [2, 9, 16, 23, 30],
+    busyParts: [],
+  },
+  {
+    ...base(16),
+    vendorName: "Демо-вендор «Ретро»",
+    legalName: "Демо Ретро (вымышленное юрлицо)",
+    category: "car",
+    slug: "demo-kortej-retro",
+    name: "Демо-кортеж «Ретро» · Demo kortej «Retro»",
+    districtCode: "uchtepa",
+    addressRu: "Ташкент, Учтепа — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Uchtepa — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Ретро-автомобили и внедорожники для свадебной прогулки, минивэн для гостей. Машины украшаем живыми цветами, по пути — остановки для фото в любимых местах Ташкента. Работаем и по области.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Toʻy sayri uchun retro avtomobillar va yoʻltanlamaslar, mehmonlar uchun miniven. Mashinalarni jonli gullar bilan bezaymiz, yoʻl-yoʻlakay Toshkentning sevimli joylarida suratga tushish uchun toʻxtaymiz. Viloyat boʻylab ham ishlaymiz.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 3,
+    attributes: {
+      fleet: [
+        { model: "GAZ-21 Volga", class: "retro", color: "white", seats: 4, year: 1962 },
+        { model: "Cadillac Escalade", class: "suv", color: "black", seats: 7, year: 2022 },
+        { model: "Mercedes-Benz Sprinter", class: "minivan", color: "silver", seats: 16, year: 2020 },
+      ],
+      decoration: true,
+      service_area: "tashkent_region",
+      min_order_hours: 2,
+    },
+    services: [
+      {
+        type: "retro_car",
+        priceUzs: 500_000,
+        priceUnit: "per_hour",
+        minQty: 2,
+        includes: {
+          ru: "Водитель, ленты и бант, остановки для фото",
+          uz: "Haydovchi, lenta va bant, suratga tushish uchun toʻxtashlar",
+        },
+        options: [{ code: "photo_stops", priceUzs: 200_000, priceUnit: "per_event" }],
+      },
+      {
+        type: "motorcade",
+        priceUzs: 300_000,
+        priceUnit: "per_hour",
+        minQty: 3,
+        options: [{ code: "coordinator", priceUzs: 400_000, priceUnit: "per_event" }],
+      },
+      { type: "guest_transfer", priceUzs: 250_000, priceUnit: "per_hour", minQty: 3 },
+      {
+        type: "car_decor",
+        priceUzs: 200_000,
+        priceUnit: "per_item",
+        options: [{ code: "fresh_flowers", priceUzs: 250_000, priceUnit: "per_item" }],
+      },
+    ],
+    busyDays: [13],
+    busyParts: [
+      { offset: 4, part: "day" },
+      { offset: 11, part: "evening" },
+      { offset: 25, part: "morning" },
+    ],
+  },
+  {
+    ...base(17),
+    vendorName: "Демо-вендор «Лахза»",
+    legalName: "Демо Лахза (вымышленное юрлицо)",
+    category: "photo",
+    slug: "demo-foto-lahza",
+    name: "Демо-съёмка «Лахза» · Demo suratga olish «Lahza»",
+    districtCode: "yakkasaroy",
+    addressRu: "Ташкент, Яккасарай — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Yakkasaroy — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Свадебная фото- и видеосъёмка в стиле fine art: мягкий свет, спокойные цвета, живые моменты без постановки. Фотокнига ручной работы, love story в студии или на природе. Выезжаем по всему Узбекистану.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Fine art uslubida toʻy foto va videosi: yumshoq yorugʻlik, sokin ranglar, sahnalashtirilmagan jonli lahzalar. Qoʻlda yasalgan fotokitob, studiyada yoki tabiat qoʻynida love story. Butun Oʻzbekiston boʻylab chiqamiz.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      team: ["photographer", "videographer"],
+      equipment: ["camera", "stabilizer", "lighting"],
+      delivery_days: 21,
+      styles: ["fine_art", "classic"],
+      service_area: "uzbekistan",
+    },
+    services: [
+      {
+        type: "photo_shoot",
+        priceUzs: 5_500_000,
+        priceUnit: "per_event",
+        includes: {
+          ru: "Весь день съёмки, от 500 фото в обработке",
+          uz: "Kun boʻyi suratga olish, 500 tadan ortiq ishlangan surat",
+        },
+        options: [
+          { code: "photobook", priceUzs: 900_000, priceUnit: "per_item" },
+          { code: "second_photographer", priceUzs: 1_200_000, priceUnit: "per_event" },
+        ],
+      },
+      {
+        type: "videography",
+        priceUzs: 7_000_000,
+        priceUnit: "per_event",
+        options: [{ code: "second_camera", priceUzs: 1_500_000, priceUnit: "per_event" }],
+      },
+      {
+        type: "love_story",
+        priceUzs: 2_000_000,
+        priceUnit: "per_event",
+        options: [{ code: "studio_rent", priceUzs: 250_000, priceUnit: "per_hour" }],
+      },
+      { type: "morning_plov_shoot", priceUzs: 350_000, priceUnit: "per_hour", minQty: 2 },
+      { type: "photobook", priceUzs: 900_000, priceUnit: "per_item" },
+    ],
+    busyDays: [17, 31],
+    busyParts: [
+      { offset: 3, part: "morning" },
+      { offset: 8, part: "evening" },
+      { offset: 22, part: "day" },
+    ],
+  },
+  {
+    ...base(18),
+    vendorName: "Демо-вендор «Marry me»",
+    legalName: "Демо Marry me (вымышленное юрлицо)",
+    category: "studio",
+    slug: "demo-studiya-marry-me",
+    name: "Демо-студия «Marry me» · Demo studiya «Marry me»",
+    districtCode: "yunusobod",
+    addressRu: "Ташкент, Юнусабад — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Yunusobod — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Студия для love story и предсвадебных фотосессий: шесть зон — цветочная арка, белая спальня, зеркальный зал, восточный дворик, циклорама и балкон с закатным светом. Свет, дым-машина и реквизит — в аренде, визажист — по записи.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Love story va toʻydan oldingi fotosessiyalar uchun studiya: oltita zona — gul arkasi, oq yotoqxona, oynali zal, sharqona hovli, siklorama va quyosh botishi nuri tushadigan balkon. Yoritish, tutun mashinasi va rekvizit ijaraga kiradi, vizajist — oldindan yozilib.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      area_m2: 240,
+      zones_count: 6,
+      zones: {
+        ru: "Цветочная арка, белая спальня, зеркальный зал, восточный дворик, циклорама, балкон",
+        uz: "Gul arkasi, oq yotoqxona, oynali zal, sharqona hovli, siklorama, balkon",
+      },
+      natural_light: true,
+      props: true,
+      makeup_room: true,
+      dressing_room: true,
+      max_people: 20,
+      parking: true,
+    },
+    services: [
+      {
+        type: "studio_rent",
+        priceUzs: 300_000,
+        priceUnit: "per_hour",
+        minQty: 1,
+        options: [
+          { code: "extra_hour", priceUzs: 300_000, priceUnit: "per_hour" },
+          { code: "extra_zone", priceUzs: 120_000, priceUnit: "per_hour" },
+        ],
+      },
+      {
+        type: "love_story_package",
+        priceUzs: 3_200_000,
+        priceUnit: "per_event",
+        includes: {
+          ru: "3 часа студии, фотограф, 60 фото в обработке",
+          uz: "3 soat studiya, fotograf, 60 ta ishlangan surat",
+        },
+        options: [
+          { code: "makeup", priceUzs: 500_000, priceUnit: "per_event" },
+          { code: "outfit_rent", priceUzs: 400_000, priceUnit: "per_event" },
+        ],
+      },
+      { type: "pre_wedding_shoot", priceUzs: 2_800_000, priceUnit: "per_event" },
+      { type: "makeup_hair", priceUzs: 700_000, priceUnit: "per_event" },
+    ],
+    busyDays: [1, 5, 12, 19, 26],
+    busyParts: [],
+  },
+  {
+    ...base(19),
+    vendorName: "Демо-вендор «Бахор»",
+    legalName: "Демо Бахор (вымышленное юрлицо)",
+    category: "restaurant",
+    slug: "demo-restoran-bahor",
+    name: "Демо-ресторан «Бахор» · Demo restoran «Bahor»",
+    districtCode: "mirobod",
+    addressRu: "Ташкент, Мирабад — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Mirobod — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Ресторан с летней террасой и двумя банкетными залами: помолвка, день рождения, семейный ужин, корпоратив. Национальная, восточная и азиатская кухня, свой кондитер. Детское меню, напитки можно принести свои.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Yozgi ayvonli va ikkita banket zalli restoran: unashtiruv, tugʻilgan kun, oilaviy kechki ovqat, korporativ. Milliy, sharq va osiyo taomlari, oʻz qandolatchimiz bor. Bolalar menyusi, ichimliklarni oʻzingiz olib kelishingiz mumkin.`,
+    capMin: 20,
+    capMax: 200,
+    parallelCapacity: 2,
+    attributes: {
+      cuisine: ["national", "oriental", "asian"],
+      events: ["engagement", "birthday", "family", "corporate", "fotiha"],
+      private_rooms: 2,
+      alcohol: "bring_own",
+      parking: true,
+      accessible: true,
+    },
+    services: [
+      {
+        type: "banquet_menu",
+        priceUzs: 260_000,
+        priceUnit: "per_guest",
+        minQty: 20,
+        includes: {
+          ru: "Закуски, салаты, два горячих, плов, десерт, чай",
+          uz: "Gazaklar, salatlar, ikki xil issiq taom, osh, desert, choy",
+        },
+        options: [
+          { code: "drinks", priceUzs: 30_000, priceUnit: "per_guest" },
+          { code: "cake", priceUzs: 900_000, priceUnit: "per_event" },
+        ],
+      },
+      { type: "fotiha_menu", priceUzs: 1_200_000, priceUnit: "per_table", minQty: 2 },
+      {
+        type: "girls_party",
+        priceUzs: 6_000_000,
+        priceUnit: "per_event",
+        options: [
+          { code: "decor", priceUzs: 1_000_000, priceUnit: "per_event" },
+          { code: "music", priceUzs: 1_200_000, priceUnit: "per_event" },
+        ],
+      },
+      {
+        type: "private_room",
+        priceUzs: 1_500_000,
+        priceUnit: "per_event",
+        options: [{ code: "sound", priceUzs: 400_000, priceUnit: "per_event" }],
+      },
+      { type: "kids_menu", priceUzs: 70_000, priceUnit: "per_guest" },
+    ],
+    busyDays: [14],
+    busyParts: [
+      { offset: 2, part: "evening" },
+      { offset: 6, part: "day" },
+      { offset: 20, part: "evening" },
+    ],
+  },
+  {
+    ...base(20),
+    vendorName: "Демо-вендор «Гулзор»",
+    legalName: "Демо Гулзор (вымышленное юрлицо)",
+    category: "flowers",
+    slug: "demo-gullar-gulzor",
+    name: "Демо-цветы «Гулзор» · Demo gullar «Gulzor»",
+    districtCode: "mirzo_ulugbek",
+    addressRu: "Ташкент, Мирзо-Улугбек — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Mirzo Ulugʻbek — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Цветочная мастерская: оформление зала, цветочные арки и стены, букеты невесты из пионов и роз. Работаем с живыми и искусственными цветами — искусственные не вянут и подходят для утреннего плова. Доставка и монтаж — наши.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Gul ustaxonasi: zalni bezash, gul arkalari va devorlari, pion va atirgullardan kelin guldastalari. Jonli va sunʼiy gullar bilan ishlaymiz — sunʼiy gullar soʻlimaydi va nahorgi oshga mos keladi. Yetkazib berish va montaj — bizdan.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      flower_kinds: ["live", "artificial"],
+      delivery: true,
+      lead_days: 3,
+      working_hours: "08:00–22:00",
+    },
+    services: [
+      {
+        type: "bridal_bouquet",
+        priceUzs: 600_000,
+        priceUnit: "per_item",
+        options: [{ code: "toss_bouquet", priceUzs: 250_000, priceUnit: "per_item" }],
+      },
+      {
+        type: "hall_flower_decor",
+        priceUzs: 6_000_000,
+        priceUnit: "per_event",
+        includes: {
+          ru: "Тор, вход, столы гостей, монтаж и демонтаж",
+          uz: "Toʻr, kirish, mehmonlar stollari, montaj va demontaj",
+        },
+        options: [
+          { code: "arch", priceUzs: 2_500_000, priceUnit: "per_item" },
+          { code: "flower_wall", priceUzs: 3_000_000, priceUnit: "per_item" },
+        ],
+      },
+      { type: "flower_arch", priceUzs: 3_500_000, priceUnit: "per_item" },
+      {
+        type: "gift_bouquet",
+        priceUzs: 250_000,
+        priceUnit: "per_item",
+        options: [{ code: "delivery", priceUzs: 50_000, priceUnit: "per_event" }],
+      },
+      { type: "boutonniere", priceUzs: 80_000, priceUnit: "per_item" },
+    ],
+    busyDays: [],
+    busyParts: [],
+  },
+  {
+    ...base(21),
+    vendorName: "Демо-вендор «Куёв»",
+    legalName: "Демо Куёв (вымышленное юрлицо)",
+    category: "attire",
+    slug: "demo-libos-kuyov",
+    name: "Демо-салон «Куёв» · Demo salon «Kuyov»",
+    districtCode: "shayxontohur",
+    addressRu: "Ташкент, Шайхантахур — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Shayxontohur — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Костюмы для жениха и семьи: классические тройки, смокинги и национальные чапаны с тюбетейкой. Прокат и продажа, подгонка по фигуре за один день. Обувь, галстуки и запонки — в том же салоне.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Kuyov va oila uchun kostyumlar: klassik uchlik, smoking va doʻppili milliy chopon. Ijara va sotuv, bir kunda qomatga moslash. Poyabzal, galstuk va zaponkalar — shu salonda.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      attire_for: ["groom", "family"],
+      deal_kinds: ["sale", "rent"],
+      national_dress: true,
+      alterations: true,
+      fitting_room: true,
+      delivery: true,
+      size_range: "44–64",
+      lead_days: 3,
+      working_hours: "10:00–21:00",
+    },
+    services: [
+      {
+        type: "suit_rent",
+        priceUzs: 900_000,
+        priceUnit: "per_set",
+        includes: { ru: "Пиджак, брюки, жилет, рубашка", uz: "Pidjak, shim, jilet, koʻylak" },
+        options: [{ code: "shoes", priceUzs: 200_000, priceUnit: "per_item" }],
+      },
+      {
+        type: "suit_sale",
+        priceUzs: 4_500_000,
+        priceUnit: "per_set",
+        options: [{ code: "alterations", priceUzs: 300_000, priceUnit: "per_item" }],
+      },
+      {
+        type: "national_outfit",
+        priceUzs: 2_200_000,
+        priceUnit: "per_set",
+        includes: { ru: "Чапан, тюбетейка, поясной платок", uz: "Chopon, doʻppi, belbogʻ" },
+      },
+      { type: "accessories", priceUzs: 150_000, priceUnit: "per_item" },
+    ],
+    busyDays: [],
+    busyParts: [],
+  },
+  {
+    ...base(22),
+    vendorName: "Демо-вендор «Ёдгор»",
+    legalName: "Демо Ёдгор (вымышленное юрлицо)",
+    category: "gifts",
+    slug: "demo-sovga-yodgor",
+    name: "Демо-подарки «Ёдгор» · Demo sovgʻalar «Yodgor»",
+    districtCode: "uchtepa",
+    addressRu: "Ташкент, Учтепа — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Uchtepa — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Сувениры с узбекским характером: шкатулки с сюзане, мини-ляганы, наборы чая и сладостей. Бонбоньерки для гостей и корпоративные подарки с логотипом. Партия — от 30 штук, доставка по Ташкенту.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Oʻzbekona ruhdagi esdaliklar: suzani qutichalar, kichik laganlar, choy va shirinlik toʻplamlari. Mehmonlar uchun bonbonyerkalar va logotipli korporativ sovgʻalar. Partiya — 30 donadan, Toshkent boʻylab yetkazib berish.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      gift_kinds: ["bonbonniere", "souvenirs", "corporate", "couple"],
+      personalization: true,
+      packaging: true,
+      min_batch: 30,
+      lead_days: 10,
+      delivery: true,
+    },
+    services: [
+      {
+        type: "bonbonniere",
+        priceUzs: 18_000,
+        priceUnit: "per_item",
+        minQty: 30,
+        options: [{ code: "name_print", priceUzs: 4_000, priceUnit: "per_item" }],
+      },
+      {
+        type: "corporate_gifts",
+        priceUzs: 120_000,
+        priceUnit: "per_item",
+        minQty: 20,
+        options: [{ code: "logo", priceUzs: 15_000, priceUnit: "per_item" }],
+      },
+      {
+        type: "couple_gift_set",
+        priceUzs: 1_200_000,
+        priceUnit: "per_set",
+        includes: {
+          ru: "Чайный набор, сюзане, сладости в шкатулке",
+          uz: "Choy toʻplami, suzani, qutichada shirinliklar",
+        },
+      },
+      {
+        type: "in_law_gift_set",
+        priceUzs: 2_000_000,
+        priceUnit: "per_set",
+        options: [{ code: "special_packaging", priceUzs: 300_000, priceUnit: "per_set" }],
+      },
+    ],
+    busyDays: [],
+    busyParts: [],
+  },
+  {
+    ...base(23),
+    vendorName: "Демо-вендор «Асал»",
+    legalName: "Демо Асал (вымышленное юрлицо)",
+    category: "cake",
+    slug: "demo-tort-asal",
+    name: "Демо-кондитерская «Асал» · Demo qandolatxona «Asal»",
+    districtCode: "mirobod",
+    addressRu: "Ташкент, Мирабад — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Mirobod — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Торты, бенто и национальные сладости: чак-чак, пашмак, нишолда. Сливочные кремы, ягоды и фигурки, торты — от 2 кг. Кэнди-бар под ключ — со столом и оформлением.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Tortlar, bento va milliy shirinliklar: chak-chak, pashmak, nisholda. Qaymoqli kremlar, rezavorlar va figurkalar, tortlar — 2 kg dan. Shirinlik stoli tayyor holda — stol va bezagi bilan.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 1,
+    attributes: {
+      cake_kinds: ["tiered", "bento", "national", "candy_bar", "cupcakes"],
+      fillings: ["vanilla", "caramel", "cheese", "fruit"],
+      cake_decor: ["cream", "figures", "fresh_flowers"],
+      delivery: true,
+      lead_days: 3,
+      min_weight_kg: 2,
+    },
+    services: [
+      {
+        type: "wedding_cake",
+        priceUzs: 150_000,
+        priceUnit: "per_kg",
+        minQty: 2,
+        options: [
+          { code: "figure", priceUzs: 250_000, priceUnit: "per_item" },
+          { code: "fresh_flowers", priceUzs: 300_000, priceUnit: "per_event" },
+        ],
+      },
+      { type: "bento", priceUzs: 120_000, priceUnit: "per_item" },
+      {
+        type: "pastries",
+        priceUzs: 90_000,
+        priceUnit: "per_kg",
+        minQty: 1,
+        includes: { ru: "Чак-чак, пашмак, нишолда на выбор", uz: "Chak-chak, pashmak, nisholda — tanlovga" },
+      },
+      {
+        type: "candy_bar",
+        priceUzs: 2_500_000,
+        priceUnit: "per_event",
+        options: [
+          { code: "decor", priceUzs: 600_000, priceUnit: "per_event" },
+          { code: "table", priceUzs: 300_000, priceUnit: "per_event" },
+        ],
+      },
+    ],
+    busyDays: [],
+    busyParts: [],
+  },
+  {
+    ...base(24),
+    vendorName: "Демо-вендор «Нахор»",
+    legalName: "Демо Нахор (вымышленное юрлицо)",
+    category: "food",
+    slug: "demo-katering-nahor",
+    name: "Демо-кейтеринг «Нахор» · Demo katering «Nahor»",
+    districtCode: "chilonzor",
+    addressRu: "Ташкент, Чиланзар — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Chilonzor — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Утренний плов на 100–1500 гостей: повара с казанами приезжают на рассвете, к семи утра всё готово. Столы, скатерти, посуда, официанты и шатёр — по выбору. Фуршет и стол для фотихи — тоже к нам.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+100–1500 mehmonga nahorgi osh: oshpazlar qozonlari bilan tong saharda keladi, soat yettiga hammasi tayyor. Stol, dasturxon, idish-tovoq, ofitsiantlar va chodir — tanlovga. Furshet va fotiha dasturxoni ham bizda.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 3,
+    attributes: {
+      cuisine: ["national"],
+      min_guests: 100,
+      max_guests: 1500,
+      on_site_cooking: true,
+      waiters: true,
+      furniture: true,
+      certificates: true,
+      service_area: "tashkent_region",
+    },
+    services: [
+      {
+        type: "morning_plov",
+        priceUzs: 55_000,
+        priceUnit: "per_guest",
+        minQty: 100,
+        includes: {
+          ru: "Плов, салаты, лепёшки, чай, сладости",
+          uz: "Osh, salatlar, non, choy, shirinliklar",
+        },
+        options: [
+          { code: "waiters", priceUzs: 800_000, priceUnit: "per_event" },
+          { code: "furniture", priceUzs: 20_000, priceUnit: "per_guest" },
+          { code: "tent", priceUzs: 2_000_000, priceUnit: "per_event" },
+        ],
+      },
+      { type: "buffet", priceUzs: 140_000, priceUnit: "per_guest", minQty: 30 },
+      { type: "fotiha_table", priceUzs: 900_000, priceUnit: "per_table", minQty: 2 },
+      { type: "waiter_service", priceUzs: 500_000, priceUnit: "per_event" },
+      { type: "equipment_rent", priceUzs: 20_000, priceUnit: "per_guest", minQty: 50 },
+    ],
+    busyDays: [19],
+    busyParts: [
+      { offset: 2, part: "morning" },
+      { offset: 7, part: "morning" },
+      { offset: 9, part: "morning" },
+      { offset: 15, part: "day" },
+    ],
+  },
+  {
+    ...base(25),
+    vendorName: "Демо-вендор «Нафис»",
+    legalName: "Демо Нафис (вымышленное юрлицо)",
+    category: "decor",
+    slug: "demo-dekor-nafis",
+    name: "Демо-декор «Нафис» · Demo dekor «Nafis»",
+    districtCode: "yashnobod",
+    addressRu: "Ташкент, Яшнабад — демо-адрес, не настоящий",
+    addressUz: "Toshkent, Yashnobod — demo manzil, haqiqiy emas",
+    descriptionRu: `${DISCLAIMER_RU}
+
+Декор в спокойных тонах: минимализм, рустик, современная классика. Арки на вход, световые инсталляции, тяжёлый дым и конфетти на первый танец. Оформляем и утренний плов — с национальными тканями и сюзане.`,
+    descriptionUz: `${DISCLAIMER_UZ}
+
+Sokin ranglardagi bezak: minimalizm, rustik, zamonaviy klassika. Kirish arkalari, yorugʻlik instalyatsiyalari, birinchi raqs uchun ogʻir tutun va konfetti. Nahorgi oshni ham milliy matolar va suzanilar bilan bezaymiz.`,
+    capMin: null,
+    capMax: null,
+    parallelCapacity: 2,
+    attributes: {
+      styles: ["minimal", "rustic", "modern"],
+      flower_kinds: ["artificial"],
+      own_furniture: true,
+      installation: true,
+      service_area: "tashkent_region",
+    },
+    services: [
+      {
+        type: "stage_decor",
+        priceUzs: 2_500_000,
+        priceUnit: "per_event",
+        options: [{ code: "lighting", priceUzs: 700_000, priceUnit: "per_event" }],
+      },
+      { type: "entrance_arch", priceUzs: 1_800_000, priceUnit: "per_item" },
+      {
+        type: "lighting_effects",
+        priceUzs: 1_200_000,
+        priceUnit: "per_event",
+        options: [
+          { code: "smoke", priceUzs: 600_000, priceUnit: "per_event" },
+          { code: "confetti", priceUzs: 300_000, priceUnit: "per_event" },
+        ],
+      },
+      {
+        type: "morning_plov_decor",
+        priceUzs: 2_000_000,
+        priceUnit: "per_event",
+        includes: {
+          ru: "Сюзане, текстиль на столы, оформление входа",
+          uz: "Suzani, stollar uchun mato, kirishni bezash",
+        },
+      },
+      { type: "table_decor", priceUzs: 120_000, priceUnit: "per_table", minQty: 10 },
+    ],
+    busyDays: [27],
+    busyParts: [
+      { offset: 4, part: "morning" },
+      { offset: 4, part: "evening" },
+      { offset: 18, part: "day" },
+    ],
   },
 ];
 

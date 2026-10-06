@@ -213,10 +213,16 @@ HMAC от IP, `POST /requests` по IP и по клиенту, `POST /catalog/li
 телефоном витрины, `normalizeTelegram` принимает и ссылку t.me). Клиенты в панели — по имени из Telegram
 («Азиза К.»), способам входа и последней заявке; код `C-…` — вторым текстом, по нему и ищут.
 
-Демо-залы для показа — только staging: workflow `Demo data (staging)` (seed / reset) рисует
-фото и зовёт `POST /ops/demo` (`apps/api/src/demo`). Seed заводит три зала и по витрине в каждой
-включённой категории (услуги, поля витрины, занятость) с пометкой «Демо» теми же шагами, что панель; reset (`app.demo_purge()`) убирает только их — id из диапазона
+Демо-залы для показа — только staging: workflow `Demo data (staging)` (seed / reseed / reset /
+check) рисует фото — иллюстрации по категории с плашкой DEMO (`apps/api/scripts/demo-photos.ts`) —
+и зовёт `POST /ops/demo` (`apps/api/src/demo`). Seed заводит три зала и по две витрины в каждой
+другой включённой категории (услуги, поля витрины, занятость) с пометкой «Демо» теми же шагами,
+что панель, и уже заведённое не меняет — новые тексты и фото только через reseed; reset
+(`app.demo_purge()`) убирает только их — id из диапазона
 `00000000-0000-4000-8000-de…` — с заявками и фото. Вне staging и без секрета `DEMO_SEED_KEY` — 404.
+После seed и reseed (и режимом check) тот же workflow проверяет staging в браузере
+(`e2e/staging`, `playwright.staging.config.ts`): лендинг, каждый раздел и каждую его витрину, фото
+с media, «Связаться», узбекский, занятый день.
 Чего в production быть не должно, проверяет чек-лист выпуска `.github/scripts/release-check.sh`
 (последний шаг выкладки production; вручную — `bash .github/scripts/release-check.sh bayramm.uz`):
 демо-витрины в каталоге, тестовый бот, вход по телефону без Turnstile, черновики согласий («ЧЕРНОВИК» /
