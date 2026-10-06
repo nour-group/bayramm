@@ -117,21 +117,24 @@ describe("сид категорий и каталога услуг = @bayramm/sh
               required_attributes, required_services
          from app.categories order by sort, code`,
     );
+    // В порядке показа (sort): в конфигурации категории перечислены не по нему
     expect(rows).toEqual(
-      CATEGORIES.map((c) => ({
-        code: c.code,
-        name_ru: categoriesRu[c.label],
-        name_uz: categoriesUz[c.label],
-        enabled: c.enabled,
-        sort: c.sort,
-        availability: c.availability,
-        photo_policy: c.photoPolicy,
-        min_photos: c.minPhotos,
-        max_video_links: c.maxVideoLinks,
-        required_fields: [...c.listingFields],
-        required_attributes: requiredAttributeKeys(c),
-        required_services: [...c.requiredServices],
-      })),
+      [...CATEGORIES]
+        .sort((a, b) => a.sort - b.sort)
+        .map((c) => ({
+          code: c.code,
+          name_ru: categoriesRu[c.label],
+          name_uz: categoriesUz[c.label],
+          enabled: c.enabled,
+          sort: c.sort,
+          availability: c.availability,
+          photo_policy: c.photoPolicy,
+          min_photos: c.minPhotos,
+          max_video_links: c.maxVideoLinks,
+          required_fields: [...c.listingFields],
+          required_attributes: requiredAttributeKeys(c),
+          required_services: [...c.requiredServices],
+        })),
     );
   });
 

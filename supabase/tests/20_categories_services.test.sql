@@ -16,8 +16,8 @@ update pii.vendor_user_profiles set telegram_chat_id = 9101, telegram_user_id = 
 select results_eq(
   $$select code, availability_mode::text, photo_policy::text from app.categories
      where code in ('hall', 'car', 'studio', 'flowers', 'photo') order by sort$$,
-  $$values ('hall', 'day', 'no_people'), ('car', 'parts', 'no_people'), ('studio', 'slot', 'portfolio'),
-           ('flowers', 'lead', 'no_people'), ('photo', 'parts', 'portfolio')$$,
+  $$values ('hall', 'day', 'no_people'), ('car', 'parts', 'no_people'), ('photo', 'parts', 'portfolio'),
+           ('studio', 'slot', 'portfolio'), ('flowers', 'lead', 'no_people')$$,
   'режим занятости и правило фото — из конфигурации');
 select is_empty(
   $$select c.code from app.categories c
