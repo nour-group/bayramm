@@ -25,7 +25,7 @@
   "devDependencies": {
     "@types/pg": "^8.23.1",
     "kysely-codegen": "^0.20.0",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "typescript": "^6.0.2",
     "vitest": "^5.0.1",
     "wrangler": "^4.136.2"
