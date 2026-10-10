@@ -1018,6 +1018,34 @@ textarea.input {
   font-weight: 700;
 }
 
+/* «бот: нет» у сотрудника в «Команде»: оповещения до него не дойдут */
+.no-bot {
+  color: var(--coral-deep);
+  font-weight: 700;
+}
+
+/* Бот не пишет сотруднику: просьба написать ему /start — над экраном, пока не скрыли */
+.bot-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+  margin-bottom: 16px;
+}
+
+.bot-banner-text {
+  flex: 1 1 220px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.bot-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
 /* Правка карточки ждёт решения: поля, кто и когда, ссылка на неё */
 .pending-revision {
   display: flex;
@@ -1547,6 +1575,12 @@ textarea.input {
 /* Проблемное — коралловой рамкой; цифра остаётся цветом текста (контраст) */
 .stat-warn {
   border-left: 4px solid var(--coral);
+}
+
+/* Очередь «Сейчас» — ссылкой в раздел, где её разбирают: плитка целиком */
+.stat-link {
+  color: inherit;
+  text-decoration: none;
 }
 
 /* Длинные причины и подробности переносятся, а не растягивают таблицу */
@@ -2636,7 +2670,8 @@ textarea.input {
     background: var(--lilac);
   }
 
-  .rcard-tap:hover {
+  .rcard-tap:hover,
+  .stat-link:hover {
     border-color: var(--plum-mid);
   }
 }

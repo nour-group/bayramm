@@ -1,13 +1,14 @@
 // Панель оператора: всё под /staff — только для действующих сотрудников.
 //
-//   GET /staff/me (Bearer, сессия сотрудника) → 200 { id, role, displayName, username, permissions }
+//   GET /staff/me (Bearer, сессия сотрудника) → 200 { id, role, displayName, username, permissions,
+//                                                       botLinked }
 //
 // Разделы (контракт — @bayramm/shared/api/staff, права по ролям — staff/access.ts):
 //   /staff/dictionaries   справочники для форм
 //   /staff/vendors        вендоры, чек-лист проверки, пользователи кабинета
 //   /staff/listings       карточки, статусы, фото, занятость
 //   /staff/revisions      правки опубликованных карточек: очередь и решение
-//   /staff/services       услуги опубликованных витрин: очередь модерации и решение
+//   /staff/services       услуги витрин (кроме отклонённых): очередь модерации и решение
 //   /staff/requests       заявки, срок ответа вендора, напоминания, заметки
 //   /staff/clients        клиенты (псевдонимы), блокировка
 //   /staff/outbox         очередь уведомлений: что не доставлено, повтор
@@ -80,7 +81,7 @@ staff.get("/me", async (c) => {
     trx
       .selectFrom("app.staff as s")
       .innerJoin(staffProfilesAs("p"), "p.staff_id", "s.id")
-      .select(["s.id", "s.role", "p.display_name", "p.telegram_username"])
+      .select(["s.id", "s.role", "p.display_name", "p.telegram_username", "p.telegram_chat_id"])
       .where("s.id", "=", actor.id)
       .executeTakeFirst(),
   );
@@ -94,6 +95,8 @@ staff.get("/me", async (c) => {
     username: row.telegram_username,
     // Для панели — какие кнопки показывать; проверяет сервер на каждом запросе
     permissions: permissionsOf(row.role),
+    // Чат с ботом есть — оповещения команды доходят (app.enqueue_staff_alert пишет только ему)
+    botLinked: row.telegram_chat_id !== null,
   };
   return c.json(body);
 });

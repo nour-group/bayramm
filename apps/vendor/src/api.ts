@@ -193,6 +193,9 @@ export const api = {
   callAttempt: (id: string) => empty(`/vendor/requests/${encodeURIComponent(id)}/call`, { method: "POST" }),
 
   listing: (id: string) => json<VendorListing>(`/vendor/listings/${encodeURIComponent(id)}`),
+  /** Черновик (или отклонённую) — на проверку команде: в ответе витрина уже на проверке */
+  submitListing: (id: string) =>
+    json<VendorListing>(`/vendor/listings/${encodeURIComponent(id)}/submit`, { method: "POST" }),
   /**
    * Фото площадки (только владелец кабинета): photo — результат compressForUpload
    * (@bayramm/media/browser), без метаданных. Подтверждение — заголовками: X-No-Faces — лиц

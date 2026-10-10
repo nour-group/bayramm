@@ -4,6 +4,7 @@ import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
+  BENTO_ID,
   BOOKED_DAY,
   BRIDE_CAR_ID,
   CAKE_LISTING_ID,
@@ -268,6 +269,36 @@ test("модерация услуг: правка — сейчас → пред�
   expect(api.services.find((c) => c.key === `POST /staff/services/${LIMOUSINE_ID}/decline`)?.body).toEqual({
     reason: "Нужно фото лимузина",
   });
+  expect(api.unexpected).toEqual([]);
+});
+
+test("услуга партнёра у черновика — в очереди со статусом витрины; на её странице — «Одобрить» и «Отклонить»", async ({
+  page,
+}) => {
+  const api = await start(page, { seeded: true, draftService: true });
+  await page.goto("/moderation");
+  const queue = page.getByRole("region", { name: t.serviceQueue });
+  const bento = queue.getByRole("listitem").filter({ hasText: "Shirin" });
+  // Партнёр видит «на проверке» и у черновика: модератору видно, что витрины ещё нет на сайте
+  await expect(bento).toContainText(t.serviceQueueKinds.review ?? "");
+  await expect(bento).toContainText(t.status.draft);
+  await expect(queue.getByRole("heading", { level: 2 })).toHaveText(`${t.serviceQueue} 3`);
+  await expectNoAxeViolations(page, "модерация: услуга черновика");
+  await expectHitAreas(page, "модерация: услуга черновика", CONTROLS);
+
+  // Карточка очереди — ссылкой на витрину: там те же решения
+  await bento.getByRole("link").click();
+  await expect(page).toHaveURL(`/listings/${CAKE_LISTING_ID}`);
+  const services = page.getByRole("region", { name: t.services });
+  await expect(services.getByText(t.serviceWaits)).toBeVisible();
+  await expect(act(services, t.serviceDecline, "Бенто")).toBeVisible();
+  await expectNoAxeViolations(page, "витрина: услуга ждёт решения");
+  await expectHitAreas(page, "витрина: услуга ждёт решения", CONTROLS);
+  await act(services, t.serviceApprove, "Бенто").click();
+  await expect(act(services, t.serviceApprove, "Бенто")).toHaveCount(0);
+  expect(api.services.map((c) => c.key)).toContain(`POST /staff/services/${BENTO_ID}/approve`);
+  // Решили — фокус на заголовке блока услуг: кнопки решения исчезли
+  await expect(services.getByRole("heading", { level: 2 })).toBeFocused();
   expect(api.unexpected).toEqual([]);
 });
 

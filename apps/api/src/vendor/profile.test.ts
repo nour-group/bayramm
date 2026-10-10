@@ -143,6 +143,7 @@ describe("getListing", () => {
     video_links: [],
     parallel_capacity: 1,
     blockers: ["photos", "contract"],
+    review_blockers: ["photos"],
     phone: "+998000000999",
     min_photos: 3,
     max_photos: 10,
@@ -224,6 +225,8 @@ describe("getListing", () => {
       ],
       phone: "+998000000999",
       blockers: ["photos", "contract"],
+      // На проверку отправить нельзя без фото; договор — уже для публикации
+      reviewBlockers: ["photos"],
       photoLimits: { min: 3, max: 10 },
     });
     expect(result).not.toHaveProperty("packages");
@@ -262,6 +265,7 @@ describe("getListing", () => {
     ]);
     const main = fake.queries.find((q) => q.sql.includes('from "app"."listings"'));
     expect(main?.sql).toContain('pii.read_listing_phone("id")');
+    expect(main?.sql).toContain("app.listing_publish_blockers(id, 'review')");
     expect(main?.parameters).toEqual([LISTING_ID, ACTOR.vendorId]);
     const photos = fake.queries.find((q) => q.sql.includes('"app"."photos"'));
     expect(photos?.sql).toContain('"deleted_at" is null');

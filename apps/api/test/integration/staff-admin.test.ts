@@ -120,6 +120,8 @@ describe("GET /staff/me и справочники", () => {
     expect(me.permissions).toContain("listings.publish");
     expect(me.permissions).not.toContain("vendors.write");
     expect(me.permissions).not.toContain("requests.read");
+    // Пишет ли бот сотруднику: от этого зависят оповещения команды (баннер в панели)
+    expect(typeof me.botLinked).toBe("boolean");
     const manager = await ok<StaffMe>(api("manager", "GET", "/staff/me"));
     expect(manager.permissions).toContain("vendors.write");
     expect(manager.permissions).not.toContain("listings.publish");
@@ -574,7 +576,8 @@ describe("вендор → карточка → проверка → публи�
     const queue = await ok<ListingList>(api("moderator", "GET", "/staff/listings?photos=pending&limit=100"));
     const item = queue.items.find((l) => l.id === listing.id);
     expect(item?.photos.pending).toBe(1);
-    expect(queue.items.every((l) => l.status === "active" && l.photos.pending > 0)).toBe(true);
+    // Любые витрины, кроме отклонённых: фото черновика тоже можно одобрить до публикации
+    expect(queue.items.every((l) => l.status !== "rejected" && l.photos.pending > 0)).toBe(true);
 
     // Отказ без причины — нет: партнёр должен знать, что переснять
     expect(

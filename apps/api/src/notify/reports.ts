@@ -134,13 +134,14 @@ export interface ReportTexts {
 const queuesRu = (q: OpsQueues) =>
   `Ждут ответа площадки: ${q.awaiting}, из них срок вышел: ${q.overdue}\n` +
   `Не доставлено уведомлений (всего): ${q.deadTotal}\n` +
-  `На проверке: карточек ${q.listingsReview}, правок ${q.revisionsPending}, фото ${q.photosPending}`;
+  `На проверке: карточек ${q.listingsReview}, правок ${q.revisionsPending}, услуг ${q.servicesPending}, ` +
+  `фото ${q.photosPending}`;
 
 const queuesUz = (q: OpsQueues) =>
   `Maydon javobini kutmoqda: ${q.awaiting}, shundan muddati oʻtgan: ${q.overdue}\n` +
   `Yetkazilmagan xabarlar (jami): ${q.deadTotal}\n` +
   `Tekshiruvda: kartochkalar ${q.listingsReview}, oʻzgarish takliflari ${q.revisionsPending}, ` +
-  `foto ${q.photosPending}`;
+  `xizmatlar ${q.servicesPending}, foto ${q.photosPending}`;
 
 const answeredRu = (m: PeriodMetrics) =>
   `${formatRate(m.answeredRate, "ru")} (${m.answeredInTime} из ${m.measurable})`;

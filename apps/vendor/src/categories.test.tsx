@@ -6,6 +6,7 @@ import type {
   VendorListing,
   VendorListingRef,
   VendorMe,
+  VendorPhoto,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRole,
@@ -94,6 +95,7 @@ const listing = (ref: VendorListingRef, patch: Partial<VendorListing> = {}): Ven
   photos: [],
   phone: "+998000000999",
   blockers: [],
+  reviewBlockers: [],
   photoLimits: { min: 3, max: 10 },
   attributes: {},
   missingAttributes: [],
@@ -113,6 +115,7 @@ const LISTINGS: Record<string, VendorListing> = {
   [PHOTO]: listing(REFS[2] as VendorListingRef, {
     priceFromUzs: null,
     blockers: ["price", "attributes", "photos"],
+    reviewBlockers: ["price", "attributes", "photos"],
     missingAttributes: ["team", "delivery_days"],
   }),
   [CAKE]: listing(REFS[3] as VendorListingRef, {
@@ -850,6 +853,133 @@ describe("чек-лист готовности", () => {
     ]);
     // Район и договор — дело команды: пунктов партнёра для них нет
     expect(todos.flatMap((todo) => todo.lines).join(" ")).not.toMatch(/район|договор/i);
+  });
+
+  it("черновик: услуги и фото на проверке — не пункты партнёра; отклонённые фото не в счёт", () => {
+    const go = { services: () => {}, photos: () => {}, propose: () => {} };
+    const pending = (n: number, moderation: VendorPhoto["moderation"] = "pending"): VendorPhoto => ({
+      id: `dddddddd-0000-0000-0000-00000000000${n}`,
+      width: 1600,
+      height: 1200,
+      moderation,
+      declineReason: null,
+      isCover: false,
+      src: "",
+      srcSet: "",
+    });
+    const draft = {
+      ...(LISTINGS[PHOTO] as VendorListing),
+      // Для публикации не хватает одобренных услуг и фото — это решает команда
+      blockers: ["price", "photos", "contract"],
+      reviewBlockers: [],
+      missingAttributes: [],
+      photos: [pending(1), pending(2), pending(3)],
+    };
+    expect(vendorTodos(draft, categoryConfig("photo"), vendorDict.ru, "ru", go)).toEqual([]);
+    const declined = { ...draft, photos: [pending(1), pending(2), pending(3, "declined")] };
+    expect(
+      vendorTodos(declined, categoryConfig("photo"), vendorDict.ru, "ru", go).map((todo) => todo.lines),
+    ).toEqual([["Загрузите фото: есть 2 из 3"]]);
+  });
+
+  describe("«Отправить на проверку»", () => {
+    const listingPath = `/api/vendor/listings/${PHOTO}`;
+    const ready = (status: VendorListing["status"]): VendorListing => ({
+      ...(LISTINGS[PHOTO] as VendorListing),
+      status,
+      priceFromUzs: 500_000,
+      blockers: ["price", "photos", "contract"],
+      reviewBlockers: [],
+      attributes: { team: ["photographer"], delivery_days: 14 },
+      missingAttributes: [],
+      photos: [1, 2, 3].map((n) => ({
+        id: `dddddddd-0000-0000-0000-00000000000${n}`,
+        width: 1600,
+        height: 1200,
+        moderation: "pending" as const,
+        declineReason: null,
+        isCover: n === 1,
+        src: "https://media.example/640/p.webp",
+        srcSet: "",
+      })),
+    });
+
+    beforeEach(() => resize(1280));
+
+    it("своё сделано — кнопка; отправили — «на проверке у команды», фокус на сказанном", async () => {
+      let current = ready("draft");
+      routes[`GET ${listingPath}`] = () => ({ body: current });
+      routes[`POST ${listingPath}/submit`] = () => {
+        current = ready("review");
+        return { body: current };
+      };
+      await mount("/card");
+      await click(byText(".side-vitrinas button", "Kadr Studio"));
+      const readiness = container.querySelector(".readiness");
+      expect(readiness?.textContent).toContain(
+        "С вашей стороны всё готово — отправьте её на проверку команде Bayramm.",
+      );
+      // Договор — дело команды, он ещё впереди: строкой
+      expect(readiness?.textContent).toContain("Сделает команда Bayramm: договор");
+      await click(byText(".readiness button", "Отправить на проверку"));
+      expect(sent("POST", `${listingPath}/submit`)).toHaveLength(1);
+      const after = container.querySelector(".readiness");
+      expect(after?.textContent).toContain("Витрина на проверке у команды Bayramm");
+      expect(byText(".readiness button", "Отправить на проверку", container)).toBeUndefined();
+      const said = container.querySelector('.readiness [role="status"]');
+      expect(said?.textContent).toBe("Отправили: витрина на проверке у команды Bayramm.");
+      expect(document.activeElement).toBe(said);
+      // Значки и статусы витрин в разделах — заново
+      expect(sent("GET", "/api/vendor/me").length).toBeGreaterThan(1);
+    });
+
+    it("не всё готово (витрину успели изменить) — чего не хватает, и чек-лист заново", async () => {
+      routes[`GET ${listingPath}`] = () => ({ body: ready("draft") });
+      routes[`POST ${listingPath}/submit`] = () => ({
+        status: 422,
+        body: { error: { code: "publish_blocked", message: "x", details: ["phone", "price"] } },
+      });
+      await mount("/card");
+      await click(byText(".side-vitrinas button", "Kadr Studio"));
+      await click(byText(".readiness button", "Отправить на проверку"));
+      expect(container.querySelector('.readiness [role="alert"]')?.textContent).toBe(
+        "Для проверки ещё не хватает: телефон для заявок, услуга с ценой.",
+      );
+      expect(sent("GET", listingPath).length).toBeGreaterThan(1);
+    });
+
+    it("команда ещё не заполнила своё — кнопки нет, сказано чего ждать; сотрудник площадки не отправляет", async () => {
+      routes[`GET ${listingPath}`] = () => ({ body: { ...ready("draft"), reviewBlockers: ["district"] } });
+      await mount("/card");
+      await click(byText(".side-vitrinas button", "Kadr Studio"));
+      expect(container.querySelector(".readiness")?.textContent).toContain(
+        "Отправить на проверку можно, когда команда Bayramm заполнит: район.",
+      );
+      expect(byText(".readiness button", "Отправить на проверку", container)).toBeUndefined();
+      act(() => root.unmount());
+      container.remove();
+
+      routes = defaultRoutes("member");
+      routes[`GET ${listingPath}`] = () => ({ body: ready("draft") });
+      await mount("/card");
+      await click(byText(".side-vitrinas button", "Kadr Studio"));
+      expect(container.querySelector(".readiness")?.textContent).toContain(
+        "На проверку витрину отправляет владелец кабинета.",
+      );
+      expect(byText(".readiness button", "Отправить на проверку", container)).toBeUndefined();
+    });
+
+    it("отклонённая: исправили — отправить снова", async () => {
+      routes[`GET ${listingPath}`] = () => ({
+        body: { ...ready("rejected"), statusReason: "Нет фото с мероприятий" },
+      });
+      await mount("/card");
+      await click(byText(".side-vitrinas button", "Kadr Studio"));
+      const readiness = container.querySelector(".readiness");
+      expect(readiness?.textContent).toContain("Если всё исправили — отправьте её на проверку снова.");
+      expect(readiness?.textContent).toContain("Нет фото с мероприятий");
+      expect(byText(".readiness button", "Отправить на проверку", container)).toBeDefined();
+    });
   });
 });
 

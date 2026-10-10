@@ -106,11 +106,15 @@ select lives_ok(
             pg_temp.photo_key('aaaaaaaa-0000-0000-0000-000000000102'), true)$$,
   'и черновика');
 reset role;
+-- Фото черновика — тоже команде (20261011090000_moderation_flow.sql): одобрить его можно и до публикации
 select results_eq(
-  $$select recipient_id, payload from app.outbox where kind = 'ops.photos_submitted' order by recipient_id$$,
+  $$select recipient_id, payload from app.outbox where kind = 'ops.photos_submitted'
+     order by recipient_id, payload ->> 'listing_id'$$,
   $$values ('00000000-0000-0000-0000-00000000a001'::uuid, '{"listing_id": "aaaaaaaa-0000-0000-0000-000000000101"}'::jsonb),
-           ('00000000-0000-0000-0000-00000000a003'::uuid, '{"listing_id": "aaaaaaaa-0000-0000-0000-000000000101"}'::jsonb)$$,
-  'оповещение — администратору и модератору, одно в час на площадку; фото черновика — без оповещения');
+           ('00000000-0000-0000-0000-00000000a001'::uuid, '{"listing_id": "aaaaaaaa-0000-0000-0000-000000000102"}'::jsonb),
+           ('00000000-0000-0000-0000-00000000a003'::uuid, '{"listing_id": "aaaaaaaa-0000-0000-0000-000000000101"}'::jsonb),
+           ('00000000-0000-0000-0000-00000000a003'::uuid, '{"listing_id": "aaaaaaaa-0000-0000-0000-000000000102"}'::jsonb)$$,
+  'оповещение — администратору и модератору, одно на площадку, пока не отправлено; у черновика — тоже');
 select results_eq(
   $$select moderation::text from app.photos where id = 'f0f0f0f0-0000-0000-0000-000000000001'$$,
   $$values ('pending')$$,

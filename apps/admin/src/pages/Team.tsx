@@ -276,6 +276,20 @@ function linkState(member: TeamMember): string {
   return member.accepted ? t.memberAccepted : t.memberPending;
 }
 
+/** Действующему сотруднику бот не пишет (не было /start): оповещения команды до него не дойдут */
+function NoBot({ member }: { member: TeamMember }) {
+  if (!member.active || member.botLinked) return null;
+  return (
+    <>
+      {" · "}
+      <span className="no-bot">
+        {t.memberNoBot}
+        <span className="visually-hidden">, {t.memberNoBotHint}</span>
+      </span>
+    </>
+  );
+}
+
 function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
   const roleId = useId();
   const toggleButton = useRef<HTMLButtonElement>(null);
@@ -297,7 +311,10 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
         {member.self ? `${t.you} · ` : ""}
         {member.username ? `@${member.username}` : member.invitedBy === "phone" ? t.invitedByPhone : t.none}
       </p>
-      <p className="rcard-meta">{linkState(member)}</p>
+      <p className="rcard-meta">
+        {linkState(member)}
+        <NoBot member={member} />
+      </p>
       {member.self || !member.active ? (
         <p className="rcard-meta">
           {t.colRole}: {t.roles[member.role]}
@@ -397,7 +414,10 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
         ) : (
           <Pill tone="muted">{t.memberInactive}</Pill>
         )}
-        <span className="sub">{linkState(member)}</span>
+        <span className="sub">
+          {linkState(member)}
+          <NoBot member={member} />
+        </span>
       </td>
       <td>
         {!member.self &&

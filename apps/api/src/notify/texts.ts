@@ -8,6 +8,7 @@
 // Без parse_mode: название площадки пишет человек, разметка из него не исполняется.
 
 import { type Lang, ruPlural } from "@bayramm/shared";
+import type { ListingStatus } from "@bayramm/shared/api/staff";
 
 /** Заявка глазами уведомления: только то, что можно показать получателю */
 export interface RequestFacts {
@@ -137,6 +138,28 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
 
 // ── команде: только по-русски, панель оператора русская ─────────────────────
 
+/** Кнопка оповещения команды: экран панели, где по нему решают */
+export const OPS_BUTTON = "Открыть в панели";
+
+/** Статус витрины словами — как в панели */
+const LISTING_STATUS_RU: Readonly<Record<ListingStatus, string>> = {
+  lead: "лид",
+  draft: "черновик",
+  review: "на проверке",
+  active: "опубликована",
+  suspended: "приостановлена",
+  rejected: "отклонена",
+};
+
+/**
+ * Витрина ещё не на сайте (черновик, на проверке): решить по ней можно уже сейчас, а что не
+ * решили — одобрит публикация. У опубликованной — пусто
+ */
+const notLiveNote = (status: ListingStatus) =>
+  status === "active" || status === "suspended"
+    ? ""
+    : `\nВитрина ещё не на сайте (${LISTING_STATUS_RU[status]}): решить можно сейчас, остальное одобрит публикация.`;
+
 export interface OpsSlaFacts extends RequestFacts {
   /** Публичный код вендора (V101) */
   readonly vendorCode: string;
@@ -171,7 +194,7 @@ export const SERVICE_TEXTS: Readonly<
   Record<Lang, { readonly button: string; readonly decided: (f: ServiceDecisionFacts) => string }>
 > = {
   ru: {
-    button: "Открыть витрину",
+    button: "Открыть услуги",
     decided: (f) => {
       if (f.outcome === "approved")
         return `Услуга «${f.service}» на витрине «${f.listing}» одобрена — клиенты видят её.`;
@@ -186,7 +209,7 @@ export const SERVICE_TEXTS: Readonly<
     },
   },
   uz: {
-    button: "Vitrinani ochish",
+    button: "Xizmatlarni ochish",
     decided: (f) => {
       if (f.outcome === "approved") {
         return `«${f.listing}» vitrinasidagi «${f.service}» xizmati tasdiqlandi — mijozlar uni koʻradi.`;
@@ -203,11 +226,13 @@ export const SERVICE_TEXTS: Readonly<
   },
 };
 
-/** Новые услуги и предложения правок опубликованной витрины — команде */
+/** Новые услуги и предложения правок витрины (любой, кроме отклонённой) — команде */
 export interface OpsServicesFacts {
   readonly listing: string;
   readonly vendorCode: string;
   readonly category: string;
+  /** Статус витрины: у черновика — пометка, что её ещё нет на сайте */
+  readonly status: ListingStatus;
   /** Сколько услуг и предложений ждёт решения */
   readonly pending: number;
 }
@@ -215,8 +240,22 @@ export interface OpsServicesFacts {
 export function opsServicesSubmitted(f: OpsServicesFacts): string {
   return (
     `Услуги на проверке: ${f.listing} (${f.category}, вендор ${f.vendorCode}).\n` +
-    `Ждут решения: ${f.pending}. Клиенты видят только одобренное.\n` +
+    `Ждут решения: ${f.pending}. Клиенты видят только одобренное.${notLiveNote(f.status)}\n` +
     "Решение — в панели, раздел «Модерация»."
+  );
+}
+
+/** Витрину отправили на проверку (партнёр или менеджер) — тем, кто публикует */
+export interface OpsListingFacts {
+  readonly listing: string;
+  readonly vendorCode: string;
+  readonly category: string;
+}
+
+export function opsListingSubmitted(f: OpsListingFacts): string {
+  return (
+    `Витрина отправлена на проверку: ${f.listing} (${f.category}, вендор ${f.vendorCode}).\n` +
+    "Опубликовать или вернуть на доработку — в панели, раздел «Модерация»."
   );
 }
 
@@ -247,17 +286,19 @@ export function opsRevisionSubmitted(f: OpsRevisionFacts): string {
   );
 }
 
-/** Новые фото опубликованной карточки — команде: площадка, код вендора, сколько ждёт решения */
+/** Новые фото карточки — команде: площадка, код вендора, сколько ждёт решения */
 export interface OpsPhotosFacts {
   readonly listing: string;
   readonly vendorCode: string;
+  /** Статус витрины: у черновика — пометка, что её ещё нет на сайте */
+  readonly status: ListingStatus;
   readonly pending: number;
 }
 
 export function opsPhotosSubmitted(f: OpsPhotosFacts): string {
   return (
     `Новые фото на проверке: ${f.listing} (вендор ${f.vendorCode}).\n` +
-    `Ждут решения: ${f.pending}. Клиенты их не видят, пока фото не одобрят.\n` +
+    `Ждут решения: ${f.pending}. Клиенты их не видят, пока фото не одобрят.${notLiveNote(f.status)}\n` +
     "Решение — в панели, раздел «Модерация»."
   );
 }

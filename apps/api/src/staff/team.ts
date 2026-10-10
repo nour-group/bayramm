@@ -42,6 +42,8 @@ async function loadTeam(trx: Tx, self: string): Promise<TeamList> {
       "s.created_at",
       "p.display_name",
       "p.telegram_username",
+      // Сам чат панели не нужен — только то, что бот может писать сотруднику
+      sql<boolean>`p.telegram_chat_id is not null`.as("bot_linked"),
       // Сам хэш номера панели не нужен — только то, что пригласили по телефону
       sql<boolean>`s.phone_hash is not null and p.telegram_username is null`.as("by_phone"),
       sql<boolean>`s.account_id is not null`.as("accepted"),
@@ -62,6 +64,7 @@ async function loadTeam(trx: Tx, self: string): Promise<TeamList> {
         accepted: row.accepted || row.tg_linked_at !== null,
         linked: row.tg_linked_at !== null,
         linkedAt: iso(row.tg_linked_at),
+        botLinked: row.bot_linked,
         createdAt: iso(row.created_at),
         self: row.id === self,
       }),

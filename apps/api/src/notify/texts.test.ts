@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   formatDate,
   NOTICE_TEXTS,
+  OPS_BUTTON,
+  opsListingSubmitted,
   opsOutboxDead,
   opsRevisionSubmitted,
   opsServicesSubmitted,
@@ -115,9 +117,32 @@ describe("тексты уведомлений", () => {
         reason: "Нет фото",
       }),
     ).toContain("Изменения услуги «Лимузин» на витрине «Шарк» команда Bayramm не приняла: Нет фото");
+    const live = opsServicesSubmitted({
+      listing: "Шарк",
+      vendorCode: "V101",
+      category: "Кортеж",
+      status: "active",
+      pending: 2,
+    });
+    expect(live).toContain("Ждут решения: 2");
+    expect(live).not.toContain("не на сайте");
+    // Черновик: решить можно и до публикации — сказано, что витрины ещё нет на сайте
     expect(
-      opsServicesSubmitted({ listing: "Шарк", vendorCode: "V101", category: "Кортеж", pending: 2 }),
-    ).toContain("Ждут решения: 2");
+      opsServicesSubmitted({
+        listing: "Шарк",
+        vendorCode: "V101",
+        category: "Кортеж",
+        status: "draft",
+        pending: 1,
+      }),
+    ).toContain("Витрина ещё не на сайте (черновик)");
+  });
+
+  it("витрина на проверке — тем, кто публикует: витрина, категория, код вендора, где решать", () => {
+    const text = opsListingSubmitted({ listing: "Шарк", vendorCode: "V101", category: "Кортеж" });
+    for (const part of ["Витрина отправлена на проверку", "Шарк", "Кортеж", "V101", "«Модерация»"])
+      expect(text).toContain(part);
+    expect(OPS_BUTTON).toBe("Открыть в панели");
   });
 
   it("склонение часов и гостей", () => {

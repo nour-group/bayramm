@@ -8,7 +8,12 @@
      · компьютер — шапка с разделами в строку, как раньше.
    В Telegram «назад» — кнопка Telegram (BackButton), своя в шапке не рисуется. */
 
-import type { MetricsOverview, OpsQueues, StaffDictionaries } from "@bayramm/shared/api/staff";
+import type {
+  MetricsOverview,
+  OpsQueues,
+  StaffDictionaries,
+  StaffPermission,
+} from "@bayramm/shared/api/staff";
 import { getWebApp } from "@bayramm/tg/webapp";
 import { Dialog, useOnReconnect } from "@bayramm/ui/react";
 import {
@@ -278,11 +283,20 @@ function OtherAppLinks({ apps, className }: { apps: OtherApps | null; className:
 
 export type Badges = Partial<Record<Section, number>>;
 
-/** Что ждёт команду — из очередей метрик: просроченные заявки, решения модерации, недоставленное */
-export function badgesOf(queues: OpsQueues): Badges {
+/**
+ * Что ждёт команду — из очередей метрик: просроченные заявки, недоставленное и решения
+ * модерации — только те очереди, по которым роль решает: витрины на проверке — кто публикует,
+ * предложения и услуги — кто решает по правкам, фото — кто решает по фото. Менеджеру счётчик
+ * модерации не горит: разобрать ему там нечего
+ */
+export function badgesOf(queues: OpsQueues, permissions: readonly StaffPermission[]): Badges {
+  const may = (permission: StaffPermission) => permissions.includes(permission);
   return {
     requests: queues.overdue,
-    moderation: queues.listingsReview + queues.revisionsPending + queues.photosPending,
+    moderation:
+      (may("listings.publish") ? queues.listingsReview : 0) +
+      (may("revisions.moderate") ? queues.revisionsPending + queues.servicesPending : 0) +
+      (may("photos.moderate") ? queues.photosPending : 0),
     notifications: queues.deadTotal,
   };
 }
@@ -290,8 +304,9 @@ export function badgesOf(queues: OpsQueues): Badges {
 /** Раз в минуту, не чаще: при смене раздела и когда вернулась связь. Без права метрик — нет */
 const BADGES_TTL_MS = 60_000;
 
-function useBadges(enabled: boolean, section: Section | null): Badges {
+function useBadges(permissions: readonly StaffPermission[], section: Section | null): Badges {
   const { api } = useSession();
+  const enabled = permissions.includes("metrics.read");
   const [badges, setBadges] = useState<Badges>({});
   const fetched = useRef<number | null>(null);
   const refresh = useCallback(
@@ -301,15 +316,64 @@ function useBadges(enabled: boolean, section: Section | null): Badges {
       if (!force && fetched.current !== null && now - fetched.current < BADGES_TTL_MS) return;
       fetched.current = now;
       void api.get<MetricsOverview>("/staff/metrics?weeks=1").then((result) => {
-        if (result.ok) setBadges(badgesOf(result.data.queues));
+        if (result.ok) setBadges(badgesOf(result.data.queues, permissions));
       });
     },
-    [api, enabled],
+    [api, enabled, permissions],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: section — повод перечитать
   useEffect(() => refresh(false), [refresh, section]);
   useOnReconnect(() => refresh(true));
   return badges;
+}
+
+// ── бот не пишет сотруднику ────────────────────────────────────────────────
+
+/** Решает по модерации: ему идут оповещения о том, что прислали на проверку */
+const DECIDES: readonly StaffPermission[] = ["listings.publish", "revisions.moderate", "photos.moderate"];
+const BOT_BANNER_KEY = "bayramm.admin.botBanner";
+
+function bannerHidden(): boolean {
+  try {
+    return window.sessionStorage.getItem(BOT_BANNER_KEY) === "hidden";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Сотрудник решает по модерации, а чата с ботом нет (не писал боту /start): оповещения команды
+ * ему не приходят — то, что прислал партнёр, он увидит, только заглянув в «Модерацию». Ссылка —
+ * на бота (в Telegram — через openTelegramLink); скрыть — до конца сессии вкладки
+ */
+function BotBanner({ staff, bot }: { staff: Staff; bot: string | null }) {
+  const [hidden, setHidden] = useState(bannerHidden);
+  // Старая сборка API без поля — молчим: незачем пугать тех, кому бот пишет
+  if (hidden || staff.botLinked !== false || !DECIDES.some((p) => staff.permissions.includes(p))) return null;
+  const hide = () => {
+    setHidden(true);
+    try {
+      window.sessionStorage.setItem(BOT_BANNER_KEY, "hidden");
+    } catch {
+      // не запомнится — покажем снова после перезагрузки
+    }
+  };
+  const link = bot ? `https://t.me/${bot}?start=admin` : null;
+  return (
+    <div className="notice notice-warn bot-banner">
+      <p className="bot-banner-text">{t.botBanner}</p>
+      <div className="bot-banner-actions">
+        {link ? (
+          <a className="btn btn-sm" href={link} target="_blank" rel="noreferrer" onClick={viaBot(link)}>
+            {t.botBannerLink}
+          </a>
+        ) : null}
+        <button type="button" className="btn btn-sm" onClick={hide}>
+          {t.botBannerHide}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Badge({ section, count }: { section: Section; count: number | undefined }) {
@@ -570,7 +634,7 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
     [staff],
   );
   const current = view ? sectionOf(view) : null;
-  const badges = useBadges(staff.permissions.includes("metrics.read"), current);
+  const badges = useBadges(staff.permissions, current);
   const [sheet, setSheet] = useState<"more" | "account" | null>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
   const accountButton = useRef<HTMLButtonElement>(null);
@@ -660,6 +724,7 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
         )}
         {layout === "tablet" ? <Rail sections={sections} current={current} badges={badges} /> : null}
         <main id="main" className="main" tabIndex={-1}>
+          <BotBanner staff={staff} bot={apps?.bot ?? null} />
           <UnsavedContext.Provider value={unsaved.registry}>
             <TitleContext.Provider value={setTitle}>
               <Page

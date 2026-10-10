@@ -17,7 +17,9 @@ import { isDay, loadDigest, loadWeekReport, REPORT_TEXTS, staffLocale } from "./
 import {
   formatDate,
   NOTICE_TEXTS,
+  OPS_BUTTON,
   type OpsSlaFacts,
+  opsListingSubmitted,
   opsOutboxDead,
   opsPhotosSubmitted,
   opsRevisionSubmitted,
@@ -33,10 +35,12 @@ import {
  * ops.revision_submitted — правка карточки от партнёра (20260930200000_revisions_phone_invites.sql);
  * ops.daily_digest, ops.weekly_report, ops.api_error — отчёты и ошибки API администраторам
  * (20260930220000_launch_metrics.sql, тексты — reports.ts);
- * ops.photos_submitted — новые фото опубликованной карточки (20261001010000_cabinet_integrity.sql);
- * vendor.service_decided — решение по услуге опубликованной витрины владельцам кабинета,
+ * ops.photos_submitted — новые фото карточки (20261001010000_cabinet_integrity.sql);
+ * vendor.service_decided — решение по услуге владельцам кабинета,
  * ops.service_submitted — новые услуги и предложения правок команде
- * (20261001120100_categories_services.sql)
+ * (20261001120100_categories_services.sql; у любой витрины, кроме отклонённой, —
+ * 20261011090000_moderation_flow.sql);
+ * ops.listing_submitted — витрину отправили на проверку (20261011090000_moderation_flow.sql)
  */
 export const NOTICE_KINDS = [
   "vendor.request_new",
@@ -53,18 +57,21 @@ export const NOTICE_KINDS = [
   "ops.photos_submitted",
   "vendor.service_decided",
   "ops.service_submitted",
+  "ops.listing_submitted",
 ] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
 /**
- * Может ли сотрудник этой роли получить оповещение: о правке карточки — тот, кто решает
- * по правкам (revisions.moderate), о новых фото — тот, кто решает по фото
- * (photos.moderate), остальные оповещения команды — администратору
+ * Может ли сотрудник этой роли получить оповещение: о правке карточки и услугах — тот, кто
+ * решает по правкам (revisions.moderate), о новых фото — тот, кто решает по фото
+ * (photos.moderate), о витрине на проверке — тот, кто публикует (listings.publish),
+ * остальные оповещения команды — администратору
  */
 function staffMayReceive(kind: string, role: AppStaffRole): boolean {
   if (kind === "ops.revision_submitted") return can(role, "revisions.moderate");
   if (kind === "ops.photos_submitted") return can(role, "photos.moderate");
   if (kind === "ops.service_submitted") return can(role, "revisions.moderate");
+  if (kind === "ops.listing_submitted") return can(role, "listings.publish");
   return role === "admin";
 }
 
@@ -85,6 +92,8 @@ export interface Urls {
   readonly webAppUrl: string;
   /** Кабинет вендора (VENDOR_APP_URL) */
   readonly vendorAppUrl: string;
+  /** Панель оператора (ADMIN_APP_URL): кнопка в оповещениях команды */
+  readonly adminAppUrl: string;
 }
 
 export type Rendered =
@@ -96,7 +105,9 @@ const skip = (reason: string): Rendered => ({ ok: false, reason });
 
 // ── ссылки ─────────────────────────────────────────────────────────────────
 // Кнопка открывает Mini App сразу на нужном экране (web_app с путём):
-//   · вендору — заявка в кабинете, /requests/<id>;
+//   · вендору — заявка в кабинете, /requests/<id>; решение по услуге — «Услуги», /services;
+//   · команде — панель: правка — её страница, витрина на проверке — страница витрины, услуги
+//     и фото — «Модерация» (очереди там);
 //   · клиенту о статусе — эта заявка в «Моих заявках»;
 //   · клиенту об отказе и просрочке — каталог «похожих»: та же дата, столько же
 //     гостей, тот же район, что в заявке (пути — @bayramm/shared/api, их же
@@ -110,6 +121,9 @@ export const clientRequestUrl = (urls: Urls, requestId: string) =>
 
 export const clientSimilarUrl = (urls: Urls, filters: CatalogLinkFilters) =>
   `${trimTrailingSlashes(urls.webAppUrl)}${clientCatalogPath(filters)}`;
+
+/** Экран панели оператора (пути — apps/admin/src/router.ts): /moderation, /listings/<id>, … */
+export const adminUrl = (urls: Urls, path: string) => `${trimTrailingSlashes(urls.adminAppUrl)}${path}`;
 
 const button = (text: string, url: string): ReplyMarkup => ({
   inline_keyboard: [[{ text, web_app: { url } }]],
@@ -362,6 +376,7 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
       typeof payload === "object" && payload !== null && !Array.isArray(payload) ? Object.keys(payload) : [];
     return message(
       opsRevisionSubmitted({ listing: revision.name, vendorCode: revision.public_code, fields }),
+      button(OPS_BUTTON, adminUrl(urls, `/revisions/${revisionId}`)),
     );
   }
 
@@ -374,6 +389,7 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
       .innerJoin("app.categories as c", "c.code", "l.category_code")
       .select([
         "l.name",
+        "l.status",
         "v.public_code",
         "c.name_ru as category",
         sql<number>`(select count(*)::int from app.listing_services s
@@ -384,15 +400,41 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
       .where("l.id", "=", listingId)
       .executeTakeFirst();
     if (listing === undefined) return skip("not_found");
-    // Уже решили — оповещать не о чем
+    // Уже решили (или витрину отклонили — её очереди нет) — оповещать не о чем
     if (listing.pending === 0) return skip("services_decided");
+    if (listing.status === "rejected") return skip("listing_rejected");
     return message(
       opsServicesSubmitted({
         listing: listing.name,
         vendorCode: listing.public_code,
         category: listing.category,
+        status: listing.status,
         pending: listing.pending,
       }),
+      button(OPS_BUTTON, adminUrl(urls, "/moderation")),
+    );
+  }
+
+  if (kind === "ops.listing_submitted") {
+    const listingId = field(row.payload, "listing_id");
+    if (listingId === null) return skip("bad_payload");
+    const listing = await trx
+      .selectFrom("app.listings as l")
+      .innerJoin("app.vendor_accounts as v", "v.id", "l.vendor_id")
+      .innerJoin("app.categories as c", "c.code", "l.category_code")
+      .select(["l.name", "l.status", "v.public_code", "c.name_ru as category"])
+      .where("l.id", "=", listingId)
+      .executeTakeFirst();
+    if (listing === undefined) return skip("not_found");
+    // Уже опубликовали, вернули или отозвали — оповещать не о чем
+    if (listing.status !== "review") return skip("listing_decided");
+    return message(
+      opsListingSubmitted({
+        listing: listing.name,
+        vendorCode: listing.public_code,
+        category: listing.category,
+      }),
+      button(OPS_BUTTON, adminUrl(urls, `/listings/${listingId}`)),
     );
   }
 
@@ -418,7 +460,8 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
         proposal: decision === "declined" && service.status !== "rejected",
         reason: decision === "declined" ? service.decision_reason : null,
       }),
-      button(t.button, `${trimTrailingSlashes(urls.vendorAppUrl)}/card`),
+      // Решение — про услугу: кнопка открывает «Услуги» кабинета, там и причина отказа
+      button(t.button, `${trimTrailingSlashes(urls.vendorAppUrl)}/services`),
     );
   }
 
@@ -430,6 +473,7 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
       .innerJoin("app.vendor_accounts as v", "v.id", "l.vendor_id")
       .select([
         "l.name",
+        "l.status",
         "v.public_code",
         sql<number>`(select count(*)::int from app.photos p
                      where p.listing_id = l.id and p.deleted_at is null and p.status = 'ready'
@@ -438,14 +482,17 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
       .where("l.id", "=", listingId)
       .executeTakeFirst();
     if (listing === undefined) return skip("not_found");
-    // Фото уже одобрили, отклонили или удалили — оповещать не о чем
+    // Фото уже одобрили, отклонили или удалили (или витрину отклонили) — оповещать не о чем
     if (listing.pending === 0) return skip("photos_decided");
+    if (listing.status === "rejected") return skip("listing_rejected");
     return message(
       opsPhotosSubmitted({
         listing: listing.name,
         vendorCode: listing.public_code,
+        status: listing.status,
         pending: listing.pending,
       }),
+      button(OPS_BUTTON, adminUrl(urls, "/moderation")),
     );
   }
 

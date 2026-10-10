@@ -19,7 +19,11 @@ import {
 } from "./reports";
 
 const STAFF_ID = "00000000-0000-4000-8000-00000000a001";
-const URLS = { webAppUrl: "https://app.example", vendorAppUrl: "https://vendor.example" };
+const URLS = {
+  webAppUrl: "https://app.example",
+  vendorAppUrl: "https://vendor.example",
+  adminAppUrl: "https://admin.example",
+};
 
 const PERIOD: PeriodMetrics = {
   requests: 12,
@@ -42,6 +46,7 @@ const QUEUES: OpsQueues = {
   listingsReview: 2,
   revisionsPending: 1,
   photosPending: 0,
+  servicesPending: 3,
 };
 const DIGEST: DigestFacts = { day: "2026-09-29", today: PERIOD, week: PERIOD, queues: QUEUES };
 const WEEKLY: WeeklyFacts = { weekStart: "2026-09-21", metrics: PERIOD, queues: QUEUES };
@@ -84,11 +89,17 @@ describe("тексты отчётов", () => {
       "в срок: 62,5% (5 из 8)",
       "Медиана ответа: 1 ч 25 мин",
       "срок вышел: 1",
-      "карточек 2, правок 1, фото 0",
+      "карточек 2, правок 1, услуг 3, фото 0",
     ])
       expect(ru).toContain(part);
     const uz = REPORT_TEXTS.uz.dailyDigest(DIGEST);
-    for (const part of ["29.09.2026", "Yangi soʻrovlar: 12", "62.5% (8 tadan 5 tasi)", "1 soat 25 daqiqa"])
+    for (const part of [
+      "29.09.2026",
+      "Yangi soʻrovlar: 12",
+      "62.5% (8 tadan 5 tasi)",
+      "1 soat 25 daqiqa",
+      "xizmatlar 3, foto 0",
+    ])
       expect(uz).toContain(part);
   });
 
@@ -162,6 +173,7 @@ const QUEUES_ROW = {
   listings_review: 2,
   revisions_pending: 1,
   photos_pending: 0,
+  services_pending: 0,
 };
 
 const reportRow = (patch: Partial<OutboxRow>): OutboxRow => ({

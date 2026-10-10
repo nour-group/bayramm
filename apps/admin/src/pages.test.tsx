@@ -55,6 +55,7 @@ const staff = (role: StaffMe["role"], permissions: StaffMe["permissions"]): Staf
   displayName: `Test ${role}`,
   username: null,
   permissions,
+  botLinked: true,
 });
 
 const DICT: StaffDictionaries = {
@@ -504,6 +505,108 @@ describe("карточка", () => {
     expect(calls.filter((c) => c.url.endsWith("/moderation")).at(-1)?.body).toEqual({
       decision: "approved",
     });
+  });
+
+  it("услуги черновика ждут решения: модератор одобряет и отклоняет на странице витрины; менеджеру — нет", async () => {
+    const service = (id: string, patch: Partial<ListingDetail["services"][number]>) => ({
+      id,
+      type: "banquet_weekday",
+      status: "review" as const,
+      name: { ru: "Банкет в будни", uz: "Ish kunlari banket" },
+      customName: false,
+      priceUzs: 150_000,
+      priceUnit: "per_guest" as const,
+      minQty: null,
+      leadDays: null,
+      includes: null,
+      options: [],
+      sort: 0,
+      proposal: null,
+      decision: null,
+      submittedAt: "2026-09-29T06:00:00.000Z",
+      updatedAt: "2026-09-29T06:00:00.000Z",
+      ...patch,
+    });
+    const REVIEW = "eeeeeeee-0000-0000-0000-000000000001";
+    const PROPOSED = "eeeeeeee-0000-0000-0000-000000000002";
+    const draft: ListingDetail = {
+      ...LISTING,
+      status: "draft",
+      services: [
+        service(REVIEW, {}),
+        service(PROPOSED, {
+          type: "banquet_weekend",
+          status: "active",
+          name: { ru: "Банкет в выходные", uz: "Dam olish kunlari banket" },
+          sort: 1,
+          proposal: { changes: { priceUzs: 200_000 }, submittedAt: "2026-09-29T07:00:00.000Z" },
+        }),
+      ],
+    };
+    const handlers = {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(draft),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 1,
+      }),
+      [`POST /api/staff/services/${REVIEW}/approve`]: json(service(REVIEW, { status: "active" })),
+      [`POST /api/staff/services/${PROPOSED}/decline`]: json(service(PROPOSED, { status: "active" })),
+    };
+    mockApi(
+      staff("moderator", [
+        "catalog.read",
+        "listings.publish",
+        "listings.draft",
+        "photos.moderate",
+        "revisions.moderate",
+      ]),
+      handlers,
+    );
+    await mount(`/listings/${LISTING_ID}`);
+    const block = container.querySelector("section[aria-labelledby=services-title]");
+    const decide = (action: string) =>
+      [...(block?.querySelectorAll("button") ?? [])].filter(
+        (b) => b.textContent?.startsWith(`${action}:`) || b.firstChild?.textContent === action,
+      );
+    // Две услуги ждут решения — у каждой «Одобрить» и «Отклонить»
+    expect(decide(t.serviceApprove)).toHaveLength(2);
+    expect(block?.textContent).toContain(t.serviceWaits);
+
+    await act(async () => decide(t.serviceApprove)[0]?.click());
+    await settle();
+    expect(calls.some((c) => c.method === "POST" && c.url === `/api/staff/services/${REVIEW}/approve`)).toBe(
+      true,
+    );
+    // Решили — фокус на заголовке блока, витрина перечитана
+    expect(document.activeElement?.id).toBe("services-title");
+    expect(calls.filter((c) => c.url === `/api/staff/listings/${LISTING_ID}`).length).toBeGreaterThan(1);
+
+    await act(async () => decide(t.serviceDecline)[1]?.click());
+    await settle();
+    const form = container.querySelector<HTMLFormElement>("form.confirm");
+    await type(form?.querySelector("textarea") as HTMLTextAreaElement, "Цена выше, чем в договоре");
+    await act(async () =>
+      [...(form?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.serviceDecline)?.click(),
+    );
+    await settle();
+    expect(calls.find((c) => c.url === `/api/staff/services/${PROPOSED}/decline`)?.body).toEqual({
+      reason: "Цена выше, чем в договоре",
+    });
+    act(() => root.unmount());
+    container.remove();
+
+    // Менеджер по услугам не решает — кнопок решения нет
+    calls = [];
+    mockApi(
+      staff("manager", ["catalog.read", "listings.write", "listings.submit", "listings.draft"]),
+      handlers,
+    );
+    await mount(`/listings/${LISTING_ID}`);
+    const managerBlock = container.querySelector("section[aria-labelledby=services-title]");
+    expect(managerBlock?.textContent).not.toContain(t.serviceApprove);
+    expect(managerBlock?.textContent).not.toContain(t.serviceWaits);
   });
 
   it("фото на телефоне: «Отклонить» — в «Ещё», причина — в шторке; отправка уходит с причиной", async () => {
