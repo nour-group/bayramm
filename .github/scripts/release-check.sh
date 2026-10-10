@@ -7,6 +7,7 @@
 # Публичные адреса — то, что увидит клиент:
 #   · тексты согласий клиента (GET /api/consent-texts): все три цели на ru и uz, ни одного
 #     черновика — они начинаются с «ЧЕРНОВИК» / «QORALAMA» (supabase/demo/*.draft.sql);
+#     утверждённые тексты публикует supabase/legal/consent-texts.template.sql;
 #   · витрины каталога (все включённые категории, все страницы и карточки): ни одной
 #     демо-витрины — id из диапазона DEMO_ID_PREFIX (apps/api/src/demo/venues.ts), slug demo-…,
 #     «Демо» / «Demo» в названии — и ни одного телефона с кодом оператора 00 (+998 00 … —
@@ -41,7 +42,7 @@ if consents=$(get "/consent-texts"); then
     for locale in ru uz; do
       if ! jq -e --arg p "$purpose" --arg l "$locale" \
         'any(.items[]; .purpose == $p and .locale == $l)' <<<"$consents" >/dev/null; then
-        fail "нет действующего текста согласия $purpose ($locale)"
+        fail "нет действующего текста согласия $purpose ($locale) — опубликовать: supabase/legal/consent-texts.template.sql"
       fi
     done
   done
@@ -115,7 +116,7 @@ if [ -n "${SUPABASE_DB_URL:-}" ]; then
       (select count(*) from pii.listing_contacts c join app.listings l on l.id = c.listing_id
         where l.status = 'active' and c.public_phone like '+99800%')"); then
     read -r drafts vendors listings demo_phones <<<"$row"
-    [ "$drafts" != 0 ] && fail "в базе действующих черновиков согласий: $drafts (вывести из оборота — supabase/demo/*.draft.sql)"
+    [ "$drafts" != 0 ] && fail "в базе действующих черновиков согласий: $drafts (вывести из оборота — supabase/legal/consent-texts.template.sql)"
     [ "$vendors" != 0 ] && fail "в базе демо-вендоров: $vendors (app.demo_purge())"
     [ "$listings" != 0 ] && fail "в базе демо-витрин: $listings (app.demo_purge())"
     [ "$demo_phones" != 0 ] && fail "у опубликованных витрин телефонов с кодом оператора 00 (демо): $demo_phones"

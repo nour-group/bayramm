@@ -11,8 +11,8 @@
 --   set bayramm.env = 'staging';
 --   \i supabase/demo/vendor-consent-texts.draft.sql
 -- Повторный запуск безопасен: существующие версии не трогаются.
--- Утверждённые тексты выходят версией 2, черновики выводятся из оборота так же,
--- как в consent-texts.draft.sql (purpose in vendor_contact, vendor_phone_public, vendor_offer).
+-- Утверждённые тексты публикует шаблон supabase/legal/consent-texts.template.sql:
+-- они выходят следующей версией, черновики выводятся из оборота.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;

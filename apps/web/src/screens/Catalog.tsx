@@ -1,13 +1,13 @@
 import type { CatalogSort } from "@bayramm/shared/api";
 import { DateField, Dialog, NumberStepper, Select } from "@bayramm/ui/react";
 import { useEffect, useId, useRef, useState } from "react";
-import { categoryDesc, categoryName, hasCalendar, hasCapacity, hasDistrict } from "../categories";
+import { categoryDesc, categoryName, hasCalendar, hasCapacity } from "../categories";
 import { AttrFiltersForm } from "../components/AttrFilters";
 import { useCalendarTexts } from "../components/Calendar";
 import { CategorySwitch } from "../components/Categories";
 import { CARD_PHOTO_SIZES, CARD_PHOTO_SIZES_SIDE, ListingCard } from "../components/ListingCard";
 import { CardsLoading, EmptyState, ErrorState, Loading } from "../components/States";
-import { pick, useDictionaries, useLang, useServices } from "../context";
+import { useDictionaries, useLang, useServices } from "../context";
 import { addDays, formatDayMonth, tashkentToday } from "../format";
 import { useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
@@ -28,12 +28,13 @@ import {
   useCatalogFeed,
 } from "./catalog-feed";
 import { attrFilterCount, filterSpecs } from "./catalog-filters";
+import { placeChoice, placeFilters } from "./catalog-place";
 
 /* Каталог: весь (/catalog — раздел «Все») или раздел (/catalog?category=…): заголовок,
-   переключатель разделов, фильтры, порядок и
-   сетка карточек. Всё — в адресе. Фильтры — одним блоком «Фильтры»: на телефоне и планшете
-   дата (гости и район — где они есть) над выдачей, поля витрины — в шторке «Фильтры»; на
-   компьютере весь блок — колонкой слева, прилипает при прокрутке. */
+   переключатель разделов, фильтры, порядок и сетка карточек. Всё — в адресе. Главные фильтры —
+   одной строкой пилюль над выдачей: место (город → район), дата, гости (где вместимость),
+   порядок; на телефоне строка листается вбок, каждая пилюля открывает шторку. Поля витрины
+   раздела — кнопкой «Фильтры» (шторка) на телефоне и планшете, на компьютере — колонкой слева. */
 
 const SORT_LABEL = {
   price_asc: "s_cheap",
@@ -72,16 +73,19 @@ function GuestsField({
     return () => clearTimeout(timer);
   }, [text, value]);
 
+  // Пилюля в строке фильтров: значок, число; подпись поля — только диктору
   return (
-    <div className="field">
-      <label className="field-label" htmlFor={id}>
+    <div className={text ? "filter-guests has-value" : "filter-guests"}>
+      <label className="sr-only" htmlFor={id}>
         {t.fGuests}
       </label>
+      <Icon name="user" size={14} />
       <NumberStepper
         id={id}
         min={1}
         max={MAX_GUESTS}
-        placeholder={t.anyGuestV}
+        maxLength={4}
+        placeholder={t.guestsPill}
         value={text}
         onChange={setText}
         onBlur={() => {
@@ -130,12 +134,11 @@ export function Catalog() {
     return () => observer.disconnect();
   }, [loadMore]);
 
-  const districts = dicts.status === "ready" ? dicts.data.districts : [];
   const items = busyLast(feed.items);
   const sorts = sortsOf(filters.category);
   const capacity = category !== null && hasCapacity(category);
-  const district = category !== null && hasDistrict(category);
   const extra = attrFilterCount(filters.attrs);
+  const place = placeChoice(filters, dicts.status === "ready" ? dicts.data : null, t, lang);
   const side = specs.length > 0;
   const filtered = hasFilters(filters);
   // Цены за гостя и за мероприятие вперемешку — объясняем, как их сравнили; у остальных
@@ -155,19 +158,12 @@ export function Catalog() {
         : null;
   // Что отсекает выдачу — каждое можно убрать по одному (пустая выдача называет его). Дата не
   // отсекает: занятые в этот день лишь уходят в конец
-  const districtLabel = districts.find((d) => d.code === filters.district);
   const cutting: readonly { key: string; label: string; drop: Partial<CatalogFilters> }[] = [
     ...(filters.guests !== null
       ? [{ key: "guests", label: `${t.fGuests}: ${filters.guests}`, drop: { guests: null } }]
       : []),
-    ...(filters.district !== null
-      ? [
-          {
-            key: "district",
-            label: `${t.fDistrict}: ${districtLabel ? pick(districtLabel.name, lang) : filters.district}`,
-            drop: { district: null },
-          },
-        ]
+    ...(place.chosen !== null
+      ? [{ key: "place", label: `${t.fPlace}: ${place.chosen}`, drop: { city: null, district: null } }]
       : []),
     ...(extra > 0 ? [{ key: "attrs", label: t.moreFiltersN(extra), drop: { attrs: {} } }] : []),
   ];
@@ -196,99 +192,97 @@ export function Catalog() {
 
       <CategorySwitch current={filters.category} date={filters.date} />
 
-      <div className={side ? "catalog-body has-side" : "catalog-body"}>
-        <section className="filters-panel" aria-labelledby={`${ids}-filters`}>
-          {/* Заголовок колонки фильтров — виден только колонкой (компьютер); диктору — всегда */}
-          <h2 className="section-title filters-title" id={`${ids}-filters`}>
-            {t.moreFilters}
-          </h2>
-          <div className={capacity || district ? "filters" : "filters solo"}>
-            <div className="field">
-              <label className="field-label" htmlFor={`${ids}-date`}>
-                {t.fDate}
-              </label>
-              <DateField
-                id={`${ids}-date`}
-                label={t.fDate}
-                placeholder={t.anyDateV}
-                value={filters.date}
-                min={today}
-                max={addDays(today, DATE_HORIZON_DAYS)}
-                format={(date) => formatDayMonth(date, t)}
-                texts={calendarTexts}
-                clearLabel={t.anyDate}
-                onChange={(date) => setFilters({ date })}
-              />
-            </div>
-            {capacity ? (
-              <GuestsField value={filters.guests} onCommit={(guests) => setFilters({ guests })} />
-            ) : null}
-            {district ? (
-              <div className="field">
-                <label className="field-label" htmlFor={`${ids}-district`}>
-                  {t.fDistrict}
-                </label>
-                <Select
-                  id={`${ids}-district`}
-                  label={t.fDistrict}
-                  value={filters.district ?? ""}
-                  options={[
-                    { value: "", label: t.anyDistrict },
-                    ...districts.map((district) => ({
-                      value: district.code,
-                      label: pick(district.name, lang),
-                    })),
-                  ]}
-                  onChange={(district) => setFilters({ district: district || null })}
-                />
-              </div>
-            ) : null}
-          </div>
-          {/* Без календаря (цветы, торты, подарки) дата не отсекает — она уйдёт в заявку */}
-          {filters.date && category && !hasCalendar(category) ? (
-            <p className="muted small date-note">{t.leadDateNote}</p>
+      <section className="filters-panel" aria-label={t.moreFilters}>
+        <div className="filter-row">
+          {/* Подписи пилюль — диктору (видимое имя — значение в пилюле) */}
+          <label className="sr-only" htmlFor={`${ids}-place`}>
+            {t.fPlace}
+          </label>
+          <Select
+            size="compact"
+            id={`${ids}-place`}
+            className={place.value ? "filter-place is-set" : "filter-place"}
+            label={t.fPlace}
+            placeholder={t.fPlace}
+            icon={<Icon name="pin" size={14} />}
+            value={place.value}
+            options={place.options}
+            onChange={(value) => setFilters(placeFilters(value))}
+          />
+          <label className="sr-only" htmlFor={`${ids}-date`}>
+            {t.fDate}
+          </label>
+          <DateField
+            size="compact"
+            id={`${ids}-date`}
+            label={t.fDate}
+            placeholder={t.anyDatePill}
+            value={filters.date}
+            min={today}
+            max={addDays(today, DATE_HORIZON_DAYS)}
+            format={(date) => formatDayMonth(date, t)}
+            texts={calendarTexts}
+            clearLabel={t.anyDate}
+            onChange={(date) => setFilters({ date })}
+          />
+          {capacity ? (
+            <GuestsField value={filters.guests} onCommit={(guests) => setFilters({ guests })} />
           ) : null}
-          {side && category ? (
-            <div className="filters-side">
-              <AttrFiltersForm
-                category={category}
-                attrs={filters.attrs}
-                onChange={(attrs) => setFilters({ attrs })}
-              />
-            </div>
-          ) : null}
-          {/* Пустая выдача сбрасывает фильтры сама (ниже) — второй кнопки рядом не нужно */}
-          {filtered && !(loaded && items.length === 0) ? (
-            <button type="button" className="link-btn filters-reset" onClick={reset}>
-              {t.resetFilters}
+          {side ? (
+            <button
+              type="button"
+              className={extra > 0 ? "filter-pill filters-open is-on" : "filter-pill filters-open"}
+              ref={filtersButton}
+              onClick={() => setSheet(true)}
+            >
+              <Icon name="sliders" size={14} />
+              {extra > 0 ? t.moreFiltersN(extra) : t.moreFilters}
             </button>
           ) : null}
-        </section>
+          <div className="sort">
+            <Select
+              size="compact"
+              label={t.sortBy}
+              icon={<Icon name="sort" size={14} />}
+              value={filters.sort ?? DEFAULT_SORT}
+              options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
+              onChange={(sort) => setFilters({ sort: sort === DEFAULT_SORT ? null : sort })}
+            />
+          </div>
+        </div>
+        {/* Пустая выдача сбрасывает фильтры сама (ниже) — второй кнопки рядом не нужно */}
+        {filtered && !(loaded && items.length === 0) ? (
+          <button type="button" className="link-btn filters-reset" onClick={reset}>
+            {t.resetFilters}
+          </button>
+        ) : null}
+        {/* Без календаря (цветы, торты, подарки) дата не отсекает — она уйдёт в заявку */}
+        {filters.date && category && !hasCalendar(category) ? (
+          <p className="muted small date-note">{t.leadDateNote}</p>
+        ) : null}
+      </section>
 
-        <div className="catalog-list">
-          <div className="list-tools">
-            {side ? (
-              <button
-                type="button"
-                className="btn btn-secondary filters-open"
-                ref={filtersButton}
-                onClick={() => setSheet(true)}
-              >
-                <Icon name="sliders" size={14} />
-                {extra > 0 ? t.moreFiltersN(extra) : t.moreFilters}
+      <div className={side ? "catalog-body has-side" : "catalog-body"}>
+        {/* Поля витрины раздела — колонкой слева на компьютере; на телефоне и планшете — шторкой */}
+        {side && category ? (
+          <aside className="filters-side" aria-labelledby={`${ids}-extra`}>
+            <h2 className="section-title side-title" id={`${ids}-extra`}>
+              {t.extraFilters}
+            </h2>
+            <AttrFiltersForm
+              category={category}
+              attrs={filters.attrs}
+              onChange={(attrs) => setFilters({ attrs })}
+            />
+            {extra > 0 ? (
+              <button type="button" className="link-btn side-reset" onClick={() => setFilters({ attrs: {} })}>
+                {t.resetFilters}
               </button>
             ) : null}
-            <div className="sort">
-              <Select
-                size="compact"
-                label={t.sortBy}
-                icon={<Icon name="sliders" size={14} />}
-                value={filters.sort ?? DEFAULT_SORT}
-                options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
-                onChange={(sort) => setFilters({ sort: sort === DEFAULT_SORT ? null : sort })}
-              />
-            </div>
-          </div>
+          </aside>
+        ) : null}
+
+        <div className="catalog-list">
           {sortHint && items.length > 0 ? <p className="muted small sort-hint">{sortHint}</p> : null}
 
           {feed.status === "loading" ? <CardsLoading /> : null}

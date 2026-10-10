@@ -624,34 +624,94 @@ textarea.field-input {
   line-height: 1.45;
 }
 
-/* Блок «Фильтры»: на телефоне и планшете — дата (гости, район) над выдачей, поля витрины —
-   в шторке; на компьютере — колонка слева (ниже, @media 1024px). Его заголовок виден только
-   колонкой; диктору — всегда */
+/* Главные фильтры — строкой пилюль над выдачей: место (город → район), дата, гости (где
+   вместимость), «Фильтры» (поля витрины — шторкой) и порядок. На телефоне строка листается
+   вбок (обе оси явно, ловушка №2) и гаснет у правого края — видно, что дальше ещё; с планшета
+   пилюли переносятся (ниже, @media 768px). Кольцо фокуса — внутри: снаружи его обрезал бы
+   край ленты */
 .filters-panel {
   min-width: 0;
+  margin-bottom: 16px;
 }
 
-.filters-title {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-7);
+  margin: 0 calc(-1 * (var(--sa-r) + 16px)) 0 calc(-1 * (var(--sa-l) + 16px));
+  padding: 2px calc(var(--sa-r) + 16px) 6px calc(var(--sa-l) + 16px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to left, transparent, black 32px);
+  mask-image: linear-gradient(to left, transparent, black 32px);
+}
+
+.filter-row > * {
+  flex: none;
+}
+
+.filter-row .ui-select:focus-visible,
+.filter-row .filter-pill:focus-visible,
+.filter-row .ui-number-input:focus-visible {
+  outline-offset: -3px;
+}
+
+.filter-row .ui-select-compact {
+  max-width: 260px;
+}
+
+/* «Фильтры» (поля витрины) — пилюля того же вида, что списки строки */
+.filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-13-5);
+  font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
 }
 
-/* Общие фильтры: дата; гости и район — где они есть. Сколько полей, столько колонок; у залов
-   (три поля) на узком телефоне район — строкой во всю ширину */
-.filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: var(--gap-9);
+.filter-pill svg {
+  flex: none;
+  color: var(--coral);
 }
 
-.filters .field:nth-child(3):last-child {
-  grid-column: 1 / -1;
+/* Гости — поле-пилюля: значок внутри, число крупно; пустое — подсказка «Сколько гостей» */
+.filter-guests {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 168px;
+}
+
+.filter-guests svg {
+  position: absolute;
+  left: 14px;
+  color: var(--coral);
+  pointer-events: none;
+}
+
+.filter-guests .ui-number-input {
+  padding: 0 14px 0 36px;
+  border-radius: var(--r-999);
+  font-weight: 600;
+}
+
+/* Подсказка — тем же кеглем, что подписи соседних пилюль */
+.filter-guests .ui-number-input::placeholder {
+  font-size: var(--fs-13-5);
+}
+
+.filter-guests.has-value .ui-number-input {
+  border-color: var(--plum);
 }
 
 .date-note {
@@ -659,7 +719,7 @@ textarea.field-input {
 }
 
 .filters-reset {
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 /* Пустая выдача: что её ограничивает — каждое убирается по одному; затем «Сбросить фильтры» */
@@ -735,24 +795,18 @@ textarea.field-input {
   outline-offset: -3px;
 }
 
-/* Кнопка «Фильтры» и порядок — рядом, над сеткой */
-.list-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-9);
-  margin: 16px 0 12px;
-}
-
-.filters-open {
-  min-height: var(--hit-min);
-  padding: 0 14px;
-  font-size: var(--fs-14);
-}
-
-/* Колонка фильтров — только на компьютере (ниже, @media 1024px); на телефоне — шторка */
+/* Колонка полей витрины — только на компьютере (ниже, @media 1024px); на телефоне и
+   планшете — шторка по кнопке «Фильтры» */
 .filters-side {
   display: none;
+}
+
+.side-title {
+  margin: 0 0 12px;
+}
+
+.side-reset {
+  margin-top: 12px;
 }
 
 .attr-filters {
@@ -782,16 +836,18 @@ textarea.field-input {
   margin-bottom: 16px;
 }
 
+/* Порядок — в конце строки фильтров */
 .sort {
   display: inline-flex;
   align-items: center;
+  margin-left: auto;
   gap: var(--gap-5);
   color: var(--coral);
 }
 
-/* Как сравнили цены за гостя и за мероприятие — строкой под порядком, над сеткой */
+/* Как сравнили цены за гостя и за мероприятие — строкой над сеткой */
 .sort-hint {
-  margin: -4px 0 12px;
+  margin: 0 0 12px;
 }
 
 /* Заготовки карточек, пока выдача грузится: не ниже окна — подвал не прыгает */
@@ -2431,7 +2487,8 @@ textarea.field-input {
     color: var(--coral-deep);
   }
 
-  .cat-chip:hover {
+  .cat-chip:hover,
+  .filter-pill:hover {
     background: var(--lilac);
   }
 
@@ -2471,12 +2528,13 @@ textarea.field-input {
 }
 
 .site-nav a[aria-current="page"] {
-  background: var(--lilac);
-  color: var(--plum);
+  border-color: var(--plum);
+  background: var(--plum);
+  color: var(--sel-ink);
 }
 
 .site-nav a[aria-current="page"] svg {
-  color: var(--coral);
+  color: var(--peach);
 }
 
 .menu-links a[aria-current="page"] {
@@ -2500,6 +2558,23 @@ textarea.field-input {
 }
 
 .cat-chip[aria-current="page"] .cat-chip-ico {
+  color: var(--peach);
+}
+
+/* Включённый фильтр — пилюлей цвета сливы, как выбранный раздел: место, дата, поля витрины */
+.filter-row .filter-place.is-set,
+.filter-row .ui-date.has-value,
+.filter-pill.is-on {
+  border-color: var(--plum);
+  background: var(--plum);
+  color: var(--sel-ink);
+}
+
+.filter-row .filter-place.is-set .ui-select-icon,
+.filter-row .filter-place.is-set .ui-select-caret,
+.filter-row .ui-date.has-value .ui-select-icon,
+.filter-row .ui-date.has-value .ui-select-caret,
+.filter-row .filter-pill.is-on svg {
   color: var(--peach);
 }
 
@@ -2662,18 +2737,6 @@ textarea.field-input {
 
 /* ---------- шире телефона ---------- */
 
-/* Три поля — в строку. Вес селектора — как у правила «район во всю ширину» выше: иначе
-   оно перебивало это и на компьютере (район растягивался, дата и гости сжимались) */
-@media (min-width: 560px) {
-  .filters {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .filters .field:nth-child(3):last-child {
-    grid-column: auto;
-  }
-}
-
 @media (min-width: 640px) {
   .cards {
     grid-template-columns: 1fr 1fr;
@@ -2783,6 +2846,22 @@ textarea.field-input {
 /* ---------- компьютер: шапка с разделами, сетка до 1280px, без нижней панели ---------- */
 
 @media (min-width: 1024px) {
+  /* Пилюли фильтров на компьютере помещаются строкой: без ленты и затухания, лишнее переносится */
+  .filter-row {
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .filter-row .ui-select:focus-visible,
+  .filter-row .filter-pill:focus-visible,
+  .filter-row .ui-number-input:focus-visible {
+    outline-offset: 2px;
+  }
+
   .top {
     gap: var(--gap-12);
     padding: calc(var(--pad-t) + 10px) max(calc(var(--sa-r) + 32px), calc(50% - 608px)) 10px
@@ -2794,24 +2873,31 @@ textarea.field-input {
   .site-nav {
     display: flex;
     flex: 1;
-    gap: var(--gap-5);
+    gap: var(--gap-7);
   }
 
+  /* Разделы — кнопками-пилюлями со значком, как разделы каталога: видно, что это кнопки.
+     Текущий — залит сливовым */
   .site-nav a {
     display: inline-flex;
     align-items: center;
+    gap: var(--gap-7);
     min-height: var(--hit-min);
-    padding: 0 12px;
-    border-radius: var(--r-11);
-    color: var(--muted);
+    padding: 0 16px 0 14px;
+    border: 1px solid var(--rule);
+    border-radius: var(--r-999);
+    background: var(--white);
+    color: var(--plum);
     font-size: var(--fs-14);
     font-weight: 700;
     text-decoration: none;
   }
 
-  /* В шапке — подписи без значков: значки остаются у нижней панели телефона */
   .site-nav svg {
-    display: none;
+    flex: none;
+    width: 17px;
+    height: 17px;
+    color: var(--coral);
   }
 
   .top-signin {
@@ -2849,38 +2935,23 @@ textarea.field-input {
       max(calc(var(--sa-l) + 32px), calc(50% - 608px));
   }
 
-  /* Каталог без полей витрины в фильтрах: дата (гости, район) — панелью над сеткой; карточки —
-     в три колонки (с 1280px — в четыре) */
-  .catalog .filters {
-    padding: 16px;
-    border: 1px solid var(--rule);
-    border-radius: var(--r-18);
-    background: var(--white);
-  }
-
-  /* Одна дата (категории без гостей и района) — поле обычной ширины без панели вокруг */
-  .catalog .filters.solo {
-    grid-template-columns: minmax(0, 320px);
-    padding: 0;
-    border: 0;
-    background: none;
-  }
-
+  /* Карточки — в три колонки (с 1280px — в четыре) */
   .cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  /* Каталог с фильтрами по полям витрины: все фильтры — одной колонкой слева (дата, гости,
-     район и поля витрины), она прилипает под шапкой; кнопка «Фильтры» (шторка) не нужна */
+  /* Поля витрины раздела — колонкой слева, она прилипает под шапкой; кнопка «Фильтры»
+     (шторка) в строке пилюль не нужна. Главные фильтры — той же строкой над колонкой и сеткой */
   .catalog-body.has-side {
     display: grid;
     grid-template-columns: 248px 24px minmax(0, 1fr);
     align-items: start;
   }
 
-  .has-side .filters-panel {
+  .has-side .filters-side {
     position: sticky;
     top: calc(var(--pad-t) + 80px);
+    display: block;
     max-height: calc(100vh - 96px);
     padding: 16px;
     overflow-x: hidden;
@@ -2890,42 +2961,11 @@ textarea.field-input {
     background: var(--white);
   }
 
-  .has-side .filters-title {
-    position: static;
-    width: auto;
-    height: auto;
-    margin: 0 0 12px;
-    overflow: visible;
-    clip: auto;
-    white-space: normal;
-  }
-
-  /* В колонке поля — друг под другом и без своей панели: панель — вся колонка */
-  .catalog .has-side .filters,
-  .catalog .has-side .filters.solo {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 0;
-    border: 0;
-    background: none;
-  }
-
-  .has-side .filters-side {
-    display: block;
-    margin-top: 16px;
-    padding-top: 16px;
-    border-top: 1px solid var(--line);
-  }
-
   .has-side .catalog-list {
     grid-column: 3;
   }
 
-  .has-side .list-tools {
-    justify-content: flex-end;
-    margin-top: 0;
-  }
-
-  .has-side .filters-open {
+  .catalog .filters-open {
     display: none;
   }
 

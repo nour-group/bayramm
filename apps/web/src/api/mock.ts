@@ -55,19 +55,20 @@ export const DEMO_DICTIONARIES: Dictionaries = {
     code: c.code,
     name: categoryTexts(c.label),
   })),
+  cities: [{ code: "tashkent", name: { ru: "Ташкент", uz: "Toshkent" } }],
   districts: [
-    { code: "yunusobod", name: { ru: "Юнусабад", uz: "Yunusobod" } },
-    { code: "mirzo_ulugbek", name: { ru: "Мирзо-Улугбек", uz: "Mirzo Ulugʻbek" } },
-    { code: "chilonzor", name: { ru: "Чиланзар", uz: "Chilonzor" } },
-    { code: "yakkasaroy", name: { ru: "Яккасарай", uz: "Yakkasaroy" } },
-    { code: "shayxontohur", name: { ru: "Шайхантахур", uz: "Shayxontohur" } },
-    { code: "mirobod", name: { ru: "Мирабад", uz: "Mirobod" } },
-    { code: "sergeli", name: { ru: "Сергели", uz: "Sergeli" } },
-    { code: "uchtepa", name: { ru: "Учтепа", uz: "Uchtepa" } },
-    { code: "olmazor", name: { ru: "Алмазар", uz: "Olmazor" } },
-    { code: "yashnobod", name: { ru: "Яшнабад", uz: "Yashnobod" } },
-    { code: "bektemir", name: { ru: "Бектемир", uz: "Bektemir" } },
-    { code: "yangihayot", name: { ru: "Янгихаят", uz: "Yangihayot" } },
+    { code: "yunusobod", name: { ru: "Юнусабад", uz: "Yunusobod" }, city: "tashkent" },
+    { code: "mirzo_ulugbek", name: { ru: "Мирзо-Улугбек", uz: "Mirzo Ulugʻbek" }, city: "tashkent" },
+    { code: "chilonzor", name: { ru: "Чиланзар", uz: "Chilonzor" }, city: "tashkent" },
+    { code: "yakkasaroy", name: { ru: "Яккасарай", uz: "Yakkasaroy" }, city: "tashkent" },
+    { code: "shayxontohur", name: { ru: "Шайхантахур", uz: "Shayxontohur" }, city: "tashkent" },
+    { code: "mirobod", name: { ru: "Мирабад", uz: "Mirobod" }, city: "tashkent" },
+    { code: "sergeli", name: { ru: "Сергели", uz: "Sergeli" }, city: "tashkent" },
+    { code: "uchtepa", name: { ru: "Учтепа", uz: "Uchtepa" }, city: "tashkent" },
+    { code: "olmazor", name: { ru: "Алмазар", uz: "Olmazor" }, city: "tashkent" },
+    { code: "yashnobod", name: { ru: "Яшнабад", uz: "Yashnobod" }, city: "tashkent" },
+    { code: "bektemir", name: { ru: "Бектемир", uz: "Bektemir" }, city: "tashkent" },
+    { code: "yangihayot", name: { ru: "Янгихаят", uz: "Yangihayot" }, city: "tashkent" },
   ],
   occasions: [
     { code: "toy", name: { ru: "Свадьба", uz: "Toʻy" } },
@@ -656,6 +657,13 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const rows = listings
           .filter((l) => all || l.categoryCode === category)
           .filter((l) => filters.every((f) => matchesAttributeFilter(l.attributes, f)))
+          // Город — его районы и витрины без района (выездные), как у API
+          .filter(
+            (l) =>
+              !query.city ||
+              l.districtCode === null ||
+              DEMO_DICTIONARIES.districts.some((d) => d.code === l.districtCode && d.city === query.city),
+          )
           .filter((l) => !query.district || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax === null || l.capMax >= query.guests)
           .map((l) => toCard(l, query.date));

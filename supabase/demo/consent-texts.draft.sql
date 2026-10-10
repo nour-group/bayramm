@@ -15,11 +15,8 @@
 -- Без первой строки скрипт ничего не делает и падает с объяснением.
 -- Повторный запуск безопасен: существующие версии не трогаются.
 --
--- Когда появятся утверждённые тексты — они выходят версией 2, а черновики
--- выводятся из оборота:
---   update app.consent_texts set retired_at = now()
---   where version = 1 and retired_at is null and purpose in ('client_service', 'request_transfer', 'bot_notifications')
---     and (body like 'ЧЕРНОВИК%' or body like 'QORALAMA%');
+-- Утверждённые тексты публикует шаблон supabase/legal/consent-texts.template.sql:
+-- они выходят следующей версией, черновики выводятся из оборота.
 -- ════════════════════════════════════════════════════════════════════════════
 
 begin;

@@ -328,6 +328,12 @@ export const uz: Dict = {
   venueGoneP: "Ehtimol, hamkor endi soʻrov qabul qilmaydi — katalogdan boshqalarini koʻring.",
   fDistrict: "Tuman",
   anyDistrict: "barcha tumanlar",
+  fPlace: "Shahar va tuman",
+  anyPlace: "Hamma joyda",
+  wholeCity: (city: string) => `${city} — butun shahar`,
+  anyDatePill: "Istalgan sana",
+  guestsPill: "Nechta mehmon",
+  extraFilters: "Qoʻshimcha filtrlar",
   s_capacity: "Avval sigʻimi kattaroq",
   resetFilters: "Filtrlarni tozalash",
   emptyHint:

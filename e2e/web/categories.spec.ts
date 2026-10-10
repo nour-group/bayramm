@@ -123,6 +123,43 @@ test.describe("лендинг → каталог категории", () => {
     await expect(page.locator(".cards .card")).toHaveCount(1);
   });
 
+  test("город и район: весь Ташкент или только Юнусабад; фильтры — одной строкой", async ({ page }) => {
+    await prepare(page);
+    await open(page, PATHS.category("hall"), ".card", { guest: true });
+    const all = await page.locator(".cards .card").count();
+    const place = page.locator(".filter-place");
+    await expect(place).toContainText(ru.wholeCity("Ташкент"));
+    if (isDesktop(page)) {
+      // Компьютер: место, дата, гости и сортировка — на одной строке
+      const tops = await page
+        .locator(".filter-row > :is(.ui-select, .filter-guests, .sort)")
+        .evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().top)));
+      expect(tops.length).toBe(4);
+      expect(new Set(tops).size, "фильтры на одной строке").toBe(1);
+    }
+
+    await place.click();
+    // Районы — внутри города, с отступом
+    const district = page.getByRole("option", { name: "Юнусабад", exact: true });
+    await expect(district).toHaveClass(/is-nested/);
+    await expectNoAxeViolations(page, "список города и районов");
+    await district.click();
+    await expect(page).toHaveURL((url) => url.searchParams.get("district") === "yunusobod");
+    expect(new URL(page.url()).searchParams.get("city")).toBeNull();
+    await expect(place).toHaveClass(/is-set/);
+    const metas = page.locator(".cards .card-meta");
+    await expect(metas.first()).toContainText("Юнусабад");
+    for (const meta of await metas.all()) await expect(meta).toContainText("Юнусабад");
+    await expectNoOverflow(page, "каталог залов Юнусабада");
+
+    // Весь город — снова все залы, района в адресе нет
+    await place.click();
+    await page.getByRole("option", { name: ru.wholeCity("Ташкент"), exact: true }).click();
+    await expect(page).toHaveURL((url) => !url.searchParams.has("district"));
+    await expect(page.locator(".cards .card")).toHaveCount(all);
+    await expect(place).not.toHaveClass(/is-set/);
+  });
+
   test("дата: у частей дня — «частично занято»; переключатель категорий её сохраняет", async ({ page }) => {
     await prepare(page);
     await open(page, `${PATHS.catalog}?category=photo&date=${BUSY_DAY}`, ".card .chip");

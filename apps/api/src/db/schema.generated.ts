@@ -168,6 +168,13 @@ export interface AppCategories {
   sort: Generated<number>;
 }
 
+export interface AppCities {
+  code: string;
+  name_ru: string;
+  name_uz: string;
+  sort: Generated<number>;
+}
+
 export interface AppClients {
   account_id: string;
   blocked_at: Timestamp | null;
@@ -237,6 +244,10 @@ export interface AppContactEvents {
 }
 
 export interface AppDistricts {
+  /**
+   * Город района
+   */
+  city_code: string;
   code: string;
   name_ru: string;
   name_uz: string;
@@ -724,6 +735,7 @@ export interface DB {
   "app.availability_parts": AppAvailabilityParts;
   "app.availability_versions": AppAvailabilityVersions;
   "app.categories": AppCategories;
+  "app.cities": AppCities;
   "app.clients": AppClients;
   "app.consent_texts": AppConsentTexts;
   "app.consents": AppConsents;

@@ -82,6 +82,11 @@ export interface DictItem {
   readonly name: Localized;
 }
 
+/** Район — в городе (city — код из cities) */
+export interface DistrictItem extends DictItem {
+  readonly city: string;
+}
+
 /**
  * GET /dictionaries — только включённые категории; всё по порядку sort. Кэшируется (ETag).
  * Описание категорий (поля, формы, услуги) — @bayramm/shared/categories; что показывать в
@@ -89,7 +94,9 @@ export interface DictItem {
  */
 export interface Dictionaries {
   readonly categories: readonly DictItem[];
-  readonly districts: readonly DictItem[];
+  /** Города; районы — внутри города (фильтр каталога «город → район») */
+  readonly cities: readonly DictItem[];
+  readonly districts: readonly DistrictItem[];
   readonly occasions: readonly DictItem[];
 }
 
@@ -122,9 +129,9 @@ export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc";
 /**
  * GET /catalog/listings — параметры строки запроса. Всё необязательно.
  * category — код категории; без него — залы (hall), как в v0.1 (старые сборки клиента).
- * category=all — все включённые категории одной выдачей (раздел «Все»): фильтров полей витрины,
- * гостей и района там нет (они у каждой категории свои), «вместительнее» — тоже; цены разных
- * единиц сравниваются как есть, подпись единицы — у каждой карточки.
+ * category=all — все включённые категории одной выдачей (раздел «Все»): фильтров полей витрины
+ * и гостей там нет (они у каждой категории свои), «вместительнее» — тоже; город и район — есть,
+ * как везде; цены разных единиц сравниваются как есть, подпись единицы — у каждой карточки.
  * guests — отсекает витрины с вместимостью в гостях (cap_max) меньше; у категорий без
  * вместимости не отсекает. date — не отсекает, а опускает занятые в этот день целиком в конец
  * выдачи (при любой сортировке); частично занятые (режим parts: занята часть дня) — среди
@@ -141,6 +148,12 @@ export interface CatalogQuery {
   readonly category?: string;
   /** Фильтры по полям витрины: { "a.parking_spaces": "50", "a.fleet.class": "premium,suv" } */
   readonly filters?: Readonly<Record<string, string>>;
+  /**
+   * Город: витрины в его районах и витрины без района (выездные — кортеж, фото, кейтеринг:
+   * адреса у них нет, они приезжают сами)
+   */
+  readonly city?: string;
+  /** Район: только витрины в нём */
   readonly district?: string;
   readonly date?: string;
   readonly guests?: number;

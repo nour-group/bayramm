@@ -24,6 +24,7 @@ describe("parseCatalogQuery", () => {
     expect(parseCatalogQuery({})).toEqual({
       category: "hall",
       filters: [],
+      city: null,
       district: null,
       date: null,
       guests: null,
@@ -38,6 +39,7 @@ describe("parseCatalogQuery", () => {
       parseCatalogQuery(
         q({
           category: "hall",
+          city: "tashkent",
           district: "mirzo_ulugbek",
           date: "2026-10-03",
           guests: "250",
@@ -48,6 +50,7 @@ describe("parseCatalogQuery", () => {
     ).toEqual({
       category: "hall",
       filters: [],
+      city: "tashkent",
       district: "mirzo_ulugbek",
       date: "2026-10-03",
       guests: 250,
@@ -79,6 +82,7 @@ describe("parseCatalogQuery", () => {
     ["дата не в формате", { date: "03.10.2026" }, ["date"]],
     ["код категории с заглавными", { category: "Hall" }, ["category"]],
     ["код района с SQL", { district: "x' or 1=1" }, ["district"]],
+    ["код города с SQL", { city: "x' or 1=1" }, ["city"]],
     ["параметр повторён", { guests: ["100", "200"] }, ["guests"]],
     ["несколько сразу", { guests: "x", sort: "y", date: "z" }, ["date", "guests", "sort"]],
     ["фильтр не из категории", { category: "car", "a.parking_spaces": "10" }, ["a.parking_spaces"]],

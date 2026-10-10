@@ -204,8 +204,14 @@ describe("GET /dictionaries", () => {
       code: "hall",
       name: { ru: "Тойхона", uz: "Toʻyxona" },
     });
+    expect(body.cities).toEqual([{ code: "tashkent", name: { ru: "Ташкент", uz: "Toshkent" } }]);
     expect(body.districts).toHaveLength(12);
-    expect(body.districts[0]).toEqual({ code: "yunusobod", name: { ru: "Юнусабад", uz: "Yunusobod" } });
+    expect(body.districts[0]).toEqual({
+      code: "yunusobod",
+      name: { ru: "Юнусабад", uz: "Yunusobod" },
+      city: "tashkent",
+    });
+    expect(body.districts.every((d) => d.city === "tashkent")).toBe(true);
     expect(body.occasions.map((o) => o.code)).toEqual(["toy", "beshik", "bd", "corp", "small"]);
     expect(res.headers.get("cache-control")).toMatch(/^public, max-age=\d+/);
 
@@ -292,6 +298,14 @@ const BASE = "category=hall&district=bektemir";
 describe("GET /catalog/listings", () => {
   it("только опубликованные; по умолчанию — сначала дешевле", async () => {
     expect((await catalogNames(BASE)).names).toEqual(["cheap", "mid", "event", "small", "big"]);
+  });
+
+  it("город → район: район внутри своего города — та же выдача, в чужом городе — пусто", async () => {
+    const all = (await catalogNames(BASE)).names;
+    expect((await catalogNames(`${BASE}&city=tashkent`)).names).toEqual(all);
+    expect((await catalogNames(`${BASE}&city=samarkand`)).names).toEqual([]);
+    // Весь город — и его районы, и витрины без района
+    expect((await catalogNames("category=hall&city=tashkent")).names).toEqual(expect.arrayContaining(all));
   });
 
   it("цена за мероприятие сравнивается честно: без гостей — на гостя по вместимости, с гостями — сумма", async () => {

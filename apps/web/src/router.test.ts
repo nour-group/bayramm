@@ -148,12 +148,17 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
     const url = at(clientCatalogPath(filters));
     // Кнопка бота открывает Mini App: там корень — каталог
     expect(screenOf(matchRoute(url.pathname), true)).toEqual({ name: "catalog" });
-    expect(readFilters(url.searchParams, "2026-10-01")).toEqual({ ...filters, sort: null, attrs: {} });
+    expect(readFilters(url.searchParams, "2026-10-01")).toEqual({
+      ...filters,
+      city: null,
+      sort: null,
+      attrs: {},
+    });
     // Та же ссылка в браузере — каталог с теми же фильтрами
     expect(legacyCatalogHref(url.pathname, url.search)).toBe(hrefFor({ name: "catalog" }, filters));
   });
 
-  it("похожие другой категории — та же категория и дата; гости и район у неё не отбирают", () => {
+  it("похожие другой категории — та же категория, дата и район; гостей у неё нет", () => {
     const url = at(
       clientCatalogPath({ category: "car", date: "2026-10-20", guests: 200, district: "chilonzor" }),
     );
@@ -162,7 +167,8 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
       category: "car",
       date: "2026-10-20",
       guests: null,
-      district: null,
+      city: null,
+      district: "chilonzor",
       sort: null,
       attrs: {},
     });
@@ -170,7 +176,7 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
     expect(legacyCatalogHref("/", "?category=car")).toBe("/catalog?category=car");
   });
 
-  it("старые ссылки бота без категории — весь каталог на ту же дату; гости и район там не отбирают", () => {
+  it("старые ссылки бота без категории — весь каталог на ту же дату и в том же районе; гостей там нет", () => {
     const filters = readFilters(
       new URLSearchParams("?date=2026-10-20&guests=200&district=chilonzor"),
       "2026-10-01",
@@ -179,7 +185,8 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
       category: "all",
       date: "2026-10-20",
       guests: null,
-      district: null,
+      city: null,
+      district: "chilonzor",
       sort: null,
       attrs: {},
     });
@@ -203,6 +210,10 @@ describe("каталог категории в адресе", () => {
       district: "chilonzor",
       guests: null,
     });
+    // Место — в любом разделе и во «Все»: город целиком или район; кривой код отброшен
+    expect(read("?category=photo&city=tashkent")).toMatchObject({ city: "tashkent", district: null });
+    expect(read("?district=yunusobod")).toMatchObject({ category: "all", district: "yunusobod" });
+    expect(read("?city=Tashkent&district=x'1")).toMatchObject({ city: null, district: null });
   });
 
   it("canonical каталога — с категорией (и у залов), весь каталог — без неё; фильтры — нет", () => {
