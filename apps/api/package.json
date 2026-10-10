@@ -18,7 +18,7 @@
     "@bayramm/media": "workspace:*",
     "@bayramm/shared": "workspace:*",
     "@bayramm/tg": "workspace:*",
-    "hono": "^4.13.8",
+    "hono": "^4.13.9",
     "kysely": "^0.29.6",
     "pg": "^8.23.0"
   },
