@@ -1283,6 +1283,73 @@ textarea.input {
   grid-column: 1 / -1;
 }
 
+/* Пользователи кабинета: имя и плашки роли и статуса в строку; приглашение — под списком */
+.vuser-name {
+  min-width: 0;
+  color: var(--plum);
+}
+
+.vuser-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5);
+}
+
+.vuser-invite {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+
+.vuser-invite-title {
+  margin: 0;
+  color: var(--plum);
+  font-size: var(--fs-15);
+}
+
+.vuser-invited {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+}
+
+.vuser-invited p {
+  margin: 0;
+}
+
+/* Роль и язык — сегментами во всю ширину поля: «Сотрудник площадки» на 320px переносится,
+   а не выталкивает страницу вбок */
+.vuser-choice {
+  display: flex;
+  width: 100%;
+  max-width: 440px;
+}
+
+.vuser-choice .ui-radio {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 10px;
+  text-align: center;
+}
+
+/* Правка пользователя: на телефоне — в шторке, шире — под его карточкой */
+.vuser-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  padding: 8px 0 4px;
+}
+
+/* Текст приглашения, когда буфер обмена недоступен: выделяется целиком при фокусе */
+.vuser-copy-text {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+}
+
 /* Пакеты цен */
 .packages {
   display: flex;

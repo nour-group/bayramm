@@ -4,37 +4,30 @@
 
 import type {
   ChecklistItem,
-  RevealedPhone,
   StaffDictionaries,
   VendorDetail,
   VendorInput,
   VendorPhones,
-  VendorUser,
-  VendorUserInput,
 } from "@bayramm/shared/api/staff";
-import { Checkbox, ConfirmSheet } from "@bayramm/ui/react";
-import { type FormEvent, useCallback, useState } from "react";
+import { Checkbox } from "@bayramm/ui/react";
+import { useCallback, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { CategoryChip } from "../categories";
 import { formatMoment, formatPrice } from "../format";
-import { apiErrorText, t } from "../texts";
+import { t } from "../texts";
 import {
   Blockers,
   ErrorText,
-  Field,
-  fieldErrors,
   Link,
   LoadedView,
   PhoneReveal,
-  Pill,
   StatusPill,
   useEntityTitle,
   useNavigate,
-  useRevealErrors,
 } from "../ui";
-import { useUnsaved } from "../unsaved";
 import { VendorResponsePanel } from "./Metrics";
 import { VendorForm } from "./VendorForm";
+import { VendorUsers } from "./VendorUsers";
 
 const CHECKLIST: readonly ChecklistItem[] = ["contract", "stir", "contacts", "pdConsent"];
 
@@ -103,7 +96,7 @@ function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
           <ContactPhones vendorId={vendor.id} />
           <Listings vendor={vendor} />
           {can("metrics.read") && <VendorResponsePanel vendorId={vendor.id} />}
-          <Users vendor={vendor} onChange={onChange} />
+          <VendorUsers vendor={vendor} onChange={onChange} />
         </div>
         <VendorForm
           key={vendor.id}
@@ -236,175 +229,6 @@ function Listings({ vendor }: { vendor: VendorDetail }) {
           </Link>
         </p>
       )}
-    </section>
-  );
-}
-
-// ── вход в кабинет ─────────────────────────────────────────────────────────
-
-function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: VendorDetail) => void }) {
-  const { api } = useSession();
-  const can = useCan();
-  const [phone, setPhone] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [failure, setFailure] = useState<Failure | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<{ user: VendorUser; action: "disable" | "unlink" } | null>(null);
-  const [confirmFailure, setConfirmFailure] = useState<Failure | null>(null);
-  const errors = fieldErrors(failure, { phone: t.fieldErrors.phone ?? "" });
-  const form = useRevealErrors(failure);
-  // Вписанный, но не добавленный пользователь — несохранённое
-  useUnsaved(phone.trim() !== "" || fullName.trim() !== "");
-
-  const replace = (user: VendorUser, exists: boolean) =>
-    onChange({
-      ...vendor,
-      users: exists ? vendor.users.map((u) => (u.id === user.id ? user : u)) : [...vendor.users, user],
-    });
-
-  const add = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    const body: VendorUserInput = { phone, ...(fullName.trim() ? { fullName } : {}) };
-    const result = await api.post<VendorUser>(`/staff/vendors/${vendor.id}/users`, body);
-    setBusy(false);
-    setFailure(result.ok ? null : result);
-    if (result.ok) {
-      replace(result.data, false);
-      setPhone("");
-      setFullName("");
-    }
-  };
-
-  const userAction = async (user: VendorUser, action: "disable" | "enable" | "unlink") => {
-    const result = await api.post<VendorUser>(`/staff/vendors/${vendor.id}/users/${user.id}/${action}`);
-    setFailure(result.ok ? null : result);
-    if (result.ok) replace(result.data, true);
-    return result;
-  };
-
-  const confirmAction = async () => {
-    if (!confirm) return;
-    setBusy(true);
-    const result = await userAction(confirm.user, confirm.action);
-    setBusy(false);
-    setConfirmFailure(result.ok ? null : result);
-    if (result.ok) setConfirm(null);
-  };
-
-  return (
-    <section className="panel" aria-labelledby="users-title">
-      <h2 id="users-title">{t.users}</h2>
-      <p className="muted small">{t.usersHint}</p>
-      {vendor.users.length === 0 ? (
-        <p className="muted">{t.usersEmpty}</p>
-      ) : (
-        <ul className="cards">
-          {vendor.users.map((user) => (
-            <li key={user.id} className="card-row">
-              <div>
-                <strong>{user.fullName ?? (user.role === "owner" ? t.owner : t.member)}</strong>{" "}
-                {user.disabledAt ? (
-                  <Pill tone="warn">{t.userDisabled}</Pill>
-                ) : user.telegramLinked ? (
-                  <Pill tone="good">{t.telegramLinked}</Pill>
-                ) : (
-                  <Pill tone="muted">{t.telegramNotLinked}</Pill>
-                )}
-              </div>
-              <PhoneReveal
-                label={t.userPhone}
-                load={async () => {
-                  const result = await api.post<RevealedPhone>(
-                    `/staff/vendors/${vendor.id}/users/${user.id}/phone`,
-                    {},
-                  );
-                  return result.ok ? { ok: true, data: result.data.phone } : result;
-                }}
-              />
-              {can("vendor_users.write") && (
-                <div className="acts">
-                  <button
-                    type="button"
-                    className={`btn btn-sm${user.disabledAt ? "" : " btn-danger"}`}
-                    onClick={() =>
-                      user.disabledAt
-                        ? void userAction(user, "enable")
-                        : setConfirm({ user, action: "disable" })
-                    }
-                  >
-                    {user.disabledAt ? t.enable : t.disable}
-                  </button>
-                  {user.telegramLinked && (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => setConfirm({ user, action: "unlink" })}
-                    >
-                      {t.unlinkTelegram}
-                    </button>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      <ConfirmSheet
-        open={confirm !== null}
-        title={confirm?.action === "unlink" ? t.unlinkTelegram : t.disable}
-        text={confirm?.action === "unlink" ? t.unlinkHint : t.disableUserHint}
-        confirmLabel={confirm?.action === "unlink" ? t.unlinkTelegram : t.disable}
-        cancelLabel={t.cancel}
-        tone="danger"
-        busy={busy}
-        error={confirmFailure ? apiErrorText(confirmFailure.code) : undefined}
-        onConfirm={() => void confirmAction()}
-        onCancel={() => {
-          setConfirm(null);
-          setConfirmFailure(null);
-        }}
-      />
-      {can("vendor_users.write") && (
-        <form ref={form} className="inline-form" onSubmit={add} noValidate>
-          <Field label={t.userPhone} error={errors.phone}>
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                type="tel"
-                inputMode="tel"
-                autoComplete="off"
-                placeholder="+998 XX XXX XX XX"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                maxLength={24}
-                enterKeyHint="next"
-                required
-              />
-            )}
-          </Field>
-          <Field label={t.userName} hint={t.optional}>
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                maxLength={120}
-                autoComplete="off"
-                enterKeyHint="done"
-              />
-            )}
-          </Field>
-          <div className="inline-form-actions">
-            <button type="submit" className="btn" disabled={busy || phone.trim() === ""}>
-              {t.addUser}
-            </button>
-          </div>
-        </form>
-      )}
-      {failure && <ErrorText failure={failure} />}
     </section>
   );
 }
