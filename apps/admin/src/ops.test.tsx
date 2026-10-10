@@ -11,11 +11,14 @@ import type {
   OutboxHealth,
   RevisionDetail,
   RevisionList,
+  ServiceQueue,
+  ServiceQueueItem,
   StaffDictionaries,
   StaffMe,
   StaffRequestDetail,
   StaffSettings,
   TeamList,
+  TeamMember,
 } from "@bayramm/shared/api/staff";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -88,6 +91,7 @@ const staff = (role: StaffMe["role"], permissions: StaffMe["permissions"]): Staf
   displayName: `Test ${role}`,
   username: null,
   permissions,
+  botLinked: true,
 });
 
 const DICT: StaffDictionaries = {
@@ -758,6 +762,7 @@ describe("команда", () => {
         accepted: true,
         linked: true,
         linkedAt: "2026-09-01T06:00:00.000Z",
+        botLinked: true,
         createdAt: "2026-09-01T06:00:00.000Z",
         self: true,
       },
@@ -771,6 +776,7 @@ describe("команда", () => {
         accepted: false,
         linked: false,
         linkedAt: null,
+        botLinked: false,
         createdAt: "2026-09-01T06:00:00.000Z",
         self: false,
       },
@@ -784,6 +790,7 @@ describe("команда", () => {
         accepted: true,
         linked: false,
         linkedAt: null,
+        botLinked: false,
         createdAt: "2026-09-01T06:00:00.000Z",
         self: false,
       },
@@ -881,6 +888,78 @@ describe("команда", () => {
     expect(nav).not.toContain(t.team);
     expect(nav).not.toContain(t.settings);
     expect(nav).not.toContain(t.audit);
+  });
+
+  it("бот не пишет сотруднику — «бот: нет» у действующих; у отключённых и тех, кому пишет, — ничего", async () => {
+    const team: TeamList = {
+      items: [
+        ...TEAM.items,
+        {
+          ...(TEAM.items[2] as TeamMember),
+          id: "00000000-0000-0000-0000-00000000a004",
+          displayName: "Gone",
+          active: false,
+        },
+      ],
+    };
+    mockApi(staff("admin", ADMIN), { "GET /api/staff/team": json(team) });
+    await mount("/team");
+    const rows = [...container.querySelectorAll("tbody tr")];
+    expect(rows.map((row) => row.querySelector(".no-bot")?.textContent ?? null)).toEqual([
+      null,
+      `${t.memberNoBot}, ${t.memberNoBotHint}`,
+      `${t.memberNoBot}, ${t.memberNoBotHint}`,
+      null,
+    ]);
+  });
+});
+
+describe("бот не пишет сотруднику", () => {
+  const METHODS = {
+    telegram: { bot: "bayramm_test_bot", loginDomain: null },
+    phone: false,
+    turnstileSiteKey: null,
+    apps: {
+      web: "https://bayramm.uz",
+      vendor: "https://vendor.bayramm.uz",
+      admin: "https://admin.bayramm.uz",
+    },
+  };
+  const banner = () => container.querySelector(".bot-banner");
+
+  it("решает по модерации без чата — просьба написать боту со ссылкой; «Скрыть» — до конца сессии вкладки", async () => {
+    const handlers = {
+      "GET /api/auth/methods": json(METHODS),
+      "GET /api/staff/vendors": json({ total: 0, items: [] }),
+    };
+    mockApi({ ...staff("moderator", MODERATOR), botLinked: false }, handlers);
+    await mount("/vendors");
+    expect(banner()?.textContent).toContain(t.botBanner);
+    expect(banner()?.querySelector("a")?.getAttribute("href")).toBe(
+      "https://t.me/bayramm_test_bot?start=admin",
+    );
+    await click(button(t.botBannerHide));
+    expect(banner()).toBeNull();
+    act(() => root.unmount());
+    container.remove();
+    // Перезагрузка в той же вкладке — скрыто
+    await mount("/vendors");
+    expect(banner()).toBeNull();
+  });
+
+  it("бот пишет — просьбы нет; менеджер по модерации не решает — тоже нет", async () => {
+    mockApi(staff("moderator", MODERATOR), { "GET /api/staff/vendors": json({ total: 0, items: [] }) });
+    await mount("/vendors");
+    expect(banner()).toBeNull();
+    act(() => root.unmount());
+    container.remove();
+    window.sessionStorage.clear();
+    mockApi(
+      { ...staff("manager", MANAGER), botLinked: false },
+      { "GET /api/staff/vendors": json({ total: 0, items: [] }) },
+    );
+    await mount("/vendors");
+    expect(banner()).toBeNull();
   });
 });
 
@@ -995,6 +1074,51 @@ describe("правки карточек", () => {
     await mount(`/revisions/${REVISION_ID}`);
     expect(text()).toContain(t.proposedBy("staff", "Test manager"));
     expect(container.querySelector("thead")?.textContent).toContain(t.revisionProposed.staff);
+  });
+
+  it("очереди: число — всего на сервере, а не загруженная сотня; у услуги черновика — статус витрины", async () => {
+    const item: ServiceQueueItem = {
+      kind: "review",
+      service: {
+        id: "eeeeeeee-0000-0000-0000-0000000000a1",
+        type: "banquet_weekday",
+        status: "review",
+        name: { ru: "Банкет в будни", uz: "Ish kunlari banket" },
+        customName: false,
+        priceUzs: 150_000,
+        priceUnit: "per_guest",
+        minQty: null,
+        leadDays: null,
+        includes: null,
+        options: [],
+        sort: 0,
+        proposal: null,
+        decision: null,
+        submittedAt: "2026-09-29T06:00:00.000Z",
+        updatedAt: "2026-09-29T06:00:00.000Z",
+      },
+      listing: { id: LISTING_ID, name: "Oqsaroy Hall", status: "draft", categoryCode: "hall" },
+      vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+      proposedBy: { kind: "partner", name: null },
+      submittedAt: "2026-09-29T06:00:00.000Z",
+    };
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 140, items: [item] } satisfies ServiceQueue),
+    });
+    await mount("/moderation");
+    const section = container.querySelector("section[aria-labelledby=queue-services-title]");
+    expect(section?.querySelector("h2")?.textContent).toBe(`${t.serviceQueue} 140`);
+    expect([...container.querySelectorAll(".queue-jump button")].map((b) => b.textContent)).toContain(
+      `${t.serviceQueue}140`,
+    );
+    // Партнёр видит «на проверке» и у черновика — модератор видит, что витрины ещё нет на сайте
+    expect([...(section?.querySelectorAll(".pill") ?? [])].map((p) => p.textContent)).toEqual([
+      t.serviceQueueKinds.review,
+      t.status.draft,
+    ]);
+    expect(section?.textContent).toContain(t.serviceApprove);
   });
 
   it("новые фото: опубликованные карточки с фото на решении — ссылка на карточку и сколько ждут", async () => {

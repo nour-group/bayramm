@@ -59,6 +59,7 @@ import {
 import { isApi } from "./vendor-api";
 
 export {
+  BENTO_ID,
   BOOKED_DAY,
   BRIDE_CAR_ID,
   CAKE_LISTING_ID,
@@ -126,13 +127,14 @@ const PERMISSION_ROLES: Readonly<Record<StaffPermission, readonly StaffRole[]>> 
 export const permissionsOf = (role: StaffRole): StaffPermission[] =>
   (Object.keys(PERMISSION_ROLES) as StaffPermission[]).filter((p) => PERMISSION_ROLES[p].includes(role));
 
-/** Вошедший сотрудник с этой ролью */
-export const staffOf = (role: StaffRole): StaffMe => ({
+/** Вошедший сотрудник с этой ролью; botLinked — бот знает его чат (оповещения команды доходят) */
+export const staffOf = (role: StaffRole, botLinked = true): StaffMe => ({
   id: "00000000-0000-4000-8600-000000000001",
   role,
   displayName: "Дильноза Операторова",
   username: "dilnoza_ops",
   permissions: permissionsOf(role),
+  botLinked,
 });
 
 export const STAFF: StaffMe = staffOf("admin");
@@ -584,6 +586,7 @@ const TEAM: TeamList = {
       accepted: true,
       linked: true,
       linkedAt: iso,
+      botLinked: true,
       createdAt: iso,
       self: true,
     },
@@ -597,6 +600,8 @@ const TEAM: TeamList = {
       accepted: false,
       linked: false,
       linkedAt: null,
+      // Не писал боту /start: в «Команде» — «бот: нет»
+      botLinked: false,
       createdAt: iso,
       self: false,
     },
@@ -636,7 +641,15 @@ const METRICS: MetricsOverview = {
     { ...WEEK, weekStart: "2026-09-28", weekLabel: "2026-W40", partial: true, answeredRate: null },
     { ...WEEK, weekStart: "2026-09-21", weekLabel: "2026-W39", partial: false },
   ],
-  queues: { awaiting: 3, overdue: 1, deadTotal: 1, listingsReview: 0, revisionsPending: 1, photosPending: 0 },
+  queues: {
+    awaiting: 3,
+    overdue: 1,
+    deadTotal: 1,
+    listingsReview: 0,
+    revisionsPending: 1,
+    photosPending: 0,
+    servicesPending: 2,
+  },
 };
 
 const VENDOR_METRICS: VendorMetrics = {
@@ -733,6 +746,10 @@ export interface StaffApiOptions {
   readonly seeded?: boolean;
   /** Пользователи кабинета вендора в начале теста (по умолчанию — никого) */
   readonly cabinetUsers?: readonly VendorUser[];
+  /** С seeded: партнёр отправил на проверку услугу черновика тортов (бенто) — она в очереди */
+  readonly draftService?: boolean;
+  /** Бот знает чат сотрудника; false — панель просит написать боту /start */
+  readonly botLinked?: boolean;
 }
 
 export async function mockStaffApi(
@@ -746,6 +763,8 @@ export async function mockStaffApi(
     fail: failures = {},
     seeded = false,
     cabinetUsers = [],
+    draftService = false,
+    botLinked = true,
   }: StaffApiOptions = {},
 ) {
   let elevated = 0;
@@ -774,7 +793,7 @@ export async function mockStaffApi(
   const activeOwners = (except?: string) =>
     users.filter((u) => u.id !== except && u.role === "owner" && u.status !== "disabled").length;
   const activeOthers = (except: string) => users.some((u) => u.id !== except && u.status !== "disabled");
-  const listings: ListingDetail[] = seeded ? seededListings() : [];
+  const listings: ListingDetail[] = seeded ? seededListings({ draftService }) : [];
   let vendorName = "Lola";
   // Занятость каждой витрины и версия её календаря (растёт с каждой правкой)
   const calendars = new Map<string, Calendar>();
@@ -856,7 +875,7 @@ export async function mockStaffApi(
         200,
         accountMe({ vendors: [VENDOR_MEMBERSHIP], staff: true }, { kind: "staff", app: "admin" }),
       );
-    if (key === "GET /staff/me") return json(route, 200, staffOf(role));
+    if (key === "GET /staff/me") return json(route, 200, staffOf(role, botLinked));
     if (key === "GET /staff/dictionaries") return json(route, 200, DICTIONARIES);
     if (key === "GET /staff/vendors") {
       state.queries.push(`vendors?${url.searchParams}`);

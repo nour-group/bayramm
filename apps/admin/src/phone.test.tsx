@@ -31,6 +31,7 @@ const ADMIN: StaffMe = {
   role: "admin",
   displayName: "Test Admin",
   username: null,
+  botLinked: true,
   permissions: [
     "catalog.read",
     "vendors.write",
@@ -68,6 +69,7 @@ const QUEUES = {
   listingsReview: 1,
   revisionsPending: 2,
   photosPending: 0,
+  servicesPending: 3,
 };
 const METRICS: MetricsOverview = { slaHours: 12, category: null, weeks: [], queues: QUEUES };
 
@@ -234,13 +236,17 @@ describe("телефон: оболочка", () => {
   });
 
   it("счётчики — из очередей метрик, одним лёгким запросом; для диктора — словами", async () => {
-    mockApi(ADMIN);
+    // Модерация — то, по чему роль решает: витрины, предложения, услуги и фото
+    mockApi({
+      ...ADMIN,
+      permissions: [...ADMIN.permissions, "listings.publish", "revisions.moderate", "photos.moderate"],
+    });
     await mount("/requests");
     expect(calls).toContain("GET /api/staff/metrics?weeks=1");
     const requests = tabs()[0];
     expect(requests?.querySelector(".badge")?.textContent).toBe("2");
     expect(requests?.textContent).toContain(t.badges.requests(2));
-    expect(tabs()[1]?.querySelector(".badge")?.textContent).toBe("3");
+    expect(tabs()[1]?.querySelector(".badge")?.textContent).toBe("6");
     // Недоставленное — в «Ещё» (уведомления): точка на «Ещё»
     expect(tabs()[4]?.querySelector(".badge-dot")).not.toBeNull();
   });
@@ -430,6 +436,7 @@ describe("телефон: читаемость списков", () => {
           accepted: true,
           linked: true,
           linkedAt: "2026-09-01T06:00:00.000Z",
+          botLinked: true,
           createdAt: "2026-09-01T06:00:00.000Z",
           self: true,
         },
@@ -473,8 +480,22 @@ describe("телефон: читаемость списков", () => {
 });
 
 describe("счётчики и инициалы", () => {
-  it("модерация — карточки на проверке, правки и фото вместе; заявки — просроченные", () => {
-    expect(badgesOf(QUEUES)).toEqual({ requests: 2, moderation: 3, notifications: 1 });
+  it("модерация — витрины на проверке, предложения, услуги и фото вместе; заявки — просроченные", () => {
+    const admin = [
+      ...ADMIN.permissions,
+      "listings.publish",
+      "revisions.moderate",
+      "photos.moderate",
+    ] as const;
+    expect(badgesOf(QUEUES, admin)).toEqual({ requests: 2, moderation: 6, notifications: 1 });
+  });
+
+  it("модерация — только очереди, по которым роль решает: менеджеру счётчик не горит", () => {
+    const moderator = ["catalog.read", "listings.publish", "revisions.moderate", "photos.moderate"] as const;
+    expect(badgesOf(QUEUES, moderator).moderation).toBe(6);
+    expect(badgesOf(QUEUES, ["catalog.read", "listings.write", "requests.read"]).moderation).toBe(0);
+    // Решает только по фото — только фото (их здесь нет)
+    expect(badgesOf({ ...QUEUES, photosPending: 4 }, ["photos.moderate"]).moderation).toBe(4);
   });
 
   it("инициалы — две первые буквы; пустое имя — точка", () => {

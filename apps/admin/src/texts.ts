@@ -107,6 +107,10 @@ export const t = {
   accountOf: (name: string, role: string) => `Аккаунт: ${name}, ${role}`,
   moreSections: "Ещё разделы",
   moreCurrent: (section: string) => `Ещё, открыт раздел «${section}»`,
+  // Сотрудник решает по модерации, а бот ему не пишет: оповещения команды не доходят
+  botBanner: "Уведомления от бота не приходят: напишите боту /start",
+  botBannerLink: "Открыть бота",
+  botBannerHide: "Скрыть",
   // Счётчики у разделов (из очередей метрик): что ждёт команду
   badges: {
     requests: (n: number) => `просрочено: ${n}`,
@@ -539,7 +543,7 @@ export const t = {
   openListing: "К витрине",
   photoQueue: "Новые фото",
   photoQueueHint:
-    "Новые фото опубликованных витрин — от вендора или менеджера. Одобрить или отклонить — на странице витрины.",
+    "Новые фото — от вендора или менеджера, и у черновиков тоже. Одобрить или отклонить — на странице витрины; что не решите, одобрит публикация.",
   photoQueueEmpty: "Новых фото, ждущих решения, нет.",
   pendingPhotos: (n: number) => `ждут решения: ${n}`,
 
@@ -879,6 +883,7 @@ export const t = {
     "staff.telegram_claim": "Приглашение принято",
     "staff.phone_claim": "Приглашение принято по телефону",
     "staff.elevate": "Вход в панель",
+    "outbox.no_recipients": "Оповещение команды некому отправить",
     "maintenance.daily": "Ежедневное обслуживание",
   } as Record<string, string>,
   piiPurposes: {
@@ -918,6 +923,9 @@ export const t = {
   memberPending: "Ещё не входил",
   memberAccepted: "Приглашение принято",
   memberLinked: (at: string) => `Вошёл через Telegram ${at}`,
+  // чата с ботом нет — оповещения команды ему не приходят
+  memberNoBot: "бот: нет",
+  memberNoBotHint: "оповещения не приходят: не писал боту /start",
   changeRole: "Сменить роль",
   deactivate: "Отключить",
   activate: "Включить",
@@ -974,6 +982,7 @@ export const t = {
     listingsReview: "Витрин на проверке",
     revisionsPending: "Предложений ждут решения",
     photosPending: "Новых фото ждут решения",
+    servicesPending: "Услуг ждут решения",
   } as Record<string, string>,
   metricsWeekly: "По неделям",
   metricsWeeklyHint: (hours: number) =>
@@ -1092,7 +1101,9 @@ export const t = {
   servicesEmpty: "Услуг пока нет.",
   servicesDecides: "Вы решаете по модерации: ваши услуги и их изменения сразу на витрине.",
   servicesManager:
-    "Новые услуги и изменения услуг опубликованной витрины уходят модератору; у неопубликованной их одобрит публикация.",
+    "Новые услуги и изменения услуг опубликованной витрины уходят модератору; у неопубликованной их одобрит модератор или публикация.",
+  // услуга ждёт решения прямо на странице витрины (как в очереди «Модерации»)
+  serviceWaits: "Ждёт решения",
   serviceStatus: {
     draft: "Черновик",
     review: "На проверке",
@@ -1154,7 +1165,7 @@ export const t = {
   // очередь услуг в модерации
   serviceQueue: "Услуги",
   serviceQueueHint:
-    "Новые услуги и изменения услуг опубликованных витрин. Услуги неопубликованной витрины одобряет её публикация.",
+    "Новые услуги и изменения услуг — от вендора или менеджера, и у черновиков тоже: партнёр видит «на проверке». Что не решите до публикации, одобрит публикация витрины.",
   serviceQueueEmpty: "Услуг, ждущих решения, нет.",
   serviceQueueKinds: { review: "Новая услуга", proposal: "Изменения услуги" } as Record<string, string>,
   serviceNow: "Сейчас",
@@ -1165,6 +1176,9 @@ export const t = {
   // что решили по услуге в очереди — строкой статуса (фокус уже на следующей)
   serviceApproved: (name: string) => `Одобрено: ${name}. Дальше — следующая услуга.`,
   serviceDeclinedSaid: (name: string) => `Отклонено: ${name}. Дальше — следующая услуга.`,
+  // то же на странице витрины
+  serviceApprovedHere: (name: string) => `Одобрено: ${name}.`,
+  serviceDeclinedHere: (name: string) => `Отклонено: ${name}. Причину увидит партнёр.`,
   guestsUpTo: (n: number) => `до ${n} гостей`,
   // после решения по предложению или витрине на проверке — к следующему в очереди
   nextRevision: (name: string) => `Следующее предложение: ${name}`,

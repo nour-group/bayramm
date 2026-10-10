@@ -25,6 +25,7 @@ const staff = (permissions: StaffMe["permissions"]): StaffMe => ({
   displayName: "Test manager",
   username: null,
   permissions,
+  botLinked: true,
 });
 const MANAGER = staff(["catalog.read", "vendors.write", "vendor_users.write", "vendor_phones.read"]);
 

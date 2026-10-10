@@ -1,7 +1,7 @@
 import type { StaffRole } from "@bayramm/shared/api/staff";
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
-import { expectNoAxeViolations } from "../support/a11y";
+import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { createVitrina } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import { CLIENT_ID, mockStaffApi, NOW, REQUEST_ID, REVISION_ID, staffOf } from "../support/staff-api";
@@ -157,6 +157,59 @@ test("менеджер: повтора уведомлений и телефон�
   await expect(page.getByLabel(t.clientPhoneReason)).toHaveCount(0);
   await page.goto(`/clients/${CLIENT_ID}`);
   await expect(page.getByRole("button", { name: t.block })).toBeVisible();
+});
+
+test.describe("оповещения команды: бот должен знать чат", () => {
+  test("модератор без чата с ботом — просьба написать боту со ссылкой на него; «Скрыть» — и нет", async ({
+    page,
+  }) => {
+    const api = await start(page, "moderator", { botLinked: false });
+    await page.goto("/moderation");
+    const banner = page.locator(".bot-banner");
+    await expect(banner).toContainText(t.botBanner);
+    await expect(banner.getByRole("link", { name: t.botBannerLink })).toHaveAttribute(
+      "href",
+      "https://t.me/bayramm_demo_bot?start=admin",
+    );
+    await expectNoAxeViolations(page, "просьба написать боту");
+    await expectHitAreas(page, "просьба написать боту", ".bot-banner .btn");
+    const width = page.viewportSize()?.width ?? 0;
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await banner.getByRole("button", { name: t.botBannerHide }).click();
+    await expect(banner).toHaveCount(0);
+    // Перезагрузка в той же вкладке — не возвращается
+    await page.reload();
+    await expect(heading(page)).toHaveText(t.moderation);
+    await expect(page.locator(".bot-banner")).toHaveCount(0);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("менеджер по модерации не решает — просьбы нет", async ({ page }) => {
+    await start(page, "manager", { botLinked: false });
+    await page.goto("/vendors");
+    await expect(heading(page)).toHaveText(t.vendors);
+    await expect(page.locator(".bot-banner")).toHaveCount(0);
+  });
+
+  test("«Команда»: «бот: нет» у того, кому бот не пишет", async ({ page }) => {
+    await start(page, "admin");
+    await page.goto("/team");
+    await expect(page.locator(".no-bot")).toHaveCount(1);
+    await expect(page.locator(".no-bot")).toContainText(t.memberNoBot);
+  });
+
+  test("«Сейчас» в метриках: плитка очереди ведёт туда, где её разбирают", async ({ page }) => {
+    const api = await start(page, "moderator");
+    await page.goto("/metrics");
+    const services = page.getByRole("link", { name: new RegExp(t.metricsQueues.servicesPending ?? "") });
+    await expect(services).toContainText("2");
+    // У модератора заявок нет: «Ждут ответа площадки» — без ссылки
+    await expect(page.getByRole("link", { name: new RegExp(t.metricsQueues.awaiting ?? "") })).toHaveCount(0);
+    await services.click();
+    await expect(page).toHaveURL("/moderation");
+    await expect(heading(page)).toHaveText(t.moderation);
+    expect(api.unexpected).toEqual([]);
+  });
 });
 
 test.describe("ошибки API — словами", () => {

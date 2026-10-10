@@ -1,40 +1,33 @@
 /* Модерация: витрины на проверке — по порядку отправки (решение — на странице витрины),
-   предложения изменений опубликованных витрин от вендоров и менеджеров (решение — на странице
-   предложения), услуги и изменения услуг опубликованных витрин (решение — прямо в очереди:
-   одобрить или отклонить с причиной для партнёра) и новые фото опубликованных витрин — старые
-   загрузки первыми (одобрить или отклонить — на странице витрины, в блоке фото). Элемент
-   очереди — карточка целиком: нажатие в любом её месте открывает то, по чему решать.
+   предложения изменений от вендоров и менеджеров (решение — на странице предложения), услуги
+   и изменения услуг (решение — прямо в очереди: одобрить или отклонить с причиной для
+   партнёра) и новые фото — старые загрузки первыми (одобрить или отклонить — на странице
+   витрины, в блоке фото). Услуги и фото — у любых витрин, кроме отклонённых: партнёр видит
+   «на проверке» и у черновика, поэтому у карточки очереди — статус витрины, если она не на
+   сайте. Элемент очереди — карточка целиком: нажатие в любом её месте открывает то, по чему
+   решать.
 
    Разбор с телефона: вверху — сколько ждёт в каждой очереди (кнопки ведут к ней), у заголовка
-   очереди — число, пустая очередь — одной строкой, пояснение — только у непустой. Решение по
-   услуге — без клавиатуры (одобрить) или с причиной в шторке; после решения очередь
-   перечитывается тихо, фокус — на следующей услуге (или на заголовке очереди, если она
-   кончилась), что решили — говорит строка статуса. */
+   очереди — число (всего, а не только загруженное), пустая очередь — одной строкой, пояснение —
+   только у непустой. Решение по услуге — без клавиатуры (одобрить) или с причиной в шторке
+   (ServiceDecision — тот же, что на странице витрины); после решения очередь перечитывается
+   тихо, фокус — на следующей услуге (или на заголовке очереди, если она кончилась), что
+   решили — говорит строка статуса. */
 
 import type {
   ListingList,
-  ListingService,
+  ListingStatus,
   RevisionList,
   ServiceQueue,
   ServiceQueueItem,
 } from "@bayramm/shared/api/staff";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { type Failure, type Loaded, useCan, useLoad, useSession } from "../api";
+import { type Loaded, useCan, useLoad } from "../api";
 import { CategoryChip } from "../categories";
 import { formatMoment, formatPrice, vendorLabel } from "../format";
 import { t } from "../texts";
-import {
-  Blockers,
-  ConfirmForm,
-  ErrorText,
-  focusSection,
-  Link,
-  LoadedView,
-  PhoneSheet,
-  Pill,
-  publishBlockers,
-} from "../ui";
-import { ServiceChanges } from "./Services";
+import { Blockers, focusSection, Link, LoadedView, Pill, publishBlockers, StatusPill } from "../ui";
+import { ServiceChanges, ServiceDecision } from "./Services";
 
 type Queue = "review" | "revisions" | "services" | "photos";
 
@@ -61,9 +54,14 @@ const QUEUE_EMPTY: Readonly<Record<Queue, string>> = {
 
 const titleId = (queue: Queue) => `queue-${queue}-title`;
 
-/** Сколько в очереди, когда загрузилась: для сводки вверху и числа у заголовка */
-function countOf<T extends { readonly items: readonly unknown[] }>(loaded: Loaded<T>): number | null {
-  return loaded.state === "ready" ? loaded.data.items.length : null;
+/** Сколько в очереди всего (не только загруженная сотня), когда загрузилась: для сводки и заголовка */
+function countOf<T extends { readonly total: number }>(loaded: Loaded<T>): number | null {
+  return loaded.state === "ready" ? loaded.data.total : null;
+}
+
+/** Витрина не на сайте (черновик, на проверке…) — её статус у карточки очереди; опубликованная — без него */
+function NotLiveStatus({ status }: { status: ListingStatus }) {
+  return status === "active" ? null : <StatusPill status={status} />;
 }
 
 /**
@@ -216,9 +214,12 @@ function PhotoQueue({ list }: { list: ListingList }) {
     <ul className="rcards">
       {list.items.map((listing) => (
         <li key={listing.id} className="rcard rcard-tap">
-          <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
-            {listing.name}
-          </Link>
+          <div className="rcard-head">
+            <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
+              {listing.name}
+            </Link>
+            <NotLiveStatus status={listing.status} />
+          </div>
           <p className="rcard-meta">{vendorLabel(listing.vendor)}</p>
           <p className="rcard-meta">
             {t.pendingPhotos(listing.photos.pending)} ·{" "}
@@ -294,28 +295,8 @@ function ServiceQueueCard({
   item: ServiceQueueItem;
   onDecided: (said: string) => void;
 }) {
-  const { api } = useSession();
-  const [declining, setDeclining] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<Failure | null>(null);
-  const declineButton = useRef<HTMLButtonElement>(null);
   const { service } = item;
   const name = service.name.ru;
-
-  const approve = async () => {
-    setBusy(true);
-    const result = await api.post<ListingService>(`/staff/services/${service.id}/approve`);
-    setBusy(false);
-    setFailure(result.ok ? null : result);
-    if (result.ok) onDecided(t.serviceApproved(name));
-  };
-  const decline = async (reason: string): Promise<Failure | null> => {
-    const result = await api.post<ListingService>(`/staff/services/${service.id}/decline`, { reason });
-    if (!result.ok) return result;
-    setDeclining(false);
-    onDecided(t.serviceDeclinedSaid(name));
-    return null;
-  };
 
   return (
     <li className="rcard rcard-tap">
@@ -326,7 +307,8 @@ function ServiceQueueCard({
         <Pill tone={item.kind === "proposal" ? "outline" : "muted"}>{t.serviceQueueKinds[item.kind]}</Pill>
       </div>
       <p className="rcard-meta">
-        <CategoryChip code={item.listing.categoryCode} /> {item.listing.name} · {vendorLabel(item.vendor)}
+        <CategoryChip code={item.listing.categoryCode} /> {item.listing.name} · {vendorLabel(item.vendor)}{" "}
+        <NotLiveStatus status={item.listing.status} />
       </p>
       <p className="rcard-meta">
         {t.proposedBy(item.proposedBy.kind, item.proposedBy.name)} · {formatMoment(item.submittedAt)}
@@ -342,47 +324,13 @@ function ServiceQueueCard({
           {service.includes?.ru ? ` · ${service.includes.ru}` : ""}
         </p>
       )}
-      <div className="rcard-actions">
-        <button
-          type="button"
-          className="btn btn-primary queue-approve"
-          disabled={busy}
-          onClick={() => void approve()}
-        >
-          {t.serviceApprove}
-          <span className="visually-hidden">: {name}</span>
-        </button>
-        <button
-          ref={declineButton}
-          type="button"
-          className="btn btn-danger"
-          aria-expanded={declining}
-          disabled={busy}
-          onClick={() => setDeclining(!declining)}
-        >
-          {t.serviceDecline}
-          <span className="visually-hidden">: {name}</span>
-        </button>
-      </div>
-      {failure ? <ErrorText failure={failure} /> : null}
-      <PhoneSheet
-        open={declining}
-        title={`${t.serviceDecline}: ${name}`}
-        onClose={() => setDeclining(false)}
-        returnFocus={declineButton}
-      >
-        <div className="rcard-actions">
-          <ConfirmForm
-            hint={t.serviceDeclineHint}
-            label={t.reason}
-            required
-            danger
-            submitLabel={t.serviceDecline}
-            onSubmit={decline}
-            onCancel={() => setDeclining(false)}
-          />
-        </div>
-      </PhoneSheet>
+      <ServiceDecision
+        service={service}
+        approveClass="queue-approve"
+        onDecided={(outcome) =>
+          onDecided(outcome === "approved" ? t.serviceApproved(name) : t.serviceDeclinedSaid(name))
+        }
+      />
     </li>
   );
 }

@@ -369,7 +369,7 @@ export async function createService(
 /**
  * Правка услуги. Активная или снятая, если правят только предложением, — изменённые поля
  * уходят предложением (заменяют прежнее); иначе — сразу. Черновик и отклонённая уходят на
- * проверку, если submit не false
+ * проверку, если submit не false; отклонённая с submit: false становится черновиком
  */
 export async function updateService(
   trx: Tx,
@@ -401,6 +401,9 @@ export async function updateService(
   let status: ServiceStatus = row.status;
   if (submit && (row.status === "draft" || row.status === "rejected"))
     status = actor.decides ? "active" : "review";
+  // «Сохранить черновик» у отклонённой — и правда черновик: отказ остаётся в прошлом круге
+  // (база стирает прежнее решение), а услуга не висит «отклонённой» после исправления
+  else if (!submit && row.status === "rejected") status = "draft";
   await trx
     .updateTable("app.listing_services")
     .set({ ...dbValues(columns), ...(status === row.status ? {} : { status }) })

@@ -8,6 +8,7 @@
 //   PATCH  /vendor/requests/:id        { status, declineReason?, declineNote? } → 200 VendorRequestItem
 //   POST   /vendor/requests/:id/call               → 204 (нажатие на телефон — в журнал)
 //   GET    /vendor/listings/:id                    → 200 VendorListing
+//   POST   /vendor/listings/:id/submit             → 200 VendorListing (черновик — на проверку команде)
 //   GET    /vendor/listings/:id/calendar?month=    → 200 VendorCalendar (+ ETag версии)
 //   PUT    /vendor/listings/:id/calendar/capacity  If-Match: <версия> { parallelCapacity } → 200
 //   PUT    /vendor/listings/:id/calendar/:day[?part=] If-Match: <версия> → 200 VendorCalendarChange
@@ -25,8 +26,9 @@
 //
 // Чужая заявка или листинг — 404, как несуществующие. Клиент или сотрудник с
 // сессией — 403, без сессии — 401. Фото и предложения правок — только владелец
-// кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required. Услуги —
-// тоже только владелец; календарь и сколько заказов одновременно — любой пользователь.
+// кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required. Услуги и
+// отправка витрины на проверку — тоже только владелец; календарь и сколько заказов
+// одновременно — любой пользователь.
 
 import { MAX_UPLOAD_BYTES } from "@bayramm/media";
 import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
@@ -70,6 +72,7 @@ import {
   updateVendorService,
   withdrawVendorService,
 } from "../vendor/services";
+import { submitListing } from "../vendor/submit";
 
 // Тела здесь крошечные: статус с причиной, язык
 const limitBody = bodyLimit({
@@ -146,6 +149,13 @@ vendor.get("/listings/:id", async (c) => {
   return c.json(await getListing(c.var.db, vendorOf(c), id, c.env.APP_ENV));
 });
 
+// Витрину — на проверку команде (draft → review). Оповещение тем, кто публикует, ставит
+// триггер базы; outboxKick отправляет его сразу после ответа
+vendor.post("/listings/:id/submit", outboxKick, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await submitListing(c.var.db, vendorOf(c), id, c.env.APP_ENV));
+});
+
 vendor.get("/listings/:id/calendar", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const calendar = await getCalendar(c.var.db, vendorOf(c), id, c.req.query("month"));
@@ -186,8 +196,8 @@ vendor.delete("/listings/:id/calendar/:day", async (c) => {
 });
 
 // Фото площадки: только владелец кабинета; подтверждение обязательно — «лиц нет» или (у
-// категорий-портфолио) согласие людей на фото. Оповещение команде о новом фото
-// опубликованной карточки ставит триггер базы
+// категорий-портфолио) согласие людей на фото. Оповещение команде о новом фото (у любой
+// витрины, кроме отклонённой) ставит триггер базы
 vendor.post("/listings/:id/photos", limitUpload, outboxKick, async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const actor = vendorOf(c);
@@ -224,7 +234,7 @@ vendor.post("/listings/:id/revisions/:revisionId/withdraw", async (c) => {
 });
 
 // Услуги витрины — только владелец кабинета. Оповещение команде о новой услуге или
-// предложении правки опубликованной витрины ставит триггер базы
+// предложении правки (у любой витрины, кроме отклонённой) ставит триггер базы
 vendor.get("/listings/:id/services", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   return c.json(await listVendorServices(c.var.db, vendorOf(c), id));

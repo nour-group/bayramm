@@ -61,6 +61,11 @@ export interface StaffMe {
   readonly displayName: string;
   readonly username: string | null;
   readonly permissions: readonly StaffPermission[];
+  /**
+   * Бот знает чат сотрудника (написал боту /start): только тогда приходят оповещения команды.
+   * false — панель просит написать боту
+   */
+  readonly botLinked: boolean;
 }
 
 // ── справочники ────────────────────────────────────────────────────────────
@@ -318,8 +323,9 @@ export interface ListingListItem extends ListingBrief {
 
 /**
  * GET /staff/listings?status=&q=&vendorId=&category=&photos=pending&limit=&offset=
- * photos=pending — только опубликованные карточки с фото, которые ждут решения (очередь
- * «Новые фото» в модерации: их загрузил партнёр или менеджер), старые загрузки первыми.
+ * photos=pending — карточки (любые, кроме отклонённых: фото черновика тоже можно одобрить до
+ * публикации) с фото, которые ждут решения (очередь «Новые фото» в модерации: их загрузил
+ * партнёр или менеджер), старые загрузки первыми.
  * category — только витрины этой категории
  */
 export interface ListingList {
@@ -601,12 +607,14 @@ export interface AvailabilityInput {
  *
  * Модерация (право revisions.moderate — администратор, модератор):
  * GET    /staff/services?status=pending|review|proposal&limit=&offset= → ServiceQueue: новые услуги
- *        на проверке и предложения правок у опубликованных витрин, старые первыми
+ *        на проверке и предложения правок у любых витрин, кроме отклонённых (и у черновика: партнёр
+ *        видит «на проверке»), старые первыми; total — сколько всего, items — не больше limit
  * POST   /staff/services/:sid/approve                       → ListingService: одобрить услугу или
  *        применить предложение (422 service_invalid — не проходит проверку полей)
  * POST   /staff/services/:sid/decline { reason }            → ListingService: отклонить услугу или
  *        предложение; причину увидит партнёр
- * Решение по услуге опубликованной витрины — уведомление владельцам кабинета (vendor.service_decided)
+ * Решение по услуге — уведомление владельцам кабинета (vendor.service_decided): одобрение — у
+ * опубликованной витрины, отказ — у любой
  */
 
 /** Что ждёт решения: новая услуга (review) или предложение правки активной (proposal) */
@@ -1035,6 +1043,8 @@ export interface TeamMember {
   /** Telegram привязан (оповещения команды): первый вход через Telegram был */
   readonly linked: boolean;
   readonly linkedAt: string | null;
+  /** Бот знает чат (написал боту /start): оповещения команды приходят только тогда */
+  readonly botLinked: boolean;
   readonly createdAt: string;
   /** Это вы: себя не отключить и роль не сменить */
   readonly self: boolean;
@@ -1203,8 +1213,10 @@ export interface OpsQueues {
   readonly deadTotal: number;
   readonly listingsReview: number;
   readonly revisionsPending: number;
-  /** Новые фото опубликованных карточек ждут решения */
+  /** Новые фото ждут решения (у любых витрин, кроме отклонённых) */
   readonly photosPending: number;
+  /** Новые услуги и предложения правок услуг ждут решения — как очередь GET /staff/services */
+  readonly servicesPending: number;
 }
 
 /**

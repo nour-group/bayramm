@@ -68,6 +68,8 @@ interface TestRequest {
 const vendors: TestVendor[] = [];
 const clients: string[] = [];
 const requests: TestRequest[] = [];
+/** Витрины, которые заводят сами тесты (отправка на проверку) */
+const extraListings: string[] = [];
 
 const days = (n: number) => {
   // Сегодня по Ташкенту + n дней, как считает API
@@ -258,7 +260,7 @@ afterAll(async () => {
     await admin.query("set session_replication_role = replica");
     const ids = requests.map((r) => r.id);
     const accounts = vendors.map((v) => v.accountId);
-    const listings = vendors.flatMap((v) => [v.listingId, v.draftId]);
+    const listings = [...vendors.flatMap((v) => [v.listingId, v.draftId]), ...extraListings];
     await admin.query("delete from app.request_status_log where request_id = any($1::uuid[])", [ids]);
     await admin.query("delete from app.pii_access_log where subject_id = any($1::uuid[])", [
       [...ids, ...listings],
@@ -271,10 +273,18 @@ afterAll(async () => {
          select id::text from app.listing_revisions where listing_id = any($1::uuid[]))`,
       [vendors.flatMap((v) => [v.listingId, v.draftId])],
     );
+    // Оповещения команды о фото, услугах и отправке на проверку; «некому отправить» — в журнале
     await admin.query(
-      "delete from app.outbox where kind = 'ops.photos_submitted' and payload ->> 'listing_id' = any($1::text[])",
+      `delete from app.outbox where kind in ('ops.photos_submitted', 'ops.service_submitted', 'ops.listing_submitted')
+         and payload ->> 'listing_id' = any($1::text[])`,
       [listings],
     );
+    await admin.query(
+      "delete from app.outbox where kind = 'vendor.service_decided' and recipient_id = any($1::uuid[])",
+      [vendors.map((v) => v.userId)],
+    );
+    await admin.query("delete from app.audit_log where object_id = any($1::text[])", [listings]);
+    await admin.query("delete from app.listing_status_log where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from app.availability where listing_id = any($1::uuid[])", [listings]);
     await admin.query("delete from pii.request_contacts where request_id = any($1::uuid[])", [ids]);
     await admin.query("delete from app.requests where id = any($1::uuid[])", [ids]);
@@ -1311,6 +1321,127 @@ describe("что ждёт партнёра", () => {
     // Партнёр продолжает работу: первый ответ остаётся за тем, кто ответил первым
     const deal = await call(`/vendor/requests/${staffReq.id}`, patch(A.token, { status: "deal" }));
     expect(((await deal.json()) as VendorRequestItem).firstResponseBy).toBe("staff");
+  });
+});
+
+// ── витрина — на проверку ───────────────────────────────────────────────────
+
+describe("партнёр отправляет витрину на проверку", () => {
+  const submit = (listingId: string, token = A.token) =>
+    call(`/vendor/listings/${listingId}/submit`, as(token, "POST"));
+  const errorOf = async (res: Response) => {
+    const body = (await res.json()) as { error: { code: string; details?: string[] } };
+    return { status: res.status, code: body.error.code, details: body.error.details };
+  };
+  let readyId: string;
+
+  beforeAll(async () => {
+    // Черновик зала, где команда заполнила своё (вместимость, район, телефон), партнёр — описания
+    // и фото; услуги партнёр отправит из кабинета
+    readyId = randomUUID();
+    extraListings.push(readyId);
+    await admin.query(
+      `insert into app.listings (id, vendor_id, slug, category_code, name, district_code, description_ru,
+                                 description_uz, cap_min, cap_max)
+       values ($1, $2, $3, 'hall', 'Ready Draft A', 'yunusobod', 'Описание', 'Tavsif', 50, 200)`,
+      [readyId, A.accountId, `test-ready-${run}`],
+    );
+    await admin.query(
+      "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000998')",
+      [readyId],
+    );
+    for (let n = 0; n < 3; n++) {
+      await admin.query(
+        `insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
+                                 sort, no_faces_ack)
+         values ($1, 'ready', 'pending', $2, 'image/webp', 1000, 1600, 1200, $3, $4, true)`,
+        [readyId, `listings/${readyId}/${randomUUID()}.webp`, randomBytes(32), n],
+      );
+    }
+  });
+
+  it("не всё готово — 422 publish_blocked с пунктами; статус прежний", async () => {
+    expect(await errorOf(await submit(readyId))).toMatchObject({
+      status: 422,
+      code: "publish_blocked",
+      details: expect.arrayContaining(["price", "packages"]),
+    });
+    const listing = (await (
+      await call(`/vendor/listings/${readyId}`, bearer(A.token))
+    ).json()) as VendorListing;
+    expect(listing.status).toBe("draft");
+    expect(listing.reviewBlockers).toEqual(expect.arrayContaining(["price", "packages"]));
+    // Фото на проверке для отправки засчитываются, для публикации — ещё нет
+    expect(listing.reviewBlockers).not.toContain("photos");
+    expect(listing.blockers).toContain("photos");
+  });
+
+  it("услуги черновика — команде; готово — на проверку, оповещение тем, кто публикует", async () => {
+    for (const [type, price] of [
+      ["banquet_weekday", 150_000],
+      ["banquet_weekend", 180_000],
+    ] as const) {
+      const res = await call(`/vendor/listings/${readyId}/services`, {
+        method: "POST",
+        headers: { ...json, Authorization: `Bearer ${A.token}` },
+        body: JSON.stringify({ type, priceUzs: price, priceUnit: "per_guest" }),
+      });
+      expect(res.status).toBe(201);
+    }
+    // Оповещение команде поставлено — или в журнале, что его некому отправить (у команды нет чатов)
+    const reached = async (kind: string) => {
+      const { rows } = await admin.query<{ n: number }>(
+        `select (select count(*) from app.outbox where kind = $1 and payload ->> 'listing_id' = $2)
+              + (select count(*) from app.audit_log where action = 'outbox.no_recipients'
+                   and object_id = $2 and detail ->> 'kind' = $1) as n`,
+        [kind, readyId],
+      );
+      return Number(rows[0]?.n ?? 0);
+    };
+    expect(await reached("ops.service_submitted")).toBeGreaterThan(0);
+
+    const res = await submit(readyId);
+    expect(res.status).toBe(200);
+    const listing = (await res.json()) as VendorListing;
+    expect(listing).toMatchObject({ id: readyId, status: "review", reviewBlockers: [] });
+    expect(await reached("ops.listing_submitted")).toBeGreaterThan(0);
+    // Уже на проверке — второй раз не отправить
+    expect(await errorOf(await submit(readyId))).toMatchObject({ status: 409, code: "illegal_transition" });
+  });
+
+  it("чужая — 404; сотрудник площадки — 403 vendor_owner_required", async () => {
+    expect((await submit(B.draftId)).status).toBe(404);
+    const memberUser = vendorTelegramUser();
+    const memberId = randomUUID();
+    await admin.query(
+      `insert into app.vendor_users (id, vendor_id, phone_hash, tg_user_hash, tg_linked_at, role)
+       values ($1, $2, $3, $4, now(), 'member')`,
+      [memberId, A.accountId, randomBytes(32), tgIdHash(memberUser.id)],
+    );
+    await admin.query(
+      "insert into pii.vendor_user_profiles (vendor_user_id, phone, full_name) values ($1, '+998000000114', 'Staff A3')",
+      [memberId],
+    );
+    const token = await vendorToken(memberUser);
+    expect(await errorOf(await submit(A.draftId, token))).toMatchObject({
+      status: 403,
+      code: "vendor_owner_required",
+    });
+  });
+
+  it("отклонённую услугу «Сохранить черновик» делает черновиком: отказ — в прошлом круге", async () => {
+    const { rows } = await admin.query<{ id: string }>(
+      `insert into app.listing_services (listing_id, category_code, service_type, status, price_uzs, price_unit,
+                                         decision, decision_reason, decided_at)
+       values ($1, 'hall', 'fotiha_hall', 'rejected', 100000, 'per_guest', 'declined', 'Нужна цена за гостя', now())
+       returning id`,
+      [A.draftId],
+    );
+    const res = await call(`/vendor/listings/${A.draftId}/services/${rows[0]?.id}`, {
+      ...patch(A.token, { priceUzs: 120_000, priceUnit: "per_guest", submit: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ status: "draft", priceUzs: 120_000, decision: null });
   });
 });
 

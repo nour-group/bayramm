@@ -733,6 +733,8 @@ describe("команда", () => {
       role: "admin",
       linked: true,
     });
+    // Чат с ботом — отдельно от привязки: без него оповещения команды не приходят
+    expect(list.items.every((m) => typeof m.botLinked === "boolean")).toBe(true);
     expect(await status(api("manager", "GET", "/staff/team"))).toBe(403);
   });
 

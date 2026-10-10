@@ -267,7 +267,11 @@ describe("outbox: отправка и оповещение о недоставл
       const deps = {
         db,
         telegram: telegramClient({ token: BOT_TOKEN }),
-        urls: { webAppUrl: "http://localhost:5173", vendorAppUrl: "http://localhost:5174" },
+        urls: {
+          webAppUrl: "http://localhost:5173",
+          vendorAppUrl: "http://localhost:5174",
+          adminAppUrl: "http://localhost:5175",
+        },
       };
       const first = await dispatchOutbox(deps);
       expect(first).toMatchObject({ dead: 1, sent: 0 });

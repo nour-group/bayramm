@@ -26,6 +26,7 @@ import type {
 import type { ListingService, ListingServices } from "@bayramm/shared/api/services";
 import type {
   ListingDetail,
+  MetricsOverview,
   ServiceQueue,
   StaffRequestList,
   VendorDetail,
@@ -779,5 +780,56 @@ describe("кабинет: витрины, услуги, предложения, 
       headers: { Authorization: `Bearer ${vendorToken}`, "If-Match": String(change.version + 1) },
     });
     expect(hall.status).toBe(422);
+  });
+
+  it("услуга черновика — в очереди модерации и в счётчике; отказ — партнёру; «черновиком» — черновик", async () => {
+    // Новая витрина вендора — черновик (ЗАГС): до публикации партнёр видит «на проверке»
+    const draft = await ok<ListingDetail>(
+      api("manager", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "zags" }),
+      201,
+    );
+    expect(draft.status).toBe("draft");
+    const created = await ok<ListingService>(
+      request(vendorToken, "POST", `/vendor/listings/${draft.id}/services`, {
+        type: "simple_registration",
+        priceUzs: 500_000,
+        priceUnit: "per_event",
+      }),
+      201,
+    );
+    expect(created.status).toBe("review");
+    const queue = await ok<ServiceQueue>(api("moderator", "GET", "/staff/services?limit=100"));
+    expect(queue.items.find((i) => i.service.id === created.id)).toMatchObject({
+      kind: "review",
+      listing: { id: draft.id, status: "draft", categoryCode: "zags" },
+      proposedBy: { kind: "partner" },
+    });
+    const metrics = await ok<MetricsOverview>(api("moderator", "GET", "/staff/metrics?weeks=1"));
+    expect(metrics.queues.servicesPending).toBeGreaterThanOrEqual(1);
+    const alerts = await admin.query<{ n: number }>(
+      `select (select count(*) from app.outbox where kind = 'ops.service_submitted' and payload ->> 'listing_id' = $1)
+            + (select count(*) from app.audit_log where action = 'outbox.no_recipients' and object_id = $1) as n`,
+      [draft.id],
+    );
+    expect(Number(alerts.rows[0]?.n)).toBeGreaterThan(0);
+
+    const declined = await ok<ListingService>(
+      api("moderator", "POST", `/staff/services/${created.id}/decline`, { reason: "Цена — за что именно?" }),
+    );
+    expect(declined.status).toBe("rejected");
+    const notices = await admin.query(
+      "select payload ->> 'decision' as decision from app.outbox where kind = 'vendor.service_decided' and payload ->> 'service_id' = $1",
+      [created.id],
+    );
+    expect(notices.rows.map((r) => r.decision)).toEqual(["declined"]);
+
+    const saved = await ok<ListingService>(
+      request(vendorToken, "PATCH", `/vendor/listings/${draft.id}/services/${created.id}`, {
+        priceUzs: 550_000,
+        priceUnit: "per_event",
+        submit: false,
+      }),
+    );
+    expect(saved).toMatchObject({ status: "draft", priceUzs: 550_000, decision: null });
   });
 });

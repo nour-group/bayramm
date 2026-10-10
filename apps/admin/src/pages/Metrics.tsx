@@ -1,6 +1,7 @@
 /* Метрики запуска — только чтение, только числа (все роли). Считает база, определения — одни
    с отчётами бота: ответ площадки (не «связались» от команды), в срок, какие заявки в расчёте
-   доли. Здесь — очереди команды, сводка по категориям за 30 дней, таблица по неделям и вендоры
+   доли. Здесь — очереди команды (плитка — ссылка в раздел, где очередь разбирают, если он есть
+   у роли), сводка по категориям за 30 дней, таблица по неделям и вендоры
    за 30 дней с сортировкой по доле ответов в срок; фильтр категории — у недель и вендоров
    (на телефоне — в шторке). Ниже вендоров — «Контакты витрин»: у каких витрин чаще открывают
    контакты и звонят или пишут в Telegram (те же 30 дней и тот же фильтр категории). На странице
@@ -22,10 +23,11 @@ import type {
 } from "@bayramm/shared/api/staff";
 import { Dialog, RadioGroup, Select } from "@bayramm/ui/react";
 import { useState } from "react";
-import { useLoad } from "../api";
+import { useCan, useLoad } from "../api";
 import { CategoryChip, categoryName, categoryOptions } from "../categories";
 import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel, weekNumber } from "../format";
 import { usePhone } from "../layout";
+import { SECTION_PERMISSION, type Section } from "../router";
 import { t } from "../texts";
 import { ActiveFilter, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
 
@@ -38,8 +40,19 @@ const QUEUES: readonly (keyof OpsQueues)[] = [
   "deadTotal",
   "listingsReview",
   "revisionsPending",
+  "servicesPending",
   "photosPending",
 ];
+/** Где очередь разбирают: плитка «Сейчас» ведёт туда */
+const QUEUE_SECTION: Readonly<Record<keyof OpsQueues, Section>> = {
+  awaiting: "requests",
+  overdue: "requests",
+  deadTotal: "notifications",
+  listingsReview: "moderation",
+  revisionsPending: "moderation",
+  servicesPending: "moderation",
+  photosPending: "moderation",
+};
 /** Эти очереди, если не пусты, — выделить */
 const QUEUE_WARN: ReadonlySet<keyof OpsQueues> = new Set(["overdue", "deadTotal"]);
 
@@ -165,14 +178,31 @@ function CategoryFilter({
 }
 
 function Queues({ queues }: { queues: OpsQueues }) {
+  const can = useCan();
   return (
     <ul className="stats">
-      {QUEUES.map((key) => (
-        <li key={key} className={`stat${QUEUE_WARN.has(key) && queues[key] > 0 ? " stat-warn" : ""}`}>
-          <span className="stat-value">{queues[key]}</span>
-          <span className="stat-label">{t.metricsQueues[key]}</span>
-        </li>
-      ))}
+      {QUEUES.map((key) => {
+        const className = `stat${QUEUE_WARN.has(key) && queues[key] > 0 ? " stat-warn" : ""}`;
+        const section = QUEUE_SECTION[key];
+        const body = (
+          <>
+            <span className="stat-value">{queues[key]}</span>
+            <span className="stat-label">{t.metricsQueues[key]}</span>
+          </>
+        );
+        // Раздела у роли нет (модератору — заявки): плитка без ссылки, иначе — «нет доступа»
+        return can(SECTION_PERMISSION[section]) ? (
+          <li key={key}>
+            <Link to={{ name: section }} className={`${className} stat-link`}>
+              {body}
+            </Link>
+          </li>
+        ) : (
+          <li key={key} className={className}>
+            {body}
+          </li>
+        );
+      })}
     </ul>
   );
 }

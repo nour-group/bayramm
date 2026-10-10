@@ -38,6 +38,7 @@ const MODERATOR: StaffMe = {
   role: "moderator",
   displayName: "Test moderator",
   username: null,
+  botLinked: true,
   permissions: ["catalog.read", "listings.publish", "listings.moderate", "metrics.read"],
 };
 const ADMIN: StaffMe = {
@@ -91,7 +92,15 @@ const OVERVIEW: MetricsOverview = {
     },
     WEEK,
   ],
-  queues: { awaiting: 3, overdue: 1, deadTotal: 0, listingsReview: 2, revisionsPending: 1, photosPending: 0 },
+  queues: {
+    awaiting: 3,
+    overdue: 1,
+    deadTotal: 0,
+    listingsReview: 2,
+    revisionsPending: 1,
+    photosPending: 0,
+    servicesPending: 4,
+  },
 };
 
 const vendorRow = (id: string, code: string, rate: number | null, requests: number): VendorMetrics => ({
@@ -266,9 +275,20 @@ describe("раздел «Метрики»", () => {
 
     // очереди: просрочка выделена, пустое недоставленное — нет
     const stats = [...container.querySelectorAll(".stat")];
-    expect(stats).toHaveLength(6);
+    expect(stats).toHaveLength(7);
     expect(stats[1]?.className).toContain("stat-warn");
     expect(stats[2]?.className).not.toContain("stat-warn");
+    // Плитка — ссылка туда, где очередь разбирают; заявок и уведомлений у модератора нет — без ссылки
+    expect(stats.map((el) => el.getAttribute("href"))).toEqual([
+      null,
+      null,
+      null,
+      "/moderation",
+      "/moderation",
+      "/moderation",
+      "/moderation",
+    ]);
+    expect(stats[5]?.textContent).toBe(`4${t.metricsQueues.servicesPending}`);
 
     // недели: текущая — «идёт», пустая доля — прочерк; прошлая — 50 % (3 из 6), медиана и 90%
     const weeks = [...container.querySelectorAll("section[aria-labelledby='weekly-title'] tbody tr")];

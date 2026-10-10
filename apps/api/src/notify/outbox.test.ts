@@ -12,7 +12,11 @@ const VENDOR_ID = "aaaaaaaa-0000-4000-8000-000000000001";
 const VENDOR_USER_ID = "aaaaaaaa-0000-4000-8000-000000000011";
 const CLIENT_ID = "cccccccc-0000-4000-8000-000000000001";
 const STAFF_ID = "00000000-0000-4000-8000-00000000a001";
-const URLS = { webAppUrl: "https://app.example", vendorAppUrl: "https://vendor.example" };
+const URLS = {
+  webAppUrl: "https://app.example",
+  vendorAppUrl: "https://vendor.example",
+  adminAppUrl: "https://admin.example",
+};
 const NOW = new Date("2026-10-01T09:00:00Z");
 const CREATED = new Date("2026-10-01T05:00:00Z");
 
@@ -39,6 +43,10 @@ interface World {
   revision?: Record<string, unknown> | null;
   /** Площадка оповещения о новых фото: название, код вендора, сколько ждёт решения */
   photosListing?: Record<string, unknown> | null;
+  /** Витрина оповещений об услугах и отправке на проверку (тот же запрос к listings) */
+  listing?: Record<string, unknown> | null;
+  /** Услуга решения vendor.service_decided */
+  service?: Record<string, unknown> | null;
 }
 
 function db(world: World = {}) {
@@ -82,8 +90,11 @@ function db(world: World = {}) {
     }
     if (q.sql.includes('from "app"."listing_revisions" as "rv"'))
       return world.revision ? [world.revision] : [];
-    if (q.sql.includes('from "app"."listings" as "l"'))
-      return world.photosListing ? [world.photosListing] : [];
+    if (q.sql.includes('from "app"."listing_services" as "s"')) return world.service ? [world.service] : [];
+    if (q.sql.includes('from "app"."listings" as "l"')) {
+      const listing = world.listing ?? world.photosListing;
+      return listing ? [listing] : [];
+    }
     if (q.sql.includes('from "app"."outbox" as "o"')) return world.deadRow ? [world.deadRow] : [];
     return [];
   });
@@ -289,6 +300,17 @@ describe("dispatchOutbox: сообщения", () => {
     expect(moderator.tg.calls[0]?.chat_id).toBe(9002);
     for (const part of ["Test Hall", "V101", "название, описание (рус.)"])
       expect(moderator.tg.calls[0]?.text).toContain(part);
+    // Кнопка — страница правки в панели (Mini App с путём)
+    expect(moderator.tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          {
+            text: "Открыть в панели",
+            web_app: { url: "https://admin.example/revisions/0c0c0c0c-0000-4000-8000-000000000001" },
+          },
+        ],
+      ],
+    });
 
     const manager = await run({
       revision,
@@ -316,7 +338,7 @@ describe("dispatchOutbox: сообщения", () => {
         request_id: null,
         payload: { listing_id: "aaaaaaaa-0000-4000-8000-000000000101" },
       });
-    const photosListing = { name: "Test Hall", public_code: "V101", pending: 2 };
+    const photosListing = { name: "Test Hall", status: "active", public_code: "V101", pending: 2 };
     const moderator = await run({
       photosListing,
       staff: { active: true, role: "moderator", telegram_chat_id: "9002" },
@@ -325,6 +347,16 @@ describe("dispatchOutbox: сообщения", () => {
     expect(moderator.report.sent).toBe(1);
     for (const part of ["Test Hall", "V101", "Ждут решения: 2", "«Модерация»"])
       expect(moderator.tg.calls[0]?.text).toContain(part);
+    expect(moderator.tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [[{ text: "Открыть в панели", web_app: { url: "https://admin.example/moderation" } }]],
+    });
+    // Фото черновика: витрины ещё нет на сайте — так и сказано
+    const draft = await run({
+      photosListing: { ...photosListing, status: "draft" },
+      staff: { active: true, role: "moderator", telegram_chat_id: "9002" },
+      rows: [photosRow(5)],
+    });
+    expect(draft.tg.calls[0]?.text).toContain("Витрина ещё не на сайте (черновик)");
     const listing = moderator.fake.queries.find((q) => q.sql.includes('from "app"."listings" as "l"'));
     expect(listing?.parameters).toContain("aaaaaaaa-0000-4000-8000-000000000101");
 
@@ -379,6 +411,112 @@ describe("dispatchOutbox: сообщения", () => {
     const other = await run({ vendorUser: member, rows: [granted("aaaaaaaa-0000-4000-8000-000000000002")] });
     expect(other.tg.calls).toHaveLength(0);
     expect(other.report.dead).toBe(1);
+  });
+
+  it("услуги черновика — модератору: сколько ждёт и что витрины ещё нет на сайте; решили — не о чем", async () => {
+    const servicesRow = (n: number) =>
+      outboxRow({
+        id: `0b0b0b0b-0000-4000-8000-00000000002${n}`,
+        kind: "ops.service_submitted",
+        recipient_kind: "staff",
+        recipient_id: STAFF_ID,
+        request_id: null,
+        payload: { listing_id: "aaaaaaaa-0000-4000-8000-000000000102" },
+      });
+    const listing = {
+      name: "Draft Hall",
+      status: "draft",
+      public_code: "V101",
+      category: "Тойхона",
+      pending: 3,
+    };
+    const moderator = await run({
+      listing,
+      staff: { active: true, role: "moderator", telegram_chat_id: "9002" },
+      rows: [servicesRow(1)],
+    });
+    expect(moderator.report.sent).toBe(1);
+    for (const part of ["Draft Hall", "Тойхона", "V101", "Ждут решения: 3", "не на сайте (черновик)"])
+      expect(moderator.tg.calls[0]?.text).toContain(part);
+    expect(moderator.tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [[{ text: "Открыть в панели", web_app: { url: "https://admin.example/moderation" } }]],
+    });
+    // Считает всё, что ждёт решения по витрине, — одним запросом при отправке
+    const query = moderator.fake.queries.find((q) => q.sql.includes('from "app"."listings" as "l"'));
+    expect(query?.sql).toContain("s.status = 'review' or s.proposal is not null");
+    const decided = await run({ listing: { ...listing, pending: 0 }, rows: [servicesRow(2)] });
+    expect(decided.tg.calls).toHaveLength(0);
+    expect(decided.report.dead).toBe(1);
+    // Витрину отклонили, пока оповещение ждало: её услуг в очереди нет — и сообщения нет
+    const rejected = await run({ listing: { ...listing, status: "rejected" }, rows: [servicesRow(3)] });
+    expect(rejected.tg.calls).toHaveLength(0);
+  });
+
+  it("витрина на проверке — тем, кто публикует, с кнопкой на её страницу; уже решили — не о чем", async () => {
+    const LISTING = "aaaaaaaa-0000-4000-8000-000000000102";
+    const submittedRow = (n: number) =>
+      outboxRow({
+        id: `0b0b0b0b-0000-4000-8000-00000000003${n}`,
+        kind: "ops.listing_submitted",
+        recipient_kind: "staff",
+        recipient_id: STAFF_ID,
+        request_id: null,
+        payload: { listing_id: LISTING },
+      });
+    const listing = { name: "Draft Hall", status: "review", public_code: "V101", category: "Тойхона" };
+    const moderator = await run({
+      listing,
+      staff: { active: true, role: "moderator", telegram_chat_id: "9002" },
+      rows: [submittedRow(1)],
+    });
+    expect(moderator.report.sent).toBe(1);
+    for (const part of ["Витрина отправлена на проверку", "Draft Hall", "Тойхона", "V101"])
+      expect(moderator.tg.calls[0]?.text).toContain(part);
+    expect(moderator.tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [
+        [{ text: "Открыть в панели", web_app: { url: `https://admin.example/listings/${LISTING}` } }],
+      ],
+    });
+    // Менеджер не публикует — ему не шлём
+    const manager = await run({
+      listing,
+      staff: { active: true, role: "manager", telegram_chat_id: "9003" },
+      rows: [submittedRow(2)],
+    });
+    expect(manager.tg.calls).toHaveLength(0);
+    // Опубликовали или вернули до отправки — не о чем
+    const decided = await run({ listing: { ...listing, status: "active" }, rows: [submittedRow(3)] });
+    expect(decided.tg.calls).toHaveLength(0);
+    expect(decided.report.dead).toBe(1);
+  });
+
+  it("решение по услуге — владельцу кабинета, кнопка ведёт в «Услуги»", async () => {
+    const { tg, report } = await run({
+      service: {
+        id: "0d0d0d0d-0000-4000-8000-000000000001",
+        listing_id: "aaaaaaaa-0000-4000-8000-000000000102",
+        category_code: "hall",
+        service_type: "banquet_weekday",
+        status: "rejected",
+        name_ru: null,
+        name_uz: null,
+        decision_reason: "Цена без НДС?",
+        listing_name: "Draft Hall",
+        vendor_id: VENDOR_ID,
+      },
+      rows: [
+        outboxRow({
+          kind: "vendor.service_decided",
+          request_id: null,
+          payload: { service_id: "0d0d0d0d-0000-4000-8000-000000000001", decision: "declined" },
+        }),
+      ],
+    });
+    expect(report.sent).toBe(1);
+    expect(tg.calls[0]?.text).toContain("Цена без НДС?");
+    expect(tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [[{ text: "Открыть услуги", web_app: { url: "https://vendor.example/services" } }]],
+    });
   });
 
   it("просрочка: клиенту — предложение посмотреть похожие, администратору — оповещение по-русски", async () => {

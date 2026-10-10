@@ -19,6 +19,7 @@ const ADMIN: StaffMe = {
   role: "admin",
   displayName: "Test Admin",
   username: null,
+  botLinked: true,
   permissions: ["catalog.read", "vendors.write", "vendor_users.write", "listings.write", "settings.write"],
 };
 

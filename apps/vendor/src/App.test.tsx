@@ -688,6 +688,7 @@ const LISTING: VendorListing = {
   photos: [],
   phone: "+998000000999",
   blockers: [],
+  reviewBlockers: [],
   photoLimits: { min: 3, max: 10 },
   attributes: {},
   missingAttributes: [],

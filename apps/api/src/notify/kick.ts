@@ -21,12 +21,16 @@ import type { Urls } from "./render";
 export const KICK_BATCH = 10;
 const SEND_TIMEOUT_MS = 10_000;
 
-type OutboxEnv = Pick<Env, "HYPERDRIVE" | "TELEGRAM_BOT_TOKEN" | "WEB_APP_URL" | "VENDOR_APP_URL">;
+type OutboxEnv = Pick<
+  Env,
+  "HYPERDRIVE" | "TELEGRAM_BOT_TOKEN" | "WEB_APP_URL" | "VENDOR_APP_URL" | "ADMIN_APP_URL"
+>;
 
-export function outboxUrls(env: Pick<Env, "WEB_APP_URL" | "VENDOR_APP_URL">): Urls {
+export function outboxUrls(env: Pick<Env, "WEB_APP_URL" | "VENDOR_APP_URL" | "ADMIN_APP_URL">): Urls {
   return {
     webAppUrl: httpUrl("WEB_APP_URL", env.WEB_APP_URL),
     vendorAppUrl: httpUrl("VENDOR_APP_URL", env.VENDOR_APP_URL),
+    adminAppUrl: httpUrl("ADMIN_APP_URL", env.ADMIN_APP_URL),
   };
 }
 

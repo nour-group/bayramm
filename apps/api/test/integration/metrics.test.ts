@@ -370,7 +370,11 @@ describe("отчёты команде и ошибки API", () => {
         renderNotice(
           trx,
           row,
-          { webAppUrl: "http://localhost:5173", vendorAppUrl: "http://localhost:5174" },
+          {
+            webAppUrl: "http://localhost:5173",
+            vendorAppUrl: "http://localhost:5174",
+            adminAppUrl: "http://localhost:5175",
+          },
           new Date(),
         ),
       );

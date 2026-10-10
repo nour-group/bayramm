@@ -256,7 +256,8 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
   const vendorId = vendorParam ? pathId(vendorParam) : undefined;
   const categoryParam = c.req.query("category");
   const category = categoryParam && /^[a-z_]{2,20}$/.test(categoryParam) ? categoryParam : undefined;
-  // Очередь «Новые фото»: опубликованные карточки, у которых есть фото на решении
+  // Очередь «Новые фото»: карточки (кроме отклонённых), у которых есть фото на решении — у
+  // черновика тоже: партнёр загрузил, решить можно до публикации (как app.metrics_ops_now)
   const pendingPhotos = c.req.query("photos") === "pending";
   const { limit, offset } = paging((key) => c.req.query(key));
 
@@ -299,7 +300,7 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
       ]);
     if (status) query = query.where("l.status", "=", status);
     if (pendingPhotos) {
-      query = query.where("l.status", "=", "active").where(
+      query = query.where("l.status", "<>", "rejected").where(
         sql<boolean>`exists (select 1 from app.photos p
                      where p.listing_id = l.id and p.deleted_at is null and p.status = 'ready'
                        and p.moderation = 'pending')`,

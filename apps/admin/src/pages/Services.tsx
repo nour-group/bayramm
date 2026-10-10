@@ -4,6 +4,9 @@
    проверяются теми же правилами, что на сервере (serviceErrors), — ошибки подсвечиваются до
    отправки. Модератор и администратор заводят и правят сразу на витрину; менеджер — на
    проверку (у опубликованной витрины правка активной услуги — предложением).
+   Услуга на проверке или с предложением изменений (от партнёра или менеджера, и у черновика
+   тоже) — тому, кто решает по модерации, здесь же «Одобрить» и «Отклонить» с причиной для
+   партнёра, как в очереди «Модерации» (ServiceDecision — один на оба места).
    Форма услуги — на месте, под списком: длинная, со своими списками выбора, в шторке ей
    тесно. После любого действия витрина перечитывается: меняются цена «от» и готовность. */
 
@@ -30,7 +33,7 @@ import { type Failure, type Result, useCan, useSession } from "../api";
 import { ru, unitName } from "../categories";
 import { formatPrice, formatSum } from "../format";
 import { apiErrorText, t } from "../texts";
-import { ErrorText, Field, Pill, type Tone } from "../ui";
+import { ConfirmForm, ErrorText, Field, focusSection, PhoneSheet, Pill, type Tone } from "../ui";
 import { useUnsaved } from "../unsaved";
 
 const STATUS_TONE: Record<ListingService["status"], Tone> = {
@@ -101,6 +104,93 @@ export function ServiceChanges({ service }: { service: ListingService }) {
   );
 }
 
+/** Услуга ждёт решения: новая на проверке или с предложением изменений */
+export const awaitsDecision = (service: ListingService) =>
+  service.status === "review" || service.proposal !== null;
+
+/**
+ * Одобрить или отклонить услугу (новую или её изменения) — в очереди «Модерации» и на странице
+ * витрины. Отказ — с причиной, её увидит партнёр (на телефоне — в шторке). approveClass —
+ * класс кнопки «Одобрить»: очередь по нему ставит фокус на следующую услугу
+ */
+export function ServiceDecision({
+  service,
+  onDecided,
+  approveClass,
+}: {
+  service: ListingService;
+  onDecided: (outcome: "approved" | "declined") => void;
+  approveClass?: string;
+}) {
+  const { api } = useSession();
+  const [declining, setDeclining] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const declineButton = useRef<HTMLButtonElement>(null);
+  const name = service.name.ru;
+
+  const approve = async () => {
+    setBusy(true);
+    const result = await api.post<ListingService>(`/staff/services/${service.id}/approve`);
+    setBusy(false);
+    setFailure(result.ok ? null : result);
+    if (result.ok) onDecided("approved");
+  };
+  const decline = async (reason: string): Promise<Failure | null> => {
+    const result = await api.post<ListingService>(`/staff/services/${service.id}/decline`, { reason });
+    if (!result.ok) return result;
+    setDeclining(false);
+    onDecided("declined");
+    return null;
+  };
+
+  return (
+    <>
+      <div className="rcard-actions">
+        <button
+          type="button"
+          className={`btn btn-primary${approveClass ? ` ${approveClass}` : ""}`}
+          disabled={busy}
+          onClick={() => void approve()}
+        >
+          {t.serviceApprove}
+          <span className="visually-hidden">: {name}</span>
+        </button>
+        <button
+          ref={declineButton}
+          type="button"
+          className="btn btn-danger"
+          aria-expanded={declining}
+          disabled={busy}
+          onClick={() => setDeclining(!declining)}
+        >
+          {t.serviceDecline}
+          <span className="visually-hidden">: {name}</span>
+        </button>
+      </div>
+      {failure ? <ErrorText failure={failure} /> : null}
+      <PhoneSheet
+        open={declining}
+        title={`${t.serviceDecline}: ${name}`}
+        onClose={() => setDeclining(false)}
+        returnFocus={declineButton}
+      >
+        <div className="rcard-actions">
+          <ConfirmForm
+            hint={t.serviceDeclineHint}
+            label={t.reason}
+            required
+            danger
+            submitLabel={t.serviceDecline}
+            onSubmit={decline}
+            onCancel={() => setDeclining(false)}
+          />
+        </div>
+      </PhoneSheet>
+    </>
+  );
+}
+
 interface ServicesProps {
   listing: ListingDetail;
   category: CategoryConfig;
@@ -114,6 +204,10 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
   const { api } = useSession();
   const can = useCan();
   const editable = can("listings.write");
+  // Решает по услугам тот, у кого право модерации (как очередь GET /staff/services)
+  const decides = can("revisions.moderate");
+  // Что решили здесь — строкой статуса: кнопки решения исчезли, фокус — на заголовке блока
+  const [said, setSaid] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -147,6 +241,16 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
     onChanged();
   };
 
+  const decided = (service: ListingService, outcome: "approved" | "declined") => {
+    setSaid(
+      outcome === "approved"
+        ? t.serviceApprovedHere(service.name.ru)
+        : t.serviceDeclinedHere(service.name.ru),
+    );
+    focusSection("services-title");
+    onChanged();
+  };
+
   return (
     <section className="panel" aria-labelledby="services-title">
       <div className="panel-head">
@@ -168,6 +272,9 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
         ) : null}
       </div>
       <p className="muted small">{t.servicesHint}</p>
+      <p className="visually-hidden" aria-live="polite">
+        {said}
+      </p>
       <p className="price-from">
         <span className="muted">{t.priceFromAuto}: </span>
         <strong>
@@ -234,6 +341,12 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
                   <div className="notice notice-warn">
                     <p className="notice-title">{t.serviceProposal}</p>
                     <ServiceChanges service={service} />
+                  </div>
+                ) : null}
+                {decides && awaitsDecision(service) ? (
+                  <div className="notice notice-warn">
+                    <p className="notice-title">{t.serviceWaits}</p>
+                    <ServiceDecision service={service} onDecided={(outcome) => decided(service, outcome)} />
                   </div>
                 ) : null}
                 {editable ? (
