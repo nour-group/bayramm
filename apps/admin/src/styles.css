@@ -1191,6 +1191,266 @@ textarea.input {
   font-weight: 500;
 }
 
+/* ── поля под свои данные (fields.tsx, reason.tsx) ──────────────────────── */
+
+/* Поле с приставкой («+998», «@», «…/venue/») или единицей («сум»): одна рамка на всё, текст
+   приставки — вторичным цветом, стереть его нельзя. Рамка фокуса — вокруг всего поля */
+.affix {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--hit-min);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--white);
+}
+
+.affix-pre,
+.affix-post {
+  display: flex;
+  flex: none;
+  align-items: center;
+  color: var(--muted);
+  font-size: var(--fs-15);
+  white-space: nowrap;
+}
+
+.affix-pre {
+  padding-left: 12px;
+}
+
+.affix-post {
+  padding-right: 12px;
+}
+
+/* Поле внутри — без своей рамки и кольца: их держит .affix */
+.affix .affix-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+
+.affix .affix-pre + .affix-input {
+  padding-left: 6px;
+}
+
+.affix .affix-input:focus-visible {
+  outline: none;
+}
+
+.affix:focus-within {
+  outline: 3px solid var(--coral);
+  outline-offset: 2px;
+}
+
+.field-bad .affix {
+  border-color: var(--berry);
+}
+
+.affix.is-disabled {
+  background: var(--paper);
+}
+
+/* Сумма — цифрами одной ширины, к единице: разряды стоят столбиком */
+.money-input {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Адрес витрины и «Из названия» — в строку, кнопка уходит вниз, если не влезла */
+.slug-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.slug-row .affix {
+  flex: 1 1 260px;
+  width: auto;
+}
+
+/* Число: «−», поле, «+» и единица — в строку */
+.num-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.num-unit {
+  color: var(--muted);
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+/* Поле между «−» и «+» не сжимается уже пальца: узкая колонка переносит строку, а не поле */
+.num-row .ui-number-input {
+  min-width: 64px;
+}
+
+/* Один из вариантов сегментами — во всю ширину поля: сегменты делят её поровну, длинная
+   подпись переносится, а не выталкивает страницу вбок на 320px */
+.choice-segmented {
+  display: flex;
+  width: 100%;
+  max-width: 480px;
+}
+
+.choice-segmented .ui-radio {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 10px;
+  text-align: center;
+}
+
+/* Строки с пояснением (роль) — не шире чтения: на компьютере строка во весь экран теряет глаз */
+.choice-row {
+  width: 100%;
+  max-width: 560px;
+}
+
+.choice-row .ui-radio {
+  padding: 6px 12px;
+}
+
+/* Несколько вариантов — чипами, в рамке группы, как список данных витрины */
+.chips-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-11);
+}
+
+.chips-field legend {
+  padding: 0 4px;
+  color: var(--plum);
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
+.chips-field > p {
+  margin: 0;
+}
+
+.chips-field.field-bad {
+  border-color: var(--berry);
+}
+
+.chip-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+/* Чип — галочка набора (ui-check) в рамке пилюли: под рисунком настоящий checkbox */
+.chip-check {
+  align-items: center;
+  gap: var(--gap-7);
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  background: var(--white);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.chip-check .ui-check-box {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-999);
+}
+
+.chip-check .ui-check-label {
+  padding-top: 0;
+}
+
+/* Выбранный чип — рамкой и подложкой (где нет :has — его видно по галочке) */
+.chip-check:has(.ui-native:checked) {
+  border-color: var(--plum);
+  background: var(--lilac);
+  color: var(--plum);
+}
+
+/* Частые причины — чипами над полем причины */
+.reason-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+.reason-chip {
+  font-weight: 600;
+}
+
+/* Телефон, который не показан: маска и «Изменить номер» — в строку */
+.phone-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+/* Вместимость: «от» и «до» — парой полей с общей подписью */
+.cap-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-12);
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.cap-pair legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--plum);
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
+.cap-pair > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* Настройка-число: «−», поле, «+» и единица — по своей ширине, а не в колонку поля времени;
+   два напоминания на узком телефоне встают друг под другом */
+.setting-inputs .field.setting-num {
+  flex: 0 1 auto;
+  width: auto;
+}
+
+/* Единица цены одна — словами, на высоте поля рядом */
+.svc-unit-fixed {
+  display: flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+@media (max-width: 719px) {
+  /* Приставка — тем же кеглем, что поле (16px на телефоне) */
+  .affix-pre,
+  .affix-post {
+    font-size: var(--fs-16);
+  }
+
+  /* «От» и «до» с «−» и «+» в две колонки на телефоне не влезают — друг под другом */
+  .cap-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Кнопка сохранения прилипает к низу экрана: длинная форма не прячет её */
 .formbar {
   position: sticky;
@@ -1346,21 +1606,6 @@ textarea.input {
 
 .vuser-invited p {
   margin: 0;
-}
-
-/* Роль и язык — сегментами во всю ширину поля: «Сотрудник площадки» на 320px переносится,
-   а не выталкивает страницу вбок */
-.vuser-choice {
-  display: flex;
-  width: 100%;
-  max-width: 440px;
-}
-
-.vuser-choice .ui-radio {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 4px 10px;
-  text-align: center;
 }
 
 /* Правка пользователя: на телефоне — в шторке, шире — под его карточкой */
@@ -1553,9 +1798,13 @@ textarea.input {
   margin: 8px 0;
 }
 
+/* Месяц — между стрелками, «Сегодня» — рядом со стрелкой вперёд */
 .cal-title {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   font-weight: 700;
+  text-align: center;
 }
 
 /* Дорожки без зазора: вся ширина дорожки — зона нажатия дня. Видимый зазор между днями —

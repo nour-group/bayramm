@@ -13,6 +13,10 @@
    по одной — дни неактивны, пока не пришёл ответ.
    «Несколько дней»: первое нажатие — начало, второе — конец (пальцем, без перетаскивания,
    можно и через месяц), затем «Занять» или «Освободить» — одной правкой, днями целиком.
+   «Освободить» больше одного дня — через подтверждение со счётом: сколько дней выбрано,
+   сколько из них занято и сколько отметил сам вендор (до 400 дней одним нажатием).
+   Месяц листают стрелками, «Сегодня» возвращает к текущему; пока новый месяц грузится, дни
+   прежнего на экране неактивны — отметка не уйдёт в чужой месяц.
    Клетка дня — вся дорожка сетки, не меньше 44px: на 320px месяц выходит на 10px за поля
    страницы и семь дорожек по 44px помещаются без прокрутки вбок. */
 
@@ -25,11 +29,11 @@ import type {
   ListingDetail,
 } from "@bayramm/shared/api/staff";
 import { type CategoryConfig, DAY_PARTS, readAttributes } from "@bayramm/shared/categories";
-import { Tooltip } from "@bayramm/ui/react";
-import { useRef, useState } from "react";
+import { ConfirmSheet, Tooltip, UiIcon } from "@bayramm/ui/react";
+import { useEffect, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { partWindow } from "../categories";
-import { t } from "../texts";
+import { apiErrorText, t } from "../texts";
 import { ErrorText, LoadedView } from "../ui";
 
 const DAY_MS = 86_400_000;
@@ -129,6 +133,25 @@ export function dayState(availability: Availability, day: string): { parts: Part
 
 type Range = { readonly start: string; readonly end: string | null };
 
+/** Что снимет «Освободить»: выбрано дней, из них занято (отмечено) и отмечено вендором */
+export interface FreeCount {
+  readonly days: number;
+  /** null — не узнали (нет связи): подтверждение говорит только число дней */
+  readonly marked: number | null;
+  readonly byVendor: number | null;
+}
+
+/** Счёт для подтверждения по занятым дням отрезка */
+export function freeCount(days: readonly string[], busy: readonly BusyDay[]): FreeCount {
+  const chosen = new Set(days);
+  const marked = busy.filter((b) => chosen.has(b.day));
+  return {
+    days: days.length,
+    marked: marked.length,
+    byVendor: marked.filter((b) => b.source === "vendor").length,
+  };
+}
+
 export function Calendar({ listingId, category }: { listingId: string; category: CategoryConfig }) {
   const { api } = useSession();
   const can = useCan();
@@ -149,6 +172,12 @@ export function Calendar({ listingId, category }: { listingId: string; category:
   const [range, setRange] = useState<Range | null>(null);
   // Режим parts: открытый день — его части под сеткой
   const [opened, setOpened] = useState<string | null>(null);
+  // «Освободить» несколько дней — подтверждение со счётом
+  const [freeing, setFreeing] = useState<FreeCount | null>(null);
+  // Листнули месяц: на экране — прежний ответ, пока не пришёл новый (useLoad его не стирает)
+  const [waiting, setWaiting] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loaded — повод: пришёл ответ нового месяца
+  useEffect(() => setWaiting(false), [loaded]);
   const editable = can("listings.write");
   const parts = category.availability === "parts";
   const selected = range ? rangeDays(range.start, range.end ?? range.start, today) : [];
@@ -163,7 +192,14 @@ export function Calendar({ listingId, category }: { listingId: string; category:
   const goMonth = (delta: number) => {
     setFailure(null);
     setOpened(null);
+    setWaiting(true);
     setMonth(shiftMonth(month, delta));
+  };
+  const goToday = () => {
+    setFailure(null);
+    setOpened(null);
+    setWaiting(true);
+    setMonth(today.slice(0, 7));
   };
 
   const send = async (key: string, input: AvailabilityInput, current: Availability) => {
@@ -215,7 +251,36 @@ export function Calendar({ listingId, category }: { listingId: string; category:
     if (ok) {
       setRange(null);
       setRanging(false);
+      setFreeing(null);
     }
+  };
+
+  // Освободить больше одного дня — сначала счёт: сколько занято и сколько отметил вендор. Дни
+  // за краем показанного месяца — одним запросом отрезка (сервер отдаёт до 400 дней)
+  const askFree = async (current: Availability) => {
+    const first = selected[0];
+    const last = selected.at(-1);
+    if (first === undefined || last === undefined) return;
+    // Прежняя ошибка — не про этот выбор: в подтверждении её не показываем
+    setFailure(null);
+    if (selected.length === 1) {
+      void applyRange("free", current);
+      return;
+    }
+    if (first >= current.from && last <= current.to) {
+      setFreeing(freeCount(selected, current.busy));
+      return;
+    }
+    setPending("count");
+    const result = await api.get<Availability>(
+      `/staff/listings/${listingId}/availability?from=${first}&to=${last}`,
+    );
+    setPending(null);
+    setFreeing(
+      result.ok
+        ? freeCount(selected, result.data.busy)
+        : { days: selected.length, marked: null, byVendor: null },
+    );
   };
 
   const toggleRanging = () => {
@@ -231,14 +296,19 @@ export function Calendar({ listingId, category }: { listingId: string; category:
       {/* Без права правки дни неактивны — и подсказка не зовёт на них нажимать */}
       <p className="muted small">{editable ? hint : t.availabilityReadOnly}</p>
       <div className="cal-head">
-        <button type="button" className="btn btn-sm" onClick={() => goMonth(-1)} aria-label={t.prevMonth}>
-          ←
+        <button type="button" className="ui-icon-btn" onClick={() => goMonth(-1)} aria-label={t.prevMonth}>
+          <UiIcon name="prev" size={17} />
         </button>
         <p className="cal-title" aria-live="polite">
           {monthTitle(month)}
         </p>
-        <button type="button" className="btn btn-sm" onClick={() => goMonth(1)} aria-label={t.nextMonth}>
-          →
+        {month === today.slice(0, 7) ? null : (
+          <button type="button" className="btn btn-sm" onClick={goToday}>
+            {t.calToday}
+          </button>
+        )}
+        <button type="button" className="ui-icon-btn" onClick={() => goMonth(1)} aria-label={t.nextMonth}>
+          <UiIcon name="next" size={17} />
         </button>
       </div>
       {editable && (
@@ -259,13 +329,20 @@ export function Calendar({ listingId, category }: { listingId: string; category:
       )}
       <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
         {(availability) => {
-          const busyByDay = new Map(availability.busy.map((b) => [b.day, b]));
+          // Новый месяц ещё грузится, на экране — прежний ответ: дни неактивны, отметки не видны
+          const stale = waiting;
+          const busyByDay = new Map(stale ? [] : availability.busy.map((b) => [b.day, b]));
           const inRange = new Set(selected);
-          const openedState = opened ? dayState(availability, opened) : null;
+          const openedState = opened && !stale ? dayState(availability, opened) : null;
           return (
             <>
               {parts ? <p className="cal-capacity">{t.capacityNow(availability.parallelCapacity)}</p> : null}
-              <div className="cal">
+              {stale ? (
+                <p className="visually-hidden" role="status">
+                  {t.calLoading}
+                </p>
+              ) : null}
+              <div className="cal" aria-busy={stale || undefined}>
                 {t.weekdays.map((name) => (
                   <span key={name} className="cal-wd" aria-hidden="true">
                     {name}
@@ -279,7 +356,8 @@ export function Calendar({ listingId, category }: { listingId: string; category:
                   const busy = busyByDay.get(day);
                   const past = day < today;
                   const chosen = inRange.has(day);
-                  const load: DayLoad = parts ? dayState(availability, day).load : busy ? "busy" : "free";
+                  const load: DayLoad =
+                    parts && !stale ? dayState(availability, day).load : busy ? "busy" : "free";
                   const status = parts
                     ? load === "free"
                       ? ""
@@ -300,7 +378,7 @@ export function Calendar({ listingId, category }: { listingId: string; category:
                           className={`cal-day${load === "busy" ? " cal-busy" : load === "partial" ? " cal-partial" : ""}${day === today ? " cal-today" : ""}${chosen ? " cal-chosen" : ""}${open && opened === day ? " cal-open" : ""}`}
                           aria-pressed={open ? opened === day : Boolean(busy)}
                           aria-label={label}
-                          disabled={!editable || past || pending !== null}
+                          disabled={!editable || past || pending !== null || stale}
                           onClick={() =>
                             ranging
                               ? pick(day)
@@ -400,7 +478,7 @@ export function Calendar({ listingId, category }: { listingId: string; category:
                   <button
                     type="button"
                     className="btn btn-primary"
-                    disabled={pending !== null}
+                    disabled={pending !== null || stale}
                     onClick={() => void applyRange("busy", availability)}
                   >
                     {t.rangeBusy(selected.length)}
@@ -408,8 +486,8 @@ export function Calendar({ listingId, category }: { listingId: string; category:
                   <button
                     type="button"
                     className="btn"
-                    disabled={pending !== null}
-                    onClick={() => void applyRange("free", availability)}
+                    disabled={pending !== null || stale}
+                    onClick={() => void askFree(availability)}
                   >
                     {t.rangeFree}
                   </button>
@@ -418,6 +496,18 @@ export function Calendar({ listingId, category }: { listingId: string; category:
                   </button>
                 </div>
               )}
+              <ConfirmSheet
+                open={freeing !== null}
+                title={t.rangeFreeTitle}
+                text={freeing ? t.rangeFreeText(freeing.days, freeing.marked, freeing.byVendor) : undefined}
+                confirmLabel={t.rangeFreeConfirm(freeing?.days ?? 0)}
+                cancelLabel={t.cancel}
+                tone="danger"
+                busy={pending !== null}
+                error={freeing && failure ? apiErrorText(failure.code) : undefined}
+                onConfirm={() => void applyRange("free", availability)}
+                onCancel={() => setFreeing(null)}
+              />
             </>
           );
         }}
@@ -441,7 +531,7 @@ export function LeadTime({ listing, category }: { listing: ListingDetail; catego
       </p>
       {services.length > 0 ? (
         <p className="sub">
-          {t.leadServices(services.map((s) => `${s.name.ru} — ${s.leadDays} дн.`).join("; "))}
+          {t.leadServices(services.map((s) => `${s.name.ru} — ${s.leadDays} ${t.daysShort}`).join("; "))}
         </p>
       ) : null}
     </section>

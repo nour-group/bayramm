@@ -33,11 +33,12 @@ import {
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
 import { ConfirmSheet, Select } from "@bayramm/ui/react";
-import { type FormEvent, useCallback, useId, useRef, useState } from "react";
+import { type FormEvent, useCallback, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { CategoryChip, categoryName, categoryOptions } from "../categories";
 import { formatMoment, vendorLabel } from "../format";
 import { usePhone } from "../layout";
+import { ReasonField } from "../reason";
 import { t } from "../texts";
 import {
   ActionBar,
@@ -80,6 +81,13 @@ const PERMISSION = {
 } as const;
 
 const REASON_REQUIRED: ReadonlySet<ListingAction> = new Set(["suspend", "reject"]);
+
+/** Снимают с каталога или отказывают: кнопка подтверждения — цвета отказа, с готовыми причинами */
+const DESTRUCTIVE: ReadonlySet<ListingAction> = new Set(["suspend", "reject"]);
+const REASON_PRESETS: Partial<Record<ListingAction, readonly string[]>> = {
+  suspend: t.reasons.listingSuspend,
+  reject: t.reasons.listingReject,
+};
 
 export function ListingNewPage({ vendorId }: { vendorId: string }) {
   const { loaded, reload } = useLoad<VendorDetail>(`/staff/vendors/${vendorId}`);
@@ -506,7 +514,10 @@ function CategoryPanel({
       <p>
         <CategoryChip code={listing.categoryCode} />
       </p>
-      <p className="muted small">{locked ? t.categoryChangeLocked : t.categoryChangeHint}</p>
+      {/* Открыта форма — что будет, сказано в ней, у кнопки: здесь не повторяем */}
+      {locked || !open ? (
+        <p className="muted small">{locked ? t.categoryChangeLocked : t.categoryChangeHint}</p>
+      ) : null}
       {locked ? null : (
         <button
           ref={button}
@@ -520,6 +531,15 @@ function CategoryPanel({
       )}
       <PhoneSheet open={open} title={t.categoryChange} onClose={close} returnFocus={button}>
         <form className="confirm" onSubmit={submit} noValidate>
+          {/* Что будет — в самой форме, у кнопки: подсказка над блоком в шторке не видна */}
+          <div className="notice notice-warn">
+            {code ? (
+              <p className="notice-title">
+                {t.categoryChangeFromTo(categoryName(listing.categoryCode), categoryName(code))}
+              </p>
+            ) : null}
+            <p>{t.categoryChangeConsequence}</p>
+          </div>
           <Field label={t.categoryNew}>
             {(props) => (
               <Select
@@ -534,7 +554,7 @@ function CategoryPanel({
             )}
           </Field>
           <div className="acts">
-            <button type="submit" className="btn btn-primary" disabled={busy || code === null}>
+            <button type="submit" className="btn btn-danger" disabled={busy || code === null}>
               {t.categoryChange}
             </button>
             <button type="button" className="btn" onClick={close}>
@@ -595,7 +615,6 @@ function StatusActions({
   const { api } = useSession();
   const can = useCan();
   const phone = usePhone();
-  const reasonId = useId();
   const primaryButton = useRef<HTMLButtonElement>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
   const [pending, setPending] = useState<ListingAction | null>(null);
@@ -688,22 +707,17 @@ function StatusActions({
         {pending && (
           <form className="confirm" onSubmit={run} noValidate>
             <p className="muted small">{t.actionHints[pending]}</p>
-            <label htmlFor={reasonId}>
-              {REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
-            </label>
-            <textarea
-              id={reasonId}
-              className="input"
-              rows={2}
-              maxLength={1000}
+            <ReasonField
+              label={REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
               value={reason}
-              onChange={(event) => setReason(event.target.value)}
+              onChange={setReason}
+              presets={REASON_PRESETS[pending]}
               required={REASON_REQUIRED.has(pending)}
             />
             <div className="acts">
               <button
                 type="submit"
-                className="btn btn-primary"
+                className={`btn ${DESTRUCTIVE.has(pending) ? "btn-danger" : "btn-primary"}`}
                 disabled={busy || (REASON_REQUIRED.has(pending) && reason.trim() === "")}
               >
                 {t.actions[pending]}

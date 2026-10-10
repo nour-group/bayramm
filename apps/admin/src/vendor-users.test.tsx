@@ -224,10 +224,23 @@ describe("приглашение в кабинет", () => {
     expect(radio(invite(), t.vuRoles.member)?.checked).toBe(false);
   });
 
-  it("номер не узбекский — запроса нет, ошибка у поля", async () => {
+  it("номер не узбекский — ошибка у поля сразу, номер не попадает в поле, запроса нет", async () => {
     mockApi(MANAGER, vendor([user()]));
     await mount();
-    await type(inputLabelled(invite(), t.userPhone), "+7 912 000 00 00");
+    const phone = inputLabelled(invite(), t.userPhone);
+    await type(phone, "+7 912 000 00 00");
+    expect(phone?.value).toBe("");
+    expect(invite().querySelector(".field-error")?.textContent).toBe(t.input.phoneForeign);
+    await click(radio(invite(), t.vuRoles.owner));
+    await click(button(invite(), t.vuInvite));
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+
+  it("неполный номер — «9 цифр после +998» до отправки", async () => {
+    mockApi(MANAGER, vendor([user()]));
+    await mount();
+    const phone = inputLabelled(invite(), t.userPhone);
+    await type(phone, "90 111");
     await click(radio(invite(), t.vuRoles.owner));
     await click(button(invite(), t.vuInvite));
     expect(calls.some((c) => c.method === "POST")).toBe(false);
@@ -324,6 +337,33 @@ describe("пользователь кабинета", () => {
     await click(button(form, t.save));
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ role: "member", locale: "ru" });
     expect(form.textContent).toContain(apiErrorText("vendor_last_owner"));
+    // Вошёл по номеру — номер скрыт маской, сменить нельзя: кнопки нет, сказано почему
+    expect(button(form, t.input.phoneChange)).toBeUndefined();
+    expect(form.textContent).toContain(t.input.phoneLinked);
+  });
+
+  it("изменить номер ещё не вошедшего: «Изменить номер» — поле с маской, на сервер — +998…", async () => {
+    const pending = user({
+      status: "pending",
+      accountLinked: false,
+      telegramLinked: false,
+      telegramLinkedAt: null,
+    });
+    mockApi(MANAGER, vendor([pending]), {
+      [`PATCH /api/staff/vendors/${VENDOR_ID}/users/${OWNER_ID}`]: json(pending),
+    });
+    await mount();
+    const card = panel().querySelector(".vuser") as HTMLElement;
+    await click(button(card, t.vuEdit));
+    const form = card.querySelector(".vuser-edit") as HTMLElement;
+    expect(form.textContent).toContain(t.input.phoneMasked);
+    expect(inputLabelled(form, t.phoneNew)).toBeUndefined();
+    await click(button(form, t.input.phoneChange));
+    const phone = inputLabelled(form, t.phoneNew);
+    await type(phone, "+998 90 222 33 44");
+    expect(phone?.value).toBe("90 222 33 44");
+    await click(button(form, t.save));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ phone: "+998902223344" });
   });
 
   it("убрать из кабинета — после подтверждения; пользователь пропадает из списка", async () => {

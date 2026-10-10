@@ -8,16 +8,20 @@
    тоже) — тому, кто решает по модерации, здесь же «Одобрить» и «Отклонить» с причиной для
    партнёра, как в очереди «Модерации» (ServiceDecision — один на оба места).
    Форма услуги — на месте, под списком: длинная, со своими списками выбора, в шторке ей
-   тесно. После любого действия витрина перечитывается: меняются цена «от» и готовность. */
+   тесно. Цена — с разрядами и «сум», единица одна — словами, две–четыре — пилюлями, минимум и
+   срок — числами с «−» и «+»; у дополнения — единицы категории и шаблона. «Снять с витрины» —
+   через подтверждение: услуга пропадёт у клиентов, цена «от» пересчитается.
+   После любого действия витрина перечитывается: меняются цена «от» и готовность. */
 
 import type { ListingDetail, ListingService } from "@bayramm/shared/api/staff";
 import {
   type CategoryConfig,
+  categoryPriceUnits,
   newOptionDraft,
   newServiceDraft,
   type OptionDraft,
-  PRICE_UNITS,
   type PriceUnit,
+  SERVICE_LIMITS,
   type ServiceDraft,
   serviceChangeRows,
   serviceDirty,
@@ -31,6 +35,7 @@ import { ConfirmSheet, Select } from "@bayramm/ui/react";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
 import { ru, unitName } from "../categories";
+import { ChoiceField, MoneyField, NumberField } from "../fields";
 import { formatPrice, formatSum } from "../format";
 import { apiErrorText, t } from "../texts";
 import { ConfirmForm, ErrorText, Field, focusSection, PhoneSheet, Pill, type Tone } from "../ui";
@@ -44,7 +49,11 @@ const STATUS_TONE: Record<ListingService["status"], Tone> = {
   paused: "muted",
 };
 
-const ALL_UNITS: readonly PriceUnit[] = PRICE_UNITS;
+/** Единицы цены дополнения: единицы категории и единица шаблона, если её там нет (как в кабинете) */
+export function optionUnits(category: CategoryConfig, option: Pick<OptionDraft, "priceUnit">): PriceUnit[] {
+  const units = categoryPriceUnits(category);
+  return units.includes(option.priceUnit) ? units : [...units, option.priceUnit];
+}
 
 /** Строка услуги: цена и единица, минимум, срок */
 function serviceFacts(service: ListingService): string {
@@ -181,6 +190,7 @@ export function ServiceDecision({
             label={t.reason}
             required
             danger
+            presets={t.reasons.serviceDecline}
             submitLabel={t.serviceDecline}
             onSubmit={decline}
             onCancel={() => setDeclining(false)}
@@ -213,6 +223,8 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
   const [failure, setFailure] = useState<Failure | null>(null);
   const [removing, setRemoving] = useState<ListingService | null>(null);
   const [removeFailure, setRemoveFailure] = useState<Failure | null>(null);
+  // «Снять с витрины» — через подтверждение: услуга пропадёт у клиентов
+  const [pausing, setPausing] = useState<ListingService | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const base = `/staff/listings/${listing.id}/services`;
 
@@ -222,6 +234,12 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
     setBusy(null);
     setFailure(result.ok ? null : result);
     if (result.ok) onChanged();
+    return result.ok;
+  };
+
+  const pause = async () => {
+    if (!pausing) return;
+    if (await act(pausing, "pause")) setPausing(null);
   };
 
   const remove = async () => {
@@ -368,7 +386,10 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
                         type="button"
                         className="btn btn-sm"
                         disabled={busy !== null}
-                        onClick={() => void act(service, "pause")}
+                        onClick={() => {
+                          setFailure(null);
+                          setPausing(service);
+                        }}
                       >
                         {t.servicePause}
                         <span className="visually-hidden">: {service.name.ru}</span>
@@ -427,6 +448,21 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
         error={removeFailure ? apiErrorText(removeFailure.code) : undefined}
         onConfirm={() => void remove()}
         onCancel={() => setRemoving(null)}
+      />
+      <ConfirmSheet
+        open={pausing !== null}
+        title={t.servicePauseTitle}
+        text={pausing ? t.servicePauseText(pausing.name.ru) : undefined}
+        confirmLabel={t.servicePause}
+        cancelLabel={t.cancel}
+        tone="danger"
+        busy={busy !== null}
+        error={pausing && failure ? apiErrorText(failure.code) : undefined}
+        onConfirm={() => void pause()}
+        onCancel={() => {
+          setPausing(null);
+          setFailure(null);
+        }}
       />
     </section>
   );
@@ -554,67 +590,61 @@ function ServiceForm({ listingId, category, service, onSaved, onCancel }: Servic
                 </Field>
               </>
             ) : null}
-            <Field label={t.serviceFields.priceUzs ?? ""} error={errorOf(details, "priceUzs")}>
-              {(props) => (
-                <input
-                  {...props}
-                  className="input"
-                  inputMode="numeric"
-                  value={draft.price}
-                  maxLength={16}
-                  autoComplete="off"
-                  enterKeyHint="done"
-                  onChange={(event) => patch({ price: event.target.value })}
-                />
-              )}
-            </Field>
-            <Field label={t.serviceFields.priceUnit ?? ""} error={errorOf(details, "priceUnit")}>
-              {(props) => (
-                <Select
-                  {...props}
-                  className="input"
-                  label={t.serviceFields.priceUnit ?? ""}
-                  value={draft.priceUnit}
-                  disabled={type.units.length < 2}
-                  onChange={(priceUnit) => patch({ priceUnit })}
-                  options={type.units.map((unit) => ({ value: unit, label: unitName(unit) }))}
-                />
-              )}
-            </Field>
-            <Field
-              label={t.serviceFields.minQty ?? ""}
+            <MoneyField
+              label={t.serviceFields.priceUzs ?? ""}
+              value={draft.price}
+              onChange={(price) => patch({ price })}
+              max={SERVICE_LIMITS.maxPrice}
+              error={errorOf(details, "priceUzs")}
+            />
+            {/* Единица одна — выбирать нечего: написано, за что цена; две–четыре — пилюлями */}
+            {type.units.length === 1 ? (
+              <div className="field">
+                <span>{t.serviceFields.priceUnit}</span>
+                <p className="svc-unit-fixed">{unitName(draft.priceUnit)}</p>
+              </div>
+            ) : type.units.length <= 4 ? (
+              <ChoiceField
+                label={t.serviceFields.priceUnit ?? ""}
+                value={draft.priceUnit}
+                options={type.units.map((unit) => ({ value: unit, label: unitName(unit) }))}
+                onChange={(priceUnit) => patch({ priceUnit })}
+                variant="pill"
+                full={false}
+                error={errorOf(details, "priceUnit")}
+              />
+            ) : (
+              <Field label={t.serviceFields.priceUnit ?? ""} error={errorOf(details, "priceUnit")}>
+                {(props) => (
+                  <Select
+                    {...props}
+                    className="input"
+                    label={t.serviceFields.priceUnit ?? ""}
+                    value={draft.priceUnit}
+                    onChange={(priceUnit) => patch({ priceUnit })}
+                    options={type.units.map((unit) => ({ value: unit, label: unitName(unit) }))}
+                  />
+                )}
+              </Field>
+            )}
+            <NumberField
+              label={t.serviceMinQtyIn[draft.priceUnit] ?? t.serviceFields.minQty ?? ""}
+              value={draft.minQty}
+              onChange={(minQty) => patch({ minQty })}
+              min={1}
+              max={SERVICE_LIMITS.maxMinQty}
               error={errorOf(details, "minQty")}
               hint={t.serviceFields.minQtyHint}
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  className="input"
-                  inputMode="numeric"
-                  value={draft.minQty}
-                  maxLength={6}
-                  autoComplete="off"
-                  onChange={(event) => patch({ minQty: event.target.value })}
-                />
-              )}
-            </Field>
-            <Field
+            />
+            <NumberField
               label={t.serviceFields.leadDays ?? ""}
+              value={draft.leadDays}
+              onChange={(leadDays) => patch({ leadDays })}
+              min={0}
+              max={SERVICE_LIMITS.maxLeadDays}
               error={errorOf(details, "leadDays")}
               hint={t.serviceFields.leadDaysHint}
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  className="input"
-                  inputMode="numeric"
-                  value={draft.leadDays}
-                  maxLength={3}
-                  autoComplete="off"
-                  onChange={(event) => patch({ leadDays: event.target.value })}
-                />
-              )}
-            </Field>
+            />
             {(["Ru", "Uz"] as const).map((lang) => (
               <Field
                 key={lang}
@@ -684,23 +714,14 @@ function ServiceForm({ listingId, category, service, onSaved, onCancel }: Servic
                       />
                     )}
                   </Field>
-                  <Field
+                  <MoneyField
                     label={t.serviceFields.priceUzs ?? ""}
+                    value={option.price}
+                    onChange={(price) => putOption(option.key, { price })}
+                    max={SERVICE_LIMITS.maxPrice}
                     error={bad("priceUzs") ? t.serviceErrors.priceUzs : undefined}
-                  >
-                    {(props) => (
-                      <input
-                        {...props}
-                        className="input"
-                        inputMode="numeric"
-                        value={option.price}
-                        maxLength={16}
-                        autoComplete="off"
-                        onChange={(event) => putOption(option.key, { price: event.target.value })}
-                      />
-                    )}
-                  </Field>
-                  <Field label={t.serviceFields.priceUnit ?? ""}>
+                  />
+                  <Field label={t.serviceFields.priceUnit ?? ""} hint={t.optionUnitsHint}>
                     {(props) => (
                       <Select
                         {...props}
@@ -708,7 +729,10 @@ function ServiceForm({ listingId, category, service, onSaved, onCancel }: Servic
                         label={`${t.serviceFields.priceUnit ?? ""} · ${title}`}
                         value={option.priceUnit}
                         onChange={(priceUnit) => putOption(option.key, { priceUnit })}
-                        options={ALL_UNITS.map((unit) => ({ value: unit, label: unitName(unit) }))}
+                        options={optionUnits(category, option).map((unit) => ({
+                          value: unit,
+                          label: unitName(unit),
+                        }))}
                       />
                     )}
                   </Field>

@@ -13,8 +13,12 @@
    пишутся: текущие — по «Показать» (одним чтением). Telegram — по желанию: пустое поле не
    меняет, «Убрать Telegram» снимает; имя, @имя и ссылку t.me/имя сервер понимает сам.
    «Убрать телефон» — только пока витрина не на проверке и не в каталоге (без телефона её не
-   опубликовать — так же решает база); Telegram уходит вместе с ним: он хранится рядом. */
+   опубликовать — так же решает база); Telegram уходит вместе с ним: он хранится рядом.
+   Поля — под свои данные (fields.tsx): адрес страницы — латиницей с «Из названия», район —
+   списком по городам, вместимость — парой чисел «от» и «до», телефон — +998 и маской (номер
+   есть — поле открывает «Изменить номер»), Telegram — с «@». */
 
+import { normalizeTelegram, normalizeUzPhone, SLUG_RE } from "@bayramm/shared";
 import type {
   ListingDetail,
   ListingInput,
@@ -36,10 +40,11 @@ import {
   videoLinkErrors,
   videoLinksValue,
 } from "@bayramm/shared/categories";
-import { Checkbox, NumberStepper, Select } from "@bayramm/ui/react";
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { Checkbox, NumberStepper, Select, type SelectOption } from "@bayramm/ui/react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import type { Failure, Result } from "../api";
 import { categoryName } from "../categories";
+import { NumberField, PhoneField, SlugField, TelegramField } from "../fields";
 import { t } from "../texts";
 import { ContactsReveal, ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
 import { useUnsaved } from "../unsaved";
@@ -70,6 +75,8 @@ const MODERATED_KEYS: ReadonlySet<string> = new Set<RevisionField>([
 ]);
 
 export const MAX_PARALLEL = 50;
+/** Вместимость в гостях — границы сервера (capMin, capMax) */
+export const CAPACITY = { min: 1, max: 5000 } as const;
 
 /** Что спрашивает форма у этой категории */
 export function formParts(category: CategoryConfig) {
@@ -148,7 +155,8 @@ export function listingBody(category: CategoryConfig, now: FormState, before: Fo
   // Убрать телефон — убрать и Telegram (строка контактов одна): вписанное в поля не уходит
   if (now.clearPhone) body.phone = null;
   else {
-    if (now.values.phone.trim() !== "") body.phone = now.values.phone.trim();
+    const phone = now.values.phone.trim();
+    if (phone !== "") body.phone = normalizeUzPhone(phone) ?? phone;
     // Telegram: убрать — null; иначе только то, что вписали (как есть: имя, @имя или ссылку — разберёт сервер)
     if (now.clearTelegram) body.telegram = null;
     else if (now.values.telegram.trim() !== "") body.telegram = now.values.telegram.trim();
@@ -164,10 +172,29 @@ export function listingBody(category: CategoryConfig, now: FormState, before: Fo
   return body as ListingInput;
 }
 
-/** Ошибки до отправки — те же пути, что ответ 422: данные витрины, видео, заказы одновременно */
+/** Ошибки до отправки — те же пути, что ответ 422: адрес, вместимость, данные витрины, видео,
+ *  заказы одновременно, телефон и Telegram */
 export function formErrors(category: CategoryConfig, now: FormState): string[] {
   const parts = formParts(category);
   const errors = attributeErrors(category, now.attributes);
+  if (!SLUG_RE.test(now.values.slug.trim())) errors.push("slug");
+  if (parts.capacity) {
+    const [min, max] = CAP_KEYS.map((key) => parseAmount(now.values[key]));
+    for (const [key, n] of [
+      ["capMin", min],
+      ["capMax", max],
+    ] as const)
+      if (n !== null && n !== undefined && (Number.isNaN(n) || n < CAPACITY.min || n > CAPACITY.max))
+        errors.push(key);
+    // «До» меньше «от» — ошибка у «до»: её и поправят
+    if (typeof min === "number" && typeof max === "number" && max < min && !errors.includes("capMax"))
+      errors.push("capMax");
+  }
+  const phone = now.values.phone.trim();
+  if (!now.clearPhone && phone !== "" && normalizeUzPhone(phone) === null) errors.push("phone");
+  const telegram = now.values.telegram.trim();
+  if (!now.clearPhone && !now.clearTelegram && telegram !== "" && normalizeTelegram(telegram) === null)
+    errors.push("telegram");
   if (parts.videos) {
     // Номер поля формы → номер в отправленном списке (пустые поля не отправляются)
     const filled = now.videos.flatMap((link, index) => (link.trim() === "" ? [] : [index]));
@@ -208,6 +235,38 @@ interface Sent {
 
 const invalid = (details: string[]): Failure => ({ ok: false, status: 422, code: "invalid_input", details });
 
+/** «До» меньше «от»: ошибка вместимости — про порядок, а не про границы */
+function capOrderBroken(now: FormState): boolean {
+  const min = parseAmount(now.values.capMin);
+  const max = parseAmount(now.values.capMax);
+  return typeof min === "number" && typeof max === "number" && max < min;
+}
+
+/**
+ * Районы списком по городам: город — заголовок группы (выбрать нельзя: витрина — в районе),
+ * районы — вложенными под ним. Район без города в справочнике — в конце списка
+ */
+export function districtChoices(dictionaries: StaffDictionaries | null): SelectOption[] {
+  const districts = dictionaries?.districts ?? [];
+  const cities = dictionaries?.cities ?? [];
+  const known = new Set(cities.map((city) => city.code));
+  return [
+    { value: "", label: t.none },
+    ...cities.flatMap((city) => {
+      const inside = districts.filter((district) => district.city === city.code);
+      return inside.length === 0
+        ? []
+        : [
+            { value: `city:${city.code}`, label: city.nameRu, disabled: true },
+            ...inside.map((district) => ({ value: district.code, label: district.nameRu, nested: true })),
+          ];
+    }),
+    ...districts
+      .filter((district) => district.city === undefined || !known.has(district.city))
+      .map((district) => ({ value: district.code, label: district.nameRu })),
+  ];
+}
+
 export function ListingForm({
   listing,
   category,
@@ -233,6 +292,9 @@ export function ListingForm({
   const form = useRevealErrors(failure);
   const formId = useId();
   const phoneRemoveHintId = useId();
+  // Номер есть: поле нового — по «Изменить номер» (пустое поле «не менять» больше не нужно)
+  const [changingPhone, setChangingPhone] = useState(false);
+  const phoneInput = useRef<HTMLInputElement>(null);
   const dirty = !readOnly && Object.keys(listingBody(category, now, before)).length > 0;
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -281,6 +343,7 @@ export function ListingForm({
     }
     setFailure(null);
     setSaves((n) => n + 1);
+    setChangingPhone(false);
     // Форма — как в витрине после правки: значения уже в том виде, как их хранит сервер
     const next = formState(result, category);
     setBefore(next);
@@ -300,7 +363,7 @@ export function ListingForm({
   const input = (
     key: keyof Values,
     label: string,
-    extra: { maxLength: number; numeric?: boolean; required?: boolean; hint?: string | undefined },
+    extra: { maxLength: number; required?: boolean; hint?: string | undefined },
   ) => (
     <Field label={label} error={errors[key]} hint={extra.hint}>
       {(props) => (
@@ -310,7 +373,6 @@ export function ListingForm({
           value={now.values[key]}
           onChange={set(key)}
           maxLength={extra.maxLength}
-          inputMode={extra.numeric ? "numeric" : undefined}
           autoComplete="off"
           enterKeyHint="done"
           readOnly={readOnly}
@@ -337,6 +399,28 @@ export function ListingForm({
     </Field>
   );
 
+  // Адрес — улица, дом и ориентир: в две-три строки, а не в одну узкую
+  const address = (key: "addressRu" | "addressUz", lang: "ru" | "uz") => (
+    <Field label={t.listingFields[key] ?? key} error={errors[key]}>
+      {(props) => (
+        <textarea
+          {...props}
+          className="input"
+          lang={lang}
+          rows={2}
+          value={now.values[key]}
+          onChange={set(key)}
+          maxLength={300}
+          autoComplete="off"
+          readOnly={readOnly}
+        />
+      )}
+    </Field>
+  );
+
+  // Районы — под своим городом: город — заголовок группы (выбрать можно только район)
+  const districtOptions = districtChoices(dictionaries);
+
   // Видео: номер поля формы ↔ номер в отправленном списке (пустые не отправляются)
   const filledVideos = now.videos.flatMap((link, index) => (link.trim() === "" ? [] : [index]));
   const videoError = (index: number) =>
@@ -355,20 +439,6 @@ export function ListingForm({
         </div>
         <div className="fields">
           {input("name", t.listingFields.name ?? "", { maxLength: 80, required: true, hint: moderatedHint })}
-          <Field label={t.listingFields.slug ?? ""} error={errors.slug}>
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                value={now.values.slug}
-                onChange={set("slug")}
-                maxLength={40}
-                autoCapitalize="none"
-                spellCheck={false}
-                readOnly={readOnly}
-              />
-            )}
-          </Field>
           <Field label={t.listingFields.districtCode ?? ""} error={errors.districtCode}>
             {(props) => (
               <Select
@@ -378,16 +448,18 @@ export function ListingForm({
                 value={now.values.districtCode}
                 onChange={put("districtCode")}
                 disabled={readOnly}
-                options={[
-                  { value: "", label: t.none },
-                  ...(dictionaries?.districts ?? []).map((district) => ({
-                    value: district.code,
-                    label: district.nameRu,
-                  })),
-                ]}
+                options={districtOptions}
               />
             )}
           </Field>
+          <SlugField
+            label={t.listingFields.slug ?? ""}
+            value={now.values.slug}
+            onChange={put("slug")}
+            source={now.values.name}
+            error={errors.slug}
+            readOnly={readOnly}
+          />
         </div>
       </section>
 
@@ -399,8 +471,8 @@ export function ListingForm({
           <p>{t.listingSections.textsHint}</p>
         </div>
         <div className="fields">
-          {input("addressRu", t.listingFields.addressRu ?? "", { maxLength: 300 })}
-          {input("addressUz", t.listingFields.addressUz ?? "", { maxLength: 300 })}
+          {address("addressRu", "ru")}
+          {address("addressUz", "uz")}
           {textarea("descriptionRu", "ru")}
           {textarea("descriptionUz", "uz")}
         </div>
@@ -415,10 +487,28 @@ export function ListingForm({
             <p>{t.listingDataSections.attributesHint(categoryName(category.code))}</p>
           </div>
           {parts.capacity ? (
-            <div className="fields attr-capacity">
-              {input("capMin", t.listingFields.capMin ?? "", { maxLength: 5, numeric: true })}
-              {input("capMax", t.listingFields.capMax ?? "", { maxLength: 5, numeric: true })}
-            </div>
+            <fieldset className="cap-pair">
+              <legend>{t.input.capacity}</legend>
+              {(["capMin", "capMax"] as const).map((key) => (
+                <NumberField
+                  key={key}
+                  label={key === "capMin" ? t.input.capFrom : t.input.capTo}
+                  value={now.values[key]}
+                  onChange={put(key)}
+                  min={CAPACITY.min}
+                  max={CAPACITY.max}
+                  step={10}
+                  disabled={readOnly}
+                  error={
+                    errors[key]
+                      ? key === "capMax" && capOrderBroken(now)
+                        ? t.input.capacityOrder
+                        : t.attributeIntError(CAPACITY.min, CAPACITY.max)
+                      : undefined
+                  }
+                />
+              ))}
+            </fieldset>
           ) : null}
           <AttributeFields
             category={category}
@@ -543,45 +633,60 @@ export function ListingForm({
         ) : null}
         {readOnly ? null : (
           <div className="fields">
-            <Field label={t.phoneChange} error={errors.phone} hint={t.phoneKeep}>
-              {(props) => (
-                <input
-                  {...props}
-                  className="input"
-                  type="tel"
-                  inputMode="tel"
-                  autoComplete="off"
-                  placeholder="+998 XX XXX XX XX"
+            {/* Номер есть — он скрыт выше; новый — по «Изменить номер». Номера нет — сразу поле */}
+            {contacts?.hasPhone && !changingPhone ? (
+              <div className="field">
+                <span>{t.listingFields.phone}</span>
+                <div className="phone-change">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    aria-expanded={false}
+                    disabled={now.clearPhone}
+                    onClick={() => {
+                      setChangingPhone(true);
+                      // Поле появится после этой отрисовки — фокус в него, без прокрутки (ловушка №3)
+                      setTimeout(() => phoneInput.current?.focus({ preventScroll: true }), 0);
+                    }}
+                  >
+                    {t.input.phoneChange}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="field">
+                <PhoneField
+                  label={contacts?.hasPhone ? t.phoneChange : (t.listingFields.phone ?? "")}
                   value={now.values.phone}
-                  onChange={set("phone")}
-                  maxLength={24}
-                  enterKeyHint="done"
+                  onChange={put("phone")}
+                  error={errors.phone}
                   disabled={now.clearPhone}
+                  inputRef={phoneInput}
                 />
-              )}
-            </Field>
-            <Field
+                {contacts?.hasPhone ? (
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        put("phone")("");
+                        setChangingPhone(false);
+                      }}
+                    >
+                      {t.input.phoneChangeCancel}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )}
+            <TelegramField
               label={t.telegramChange}
+              value={now.values.telegram}
+              onChange={put("telegram")}
               error={errors.telegram}
               hint={contacts?.hasTelegram ? t.phoneKeep : t.telegramHintNew}
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  className="input"
-                  inputMode="text"
-                  autoCapitalize="none"
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="@username"
-                  value={now.values.telegram}
-                  onChange={set("telegram")}
-                  maxLength={64}
-                  enterKeyHint="done"
-                  disabled={now.clearTelegram || now.clearPhone}
-                />
-              )}
-            </Field>
+              disabled={now.clearTelegram || now.clearPhone}
+            />
             {phoneRemovable ? (
               <div className="field-full">
                 <Checkbox

@@ -355,6 +355,7 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
               label={t.reason}
               required
               danger
+              presets={t.reasons.photoDecline}
               maxLength={REASON_MAX}
               submitLabel={t.declinePhoto}
               onSubmit={decline}

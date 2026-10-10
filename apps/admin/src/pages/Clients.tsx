@@ -282,6 +282,7 @@ function ClientView({ client, onChange }: { client: ClientDetail; onChange: (c: 
             </dl>
             {client.profile !== null && can("client_phones.read") && (
               <ReasonPhoneReveal
+                presets={t.reasons.clientPhone}
                 label={t.clientPhoneProfile}
                 hint={t.clientPhoneHint}
                 reasonLabel={t.clientPhoneReason}
@@ -389,7 +390,9 @@ function Blocking({ client, onChange }: { client: ClientDetail; onChange: (c: Cl
         <ConfirmForm
           hint={client.blockedInfo ? t.unblockHint : t.blockHint}
           submitLabel={label}
-          {...(client.blockedInfo ? {} : { label: t.reason, required: true, maxLength: 500 })}
+          {...(client.blockedInfo
+            ? {}
+            : { label: t.reason, required: true, maxLength: 500, presets: t.reasons.clientBlock })}
           danger={!client.blockedInfo}
           onSubmit={act}
           onCancel={() => setOpen(false)}

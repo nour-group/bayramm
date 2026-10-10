@@ -21,6 +21,7 @@ import { createPortal } from "react-dom";
 import type { Failure, Loaded, Result } from "./api";
 import { Icon, type IconName } from "./icons";
 import { usePhone } from "./layout";
+import { ReasonField } from "./reason";
 import { type Navigate, pathOf, type View } from "./router";
 import { apiErrorText, t } from "./texts";
 import { useUnsaved } from "./unsaved";
@@ -284,6 +285,8 @@ interface ConfirmFormProps {
   required?: boolean;
   maxLength?: number;
   danger?: boolean;
+  /** Частые причины этого места — чипами над полем (reason.tsx) */
+  presets?: readonly string[];
   /** Ответ сервера: null — готово (форма закрывается), иначе ошибка под формой */
   onSubmit: (text: string) => Promise<Failure | null>;
   onCancel: () => void;
@@ -300,10 +303,10 @@ export function ConfirmForm({
   required = false,
   maxLength = 1000,
   danger = false,
+  presets,
   onSubmit,
   onCancel,
 }: ConfirmFormProps) {
-  const id = useId();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -323,18 +326,14 @@ export function ConfirmForm({
     <form className="confirm" onSubmit={submit} noValidate>
       <p className="muted small">{hint}</p>
       {label !== undefined && (
-        <>
-          <label htmlFor={id}>{required ? label : `${label} (${t.optional})`}</label>
-          <textarea
-            id={id}
-            className="input"
-            rows={2}
-            maxLength={maxLength}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            required={required}
-          />
-        </>
+        <ReasonField
+          label={required ? label : `${label} (${t.optional})`}
+          value={text}
+          onChange={setText}
+          presets={presets}
+          required={required}
+          maxLength={maxLength}
+        />
       )}
       <div className="acts">
         <button
@@ -381,17 +380,28 @@ interface ReasonPhoneProps {
   label: string;
   hint: string;
   reasonLabel: string;
+  /** Частые причины — чипами над полем */
+  presets?: readonly string[];
   /** Запрос с причиной: база отдаёт номер только администратору и пишет чтение в журнал */
   load: (reason: string) => Promise<Result<string | null>>;
 }
 
-/** Телефон клиента: скрыт; показать — только с причиной, её видно в журнале доступа к ПДн */
-export function ReasonPhoneReveal({ label, hint, reasonLabel, load }: ReasonPhoneProps) {
-  const reasonId = useId();
+/**
+ * Телефон клиента: скрыт маской, как остальные номера; «Показать» открывает причину (с частыми —
+ * чипами), номер — только с ней: её видно в журнале доступа к ПДн. Форма причины — по кнопке, а
+ * не всегда на экране: страница клиента короче, чипы не висят над панелью действий
+ */
+export function ReasonPhoneReveal({ label, hint, reasonLabel, presets, load }: ReasonPhoneProps) {
+  const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const [phone, setPhone] = useState<string | null | undefined>(undefined);
   const [failure, setFailure] = useState<Pick<Failure, "code"> | null>(null);
   const [busy, setBusy] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  // Открыли причину — фокус на форму (диктор прочтёт, чей номер), без клавиатуры и прокрутки
+  useEffect(() => {
+    if (asking) form.current?.focus({ preventScroll: true });
+  }, [asking]);
 
   const reveal = async (event: FormEvent) => {
     event.preventDefault();
@@ -416,25 +426,48 @@ export function ReasonPhoneReveal({ label, hint, reasonLabel, load }: ReasonPhon
       </p>
     );
 
+  if (!asking)
+    return (
+      <div className="phone-row">
+        <span className="phone-label">{label}</span>
+        <span className="phone-mask">
+          <span aria-hidden="true">+998 •• ••• •• ••</span>
+          <span className="visually-hidden">{t.hidden}</span>
+        </span>
+        <button type="button" className="btn btn-sm" aria-expanded={false} onClick={() => setAsking(true)}>
+          {t.show}
+        </button>
+      </div>
+    );
+
   return (
-    <form className="confirm" onSubmit={reveal} noValidate aria-label={label}>
+    <form ref={form} className="confirm" onSubmit={reveal} noValidate aria-label={label} tabIndex={-1}>
       {/* Чей номер — словами и до показа: иначе форма причины висит без объяснения */}
       <p className="phone-label">{label}</p>
       <p className="muted small">{hint}</p>
-      <label htmlFor={reasonId}>{reasonLabel}</label>
-      <input
-        id={reasonId}
-        className="input"
+      <ReasonField
+        label={reasonLabel}
         value={reason}
-        maxLength={500}
-        autoComplete="off"
-        enterKeyHint="go"
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
+        presets={presets}
         required
+        maxLength={500}
+        multiline={false}
       />
-      <div>
+      <div className="acts">
         <button type="submit" className="btn" disabled={busy || reason.trim() === ""}>
           {t.show}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            setAsking(false);
+            setReason("");
+            setFailure(null);
+          }}
+        >
+          {t.cancel}
         </button>
       </div>
       {failure &&
