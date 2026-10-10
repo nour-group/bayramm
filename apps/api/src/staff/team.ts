@@ -3,13 +3,15 @@
 // Telegram или кодом на этот номер (номер уже подтверждён у аккаунта — сразу). Номер
 // не хранится — только его HMAC (app.staff.phone_hash). Менять команду может только
 // база (app.staff_invite, app.staff_invite_phone, app.staff_set_role,
-// app.staff_set_active): себя не отключить и роль не сменить, последнего действующего
-// администратора — никак.
+// app.staff_set_active, app.staff_revoke_invite): себя не отключить и роль не сменить,
+// последнего действующего администратора — никак. Отозвать (удалить) можно только
+// приглашение, которое ещё не приняли; принятое — отключают.
 //
-//   GET  /staff/team                     все сотрудники: действующие сверху
-//   POST /staff/team                     { username | phone, displayName, role } → 201
-//   POST /staff/team/:id/role            { role }
-//   POST /staff/team/:id/deactivate | activate
+//   GET    /staff/team                     все сотрудники: действующие сверху
+//   POST   /staff/team                     { username | phone, displayName, role } → 201
+//   POST   /staff/team/:id/role            { role }
+//   POST   /staff/team/:id/deactivate | activate
+//   DELETE /staff/team/:id                 отозвать непринятое приглашение (409 staff_invite_accepted)
 
 import type { StaffRole, TeamList, TeamMember } from "@bayramm/shared/api/staff";
 import { Hono } from "hono";
@@ -137,3 +139,14 @@ for (const [action, active] of [
     return c.json(body);
   });
 }
+
+team.delete("/:id", requirePermission("team.manage"), async (c) => {
+  const actor = staffOf(c);
+  const id = pathId(c.req.param("id"));
+  const body = await withActor(c.var.db, actor, async (trx) => {
+    await assertStaff(trx, id);
+    await sql`select app.staff_revoke_invite(${id}::uuid)`.execute(trx);
+    return loadTeam(trx, actor.id);
+  });
+  return c.json(body);
+});

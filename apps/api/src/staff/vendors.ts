@@ -12,6 +12,7 @@
 //   PATCH /staff/vendors/:id/users/:userId                   правка (телефон — пока не привязан)
 //   POST  /staff/vendors/:id/users/:userId/disable | enable | unlink (снять привязку Telegram)
 //   POST  /staff/vendors/:id/users/:userId/phone { reason? } телефон входа (в журнал)
+//   DELETE /staff/vendors/:id                                удалить целиком (без заявок и публикаций)
 //
 // Витрина в другой категории существующему вендору — POST /staff/vendors/:id/listings
 // (staff/listings.ts). Пользователи, контакты, согласия и чек-лист — у вендора общие.
@@ -24,6 +25,7 @@
 import { normalizeUzPhone } from "@bayramm/shared";
 import type {
   ChecklistItem,
+  DeleteBlocker,
   LegalForm,
   ListingRef,
   RevealedPhone,
@@ -50,6 +52,8 @@ import {
 import type { AppVendorAccounts, PiiVendorContacts } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
+import { removePhotoObjects } from "../photos/service";
+import { listingPhotoStorage } from "../storage/supabase";
 import { requirePermission } from "./access";
 import { type Body, Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
 import { iso, LISTING_STATUSES, listingBriefs, pathId, staffName } from "./shared";
@@ -175,6 +179,7 @@ export async function loadVendor(trx: Tx, id: string): Promise<VendorDetail> {
       "vc.contact_person",
       "vc.contact_role",
       "vc.telegram_username",
+      sql<DeleteBlocker | null>`app.vendor_delete_blocker(v.id)`.as("delete_blocker"),
     ])
     .where("v.id", "=", id)
     .executeTakeFirst();
@@ -209,6 +214,7 @@ export async function loadVendor(trx: Tx, id: string): Promise<VendorDetail> {
     },
     users: users.map(userView),
     listings,
+    deleteBlocker: row.delete_blocker,
   };
 }
 
@@ -426,6 +432,21 @@ vendors.patch("/:id", requirePermission("vendors.write"), limitJson, async (c) =
     return loadVendor(trx, id);
   });
   return c.json(vendor);
+});
+
+// Удалить вендора целиком — только администратор и только без заявок и витрин на проверке
+// или в каталоге (иначе 409 vendor_in_use, details — requests | published): решает база под
+// блокировкой (app.staff_delete_vendor) и отдаёт ключи фото всех витрин — объекты удаляются
+// после фиксации. Нет вендора — 404 (42501)
+vendors.delete("/:id", requirePermission("vendors.delete"), async (c) => {
+  const id = pathId(c.req.param("id"));
+  const keys = await withActor(c.var.db, staffOf(c), async (trx) => {
+    const { rows } = await sql<{ keys: string[] }>`
+      select app.staff_delete_vendor(${id}::uuid) as keys`.execute(trx);
+    return rows[0]?.keys ?? [];
+  });
+  await removePhotoObjects(listingPhotoStorage(c.env), keys);
+  return c.body(null, 204);
 });
 
 // ── чек-лист проверки ───────────────────────────────────────────────────────

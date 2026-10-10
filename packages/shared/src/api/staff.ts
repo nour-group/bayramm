@@ -33,12 +33,14 @@ export type StaffRole = "admin" | "manager" | "moderator";
 export type StaffPermission =
   | "catalog.read"
   | "vendors.write"
+  | "vendors.delete"
   | "vendor_users.write"
   | "listings.write"
   | "listings.submit"
   | "listings.publish"
   | "listings.moderate"
   | "listings.draft"
+  | "listings.delete"
   | "photos.moderate"
   | "vendor_phones.read"
   | "requests.read"
@@ -87,6 +89,23 @@ export interface StaffDictionaries {
 export type LegalForm = "ooo" | "yatt" | "self_employed";
 export type ListingStatus = "lead" | "draft" | "review" | "active" | "suspended" | "rejected";
 export type ChecklistItem = "contract" | "stir" | "contacts" | "pdConsent";
+
+/**
+ * Почему витрину (или вендора) нельзя удалить — app.listing_delete_blocker,
+ * app.vendor_delete_blocker:
+ *   requests  — по витрине (у вендора — по какой-то витрине) были заявки: удалить нельзя
+ *               никогда, снимают с публикации (приостановить) — история заявок остаётся;
+ *   published — витрина на проверке или в каталоге: сначала вернуть в черновик или
+ *               приостановить.
+ *
+ * DELETE /staff/listings/:id → 204 (право listings.delete — администратор и менеджер): витрина
+ *   со всеми фото, услугами, занятостью, контактами и предложениями изменений;
+ *   409 listing_in_use, details — [DeleteBlocker].
+ * DELETE /staff/vendors/:id → 204 (право vendors.delete — только администратор): вендор со
+ *   всеми витринами, пользователями кабинета, реквизитами и контактами;
+ *   409 vendor_in_use, details — [DeleteBlocker]
+ */
+export type DeleteBlocker = "requests" | "published";
 
 /**
  * Коды из app.listing_publish_blockers: чего не хватает для проверки или публикации.
@@ -203,6 +222,8 @@ export interface VendorDetail {
   readonly checklist: Readonly<Record<ChecklistItem, ChecklistMark>>;
   readonly users: readonly VendorUser[];
   readonly listings: readonly ListingBrief[];
+  /** Почему вендора нельзя удалить; null — можно (DELETE /staff/vendors/:id) */
+  readonly deleteBlocker: DeleteBlocker | null;
 }
 
 /**
@@ -377,6 +398,8 @@ export interface ListingDetail {
   readonly history: readonly ListingHistoryEntry[];
   /** Правка карточки, которая ждёт решения модератора (от партнёра или менеджера) */
   readonly pendingRevision: PendingRevision | null;
+  /** Почему витрину нельзя удалить; null — можно (DELETE /staff/listings/:id) */
+  readonly deleteBlocker: DeleteBlocker | null;
 }
 
 export interface PendingRevision {
@@ -1018,7 +1041,9 @@ export interface TeamMember {
  *   этим номером уже есть роль сотрудника; 422 invalid_input — поле phone не номер
  *   Узбекистана (+998 и 9 цифр).
  * POST /staff/team/:id/role { role } | /deactivate | /activate → TeamList;
- * 409 staff_self — себя нельзя, staff_last_admin — должен остаться администратор
+ * 409 staff_self — себя нельзя, staff_last_admin — должен остаться администратор.
+ * DELETE /staff/team/:id → TeamList: отозвать приглашение, которое ещё не приняли (accepted —
+ * false); 409 staff_invite_accepted — уже принято или им пользовались: сотрудника отключают
  */
 export interface TeamList {
   readonly items: readonly TeamMember[];

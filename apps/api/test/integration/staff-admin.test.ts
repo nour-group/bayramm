@@ -24,6 +24,7 @@ import type {
   StaffPhoto,
   StaffRequestDetail,
   StaffRequestList,
+  TeamList,
   VendorDetail,
   VendorList,
   VendorUser,
@@ -828,6 +829,118 @@ describe("вендор → карточка → проверка → публи�
       );
       expect(phones.phone).toBe(contactPhone);
       expect(phones.listingPhone).toMatch(/^\+99890\d{7}$/);
+    });
+
+    it("витрину и вендора с заявкой не удалить — только приостановить", async () => {
+      const seen = await ok<ListingDetail>(api("manager", "GET", `/staff/listings/${listing.id}`));
+      expect(seen.deleteBlocker).toBe("requests");
+      expect(await error(api("admin", "DELETE", `/staff/listings/${listing.id}`))).toEqual({
+        status: 409,
+        code: "listing_in_use",
+        details: ["requests"],
+      });
+      const owner = await ok<VendorDetail>(api("admin", "GET", `/staff/vendors/${vendor.id}`));
+      expect(owner.deleteBlocker).toBe("requests");
+      expect(await error(api("admin", "DELETE", `/staff/vendors/${vendor.id}`))).toEqual({
+        status: 409,
+        code: "vendor_in_use",
+        details: ["requests"],
+      });
+      expect((await api("manager", "GET", `/staff/listings/${listing.id}`)).status).toBe(200);
+    });
+  });
+});
+
+describe("удаление: витрина, вендор, приглашение", () => {
+  let vendor: VendorDetail;
+  let second: ListingDetail;
+
+  beforeAll(async () => {
+    vendor = await ok<VendorDetail>(
+      api("manager", "POST", "/staff/vendors", { name: `Ошибка ${tag}`, categoryCode: "hall" }),
+      201,
+    );
+    await ok(api("manager", "POST", `/staff/vendors/${vendor.id}/users`, { phone: phone() }), 201);
+    second = await ok<ListingDetail>(
+      api("manager", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "car" }),
+      201,
+    );
+  });
+
+  it("черновик без заявок удаляет менеджер (не модератор) — с фото; в журнале — одна запись", async () => {
+    expect(second.deleteBlocker).toBeNull();
+    const key = `listings/${second.id}/${randomUUID()}.webp`;
+    await admin.query(
+      `insert into app.photos (listing_id, status, storage_key, mime, bytes, width, height, sha256, sort, no_faces_ack)
+       values ($1, 'ready', $2, 'image/webp', 1000, 1600, 1200, $3, 1, true)`,
+      [second.id, key, randomBytes(32)],
+    );
+    expect((await api("moderator", "DELETE", `/staff/listings/${second.id}`)).status).toBe(403);
+    // Объекта в хранилище нет (или хранилище не настроено) — витрина всё равно удаляется
+    expect((await api("manager", "DELETE", `/staff/listings/${second.id}`)).status).toBe(204);
+    expect((await api("manager", "GET", `/staff/listings/${second.id}`)).status).toBe(404);
+    expect((await api("manager", "DELETE", `/staff/listings/${second.id}`)).status).toBe(404);
+    const { rows } = await admin.query<{ action: string; detail: Record<string, unknown> }>(
+      "select action, detail from app.audit_log where object_type = 'listing' and object_id = $1 order by id",
+      [second.id],
+    );
+    expect(rows.at(-1)).toEqual({
+      action: "listing.delete",
+      detail: {
+        vendor_id: vendor.id,
+        category: "car",
+        status: "draft",
+        photos: 1,
+        services: 0,
+        revisions: 0,
+        busy_days: 0,
+      },
+    });
+    const { rows: photos } = await admin.query("select 1 from app.photos where storage_key = $1", [key]);
+    expect(photos).toEqual([]);
+  });
+
+  it("вендора удаляет только администратор — с витринами и пользователями кабинета", async () => {
+    const current = await ok<VendorDetail>(api("manager", "GET", `/staff/vendors/${vendor.id}`));
+    expect(current.deleteBlocker).toBeNull();
+    expect(current.listings).toHaveLength(1);
+    expect((await api("manager", "DELETE", `/staff/vendors/${vendor.id}`)).status).toBe(403);
+    expect((await api("admin", "DELETE", `/staff/vendors/${vendor.id}`)).status).toBe(204);
+    expect((await api("admin", "GET", `/staff/vendors/${vendor.id}`)).status).toBe(404);
+    const { rows } = await admin.query<{ n: number }>(
+      `select (select count(*) from app.vendor_users where vendor_id = $1)::int
+            + (select count(*) from app.listings where vendor_id = $1)::int as n`,
+      [vendor.id],
+    );
+    expect(rows[0]?.n).toBe(0);
+    const audit = await admin.query<{ detail: Record<string, unknown> }>(
+      "select detail from app.audit_log where action = 'vendor.delete' and object_id = $1",
+      [vendor.id],
+    );
+    expect(audit.rows).toEqual([{ detail: { code: vendor.code, listings: 1, photos: 0, users: 1 } }]);
+  });
+
+  it("приглашение, которое не приняли, отзывается; принятое — 409, его отключают", async () => {
+    const username = newStaffUsername();
+    const invited = await ok<TeamList>(
+      api("admin", "POST", "/staff/team", { username, displayName: `Отозвать ${tag}`, role: "manager" }),
+      201,
+    );
+    const member = invited.items.find((m) => m.username === username);
+    expect(member).toMatchObject({ accepted: false });
+    expect((await api("manager", "DELETE", `/staff/team/${member?.id}`)).status).toBe(403);
+    const after = await ok<TeamList>(api("admin", "DELETE", `/staff/team/${member?.id}`));
+    expect(after.items.map((m) => m.id)).not.toContain(member?.id);
+    const { rows } = await admin.query<{ detail: Record<string, unknown> }>(
+      "select detail from app.audit_log where action = 'staff.invite_revoke' and object_id = $1",
+      [member?.id],
+    );
+    expect(rows).toEqual([{ detail: { role: "manager", via: "telegram" } }]);
+
+    const me = await ok<StaffMe>(api("manager", "GET", "/staff/me"));
+    expect(await error(api("admin", "DELETE", `/staff/team/${me.id}`))).toMatchObject({
+      status: 409,
+      code: "staff_invite_accepted",
     });
   });
 });
