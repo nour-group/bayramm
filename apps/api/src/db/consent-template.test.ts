@@ -41,11 +41,11 @@ describe("шаблон текстов согласий", () => {
 
   it("обязательные цели клиента — те же, что проверяет чек-лист выпуска", () => {
     const check = readFileSync(join(supabase, "../.github/scripts/release-check.sh"), "utf8");
+    // Обязательные цели шаблона — массив перед ::app.consent_purpose[]
+    const required = /array\[([^\]]*)\]::app\.consent_purpose\[\]/.exec(template)?.[1] ?? "";
     for (const purpose of ["client_service", "request_transfer", "bot_notifications"]) {
       expect(check).toContain(purpose);
-      expect(template).toMatch(
-        new RegExp(`array\\[[^\\]]*'${purpose}'[^\\]]*\\]::app\\.consent_purpose\\[\\]`),
-      );
+      expect(required).toContain(`'${purpose}'`);
     }
   });
 

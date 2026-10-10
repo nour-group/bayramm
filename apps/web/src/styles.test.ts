@@ -120,9 +120,12 @@ describe("styles.css клиента", () => {
     );
   });
 
-  it.each([".filter-pill", ".site-nav a"])("%s: пилюля с зоной нажатия 44px", (selector) => {
+  it.each([
+    [".filter-pill", /(^|\})\s*\.filter-pill \{([^}]*)\}/],
+    [".site-nav a", /(^|\})\s*\.site-nav a \{([^}]*)\}/],
+  ] as const)("%s: пилюля с зоной нажатия 44px", (selector, pattern) => {
     const body = selector === ".site-nav a" ? atRuleBody(/@media \(min-width: 1024px\)/) : css;
-    const rule = new RegExp(`(^|\\})\\s*${selector.replace(".", "\\.")} \\{([^}]*)\\}`).exec(body)?.[2] ?? "";
+    const rule = pattern.exec(body)?.[2] ?? "";
     expect(rule).toMatch(/min-height: var\(--hit-min\)/);
     expect(rule).toMatch(/border-radius: var\(--r-999\)/);
   });
