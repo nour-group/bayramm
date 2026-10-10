@@ -30,7 +30,7 @@ import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel, w
 import { usePhone } from "../layout";
 import { SECTION_PERMISSION, sectionOf, useQueryState, type View } from "../router";
 import { t } from "../texts";
-import { ActiveFilter, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
+import { ActiveFilter, EmptyList, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
 
 /** Меньше половины заявок отвечено в срок — полоса коралловая */
 const RATE_LOW = 50;
@@ -109,14 +109,15 @@ export function MetricsPage() {
         <LoadedView loaded={vendors.loaded} onRetry={vendors.reload}>
           {(list) =>
             list.items.length === 0 ? (
-              <p className="empty">{t.metricsVendorsEmpty}</p>
+              // Пусто из-за категории — снять фильтр одной кнопкой
+              <EmptyList text={t.metricsVendorsEmpty} onReset={category ? () => setCategory(null) : null} />
             ) : (
               <VendorTable items={list.items} />
             )
           }
         </LoadedView>
       </section>
-      <ContactsSection category={category} />
+      <ContactsSection category={category} onReset={() => setCategory(null)} />
     </div>
   );
 }
@@ -588,7 +589,7 @@ function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
 type ContactRow = ContactMetrics["items"][number];
 
 /** Контакты витрин за 30 дней: сколько раз открыли окно контактов, позвонили, написали в Telegram */
-function ContactsSection({ category }: { category: string | null }) {
+function ContactsSection({ category, onReset }: { category: string | null; onReset: () => void }) {
   const query = new URLSearchParams({ days: "30" });
   if (category !== null) query.set("category", category);
   const { loaded, reload } = useLoad<ContactMetrics>(`/staff/metrics/contacts?${query}`);
@@ -601,7 +602,7 @@ function ContactsSection({ category }: { category: string | null }) {
       <LoadedView loaded={loaded} onRetry={reload}>
         {(data) =>
           data.items.length === 0 ? (
-            <p className="empty">{t.metricsContactsEmpty}</p>
+            <EmptyList text={t.metricsContactsEmpty} onReset={category ? onReset : null} />
           ) : (
             <ContactTable items={data.items} days={data.days} />
           )

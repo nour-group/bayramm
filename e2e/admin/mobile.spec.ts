@@ -155,6 +155,42 @@ test.describe("календарь на 320px", () => {
   });
 });
 
+test.describe("витрина на телефоне: оглавление блоков", () => {
+  for (const width of [320, 390] as const) {
+    test(`${width}px: прилипает под шапкой; переход к блоку — заголовок виден, не под оглавлением`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      const api = await start(page);
+      await page.goto(`/listings/${CAR_LISTING_ID}`);
+      const index = page.getByRole("navigation", { name: t.listingIndex });
+      await expect(index.getByRole("button")).toHaveText([
+        t.listingIndexItems.photos ?? "",
+        t.listingIndexItems.services ?? "",
+        t.listingIndexItems.calendar ?? "",
+        t.listingIndexItems.main ?? "",
+        t.listingIndexItems.attrs ?? "",
+        t.listingIndexItems.phone ?? "",
+        t.listingIndexItems.history ?? "",
+      ]);
+      await index.getByRole("button", { name: t.listingIndexItems.history }).click();
+      const history = page.locator("#history-title");
+      await expect(history).toBeFocused();
+      // Оглавление прилипло под шапкой, заголовок блока — ниже него, а не под ним
+      const boxes = await page.evaluate(() => {
+        const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect();
+        return { bar: box(".appbar"), index: box(".section-index"), title: box("#history-title") };
+      });
+      expect(Math.round(boxes.index?.top ?? -1)).toBe(Math.round(boxes.bar?.bottom ?? 0));
+      expect(boxes.title?.top ?? 0).toBeGreaterThanOrEqual(boxes.index?.bottom ?? 0);
+      // Само оглавление листается вбок внутри себя, страница — нет
+      expect((await horizontalOverflow(page)).scrollWidth).toBeLessThanOrEqual(width);
+      await expectHitAreas(page, `оглавление ${width}px`, ".section-index button");
+      expect(api.unexpected).toEqual([]);
+    });
+  }
+});
+
 test.describe("навигация на телефоне", () => {
   test("нижняя панель: частые разделы и «Ещё» со всеми остальными; переход закрывает шторку", async ({
     page,

@@ -161,7 +161,8 @@ export function Combobox<V extends string>({
     if (item instanceof HTMLElement) keepVisible(list.current, item);
   }, [active, mode]);
 
-  const classes = ["ui-select", `ui-select-${size}`, "ui-combobox", open ? "is-open" : "", className ?? ""]
+  // Кнопка — та же, что у Select: рисунок и размеры одни
+  const classes = ["ui-select", `ui-select-${size}`, open ? "is-open" : "", className ?? ""]
     .filter(Boolean)
     .join(" ");
   const note = loading ? loadingText : options.length === 0 ? emptyText : "";

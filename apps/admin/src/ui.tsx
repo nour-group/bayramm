@@ -152,7 +152,7 @@ export type ToneDomain = keyof typeof TONES;
 /** Цвет плашки статуса; неизвестный статус (новее сборки панели) — нейтральный */
 export function toneOf(domain: ToneDomain, status: string): Tone {
   const tones: Readonly<Record<string, Tone>> = TONES[domain];
-  // Не Object.hasOwn: его нет в старых вебвью Android (ловушка №5)
+  // Своё свойство, а не унаследованное: статус «constructor» цветом не станет
   return (Object.hasOwn(tones, status) ? tones[status] : undefined) ?? "muted";
 }
 

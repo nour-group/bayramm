@@ -14,6 +14,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { categoryName } from "./categories";
+import { formatSum } from "./format";
 import { tashkentToday } from "./pages/Calendar";
 import { tokenStore } from "./session";
 import { t } from "./texts";
@@ -1398,5 +1399,228 @@ describe("заявки", () => {
     await mount(`/requests/${REQUEST_ID}`);
     expect(text()).toContain("Client");
     expect(text()).not.toContain(t.clientPhoneReason);
+  });
+});
+
+describe("переходы между объектами", () => {
+  const METHODS = {
+    telegram: { bot: "example_login_bot", loginDomain: "bayramm.example" },
+    phone: false,
+    turnstileSiteKey: null,
+    apps: {
+      web: "https://bayramm.example",
+      vendor: "https://vendor.example",
+      admin: "https://admin.example",
+    },
+  };
+  const AVAILABILITY = { from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 };
+  const link = (name: string) =>
+    [...container.querySelectorAll("a")].find((a) => a.textContent?.trim() === name) as
+      | HTMLAnchorElement
+      | undefined;
+  const crumbs = () => [...container.querySelectorAll("nav.crumbs a")].map((a) => a.textContent);
+
+  const REQUEST_DETAIL: StaffRequestDetail = {
+    id: REQUEST_ID,
+    publicNo: 1001,
+    status: "viewed",
+    sla: "waiting",
+    slaDueAt: "2026-09-29T06:00:00.000Z",
+    firstResponseAt: null,
+    firstResponseBy: null,
+    occasionCode: "toy",
+    eventDate: "2026-11-10",
+    guests: 150,
+    dayPart: null,
+    details: {},
+    createdAt: "2026-09-28T18:00:00.000Z",
+    listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },
+    vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+    budgetMinUzs: null,
+    budgetMaxUzs: 5_000_000,
+    declineReason: null,
+    declineNote: null,
+    firstViewedAt: null,
+    slaBreachedAt: null,
+    source: "tma",
+    contactName: "Client",
+    comment: null,
+    contactPurged: false,
+    client: { id: "dddddddd-0000-0000-0000-000000000001", ref: "C-dddddddd" },
+    history: [
+      {
+        from: "new",
+        to: "viewed",
+        actorKind: "vendor_user",
+        actorName: "Бахтиёр Р.",
+        source: "vendor_cabinet",
+        reason: null,
+        at: "2026-09-28T19:00:00.000Z",
+      },
+    ],
+    reminders: 0,
+    timeline: [{ kind: "created", at: "2026-09-28T18:00:00.000Z" }],
+    notes: [],
+    awaiting: true,
+    vendorReachable: 1,
+    nextReminderAt: null,
+  };
+
+  it("витрина: путь над заголовком — вендоры → вендор; на сайте и заявки витрины — ссылками", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      "GET /api/auth/methods": json(METHODS),
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json(AVAILABILITY),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(crumbs()).toEqual([t.vendors, "Oqsaroy · V101"]);
+    expect(link("Oqsaroy · V101")?.getAttribute("href")).toBe(`/vendors/${VENDOR_ID}`);
+    // На компьютере вендор — только в пути: второй ссылки в шапке страницы нет
+    expect(container.querySelector(".listing-head a[href^='/vendors/']")).toBeNull();
+    const site = [...container.querySelectorAll("a")].find((a) => a.textContent?.startsWith(t.listingOnSite));
+    expect(site?.getAttribute("href")).toBe("https://bayramm.example/venue/oqsaroy");
+    expect(site?.getAttribute("target")).toBe("_blank");
+    expect(site?.getAttribute("rel")).toContain("noopener");
+    expect(link(t.listingRequests)?.getAttribute("href")).toBe(`/requests?listingId=${LISTING_ID}`);
+  });
+
+  it("витрина не на сайте — «Открыть на сайте» нет; «Лид» объяснён словами", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      "GET /api/auth/methods": json(METHODS),
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({ ...LISTING, status: "lead" }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json(AVAILABILITY),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect([...container.querySelectorAll("a")].some((a) => a.textContent?.startsWith(t.listingOnSite))).toBe(
+      false,
+    );
+    expect(text()).toContain(t.statusHints.lead);
+  });
+
+  it("опубликовать, пока чего-то не хватает: шторка перечисляет чего и кнопку не даёт — запроса нет", async () => {
+    mockApi(staff("moderator", ["catalog.read", "listings.publish", "listings.moderate", "listings.draft"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        status: "review",
+        blockers: { review: [], active: ["descriptions", "stir"] },
+      }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json(AVAILABILITY),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    await act(async () => button(t.actions.publish)?.click());
+    const form = container.querySelector(".confirm") as HTMLFormElement;
+    expect(form.textContent).toContain(t.actionBlocked.publish);
+    expect(form.textContent).toContain(t.blockers.descriptions);
+    expect(form.textContent).toContain(t.blockers.stir);
+    const submit = [...form.querySelectorAll("button")].find((b) => b.textContent === t.actions.publish);
+    expect(submit?.disabled).toBe(true);
+    expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
+  });
+
+  it("приостановить: подтверждение — залитой красной кнопкой, пока ждём сервер — «…»", async () => {
+    let answer: (response: Response) => void = () => {};
+    mockApi(staff("moderator", ["catalog.read", "listings.moderate"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json(AVAILABILITY),
+    });
+    const base = vi.mocked(fetch).getMockImplementation();
+    vi.mocked(fetch).mockImplementation(async (input, init) =>
+      String(input).endsWith("/suspend")
+        ? new Promise<Response>((resolve) => {
+            answer = resolve;
+          })
+        : (base?.(input, init) ?? new Response("{}", { status: 404 })),
+    );
+    await mount(`/listings/${LISTING_ID}`);
+    await act(async () => button(t.actions.suspend)?.click());
+    await type(container.querySelector(".confirm textarea") as HTMLTextAreaElement, "Ремонт");
+    const submit = container.querySelector<HTMLButtonElement>(".confirm button[type=submit]");
+    expect(submit?.className).toContain("btn-danger-fill");
+    await act(async () => submit?.click());
+    expect(submit?.getAttribute("aria-busy")).toBe("true");
+    expect(submit?.textContent).toBe(`${t.actions.suspend}…`);
+    await act(async () => answer(new Response(JSON.stringify({ ...LISTING, status: "suspended" }))));
+    await settle();
+  });
+
+  it("?focus=photos (очередь «Новые фото») — фокус на блоке фото", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(LISTING),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json(AVAILABILITY),
+    });
+    await mount(`/listings/${LISTING_ID}?focus=photos`);
+    expect(document.activeElement?.id).toBe("photos-title");
+  });
+
+  it("заявка: путь — заявки → вендор → витрина; клиент — ссылкой по коду; бюджет одной границей; кто менял статус", async () => {
+    mockApi(staff("manager", ["catalog.read", "requests.read", "clients.read"]), {
+      [`GET /api/staff/requests/${REQUEST_ID}`]: json(REQUEST_DETAIL),
+    });
+    await mount(`/requests/${REQUEST_ID}`);
+    expect(crumbs()).toEqual([t.requests, "Oqsaroy · V101", "Oqsaroy Hall"]);
+    expect(link(t.requestClientOpen("C-dddddddd"))?.getAttribute("href")).toBe(
+      "/clients/dddddddd-0000-0000-0000-000000000001",
+    );
+    // Одна граница бюджета — «до …», а не «— — 5 000 000»
+    expect(text()).toContain(t.budgetTo(formatSum(5_000_000)));
+    expect(text()).not.toContain("— —");
+    expect(container.querySelector("#history-title")?.parentElement?.textContent).toContain(
+      `Бахтиёр Р. · ${t.historyBy.vendor_user}`,
+    );
+  });
+
+  it("без права на клиентов ссылки на клиента нет; бюджет с двумя границами — «от … до …»", async () => {
+    mockApi(staff("manager", ["catalog.read", "requests.read"]), {
+      [`GET /api/staff/requests/${REQUEST_ID}`]: json({
+        ...REQUEST_DETAIL,
+        budgetMinUzs: 1_000_000,
+        budgetMaxUzs: 2_000_000,
+      }),
+    });
+    await mount(`/requests/${REQUEST_ID}`);
+    expect(link(t.requestClientOpen("C-dddddddd"))).toBeUndefined();
+    expect(text()).toContain(t.budgetRange(formatSum(1_000_000), formatSum(2_000_000)));
+  });
+
+  it("вендор: заявки и журнал вендора — ссылками; только что заведённый — «что дальше»", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+    });
+    await mount(`/vendors/${VENDOR_ID}?created=1`);
+    expect(crumbs()).toEqual([t.vendors]);
+    expect(link(t.vendorRequests)?.getAttribute("href")).toBe("/requests?q=V101");
+    expect(link(t.vendorJournal)?.getAttribute("href")).toBe(`/audit?type=vendor&object=${VENDOR_ID}`);
+    expect(text()).toContain(t.vendorCreated);
+    expect(text()).toContain(t.vendorNextChecklist);
+    // Метка из адреса убрана: обновление страницы подсказку не повторит
+    expect(window.location.search).toBe("");
+    await act(async () => button(t.vendorNextDone)?.click());
+    expect(text()).not.toContain(t.vendorCreated);
+  });
+
+  it("менеджеру журнала нет — и ссылки «Журнал вендора» нет", async () => {
+    mockApi(staff("manager", ["catalog.read", "vendors.write", "requests.read"]), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    expect(link(t.vendorRequests)).toBeDefined();
+    expect(link(t.vendorJournal)).toBeUndefined();
+    expect(text()).not.toContain(t.vendorCreated);
+  });
+
+  it("отметка чек-листа — всплывающей строкой: что отмечено", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+      [`POST /api/staff/vendors/${VENDOR_ID}/checklist`]: json({
+        ...VENDOR,
+        checklist: { ...VENDOR.checklist, stir: mark(true) },
+      }),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    await act(async () => container.querySelectorAll<HTMLInputElement>(".check input")[1]?.click());
+    await settle();
+    expect(document.querySelector(".ui-toasts")?.textContent).toContain(
+      t.toastChecklist(t.checklistItems.stir, true),
+    );
   });
 });

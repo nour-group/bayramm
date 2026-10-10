@@ -44,7 +44,6 @@ import {
   availabilityOf,
   CAR_CONTACTS,
   CAR_LISTING_ID,
-  CAR_REQUEST_ID,
   type Calendar,
   carRequest,
   createService,
@@ -548,6 +547,25 @@ const AUDIT: AuditList = {
       objectType: "listing",
       objectId: "00000000-0000-4000-8100-0000000000ff",
       objectLabel: null,
+      detail: { fields: ["name"] },
+      source: "admin",
+    },
+  ],
+};
+
+/** Журнал одного вендора: объект — его названием */
+const VENDOR_AUDIT: AuditList = {
+  total: 1,
+  items: [
+    {
+      id: "5",
+      at: iso,
+      actorKind: "staff",
+      actor: { id: STAFF.id, name: STAFF.displayName },
+      action: "vendor.update",
+      objectType: "vendor",
+      objectId: VENDOR_ID,
+      objectLabel: "Lola",
       detail: { fields: ["name"] },
       source: "admin",
     },
@@ -1307,9 +1325,11 @@ export async function mockStaffApi(
       };
       return json(route, 200, list);
     }
-    if (key === `GET /staff/requests/${REQUEST_ID}`) return json(route, 200, REQUEST);
-    const car = requests.find((r) => r.id === CAR_REQUEST_ID);
-    if (car && key === `GET /staff/requests/${CAR_REQUEST_ID}`) return json(route, 200, car);
+    // Заявка — любая из списка (основная, кортежа, длинного списка)
+    const requestMatch = /^\/staff\/requests\/([0-9a-f-]{36})$/.exec(path);
+    const found =
+      requestMatch && method === "GET" ? requests.find((r) => r.id === requestMatch[1]) : undefined;
+    if (found) return json(route, 200, found);
     if (key === "GET /staff/revisions") {
       const list: RevisionList = { total: 1, items: [REVISION] };
       return json(route, 200, list);
@@ -1325,6 +1345,9 @@ export async function mockStaffApi(
     }
     if (key === `GET /staff/clients/${CLIENT_ID}`) return json(route, 200, CLIENT);
     if (key === "GET /staff/outbox") return json(route, 200, OUTBOX);
+    // Журнал одного вендора (ссылка «Журнал вендора»): записи о нём — с его названием
+    if (key === "GET /staff/audit" && url.searchParams.get("object") === VENDOR_ID)
+      return json(route, 200, VENDOR_AUDIT);
     if (key === "GET /staff/audit") return json(route, 200, AUDIT);
     if (key === "GET /staff/audit/pii") return json(route, 200, PII_AUDIT);
     if (key === "GET /staff/team") return json(route, 200, { items: team });

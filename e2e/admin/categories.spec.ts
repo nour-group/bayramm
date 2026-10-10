@@ -208,6 +208,10 @@ test("услуги: из каталога с добавкой; правка; с�
 
   await act(retro, t.servicePause, "Ретро-автомобиль").click();
   await expect(retro).toContainText(t.serviceStatus.paused ?? "");
+  // Кнопка исчезла вместе с услугой на витрине — что сделали, говорит всплывающая строка
+  await expect(
+    page.getByRole("status").filter({ hasText: t.toastServicePaused("Ретро-автомобиль") }),
+  ).toBeVisible();
   await act(retro, t.serviceDelete, "Ретро-автомобиль").click();
   await page
     .getByRole("alertdialog", { name: t.serviceDeleteTitle })

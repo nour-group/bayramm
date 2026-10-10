@@ -435,8 +435,16 @@ describe("раздел «Метрики»", () => {
     );
     expect(calls.some((c) => c.url === "/api/staff/metrics/contacts?days=30&category=car")).toBe(true);
     const section = container.querySelector("section[aria-labelledby='contacts-metrics-title']");
-    expect(section?.querySelector(".empty")?.textContent).toBe(t.metricsContactsEmpty);
+    expect(section?.querySelector(".empty p")?.textContent).toBe(t.metricsContactsEmpty);
     expect(section?.querySelector("table")).toBeNull();
+    // Пусто из-за категории — фильтр снимается здесь же
+    const reset = [...(section?.querySelectorAll(".empty button") ?? [])].find(
+      (b) => b.textContent === t.resetFilters,
+    );
+    const before = calls.length;
+    await click(reset);
+    expect(calls.slice(before).some((c) => c.url === "/api/staff/metrics/contacts?days=30")).toBe(true);
+    expect(container.querySelector("section[aria-labelledby='contacts-metrics-title'] table")).not.toBeNull();
   });
 
   it("не ответили контакты — остальные блоки на месте, у блока своя ошибка с «Повторить»", async () => {

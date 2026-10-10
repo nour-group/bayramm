@@ -760,9 +760,9 @@ export const t = {
   auditActor: "Сотрудник",
   auditActorAny: "Любой",
   auditActorKind: "Кто",
-  auditType: "Объект",
+  auditType: "Вид объекта",
   auditTypeAny: "Любой",
-  auditObject: "id объекта",
+  auditObject: "Объект",
   auditAction: "Что сделали",
   auditActionAny: "Любое действие",
   // Группы действий: значение фильтра — начало кода действия на сервере (listing. → listing.update…)
