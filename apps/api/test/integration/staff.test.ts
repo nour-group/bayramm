@@ -83,6 +83,8 @@ describe("POST /auth/staff/webapp: приглашение по имени", () =
       username,
       // Права роли — для панели; проверяет их сервер на каждом запросе
       permissions: expect.arrayContaining(["catalog.read", "listings.publish"]),
+      // Бот ещё не знает чата: сотрудник не писал ему /start
+      botLinked: false,
     });
 
     // Привязка: в app — только HMAC, Telegram ID — в pii
