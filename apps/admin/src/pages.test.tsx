@@ -1358,6 +1358,7 @@ describe("заявки", () => {
     contactName: "Client",
     comment: null,
     contactPurged: false,
+    client: { id: "dddddddd-0000-0000-0000-000000000001", ref: "C-dddddddd" },
     history: [],
     reminders: 0,
     timeline: [

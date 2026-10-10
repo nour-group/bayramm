@@ -14,6 +14,7 @@ import { formatMoment } from "../format";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
 import {
+  busyLabel,
   ConfirmForm,
   ErrorText,
   Field,
@@ -21,6 +22,7 @@ import {
   LoadedView,
   PhoneSheet,
   Pill,
+  toneOf,
   useRevealErrors,
 } from "../ui";
 import { useUnsaved } from "../unsaved";
@@ -193,9 +195,10 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
         <button
           type="submit"
           className="btn btn-primary"
+          aria-busy={busy || undefined}
           disabled={busy || displayName.trim() === "" || contact.trim() === ""}
         >
-          {t.invite}
+          {busyLabel(t.invite, busy)}
         </button>
         {done && (
           <span className="saved" role="status">
@@ -368,9 +371,9 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
       <div className="rcard-head">
         <p className="rcard-title">{member.displayName}</p>
         {member.active ? (
-          <Pill tone="outline">{t.memberActive}</Pill>
+          <Pill tone={toneOf("member", "active")}>{t.memberActive}</Pill>
         ) : (
-          <Pill tone="muted">{t.memberInactive}</Pill>
+          <Pill tone={toneOf("member", "inactive")}>{t.memberInactive}</Pill>
         )}
       </div>
       <p className="rcard-meta">
@@ -481,9 +484,9 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
       </td>
       <td>
         {member.active ? (
-          <Pill tone="outline">{t.memberActive}</Pill>
+          <Pill tone={toneOf("member", "active")}>{t.memberActive}</Pill>
         ) : (
-          <Pill tone="muted">{t.memberInactive}</Pill>
+          <Pill tone={toneOf("member", "inactive")}>{t.memberInactive}</Pill>
         )}
         <span className="sub">
           {linkState(member)}

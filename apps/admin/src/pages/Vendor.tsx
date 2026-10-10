@@ -2,7 +2,11 @@
    кабинета, витрины (по одной на категорию, бывает и несколько). Новый вендор — та же форма
    без остального, с выбором категории первой витрины. Удалить вендора целиком — администратор
    (в шапке: кнопкой, на телефоне — в «Ещё»), только пока ни у одной витрины не было заявок и
-   ни одна не на проверке и не в каталоге; подтверждение — кодом вендора. */
+   ни одна не на проверке и не в каталоге; подтверждение — кодом вендора.
+
+   В шапке — переходы к тому, что о вендоре есть в других разделах: его заявки (поиск по
+   коду) и журнал действий с ним. Только что заведённый вендор — с подсказкой «что дальше»:
+   проверка, вход в кабинет, первая витрина. */
 
 import type {
   ChecklistItem,
@@ -11,17 +15,19 @@ import type {
   VendorInput,
   VendorPhones,
 } from "@bayramm/shared/api/staff";
-import { Checkbox, ConfirmSheet } from "@bayramm/ui/react";
-import { useCallback, useId, useRef, useState } from "react";
+import { Checkbox, ConfirmSheet, useToast } from "@bayramm/ui/react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
-import { CategoryChip } from "../categories";
-import { formatMoment, formatPrice } from "../format";
+import { CategoryChip, formatPrice } from "../categories";
+import { formatMoment } from "../format";
 import { usePhone } from "../layout";
+import { readQuery, writeQuery } from "../router";
 import { t } from "../texts";
 import {
   Blockers,
   deleteFailureText,
   ErrorText,
+  focusSection,
   Link,
   LoadedView,
   OverflowMenu,
@@ -36,6 +42,9 @@ import { VendorUsers } from "./VendorUsers";
 
 const CHECKLIST: readonly ChecklistItem[] = ["contract", "stir", "contacts", "pdConsent"];
 
+/** Метка в адресе: вендора только что завели (VendorNewPage) */
+const CREATED = ["created"] as const;
+
 /**
  * Пункты готовности, которые отмечают в «Проверке вендора» на этой же странице: у витрин их
  * не повторяем — иначе четыре одинаковых строки у каждой витрины
@@ -49,8 +58,9 @@ export function VendorNewPage({ dictionaries }: { dictionaries: StaffDictionarie
     async (body: VendorInput): Promise<Failure | null> => {
       const result = await api.post<VendorDetail>("/staff/vendors", body);
       if (!result.ok) return result;
-      // Вендор создан — форма сохранена: переход без вопроса о несохранённом
-      navigate({ name: "vendor", id: result.data.id }, { force: true });
+      // Вендор создан — форма сохранена: переход без вопроса о несохранённом; на его странице —
+      // что дальше (?created=1)
+      navigate({ name: "vendor", id: result.data.id, query: { created: "1" } }, { force: true });
       return null;
     },
     [api, navigate],
@@ -62,10 +72,68 @@ export function VendorNewPage({ dictionaries }: { dictionaries: StaffDictionarie
 
 export function VendorPage({ id, dictionaries }: { id: string; dictionaries: StaffDictionaries | null }) {
   const { loaded, reload, set } = useLoad<VendorDetail>(`/staff/vendors/${id}`);
+  // Только что заведён — подсказка «что дальше»; из адреса её убираем: обновление страницы и
+  // «назад» её не повторяют
+  const [created, setCreated] = useState(() => readQuery(CREATED).created === "1");
+  useEffect(() => writeQuery(CREATED, {}), []);
   return (
-    <LoadedView loaded={loaded} onRetry={reload}>
-      {(vendor) => <VendorView vendor={vendor} dictionaries={dictionaries} onChange={set} />}
+    <LoadedView loaded={loaded} onRetry={reload} skeleton="detail">
+      {(vendor) => (
+        <VendorView
+          vendor={vendor}
+          dictionaries={dictionaries}
+          onChange={set}
+          created={created}
+          onCreatedDone={() => setCreated(false)}
+        />
+      )}
     </LoadedView>
+  );
+}
+
+/** Что делать с только что заведённым вендором: по шагу — переход к блоку на этой странице */
+function NextSteps({ vendor, onDone }: { vendor: VendorDetail; onDone: () => void }) {
+  const first = vendor.listings[0];
+  return (
+    <section className="notice notice-good next-steps" aria-labelledby="next-steps-title">
+      <p id="next-steps-title" className="notice-title" tabIndex={-1}>
+        {t.vendorCreated}
+      </p>
+      <ol className="blockers blockers-go">
+        <li>
+          <span className="blocker-text">{t.vendorNextChecklist}</span>
+          <button type="button" className="btn btn-sm" onClick={() => focusSection("checklist-title")}>
+            {t.goTo}
+            <span className="visually-hidden">: {t.checklist}</span>
+          </button>
+        </li>
+        <li>
+          <span className="blocker-text">{t.vendorNextUsers}</span>
+          <button type="button" className="btn btn-sm" onClick={() => focusSection("users-title")}>
+            {t.goTo}
+            <span className="visually-hidden">: {t.users}</span>
+          </button>
+        </li>
+        <li>
+          <span className="blocker-text">{t.vendorNextListing}</span>
+          {first ? (
+            <Link to={{ name: "listing", id: first.id }} className="btn btn-sm">
+              {first.name}
+            </Link>
+          ) : (
+            <button type="button" className="btn btn-sm" onClick={() => focusSection("listings-title")}>
+              {t.goTo}
+              <span className="visually-hidden">: {t.listings}</span>
+            </button>
+          )}
+        </li>
+      </ol>
+      <p>
+        <button type="button" className="btn btn-sm" onClick={onDone}>
+          {t.vendorNextDone}
+        </button>
+      </p>
+    </section>
   );
 }
 
@@ -73,9 +141,12 @@ interface VendorViewProps {
   vendor: VendorDetail;
   dictionaries: StaffDictionaries | null;
   onChange: (vendor: VendorDetail) => void;
+  /** Только что заведён: показать «что дальше» */
+  created: boolean;
+  onCreatedDone: () => void;
 }
 
-function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
+function VendorView({ vendor, dictionaries, onChange, created, onCreatedDone }: VendorViewProps) {
   const { api } = useSession();
   const can = useCan();
   useEntityTitle(vendor.name ?? vendor.contacts.legalName ?? vendor.code);
@@ -96,8 +167,21 @@ function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
           {t.vendorCode}: {vendor.code}
           {vendor.manager?.name ? ` · ${t.fields.managerId}: ${vendor.manager.name}` : ""}
         </p>
-        <DeleteVendor vendor={vendor} />
+        <div className="head-links">
+          {can("requests.read") ? (
+            <Link to={{ name: "requests", query: { q: vendor.code } }} className="btn btn-sm">
+              {t.vendorRequests}
+            </Link>
+          ) : null}
+          {can("audit.read") ? (
+            <Link to={{ name: "audit", query: { type: "vendor", object: vendor.id } }} className="btn btn-sm">
+              {t.vendorJournal}
+            </Link>
+          ) : null}
+          <DeleteVendor vendor={vendor} />
+        </div>
       </div>
+      {created ? <NextSteps vendor={vendor} onDone={onCreatedDone} /> : null}
       <div className="columns">
         <div className="stack">
           <Checklist vendor={vendor} onChange={onChange} />
@@ -233,6 +317,7 @@ function DeleteVendor({ vendor }: { vendor: VendorDetail }) {
 function Checklist({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: VendorDetail) => void }) {
   const { api } = useSession();
   const can = useCan();
+  const toast = useToast();
   const [busy, setBusy] = useState<ChecklistItem | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const done = CHECKLIST.filter((item) => vendor.checklist[item].done).length;
@@ -245,12 +330,14 @@ function Checklist({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: V
     });
     setBusy(null);
     setFailure(result.ok ? null : result);
-    if (result.ok) onChange(result.data);
+    if (!result.ok) return;
+    onChange(result.data);
+    toast(t.toastChecklist(t.checklistItems[item], value), { tone: "success" });
   };
 
   return (
     <section className="panel" aria-labelledby="checklist-title">
-      <h2 id="checklist-title">
+      <h2 id="checklist-title" tabIndex={-1}>
         {t.checklist} <span className="count">{done}/4</span>
       </h2>
       <p className="muted small">{t.checklistHint}</p>
@@ -308,7 +395,7 @@ function Listings({ vendor }: { vendor: VendorDetail }) {
   const can = useCan();
   return (
     <section className="panel" aria-labelledby="listings-title">
-      <h2 id="listings-title">
+      <h2 id="listings-title" tabIndex={-1}>
         {t.listings} <span className="count">{vendor.listings.length}</span>
       </h2>
       <p className="muted small">{t.vitrinasHint}</p>

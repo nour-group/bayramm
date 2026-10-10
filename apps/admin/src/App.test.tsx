@@ -335,9 +335,9 @@ describe("сессия сотрудника", () => {
     mockApi({
       ...BOT_INFO,
       "GET /api/staff/me": json(STAFF),
-      "GET /api/staff/listings?status=review&limit=100": expired,
-      "GET /api/staff/revisions?status=pending&limit=100": expired,
-      "GET /api/staff/listings?photos=pending&limit=100": expired,
+      "GET /api/staff/listings?status=review&limit=20&offset=0": expired,
+      "GET /api/staff/revisions?status=pending&limit=20&offset=0": expired,
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": expired,
     });
     await mount("/vendors");
     expect(heading()).toBe(t.vendors);
@@ -374,23 +374,39 @@ describe("сессия сотрудника", () => {
 describe("оболочка панели оператора", () => {
   beforeEach(signedIn);
 
-  it("корень открывает вендоров и переписывает адрес", async () => {
+  it("корень открывает главный раздел роли (у менеджера — заявки) и переписывает адрес", async () => {
     await mount("/");
-    expect(window.location.pathname).toBe("/vendors");
-    expect(heading()).toBe("Вендоры");
-    expect(link("Вендоры").getAttribute("aria-current")).toBe("page");
+    expect(window.location.pathname).toBe("/requests");
+    expect(heading()).toBe("Заявки");
+    expect(link("Заявки").getAttribute("aria-current")).toBe("page");
+    // Чужой раздел до главного не грузится: корень сразу — заявки
+    expect(summary().some((c) => c.startsWith("GET /api/staff/vendors"))).toBe(false);
   });
 
-  it("вошедшему страница входа не нужна — открываются вендоры", async () => {
+  it("вошедшему страница входа не нужна — открывается главный раздел", async () => {
     await mount("/login");
-    expect(window.location.pathname).toBe("/vendors");
-    expect(heading()).toBe("Вендоры");
+    expect(window.location.pathname).toBe("/requests");
+    expect(heading()).toBe("Заявки");
   });
 
-  it("в навигации — только разделы роли: менеджеру журнал, команда и настройки не показываются", async () => {
+  it("модератору заявок не видно — его главный раздел «Модерация»", async () => {
+    mockApi({
+      ...BOT_INFO,
+      "GET /api/staff/me": json({
+        ...STAFF,
+        role: "moderator",
+        permissions: ["catalog.read", "listings.publish", "photos.moderate", "revisions.moderate"],
+      }),
+    });
+    await mount("/");
+    expect(window.location.pathname).toBe("/moderation");
+    expect(heading()).toBe("Модерация");
+  });
+
+  it("в навигации — только разделы роли, в порядке нижней панели телефона", async () => {
     await mount("/vendors");
     const nav = [...container.querySelectorAll(".nav a")].map((a) => a.textContent);
-    expect(nav).toEqual(["Вендоры", "Модерация", "Заявки", "Клиенты", "Уведомления"]);
+    expect(nav).toEqual(["Заявки", "Модерация", "Вендоры", "Клиенты", "Уведомления"]);
   });
 
   it.each([
@@ -408,10 +424,10 @@ describe("оболочка панели оператора", () => {
     expect(document.title).toBe(`${name} · Bayramm`);
   });
 
-  it("неизвестный путь — «не найдена» со ссылкой на вендоров", async () => {
+  it("неизвестный путь — «не найдена» со ссылкой на главный раздел роли", async () => {
     await mount("/nope");
     expect(heading()).toBe("Страница не найдена");
-    expect(link("К вендорам").getAttribute("href")).toBe("/vendors");
+    expect(link(t.toSection(t.requests)).getAttribute("href")).toBe("/requests");
   });
 
   it("есть ссылка «К содержимому» на main", async () => {

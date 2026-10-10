@@ -102,6 +102,7 @@ const REQUEST: StaffRequestDetail = {
   contactName: "Client",
   comment: null,
   contactPurged: false,
+  client: { id: "dddddddd-0000-0000-0000-000000000001", ref: "C-dddddddd" },
   history: [],
   timeline: [],
   notes: [],
@@ -420,7 +421,7 @@ describe("телефон: читаемость списков", () => {
     await mount("/requests");
     await click([...container.querySelectorAll("button")].find((b) => b.textContent === t.filters));
     const titles = [...(dialog()?.querySelectorAll(".sheet-group") ?? [])];
-    expect(titles.map((el) => el.textContent)).toEqual([t.colDue, t.colCategory]);
+    expect(titles.map((el) => el.textContent)).toEqual([t.colDue, t.requestStatusFilter, t.colCategory]);
     for (const title of titles)
       expect(dialog()?.querySelector(`[role=radiogroup][aria-labelledby="${title.id}"]`)).not.toBeNull();
   });

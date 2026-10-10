@@ -97,8 +97,9 @@ test("модератор: заявки по ссылке — «нет досту
   await expect(heading(page)).toBeVisible();
   await expect(page.getByText(t.noAccess)).toBeVisible();
   await expect(page.getByRole("button", { name: t.retry })).toHaveCount(0);
-  await page.getByRole("link", { name: t.toSection(t.vendors) }).click();
-  await expect(page).toHaveURL("/vendors");
+  // Путь — в главный раздел роли: у модератора это «Модерация»
+  await page.getByRole("link", { name: t.toSection(t.moderation) }).click();
+  await expect(page).toHaveURL("/moderation");
   expect(asked).toEqual([]);
   await page.goto("/team");
   await expect(page.getByText(t.noAccess)).toBeVisible();
@@ -203,11 +204,15 @@ test.describe("оповещения команды: бот должен знат
     await page.goto("/metrics");
     const services = page.getByRole("link", { name: new RegExp(t.metricsQueues.servicesPending ?? "") });
     await expect(services).toContainText("2");
-    // У модератора заявок нет: «Ждут ответа площадки» — без ссылки
+    // У модератора заявок нет: «Ждут ответа вендора» — без ссылки
     await expect(page.getByRole("link", { name: new RegExp(t.metricsQueues.awaiting ?? "") })).toHaveCount(0);
     await services.click();
-    await expect(page).toHaveURL("/moderation");
+    // Сразу к своей очереди: заголовок очереди услуг — в фокусе
+    await expect(page).toHaveURL("/moderation?queue=services");
     await expect(heading(page)).toHaveText(t.moderation);
+    await expect(
+      page.getByRole("heading", { level: 2, name: new RegExp(`^${t.serviceQueue}`) }),
+    ).toBeFocused();
     expect(api.unexpected).toEqual([]);
   });
 });

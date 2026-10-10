@@ -279,14 +279,15 @@ describe("раздел «Метрики»", () => {
     expect(stats[1]?.className).toContain("stat-warn");
     expect(stats[2]?.className).not.toContain("stat-warn");
     // Плитка — ссылка туда, где очередь разбирают; заявок и уведомлений у модератора нет — без ссылки
+    // Плитка ведёт сразу к своей очереди модерации (?queue=)
     expect(stats.map((el) => el.getAttribute("href"))).toEqual([
       null,
       null,
       null,
-      "/moderation",
-      "/moderation",
-      "/moderation",
-      "/moderation",
+      "/moderation?queue=review",
+      "/moderation?queue=revisions",
+      "/moderation?queue=services",
+      "/moderation?queue=photos",
     ]);
     expect(stats[5]?.textContent).toBe(`4${t.metricsQueues.servicesPending}`);
 
@@ -348,6 +349,24 @@ describe("раздел «Метрики»", () => {
     // Сводка по категориям от фильтра не зависит
     expect(calls.filter((c) => c.url.startsWith("/api/staff/metrics/categories"))).toHaveLength(1);
     expect(text()).toContain(t.metricsCategoryFilter(categoryName("car")));
+    // Фильтр — в адресе: «назад» с вендора вернёт те же цифры, ссылку можно переслать
+    expect(window.location.search).toBe("?category=car");
+  });
+
+  it("фильтр категории из адреса; плитка просрочки у администратора — заявки «Требуют действия»", async () => {
+    mockApi(
+      { ...ADMIN, permissions: [...ADMIN.permissions, "requests.read", "outbox.read"] },
+      {
+        "GET /api/staff/metrics?category=car": json(OVERVIEW),
+        "GET /api/staff/metrics/vendors?category=car": json(VENDORS),
+        "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
+      },
+    );
+    await mount("/metrics?category=car");
+    expect(text()).toContain(t.metricsCategoryFilter(categoryName("car")));
+    const stats = [...container.querySelectorAll(".stat")];
+    expect(stats[1]?.getAttribute("href")).toBe("/requests?sla=late");
+    expect(stats[2]?.getAttribute("href")).toBe("/notifications");
   });
 
   it("«Контакты витрин»: за 30 дней, витрина — ссылкой; открыли, позвонить, Telegram — числами", async () => {

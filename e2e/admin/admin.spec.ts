@@ -139,18 +139,16 @@ test.describe("работа сотрудника", () => {
       BLOCKER_CODES,
     );
 
-    // Попытка отправить на проверку: сервер отказал — объяснение и чего не хватает (из его
-    // ответа) словами, а не код ошибки; раньше было «список ниже» без списка в шторке
+    // Отправить на проверку, пока чего-то не хватает: шторка сразу перечисляет, чего (словами, а
+    // не кодами), и кнопку не даёт — без запроса и отказа сервера (publish_blocked)
     await page.getByRole("button", { name: t.actions.submit }).click();
-    await page.locator("form.confirm").getByRole("button", { name: t.actions.submit }).click();
-    const refusal = page.getByRole("alert");
-    await expect(refusal).toContainText(t.api.publish_blocked ?? "");
+    const sheet = page.locator("form.confirm");
+    await expect(sheet).toContainText(t.actionBlocked.submit ?? "");
     for (const code of ["price", "capacity", "district", "photos"])
-      await expect(refusal.getByRole("listitem").filter({ hasText: t.blockers[code] ?? code })).toHaveCount(
-        1,
-      );
-    expect(await refusal.innerText()).not.toMatch(BLOCKER_CODES);
-    expect(api.actions).toEqual(["submit"]);
+      await expect(sheet.getByRole("listitem").filter({ hasText: t.blockers[code] ?? code })).toHaveCount(1);
+    expect(await sheet.innerText()).not.toMatch(BLOCKER_CODES);
+    await expect(sheet.getByRole("button", { name: t.actions.submit })).toBeDisabled();
+    expect(api.actions).toEqual([]);
     await expectNoAxeViolations(page, "карточка");
     await expectHitAreas(page, "карточка", CONTROLS);
     expect(api.unexpected).toEqual([]);
@@ -190,9 +188,10 @@ test.describe("работа сотрудника", () => {
     const api = await start(page);
     await page.goto("/moderation");
     const photos = page.getByRole("region", { name: t.photoQueue });
+    // Витрина — сразу на блоке фото
     await expect(photos.getByRole("link", { name: "Bogʻ zali" })).toHaveAttribute(
       "href",
-      `/listings/${PHOTO_QUEUE_LISTING_ID}`,
+      `/listings/${PHOTO_QUEUE_LISTING_ID}?focus=photos`,
     );
     await expect(photos).toContainText(t.pendingPhotos(2));
     await expect(page.getByRole("region", { name: t.revisions })).toContainText(

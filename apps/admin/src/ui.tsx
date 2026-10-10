@@ -18,10 +18,10 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import type { Failure, Loaded, Result } from "./api";
+import { type Failure, type Loaded, type Result, useLoad, useSession } from "./api";
 import { Icon, type IconName } from "./icons";
 import { usePhone } from "./layout";
-import { type Navigate, pathOf, type View } from "./router";
+import { hrefOf, type Navigate, type View } from "./router";
 import { apiErrorText, t } from "./texts";
 import { useUnsaved } from "./unsaved";
 
@@ -39,6 +39,26 @@ export const TitleContext = createContext<(title: string | null) => void>(() => 
 export function useEntityTitle(title: string): void {
   const setTitle = useContext(TitleContext);
   useEffect(() => setTitle(title), [setTitle, title]);
+}
+
+/** Звено пути к экрану: «Вендоры › Lola · V101 › Lola zali» */
+export interface Crumb {
+  readonly label: string;
+  readonly to: View;
+}
+
+/** Путь страницы объекта (хлебные крошки над заголовком на компьютере) — когда загрузилась */
+export const CrumbsContext = createContext<(crumbs: readonly Crumb[]) => void>(() => {});
+
+/**
+ * Страница объекта называет, где она: раздел и объекты выше (витрина → вендор, заявка →
+ * витрина → вендор). Раздел оболочка добавляет сама — здесь только объекты
+ */
+export function useBreadcrumbs(crumbs: readonly Crumb[]): void {
+  const setCrumbs = useContext(CrumbsContext);
+  const key = JSON.stringify(crumbs);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: key — те же звенья, новый массив не повод
+  useEffect(() => setCrumbs(crumbs), [setCrumbs, key]);
 }
 
 interface LinkProps {
@@ -64,7 +84,7 @@ export function Link({ to, className, children, current, onNavigate, onPrefetch 
   };
   return (
     <a
-      href={pathOf(to)}
+      href={hrefOf(to)}
       className={className}
       aria-current={current ? "page" : undefined}
       onClick={onClick}
@@ -85,17 +105,59 @@ export function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
   return <span className={`pill pill-${tone}`}>{children}</span>;
 }
 
-const STATUS_TONE: Record<ListingStatus, Tone> = {
-  lead: "muted",
-  draft: "muted",
-  review: "outline",
-  active: "strong",
-  suspended: "warn",
-  rejected: "warn",
-};
+/**
+ * Один цвет на один смысл во всех разделах: good — на сайте, одобрено, действует; outline —
+ * ждёт или на проверке; warn — отклонено, заблокировано, просрочено; muted — черновик, снято,
+ * закрыто, отключено. strong — не статус, а выбор («Обложка»)
+ */
+const TONES = {
+  listing: {
+    lead: "muted",
+    draft: "muted",
+    review: "outline",
+    active: "good",
+    suspended: "muted",
+    rejected: "warn",
+  },
+  service: { draft: "muted", review: "outline", active: "good", rejected: "warn", paused: "muted" },
+  // Услуга в очереди модерации: и новая, и изменения — на проверке
+  serviceQueue: { review: "outline", proposal: "outline" },
+  photo: { pending: "outline", approved: "good", declined: "warn" },
+  revision: { pending: "outline", approved: "good", declined: "warn", withdrawn: "muted" },
+  request: {
+    new: "outline",
+    viewed: "outline",
+    contacted: "good",
+    deal: "good",
+    declined: "warn",
+    withdrawn: "muted",
+    expired: "muted",
+  },
+  sla: {
+    waiting: "outline",
+    overdue: "warn",
+    breached: "warn",
+    answered: "good",
+    answered_late: "muted",
+    ops_contacted: "muted",
+    closed: "muted",
+  },
+  member: { active: "good", inactive: "muted" },
+  client: { active: "good", blocked: "warn", deleted: "muted" },
+  vendorUser: { pending: "outline", accepted: "good", disabled: "muted" },
+} as const satisfies Readonly<Record<string, Readonly<Record<string, Tone>>>>;
+
+export type ToneDomain = keyof typeof TONES;
+
+/** Цвет плашки статуса; неизвестный статус (новее сборки панели) — нейтральный */
+export function toneOf(domain: ToneDomain, status: string): Tone {
+  const tones: Readonly<Record<string, Tone>> = TONES[domain];
+  // Не Object.hasOwn: его нет в старых вебвью Android (ловушка №5)
+  return (Object.hasOwn(tones, status) ? tones[status] : undefined) ?? "muted";
+}
 
 export function StatusPill({ status }: { status: ListingStatus }) {
-  return <Pill tone={STATUS_TONE[status]}>{t.status[status]}</Pill>;
+  return <Pill tone={toneOf("listing", status)}>{t.status[status]}</Pill>;
 }
 
 // ── состояния загрузки и ошибки ────────────────────────────────────────────
@@ -203,6 +265,227 @@ export function LoadedView<T>({ loaded, onRetry, children, skeleton }: LoadedVie
       </div>
     );
   return <>{children(loaded.data)}</>;
+}
+
+// ── списки: страницы, «Показать ещё», пустой список ────────────────────────
+
+/** Значение с задержкой: запрос к API — когда человек перестал печатать */
+export function useDebounced<T>(value: T, ms = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return debounced;
+}
+
+/**
+ * Поиск списка: поле меняется сразу, в адрес и в запрос строка уходит, когда перестали
+ * печатать (write — записать; новый поиск — с первой страницы). Сброс фильтров чистит поле
+ * само: запоздавшая строка поиска не возвращается в адрес
+ */
+export function useListSearch(initial: string, write: (search: string) => void) {
+  const [q, setQ] = useState(initial);
+  const search = useDebounced(q.trim());
+  const written = useRef(search);
+  const writer = useRef(write);
+  writer.current = write;
+  useEffect(() => {
+    if (search === written.current) return;
+    written.current = search;
+    writer.current(search);
+  }, [search]);
+  return [q, setQ] as const;
+}
+
+/** Ответ списка API: сколько всего и страница (limit, offset) */
+export interface Paged<I> {
+  readonly total: number;
+  readonly items: readonly I[];
+}
+
+/** Номер страницы из адреса (?page=2) → сдвиг; кривой номер — первая страница */
+export function offsetOf(page: string | undefined, size: number): number {
+  const n = Number(page);
+  return Number.isSafeInteger(n) && n > 1 ? (n - 1) * size : 0;
+}
+
+/**
+ * Список страницами, без молчаливой обрезки. Компьютер — по страницам (offset: какую
+ * показать — номер страницы в адресе), телефон — «Показать ещё» дописывает следующую
+ * страницу к показанным (append). Фильтры сменились или список перечитан — дописанное
+ * сбрасывается. path — список с фильтрами, без limit и offset; null — не грузить
+ */
+export function usePagedList<I, L extends Paged<I> = Paged<I>>(
+  path: string | null,
+  { size, offset, append }: { readonly size: number; readonly offset: number; readonly append: boolean },
+) {
+  const { api } = useSession();
+  // «/staff/vendors?» без фильтров — limit и offset сразу после «?»
+  const join = path === null || path.endsWith("?") ? "" : path.includes("?") ? "&" : "?";
+  const page = (from: number) => (path === null ? null : `${path}${join}limit=${size}&offset=${from}`);
+  const first = useLoad<L>(page(append ? 0 : offset));
+  const data = first.loaded.state === "ready" ? first.loaded.data : null;
+  const [more, setMore] = useState<{ readonly base: L | null; readonly items: readonly I[] }>({
+    base: null,
+    items: [],
+  });
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const extra = append && data !== null && more.base === data ? more.items : [];
+  const items = data === null ? [] : extra.length > 0 ? [...data.items, ...extra] : data.items;
+
+  const loadMore = async () => {
+    const next = data === null ? null : page(data.items.length + extra.length);
+    if (data === null || next === null) return;
+    setBusy(true);
+    const result = await api.get<L>(next);
+    setBusy(false);
+    setFailure(result.ok ? null : result);
+    // Пока грузили, фильтры сменились — дописывать не к чему (base уже другой)
+    if (result.ok) setMore({ base: data, items: [...extra, ...result.data.items] });
+  };
+
+  return {
+    ...first,
+    /** Показанные строки: страница, а на телефоне — и дописанные */
+    items,
+    total: data?.total ?? 0,
+    more: { busy, failure, load: loadMore },
+  } as const;
+}
+
+interface PagerProps {
+  readonly total: number;
+  readonly offset: number;
+  readonly size: number;
+  readonly onPage: (offset: number) => void;
+  /** Подписи кнопок: журнал листают «новее / старше» */
+  readonly prevLabel?: string;
+  readonly nextLabel?: string;
+}
+
+/** Страницы списка на компьютере: «предыдущие · 51–100 из 240 · следующие» */
+export function Pager({
+  total,
+  offset,
+  size,
+  onPage,
+  prevLabel = t.pagerPrev,
+  nextLabel = t.pagerNext,
+}: PagerProps) {
+  if (total <= size && offset === 0) return <p className="muted small">{t.total(total)}</p>;
+  return (
+    <nav className="pager" aria-label={t.pagerLabel}>
+      <button
+        type="button"
+        className="btn btn-sm"
+        disabled={offset === 0}
+        onClick={() => onPage(Math.max(0, offset - size))}
+      >
+        {prevLabel}
+      </button>
+      <span className="muted small" aria-live="polite">
+        {t.pagerRange(Math.min(offset + 1, total), Math.min(offset + size, total), total)}
+      </span>
+      <button
+        type="button"
+        className="btn btn-sm"
+        disabled={offset + size >= total}
+        onClick={() => onPage(offset + size)}
+      >
+        {nextLabel}
+      </button>
+    </nav>
+  );
+}
+
+/** «Показать ещё» на телефоне: следующая страница дописывается под показанными */
+export function ShowMore({
+  shown,
+  total,
+  busy,
+  failure,
+  onMore,
+}: {
+  readonly shown: number;
+  readonly total: number;
+  readonly busy: boolean;
+  readonly failure: Failure | null;
+  readonly onMore: () => void;
+}) {
+  if (shown >= total) return <p className="muted small">{t.total(total)}</p>;
+  return (
+    <div className="show-more">
+      <p className="muted small" aria-live="polite">
+        {t.shownOf(shown, total)}
+      </p>
+      <button type="button" className="btn" aria-busy={busy || undefined} disabled={busy} onClick={onMore}>
+        {busyLabel(t.showMore, busy)}
+      </button>
+      {failure ? <ErrorText failure={failure} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Подвал списка: на телефоне — «Показать ещё», шире — страницы. list — из usePagedList;
+ * onPage — сменить страницу (номер — в адресе)
+ */
+export function ListFooter({
+  list,
+  offset,
+  size,
+  onPage,
+}: {
+  readonly list: {
+    readonly items: readonly unknown[];
+    readonly total: number;
+    readonly more: { readonly busy: boolean; readonly failure: Failure | null; readonly load: () => void };
+  };
+  readonly offset: number;
+  readonly size: number;
+  readonly onPage: (offset: number) => void;
+}) {
+  const phone = usePhone();
+  if (phone)
+    return (
+      <ShowMore
+        shown={list.items.length}
+        total={list.total}
+        busy={list.more.busy}
+        failure={list.more.failure}
+        onMore={() => void list.more.load()}
+      />
+    );
+  return <Pager total={list.total} offset={offset} size={size} onPage={onPage} />;
+}
+
+/**
+ * Пустой список. Сузили фильтрами — сказать об этом и дать снять их одной кнопкой: иначе
+ * «ничего нет» выглядит как пустая база
+ */
+export function EmptyList({
+  text,
+  onReset,
+}: {
+  readonly text: string;
+  readonly onReset?: (() => void) | null;
+}) {
+  if (!onReset) return <p className="empty">{text}</p>;
+  return (
+    <div className="empty empty-filtered">
+      <p>{text}</p>
+      <button type="button" className="btn btn-sm" onClick={onReset}>
+        {t.resetFilters}
+      </button>
+    </div>
+  );
+}
+
+/** Подпись кнопки, пока идёт запрос: «Одобрить…» — нажатие принято, ждём сервер */
+export function busyLabel(label: string, busy: boolean): string {
+  return busy ? `${label}…` : label;
 }
 
 // ── поля формы ─────────────────────────────────────────────────────────────
@@ -339,10 +622,11 @@ export function ConfirmForm({
       <div className="acts">
         <button
           type="submit"
-          className={`btn ${danger ? "btn-danger" : "btn-primary"}`}
+          className={`btn ${danger ? "btn-danger-fill" : "btn-primary"}`}
+          aria-busy={busy || undefined}
           disabled={busy || (required && text.trim() === "")}
         >
-          {submitLabel}
+          {busyLabel(submitLabel, busy)}
         </button>
         <button type="button" className="btn" onClick={onCancel}>
           {t.cancel}
@@ -433,8 +717,13 @@ export function ReasonPhoneReveal({ label, hint, reasonLabel, load }: ReasonPhon
         required
       />
       <div>
-        <button type="submit" className="btn" disabled={busy || reason.trim() === ""}>
-          {t.show}
+        <button
+          type="submit"
+          className="btn"
+          aria-busy={busy || undefined}
+          disabled={busy || reason.trim() === ""}
+        >
+          {busyLabel(t.show, busy)}
         </button>
       </div>
       {failure &&
@@ -621,8 +910,15 @@ export function FormBar({
   note: ReactNode;
 }) {
   const phone = usePhone();
+  // Главной кнопка становится, когда есть что сохранять: иначе на экране два главных действия
   const button = (
-    <button type="submit" form={formId} className="btn btn-primary" disabled={busy}>
+    <button
+      type="submit"
+      form={formId}
+      className={`btn${show || busy ? " btn-primary" : ""}`}
+      aria-busy={busy || undefined}
+      disabled={busy}
+    >
       {busy ? t.saving : submitLabel}
     </button>
   );
@@ -807,6 +1103,8 @@ export function ActiveFilter({ label, onClear }: { label: string; onClear: () =>
 export function focusSection(id: string): void {
   const heading = document.getElementById(id);
   if (!heading) return;
+  // Заголовок без tabIndex фокус не примет: делаем его фокусируемым программно (не по Tab)
+  if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
   heading.scrollIntoView?.({ block: "start" });
   heading.focus({ preventScroll: true });
 }

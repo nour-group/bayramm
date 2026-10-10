@@ -19,8 +19,9 @@
   --app-h: 100vh;
   /* Шапка телефона и планшета без верхней безопасной зоны: 8 + 44 + 8 + линия */
   --bar-h: 61px;
-  /* Нижняя панель телефона без нижней безопасной зоны: 6 + 48 + 6 + линия.
-     0 — когда её нет (компьютер, планшет, открыта клавиатура) */
+  /* Нижняя панель телефона без нижней безопасной зоны: 6 + 48 + 6 + линия */
+  --tabbar-full: 61px;
+  /* Сколько она занимает сейчас: 0 — когда её нет (компьютер, планшет, открыта клавиатура) */
   --tabbar-h: 0px;
   /* Колонка разделов планшета */
   --rail-w: 96px;
@@ -74,7 +75,7 @@ html.in-telegram body {
 
 /* Нижняя панель телефона есть — от неё отсчитываются прилипшие панели действий */
 .app-phone {
-  --tabbar-h: 61px;
+  --tabbar-h: var(--tabbar-full);
 }
 
 /* Открыта клавиатура (поле ввода в фокусе): нижней панели нет */
@@ -459,7 +460,10 @@ html.in-telegram body {
 }
 
 .app-phone .main {
-  padding: 16px calc(var(--sa-r) + 16px) calc(61px + var(--pad-b) + 24px) calc(var(--sa-l) + 16px);
+  /* Место под нижней панелью — и пока её прячет клавиатура: иначе страница укорачивается под
+     пальцем, и кнопка у низа уезжает под вернувшуюся панель между нажатием и отпусканием */
+  padding: 16px calc(var(--sa-r) + 16px) calc(var(--tabbar-full) + var(--pad-b) + 24px)
+    calc(var(--sa-l) + 16px);
 }
 
 /* Клавиатура открыта: нижняя панель не заслоняет поле */
@@ -487,7 +491,7 @@ html.in-telegram body {
 }
 
 .nav .badge {
-  margin-left: 7px;
+  margin-left: 8px;
 }
 
 .tab-icon .badge,
@@ -587,6 +591,39 @@ html.in-telegram body {
   max-width: 640px;
   margin: 0 0 16px;
   color: var(--muted);
+}
+
+/* Путь к странице объекта над заголовком (компьютер): «Вендоры › Lola · V101 ›» */
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5);
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+  min-width: 0;
+}
+
+.crumbs li::after {
+  content: "›";
+  color: var(--muted);
+}
+
+.crumbs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  color: var(--plum);
+  text-decoration: none;
 }
 
 .soon {
@@ -715,11 +752,12 @@ html.in-telegram body {
   min-height: var(--hit-min);
   padding: 0 16px;
   border: 1px solid var(--rule);
-  border-radius: var(--r-11);
+  /* Скругление и кегль — как у кнопок набора (.ui-btn): одна кнопка во всех шторках и формах */
+  border-radius: var(--r-14);
   background: var(--raise);
   color: var(--plum);
   font-family: inherit;
-  font-size: var(--fs-14);
+  font-size: var(--fs-15);
   font-weight: 700;
   text-align: center;
   text-decoration: none;
@@ -729,7 +767,7 @@ html.in-telegram body {
 
 .btn-sm {
   padding: 0 12px;
-  font-size: var(--fs-13-5);
+  font-size: var(--fs-14);
 }
 
 .btn-primary {
@@ -738,10 +776,18 @@ html.in-telegram body {
   color: var(--btn-ink);
 }
 
+/* Красная рамка — действие, которое откроет подтверждение (удалить, отклонить, отключить) */
 .btn-danger {
   border-color: var(--berry);
   background: var(--white);
   color: var(--berry);
+}
+
+/* Залитая красная — само подтверждение необратимого, как .ui-btn-danger набора */
+.btn-danger-fill {
+  border-color: var(--berry);
+  background: var(--berry);
+  color: var(--btn-ink);
 }
 
 @media (hover: hover) {
@@ -756,6 +802,11 @@ html.in-telegram body {
 
   .btn-danger:hover {
     background: var(--white);
+    text-decoration: underline;
+  }
+
+  .btn-danger-fill:hover {
+    background: var(--berry);
     text-decoration: underline;
   }
 }
@@ -838,6 +889,86 @@ textarea.input {
 
 .chip-count {
   font-weight: 600;
+}
+
+/* Страницы списка (компьютер) и «Показать ещё» (телефон) — под списком */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.show-more {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap-9);
+}
+
+.show-more > p {
+  margin: 0;
+  text-align: center;
+}
+
+/* Пустой список из-за фильтров: «Сбросить фильтры» — под словами */
+.empty-filtered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-12);
+}
+
+.empty-filtered > p {
+  margin: 0;
+}
+
+/* Фильтр одной строкой пилюль и подсказка к выбранному под ним */
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+}
+
+/* Переходы в шапке страницы объекта: заявки, журнал, витрина на сайте */
+.head-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7);
+  margin: 0;
+}
+
+/* Оглавление витрины на телефоне: прилипает под шапкой, листается вбок (обе оси — ловушка №2) */
+.section-index {
+  position: sticky;
+  top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)));
+  z-index: 2;
+  margin: 0 -16px;
+  padding: 6px 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+  scrollbar-width: none;
+}
+
+.section-index ul {
+  display: flex;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.section-index .chip {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Переход к блоку на телефоне: заголовок встаёт под шапкой и оглавлением, а не под ними */
+.app-phone .page [id$="-title"] {
+  scroll-margin-top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)) + 64px);
 }
 
 /* Модерация: сводка очередей вверху — кнопками к ним; где есть что решать — выделена */
@@ -1084,6 +1215,11 @@ textarea.input {
   flex: 1 1 200px;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Только что заведённый вендор: что дальше — после общего правила списка (ловушка №7) */
+.next-steps .blockers {
+  margin: 8px 0;
 }
 
 /* Панели и формы */
@@ -1378,41 +1514,6 @@ textarea.input {
   resize: vertical;
 }
 
-/* Пакеты цен */
-.packages {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-12);
-  margin: 16px 0 0;
-  padding: 0;
-  border: 0;
-}
-
-.packages legend {
-  margin-bottom: 8px;
-  color: var(--plum);
-  font-weight: 700;
-}
-
-/* Подсказка и ошибка под заголовком пакетов: отступы задаёт gap */
-.packages > p {
-  margin: 0;
-}
-
-.package-row {
-  display: grid;
-  grid-template-columns: 100px repeat(2, minmax(0, 1.2fr)) minmax(0, 1fr) minmax(0, 1fr) auto;
-  align-items: end;
-  gap: var(--gap-9);
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--rule);
-}
-
-.package-kind {
-  align-self: center;
-  font-weight: 700;
-}
-
 /* Фото */
 .photos {
   display: grid;
@@ -1567,7 +1668,7 @@ textarea.input {
 }
 
 .cal-wd {
-  padding-bottom: 3px;
+  padding-bottom: 4px;
   color: var(--muted-lt);
   font-size: var(--fs-12-5);
   font-weight: 700;
@@ -1858,18 +1959,6 @@ textarea.input {
   }
 }
 
-/* Пакет в одну строку — только когда колонке формы хватает ширины: на 1024px «за гостя»
-   обрезалось до «за г…». Уже — по два поля в строку, вид пакета — заголовком */
-@media (max-width: 1279px) {
-  .package-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .package-kind {
-    grid-column: 1 / -1;
-  }
-}
-
 /* Компьютер, но не широкий: все разделы не влезают в строку с именем и ссылками — разделы
    второй строкой шапки, а не обрезаны прокруткой */
 @media (max-width: 1439px) {
@@ -2096,15 +2185,6 @@ textarea.input {
 /* «Позже» — та же стрелка, развёрнутая вправо */
 .btn-flip .icon {
   transform: scaleX(-1);
-}
-
-/* Ссылка «← К вендору» над формой: зона нажатия 44px */
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--hit-min);
-  font-weight: 700;
-  text-decoration: none;
 }
 
 /* ── календарь: несколько дней, обозначения ──────────────────────────────── */
@@ -2545,7 +2625,7 @@ textarea.input {
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-9);
-  padding-top: 7px;
+  padding-top: 8px;
   border-top: 1px solid var(--rule);
 }
 
@@ -2600,8 +2680,7 @@ textarea.input {
 @media (max-width: 719px) {
   .fields,
   .fields-3,
-  .inline-form,
-  .package-row {
+  .inline-form {
     grid-template-columns: minmax(0, 1fr);
   }
 

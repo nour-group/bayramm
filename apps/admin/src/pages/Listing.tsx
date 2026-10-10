@@ -12,7 +12,13 @@
    Каждое сказано один раз: категория — плашкой в шапке и блоком «Категория» (сменить),
    телефон и Telegram для клиентов — блоком формы («Показать» и поля для новых значений вместе). У каждого пункта
    «чего не хватает» — переход туда, где он заполняется: услуги, фото, поля формы; проверка
-   вендора (договор, СТИР…) — одной строкой со ссылкой на страницу вендора. */
+   вендора (договор, СТИР…) — одной строкой со ссылкой на страницу вендора.
+
+   Где витрина: на компьютере — путь над заголовком (вендоры → вендор), на телефоне — вендор
+   ссылкой в шапке страницы и оглавление блоков, прилипшее под шапкой. Опубликованную — открыть
+   на сайте; её заявки — списком заявок с фильтром витрины. ?focus=photos (из очереди фото) —
+   сразу к блоку. Опубликовать и отправить на проверку, пока чего-то не хватает, — шторка
+   перечисляет, чего, вместо отказа сервера. */
 
 import type {
   ListingAction,
@@ -33,14 +39,17 @@ import {
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
 import { ConfirmSheet, Select } from "@bayramm/ui/react";
-import { type FormEvent, useCallback, useId, useRef, useState } from "react";
-import { type Failure, useCan, useLoad, useSession } from "../api";
+import { type FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
+import { type Failure, useAuthMethods, useCan, useLoad, useSession } from "../api";
 import { CategoryChip, categoryName, categoryOptions } from "../categories";
 import { formatMoment, vendorLabel } from "../format";
-import { usePhone } from "../layout";
+import { useLayout, usePhone } from "../layout";
+import { readQuery } from "../router";
 import { t } from "../texts";
 import {
   ActionBar,
+  Blockers,
+  busyLabel,
   deleteFailureText,
   ErrorText,
   Field,
@@ -51,6 +60,7 @@ import {
   PhoneSheet,
   publishBlockers,
   StatusPill,
+  useBreadcrumbs,
   useEntityTitle,
   useNavigate,
 } from "../ui";
@@ -83,17 +93,11 @@ const REASON_REQUIRED: ReadonlySet<ListingAction> = new Set(["suspend", "reject"
 
 export function ListingNewPage({ vendorId }: { vendorId: string }) {
   const { loaded, reload } = useLoad<VendorDetail>(`/staff/vendors/${vendorId}`);
+  // К вендору — путь над заголовком на компьютере и «назад» в шапке телефона
   return (
-    <div className="stack">
-      <p>
-        <Link to={{ name: "vendor", id: vendorId }} className="back-link">
-          ← {t.openVendor}
-        </Link>
-      </p>
-      <LoadedView loaded={loaded} onRetry={reload}>
-        {(vendor) => <NewVitrinaForm vendor={vendor} />}
-      </LoadedView>
-    </div>
+    <LoadedView loaded={loaded} onRetry={reload} skeleton="detail">
+      {(vendor) => <NewVitrinaForm vendor={vendor} />}
+    </LoadedView>
   );
 }
 
@@ -106,6 +110,7 @@ function NewVitrinaForm({ vendor }: { vendor: VendorDetail }) {
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   useUnsaved(categoryCode !== null || name.trim() !== "");
+  useBreadcrumbs([{ label: vendorLabel(vendor), to: { name: "vendor", id: vendor.id } }]);
   const bad = failure?.code === "invalid_input" ? failure.details : [];
   const existing = vendor.listings.map((l) => `${l.name} (${categoryName(l.categoryCode)})`).join(", ");
 
@@ -178,7 +183,7 @@ function NewVitrinaForm({ vendor }: { vendor: VendorDetail }) {
       </section>
       {failure && <ErrorText failure={failure} />}
       <div className="acts">
-        <button type="submit" className="btn btn-primary" disabled={busy}>
+        <button type="submit" className="btn btn-primary" aria-busy={busy || undefined} disabled={busy}>
           {busy ? t.saving : t.createVitrina}
         </button>
       </div>
@@ -231,7 +236,12 @@ function CategoryListing({
   const [dirty, setDirty] = useState(false);
   // Модератор решил по витрине на проверке — путь к следующей в очереди
   const [decided, setDecided] = useState(false);
+  const desktop = useLayout() === "desktop";
+  const phone = usePhone();
+  const methods = useAuthMethods();
   useEntityTitle(listing.name);
+  useBreadcrumbs([{ label: vendorLabel(listing.vendor), to: { name: "vendor", id: listing.vendor.id } }]);
+  useFocusParam();
   const save = useCallback(
     async (body: ListingInput): Promise<Failure | ListingSaveResult> => {
       const result = await api.patch<ListingSaveResult>(`/staff/listings/${listing.id}`, {
@@ -263,13 +273,23 @@ function CategoryListing({
   const activeBlockers = publishBlockers(listing.blockers.active, approvable, minPhotos);
   // Сотрудник без права решать по правкам меняет опубликованную карточку через модерацию
   const moderated = listing.status === "active" && !can("revisions.moderate");
+  // Блок «Данные витрины» есть у формы, если у категории есть поля или вместимость
+  const showAttributes = category.attributes.length > 0 || category.listingFields.includes("guest_capacity");
+  // Опубликованная — открыть так, как её видит клиент (адрес сайта — из GET /auth/methods)
+  const siteUrl =
+    listing.status === "active" && methods
+      ? `${methods.apps.web}/venue/${encodeURIComponent(listing.slug)}`
+      : null;
 
   return (
     <div className="stack">
       <div className="listing-head">
-        <p className="sub">
-          <Link to={{ name: "vendor", id: listing.vendor.id }}>{vendorLabel(listing.vendor)}</Link>
-        </p>
+        {/* На компьютере вендор — в пути над заголовком; на телефоне — здесь */}
+        {desktop ? null : (
+          <p className="sub">
+            <Link to={{ name: "vendor", id: listing.vendor.id }}>{vendorLabel(listing.vendor)}</Link>
+          </p>
+        )}
         <p>
           <CategoryChip code={listing.categoryCode} /> <StatusPill status={listing.status} />
           {listing.statusReason && (
@@ -279,6 +299,24 @@ function CategoryListing({
             </span>
           )}
         </p>
+        {t.statusHints[listing.status] ? (
+          <p className="muted small">{t.statusHints[listing.status]}</p>
+        ) : null}
+        {siteUrl || can("requests.read") ? (
+          <p className="head-links">
+            {siteUrl ? (
+              <a className="btn btn-sm" href={siteUrl} target="_blank" rel="noopener noreferrer">
+                {t.listingOnSite}
+                <span className="visually-hidden"> ({t.opensNewTab})</span>
+              </a>
+            ) : null}
+            {can("requests.read") ? (
+              <Link to={{ name: "requests", query: { listingId: listing.id } }} className="btn btn-sm">
+                {t.listingRequests}
+              </Link>
+            ) : null}
+          </p>
+        ) : null}
       </div>
 
       {listing.pendingRevision && <PendingRevisionNotice revision={listing.pendingRevision} />}
@@ -288,6 +326,7 @@ function CategoryListing({
         onChange={onChange}
         hidden={dirty}
         onDecided={() => setDecided(true)}
+        blockers={{ publish: activeBlockers, submit: listing.blockers.review }}
       />
       {decided && listing.status !== "review" ? <NextInQueue queue="review" currentId={listing.id} /> : null}
 
@@ -298,7 +337,7 @@ function CategoryListing({
           listing={listing}
           category={category}
           photos={{ count: approvable, min: minPhotos }}
-          showAttributes={category.attributes.length > 0 || category.listingFields.includes("guest_capacity")}
+          showAttributes={showAttributes}
         />
       )}
       {listing.status !== "active" && (
@@ -306,7 +345,7 @@ function CategoryListing({
           listing={listing}
           category={category}
           photos={{ count: approvable, min: minPhotos }}
-          showAttributes={category.attributes.length > 0 || category.listingFields.includes("guest_capacity")}
+          showAttributes={showAttributes}
           title={t.blockersActive}
           // До проверки — только то, чего не хватит сверх уже перечисленного
           codes={
@@ -320,6 +359,8 @@ function CategoryListing({
         <p className="notice notice-good">{t.readyToPublish}</p>
       )}
 
+      {/* Оглавление — перед блоками, которые оно перечисляет: прилипает, когда до них дошли */}
+      {phone ? <SectionIndex category={category} showAttributes={showAttributes} /> : null}
       <div className="columns">
         <div className="stack">
           <Photos
@@ -353,6 +394,61 @@ function CategoryListing({
         />
       </div>
     </div>
+  );
+}
+
+// ── оглавление и переход к блоку ───────────────────────────────────────────
+
+/** Блоки страницы витрины и заголовки, к которым ведёт оглавление и ?focus= */
+const SECTIONS = {
+  photos: "photos-title",
+  services: "services-title",
+  calendar: "calendar-title",
+  main: "form-main-title",
+  attrs: "form-attrs-title",
+  phone: "form-phone-title",
+  history: "history-title",
+} as const;
+
+type SectionKey = keyof typeof SECTIONS;
+
+const isSection = (value: string | undefined): value is SectionKey =>
+  value !== undefined && Object.hasOwn(SECTIONS, value);
+
+/**
+ * ?focus=photos — пришли из очереди «Новые фото» (услуги — из очереди услуг): к блоку, когда
+ * страница отрисовалась. Один раз за заход
+ */
+function useFocusParam() {
+  useEffect(() => {
+    const focus = readQuery(["focus"] as const).focus;
+    if (!isSection(focus)) return;
+    const timer = setTimeout(() => focusSection(SECTIONS[focus]), 0);
+    return () => clearTimeout(timer);
+  }, []);
+}
+
+/**
+ * Оглавление витрины на телефоне: страница — одна длинная колонка, к блоку — одним нажатием.
+ * Прилипает под шапкой; пункты — по категории (без данных витрины — без «Данных», у срока
+ * заказа вместо календаря — «Занятость» ведёт к сроку)
+ */
+function SectionIndex({ category, showAttributes }: { category: CategoryConfig; showAttributes: boolean }) {
+  const keys = (Object.keys(SECTIONS) as SectionKey[]).filter((key) => key !== "attrs" || showAttributes);
+  const target = (key: SectionKey) =>
+    key === "calendar" && category.availability === "lead" ? "lead-title" : SECTIONS[key];
+  return (
+    <nav className="section-index" aria-label={t.listingIndex}>
+      <ul>
+        {keys.map((key) => (
+          <li key={key}>
+            <button type="button" className="chip" onClick={() => focusSection(target(key))}>
+              {t.listingIndexItems[key]}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
 
@@ -573,9 +669,12 @@ function PendingRevisionNotice({ revision }: { revision: PendingRevision }) {
 /** Главное действие для панели внизу телефона: вперёд по пути к публикации */
 const PRIMARY: readonly ListingAction[] = ["publish", "submit"];
 
+/** Действие убирает витрину из каталога или отказывает: подтверждение — красной кнопкой */
+const DESTRUCTIVE: ReadonlySet<ListingAction> = new Set(["suspend", "reject"]);
+
 function actionClass(action: ListingAction): string {
   if (PRIMARY.includes(action)) return "btn btn-primary";
-  if (action === "suspend" || action === "reject") return "btn btn-danger";
+  if (DESTRUCTIVE.has(action)) return "btn btn-danger";
   return "btn";
 }
 
@@ -584,6 +683,7 @@ function StatusActions({
   onChange,
   hidden,
   onDecided,
+  blockers,
 }: {
   listing: ListingDetail;
   onChange: (l: ListingDetail) => void;
@@ -591,6 +691,8 @@ function StatusActions({
   hidden: boolean;
   /** Решение по витрине на проверке (опубликовать, вернуть, отклонить) — дальше следующая */
   onDecided: () => void;
+  /** Чего не хватает для публикации и для проверки: шторка скажет это, а не сервер отказом */
+  blockers: { readonly publish: readonly PublishBlocker[]; readonly submit: readonly PublishBlocker[] };
 }) {
   const { api } = useSession();
   const can = useCan();
@@ -633,6 +735,10 @@ function StatusActions({
     setPending(null);
     setReason("");
   };
+  // Опубликовать или отправить на проверку, когда чего-то не хватает, — сервер откажет
+  // (publish_blocked): шторка сразу перечисляет, чего, и кнопку не даёт
+  const blocked: readonly PublishBlocker[] =
+    pending === "publish" ? blockers.publish : pending === "submit" ? blockers.submit : [];
   // Телефон: главное действие — кнопкой, остальные — в «Ещё»
   const primary = phone ? (actions.find((action) => PRIMARY.includes(action)) ?? actions[0]) : undefined;
   const rest = phone ? actions.filter((action) => action !== primary) : actions;
@@ -687,26 +793,35 @@ function StatusActions({
       >
         {pending && (
           <form className="confirm" onSubmit={run} noValidate>
-            <p className="muted small">{t.actionHints[pending]}</p>
-            <label htmlFor={reasonId}>
-              {REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
-            </label>
-            <textarea
-              id={reasonId}
-              className="input"
-              rows={2}
-              maxLength={1000}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              required={REASON_REQUIRED.has(pending)}
-            />
+            {blocked.length > 0 ? (
+              <Blockers title={t.actionBlocked[pending] ?? ""} codes={blocked} />
+            ) : (
+              <>
+                <p className="muted small">{t.actionHints[pending]}</p>
+                <label htmlFor={reasonId}>
+                  {REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
+                </label>
+                <textarea
+                  id={reasonId}
+                  className="input"
+                  rows={2}
+                  maxLength={1000}
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  required={REASON_REQUIRED.has(pending)}
+                />
+              </>
+            )}
             <div className="acts">
               <button
                 type="submit"
-                className="btn btn-primary"
-                disabled={busy || (REASON_REQUIRED.has(pending) && reason.trim() === "")}
+                className={`btn ${DESTRUCTIVE.has(pending) ? "btn-danger-fill" : "btn-primary"}`}
+                aria-busy={busy || undefined}
+                disabled={
+                  busy || blocked.length > 0 || (REASON_REQUIRED.has(pending) && reason.trim() === "")
+                }
               >
-                {t.actions[pending]}
+                {busyLabel(t.actions[pending], busy)}
               </button>
               <button type="button" className="btn" onClick={cancel}>
                 {t.cancel}
@@ -726,7 +841,9 @@ function StatusActions({
 function History({ listing }: { listing: ListingDetail }) {
   return (
     <section className="panel" aria-labelledby="history-title">
-      <h2 id="history-title">{t.history}</h2>
+      <h2 id="history-title" tabIndex={-1}>
+        {t.history}
+      </h2>
       {listing.history.length === 0 ? (
         <p className="muted">{t.historyEmpty}</p>
       ) : (

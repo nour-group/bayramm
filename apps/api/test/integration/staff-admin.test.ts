@@ -756,13 +756,14 @@ describe("вендор → карточка → проверка → публи�
   describe("заявки", () => {
     let requestId = "";
     const clientPhone = phone();
+    // Клиент заявки: его код C-… панель показывает ссылкой на страницу клиента
+    const client = randomUUID();
 
     beforeAll(async () => {
       // Опубликовать снова и завести заявку, как её создаст клиентское приложение
       listing = await ok<ListingDetail>(
         api("moderator", "POST", `/staff/listings/${listing.id}/publish`, { version: listing.version }),
       );
-      const client = randomUUID();
       const text = randomUUID();
       const consent = randomUUID();
       await admin.query("insert into app.clients (id, tg_id_hash) values ($1, $2)", [
@@ -805,10 +806,27 @@ describe("вендор → карточка → проверка → публи�
       expect((await api("moderator", "GET", "/staff/requests")).status).toBe(403);
     });
 
-    it("заявка: имя и комментарий видны, телефона в ответе нет", async () => {
+    it("список: заявки одной витрины (?listingId=) — ссылка «Заявки витрины» в панели", async () => {
+      const list = await ok<StaffRequestList>(
+        api("manager", "GET", `/staff/requests?listingId=${listing.id}`),
+      );
+      expect(list.items.map((r) => r.id)).toContain(requestId);
+      expect(list.items.every((r) => r.listing.id === listing.id)).toBe(true);
+      const other = await ok<StaffRequestList>(
+        api("manager", "GET", `/staff/requests?listingId=${randomUUID()}`),
+      );
+      expect(other).toMatchObject({ total: 0, items: [] });
+      // Не UUID — фильтра нет, а не ошибка
+      expect((await api("manager", "GET", "/staff/requests?listingId=nope")).status).toBe(200);
+    });
+
+    it("заявка: имя и комментарий видны, телефона в ответе нет; клиент — id и код C-… для ссылки", async () => {
       const detail = await ok<StaffRequestDetail>(api("manager", "GET", `/staff/requests/${requestId}`));
       expect(detail).toMatchObject({ contactName: "Client", comment: "Нужен зал", contactPurged: false });
+      expect(detail.client).toEqual({ id: client, ref: `C-${client.slice(0, 8)}` });
       expect(detail.history).toMatchObject([{ from: null, to: "new" }]);
+      // Кто сменил статус — подписью журнала (у системы — без имени); телефона там нет
+      expect(detail.history.every((h) => h.actorName === null || typeof h.actorName === "string")).toBe(true);
       expect(JSON.stringify(detail)).not.toContain(clientPhone.slice(4));
     });
 

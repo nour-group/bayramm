@@ -23,6 +23,7 @@ import { formatMoment } from "../format";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
 import {
+  busyLabel,
   ErrorText,
   Field,
   fieldErrors,
@@ -32,7 +33,7 @@ import {
   PhoneSheet,
   Pill,
   SheetClose,
-  type Tone,
+  toneOf,
   useRevealErrors,
 } from "../ui";
 import { useUnsaved } from "../unsaved";
@@ -40,7 +41,6 @@ import { vendorInviteText } from "../vendor-invite";
 
 type Role = VendorUser["role"];
 type Lang = VendorUser["locale"];
-type Status = VendorUser["status"];
 
 const LANG_OPTIONS: readonly RadioOption<Lang>[] = [
   { value: "ru", label: t.vuLocales.ru },
@@ -52,8 +52,6 @@ const roleOptions = (hasOwner: boolean): readonly RadioOption<Role>[] => [
   { value: "owner", label: t.vuRoles.owner },
   { value: "member", label: t.vuRoles.member, disabled: !hasOwner },
 ];
-
-const STATUS_TONE: Record<Status, Tone> = { pending: "muted", accepted: "good", disabled: "warn" };
 
 /** Ошибка номера до запроса: сервер ответил бы так же (422, поле phone) */
 const phoneFailure: Failure = { ok: false, status: 422, code: "invalid_input", details: ["phone"] };
@@ -134,7 +132,7 @@ export function VendorUsers({
 
   return (
     <section className="panel" aria-labelledby="users-title">
-      <h2 id="users-title">
+      <h2 id="users-title" tabIndex={-1}>
         {t.users} <span className="count">{vendor.users.length}</span>
       </h2>
       <p className="muted small">{t.usersHint}</p>
@@ -219,8 +217,9 @@ function UserCard({ user, vendorId, write, copier, failure, onSaved, onEnable, o
       <div className="rcard-head">
         <strong className="vuser-name">{name}</strong>
         <span className="vuser-pills">
-          <Pill tone="outline">{t.vuRoles[user.role]}</Pill>
-          <Pill tone={STATUS_TONE[user.status]}>{t.vuStatus[user.status]}</Pill>
+          {/* Роль — не статус: нейтральной плашкой; статус — общим цветом статусов */}
+          <Pill tone="muted">{t.vuRoles[user.role]}</Pill>
+          <Pill tone={toneOf("vendorUser", user.status)}>{t.vuStatus[user.status]}</Pill>
         </span>
       </div>
       <p className="rcard-meta">{notifyLine(user)}</p>
@@ -532,8 +531,14 @@ function InviteForm({
         />
       </div>
       <div className="acts">
-        <button type="submit" className="btn btn-primary" disabled={busy || phone.trim() === ""}>
-          {t.vuInvite}
+        {/* Одно главное действие на экране — у формы вендора; приглашение — обычной кнопкой */}
+        <button
+          type="submit"
+          className="btn"
+          aria-busy={busy || undefined}
+          disabled={busy || phone.trim() === ""}
+        >
+          {busyLabel(t.vuInvite, busy)}
         </button>
       </div>
       {invited && (
