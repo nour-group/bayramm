@@ -961,10 +961,13 @@ describe("карточка: убрать телефон", () => {
     await mount(`/listings/${LISTING_ID}`);
     const remove = removePhone();
     if (!remove) throw new Error("нет «Убрать телефон»");
+    // Что будет с Telegram — сказано до галочки и связано с ней
+    expect(document.getElementById(remove.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
+      t.phoneRemoveHint,
+    );
     await act(async () => remove.click());
     expect(field(t.phoneChange)?.disabled).toBe(true);
     expect(field(t.telegramChange)?.disabled).toBe(true);
-    expect(text()).toContain(t.phoneRemoveHint);
     await act(async () => button(t.save)?.click());
     await settle();
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ phone: null, version: 7 });

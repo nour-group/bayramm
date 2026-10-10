@@ -232,6 +232,7 @@ export function ListingForm({
   const moderatedHint = moderated && !readOnly ? t.moderatedHint : undefined;
   const form = useRevealErrors(failure);
   const formId = useId();
+  const phoneRemoveHintId = useId();
   const dirty = !readOnly && Object.keys(listingBody(category, now, before)).length > 0;
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -585,6 +586,7 @@ export function ListingForm({
               <div className="field-full">
                 <Checkbox
                   checked={now.clearPhone}
+                  aria-describedby={phoneRemoveHintId}
                   onChange={(checked) => {
                     touch();
                     setNow((prev) => ({
@@ -597,7 +599,9 @@ export function ListingForm({
                 >
                   {t.phoneRemove}
                 </Checkbox>
-                {now.clearPhone ? <span className="field-hint">{t.phoneRemoveHint}</span> : null}
+                <span id={phoneRemoveHintId} className="field-hint">
+                  {t.phoneRemoveHint}
+                </span>
               </div>
             ) : null}
             {contacts?.hasTelegram && !now.clearPhone ? (
