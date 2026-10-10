@@ -264,7 +264,10 @@ begin
   select coalesce(array_agg(g.id), '{}') into v_outbox from gone g;
   perform app.outbox_forget(v_outbox);
   delete from app.sessions s where s.vendor_user_id = any (v_users);
-  delete from app.vendor_users u where u.id = any (v_users);
+  -- Всех пользователей — одним запросом: вендор уходит целиком, и проверка «у вендора
+  -- остаётся действующий владелец» его не держит (она пропускает вендора, которого удаляют)
+  perform set_config('app.deleting_vendor', p_vendor::text, true);
+  delete from app.vendor_users u where u.vendor_id = p_vendor;
   -- Реквизиты и контакты (pii.vendor_contacts) — каскадом
   delete from app.vendor_accounts v where v.id = p_vendor;
 
