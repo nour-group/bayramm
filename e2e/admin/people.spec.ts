@@ -140,7 +140,7 @@ test.describe("контакты витрины для клиентов", () => {
     expect(api.unexpected).toEqual([]);
   });
 
-  test("Telegram: плохое имя — ошибка под полем; имя, @имя и t.me/имя уходят как вписаны; после правки контакты снова скрыты", async ({
+  test("Telegram: плохое имя — ошибка до отправки; ссылку t.me поле снимает, уходит имя; после правки контакты снова скрыты", async ({
     page,
   }) => {
     const api = await start(page);
@@ -158,9 +158,11 @@ test.describe("контакты витрины для клиентов", () => {
     await expectNoAxeViolations(page, "Telegram витрины: ошибка");
 
     await telegramField(page).fill("https://t.me/Oq_Kortej_Official");
+    await expect(telegramField(page)).toHaveValue("Oq_Kortej_Official");
     await save(page).click();
     await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
-    expect(api.patches.map((body) => body.telegram)).toEqual(["ab", "https://t.me/Oq_Kortej_Official"]);
+    // Плохое имя не ушло на сервер: проверка формы — та же, что у API
+    expect(api.patches.map((body) => body.telegram)).toEqual(["Oq_Kortej_Official"]);
     // Показанное было до правки: контакты закрылись и просят нового «Показать»
     await expect(contacts(page)).not.toContainText(CAR_CONTACTS.telegram);
     await contacts(page).getByRole("button", { name: t.contactsShow }).click();
@@ -195,17 +197,24 @@ test.describe("контакты витрины для клиентов", () => {
     await page.goto(`/listings/${CAKE_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Shirin");
     await expect(page.getByLabel(t.phoneRemove)).toHaveCount(0);
-    await page.getByLabel(t.phoneChange).fill("+998 90 111 22 33");
+    // Номера нет — сразу поле «Телефон» (не «Сменить номер»): +998 у поля, маска
+    await expect(page.getByLabel(t.phoneChange)).toHaveCount(0);
+    const phone = page.getByLabel(t.listingFields.phone ?? "", { exact: true });
+    await phone.fill("+998 90 111 22 33");
+    await expect(phone).toHaveValue("90 111 22 33");
     await save(page).click();
     await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
+    // Номер есть — он скрыт; новый — по «Изменить номер»
+    const change = page.getByRole("button", { name: t.input.phoneChange });
+    await expect(change).toBeVisible();
 
     await page.getByLabel(t.phoneRemove).check();
-    await expect(page.getByLabel(t.phoneChange)).toBeDisabled();
+    await expect(change).toBeDisabled();
     await expect(telegramField(page)).toBeDisabled();
     await expect(page.getByText(t.phoneRemoveHint)).toBeVisible();
     await save(page).click();
     await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
-    expect(api.patches.map((body) => body.phone)).toEqual(["+998 90 111 22 33", null]);
+    expect(api.patches.map((body) => body.phone)).toEqual(["+998901112233", null]);
     await expect(contacts(page)).toContainText(t.phoneMissing);
     await expect(page.getByLabel(t.phoneRemove)).toHaveCount(0);
     expect(api.unexpected).toEqual([]);

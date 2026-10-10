@@ -148,9 +148,10 @@ const DICTIONARIES: StaffDictionaries = {
     { code: "hall", nameRu: "Тойхона", nameUz: "Toʻyxona", enabled: true },
     { code: "car", nameRu: "Кортеж", nameUz: "Kortej", enabled: true },
   ],
+  cities: [{ code: "tashkent", nameRu: "Ташкент", nameUz: "Toshkent" }],
   districts: [
-    { code: "yunusobod", nameRu: "Юнусабад", nameUz: "Yunusobod" },
-    { code: "chilonzor", nameRu: "Чиланзар", nameUz: "Chilonzor" },
+    { code: "yunusobod", nameRu: "Юнусабад", nameUz: "Yunusobod", city: "tashkent" },
+    { code: "chilonzor", nameRu: "Чиланзар", nameUz: "Chilonzor", city: "tashkent" },
   ],
   occasions: [{ code: "toy", nameRu: "Свадьба", nameUz: "Toʻy" }],
   staff: [{ id: STAFF.id, displayName: STAFF.displayName, role: "admin" }],

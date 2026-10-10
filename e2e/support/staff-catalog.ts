@@ -76,15 +76,7 @@ export const CAR_CONTACTS = { phone: "+998901112233", telegram: "oq_kortej" } as
  * Telegram витрины, как его понимает сервер (apps/api/src/staff/input.ts): «@имя», «имя» или ссылка
  * t.me/имя → имя без @ (5–32 знака, латиница, цифры и «_», с буквы, не на «_»); иначе null
  */
-export function normalizeTelegram(value: string): string | null {
-  const name = value
-    .trim()
-    .replace(/^https?:\/\//i, "")
-    .replace(/^(www\.)?(t\.me|telegram\.me)\//i, "")
-    .replace(/^@/, "")
-    .replace(/\/$/, "");
-  return /^[A-Za-z][A-Za-z0-9_]{3,30}[A-Za-z0-9]$/.test(name) ? name : null;
-}
+export { normalizeTelegram } from "@bayramm/shared";
 
 const BASE_REVIEW: readonly PublishBlocker[] = ["price", "descriptions", "phone", "photos"];
 const CHECKLIST: readonly PublishBlocker[] = ["contract", "stir", "contacts", "pd_consent"];
