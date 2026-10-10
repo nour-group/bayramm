@@ -1,48 +1,79 @@
 /* Вендоры: поиск, фильтры по статусу и категории витрин, таблица. Строка ведёт на страницу
-   вендора; у каждой витрины — её категория. */
+   вендора; у каждой витрины — её категория. Поиск, фильтры и страница — в адресе (?q=&status=
+   &category=&page=): «назад» из вендора возвращает тот же список. Список — страницами: на
+   компьютере листается, на телефоне «Показать ещё» дописывает следующую. */
 
-import type { ListingStatus, VendorList } from "@bayramm/shared/api/staff";
-import { Dialog, RadioGroup, SearchField, Select } from "@bayramm/ui/react";
-import { useEffect, useState } from "react";
-import { useCan, useLoad } from "../api";
-import { CategoryChip, categoryName, categoryOptions } from "../categories";
+import type { ListingStatus, VendorList, VendorListItem } from "@bayramm/shared/api/staff";
+import { Dialog, RadioGroup, type RadioOption, SearchField, Select } from "@bayramm/ui/react";
+import { useState } from "react";
+import { useCan } from "../api";
+import { CategoryChip, categoryName, categoryOptions, knownCategory } from "../categories";
 import { usePhone } from "../layout";
+import { useQueryState } from "../router";
 import { t } from "../texts";
-import { ActionBar, ActiveFilter, FilterButton, Link, LoadedView, StatusPill } from "../ui";
+import {
+  ActionBar,
+  ActiveFilter,
+  EmptyList,
+  FilterButton,
+  Link,
+  ListFooter,
+  LoadedView,
+  offsetOf,
+  StatusPill,
+  useListSearch,
+  usePagedList,
+} from "../ui";
 
-const FILTERS: readonly (ListingStatus | null)[] = [
-  null,
-  "lead",
-  "draft",
-  "review",
-  "active",
-  "suspended",
-  "rejected",
+const STATUSES: readonly ListingStatus[] = ["lead", "draft", "review", "active", "suspended", "rejected"];
+
+/** Вендоров на странице */
+const PAGE = 50;
+
+const KEYS = ["q", "status", "category", "page"] as const;
+
+const statusOf = (value: string | undefined): ListingStatus | null =>
+  STATUSES.find((status) => status === value) ?? null;
+
+/** Варианты статуса витрины; в шторке у «Лида» — подсказка, что это значит */
+const statusOptions = (hints: boolean): RadioOption<ListingStatus | "all">[] => [
+  { value: "all", label: t.all },
+  ...STATUSES.map((status) => {
+    const hint = hints ? t.statusHints[status] : undefined;
+    return { value: status, label: t.status[status], ...(hint ? { hint } : {}) };
+  }),
 ];
-
-/** Значение с задержкой: запрос к API — когда человек перестал печатать */
-function useDebounced<T>(value: T, ms = 300): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), ms);
-    return () => clearTimeout(timer);
-  }, [value, ms]);
-  return debounced;
-}
 
 export function VendorsPage() {
   const can = useCan();
   const phone = usePhone();
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState<ListingStatus | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
+  const [query, setQuery] = useQueryState(KEYS);
+  // Поиск — в адрес, когда перестали печатать; новый поиск — с первой страницы
+  const [q, setQ] = useListSearch(query.q ?? "", (search) => setQuery({ q: search, page: null }));
+  const status = statusOf(query.status);
+  const category = knownCategory(query.category);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const query = useDebounced(q.trim());
-  const params = new URLSearchParams({ limit: "100" });
-  if (query) params.set("q", query);
+  const offset = phone ? 0 : offsetOf(query.page, PAGE);
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
   if (status) params.set("listingStatus", status);
   if (category) params.set("category", category);
-  const { loaded, reload } = useLoad<VendorList>(`/staff/vendors?${params}`);
+  const list = usePagedList<VendorListItem, VendorList>(`/staff/vendors?${params}`, {
+    size: PAGE,
+    offset,
+    append: phone,
+  });
+  const filtered = Boolean(query.q || status || category);
+  const setStatus = (next: ListingStatus | null) => setQuery({ status: next, page: null });
+  const setCategory = (next: string | null) => setQuery({ category: next, page: null });
+  const reset = () => {
+    setQ("");
+    setQuery({ q: null, status: null, category: null, page: null });
+  };
+  const onPage = (next: number) => {
+    setQuery({ page: next > 0 ? String(next / PAGE + 1) : null });
+    window.scrollTo?.(0, 0);
+  };
 
   return (
     <div className="stack">
@@ -90,10 +121,7 @@ export function VendorsPage() {
               <button
                 type="button"
                 className="ui-btn ui-btn-secondary"
-                onClick={() => {
-                  setStatus(null);
-                  setCategory(null);
-                }}
+                onClick={() => setQuery({ status: null, category: null, page: null })}
               >
                 {t.reset}
               </button>
@@ -105,13 +133,10 @@ export function VendorsPage() {
         >
           <RadioGroup<ListingStatus | "all">
             variant="row"
-            label={t.listingFields.status ?? ""}
+            label={t.vendorsListingStatus}
             value={status ?? "all"}
             onChange={(value) => setStatus(value === "all" ? null : value)}
-            options={FILTERS.map((filter) => ({
-              value: filter ?? "all",
-              label: filter ? t.status[filter] : t.all,
-            }))}
+            options={statusOptions(true)}
           />
           <RadioGroup<string>
             variant="row"
@@ -122,20 +147,17 @@ export function VendorsPage() {
           />
         </Dialog>
       ) : (
-        <fieldset className="chips">
-          <legend className="visually-hidden">{t.listingFields.status}</legend>
-          {FILTERS.map((filter) => (
-            <button
-              key={filter ?? "all"}
-              type="button"
-              className="chip"
-              aria-pressed={status === filter}
-              onClick={() => setStatus(filter)}
-            >
-              {filter ? t.status[filter] : t.all}
-            </button>
-          ))}
-        </fieldset>
+        <div className="filter-row">
+          <RadioGroup<ListingStatus | "all">
+            variant="pill"
+            label={t.vendorsListingStatus}
+            name="vendors-status"
+            value={status ?? "all"}
+            onChange={(value) => setStatus(value === "all" ? null : value)}
+            options={statusOptions(false)}
+          />
+          {status === "lead" ? <p className="muted small">{t.statusHints.lead}</p> : null}
+        </div>
       )}
       {/* Телефон: «Новый вендор» — в панели действий внизу, под большим пальцем */}
       {can("vendors.write") && phone ? (
@@ -145,118 +167,130 @@ export function VendorsPage() {
           </Link>
         </ActionBar>
       ) : null}
-      <LoadedView loaded={loaded} onRetry={reload}>
-        {(list) =>
+      <LoadedView loaded={list.loaded} onRetry={list.reload}>
+        {() =>
           list.items.length === 0 ? (
-            <p className="empty">{query || status || category ? t.vendorsEmpty : t.vendorsEmptyAll}</p>
-          ) : phone ? (
-            <>
-              <ul className="rcards">
-                {list.items.map((vendor) => {
-                  const done = Object.values(vendor.checklist).filter(Boolean).length;
-                  return (
-                    <li key={vendor.id} className="rcard rcard-tap">
-                      <div className="rcard-head">
-                        <Link to={{ name: "vendor", id: vendor.id }} className="rcard-link">
-                          {vendor.name ?? vendor.legalName ?? vendor.code}
-                        </Link>
-                        {/* Что значит «0/4» — словами и на виду: на телефоне заголовка столбца нет */}
-                        <span className={`ring${done === 4 ? " ring-done" : ""}`}>
-                          {t.colChecklist} {done}/4
-                        </span>
-                      </div>
-                      <p className="rcard-meta">
-                        {vendor.code}
-                        {vendor.managerName ? ` · ${vendor.managerName}` : ""}
-                      </p>
-                      <dl className="rcard-facts">
-                        <dt>{t.colContact}</dt>
-                        <dd>
-                          {vendor.contactPerson ?? t.none}
-                          {vendor.legalName ? ` · ${vendor.legalName}` : ""}
-                        </dd>
-                        <dt>{t.colCabinet}</dt>
-                        <dd>{t.cabinetUsers(vendor.users, vendor.linkedUsers)}</dd>
-                      </dl>
-                      {vendor.listings.length === 0 ? (
-                        <p className="rcard-meta">{t.noListings}</p>
-                      ) : (
-                        <ul className="rcard-tags" aria-label={t.colListings}>
-                          {vendor.listings.map((listing) => (
-                            <li key={listing.id}>
-                              {listing.name} <CategoryChip code={listing.categoryCode} />{" "}
-                              <StatusPill status={listing.status} />
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="muted small">{t.total(list.total)}</p>
-            </>
+            filtered ? (
+              <EmptyList text={t.vendorsFilteredEmpty} onReset={reset} />
+            ) : (
+              <EmptyList text={t.vendorsEmptyAll} />
+            )
           ) : (
             <>
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">{t.colVendor}</th>
-                      <th scope="col">{t.colContact}</th>
-                      <th scope="col">{t.colListings}</th>
-                      <th scope="col">{t.colChecklist}</th>
-                      <th scope="col">{t.colCabinet}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.items.map((vendor) => {
-                      const done = Object.values(vendor.checklist).filter(Boolean).length;
-                      return (
-                        <tr key={vendor.id}>
-                          <td>
-                            <Link to={{ name: "vendor", id: vendor.id }} className="row-link">
-                              {vendor.name ?? vendor.legalName ?? vendor.code}
-                            </Link>
-                            <span className="sub">
-                              {vendor.code}
-                              {vendor.managerName ? ` · ${vendor.managerName}` : ""}
-                            </span>
-                          </td>
-                          <td>
-                            {vendor.contactPerson ?? t.none}
-                            {vendor.legalName && <span className="sub">{vendor.legalName}</span>}
-                          </td>
-                          <td>
-                            {vendor.listings.length === 0 ? (
-                              <span className="muted">{t.noListings}</span>
-                            ) : (
-                              <ul className="plain">
-                                {vendor.listings.map((listing) => (
-                                  <li key={listing.id}>
-                                    <Link to={{ name: "listing", id: listing.id }}>{listing.name}</Link>{" "}
-                                    <CategoryChip code={listing.categoryCode} />{" "}
-                                    <StatusPill status={listing.status} />
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </td>
-                          <td>
-                            <span className={`ring${done === 4 ? " ring-done" : ""}`}>{done}/4</span>
-                          </td>
-                          <td>{t.cabinetUsers(vendor.users, vendor.linkedUsers)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              <p className="muted small">{t.total(list.total)}</p>
+              {phone ? <VendorCards items={list.items} /> : <VendorTable items={list.items} />}
+              <ListFooter list={list} offset={offset} size={PAGE} onPage={onPage} />
             </>
           )
         }
       </LoadedView>
+    </div>
+  );
+}
+
+const checksDone = (vendor: VendorListItem) => Object.values(vendor.checklist).filter(Boolean).length;
+
+function VendorCards({ items }: { items: readonly VendorListItem[] }) {
+  return (
+    <ul className="rcards">
+      {items.map((vendor) => {
+        const done = checksDone(vendor);
+        return (
+          <li key={vendor.id} className="rcard rcard-tap">
+            <div className="rcard-head">
+              <Link to={{ name: "vendor", id: vendor.id }} className="rcard-link">
+                {vendor.name ?? vendor.legalName ?? vendor.code}
+              </Link>
+              {/* Что значит «0/4» — словами и на виду: на телефоне заголовка столбца нет */}
+              <span className={`ring${done === 4 ? " ring-done" : ""}`}>
+                {t.colChecklist} {done}/4
+              </span>
+            </div>
+            <p className="rcard-meta">
+              {vendor.code}
+              {vendor.managerName ? ` · ${vendor.managerName}` : ""}
+            </p>
+            <dl className="rcard-facts">
+              <dt>{t.colContact}</dt>
+              <dd>
+                {vendor.contactPerson ?? t.none}
+                {vendor.legalName ? ` · ${vendor.legalName}` : ""}
+              </dd>
+              <dt>{t.colCabinet}</dt>
+              <dd>{t.cabinetUsers(vendor.users, vendor.linkedUsers)}</dd>
+            </dl>
+            {vendor.listings.length === 0 ? (
+              <p className="rcard-meta">{t.noListings}</p>
+            ) : (
+              <ul className="rcard-tags" aria-label={t.colListings}>
+                {vendor.listings.map((listing) => (
+                  <li key={listing.id}>
+                    {listing.name} <CategoryChip code={listing.categoryCode} />{" "}
+                    <StatusPill status={listing.status} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function VendorTable({ items }: { items: readonly VendorListItem[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th scope="col">{t.colVendor}</th>
+            <th scope="col">{t.colContact}</th>
+            <th scope="col">{t.colListings}</th>
+            <th scope="col">{t.colChecklist}</th>
+            <th scope="col">{t.colCabinet}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((vendor) => {
+            const done = checksDone(vendor);
+            return (
+              <tr key={vendor.id}>
+                <td>
+                  <Link to={{ name: "vendor", id: vendor.id }} className="row-link">
+                    {vendor.name ?? vendor.legalName ?? vendor.code}
+                  </Link>
+                  <span className="sub">
+                    {vendor.code}
+                    {vendor.managerName ? ` · ${vendor.managerName}` : ""}
+                  </span>
+                </td>
+                <td>
+                  {vendor.contactPerson ?? t.none}
+                  {vendor.legalName && <span className="sub">{vendor.legalName}</span>}
+                </td>
+                <td>
+                  {vendor.listings.length === 0 ? (
+                    <span className="muted">{t.noListings}</span>
+                  ) : (
+                    <ul className="plain">
+                      {vendor.listings.map((listing) => (
+                        <li key={listing.id}>
+                          <Link to={{ name: "listing", id: listing.id }}>{listing.name}</Link>{" "}
+                          <CategoryChip code={listing.categoryCode} /> <StatusPill status={listing.status} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </td>
+                <td>
+                  <span className={`ring${done === 4 ? " ring-done" : ""}`}>{done}/4</span>
+                </td>
+                <td>{t.cabinetUsers(vendor.users, vendor.linkedUsers)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

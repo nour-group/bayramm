@@ -44,7 +44,6 @@ import {
   availabilityOf,
   CAR_CONTACTS,
   CAR_LISTING_ID,
-  CAR_REQUEST_ID,
   type Calendar,
   carRequest,
   createService,
@@ -334,6 +333,8 @@ const REQUEST: StaffRequestDetail = {
   createdAt: new Date(NOW.getTime() - 15 * 3_600_000).toISOString(),
   listing: { id: LISTING_ID, name: "Lola zali", categoryCode: "hall" },
   vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
+  // Чья заявка — код клиента: ссылка на его страницу (CLIENT_ID, C-00000000)
+  client: { id: "00000000-0000-4000-8800-000000000001", ref: "C-00000000" },
   budgetMinUzs: 30_000_000,
   budgetMaxUzs: 50_000_000,
   declineReason: null,
@@ -349,6 +350,7 @@ const REQUEST: StaffRequestDetail = {
       from: null,
       to: "new",
       actorKind: "client",
+      actorName: "C-00000000",
       source: "tma",
       reason: null,
       at: new Date(NOW.getTime() - 15 * 3_600_000).toISOString(),
@@ -357,6 +359,7 @@ const REQUEST: StaffRequestDetail = {
       from: "new",
       to: "viewed",
       actorKind: "vendor_user",
+      actorName: "Бахтиёр Рашидов",
       source: "vendor",
       reason: null,
       at: new Date(NOW.getTime() - 14 * 3_600_000).toISOString(),
@@ -551,6 +554,25 @@ const AUDIT: AuditList = {
   ],
 };
 
+/** Журнал одного вендора: объект — его названием */
+const VENDOR_AUDIT: AuditList = {
+  total: 1,
+  items: [
+    {
+      id: "5",
+      at: iso,
+      actorKind: "staff",
+      actor: { id: STAFF.id, name: STAFF.displayName },
+      action: "vendor.update",
+      objectType: "vendor",
+      objectId: VENDOR_ID,
+      objectLabel: "Lola",
+      detail: { fields: ["name"] },
+      source: "admin",
+    },
+  ],
+};
+
 /** Кто читал телефоны: чей телефон — словами, номеров нет */
 const PII_AUDIT: PiiAccessList = {
   total: 2,
@@ -728,6 +750,24 @@ export interface StaffApi {
   readonly deletes: string[];
 }
 
+/** Страница списка, как у API: limit (по умолчанию 50) и offset из адреса */
+function pageOf<T>(items: readonly T[], url: URL): T[] {
+  const limit = Number(url.searchParams.get("limit") ?? 50);
+  const offset = Number(url.searchParams.get("offset") ?? 0);
+  return items.slice(offset, offset + limit);
+}
+
+/** Ещё n заявок к основной: длинный список — страницами на компьютере, «Показать ещё» на телефоне */
+function moreRequests(base: StaffRequestDetail, n: number): StaffRequestDetail[] {
+  return Array.from({ length: n }, (_, i) => ({
+    ...base,
+    id: `00000000-0000-4000-8300-${String(1000 + i).padStart(12, "0")}`,
+    publicNo: 2000 + i,
+    sla: "waiting" as const,
+    status: "new" as const,
+  }));
+}
+
 const json = (route: Route, status: number, body: unknown) =>
   route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 const fail = (route: Route, status: number, code: string, details: readonly string[] = []) =>
@@ -760,6 +800,8 @@ export interface StaffApiOptions {
   readonly draftService?: boolean;
   /** Бот знает чат сотрудника; false — панель просит написать боту /start */
   readonly botLinked?: boolean;
+  /** Ещё столько заявок в списке: проверка страниц и «Показать ещё» */
+  readonly manyRequests?: number;
 }
 
 export async function mockStaffApi(
@@ -775,6 +817,7 @@ export async function mockStaffApi(
     cabinetUsers = [],
     draftService = false,
     botLinked = true,
+    manyRequests = 0,
   }: StaffApiOptions = {},
 ) {
   let elevated = 0;
@@ -824,7 +867,10 @@ export async function mockStaffApi(
     seeded ? [[CAR_LISTING_ID, { ...CAR_CONTACTS }]] : [],
   );
   const contactsOf = (id: string) => contacts.get(id) ?? { phone: null, telegram: null };
-  const requests = seeded ? [REQUEST, carRequest(REQUEST)] : [REQUEST];
+  const requests = [
+    ...(seeded ? [REQUEST, carRequest(REQUEST)] : [REQUEST]),
+    ...moreRequests(REQUEST, manyRequests),
+  ];
   // Удалить нельзя: по витрине были заявки (их история хранится) или она на проверке и в каталоге
   const blockerOf = (listing: ListingDetail): DeleteBlocker | null =>
     requests.some((r) => r.listing.id === listing.id) ? "requests" : listing.deleteBlocker;
@@ -1248,11 +1294,26 @@ export async function mockStaffApi(
     }
     if (key === "GET /staff/requests") {
       state.queries.push(`requests?${url.searchParams}`);
-      const category = url.searchParams.get("category");
-      const items = requests.filter((r) => !category || r.listing.categoryCode === category);
+      const params = url.searchParams;
+      const category = params.get("category");
+      const sla = params.get("sla");
+      const q = params.get("q")?.toLowerCase() ?? "";
+      // Те же фильтры, что у API: категория, срок (late — просроченные и нарушенные), статус,
+      // одна витрина, поиск по номеру, витрине и вендору
+      const items = requests.filter(
+        (r) =>
+          (!category || r.listing.categoryCode === category) &&
+          (!sla || (sla === "late" ? r.sla === "overdue" || r.sla === "breached" : r.sla === sla)) &&
+          (!params.get("status") || r.status === params.get("status")) &&
+          (!params.get("listingId") || r.listing.id === params.get("listingId")) &&
+          (!q ||
+            String(r.publicNo) === q ||
+            r.listing.name.toLowerCase().includes(q) ||
+            r.vendor.code.toLowerCase().includes(q)),
+      );
       const list: StaffRequestList = {
         total: items.length,
-        items,
+        items: pageOf(items, url),
         counts: {
           waiting: 0,
           overdue: 1,
@@ -1265,9 +1326,11 @@ export async function mockStaffApi(
       };
       return json(route, 200, list);
     }
-    if (key === `GET /staff/requests/${REQUEST_ID}`) return json(route, 200, REQUEST);
-    const car = requests.find((r) => r.id === CAR_REQUEST_ID);
-    if (car && key === `GET /staff/requests/${CAR_REQUEST_ID}`) return json(route, 200, car);
+    // Заявка — любая из списка (основная, кортежа, длинного списка)
+    const requestMatch = /^\/staff\/requests\/([0-9a-f-]{36})$/.exec(path);
+    const found =
+      requestMatch && method === "GET" ? requests.find((r) => r.id === requestMatch[1]) : undefined;
+    if (found) return json(route, 200, found);
     if (key === "GET /staff/revisions") {
       const list: RevisionList = { total: 1, items: [REVISION] };
       return json(route, 200, list);
@@ -1278,11 +1341,14 @@ export async function mockStaffApi(
       const items = [CLIENT_ITEM, ...OTHER_CLIENTS].filter(
         (c) => url.searchParams.get("blocked") !== "1" || c.blocked,
       );
-      const list: ClientList = { total: items.length, items };
+      const list: ClientList = { total: items.length, items: pageOf(items, url) };
       return json(route, 200, list);
     }
     if (key === `GET /staff/clients/${CLIENT_ID}`) return json(route, 200, CLIENT);
     if (key === "GET /staff/outbox") return json(route, 200, OUTBOX);
+    // Журнал одного вендора (ссылка «Журнал вендора»): записи о нём — с его названием
+    if (key === "GET /staff/audit" && url.searchParams.get("object") === VENDOR_ID)
+      return json(route, 200, VENDOR_AUDIT);
     if (key === "GET /staff/audit") return json(route, 200, AUDIT);
     if (key === "GET /staff/audit/pii") return json(route, 200, PII_AUDIT);
     if (key === "GET /staff/team") return json(route, 200, { items: team });

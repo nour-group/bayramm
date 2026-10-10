@@ -2,11 +2,12 @@
 // вендора (SLA), история, заметки. Телефоны скрыты: показать — отдельным
 // запросом, который база пишет в журнал доступа к ПДн.
 //
-//   GET  /staff/requests?status=&sla=&category=&q=&limit=&offset=   список: сначала без ответа;
-//        sla=late — очередь просроченных и нарушенных, самый давний срок первым;
-//        category — заявки витрин этой категории; contactName — имя из заявки, чья она
-//   GET  /staff/requests/:id                              заявка, история, срок ответа по
-//        шагам (timeline), заметки
+//   GET  /staff/requests?status=&sla=&category=&listingId=&q=&limit=&offset=   список: сначала
+//        без ответа; sla=late — очередь просроченных и нарушенных, самый давний срок первым;
+//        category — заявки витрин этой категории; listingId — одной витрины; contactName — имя
+//        из заявки, чья она
+//   GET  /staff/requests/:id                              заявка, история (кто — подписью
+//        журнала), срок ответа по шагам (timeline), заметки; client — id и код C-… для ссылки
 //   POST /staff/requests/:id/client-phone  { reason }     телефон клиента — только
 //        администратор, причина обязательна (так же проверяет функция базы read_request_phone)
 //   POST /staff/requests/:id/vendor-phone  { reason? }    кому звонить: контакт вендора
@@ -46,8 +47,9 @@ import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
 import { outboxKick } from "../notify/kick";
 import { requirePermission } from "./access";
-import { Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
-import { iso, num, pathId } from "./shared";
+import { Input, invalidInput, isUuid, likePattern, limitJson, paging, readBody } from "./input";
+import { loadLabels } from "./labels";
+import { clientRef, iso, num, pathId } from "./shared";
 import { readReason, readVendorPhones } from "./vendors";
 
 export const requests = new Hono<AppEnv>();
@@ -159,6 +161,8 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
   const sla = slaParam === "late" ? LATE : SLA_STATES.filter((s) => s === slaParam);
   const categoryParam = c.req.query("category");
   const category = categoryParam && /^[a-z_]{2,20}$/.test(categoryParam) ? categoryParam : undefined;
+  const listingParam = c.req.query("listingId");
+  const listingId = listingParam && isUuid(listingParam) ? listingParam.toLowerCase() : undefined;
   const { limit, offset } = paging((key) => c.req.query(key));
 
   const result = await withActor(c.var.db, staffOf(c), async (trx) => {
@@ -166,6 +170,7 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
     if (status) query = query.where("r.status", "=", status);
     if (sla.length > 0) query = query.where(sql<boolean>`${slaState} in (${sql.join(sla)})`);
     if (category) query = query.where("l.category_code", "=", category);
+    if (listingId) query = query.where("l.id", "=", listingId);
     if (q !== "") {
       const pattern = likePattern(q);
       const number = /^\d{1,12}$/.test(q) ? q : null;
@@ -222,6 +227,7 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
   const row = await selectRequests(trx)
     .leftJoin(requestContactsAs("rc"), "rc.request_id", "r.id")
     .select([
+      "r.client_id",
       "r.details",
       "r.budget_min_uzs",
       "r.budget_max_uzs",
@@ -247,11 +253,16 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
 
   const history = await trx
     .selectFrom("app.request_status_log")
-    .select(["from_status", "to_status", "actor_kind", "source", "reason", "at"])
+    .select(["from_status", "to_status", "actor_kind", "actor_id", "source", "reason", "at"])
     .where("request_id", "=", id)
     .orderBy("at", "desc")
     .orderBy("id", "desc")
     .execute();
+  // Кто менял статус — словами, как в журнале: один запрос на вид, а не на строку
+  const actors = await loadLabels(
+    trx,
+    history.map((h) => ({ type: h.actor_kind, id: h.actor_id })),
+  );
 
   // Напоминание — строка outbox на каждого пользователя вендора: сводим в одно событие.
   // Кто напомнил — id сотрудника в payload, имя — из профиля
@@ -311,6 +322,7 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
   const pauseUntil = row.reminder_pause_until;
   return {
     ...itemView(row),
+    client: { id: row.client_id, ref: clientRef(row.client_id) },
     details: row.details as RequestDetails,
     budgetMinUzs: num(row.budget_min_uzs),
     budgetMaxUzs: num(row.budget_max_uzs),
@@ -325,6 +337,7 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
       from: h.from_status,
       to: h.to_status,
       actorKind: roleActorKind(h.actor_kind),
+      actorName: h.actor_kind === "system" ? null : actors.get(h.actor_kind, h.actor_id),
       source: h.source,
       reason: h.reason,
       at: iso(h.at),

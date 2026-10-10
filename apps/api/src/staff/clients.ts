@@ -29,16 +29,15 @@ import { notFound } from "../errors";
 import { requirePermission } from "./access";
 import { Input, invalidInput, limitJson, paging, readBody } from "./input";
 import { slaState } from "./requests";
-import { iso, num, pathId, staffName } from "./shared";
+import { clientRef, iso, num, pathId, staffName } from "./shared";
 import { readReason } from "./vendors";
+
+export { clientRef };
 
 export const clients = new Hono<AppEnv>();
 
 /** Список — страницами поменьше: это не выгрузка базы */
 const MAX_PAGE = 50;
-
-/** C- и первые 8 символов id */
-export const clientRef = (id: string) => `C-${id.slice(0, 8)}`;
 
 /**
  * Строка поиска → условие: номер заявки (цифры), полный id, его начало от 8 знаков

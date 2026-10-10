@@ -2,7 +2,9 @@
    Предлагает вендор из кабинета или менеджер из панели — кто именно, видно в шапке.
    Одобрить — значения сразу попадают на витрину; отклонить — только с причиной (её увидит
    вендор). Решает модератор или администратор; после решения — кнопка к следующему
-   предложению в очереди (NextInQueue), фокус — на ней. */
+   предложению в очереди (NextInQueue), фокус — на ней. Где предложение: на компьютере — путь
+   над заголовком (модерация → вендор → витрина), на телефоне — ссылки в шапке страницы. Видео —
+   ссылками наружу: открыть и посмотреть, что предлагают. */
 
 import type { RevisionChange, RevisionDetail, RevisionValue } from "@bayramm/shared/api/staff";
 import {
@@ -15,7 +17,7 @@ import { useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { ru } from "../categories";
 import { formatMoment, vendorLabel } from "../format";
-import { usePhone } from "../layout";
+import { useLayout, usePhone } from "../layout";
 import { t } from "../texts";
 import {
   ActionBar,
@@ -25,6 +27,8 @@ import {
   PhoneSheet,
   Pill,
   StatusPill,
+  toneOf,
+  useBreadcrumbs,
   useEntityTitle,
 } from "../ui";
 import { NextInQueue } from "./NextInQueue";
@@ -32,7 +36,7 @@ import { NextInQueue } from "./NextInQueue";
 export function RevisionPage({ id }: { id: string }) {
   const { loaded, reload, set } = useLoad<RevisionDetail>(`/staff/revisions/${id}`);
   return (
-    <LoadedView loaded={loaded} onRetry={reload}>
+    <LoadedView loaded={loaded} onRetry={reload} skeleton="detail">
       {(revision) => <RevisionView revision={revision} onChange={set} />}
     </LoadedView>
   );
@@ -85,7 +89,15 @@ function Value({
       <ul className="plain">
         {(value as readonly string[]).map((link) => (
           <li key={link} className="reason">
-            {link}
+            {/* Только https-ссылка — ссылкой: значение пришло от партнёра */}
+            {/^https:\/\//i.test(link) ? (
+              <a href={link} target="_blank" rel="noopener noreferrer">
+                {link}
+                <span className="visually-hidden"> ({t.opensNewTab})</span>
+              </a>
+            ) : (
+              link
+            )}
           </li>
         ))}
       </ul>
@@ -105,6 +117,11 @@ function RevisionView({
   onChange: (r: RevisionDetail) => void;
 }) {
   useEntityTitle(`${t.views.revision}: ${revision.listing.name}`);
+  useBreadcrumbs([
+    { label: vendorLabel(revision.vendor), to: { name: "vendor", id: revision.vendor.id } },
+    { label: revision.listing.name, to: { name: "listing", id: revision.listing.id } },
+  ]);
+  const desktop = useLayout() === "desktop";
   const category = categoryConfig(revision.listing.categoryCode);
   const { api } = useSession();
   const can = useCan();
@@ -131,15 +148,16 @@ function RevisionView({
   return (
     <div className="stack">
       <div className="listing-head">
-        <p className="sub">
-          <Link to={{ name: "listing", id: revision.listing.id }}>{t.openListing}</Link>
-          {" · "}
-          <Link to={{ name: "vendor", id: revision.vendor.id }}>{vendorLabel(revision.vendor)}</Link>
-        </p>
+        {/* На компьютере витрина и вендор — в пути над заголовком */}
+        {desktop ? null : (
+          <p className="sub">
+            <Link to={{ name: "listing", id: revision.listing.id }}>{t.openListing}</Link>
+            {" · "}
+            <Link to={{ name: "vendor", id: revision.vendor.id }}>{vendorLabel(revision.vendor)}</Link>
+          </p>
+        )}
         <p>
-          <Pill tone={open ? "outline" : revision.status === "approved" ? "good" : "muted"}>
-            {t.revisionStatus[revision.status]}
-          </Pill>{" "}
+          <Pill tone={toneOf("revision", revision.status)}>{t.revisionStatus[revision.status]}</Pill>{" "}
           <StatusPill status={revision.listing.status} />
           <span className="sub">
             {t.submittedAt} {formatMoment(revision.submittedAt)}

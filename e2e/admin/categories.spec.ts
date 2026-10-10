@@ -226,6 +226,10 @@ test("услуги: из каталога с добавкой; правка; с�
   await expect(pause).toContainText(t.servicePauseText("Ретро-автомобиль"));
   await pause.getByRole("button", { name: t.servicePause }).click();
   await expect(retro).toContainText(t.serviceStatus.paused ?? "");
+  // Кнопка исчезла вместе с услугой на витрине — что сделали, говорит всплывающая строка
+  await expect(
+    page.getByRole("status").filter({ hasText: t.toastServicePaused("Ретро-автомобиль") }),
+  ).toBeVisible();
   await act(retro, t.serviceDelete, "Ретро-автомобиль").click();
   await page
     .getByRole("alertdialog", { name: t.serviceDeleteTitle })
@@ -304,10 +308,11 @@ test("услуга партнёра у черновика — в очереди 
   await expectNoAxeViolations(page, "модерация: услуга черновика");
   await expectHitAreas(page, "модерация: услуга черновика", CONTROLS);
 
-  // Карточка очереди — ссылкой на витрину: там те же решения
+  // Карточка очереди — ссылкой на витрину, сразу на блоке услуг: там те же решения
   await bento.getByRole("link").click();
-  await expect(page).toHaveURL(`/listings/${CAKE_LISTING_ID}`);
+  await expect(page).toHaveURL(`/listings/${CAKE_LISTING_ID}?focus=services`);
   const services = page.getByRole("region", { name: t.services });
+  await expect(services.getByRole("heading", { level: 2 })).toBeFocused();
   await expect(services.getByText(t.serviceWaits)).toBeVisible();
   await expect(act(services, t.serviceDecline, "Бенто")).toBeVisible();
   await expectNoAxeViolations(page, "витрина: услуга ждёт решения");

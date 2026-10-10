@@ -174,7 +174,7 @@ describe("несохранённые правки", () => {
     await click(navLink(t.vendors));
     await click(buttonIn(question() as HTMLElement, t.unsavedLeave));
     expect(window.location.pathname).toBe("/vendors");
-    expect(calls).toContain("GET /api/staff/vendors?limit=100");
+    expect(calls).toContain("GET /api/staff/vendors?limit=50&offset=0");
   });
 
   it("«назад» браузера с правками — экран остаётся, вопрос; «Уйти» — назад", async () => {

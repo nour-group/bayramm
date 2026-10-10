@@ -31,23 +31,15 @@ import {
   serviceType,
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
-import { ConfirmSheet, Select } from "@bayramm/ui/react";
+import { ConfirmSheet, Select, useToast } from "@bayramm/ui/react";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
-import { ru, unitName } from "../categories";
+import { formatPrice, ru, unitName } from "../categories";
 import { ChoiceField, MoneyField, NumberField } from "../fields";
-import { formatPrice, formatSum } from "../format";
+import { formatSum } from "../format";
 import { apiErrorText, t } from "../texts";
-import { ConfirmForm, ErrorText, Field, focusSection, PhoneSheet, Pill, type Tone } from "../ui";
+import { busyLabel, ConfirmForm, ErrorText, Field, focusSection, PhoneSheet, Pill, toneOf } from "../ui";
 import { useUnsaved } from "../unsaved";
-
-const STATUS_TONE: Record<ListingService["status"], Tone> = {
-  draft: "muted",
-  review: "outline",
-  active: "good",
-  rejected: "warn",
-  paused: "muted",
-};
 
 /** Единицы цены дополнения: единицы категории и единица шаблона, если её там нет (как в кабинете) */
 export function optionUnits(category: CategoryConfig, option: Pick<OptionDraft, "priceUnit">): PriceUnit[] {
@@ -159,10 +151,11 @@ export function ServiceDecision({
         <button
           type="button"
           className={`btn btn-primary${approveClass ? ` ${approveClass}` : ""}`}
+          aria-busy={busy || undefined}
           disabled={busy}
           onClick={() => void approve()}
         >
-          {t.serviceApprove}
+          {busyLabel(t.serviceApprove, busy)}
           <span className="visually-hidden">: {name}</span>
         </button>
         <button
@@ -213,6 +206,7 @@ type Editing = { readonly kind: "new" } | { readonly kind: "edit"; readonly serv
 export function Services({ listing, category, onChanged }: ServicesProps) {
   const { api } = useSession();
   const can = useCan();
+  const toast = useToast();
   const editable = can("listings.write");
   // Решает по услугам тот, у кого право модерации (как очередь GET /staff/services)
   const decides = can("revisions.moderate");
@@ -233,8 +227,18 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
     const result = await api.post<ListingService>(`${base}/${service.id}/${action}`);
     setBusy(null);
     setFailure(result.ok ? null : result);
-    if (result.ok) onChanged();
-    return result.ok;
+    if (!result.ok) return false;
+    onChanged();
+    // Что стало с услугой — словами: кнопка, которую нажали, исчезла вместе со строкой статуса
+    const name = service.name.ru;
+    const said =
+      action === "pause"
+        ? t.toastServicePaused(name)
+        : result.data.status === "active"
+          ? t.toastServiceResumed(name)
+          : t.toastServiceSubmitted(name);
+    toast(said, { tone: "success" });
+    return true;
   };
 
   const pause = async () => {
@@ -336,7 +340,7 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
               <li key={service.id} className="card-row service-row">
                 <div className="rcard-head">
                   <strong className="service-name">{service.name.ru}</strong>
-                  <Pill tone={STATUS_TONE[service.status]}>{t.serviceStatus[service.status]}</Pill>
+                  <Pill tone={toneOf("service", service.status)}>{t.serviceStatus[service.status]}</Pill>
                 </div>
                 {service.customName ? <span className="sub">{typeLabel}</span> : null}
                 <span className="sub">{serviceFacts(service)}</span>

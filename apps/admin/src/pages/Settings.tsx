@@ -180,7 +180,12 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
             ? [input(0, { label: t.quietFrom, type: "time" }), input(1, { label: t.quietTo, type: "time" })]
             : input(0, { label: t.settingValue, type: "number" })}
         <div className="setting-save">
-          <button type="submit" className="btn" disabled={busy || !dirty}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            aria-busy={busy || undefined}
+            disabled={busy || !dirty}
+          >
             {busy ? t.saving : t.save}
           </button>
         </div>

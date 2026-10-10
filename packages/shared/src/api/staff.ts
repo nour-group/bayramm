@@ -720,9 +720,9 @@ export interface StaffRequestItem {
 }
 
 /**
- * GET /staff/requests?status=&sla=&category=&q=&limit=&offset= — сначала без ответа: ближайший
- * (или самый давний) срок первым. sla=late — очередь просроченных и нарушенных; category —
- * заявки витрин этой категории
+ * GET /staff/requests?status=&sla=&category=&listingId=&q=&limit=&offset= — сначала без ответа:
+ * ближайший (или самый давний) срок первым. sla=late — очередь просроченных и нарушенных;
+ * category — заявки витрин этой категории; listingId — заявки одной витрины
  */
 export interface StaffRequestList {
   readonly total: number;
@@ -735,6 +735,11 @@ export interface RequestHistoryEntry {
   readonly from: RequestStatus | null;
   readonly to: RequestStatus;
   readonly actorKind: "client" | "vendor_user" | "staff" | "system";
+  /**
+   * Кто сменил статус словами (подписи журнала, apps/api/src/staff/labels.ts): имя сотрудника
+   * или пользователя кабинета, код клиента C-…; у системы и без подписи — null. Телефонов нет
+   */
+  readonly actorName: string | null;
   readonly source: string;
   readonly reason: string | null;
   readonly at: string;
@@ -742,6 +747,8 @@ export interface RequestHistoryEntry {
 
 /** GET /staff/requests/:id */
 export interface StaffRequestDetail extends StaffRequestItem {
+  /** Чья заявка: id и код C-… — ссылка на страницу клиента (ПДн в ней нет) */
+  readonly client: { readonly id: string; readonly ref: string };
   readonly budgetMinUzs: number | null;
   readonly budgetMaxUzs: number | null;
   readonly declineReason: DeclineReason | null;

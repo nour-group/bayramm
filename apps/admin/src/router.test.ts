@@ -4,6 +4,8 @@ import {
   goBack,
   HOME,
   historyIndex,
+  homeOf,
+  hrefOf,
   isNested,
   matchRoute,
   matchSection,
@@ -12,10 +14,14 @@ import {
   parseView,
   pathOf,
   ROUTES,
+  readQuery,
+  restoreScroll,
   SECTION_PERMISSION,
+  savedScroll,
   sectionOf,
   TAB_SECTIONS,
   tabsFor,
+  writeQuery,
 } from "./router";
 import { t } from "./texts";
 
@@ -44,13 +50,13 @@ describe("маршруты панели оператора", () => {
     expect(matchSection("/nope")).toBeNull();
   });
 
-  it("пути не повторяются; в навигации все разделы", () => {
+  it("пути не повторяются; в навигации все разделы — в порядке нижней панели, потом остальные", () => {
     const paths = Object.values(ROUTES);
     expect(new Set(paths).size).toBe(paths.length);
     expect(NAV).toEqual([
-      "vendors",
-      "moderation",
       "requests",
+      "moderation",
+      "vendors",
       "metrics",
       "clients",
       "notifications",
@@ -58,6 +64,68 @@ describe("маршруты панели оператора", () => {
       "team",
       "settings",
     ]);
+    // Компьютер и телефон — один порядок: кнопки нижней панели идут в навигации первыми
+    expect(NAV.slice(0, TAB_SECTIONS.length)).toEqual(TAB_SECTIONS);
+  });
+
+  it("главный экран — первый раздел нижней панели, доступный роли", () => {
+    // Администратор и менеджер — заявки
+    expect(homeOf(NAV)).toBe("requests");
+    expect(homeOf(["vendors", "moderation", "requests", "metrics", "clients", "notifications"])).toBe(
+      "requests",
+    );
+    // Модератор заявок не видит — модерация
+    expect(homeOf(["vendors", "moderation", "metrics"])).toBe("moderation");
+    // Роль без ежедневных разделов — первый свой; без разделов — запасной
+    expect(homeOf(["audit", "team"])).toBe("audit");
+    expect(homeOf([])).toBe(HOME);
+  });
+
+  it("ссылка с параметрами: /requests?sla=late, пустые значения в адрес не попадают", () => {
+    expect(hrefOf({ name: "requests", query: { sla: "late" } })).toBe("/requests?sla=late");
+    expect(hrefOf({ name: "requests", query: { q: "V101", status: "" } })).toBe("/requests?q=V101");
+    expect(hrefOf({ name: "listing", id: "x", query: { focus: "photos" } })).toBe("/listings/x?focus=photos");
+    expect(hrefOf({ name: "vendors" })).toBe("/vendors");
+    // Путь экрана — без параметров: им сравниваются экраны
+    expect(pathOf({ name: "requests", query: { sla: "late" } })).toBe("/requests");
+  });
+
+  it("параметры адреса: читаются только свои ключи, пишутся без новой записи истории", () => {
+    window.history.replaceState({ idx: 3 }, "", "/requests?sla=late&q=%20V101%20&foreign=1");
+    expect(readQuery(["sla", "q", "status"] as const)).toEqual({ sla: "late", q: "V101" });
+    const length = window.history.length;
+    writeQuery(["sla", "status"] as const, { status: "new" });
+    expect(window.location.pathname + window.location.search).toBe("/requests?q=+V101+&foreign=1&status=new");
+    // Номер записи истории и её длина — те же: «назад» панели не сбивается
+    expect(historyIndex()).toBe(3);
+    expect(window.history.length).toBe(length);
+    // Ушли с экрана — запоздавшая запись адрес не трогает
+    writeQuery(["status"] as const, {}, "/vendors");
+    expect(window.location.search).toContain("status=new");
+  });
+
+  it("прокрутка записи истории: возвращается, когда страница до неё дорастёт", () => {
+    window.history.replaceState({ idx: 1, scroll: 640 }, "", "/vendors");
+    expect(savedScroll()).toBe(640);
+    window.history.replaceState({ idx: 1 }, "", "/vendors");
+    expect(savedScroll()).toBeNull();
+
+    vi.useFakeTimers();
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    let height = 300;
+    const doc = vi.spyOn(document.documentElement, "scrollHeight", "get").mockImplementation(() => height);
+    restoreScroll(640);
+    expect(scrollTo).not.toHaveBeenCalled();
+    // Список догрузился — страница выросла: прокрутка туда же, где была
+    height = 640 + window.innerHeight;
+    vi.advanceTimersByTime(60);
+    expect(scrollTo).toHaveBeenCalledWith(0, 640);
+    scrollTo.mockClear();
+    vi.advanceTimersByTime(5000);
+    expect(scrollTo).not.toHaveBeenCalled();
+    doc.mockRestore();
+    scrollTo.mockRestore();
+    vi.useRealTimers();
   });
 
   it("у каждого раздела — право, без которого его нет в навигации; команда, настройки и журнал — только администратору", () => {

@@ -376,6 +376,32 @@ html.ui-lock {
   cursor: not-allowed;
 }
 
+/* Список с поиском (Combobox): поле поиска сверху не прокручивается, прокручиваются варианты */
+.ui-pop.ui-pop-combo {
+  width: 360px;
+}
+
+.ui-combo-search {
+  flex: none;
+  padding: 8px 8px 4px;
+}
+
+.ui-sheet .ui-combo-search {
+  padding: 0 0 8px;
+}
+
+.ui-combo-note {
+  flex: none;
+  margin: 0;
+  padding: 4px 12px;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.ui-combo-note:empty {
+  display: none;
+}
+
 .ui-date-panel {
   display: flex;
   flex-direction: column;

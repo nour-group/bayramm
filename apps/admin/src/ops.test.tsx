@@ -19,6 +19,7 @@ import type {
   StaffSettings,
   TeamList,
   TeamMember,
+  VendorListItem,
 } from "@bayramm/shared/api/staff";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -104,6 +105,37 @@ const DICT: StaffDictionaries = {
   settings: { minPhotos: 3, maxPhotos: 10, slaHours: 12 },
 };
 
+/** Строка списка вендоров и сотрудник команды — для поиска объекта и сотрудника в журнале */
+const VENDOR_ITEM: VendorListItem = {
+  id: VENDOR_ID,
+  code: "V101",
+  name: "Oqsaroy",
+  legalForm: null,
+  legalName: null,
+  contactPerson: null,
+  managerName: null,
+  createdAt: "2026-09-01T06:00:00.000Z",
+  checklist: { contract: false, stir: false, contacts: false, pdConsent: false },
+  listings: [],
+  users: 0,
+  linkedUsers: 0,
+};
+
+const TEAM_MEMBER: TeamMember = {
+  id: ME_ID,
+  displayName: "Test admin",
+  username: null,
+  invitedBy: "telegram",
+  role: "moderator",
+  active: true,
+  accepted: true,
+  linked: true,
+  linkedAt: "2026-09-01T06:00:00.000Z",
+  botLinked: true,
+  createdAt: "2026-09-01T06:00:00.000Z",
+  self: false,
+};
+
 interface Call {
   method: string;
   url: string;
@@ -161,6 +193,16 @@ const buttons = (name: string) =>
   [...container.querySelectorAll("button")].filter((b) => b.textContent?.trim() === name);
 const button = (name: string) => buttons(name)[0];
 const lastCall = (suffix: string) => calls.filter((c) => c.url.split("?")[0]?.endsWith(suffix)).at(-1);
+/** Вариант группы (RadioGroup) по подписи: под рисунком — настоящая радиокнопка */
+const radio = (name: string) =>
+  [...container.querySelectorAll("label.ui-radio")]
+    .find((label) => label.textContent?.trim() === name)
+    ?.querySelector<HTMLInputElement>("input[type=radio]") ?? undefined;
+/** Поиск списка уходит, когда перестали печатать: ждём задержку */
+const debounced = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
 
 async function click(element: Element | undefined) {
   await act(async () => (element as HTMLElement | undefined)?.click());
@@ -220,6 +262,7 @@ const REQUEST: StaffRequestDetail = {
   contactName: "Client",
   comment: null,
   contactPurged: false,
+  client: { id: "dddddddd-0000-0000-0000-000000000001", ref: "C-dddddddd" },
   history: [],
   timeline: [
     { kind: "created", at: "2026-09-28T18:00:00.000Z" },
@@ -364,10 +407,102 @@ describe("заявка: работа с заявкой", () => {
       }),
     });
     await mount("/requests");
-    const late = button(`${t.slaLate}5`);
+    // Счётчик — в подписи варианта: на компьютере срок ответа — одной строкой пилюль
+    const late = radio(`${t.slaLate} · 5`);
     expect(late).toBeDefined();
     await click(late);
     expect(calls.at(-1)?.url).toContain("sla=late");
+    // Фильтр — в адресе: «назад» из заявки вернёт тот же список
+    expect(window.location.search).toBe("?sla=late");
+  });
+
+  it("список: фильтр статуса заявки, поиск без кнопки, пусто из-за фильтров — «Сбросить фильтры»", async () => {
+    mockApi(staff("manager", MANAGER), {
+      "GET /api/staff/requests": json({
+        total: 0,
+        items: [],
+        counts: {
+          waiting: 0,
+          overdue: 0,
+          breached: 0,
+          answered: 0,
+          answered_late: 0,
+          ops_contacted: 0,
+          closed: 0,
+        },
+      }),
+    });
+    await mount("/requests?q=V101");
+    // Пришли по ссылке «Заявки вендора»: поиск уже в поле и в запросе
+    expect((container.querySelector("input[type=search]") as HTMLInputElement).value).toBe("V101");
+    expect(lastCall("/staff/requests")?.url).toContain("q=V101");
+    await click(container.querySelector(`button[aria-haspopup=listbox]`) ?? undefined);
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.requestStatus.deal),
+    );
+    expect(lastCall("/staff/requests")?.url).toContain("status=deal");
+    expect(window.location.search).toContain("status=deal");
+    // Поиск — без кнопки «Найти»: как только перестали печатать
+    expect(button(t.search)).toBeUndefined();
+    await type(container.querySelector("input[type=search]"), "1001");
+    await debounced();
+    await settle();
+    expect(lastCall("/staff/requests")?.url).toContain("q=1001");
+    expect(text()).toContain(t.requestsFilteredEmpty);
+    await click(button(t.resetFilters));
+    expect(window.location.search).toBe("");
+    expect(lastCall("/staff/requests")?.url).toBe("/api/staff/requests?limit=50&offset=0");
+  });
+
+  it("список длиннее страницы — страницы: «Следующие» уходит со сдвигом, номер страницы — в адресе", async () => {
+    const item = (n: number) => ({
+      id: `cccccccc-0000-0000-0000-${String(n).padStart(12, "0")}`,
+      publicNo: 2000 + n,
+      status: "new",
+      sla: "waiting",
+      slaDueAt: "2026-09-29T06:00:00.000Z",
+      firstResponseAt: null,
+      firstResponseBy: null,
+      occasionCode: "toy",
+      eventDate: "2026-11-10",
+      guests: null,
+      dayPart: null,
+      createdAt: "2026-09-28T18:00:00.000Z",
+      contactName: null,
+      listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },
+      vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+      reminders: 0,
+    });
+    mockApi(staff("manager", MANAGER), {
+      "GET /api/staff/requests": () => {
+        const offset = Number(new URL(calls.at(-1)?.url ?? "", "http://x").searchParams.get("offset"));
+        const items = Array.from({ length: offset === 0 ? 50 : 10 }, (_, i) => item(offset + i));
+        return new Response(
+          JSON.stringify({
+            total: 60,
+            items,
+            counts: {
+              waiting: 60,
+              overdue: 0,
+              breached: 0,
+              answered: 0,
+              answered_late: 0,
+              ops_contacted: 0,
+              closed: 0,
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    await mount("/requests");
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(50);
+    expect(text()).toContain(t.pagerRange(1, 50, 60));
+    await click(button(t.pagerNext));
+    expect(lastCall("/staff/requests")?.url).toContain("offset=50");
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(text()).toContain(t.pagerRange(51, 60, 60));
+    expect(window.location.search).toBe("?page=2");
   });
 });
 
@@ -469,10 +604,14 @@ describe("клиенты", () => {
     expect(rows[1]).toContain(t.clientNoRequests);
     expect(rows[2]).toContain(t.signInNone);
     expect(rows[2]).toContain(t.clientDeleted);
+    // Поиск — сразу, как перестали печатать: кнопки «Найти» нет
+    expect(button(t.search)).toBeUndefined();
     const search = container.querySelector("input[type=search]");
     await type(search, "1001");
-    await click(button(t.search));
+    await debounced();
+    await settle();
     expect(calls.at(-1)?.url).toContain("q=1001");
+    expect(window.location.search).toBe("?q=1001");
   });
 
   it("клиент: имя, заявки, согласия; блокировка — только с причиной", async () => {
@@ -638,6 +777,89 @@ describe("журнал", () => {
     expect(text()).not.toContain(LISTING_ID.slice(0, 8));
   });
 
+  it("объект — поиском по виду: вендор по названию или коду; в адрес и на сервер — его id", async () => {
+    const OTHER = "aaaaaaaa-0000-0000-0000-000000000099";
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/audit": json(LIST),
+      "GET /api/staff/vendors": json({
+        total: 2,
+        items: [
+          { ...VENDOR_ITEM, id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+          { ...VENDOR_ITEM, id: OTHER, code: "V102", name: "Lola" },
+        ],
+      }),
+    });
+    await mount("/audit");
+    const field = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")].find(
+        (b) => b.id && container.querySelector(`label[for="${b.id}"]`)?.textContent === label,
+      );
+    // Вид объекта не выбран — искать нечего: поле недоступно и говорит почему
+    expect(field(t.auditObject)?.disabled).toBe(true);
+    expect(text()).toContain(t.auditObjectPickType);
+    await click(field(t.auditType));
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.auditTypes.vendor),
+    );
+    expect(field(t.auditObject)?.disabled).toBe(false);
+    await click(field(t.auditObject));
+    const search = document.querySelector<HTMLInputElement>('[role="combobox"]');
+    expect(search?.getAttribute("placeholder")).toBe(t.auditObjectHints.vendor);
+    await type(search, "Lo");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    await settle();
+    expect(lastCall("/staff/vendors")?.url).toBe("/api/staff/vendors?q=Lo&limit=20");
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === "Lola · V102"),
+    );
+    expect(field(t.auditObject)?.textContent).toBe("Lola · V102");
+    await click(button(t.auditApply));
+    expect(lastCall("/staff/audit")?.url).toContain(`object=${OTHER}`);
+    expect(window.location.search).toBe(`?type=vendor&object=${OTHER}`);
+  });
+
+  it("«Сотрудник» — и отключённые с пометкой; когда «Кто» не сотрудник — поле недоступно", async () => {
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/audit": json(LIST),
+      "GET /api/staff/team": json({
+        items: [
+          { ...TEAM_MEMBER, id: ME_ID, displayName: "Test admin", active: true },
+          {
+            ...TEAM_MEMBER,
+            id: "00000000-0000-0000-0000-00000000a009",
+            displayName: "Old moderator",
+            active: false,
+          },
+        ],
+      }),
+    });
+    await mount("/audit");
+    const actor = [...container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")][0];
+    await click(actor);
+    expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
+      t.auditActorAny,
+      "Test admin",
+      t.auditStaffInactive("Old moderator"),
+    ]);
+    await act(async () => {
+      document
+        .querySelector<HTMLElement>('[role="listbox"]')
+        ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    const kind = [...container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")][1];
+    await click(kind);
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.historyBy.client),
+    );
+    expect(container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")[0]?.disabled).toBe(
+      true,
+    );
+    expect(text()).toContain(t.auditActorStaffOnly);
+  });
+
   it("нет подписи (витрины уже нет) — короткий id; партнёр и клиент — по имени и виду", async () => {
     const entry = LIST.items[0] as AuditList["items"][number];
     const odd: AuditList = {
@@ -776,8 +998,8 @@ describe("журнал", () => {
       }),
     });
     await mount("/audit");
-    await click(button(t.auditTabs.pii));
-    expect(calls.at(-1)?.url).toContain("/api/staff/audit/pii");
+    await click(radio(t.auditTabs.pii));
+    expect(lastCall("/staff/audit/pii")).toBeDefined();
     expect(text()).toContain("Клиент просит перезвонить");
     // Чей телефон — «№1001» ссылкой на заявку, а не начало UUID
     expect(container.querySelector(`a[href="/requests/${REQUEST_ID}"]`)?.textContent).toBe("№1001");
@@ -1293,13 +1515,13 @@ describe("правки карточек", () => {
     };
     mockApi(staff("moderator", MODERATOR), {
       // Очередь фото — свой запрос; карточки на проверке — остальные запросы списка
-      "GET /api/staff/listings?photos=pending&limit=100": json(queue),
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": json(queue),
       "GET /api/staff/listings": json(EMPTY_LISTINGS),
       "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
       "GET /api/staff/services": json({ total: 0, items: [] }),
     });
     await mount("/moderation");
-    expect(calls.some((c) => c.url === "/api/staff/listings?photos=pending&limit=100")).toBe(true);
+    expect(calls.some((c) => c.url === "/api/staff/listings?photos=pending&limit=20&offset=0")).toBe(true);
     const section = container.querySelector("section[aria-labelledby=queue-photos-title]");
     // У заголовка очереди — сколько ждёт; в сводке вверху — то же число кнопкой к очереди
     expect(section?.querySelector("h2")?.textContent).toBe(`${t.photoQueue} 1`);
@@ -1310,7 +1532,10 @@ describe("правки карточек", () => {
       `${t.serviceQueue}0`,
       `${t.photoQueue}1`,
     ]);
-    expect(section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}"]`)?.textContent).toBe("Lola zali");
+    // Витрина — сразу на блоке фото (?focus=photos): решать по ним, а не листать страницу
+    expect(section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}?focus=photos"]`)?.textContent).toBe(
+      "Lola zali",
+    );
     expect(section?.textContent).toContain(t.pendingPhotos(2));
     expect(section?.textContent).toContain("Lola · V102");
     // Остальные очереди пусты

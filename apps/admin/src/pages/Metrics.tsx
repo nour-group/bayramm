@@ -1,12 +1,13 @@
 /* Метрики запуска — только чтение, только числа (все роли). Считает база, определения — одни
-   с отчётами бота: ответ площадки (не «связались» от команды), в срок, какие заявки в расчёте
+   с отчётами бота: ответ вендора (не «связались» от команды), в срок, какие заявки в расчёте
    доли. Здесь — очереди команды (плитка — ссылка в раздел, где очередь разбирают, если он есть
    у роли), сводка по категориям за 30 дней, таблица по неделям и вендоры
    за 30 дней с сортировкой по доле ответов в срок; фильтр категории — у недель и вендоров
    (на телефоне — в шторке). Ниже вендоров — «Контакты витрин»: у каких витрин чаще открывают
    контакты и звонят или пишут в Telegram (те же 30 дней и тот же фильтр категории). На странице
    вендора — его ответы по витринам с категориями (VendorResponsePanel). Полосы — классами:
-   CSP не пускает встроенные стили. */
+   CSP не пускает встроенные стили. Фильтр категории — в адресе (?category=): «назад» с
+   вендора или витрины возвращает те же цифры. */
 
 import type {
   CategoryMetrics,
@@ -24,12 +25,12 @@ import type {
 import { Dialog, RadioGroup, Select } from "@bayramm/ui/react";
 import { useState } from "react";
 import { useCan, useLoad } from "../api";
-import { CategoryChip, categoryName, categoryOptions } from "../categories";
+import { CategoryChip, categoryName, categoryOptions, knownCategory } from "../categories";
 import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel, weekNumber } from "../format";
 import { usePhone } from "../layout";
-import { SECTION_PERMISSION, type Section } from "../router";
+import { SECTION_PERMISSION, sectionOf, useQueryState, type View } from "../router";
 import { t } from "../texts";
-import { ActiveFilter, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
+import { ActiveFilter, EmptyList, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
 
 /** Меньше половины заявок отвечено в срок — полоса коралловая */
 const RATE_LOW = 50;
@@ -43,21 +44,26 @@ const QUEUES: readonly (keyof OpsQueues)[] = [
   "servicesPending",
   "photosPending",
 ];
-/** Где очередь разбирают: плитка «Сейчас» ведёт туда */
-const QUEUE_SECTION: Readonly<Record<keyof OpsQueues, Section>> = {
-  awaiting: "requests",
-  overdue: "requests",
-  deadTotal: "notifications",
-  listingsReview: "moderation",
-  revisionsPending: "moderation",
-  servicesPending: "moderation",
-  photosPending: "moderation",
+/**
+ * Где очередь разбирают: плитка «Сейчас» ведёт туда — сразу к нужной очереди или с нужным
+ * фильтром (просроченные заявки — «Требуют действия»)
+ */
+const QUEUE_LINK: Readonly<Record<keyof OpsQueues, View>> = {
+  awaiting: { name: "requests" },
+  overdue: { name: "requests", query: { sla: "late" } },
+  deadTotal: { name: "notifications" },
+  listingsReview: { name: "moderation", query: { queue: "review" } },
+  revisionsPending: { name: "moderation", query: { queue: "revisions" } },
+  servicesPending: { name: "moderation", query: { queue: "services" } },
+  photosPending: { name: "moderation", query: { queue: "photos" } },
 };
 /** Эти очереди, если не пусты, — выделить */
 const QUEUE_WARN: ReadonlySet<keyof OpsQueues> = new Set(["overdue", "deadTotal"]);
 
 export function MetricsPage() {
-  const [category, setCategory] = useState<string | null>(null);
+  const [query, setQuery] = useQueryState(["category"] as const);
+  const category = knownCategory(query.category);
+  const setCategory = (next: string | null) => setQuery({ category: next });
   const filter = category === null ? "" : `?category=${encodeURIComponent(category)}`;
   const overview = useLoad<MetricsOverview>(`/staff/metrics${filter}`);
   const vendors = useLoad<VendorMetricsList>(`/staff/metrics/vendors${filter}`);
@@ -103,14 +109,15 @@ export function MetricsPage() {
         <LoadedView loaded={vendors.loaded} onRetry={vendors.reload}>
           {(list) =>
             list.items.length === 0 ? (
-              <p className="empty">{t.metricsVendorsEmpty}</p>
+              // Пусто из-за категории — снять фильтр одной кнопкой
+              <EmptyList text={t.metricsVendorsEmpty} onReset={category ? () => setCategory(null) : null} />
             ) : (
               <VendorTable items={list.items} />
             )
           }
         </LoadedView>
       </section>
-      <ContactsSection category={category} />
+      <ContactsSection category={category} onReset={() => setCategory(null)} />
     </div>
   );
 }
@@ -183,7 +190,7 @@ function Queues({ queues }: { queues: OpsQueues }) {
     <ul className="stats">
       {QUEUES.map((key) => {
         const className = `stat${QUEUE_WARN.has(key) && queues[key] > 0 ? " stat-warn" : ""}`;
-        const section = QUEUE_SECTION[key];
+        const link = QUEUE_LINK[key];
         const body = (
           <>
             <span className="stat-value">{queues[key]}</span>
@@ -191,9 +198,9 @@ function Queues({ queues }: { queues: OpsQueues }) {
           </>
         );
         // Раздела у роли нет (модератору — заявки): плитка без ссылки, иначе — «нет доступа»
-        return can(SECTION_PERMISSION[section]) ? (
+        return can(SECTION_PERMISSION[sectionOf(link)]) ? (
           <li key={key}>
-            <Link to={{ name: section }} className={`${className} stat-link`}>
+            <Link to={link} className={`${className} stat-link`}>
               {body}
             </Link>
           </li>
@@ -394,7 +401,7 @@ function CategoryTable({ items }: { items: readonly CategoryMetrics[] }) {
   );
 }
 
-/** «опубликовано площадок: 2 · Площадка, Кортеж» */
+/** «опубликовано витрин: 2 · Тойхона, Кортеж» */
 const vendorMeta = (row: VendorMetrics) =>
   [t.activeListings(row.activeListings), row.categories.map(categoryName).join(", ")]
     .filter((part) => part !== "")
@@ -582,7 +589,7 @@ function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
 type ContactRow = ContactMetrics["items"][number];
 
 /** Контакты витрин за 30 дней: сколько раз открыли окно контактов, позвонили, написали в Telegram */
-function ContactsSection({ category }: { category: string | null }) {
+function ContactsSection({ category, onReset }: { category: string | null; onReset: () => void }) {
   const query = new URLSearchParams({ days: "30" });
   if (category !== null) query.set("category", category);
   const { loaded, reload } = useLoad<ContactMetrics>(`/staff/metrics/contacts?${query}`);
@@ -595,7 +602,7 @@ function ContactsSection({ category }: { category: string | null }) {
       <LoadedView loaded={loaded} onRetry={reload}>
         {(data) =>
           data.items.length === 0 ? (
-            <p className="empty">{t.metricsContactsEmpty}</p>
+            <EmptyList text={t.metricsContactsEmpty} onReset={category ? onReset : null} />
           ) : (
             <ContactTable items={data.items} days={data.days} />
           )
@@ -689,7 +696,7 @@ function ContactTable({ items, days }: { items: readonly ContactRow[]; days: num
 
 // ── страница вендора ───────────────────────────────────────────────────────
 
-/** Ответы вендора на заявки за 30 дней и по его площадкам (если их несколько) */
+/** Ответы вендора на заявки за 30 дней и по его витринам (если их несколько) */
 export function VendorResponsePanel({ vendorId }: { vendorId: string }) {
   const { loaded, reload } = useLoad<VendorResponseStats>(`/staff/metrics/vendors/${vendorId}`);
   return (

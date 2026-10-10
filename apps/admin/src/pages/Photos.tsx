@@ -7,21 +7,24 @@
    выбрать; ничего не отмечено заранее. Выбор файлов —
    FileDrop: на телефоне — камера или галерея, на компьютере — ещё и перетаскивание.
    Порядок — кнопками «раньше / позже», не перетаскиванием: так и пальцем, и с клавиатуры.
-   На телефоне — две колонки; у фото «раньше», «позже» и «Ещё» (обложка, решение, удаление). */
+   На телефоне — две колонки; у фото «раньше», «позже» и «Ещё» (обложка, решение, удаление).
+   Стрелки — одни и те же значки на телефоне и компьютере. Выбрали больше, чем помещается до
+   предела, — загружаются первые, а строка говорит, сколько из выбранных и почему не все.
+   Обложка и одобрение — без перезагрузки экрана: о сделанном — всплывающей строкой. */
 
 import { isImageError } from "@bayramm/media";
 import { compressForUpload } from "@bayramm/media/browser";
 import type { StaffPhoto } from "@bayramm/shared/api/staff";
 import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
 import type { PhotoPolicy } from "@bayramm/shared/categories";
-import { Checkbox, ConfirmSheet, FileDrop, RadioGroup } from "@bayramm/ui/react";
+import { Checkbox, ConfirmSheet, FileDrop, RadioGroup, useToast } from "@bayramm/ui/react";
 import { useEffect, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
 import { photoSrc, photoSrcSet } from "../format";
 import { Icon } from "../icons";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
-import { ConfirmForm, ErrorText, type MenuAction, OverflowMenu, PhoneSheet, Pill } from "../ui";
+import { ConfirmForm, ErrorText, type MenuAction, OverflowMenu, PhoneSheet, Pill, toneOf } from "../ui";
 
 /** Форматы фото; на телефоне — любое фото: так точно предлагают и камеру, и галерею (HEIC — по расширению) */
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
@@ -56,6 +59,9 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
     portfolio && portfolioAck === "consent" ? { [PHOTO_CONSENT_HEADER]: "1" } : { [NO_FACES_HEADER]: "1" };
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [problems, setProblems] = useState<string[]>([]);
+  // Выбрали больше, чем помещается до предела: сколько загрузили из выбранных
+  const [overLimit, setOverLimit] = useState<{ uploaded: number; picked: number } | null>(null);
+  const toast = useToast();
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState<StaffPhoto | null>(null);
@@ -73,6 +79,7 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
 
   const upload = async (picked: readonly File[]) => {
     const files = picked.slice(0, Math.max(0, maxPhotos - photos.length));
+    setOverLimit(null);
     if (files.length === 0) return;
     setProblems([]);
     setFailure(null);
@@ -101,14 +108,18 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
     }
     setProgress(null);
     setProblems(found);
+    // Лишние не загружались вовсе — сказать, сколько из выбранных и какой предел
+    if (picked.length > files.length)
+      setOverLimit({ uploaded: files.length - found.length, picked: picked.length });
     onChanged();
   };
 
-  const act = async (run: () => Promise<Result<unknown>>) => {
+  const act = async (run: () => Promise<Result<unknown>>, done?: string) => {
     setBusy(true);
     const result = await run();
     setBusy(false);
     setFailure(result.ok ? null : result);
+    if (result.ok && done) toast(done, { tone: "success" });
     onChanged();
   };
 
@@ -120,9 +131,13 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
     void act(() => api.put(`${base}/order`, { ids }));
   };
 
-  const cover = (photo: StaffPhoto) => void act(() => api.post(`${base}/${photo.id}/cover`));
-  const approve = (photo: StaffPhoto) =>
-    void act(() => api.post(`${base}/${photo.id}/moderation`, { decision: "approved" }));
+  const cover = (photo: StaffPhoto, index: number) =>
+    void act(() => api.post(`${base}/${photo.id}/cover`), t.toastCover(index + 1));
+  const approve = (photo: StaffPhoto, index: number) =>
+    void act(
+      () => api.post(`${base}/${photo.id}/moderation`, { decision: "approved" }),
+      t.toastPhotoApproved(index + 1),
+    );
   // Отказ без причины сервер не примет (422): сначала спрашиваем её, а фокус вернётся на ту
   // кнопку, с которой начали («Отклонить» у фото — она у нажатия; «Ещё» — где фокус после меню)
   const startDecline = (photo: StaffPhoto, index: number, opener?: HTMLElement) => {
@@ -170,10 +185,18 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
   /** Шторка «Ещё» у фото на телефоне: обложка, решение модератора, удаление */
   const menuOf = (photo: StaffPhoto, index: number): MenuAction[] => [
     ...(editable && !isCover(photo, index)
-      ? [{ key: "cover", label: t.makeCover, icon: "star" as const, disabled: busy, run: () => cover(photo) }]
+      ? [
+          {
+            key: "cover",
+            label: t.makeCover,
+            icon: "star" as const,
+            disabled: busy,
+            run: () => cover(photo, index),
+          },
+        ]
       : []),
     ...(moderates && photo.moderation !== "approved"
-      ? [{ key: "approve", label: t.approve, disabled: busy, run: () => approve(photo) }]
+      ? [{ key: "approve", label: t.approve, disabled: busy, run: () => approve(photo, index) }]
       : []),
     ...(moderates && photo.moderation !== "declined"
       ? [{ key: "decline", label: t.decline, disabled: busy, run: () => startDecline(photo, index) }]
@@ -218,17 +241,7 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
               />
               <div className="photo-tags">
                 {isCover(photo, index) && <Pill tone="strong">{t.cover}</Pill>}
-                <Pill
-                  tone={
-                    photo.moderation === "approved"
-                      ? "good"
-                      : photo.moderation === "declined"
-                        ? "warn"
-                        : "muted"
-                  }
-                >
-                  {t.moderationStates[photo.moderation]}
-                </Pill>
+                <Pill tone={toneOf("photo", photo.moderation)}>{t.moderationStates[photo.moderation]}</Pill>
               </div>
               {photo.moderation === "declined" && photo.declineReason && (
                 <p className="muted small photo-reason">{t.photoDeclineReason(photo.declineReason)}</p>
@@ -271,28 +284,28 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
                     <>
                       <button
                         type="button"
-                        className="btn btn-sm"
+                        className="btn btn-icon"
                         disabled={busy || index === 0}
                         onClick={() => move(index, -1)}
-                        aria-label={t.moveLeft}
+                        aria-label={t.moveEarlier(index + 1)}
                       >
-                        ←
+                        <Icon name="back" size={20} />
                       </button>
                       <button
                         type="button"
-                        className="btn btn-sm"
+                        className="btn btn-icon btn-flip"
                         disabled={busy || index === photos.length - 1}
                         onClick={() => move(index, 1)}
-                        aria-label={t.moveRight}
+                        aria-label={t.moveLater(index + 1)}
                       >
-                        →
+                        <Icon name="back" size={20} />
                       </button>
                       {!isCover(photo, index) && (
                         <button
                           type="button"
                           className="btn btn-sm"
                           disabled={busy}
-                          onClick={() => cover(photo)}
+                          onClick={() => cover(photo, index)}
                         >
                           {t.makeCover}
                         </button>
@@ -304,7 +317,7 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
                       type="button"
                       className="btn btn-sm"
                       disabled={busy}
-                      onClick={() => approve(photo)}
+                      onClick={() => approve(photo, index)}
                     >
                       {t.approve}
                     </button>
@@ -398,6 +411,11 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
           )}
         </div>
       )}
+      {overLimit ? (
+        <p className="notice notice-warn" role="status">
+          {t.photosOverLimit(overLimit.uploaded, overLimit.picked, maxPhotos)}
+        </p>
+      ) : null}
       {problems.length > 0 && (
         <ul className="notice notice-error" role="alert">
           {problems.map((problem) => (

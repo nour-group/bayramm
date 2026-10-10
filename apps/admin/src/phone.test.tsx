@@ -102,6 +102,7 @@ const REQUEST: StaffRequestDetail = {
   contactName: "Client",
   comment: null,
   contactPurged: false,
+  client: { id: "dddddddd-0000-0000-0000-000000000001", ref: "C-dddddddd" },
   history: [],
   timeline: [],
   notes: [],
@@ -420,7 +421,7 @@ describe("телефон: читаемость списков", () => {
     await mount("/requests");
     await click([...container.querySelectorAll("button")].find((b) => b.textContent === t.filters));
     const titles = [...(dialog()?.querySelectorAll(".sheet-group") ?? [])];
-    expect(titles.map((el) => el.textContent)).toEqual([t.colDue, t.colCategory]);
+    expect(titles.map((el) => el.textContent)).toEqual([t.colDue, t.requestStatusFilter, t.colCategory]);
     for (const title of titles)
       expect(dialog()?.querySelector(`[role=radiogroup][aria-labelledby="${title.id}"]`)).not.toBeNull();
   });
@@ -550,5 +551,116 @@ describe("счётчики и инициалы", () => {
     expect(initialsOf("Дильноза Операторова")).toBe("ДО");
     expect(initialsOf("madina")).toBe("M");
     expect(initialsOf("  ")).toBe("•");
+  });
+});
+
+describe("телефон: длинные списки, оглавление витрины", () => {
+  const item = (n: number): StaffRequestList["items"][number] => ({
+    id: `cccccccc-0000-0000-0000-${String(100 + n).padStart(12, "0")}`,
+    publicNo: 3000 + n,
+    status: "new",
+    sla: "waiting",
+    slaDueAt: "2026-09-29T06:00:00.000Z",
+    firstResponseAt: null,
+    firstResponseBy: null,
+    occasionCode: "toy",
+    eventDate: "2026-11-10",
+    guests: null,
+    dayPart: null,
+    createdAt: "2026-09-28T18:00:00.000Z",
+    contactName: null,
+    listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },
+    vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+    reminders: 0,
+  });
+
+  it("заявки: «Показать ещё» дописывает следующую страницу к показанным, пока не покажет все", async () => {
+    const page = (offset: number, count: number): StaffRequestList => ({
+      total: 60,
+      items: Array.from({ length: count }, (_, i) => item(offset + i)),
+      counts: LIST.counts,
+    });
+    // Ответ — по сдвигу из последнего запроса: первая страница 50, вторая — оставшиеся 10
+    mockApi(ADMIN, {
+      "GET /api/staff/requests": () =>
+        json(calls.at(-1)?.endsWith("offset=50") ? page(50, 10) : page(0, 50))(),
+    });
+    await mount("/requests");
+    expect(container.querySelectorAll(".rcards > li")).toHaveLength(50);
+    expect(container.textContent).toContain(t.shownOf(50, 60));
+    // Страниц на телефоне нет — только «Показать ещё»
+    expect(container.querySelector("nav.pager")).toBeNull();
+    await click([...container.querySelectorAll("button")].find((b) => b.textContent === t.showMore));
+    expect(calls).toContain("GET /api/staff/requests?limit=50&offset=50");
+    expect(container.querySelectorAll(".rcards > li")).toHaveLength(60);
+    expect([...container.querySelectorAll("button")].some((b) => b.textContent === t.showMore)).toBe(false);
+    expect(container.textContent).toContain(t.total(60));
+  });
+
+  it("витрина: оглавление блоков — переход к блоку; вендор — ссылкой в шапке, пути над заголовком нет", async () => {
+    const listing = {
+      id: LISTING_ID,
+      slug: "oqsaroy",
+      categoryCode: "hall",
+      status: "active",
+      statusReason: null,
+      statusChangedAt: null,
+      name: "Oqsaroy Hall",
+      districtCode: "chilonzor",
+      addressRu: null,
+      addressUz: null,
+      descriptionRu: "Описание",
+      descriptionUz: "Tavsif",
+      priceFromUzs: 150000,
+      priceUnit: "per_guest",
+      capMin: 50,
+      capMax: 300,
+      submittedAt: null,
+      publishedAt: "2026-09-29T06:00:00.000Z",
+      version: 7,
+      createdAt: "2026-09-29T06:00:00.000Z",
+      updatedAt: "2026-09-29T06:00:00.000Z",
+      hasPhone: true,
+      hasTelegram: false,
+      attributes: {},
+      missingAttributes: [],
+      videoLinks: [],
+      parallelCapacity: 1,
+      services: [],
+      photos: [],
+      blockers: { review: [], active: [] },
+      vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+      history: [],
+      pendingRevision: null,
+      deleteBlocker: null,
+    };
+    mockApi(ADMIN, {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(listing),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json({
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 1,
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(container.querySelector("nav.crumbs")).toBeNull();
+    expect(container.querySelector(".listing-head a")?.getAttribute("href")).toBe(`/vendors/${VENDOR_ID}`);
+    const index = byLabel(t.listingIndex);
+    expect([...(index?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([
+      t.listingIndexItems.photos,
+      t.listingIndexItems.services,
+      t.listingIndexItems.calendar,
+      t.listingIndexItems.main,
+      t.listingIndexItems.attrs,
+      t.listingIndexItems.phone,
+      t.listingIndexItems.history,
+    ]);
+    await click(
+      [...(index?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent === t.listingIndexItems.history,
+      ),
+    );
+    expect(document.activeElement?.id).toBe("history-title");
   });
 });

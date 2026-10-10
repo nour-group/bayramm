@@ -97,16 +97,15 @@ test.describe("клиенты", () => {
   test("только заблокированные: фильтр уходит на сервер", async ({ page }) => {
     const api = await start(page);
     await page.goto("/clients");
-    if (isPhone(page)) {
-      await page.getByRole("button", { name: t.filters }).click();
-      const sheet = page.getByRole("dialog", { name: t.filters });
-      await sheet.getByRole("switch", { name: t.onlyBlocked }).click();
-      await sheet.getByRole("button", { name: t.done }).click();
-    } else {
-      await page.getByRole("button", { name: t.onlyBlocked }).click();
-    }
-    await expect(page.getByText(t.clientsEmpty)).toBeVisible();
+    // Один фильтр — одним переключателем и на телефоне, и на компьютере
+    await page.getByRole("switch", { name: t.onlyBlocked }).check();
+    await expect(page.getByText(t.clientsFilteredEmpty)).toBeVisible();
     expect(api.queries.at(-1)).toContain("blocked=1");
+    await expect(page).toHaveURL("/clients?blocked=1");
+    // Пусто из-за фильтра — снять его одной кнопкой
+    await page.getByRole("button", { name: t.resetFilters }).click();
+    await expect(page.getByRole("switch", { name: t.onlyBlocked })).not.toBeChecked();
+    await expect(page).toHaveURL("/clients");
   });
 });
 

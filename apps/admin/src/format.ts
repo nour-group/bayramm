@@ -1,7 +1,6 @@
 /* Показ чисел, дат и адресов фото в панели. Время — по Ташкенту: команда и вендоры там. */
 
 import { type MediaTarget, type MediaWidth, mediaSrcSet, mediaUrl } from "@bayramm/media";
-import type { PriceUnit } from "@bayramm/shared/api/staff";
 import { t } from "./texts";
 
 const TZ = "Asia/Tashkent";
@@ -42,10 +41,6 @@ export function vendorLabel(vendor: { readonly name: string | null; readonly cod
 export function formatSum(value: number | null): string {
   if (value === null) return t.none;
   return `${new Intl.NumberFormat("ru-RU").format(value)} ${t.sum}`;
-}
-
-export function formatPrice(value: number | null, unit: PriceUnit): string {
-  return value === null ? t.none : `${formatSum(value)} ${t.priceUnits[unit]}`;
 }
 
 export { dateOnly };

@@ -33,6 +33,9 @@ export function num(value: string | number | null): number | null {
   return value === null ? null : Number(value);
 }
 
+/** Код клиента: C- и первые 8 символов id (заявка, клиенты, подписи журнала) */
+export const clientRef = (id: string) => `C-${id.slice(0, 8)}`;
+
 /** id из пути: не UUID — 404 (такого объекта нет), без похода в базу */
 export function pathId(raw: string | undefined): string {
   if (raw === undefined || !isUuid(raw)) throw notFound();
