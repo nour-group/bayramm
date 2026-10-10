@@ -2,16 +2,17 @@
    номеру телефона, роль, отключение. Номер проверяется здесь же (+998 и 9 цифр) и ещё раз
    сервером; хранится только его HMAC — в списке видно лишь «по телефону». Себя не
    отключить и роль не сменить; последнего администратора база не даст ни отключить, ни
-   понизить. */
+   понизить. Приглашение, которое ещё не приняли, можно отозвать (удалить); принятое —
+   только отключить. */
 
 import { normalizeUzPhone } from "@bayramm/shared";
 import type { StaffRole, TeamInviteInput, TeamList, TeamMember } from "@bayramm/shared/api/staff";
-import { RadioGroup, Select } from "@bayramm/ui/react";
-import { type FormEvent, useId, useRef, useState } from "react";
+import { ConfirmSheet, RadioGroup, Select } from "@bayramm/ui/react";
+import { type FormEvent, type RefObject, useId, useRef, useState } from "react";
 import { type Failure, useAuthMethods, useLoad, useSession } from "../api";
 import { formatMoment } from "../format";
 import { usePhone } from "../layout";
-import { t } from "../texts";
+import { apiErrorText, t } from "../texts";
 import {
   ConfirmForm,
   ErrorText,
@@ -247,6 +248,8 @@ function useMember(member: TeamMember, onChange: (list: TeamList) => void) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [revoking, setRevoking] = useState(false);
+  const [revokeFailure, setRevokeFailure] = useState<Failure | null>(null);
   // Новая роль выбрана, но не применена — несохранённое
   useUnsaved(member.active && !member.self && role !== member.role);
 
@@ -268,7 +271,71 @@ function useMember(member: TeamMember, onChange: (list: TeamList) => void) {
     return null;
   };
 
-  return { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle };
+  // Отозвать приглашение: в ответе — команда уже без него (строка исчезнет)
+  const revoke = async () => {
+    setBusy(true);
+    const result = await api.del<TeamList>(`/staff/team/${member.id}`);
+    setBusy(false);
+    setRevokeFailure(result.ok ? null : result);
+    if (result.ok) {
+      setRevoking(false);
+      onChange(result.data);
+    }
+  };
+  const revokeOpen = () => {
+    setRevokeFailure(null);
+    setRevoking(true);
+  };
+  const revokeClose = () => {
+    setRevoking(false);
+    setRevokeFailure(null);
+  };
+
+  return {
+    role,
+    setRole,
+    confirming,
+    setConfirming,
+    busy,
+    failure,
+    changeRole,
+    toggle,
+    revoking,
+    revokeOpen,
+    revokeClose,
+    revoke,
+    revokeFailure,
+  };
+}
+
+/** Приглашение ещё не приняли — его можно отозвать (удалить); себя — нет */
+const revocable = (member: TeamMember) => !member.accepted && !member.self;
+
+/** Подтверждение «Отозвать приглашение»: что будет, ошибка — под текстом */
+function RevokeSheet({
+  member,
+  state,
+  returnFocus,
+}: {
+  member: TeamMember;
+  state: ReturnType<typeof useMember>;
+  returnFocus: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <ConfirmSheet
+      open={state.revoking}
+      title={t.inviteRevokeTitle}
+      text={t.inviteRevokeText(member.displayName)}
+      confirmLabel={t.inviteRevoke}
+      cancelLabel={t.cancel}
+      tone="danger"
+      busy={state.busy}
+      error={state.revokeFailure ? apiErrorText(state.revokeFailure.code) : undefined}
+      returnFocus={returnFocus}
+      onConfirm={() => void state.revoke()}
+      onCancel={state.revokeClose}
+    />
+  );
 }
 
 function linkState(member: TeamMember): string {
@@ -279,10 +346,9 @@ function linkState(member: TeamMember): string {
 function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
   const roleId = useId();
   const toggleButton = useRef<HTMLButtonElement>(null);
-  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = useMember(
-    member,
-    onChange,
-  );
+  const revokeButton = useRef<HTMLButtonElement>(null);
+  const state = useMember(member, onChange);
+  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = state;
   return (
     <li className="rcard">
       <div className="rcard-head">
@@ -333,8 +399,14 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
           >
             {member.active ? t.deactivate : t.activate}
           </button>
+          {revocable(member) ? (
+            <button ref={revokeButton} type="button" className="btn btn-danger" onClick={state.revokeOpen}>
+              {t.inviteRevoke}
+            </button>
+          ) : null}
         </div>
       )}
+      <RevokeSheet member={member} state={state} returnFocus={revokeButton} />
       <PhoneSheet
         open={confirming}
         title={member.active ? t.deactivate : t.activate}
@@ -356,10 +428,9 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
 
 function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
   const roleId = useId();
-  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = useMember(
-    member,
-    onChange,
-  );
+  const revokeButton = useRef<HTMLButtonElement>(null);
+  const state = useMember(member, onChange);
+  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = state;
 
   return (
     <tr>
@@ -410,14 +481,27 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
               onCancel={() => setConfirming(false)}
             />
           ) : (
-            <button
-              type="button"
-              className={`btn btn-sm${member.active ? " btn-danger" : ""}`}
-              onClick={() => setConfirming(true)}
-            >
-              {member.active ? t.deactivate : t.activate}
-            </button>
+            <div className="acts">
+              <button
+                type="button"
+                className={`btn btn-sm${member.active ? " btn-danger" : ""}`}
+                onClick={() => setConfirming(true)}
+              >
+                {member.active ? t.deactivate : t.activate}
+              </button>
+              {revocable(member) ? (
+                <button
+                  ref={revokeButton}
+                  type="button"
+                  className="btn btn-sm btn-danger"
+                  onClick={state.revokeOpen}
+                >
+                  {t.inviteRevoke}
+                </button>
+              ) : null}
+            </div>
           ))}
+        <RevokeSheet member={member} state={state} returnFocus={revokeButton} />
         {failure && <ErrorText failure={failure} />}
       </td>
     </tr>

@@ -51,6 +51,7 @@ const listing = (categoryCode: string, extra: Partial<ListingDetail> = {}): List
   vendor: { id: "aaaaaaaa-0000-0000-0000-000000000001", code: "V101", name: "Lola" },
   history: [],
   pendingRevision: null,
+  deleteBlocker: null,
   ...extra,
 });
 
@@ -141,6 +142,18 @@ describe("телефон и Telegram для клиентов", () => {
     expect(
       listingBody(hall, { ...cleared, values: { ...cleared.values, telegram: "@lola_hall" } }, before),
     ).toEqual({ telegram: null });
+  });
+
+  it("«Убрать телефон» — phone: null, без Telegram (он уходит вместе с телефоном) и вписанного", () => {
+    const before = formState(listing("hall", { hasPhone: true, hasTelegram: true }), hall);
+    expect(before.clearPhone).toBe(false);
+    const cleared = {
+      ...before,
+      clearPhone: true,
+      clearTelegram: true,
+      values: { ...before.values, phone: "+998 90 111 22 33", telegram: "@lola_hall" },
+    };
+    expect(listingBody(hall, cleared, before)).toEqual({ phone: null });
   });
 });
 

@@ -28,12 +28,14 @@ const REQUEST_ID = "cccccccc-0000-0000-0000-000000000001";
 const ALL_PERMISSIONS: StaffMe["permissions"] = [
   "catalog.read",
   "vendors.write",
+  "vendors.delete",
   "vendor_users.write",
   "listings.write",
   "listings.submit",
   "listings.publish",
   "listings.moderate",
   "listings.draft",
+  "listings.delete",
   "photos.moderate",
   "vendor_phones.read",
   "requests.read",
@@ -91,6 +93,7 @@ const VENDOR: VendorDetail = {
   checklist: { contract: mark(true), stir: mark(false), contacts: mark(false), pdConsent: mark(false) },
   users: [],
   listings: [],
+  deleteBlocker: null,
 };
 
 const LISTING: ListingDetail = {
@@ -127,6 +130,7 @@ const LISTING: ListingDetail = {
   vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
   history: [],
   pendingRevision: null,
+  deleteBlocker: null,
 };
 
 interface Call {
@@ -811,6 +815,178 @@ describe("карточка: телефон и Telegram для клиентов",
     expect(button(t.contactsShow)).toBeDefined();
     expect(field(t.telegramChange)).toBeUndefined();
     expect(field(t.phoneChange)).toBeUndefined();
+  });
+});
+
+describe("удаление витрины и вендора", () => {
+  const AVAILABILITY = `/api/staff/listings/${LISTING_ID}/availability`;
+  const day = json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 });
+  const DRAFT: ListingDetail = { ...LISTING, status: "draft" };
+  const sheet = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
+  const sheetButton = (name: string) =>
+    [...(sheet()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => b.textContent === name);
+  const panel = () => document.getElementById("delete-title")?.closest("section") ?? null;
+  const gone: Handler = () => new Response(null, { status: 204 });
+
+  it("витрину удаляет менеджер: что удалится — в подтверждении; потом — страница вендора", async () => {
+    mockApi(staff("manager", ["catalog.read", "listings.write", "listings.delete"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(DRAFT),
+      [`GET ${AVAILABILITY}`]: day,
+      [`DELETE /api/staff/listings/${LISTING_ID}`]: gone,
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(panel()?.textContent).toContain(t.listingDeleteHint);
+    await act(async () => panel()?.querySelector("button")?.click());
+    expect(sheet()?.textContent).toContain(t.listingDeleteText(DRAFT.name));
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    await act(async () => sheetButton(t.listingDelete)?.click());
+    await settle();
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([
+      `/api/staff/listings/${LISTING_ID}`,
+    ]);
+    expect(window.location.pathname).toBe(`/vendors/${VENDOR_ID}`);
+    expect(container.querySelector("h1")?.textContent).toBe("Oqsaroy");
+  });
+
+  it("витрину с заявками не удалить: кнопка недоступна, рядом — что сделать вместо; модератору блока нет", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({ ...LISTING, deleteBlocker: "requests" }),
+      [`GET ${AVAILABILITY}`]: day,
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(panel()?.textContent).toContain(t.listingDeleteBlocked.requests);
+    expect(panel()?.querySelector("button")?.disabled).toBe(true);
+    act(() => root.unmount());
+    container.remove();
+
+    mockApi(staff("moderator", ["catalog.read", "listings.moderate"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(DRAFT),
+      [`GET ${AVAILABILITY}`]: day,
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(panel()).toBeNull();
+  });
+
+  it("пока смотрели, появилась заявка: причина в подтверждении, удалить больше нельзя", async () => {
+    let reads = 0;
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: () =>
+        json(reads++ === 0 ? DRAFT : { ...DRAFT, deleteBlocker: "requests" })(null),
+      [`GET ${AVAILABILITY}`]: day,
+      [`DELETE /api/staff/listings/${LISTING_ID}`]: json(
+        { error: { code: "listing_in_use", message: "in use", details: ["requests"] } },
+        409,
+      ),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    await act(async () => panel()?.querySelector("button")?.click());
+    await act(async () => sheetButton(t.listingDelete)?.click());
+    await settle();
+    expect(sheet()?.querySelector('[role="alert"]')?.textContent).toBe(t.listingDeleteBlocked.requests);
+    expect(sheetButton(t.listingDelete)?.disabled).toBe(true);
+    expect(window.location.pathname).toBe(`/listings/${LISTING_ID}`);
+    // Витрина перечитана: блок говорит то же
+    expect(panel()?.querySelector("button")?.disabled).toBe(true);
+  });
+
+  it("вендора удаляет администратор — после того, как вписан код вендора; потом — список", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+      [`DELETE /api/staff/vendors/${VENDOR_ID}`]: gone,
+      "GET /api/staff/vendors": json({ total: 0, items: [] }),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    await act(async () => button(t.vendorDelete)?.click());
+    expect(sheet()?.textContent).toContain(t.vendorDeleteText("V101"));
+    expect(sheetButton(t.vendorDelete)?.disabled).toBe(true);
+    const code = sheet()?.querySelector<HTMLInputElement>("input");
+    if (!code) throw new Error("нет поля кода");
+    expect(code.labels?.[0]?.textContent).toBe(t.vendorDeleteCode("V101"));
+    await type(code, "v10");
+    expect(sheetButton(t.vendorDelete)?.disabled).toBe(true);
+    await type(code, " v101 ");
+    expect(sheetButton(t.vendorDelete)?.disabled).toBe(false);
+    await act(async () => sheetButton(t.vendorDelete)?.click());
+    await settle();
+    expect(calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual([
+      `/api/staff/vendors/${VENDOR_ID}`,
+    ]);
+    expect(window.location.pathname).toBe("/vendors");
+  });
+
+  it("вендора с опубликованной витриной не удалить — недоступно и сказано почему; менеджеру кнопки нет", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json({ ...VENDOR, deleteBlocker: "published" }),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    expect(button(t.vendorDelete)?.disabled).toBe(true);
+    expect(text()).toContain(t.vendorDeleteBlocked.published);
+    act(() => root.unmount());
+    container.remove();
+
+    mockApi(staff("manager", ["catalog.read", "vendors.write", "listings.write", "listings.delete"]), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    expect(button(t.vendorDelete)).toBeUndefined();
+  });
+});
+
+describe("карточка: убрать телефон", () => {
+  const AVAILABILITY = `/api/staff/listings/${LISTING_ID}/availability`;
+  const day = json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 });
+  const removePhone = () =>
+    [...container.querySelectorAll<HTMLInputElement>("input[type=checkbox]")].find(
+      (input) => input.labels?.[0]?.textContent === t.phoneRemove,
+    );
+  const field = (label: string) =>
+    [...container.querySelectorAll<HTMLInputElement>("input")].find(
+      (input) => input.labels?.[0]?.textContent === label,
+    );
+
+  it("черновик: phone: null в теле, Telegram уходит вместе с ним — поля на это время закрыты", async () => {
+    const draft: ListingDetail = { ...LISTING, status: "draft", hasTelegram: true };
+    mockApi(staff("manager", ["catalog.read", "listings.write"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json(draft),
+      [`GET ${AVAILABILITY}`]: day,
+      [`PATCH /api/staff/listings/${LISTING_ID}`]: json({
+        ...draft,
+        hasPhone: false,
+        hasTelegram: false,
+        version: 8,
+        sentForModeration: [],
+      }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    const remove = removePhone();
+    if (!remove) throw new Error("нет «Убрать телефон»");
+    await act(async () => remove.click());
+    expect(field(t.phoneChange)?.disabled).toBe(true);
+    expect(field(t.telegramChange)?.disabled).toBe(true);
+    expect(text()).toContain(t.phoneRemoveHint);
+    await act(async () => button(t.save)?.click());
+    await settle();
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ phone: null, version: 7 });
+    expect(container.querySelector(".contacts-reveal")?.textContent).toContain(t.phoneMissing);
+    expect(removePhone()).toBeUndefined();
+  });
+
+  it("на проверке и в каталоге телефон не убрать — галочки нет", async () => {
+    for (const status of ["active", "review"] as const) {
+      mockApi(staff("admin", ALL_PERMISSIONS), {
+        [`GET /api/staff/listings/${LISTING_ID}`]: json({ ...LISTING, status }),
+        [`GET ${AVAILABILITY}`]: day,
+      });
+      await mount(`/listings/${LISTING_ID}`);
+      expect(field(t.phoneChange)).toBeDefined();
+      expect(removePhone()).toBeUndefined();
+      act(() => root.unmount());
+      container.remove();
+    }
+    // afterEach снимет ещё раз — пустой корень
+    container = document.createElement("div");
+    root = createRoot(container);
   });
 });
 

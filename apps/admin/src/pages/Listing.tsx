@@ -6,6 +6,9 @@
    название, остальное — на странице витрины. Что спрашивать, решает категория
    (@bayramm/shared/categories).
 
+   Удалить витрину можно, только пока по ней не было заявок и она не на проверке и не в
+   каталоге: блок «Удалить витрину» внизу — с причиной, если нельзя.
+
    Каждое сказано один раз: категория — плашкой в шапке и блоком «Категория» (сменить),
    телефон и Telegram для клиентов — блоком формы («Показать» и поля для новых значений вместе). У каждого пункта
    «чего не хватает» — переход туда, где он заполняется: услуги, фото, поля формы; проверка
@@ -29,7 +32,7 @@ import {
   categoryConfig,
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
-import { Select } from "@bayramm/ui/react";
+import { ConfirmSheet, Select } from "@bayramm/ui/react";
 import { type FormEvent, useCallback, useId, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { CategoryChip, categoryName, categoryOptions } from "../categories";
@@ -38,6 +41,7 @@ import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
   ActionBar,
+  deleteFailureText,
   ErrorText,
   Field,
   focusSection,
@@ -334,6 +338,7 @@ function CategoryListing({
           )}
           <CategoryPanel listing={listing} onChange={onChange} />
           <History listing={listing} />
+          <DeleteListing listing={listing} onReload={onReload} />
         </div>
         <ListingForm
           key={`${listing.id}:${listing.categoryCode}`}
@@ -738,6 +743,74 @@ function History({ listing }: { listing: ListingDetail }) {
           ))}
         </ol>
       )}
+    </section>
+  );
+}
+
+// ── удаление ───────────────────────────────────────────────────────────────
+
+/**
+ * Удалить витрину — администратор и менеджер, и только пока по ней не было заявок и она не на
+ * проверке и не в каталоге. Почему нельзя, сервер говорит заранее (deleteBlocker): кнопка
+ * недоступна, рядом — что сделать вместо. Удалили — к вендору без вопроса о несохранённом и
+ * без записи удалённой витрины в истории («назад» не приведёт к «не найдено»)
+ */
+function DeleteListing({ listing, onReload }: { listing: ListingDetail; onReload: () => void }) {
+  const { api } = useSession();
+  const can = useCan();
+  const navigate = useNavigate();
+  const button = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  if (!can("listings.delete")) return null;
+  const blocker = listing.deleteBlocker;
+
+  const remove = async () => {
+    setBusy(true);
+    const result = await api.del<null>(`/staff/listings/${listing.id}`);
+    setBusy(false);
+    if (!result.ok) {
+      setFailure(result);
+      // Пока смотрели, появилась заявка или витрину отправили на проверку — блок покажет почему
+      if (result.code === "listing_in_use") onReload();
+      return;
+    }
+    setOpen(false);
+    navigate({ name: "vendor", id: listing.vendor.id }, { force: true, replace: true });
+  };
+  const close = () => {
+    setOpen(false);
+    setFailure(null);
+  };
+
+  return (
+    <section className="panel" aria-labelledby="delete-title">
+      <h2 id="delete-title">{t.listingDelete}</h2>
+      <p className="muted small">{blocker ? t.listingDeleteBlocked[blocker] : t.listingDeleteHint}</p>
+      <button
+        ref={button}
+        type="button"
+        className="btn btn-sm btn-danger"
+        disabled={blocker !== null}
+        onClick={() => setOpen(true)}
+      >
+        {t.listingDelete}
+      </button>
+      <ConfirmSheet
+        open={open}
+        title={t.listingDeleteTitle}
+        text={t.listingDeleteText(listing.name)}
+        confirmLabel={t.listingDelete}
+        cancelLabel={t.cancel}
+        tone="danger"
+        busy={busy}
+        confirmDisabled={failure?.code === "listing_in_use"}
+        error={failure ? deleteFailureText(failure, t.listingDeleteBlocked) : undefined}
+        returnFocus={button}
+        onConfirm={() => void remove()}
+        onCancel={close}
+      />
     </section>
   );
 }

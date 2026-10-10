@@ -11,7 +11,9 @@
    форма говорит «отправлено на модерацию» и показывает то, что в витрине сейчас. Остальное
    (адрес, данные витрины, видео, телефон…) сохраняется сразу. Телефон и Telegram только
    пишутся: текущие — по «Показать» (одним чтением). Telegram — по желанию: пустое поле не
-   меняет, «Убрать Telegram» снимает; имя, @имя и ссылку t.me/имя сервер понимает сам. */
+   меняет, «Убрать Telegram» снимает; имя, @имя и ссылку t.me/имя сервер понимает сам.
+   «Убрать телефон» — только пока витрина не на проверке и не в каталоге (без телефона её не
+   опубликовать — так же решает база); Telegram уходит вместе с ним: он хранится рядом. */
 
 import type {
   ListingDetail,
@@ -108,6 +110,8 @@ export interface FormState {
   readonly videos: readonly string[];
   /** «Убрать Telegram»: в тело уйдёт telegram: null */
   readonly clearTelegram: boolean;
+  /** «Убрать телефон»: в тело уйдёт phone: null (Telegram уйдёт вместе с ним) */
+  readonly clearPhone: boolean;
 }
 
 export function formState(listing: ListingDetail, category: CategoryConfig): FormState {
@@ -116,6 +120,7 @@ export function formState(listing: ListingDetail, category: CategoryConfig): For
     attributes: attributeDrafts(category, listing.attributes),
     videos: videoDrafts(listing, category),
     clearTelegram: false,
+    clearPhone: false,
   };
 }
 
@@ -140,10 +145,14 @@ export function listingBody(category: CategoryConfig, now: FormState, before: Fo
     body.districtCode = now.values.districtCode || null;
   const slug = now.values.slug.trim();
   if (slug !== "" && slug !== before.values.slug) body.slug = slug;
-  if (now.values.phone.trim() !== "") body.phone = now.values.phone.trim();
-  // Telegram: убрать — null; иначе только то, что вписали (как есть: имя, @имя или ссылку — разберёт сервер)
-  if (now.clearTelegram) body.telegram = null;
-  else if (now.values.telegram.trim() !== "") body.telegram = now.values.telegram.trim();
+  // Убрать телефон — убрать и Telegram (строка контактов одна): вписанное в поля не уходит
+  if (now.clearPhone) body.phone = null;
+  else {
+    if (now.values.phone.trim() !== "") body.phone = now.values.phone.trim();
+    // Telegram: убрать — null; иначе только то, что вписали (как есть: имя, @имя или ссылку — разберёт сервер)
+    if (now.clearTelegram) body.telegram = null;
+    else if (now.values.telegram.trim() !== "") body.telegram = now.values.telegram.trim();
+  }
   const attributes = attributePatch(category, now.attributes, before.attributes);
   if (Object.keys(attributes).length > 0) body.attributes = attributes;
   if (parts.videos) {
@@ -231,6 +240,9 @@ export function ListingForm({
   useUnsaved(dirty);
   // Чего не хватает для публикации — по тому, что сейчас в форме
   const missing = missingAttributes(category, attributesOf(category, now.attributes));
+  // Телефон снимается, только пока витрина не на проверке и не в каталоге (иначе её не опубликовать)
+  const phoneRemovable =
+    Boolean(contacts?.hasPhone) && listing.status !== "review" && listing.status !== "active";
 
   // Любая новая правка — старое «Сохранено» или «Отправлено» уже не про неё
   const touch = () => {
@@ -543,6 +555,7 @@ export function ListingForm({
                   onChange={set("phone")}
                   maxLength={24}
                   enterKeyHint="done"
+                  disabled={now.clearPhone}
                 />
               )}
             </Field>
@@ -564,11 +577,30 @@ export function ListingForm({
                   onChange={set("telegram")}
                   maxLength={64}
                   enterKeyHint="done"
-                  disabled={now.clearTelegram}
+                  disabled={now.clearTelegram || now.clearPhone}
                 />
               )}
             </Field>
-            {contacts?.hasTelegram ? (
+            {phoneRemovable ? (
+              <div className="field-full">
+                <Checkbox
+                  checked={now.clearPhone}
+                  onChange={(checked) => {
+                    touch();
+                    setNow((prev) => ({
+                      ...prev,
+                      clearPhone: checked,
+                      clearTelegram: false,
+                      values: checked ? { ...prev.values, phone: "", telegram: "" } : prev.values,
+                    }));
+                  }}
+                >
+                  {t.phoneRemove}
+                </Checkbox>
+                {now.clearPhone ? <span className="field-hint">{t.phoneRemoveHint}</span> : null}
+              </div>
+            ) : null}
+            {contacts?.hasTelegram && !now.clearPhone ? (
               <div className="field-full">
                 <Checkbox
                   checked={now.clearTelegram}
