@@ -1,6 +1,7 @@
 /* Данные витрины — поля категории из конфигурации (@bayramm/shared/categories): форма не
-   пишется под каждую категорию, а строится по описанию полей. Число — текстовым полем с
-   цифровой клавиатурой, да/нет — галочкой, один вариант — списком, несколько — галочками,
+   пишется под каждую категорию, а строится по описанию полей. Число — с «−» и «+» и границами
+   категории на виду, да/нет — галочкой, один из немногих вариантов (до четырёх) — сразу на
+   виду (короткие — сегментами, длинные — пилюлями), из многих — списком, несколько — чипами,
    текст на двух языках — двумя полями, список (автопарк) — записями с «Добавить» и «Убрать».
    Ошибки — по путям ответа API и проверки формы: «attributes.fleet.0.class». */
 
@@ -14,8 +15,20 @@ import {
 import { Checkbox, Select } from "@bayramm/ui/react";
 import { useId } from "react";
 import { ru } from "../categories";
+import { ChipsField, ChoiceField, NumberField } from "../fields";
 import { t } from "../texts";
 import { Field } from "../ui";
+
+/** До стольких вариантов выбор — сразу на виду, а не в списке */
+const CHOICE_MAX = 4;
+/** Столько знаков подписей влезает сегментами в поле в полстроки; длиннее — пилюлями */
+const SEGMENTED_CHARS = 30;
+
+/** Как показать выбор одного: немного коротких — сегменты, немного длинных — пилюли, много — список */
+export function enumControl(labels: readonly string[]): "segmented" | "pill" | "select" {
+  if (labels.length > CHOICE_MAX) return "select";
+  return labels.join("").length <= SEGMENTED_CHARS ? "segmented" : "pill";
+}
 
 interface AttributeFieldsProps {
   category: CategoryConfig;
@@ -80,30 +93,16 @@ export function AttributeFields({
           case "multi": {
             const chosen = Array.isArray(draft) ? (draft as readonly string[]) : [];
             return (
-              <fieldset key={field.key} className={`attr-group field-full${error ? " field-bad" : ""}`}>
-                <legend>{label}</legend>
-                {error || hint ? (
-                  <p className={error ? "field-error" : "field-hint"}>{error ?? hint}</p>
-                ) : null}
-                <div className="attr-options">
-                  {field.options.map((option) => (
-                    <Checkbox
-                      key={option.code}
-                      checked={chosen.includes(option.code)}
-                      disabled={readOnly}
-                      aria-invalid={Boolean(error)}
-                      onChange={(checked) =>
-                        onChange(
-                          field.key,
-                          checked ? [...chosen, option.code] : chosen.filter((code) => code !== option.code),
-                        )
-                      }
-                    >
-                      {ru(option.label)}
-                    </Checkbox>
-                  ))}
-                </div>
-              </fieldset>
+              <ChipsField
+                key={field.key}
+                label={label}
+                value={chosen}
+                options={field.options.map((option) => ({ value: option.code, label: ru(option.label) }))}
+                onChange={(next) => onChange(field.key, next)}
+                error={error}
+                hint={hint}
+                disabled={readOnly}
+              />
             );
           }
           case "text":
@@ -172,10 +171,41 @@ interface ScalarProps {
 
 /** Число, вариант или строка текста — одно поле */
 function Scalar({ field, label, value, error, hint, readOnly, onChange }: ScalarProps) {
-  return (
-    <Field label={label} error={error} hint={hint}>
-      {(props) =>
-        field.type === "enum" ? (
+  if (field.type === "int")
+    return (
+      <NumberField
+        label={label}
+        value={value}
+        onChange={onChange}
+        min={field.min}
+        max={field.max}
+        error={error}
+        hint={hint}
+        disabled={readOnly}
+      />
+    );
+  if (field.type === "enum") {
+    const options = field.options.map((option) => ({ value: option.code, label: ru(option.label) }));
+    // Необязательное можно и снять: «Не указано» — последним вариантом
+    const choices = field.required ? options : [...options, { value: "", label: t.input.notChosen }];
+    const control = enumControl(choices.map((option) => option.label));
+    if (control !== "select")
+      return (
+        <ChoiceField
+          label={label}
+          value={value === "" && field.required ? null : value}
+          options={choices}
+          onChange={onChange}
+          variant={control}
+          error={error}
+          hint={hint}
+          full={false}
+          disabled={readOnly}
+        />
+      );
+    return (
+      <Field label={label} error={error} hint={hint}>
+        {(props) => (
           <Select
             {...props}
             className="input"
@@ -183,25 +213,26 @@ function Scalar({ field, label, value, error, hint, readOnly, onChange }: Scalar
             value={value}
             disabled={readOnly}
             onChange={onChange}
-            options={[
-              { value: "", label: t.none },
-              ...field.options.map((option) => ({ value: option.code, label: ru(option.label) })),
-            ]}
+            options={[{ value: "", label: t.none }, ...options]}
           />
-        ) : (
-          <input
-            {...props}
-            className="input"
-            value={value}
-            inputMode={field.type === "int" ? "numeric" : undefined}
-            maxLength={field.type === "int" ? 6 : field.type === "text" ? field.maxLength : 200}
-            autoComplete="off"
-            enterKeyHint="done"
-            readOnly={readOnly}
-            onChange={(event) => onChange(event.target.value)}
-          />
-        )
-      }
+        )}
+      </Field>
+    );
+  }
+  return (
+    <Field label={label} error={error} hint={hint}>
+      {(props) => (
+        <input
+          {...props}
+          className="input"
+          value={value}
+          maxLength={field.type === "text" ? field.maxLength : 200}
+          autoComplete="off"
+          enterKeyHint="done"
+          readOnly={readOnly}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      )}
     </Field>
   );
 }

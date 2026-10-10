@@ -1,66 +1,15 @@
 // Адрес карточки (slug) из названия: латиница, цифры и дефис, 3–40 символов —
-// как CHECK в app.listings. Кириллица — по узбекской латинице (х → x, қ → q):
-// названия тойхон узнаваемее так, чем по русской транслитерации.
+// как CHECK в app.listings. Перевод в латиницу — slugFromName из @bayramm/shared: тот же
+// делает «из названия» в форме витрины панели.
 
+import { MAX_SLUG, SLUG_RE, slugFromName } from "@bayramm/shared";
 import type { Tx } from "../db/actor";
 
-const CYRILLIC: Readonly<Record<string, string>> = {
-  а: "a",
-  б: "b",
-  в: "v",
-  г: "g",
-  д: "d",
-  е: "e",
-  ё: "yo",
-  ж: "j",
-  з: "z",
-  и: "i",
-  й: "y",
-  к: "k",
-  л: "l",
-  м: "m",
-  н: "n",
-  о: "o",
-  п: "p",
-  р: "r",
-  с: "s",
-  т: "t",
-  у: "u",
-  ф: "f",
-  х: "x",
-  ц: "ts",
-  ч: "ch",
-  ш: "sh",
-  щ: "sh",
-  ъ: "",
-  ы: "i",
-  ь: "",
-  э: "e",
-  ю: "yu",
-  я: "ya",
-  ў: "o",
-  қ: "q",
-  ғ: "g",
-  ҳ: "h",
-};
-
-export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
-const MAX_SLUG = 40;
+export { SLUG_RE };
 
 /** Основа адреса из названия; пусто или слишком коротко — «hall» */
 export function slugify(name: string): string {
-  const latin = Array.from(name.toLowerCase())
-    .map((ch) => CYRILLIC[ch] ?? ch)
-    .join("")
-    // oʻ, gʻ, tutuq belgisi и кавычки — без следа, диакритика — без знаков
-    .replace(/[ʻʼ'‘’`"]/g, "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
-  const slug = latin
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, MAX_SLUG)
-    .replace(/-+$/g, "");
+  const slug = slugFromName(name);
   return SLUG_RE.test(slug) ? slug : "hall";
 }
 

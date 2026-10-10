@@ -68,7 +68,6 @@ const LEGAL_FORMS = ["ooo", "yatt", "self_employed"] as const satisfies readonly
 const LOCALES = ["ru", "uz"] as const;
 const USER_ROLES = ["owner", "member"] as const;
 const STIR_RE = /^\d{9}$/;
-const TELEGRAM_USERNAME_RE = /^@?[A-Za-z0-9_]{5,32}$/;
 
 // ── чек-лист проверки вендора ───────────────────────────────────────────────
 // Все четыре пункта нужны для публикации (app.listing_publish_blockers)
@@ -119,7 +118,8 @@ function parseVendor(body: Body, creating: boolean): { account: AccountFields; c
   const name = input.text("name", { min: 2, max: 120, required: creating });
   // Название обязательно: у существующего вендора его можно сменить, но не стереть
   if (name === null) input.fail("name");
-  const username = input.pattern("telegramUsername", TELEGRAM_USERNAME_RE);
+  // Как у витрины и приглашения в команду: имя, @имя или ссылка t.me — хранится имя без «@»
+  const username = input.telegram("telegramUsername");
   const account = definedOnly<AccountFields>({
     name,
     legal_form: input.oneOf("legalForm", LEGAL_FORMS),
@@ -134,7 +134,7 @@ function parseVendor(body: Body, creating: boolean): { account: AccountFields; c
     contact_role: input.text("contactRole", { max: 80 }),
     phone: input.phone("phone"),
     phone_alt: input.phone("phoneAlt"),
-    telegram_username: typeof username === "string" ? username.replace(/^@/, "") : username,
+    telegram_username: username,
   });
   input.done();
   return { account, contacts };

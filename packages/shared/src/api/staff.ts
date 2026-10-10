@@ -82,7 +82,12 @@ export interface StaffDictItem {
 export interface StaffDictionaries {
   /** Все категории; создать карточку можно только во включённой */
   readonly categories: readonly (StaffDictItem & { readonly enabled: boolean })[];
-  readonly districts: readonly StaffDictItem[];
+  /**
+   * Города; районы — внутри города (city — код города района). Панель обходится и без них:
+   * районы без города — плоским списком
+   */
+  readonly cities?: readonly StaffDictItem[];
+  readonly districts: readonly (StaffDictItem & { readonly city?: string })[];
   readonly occasions: readonly StaffDictItem[];
   /** Действующие сотрудники — для выбора менеджера */
   readonly staff: readonly { readonly id: string; readonly displayName: string; readonly role: StaffRole }[];
@@ -1027,6 +1032,22 @@ export type SettingKey =
 
 /** Значение: число; sla_reminder_hours — [часы, часы]; quiet_hours — { from: "22:00", to: "08:00" } */
 export type SettingValue = number | readonly number[] | { readonly from: string; readonly to: string };
+
+/**
+ * Границы числовых настроек — как в app.setting_value_ok: их проверяет API до базы, а панель —
+ * до отправки (поле с «−» и «+» дальше границ не уходит). sla_reminder_hours — каждое из двух
+ */
+export const SETTING_LIMITS = {
+  sla_hours: [1, 72],
+  sla_reminder_hours: [1, 72],
+  min_photos: [3, 10],
+  max_photos: [3, 30],
+  client_requests_per_day: [1, 100],
+  request_contact_retention_days: [1, 3650],
+  otp_retention_hours: [1, 720],
+  session_retention_days: [1, 365],
+  ops_reminder_pause_minutes: [5, 1440],
+} as const satisfies Record<Exclude<SettingKey, "quiet_hours">, readonly [number, number]>;
 
 export interface StaffSetting {
   readonly key: SettingKey;

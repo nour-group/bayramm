@@ -213,14 +213,34 @@ test.describe("работа сотрудника", () => {
     await expect(today).toBeEnabled();
     await today.click();
     await expect(today).toHaveAttribute("aria-pressed", "false");
+
+    // Несколько дней: занять три, освободить — через подтверждение со счётом
+    await page.getByRole("button", { name: t.rangeMode }).click();
+    await today.click();
+    await page.locator(".cal-day").filter({ hasText: /^3$/ }).click();
+    await page.getByRole("button", { name: t.rangeBusy(3) }).click();
+    await expect(page.locator(".cal-day.cal-busy")).toHaveCount(3);
+    await page.getByRole("button", { name: t.rangeMode }).click();
+    await today.click();
+    await page.locator(".cal-day").filter({ hasText: /^3$/ }).click();
+    await page.getByRole("button", { name: t.rangeFree, exact: true }).click();
+    const confirm = page.getByRole("alertdialog", { name: t.rangeFreeTitle });
+    await expect(confirm).toContainText(t.rangeFreeText(3, 3, 0));
+    await expectNoAxeViolations(page, "календарь: освободить несколько дней");
+    await confirm.getByRole("button", { name: t.rangeFreeConfirm(3) }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.locator(".cal-day.cal-busy")).toHaveCount(0);
+    const three = ["2026-10-01", "2026-10-02", "2026-10-03"];
     expect(api.calendar).toEqual([
       { version: 0, busy: ["2026-10-01"] },
       { version: 1, free: ["2026-10-01"] },
+      { version: 2, busy: three },
+      { version: 3, free: three },
     ]);
     expect(api.unexpected).toEqual([]);
   });
 
-  test("команда: приглашение по телефону — своё поле номера, неверный номер — ошибка у поля", async ({
+  test("команда: приглашение по телефону — +998 и маска, чужой номер — ошибка у поля сразу", async ({
     page,
   }) => {
     const api = await start(page);
@@ -232,10 +252,19 @@ test.describe("работа сотрудника", () => {
     await expect(form).toContainText(t.inviteHintPhoneOff);
     const phone = form.getByLabel(t.invitePhone);
     await expect(phone).toHaveAttribute("type", "tel");
+    await expect(phone).toHaveAttribute("inputmode", "numeric");
+    await expect(form.locator(".affix-pre")).toHaveText("+998");
     await form.getByLabel(t.inviteName).fill("Новый менеджер");
     await phone.fill("+7 900 123 45 67");
-    await form.getByRole("button", { name: t.invite }).click();
-    await expect(form.locator(".field-error")).toHaveText(t.fieldErrors.phone ?? "");
+    await expect(form.locator(".field-error")).toHaveText(t.input.phoneForeign);
+    await expect(phone).toHaveValue("");
+    await expect(form.getByRole("button", { name: t.invite })).toBeDisabled();
+    // Номер в любой записи встаёт в маску
+    await phone.fill("+998 (90) 123-45-67");
+    await expect(phone).toHaveValue("90 123 45 67");
+    await expect(form.locator(".field-error")).toHaveCount(0);
+    // Роль — строками с пояснением
+    await expect(form.getByRole("radio", { name: new RegExp(`^${t.roles.moderator}`) })).toBeVisible();
     await expectNoAxeViolations(page, "команда: приглашение по телефону");
     await expectHitAreas(page, "команда: приглашение по телефону", CONTROLS);
     expect(api.unexpected).toEqual([]);

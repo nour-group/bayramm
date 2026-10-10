@@ -264,6 +264,7 @@ function RevisionView({
               label={t.reason}
               required
               danger
+              presets={t.reasons.revisionDecline}
               submitLabel={t.revisionDecline}
               onSubmit={decide}
               onCancel={() => setPending(null)}

@@ -236,7 +236,8 @@ test.describe("ошибки API — словами", () => {
     await page.goto("/settings");
     const setting = page.locator("form.setting").first();
     await expect(setting.getByRole("button", { name: t.save })).toBeDisabled();
-    await setting.locator("input").first().fill("99");
+    // В границах (до 72): ответ 422 — от сервера, а не проверка формы
+    await setting.locator("input").first().fill("48");
     await setting.getByRole("button", { name: t.save }).click();
     await expect(setting.locator(".field-error")).toHaveText(t.settingInvalid);
   });

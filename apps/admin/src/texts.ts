@@ -275,14 +275,14 @@ export const t = {
     contactRole: "Должность",
     phone: "Телефон",
     phoneAlt: "Второй телефон",
-    telegramUsername: "Telegram (@имя)",
+    telegramUsername: "Telegram",
   } as Record<string, string>,
   fieldErrors: {
     name: "От 2 до 120 символов",
     stir: "Ровно 9 цифр",
     phone: "Номер Узбекистана: +998 и 9 цифр",
     phoneAlt: "Номер Узбекистана: +998 и 9 цифр",
-    telegramUsername: "5–32 символа: латиница, цифры, _",
+    telegramUsername: "5–32 знака: латиница, цифры и «_», с буквы и не на «_»",
   } as Record<string, string>,
   phoneKeep: "Оставьте пустым, чтобы не менять",
   phoneNew: "Новый номер",
@@ -1265,6 +1265,129 @@ export const t = {
   dayPart: "Часть дня",
   requestDetails: "Что нужно клиенту",
   requestServices: "Выбранные услуги",
+
+  // ── поля форм и подтверждения (fields.tsx, reason.tsx) ───────────────────
+  input: {
+    phonePrefix: "+998",
+    phonePlaceholder: "90 123 45 67",
+    phoneShort: "Номер — 9 цифр после +998",
+    phoneForeign: "Только номера Узбекистана: +998 и 9 цифр",
+    // Номер есть, но в форме не показан (показать — «Показать», с записью в журнал)
+    phoneMasked: "+998 •• ••• •• ••",
+    phoneHidden: "номер скрыт",
+    phoneChange: "Изменить номер",
+    phoneChangeCancel: "Не менять номер",
+    phoneLinked:
+      "Партнёр уже вошёл по этому номеру — сменить его нельзя: отвяжите вход или пригласите заново.",
+    telegramPlaceholder: "username",
+    telegramChars: "Только латиница, цифры и «_» — без пробелов и дефисов",
+    telegramRule: "5–32 знака: латиница, цифры и «_», с буквы и не на «_»",
+    telegramHint: "Имя без «@»; можно вставить ссылку t.me/имя",
+    sum: "сум",
+    moneyMax: (max: string) => `Не больше ${max} сум`,
+    slugPrefix: "…/venue/",
+    slugFromName: "Из названия",
+    slugHint: "Латиница, цифры и дефис, 3–40 знаков. Старые ссылки на витрину после смены не откроются",
+    range: (min: number, max: number) => `от ${min} до ${max}`,
+    less: "меньше",
+    more: "больше",
+    notChosen: "Не указано",
+    stir: "Ровно 9 цифр — как в реестре",
+    capacity: "Вместимость, гостей",
+    capacityHint: "Сколько гостей принимает зал: от и до",
+    capacityOrder: "«До» — не меньше, чем «от»",
+    capFrom: "Гостей от",
+    capTo: "Гостей до",
+    chooseOne: (n: number) => `Выбрано: ${n}`,
+    managerInactive: "отключён",
+    reasonPresets: "Частые причины",
+    reasonPresetHint: "Нажмите — причина впишется в поле, её можно поправить",
+  },
+  // Готовые причины по местам: нажатие вписывает текст в поле причины
+  reasons: {
+    listingSuspend: [
+      "Не отвечает на заявки",
+      "Жалобы клиентов",
+      "Цены не совпадают с настоящими",
+      "По просьбе вендора",
+    ],
+    listingReject: [
+      "Фото не соответствуют правилам",
+      "Неполные или неверные данные",
+      "Цены не подтверждены",
+      "Такая витрина уже есть",
+    ],
+    photoDecline: [
+      "На фото есть лица",
+      "Плохое качество",
+      "Водяной знак или чужой логотип",
+      "Не эта витрина",
+    ],
+    serviceDecline: [
+      "Цена указана неверно",
+      "Непонятно, что входит",
+      "Не подходит категории",
+      "Такая услуга уже есть",
+    ],
+    revisionDecline: [
+      "Неточные данные",
+      "Контакты или реклама в тексте",
+      "Ошибки в тексте",
+      "Нет текста на узбекском",
+    ],
+    clientBlock: ["Спам заявками", "Ложные заявки", "Оскорбления вендоров", "По просьбе клиента"],
+    clientPhone: ["Вендор не может дозвониться", "Жалоба вендора", "Проверка заявки"],
+  },
+  // Единица настройки — после поля с числом
+  settingUnits: {
+    sla_hours: "ч",
+    sla_reminder_hours: "ч",
+    ops_reminder_pause_minutes: "мин",
+    min_photos: "фото",
+    max_photos: "фото",
+    client_requests_per_day: "заявок",
+    request_contact_retention_days: "дн.",
+    session_retention_days: "дн.",
+    otp_retention_hours: "ч",
+  } as Record<string, string>,
+  settingRange: (min: number, max: number) => `Можно от ${min} до ${max}.`,
+  // Минимум услуги — в единицах её цены: «Минимум, часов»
+  serviceMinQtyIn: {
+    per_guest: "Минимум, гостей",
+    per_event: "Минимум, мероприятий",
+    per_hour: "Минимум, часов",
+    per_item: "Минимум, штук",
+    per_kg: "Минимум, кг",
+    per_set: "Минимум, комплектов",
+    per_table: "Минимум, столов",
+  } as Record<string, string>,
+  servicePriceUnitOne: "Цена — за единицу этой услуги:",
+  servicePauseTitle: "Снять услугу с витрины?",
+  servicePauseText: (name: string) =>
+    `«${name}» пропадёт с витрины, цена «от» пересчитается. Вернуть на витрину можно в любой момент.`,
+  optionUnitsHint: "Единицы этой категории",
+  // смена категории витрины: что будет — в шторке, до кнопки
+  categoryChangeFromTo: (from: string, to: string) => `Категория сменится: ${from} → ${to}.`,
+  categoryChangeConsequence:
+    "Данные витрины прежней категории очистятся, лишние ссылки на видео уберутся. Поля, правила фото и занятость — уже новой категории: проверьте витрину заново.",
+  // календарь
+  calToday: "Сегодня",
+  calLoading: "Загружаем месяц…",
+  rangeFreeTitle: "Освободить дни?",
+  rangeFreeText: (days: number, marked: number | null, byVendor: number | null) =>
+    marked === null
+      ? `Снять отметки «занято» с выбранных дней: ${days}.`
+      : `Выбрано дней: ${days}, из них отмечено занятыми: ${marked}${byVendor ? `, из них ${byVendor} отметил вендор` : ""}. Отметки снимутся — клиенты увидят эти дни свободными.`,
+  rangeFreeConfirm: (n: number) => `Освободить (${n})`,
+  daysShort: "дн.",
+  // команда: повышение до администратора
+  promoteTitle: "Сделать администратором?",
+  promoteText: (name: string) =>
+    `${name} получит всё: команду, настройки, журнал и телефоны клиентов. Понизить можно, пока в команде есть другой администратор.`,
+  inviteAdminTitle: "Пригласить администратора?",
+  inviteAdminText: (name: string) =>
+    `${name} получит всё: команду, настройки, журнал и телефоны клиентов — сразу после первого входа.`,
+  promote: "Сделать администратором",
 } as const;
 
 /** Текст ошибки API по коду */

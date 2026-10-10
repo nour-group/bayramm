@@ -6,7 +6,13 @@
 //   GET /staff/settings           все изменяемые настройки
 //   PUT /staff/settings/:key      { value } → все настройки; 422 invalid_input (details — [key])
 
-import type { SettingKey, SettingValue, StaffSetting, StaffSettings } from "@bayramm/shared/api/staff";
+import {
+  SETTING_LIMITS,
+  type SettingKey,
+  type SettingValue,
+  type StaffSetting,
+  type StaffSettings,
+} from "@bayramm/shared/api/staff";
 import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
@@ -19,17 +25,9 @@ import { iso, staffName } from "./shared";
 
 export const settings = new Hono<AppEnv>();
 
-/** Числовые настройки и их границы — как в app.setting_value_ok */
-export const INT_SETTINGS = {
-  sla_hours: [1, 72],
-  min_photos: [3, 10],
-  max_photos: [3, 30],
-  client_requests_per_day: [1, 100],
-  request_contact_retention_days: [1, 3650],
-  otp_retention_hours: [1, 720],
-  session_retention_days: [1, 365],
-  ops_reminder_pause_minutes: [5, 1440],
-} as const satisfies Partial<Record<SettingKey, readonly [number, number]>>;
+/** Числовые настройки и их границы — как в app.setting_value_ok (те же границы у формы панели) */
+const { sla_reminder_hours: REMINDER_HOURS, ...INT_LIMITS } = SETTING_LIMITS;
+export const INT_SETTINGS: Readonly<Record<keyof typeof INT_LIMITS, readonly [number, number]>> = INT_LIMITS;
 
 /** Порядок показа в панели */
 export const SETTING_KEYS = [
@@ -55,7 +53,7 @@ export function parseSettingValue(key: SettingKey, value: unknown): SettingValue
   switch (key) {
     case "sla_reminder_hours": {
       if (!Array.isArray(value) || value.length > 2) return undefined;
-      if (!value.every((h) => isInt(h, 1, 72))) return undefined;
+      if (!value.every((h) => isInt(h, ...REMINDER_HOURS))) return undefined;
       const hours = value as number[];
       if (hours.length === 2 && (hours[0] ?? 0) >= (hours[1] ?? 0)) return undefined;
       return hours;

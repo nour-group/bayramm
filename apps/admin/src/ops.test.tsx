@@ -506,17 +506,34 @@ describe("клиенты", () => {
     expect(button(t.unblock)).toBeDefined();
   });
 
-  it("администратор: телефон — с причиной", async () => {
+  it("администратор: телефон — с причиной; частая причина — чипом, вписывается в поле", async () => {
     mockApi(staff("admin", ADMIN), {
       [`GET /api/staff/clients/${CLIENT_ID}`]: json(CLIENT),
       [`POST /api/staff/clients/${CLIENT_ID}/phone`]: json({ phone: "+998001112233" }),
     });
     await mount(`/clients/${CLIENT_ID}`);
+    // Номер скрыт маской; «Показать» открывает причину — без неё запроса нет
+    const row = [...container.querySelectorAll(".phone-row")].find(
+      (r) => r.querySelector(".phone-label")?.textContent === t.clientPhoneProfile,
+    );
+    expect(row?.textContent).toContain("+998 •• ••• •• ••");
+    expect(text()).not.toContain(t.clientPhoneReason);
+    await click([...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.show));
+    expect(calls.some((c) => c.url.endsWith("/phone"))).toBe(false);
     const form = [...container.querySelectorAll(".confirm")].find((f) =>
       f.textContent?.includes(t.clientPhoneReason),
     );
-    await type(form?.querySelector("input") ?? null, "Жалоба вендора");
-    await click(form?.querySelector("button") ?? undefined);
+    expect(document.activeElement).toBe(form);
+    const show = [...(form?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.show);
+    expect(show?.disabled).toBe(true);
+    const chip = [...(form?.querySelectorAll(".reason-chip") ?? [])].find(
+      (b) => b.textContent === "Жалоба вендора",
+    );
+    expect(chip?.getAttribute("aria-pressed")).toBe("false");
+    await click(chip);
+    expect((form?.querySelector("input") as HTMLInputElement | null)?.value).toBe("Жалоба вендора");
+    expect(chip?.getAttribute("aria-pressed")).toBe("true");
+    await click(show);
     expect(lastCall("/phone")?.body).toEqual({ reason: "Жалоба вендора" });
     expect(text()).toContain("+998 00 111 22 33");
   });
@@ -845,6 +862,12 @@ describe("команда", () => {
     expect(text()).toContain(t.memberInactive);
   });
 
+  /** Роль приглашения — строкой с пояснением (свои радиокнопки, не системные) */
+  const roleRow = (form: HTMLFormElement, role: "admin" | "manager" | "moderator") =>
+    [...form.querySelectorAll("label.ui-radio")].find((l) => l.textContent?.startsWith(t.roles[role])) as
+      | HTMLElement
+      | undefined;
+
   it("приглашение: имя, имя пользователя Telegram и роль уходят на сервер", async () => {
     mockApi(staff("admin", ADMIN), {
       "GET /api/staff/team": json(TEAM),
@@ -854,20 +877,57 @@ describe("команда", () => {
     const form = container.querySelector("form.fs") as HTMLFormElement;
     const [name, username] = inviteInputs(form);
     await type(name ?? null, "Новый модератор");
-    await type(username ?? null, "@new_moderator");
-    // Роль — свой список (Select): открыть и выбрать вариант; системного select нет
+    // Ссылка t.me и «@» снимаются сразу: в поле — имя, «@» стоит у поля
+    await type(username ?? null, "https://t.me/new_moderator");
+    expect((username as HTMLInputElement).value).toBe("new_moderator");
+    // Роль — строками с пояснением; системного select нет
     expect(form.querySelector("select")).toBeNull();
-    await click(form.querySelector("button[aria-haspopup=listbox]") ?? undefined);
-    await click(
-      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.roles.moderator),
-    );
+    expect(roleRow(form, "moderator")?.textContent).toContain(t.roleHints.moderator);
+    await click(roleRow(form, "moderator"));
     await click(button(t.invite));
     expect(lastCall("/team")?.body).toEqual({
       displayName: "Новый модератор",
-      username: "@new_moderator",
+      username: "new_moderator",
       role: "moderator",
     });
     expect(text()).toContain(t.invited);
+  });
+
+  it("имя Telegram не по правилам — ошибка сразу у поля, без запроса", async () => {
+    mockApi(staff("admin", ADMIN), { "GET /api/staff/team": json(TEAM) });
+    await mount("/team");
+    const form = container.querySelector("form.fs") as HTMLFormElement;
+    const [name, username] = inviteInputs(form);
+    await type(name ?? null, "Новый");
+    await type(username ?? null, "new-moderator");
+    expect(form.querySelector(".field-error")?.textContent).toBe(t.input.telegramChars);
+    await type(username ?? null, "abc");
+    await click(button(t.invite));
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    expect(form.querySelector(".field-error")?.textContent).toBe(t.fieldErrors.telegramUsername);
+  });
+
+  it("пригласить администратора — только после подтверждения", async () => {
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/team": json(TEAM),
+      "POST /api/staff/team": json(TEAM, 201),
+    });
+    await mount("/team");
+    const form = container.querySelector("form.fs") as HTMLFormElement;
+    const [name, username] = inviteInputs(form);
+    await type(name ?? null, "Новый админ");
+    await type(username ?? null, "new_admin");
+    await click(roleRow(form, "admin"));
+    await click(button(t.invite));
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    const sheet = document.querySelector('[role="alertdialog"]') as HTMLElement;
+    expect(sheet.textContent).toContain(t.inviteAdminTitle);
+    await click([...sheet.querySelectorAll("button")].find((b) => b.textContent === t.invite));
+    expect(lastCall("/team")?.body).toEqual({
+      displayName: "Новый админ",
+      username: "new_admin",
+      role: "admin",
+    });
   });
 
   it("приглашение по телефону: номер приводится к +998…, неверный — ошибка у поля без запроса", async () => {
@@ -886,13 +946,17 @@ describe("команда", () => {
     expect(text()).toContain(t.inviteHintPhoneOff);
     const [name, phone] = inviteInputs(form);
     expect(phone?.getAttribute("type")).toBe("tel");
+    expect(phone?.getAttribute("inputmode")).toBe("numeric");
     await type(name ?? null, "Новый менеджер");
+    // Чужой код — ошибка сразу, номер в поле не попадает: «Пригласить» неактивна
     await type(phone ?? null, "+7 900 123 45 67");
     await click(button(t.invite));
     expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/team"))).toBe(false);
-    expect(form.querySelector(".field-error")?.textContent).toBe(t.fieldErrors.phone);
+    expect(form.querySelector(".field-error")?.textContent).toBe(t.input.phoneForeign);
 
     await type(phone ?? null, "00 123-45-67");
+    // Маска «XX XXX XX XX», «+998» — у поля
+    expect((phone as HTMLInputElement).value).toBe("00 123 45 67");
     await click(button(t.invite));
     expect(lastCall("/team")?.body).toEqual({
       displayName: "Новый менеджер",
@@ -1027,6 +1091,20 @@ describe("бот не пишет сотруднику", () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe("настройки", () => {
+  it("вне границ — ошибка до запроса", async () => {
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/settings": json({
+        items: [{ key: "sla_hours", value: 12, updatedAt: "2026-09-01T06:00:00.000Z", updatedBy: null }],
+      }),
+    });
+    await mount("/settings");
+    const form = container.querySelector("form.setting");
+    await type(form?.querySelector("input") ?? null, "99");
+    await click(form?.querySelector("button[type=submit]") ?? undefined);
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+    expect(form?.textContent).toContain(t.settingInvalid);
+  });
+
   const SETTINGS: StaffSettings = {
     items: [
       { key: "sla_hours", value: 12, updatedAt: "2026-09-01T06:00:00.000Z", updatedBy: null },
@@ -1066,6 +1144,11 @@ describe("настройки", () => {
     // Числа — текст с цифровой клавиатурой, тихие часы — свой список времени, не системные
     expect(container.querySelector('input[type="number"], input[type="time"]')).toBeNull();
     expect(forms[0]?.querySelector("input")?.inputMode).toBe("numeric");
+    // Границы — общие с API (SETTING_LIMITS), единица — после поля
+    const sla = forms[0]?.querySelector("input");
+    expect(sla?.getAttribute("aria-valuemin")).toBe("1");
+    expect(sla?.getAttribute("aria-valuemax")).toBe("72");
+    expect(forms[0]?.querySelector(".num-unit")?.textContent).toBe(t.settingUnits.sla_hours);
     const times = [...(forms[2]?.querySelectorAll("button[aria-haspopup=listbox]") ?? [])];
     expect(times.map((b) => b.textContent)).toEqual(["22:00", "08:00"]);
   });

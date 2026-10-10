@@ -1,8 +1,16 @@
 /* Настройки — только администратор. Каждая — своей формой: значение проверяет сервер и
    ещё раз база (границы и согласованность: напоминания раньше срока ответа, минимум фото
-   не больше максимума). Ошибка — у той настройки, которую меняли. */
+   не больше максимума). Ошибка — у той настройки, которую меняли.
+   Число — с «−» и «+» в границах SETTING_LIMITS (те же у API) и единицей после поля; вне
+   границ или напоминания не по возрастанию — ошибка до запроса. */
 
-import type { SettingKey, SettingValue, StaffSetting, StaffSettings } from "@bayramm/shared/api/staff";
+import {
+  SETTING_LIMITS,
+  type SettingKey,
+  type SettingValue,
+  type StaffSetting,
+  type StaffSettings,
+} from "@bayramm/shared/api/staff";
 import { NumberStepper, TimeField } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
 import { type Failure, useLoad, useSession } from "../api";
@@ -49,6 +57,29 @@ function settingValue(key: SettingKey, draft: string[]): SettingValue {
   }
 }
 
+type NumberKey = keyof typeof SETTING_LIMITS;
+
+const limitsOf = (key: SettingKey): readonly [number, number] | null =>
+  key === "quiet_hours" ? null : SETTING_LIMITS[key as NumberKey];
+
+/** Значение подходит по границам (и напоминания — по возрастанию); согласованность с другими — сервер */
+export function settingFits(key: SettingKey, value: SettingValue): boolean {
+  const limits = limitsOf(key);
+  if (limits === null) return true;
+  const [min, max] = limits;
+  const fits = (n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= min && n <= max;
+  if (Array.isArray(value))
+    return value.every(fits) && value.every((n, i) => i === 0 || n > (value[i - 1] ?? 0));
+  return fits(value);
+}
+
+const invalidOf = (key: SettingKey): Failure => ({
+  ok: false,
+  status: 422,
+  code: "invalid_input",
+  details: [key],
+});
+
 function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s: StaffSettings) => void }) {
   const { api } = useSession();
   const id = useId();
@@ -73,10 +104,15 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const value = settingValue(setting.key, draft);
+    // Вне границ — сервер ответил бы так же: говорим сразу, без запроса
+    if (!settingFits(setting.key, value)) {
+      setSaved(false);
+      setFailure(invalidOf(setting.key));
+      return;
+    }
     setBusy(true);
-    const result = await api.put<StaffSettings>(`/staff/settings/${setting.key}`, {
-      value: settingValue(setting.key, draft),
-    });
+    const result = await api.put<StaffSettings>(`/staff/settings/${setting.key}`, { value });
     setBusy(false);
     setFailure(result.ok ? null : result);
     if (result.ok) {
@@ -88,11 +124,13 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
     }
   };
 
-  // Число — NumberStepper (цифровая клавиатура, стрелки), время — TimeField (список «ЧЧ:ММ»)
+  // Число — NumberStepper в границах настройки и с единицей, время — TimeField (список «ЧЧ:ММ»)
+  const limits = limitsOf(setting.key);
+  const unit = t.settingUnits[setting.key];
   const input = (index: number, extra: { label: string; type: "number" | "time" }) => {
     const common = { id: `${id}-${index}`, "aria-invalid": invalid, "aria-describedby": hintId };
     return (
-      <div className="field" key={index}>
+      <div className={`field${extra.type === "number" ? " setting-num" : ""}`} key={index}>
         <label htmlFor={common.id}>{extra.label}</label>
         {extra.type === "time" ? (
           <TimeField
@@ -103,7 +141,23 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
             onChange={change(index)}
           />
         ) : (
-          <NumberStepper {...common} value={draft[index] ?? ""} onChange={change(index)} />
+          <span className="num-row">
+            <NumberStepper
+              {...common}
+              value={draft[index] ?? ""}
+              onChange={change(index)}
+              min={limits?.[0] ?? 0}
+              max={limits?.[1] ?? Number.MAX_SAFE_INTEGER}
+              maxLength={String(limits?.[1] ?? 99999).length}
+              decrementLabel={`${extra.label}: ${t.input.less}`}
+              incrementLabel={`${extra.label}: ${t.input.more}`}
+            />
+            {unit ? (
+              <span className="num-unit" aria-hidden="true">
+                {unit}
+              </span>
+            ) : null}
+          </span>
         )}
       </div>
     );

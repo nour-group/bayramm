@@ -6,7 +6,9 @@
    и кабинет на сайте. У каждого — роль, статус (ждёт входа, вошёл, отключён), доходят ли
    уведомления в Telegram, последний вход и язык; действия — на телефоне в «Ещё», шире —
    кнопками. Владелец у кабинета есть всегда: последнего не понизить, не отключить и не
-   убрать — это проверяет база (vendor_last_owner). */
+   убрать — это проверяет база (vendor_last_owner).
+   Телефон — полем с +998 и маской (fields.tsx); в правке номер скрыт маской, сменить его —
+   «Изменить номер», пока партнёр по нему не вошёл (вошедшему сервер ответит user_linked). */
 
 import { normalizeUzPhone } from "@bayramm/shared";
 import type {
@@ -16,9 +18,10 @@ import type {
   VendorUserInput,
   VendorUserPatch,
 } from "@bayramm/shared/api/staff";
-import { ConfirmSheet, Dialog, RadioGroup, type RadioOption } from "@bayramm/ui/react";
+import { ConfirmSheet, Dialog, type RadioOption } from "@bayramm/ui/react";
 import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
 import { type Failure, useAuthMethods, useCan, useSession } from "../api";
+import { ChoiceField, PhoneField } from "../fields";
 import { formatMoment } from "../format";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
@@ -288,49 +291,10 @@ function UserCard({ user, vendorId, write, copier, failure, onSaved, onEnable, o
   );
 }
 
-/** Один из вариантов сегментами: подпись, варианты, подсказка или ошибка под ними */
-function Choice<V extends string>({
-  label,
-  value,
-  options,
-  onChange,
-  hint,
-  error,
-}: {
-  label: string;
-  value: V | null;
-  options: readonly RadioOption<V>[];
-  onChange: (value: V) => void;
-  hint?: string | undefined;
-  error?: string | undefined;
-}) {
-  const id = useId();
-  const note = error ?? hint;
-  return (
-    <div className={`field field-full${error ? " field-bad" : ""}`}>
-      <span id={`${id}-label`}>{label}</span>
-      <RadioGroup
-        variant="segmented"
-        className="vuser-choice"
-        aria-labelledby={`${id}-label`}
-        aria-describedby={note ? `${id}-note` : undefined}
-        aria-invalid={Boolean(error)}
-        id={`${id}-first`}
-        name={id}
-        value={value}
-        options={options}
-        onChange={onChange}
-      />
-      {note && (
-        <span id={`${id}-note`} className={error ? "field-error" : "field-hint"}>
-          {note}
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** Имя, роль и язык. Последнего владельца сервер не понизит — ответ словами под формой */
+/**
+ * Имя, роль, язык и номер. Последнего владельца сервер не понизит — ответ словами под формой.
+ * Номер скрыт маской; сменить — «Изменить номер», пока по нему не вошли
+ */
 function EditUserForm({
   user,
   vendorId,
@@ -346,23 +310,35 @@ function EditUserForm({
   const [fullName, setFullName] = useState(user.fullName ?? "");
   const [role, setRole] = useState<Role>(user.role);
   const [locale, setLocale] = useState<Lang>(user.locale);
+  // Новый номер: null — номер не меняют (поле закрыто)
+  const [phone, setPhone] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const phoneInput = useRef<HTMLInputElement>(null);
+  // Партнёр уже вошёл по номеру (аккаунт или Telegram) — номер не сменить
+  const phoneLocked = user.accountLinked || user.telegramLinked;
   const name = fullName.trim();
+  const newPhone = phone === null || phone.trim() === "" ? null : (normalizeUzPhone(phone) ?? phone);
   const patch: VendorUserPatch = {
     ...(name !== (user.fullName ?? "") ? { fullName: name === "" ? null : name } : {}),
     ...(role !== user.role ? { role } : {}),
     ...(locale !== user.locale ? { locale } : {}),
+    ...(newPhone !== null ? { phone: newPhone } : {}),
   };
   const dirty = Object.keys(patch).length > 0;
   // Изменённое и не сохранённое — уход со страницы переспросит
   useUnsaved(dirty);
-  const errors = fieldErrors(failure, { fullName: t.userName });
+  const errors = fieldErrors(failure, { fullName: t.userName, phone: t.fieldErrors.phone ?? "" });
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!dirty) {
       onCancel();
+      return;
+    }
+    // Неполный номер — сервер ответил бы так же (422, поле phone)
+    if (newPhone !== null && normalizeUzPhone(newPhone) === null) {
+      setFailure(phoneFailure);
       return;
     }
     setBusy(true);
@@ -387,20 +363,61 @@ function EditUserForm({
           />
         )}
       </Field>
-      <Choice
+      <ChoiceField
         label={t.vuRole}
         value={role}
         options={roleOptions(true)}
         onChange={setRole}
         hint={t.vuRoleHints[role]}
       />
-      <Choice
+      <ChoiceField
         label={t.vuLocale}
         value={locale}
         options={LANG_OPTIONS}
         onChange={setLocale}
         hint={t.vuLocaleHint}
       />
+      {phone === null ? (
+        <div className="field">
+          <span>{t.userPhone}</span>
+          <div className="phone-change">
+            <span className="phone-mask">
+              <span aria-hidden="true">{t.input.phoneMasked}</span>
+              <span className="visually-hidden">{t.input.phoneHidden}</span>
+            </span>
+            {phoneLocked ? null : (
+              <button
+                type="button"
+                className="btn btn-sm"
+                aria-expanded={false}
+                onClick={() => {
+                  setPhone("");
+                  // Поле появится после этой отрисовки — фокус в него, без прокрутки (ловушка №3)
+                  setTimeout(() => phoneInput.current?.focus({ preventScroll: true }), 0);
+                }}
+              >
+                {t.input.phoneChange}
+              </button>
+            )}
+          </div>
+          {phoneLocked ? <span className="field-hint">{t.input.phoneLinked}</span> : null}
+        </div>
+      ) : (
+        <div className="field">
+          <PhoneField
+            label={t.phoneNew}
+            value={phone}
+            onChange={setPhone}
+            error={errors.phone}
+            inputRef={phoneInput}
+          />
+          <div>
+            <button type="button" className="btn btn-sm" onClick={() => setPhone(null)}>
+              {t.input.phoneChangeCancel}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="acts">
         <button type="submit" className="btn btn-primary" disabled={busy}>
           {busy ? t.saving : t.save}
@@ -496,23 +513,14 @@ function InviteForm({
             />
           )}
         </Field>
-        <Field label={t.userPhone} error={errors.phone}>
-          {(props) => (
-            <input
-              {...props}
-              className="input"
-              type="tel"
-              inputMode="tel"
-              autoComplete="off"
-              placeholder="+998 XX XXX XX XX"
-              value={phone}
-              maxLength={24}
-              enterKeyHint="next"
-              onChange={(event) => setPhone(event.target.value)}
-            />
-          )}
-        </Field>
-        <Choice
+        <PhoneField
+          label={t.userPhone}
+          value={phone}
+          onChange={setPhone}
+          error={errors.phone}
+          enterKeyHint="next"
+        />
+        <ChoiceField
           label={t.vuRole}
           value={chosen}
           options={roleOptions(hasOwner)}
@@ -523,7 +531,7 @@ function InviteForm({
           hint={!hasOwner ? t.vuOwnerFirst : chosen ? t.vuRoleHints[chosen] : undefined}
           error={roleMissing ? t.vuRoleRequired : undefined}
         />
-        <Choice
+        <ChoiceField
           label={t.vuLocale}
           value={locale}
           options={LANG_OPTIONS}

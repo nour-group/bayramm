@@ -451,6 +451,7 @@ function RequestView({
           )}
           {can("client_phones.read") && (
             <ReasonPhoneReveal
+              presets={t.reasons.clientPhone}
               label={t.clientPhone}
               hint={t.clientPhoneHint}
               reasonLabel={t.clientPhoneReason}

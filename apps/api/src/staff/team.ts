@@ -29,8 +29,6 @@ import { iso, pathId } from "./shared";
 export const team = new Hono<AppEnv>();
 
 const ROLES = ["admin", "manager", "moderator"] as const satisfies readonly StaffRole[];
-// Как проверяет профиль сотрудника в базе: 5–32 символа, латиница, цифры, «_»; «@» можно
-const USERNAME_RE = /^@?[A-Za-z0-9_]{5,32}$/;
 
 async function loadTeam(trx: Tx, self: string): Promise<TeamList> {
   const rows = await trx
@@ -84,7 +82,8 @@ team.post("/", requirePermission("team.manage"), limitJson, async (c) => {
   const actor = staffOf(c);
   const input = new Input(await readBody(c.req.raw));
   const byPhone = input.has("phone") && !input.has("username");
-  const username = byPhone ? undefined : input.pattern("username", USERNAME_RE, true);
+  // Имя, @имя или ссылка t.me — как у витрины и вендора; в базу — имя (её триггер — в нижний регистр)
+  const username = byPhone ? undefined : input.telegram("username", true);
   // Номер Узбекистана в любой записи → «+998XXXXXXXXX»; другой — 422 с полем phone
   const phone = byPhone ? input.phone("phone", true) : undefined;
   if (input.has("phone") && input.has("username")) input.fail("phone");
