@@ -195,6 +195,15 @@ export async function exchangeHubCode(
       .where("deleted_at", "is", null)
       .executeTakeFirst();
     if (account === undefined) throw invalidCode();
+    if (input.app === "vendor") {
+      // Вход в кабинет из браузера — как из Mini App: панель видит, когда партнёр входил
+      await trx
+        .updateTable("app.vendor_users")
+        .set({ last_login_at: sql<Date>`now()` })
+        .where("account_id", "=", row.account_id)
+        .where("disabled_at", "is", null)
+        .execute();
+    }
     return issueAccountSession(trx, {
       accountId: row.account_id,
       app: input.app,

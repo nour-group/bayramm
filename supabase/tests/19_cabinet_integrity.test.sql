@@ -78,15 +78,18 @@ select is(
   (select count(*)::int from app.photos where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101' and sort = 42),
   0, 'порядок фото сотрудник площадки не меняет');
 
--- Отключённый владелец — уже не владелец
+-- Отключённый владелец — уже не владелец. Без владельца не остаётся и действующий сотрудник
+-- площадки (vendor_keep_owner, 20261011110000_vendor_user_invites.sql) — отключаются оба
 select pg_temp.as_actor(null);
-update app.vendor_users set disabled_at = now() where id = 'aaaaaaaa-0000-0000-0000-000000000011';
+update app.vendor_users set disabled_at = now()
+ where id in ('aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000012');
 set local role bayramm_api;
 select pg_temp.as_actor('vendor_user', 'aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000001');
 select ok(not app.actor_is_vendor_owner(), 'отключённый пользователь — не владелец');
 reset role;
 select pg_temp.as_actor(null);
-update app.vendor_users set disabled_at = null where id = 'aaaaaaaa-0000-0000-0000-000000000011';
+update app.vendor_users set disabled_at = null
+ where id in ('aaaaaaaa-0000-0000-0000-000000000011', 'aaaaaaaa-0000-0000-0000-000000000012');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- Фото из кабинета — команде

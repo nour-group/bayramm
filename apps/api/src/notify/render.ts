@@ -15,6 +15,7 @@ import { can } from "../staff/access";
 import type { ReplyMarkup, SendMessageParams } from "../telegram/client";
 import { isDay, loadDigest, loadWeekReport, REPORT_TEXTS, staffLocale } from "./reports";
 import {
+  ACCESS_TEXTS,
   formatDate,
   NOTICE_TEXTS,
   type OpsSlaFacts,
@@ -36,7 +37,9 @@ import {
  * ops.photos_submitted — новые фото опубликованной карточки (20261001010000_cabinet_integrity.sql);
  * vendor.service_decided — решение по услуге опубликованной витрины владельцам кабинета,
  * ops.service_submitted — новые услуги и предложения правок команде
- * (20261001120100_categories_services.sql)
+ * (20261001120100_categories_services.sql);
+ * vendor.access_granted — партнёру: его добавили в кабинет, приглашение принято
+ * (20261011110000_vendor_user_invites.sql)
  */
 export const NOTICE_KINDS = [
   "vendor.request_new",
@@ -53,6 +56,7 @@ export const NOTICE_KINDS = [
   "ops.photos_submitted",
   "vendor.service_decided",
   "ops.service_submitted",
+  "vendor.access_granted",
 ] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
@@ -419,6 +423,28 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
         reason: decision === "declined" ? service.decision_reason : null,
       }),
       button(t.button, `${trimTrailingSlashes(urls.vendorAppUrl)}/card`),
+    );
+  }
+
+  if (kind === "vendor.access_granted") {
+    const vendorId = field(row.payload, "vendor_id");
+    if (vendorId === null || row.recipient_id === null) return skip("bad_payload");
+    // Только о своём кабинете; роль и название — на момент отправки
+    if (recipient.vendorId !== vendorId) return skip("recipient_mismatch");
+    const access = await trx
+      .selectFrom("app.vendor_users as u")
+      .innerJoin("app.vendor_accounts as v", "v.id", "u.vendor_id")
+      .select(["u.role", "v.name", "v.public_code"])
+      .where("u.id", "=", row.recipient_id)
+      .executeTakeFirst();
+    if (access === undefined) return skip("not_found");
+    const t = ACCESS_TEXTS[recipient.lang];
+    return message(
+      t.granted({
+        vendor: access.name ?? access.public_code,
+        role: access.role === "member" ? "member" : "owner",
+      }),
+      button(t.button, trimTrailingSlashes(urls.vendorAppUrl)),
     );
   }
 

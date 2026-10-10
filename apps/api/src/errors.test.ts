@@ -80,6 +80,11 @@ describe("toApiError: коды Postgres", () => {
     expect(mapped(pgError("BR015"))).toMatchObject({ status: 422, code: "guests_over_capacity" });
   });
 
+  it("пользователи кабинета: последний владелец и второе членство того же человека — 409", () => {
+    expect(mapped(pgError("BR031"))).toMatchObject({ status: 409, code: "vendor_last_owner" });
+    expect(mapped(pgError("BR032"))).toMatchObject({ status: 409, code: "vendor_user_exists" });
+  });
+
   it("каждое правило — 4xx", () => {
     for (const [sqlstate, rule] of Object.entries(BUSINESS_RULES)) {
       const e = toApiError(pgError(sqlstate));

@@ -1,6 +1,7 @@
 import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
 import {
+  ACCESS_TEXTS,
   formatDate,
   NOTICE_TEXTS,
   opsOutboxDead,
@@ -67,6 +68,9 @@ function rendered(lang: "ru" | "uz", facts = FACTS): string[] {
       proposal: false,
       reason: null,
     }),
+    ACCESS_TEXTS[lang].button,
+    ACCESS_TEXTS[lang].granted({ vendor: "V", role: "owner" }),
+    ACCESS_TEXTS[lang].granted({ vendor: "V", role: "member" }),
   ];
 }
 

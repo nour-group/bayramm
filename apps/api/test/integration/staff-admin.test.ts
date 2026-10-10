@@ -29,7 +29,7 @@ import type {
   VendorUser,
 } from "@bayramm/shared/api/staff";
 import { type Client, Client as PgClient } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import app from "../../src/index";
 import {
   adminClient,
@@ -43,6 +43,15 @@ import {
 
 const STORAGE_URL = trimTrailingSlashes(process.env.TEST_SUPABASE_URL ?? "http://127.0.0.1:54321");
 const SERVICE_KEY = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+// Принятое сразу приглашение отправляет «вас добавили» сразу (kickOutbox) — не в настоящий Telegram
+const realFetch = globalThis.fetch;
+vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input instanceof Request ? input.url : input).startsWith("https://api.telegram.org/")) {
+    throw new TypeError("Telegram is offline in tests");
+  }
+  return realFetch(input, init);
+});
 
 let admin: Client;
 const tokens = { admin: "", manager: "", moderator: "" };
@@ -187,7 +196,14 @@ describe("вендор → карточка → проверка → публи�
       api("manager", "POST", `/staff/vendors/${vendor.id}/users`, { phone: userPhone, fullName: "Owner" }),
       201,
     );
-    expect(user).toMatchObject({ telegramLinked: false, role: "owner", disabledAt: null });
+    // Без роли — владелец (так заводили до приглашений); номер ещё никто не подтвердил
+    expect(user).toMatchObject({
+      telegramLinked: false,
+      role: "owner",
+      status: "pending",
+      notifiable: false,
+      disabledAt: null,
+    });
 
     for (const q of [`oqsaroy ${tag}`, stir, userPhone, vendor.code]) {
       const list = await ok<VendorList>(api("moderator", "GET", `/staff/vendors?q=${encodeURIComponent(q)}`));
@@ -709,7 +725,8 @@ describe("вендор → карточка → проверка → публи�
       user?.id,
     ]);
     const linked = await ok<VendorDetail>(api("moderator", "GET", `/staff/vendors/${vendor.id}`));
-    expect(linked.users[0]).toMatchObject({ telegramLinked: true });
+    // Привязан, но бот не знает его чат — уведомления не доходят, панель говорит это отдельно
+    expect(linked.users[0]).toMatchObject({ telegramLinked: true, status: "accepted", notifiable: false });
     expect(JSON.stringify(linked)).not.toMatch(/tg_user_hash|telegram_user_id/);
     expect(
       await error(
@@ -719,12 +736,13 @@ describe("вендор → карточка → проверка → публи�
     const unlinked = await ok<VendorUser>(
       api("manager", "POST", `/staff/vendors/${vendor.id}/users/${user?.id}/unlink`),
     );
-    expect(unlinked.telegramLinked).toBe(false);
+    expect(unlinked).toMatchObject({ telegramLinked: false, status: "pending" });
 
     const disabled = await ok<VendorUser>(
       api("manager", "POST", `/staff/vendors/${vendor.id}/users/${user?.id}/disable`),
     );
     expect(disabled.disabledAt).not.toBeNull();
+    expect(disabled.status).toBe("disabled");
     const enabled = await ok<VendorUser>(
       api("manager", "POST", `/staff/vendors/${vendor.id}/users/${user?.id}/enable`),
     );
@@ -829,5 +847,143 @@ describe("вендор → карточка → проверка → публи�
       expect(phones.phone).toBe(contactPhone);
       expect(phones.listingPhone).toMatch(/^\+99890\d{7}$/);
     });
+  });
+});
+
+describe("пользователи кабинета: приглашение, владелец, «убрать из кабинета»", () => {
+  const ownerPhone = phone();
+  const memberPhone = phone();
+  const knownPhone = phone();
+  const usersOf = (vendorId: string) => `/staff/vendors/${vendorId}/users`;
+  let vendor: VendorDetail;
+  let owner: VendorUser;
+  let member: VendorUser;
+
+  beforeAll(async () => {
+    vendor = await ok<VendorDetail>(
+      api("manager", "POST", "/staff/vendors", { name: `Kabinet ${tag}` }),
+      201,
+    );
+  });
+
+  it("модератор не приглашает; сотрудника площадки без владельца — 409 vendor_last_owner", async () => {
+    expect(
+      (await api("moderator", "POST", usersOf(vendor.id), { phone: memberPhone, role: "member" })).status,
+    ).toBe(403);
+    expect(
+      await error(api("manager", "POST", usersOf(vendor.id), { phone: memberPhone, role: "member" })),
+    ).toMatchObject({ status: 409, code: "vendor_last_owner" });
+  });
+
+  it("приглашение ждёт входа: роль и язык — как выбрали; в журнале — без имени и номера", async () => {
+    owner = await ok<VendorUser>(
+      api("manager", "POST", usersOf(vendor.id), {
+        phone: ownerPhone,
+        fullName: "Kamola",
+        role: "owner",
+        locale: "ru",
+      }),
+      201,
+    );
+    expect(owner).toMatchObject({
+      fullName: "Kamola",
+      role: "owner",
+      locale: "ru",
+      status: "pending",
+      notifiable: false,
+      accountLinked: false,
+      lastLoginAt: null,
+    });
+    member = await ok<VendorUser>(
+      api("manager", "POST", usersOf(vendor.id), { phone: memberPhone, role: "member", locale: "uz" }),
+      201,
+    );
+    expect(member).toMatchObject({ role: "member", locale: "uz", status: "pending" });
+    const { rows } = await admin.query<{ detail: unknown }>(
+      "select detail from app.audit_log where action = 'vendor_user.invite' and object_id = $1",
+      [member.id],
+    );
+    expect(rows).toEqual([
+      { detail: { vendor_id: vendor.id, role: "member", via: "phone", accepted: false } },
+    ]);
+    expect(JSON.stringify(rows)).not.toContain(memberPhone.slice(4));
+  });
+
+  it("номер уже подтверждён у аккаунта с Telegram — принято сразу, уведомления доходят, «вас добавили» — в очереди", async () => {
+    // Аккаунт с этим номером и Telegram; бот уже может ему писать как клиенту
+    const telegramId = 700_000_000 + randomInt(0, 99_999_999);
+    const tgHash = createHmac("sha256", ID_HASH_KEY).update(String(telegramId)).digest();
+    const {
+      rows: [account],
+    } = await admin.query<{ id: string }>("insert into app.accounts default values returning id");
+    await admin.query(
+      `insert into app.account_identities (account_id, kind, value_hash) values
+         ($1, 'phone', $2), ($1, 'telegram', $3)`,
+      [account?.id, createHmac("sha256", ID_HASH_KEY).update(knownPhone).digest(), tgHash],
+    );
+    await admin.query("insert into pii.account_profiles (account_id, telegram_id) values ($1, $2)", [
+      account?.id,
+      telegramId,
+    ]);
+    await admin.query("insert into app.clients (account_id, tg_id_hash, can_message) values ($1, $2, true)", [
+      account?.id,
+      tgHash,
+    ]);
+
+    const accepted = await ok<VendorUser>(
+      api("manager", "POST", usersOf(vendor.id), { phone: knownPhone, role: "member", locale: "uz" }),
+      201,
+    );
+    expect(accepted).toMatchObject({
+      status: "accepted",
+      accountLinked: true,
+      telegramLinked: true,
+      notifiable: true,
+    });
+    const { rows } = await admin.query<{ kind: string; payload: unknown }>(
+      "select kind, payload from app.outbox where recipient_kind = 'vendor_user' and recipient_id = $1",
+      [accepted.id],
+    );
+    expect(rows).toEqual([{ kind: "vendor.access_granted", payload: { vendor_id: vendor.id } }]);
+  });
+
+  it("последнего владельца не понизить, не отключить и не убрать — 409 vendor_last_owner", async () => {
+    const url = `${usersOf(vendor.id)}/${owner.id}`;
+    expect(await error(api("manager", "PATCH", url, { role: "member" }))).toMatchObject({
+      status: 409,
+      code: "vendor_last_owner",
+    });
+    expect(await error(api("manager", "POST", `${url}/disable`))).toMatchObject({
+      status: 409,
+      code: "vendor_last_owner",
+    });
+    expect(await error(api("manager", "DELETE", url))).toMatchObject({
+      status: 409,
+      code: "vendor_last_owner",
+    });
+    // Имя и язык — можно
+    const renamed = await ok<VendorUser>(
+      api("manager", "PATCH", url, { fullName: "Kamola K.", locale: "uz" }),
+    );
+    expect(renamed).toMatchObject({ fullName: "Kamola K.", locale: "uz", role: "owner" });
+  });
+
+  it("убрать из кабинета — 204: ни пользователя, ни профиля; повтор — 404; в журнале — remove", async () => {
+    const url = `${usersOf(vendor.id)}/${member.id}`;
+    expect((await api("moderator", "DELETE", url)).status).toBe(403);
+    expect((await api("manager", "DELETE", url)).status).toBe(204);
+    const detail = await ok<VendorDetail>(api("manager", "GET", `/staff/vendors/${vendor.id}`));
+    expect(detail.users.map((u) => u.id)).not.toContain(member.id);
+    const { rows: profiles } = await admin.query(
+      "select 1 from pii.vendor_user_profiles where vendor_user_id = $1",
+      [member.id],
+    );
+    expect(profiles).toEqual([]);
+    expect((await api("manager", "DELETE", url)).status).toBe(404);
+    const { rows } = await admin.query<{ detail: unknown }>(
+      "select detail from app.audit_log where action = 'vendor_user.remove' and object_id = $1",
+      [member.id],
+    );
+    expect(rows).toEqual([{ detail: { vendor_id: vendor.id, role: "member", had_account: false } }]);
   });
 });

@@ -32,6 +32,7 @@ import type {
   VendorMetrics,
   VendorMetricsList,
   VendorResponseStats,
+  VendorUser,
 } from "@bayramm/shared/api/staff";
 import { categoryConfig } from "@bayramm/shared/categories";
 import type { Page, Route } from "@playwright/test";
@@ -152,7 +153,30 @@ const DICTIONARIES: StaffDictionaries = {
 
 const CHECKLIST_OPEN = { done: false, at: null, by: null } as const;
 
-function vendorDetail(listings: readonly ListingDetail[], name = "Lola"): VendorDetail {
+/**
+ * Владелец кабинета вендора: вошёл, уведомления в Telegram доходят. Подмена с
+ * cabinetUsers: [CABINET_OWNER] — у кабинета уже есть владелец, можно звать сотрудников площадки
+ */
+export const CABINET_OWNER: VendorUser = {
+  id: "00000000-0000-4000-8200-000000000001",
+  fullName: "Шахло Каримова",
+  role: "owner",
+  locale: "uz",
+  status: "accepted",
+  telegramLinked: true,
+  telegramLinkedAt: iso,
+  notifiable: true,
+  accountLinked: true,
+  lastLoginAt: iso,
+  disabledAt: null,
+  createdAt: iso,
+};
+
+function vendorDetail(
+  listings: readonly ListingDetail[],
+  name = "Lola",
+  users: readonly VendorUser[] = [],
+): VendorDetail {
   return {
     id: VENDOR_ID,
     code: "V101",
@@ -176,7 +200,7 @@ function vendorDetail(listings: readonly ListingDetail[], name = "Lola"): Vendor
       contacts: CHECKLIST_OPEN,
       pdConsent: CHECKLIST_OPEN,
     },
-    users: [],
+    users: [...users],
     listings: listings.map((l) => ({
       id: l.id,
       name: l.name,
@@ -677,6 +701,8 @@ export interface StaffApi {
   readonly elevated: number;
   /** Отозванные сессии: account — сессия аккаунта после повышения */
   readonly loggedOut: ("account" | "staff")[];
+  /** Пользователи кабинета: «МЕТОД путь» и тело (приглашение, правка, отключение, удаление) */
+  readonly cabinet: { readonly key: string; readonly body: unknown }[];
 }
 
 const json = (route: Route, status: number, body: unknown) =>
@@ -705,6 +731,8 @@ export interface StaffApiOptions {
    * очередью модерации; фото и видео; торты) и заявка на кортеж
    */
   readonly seeded?: boolean;
+  /** Пользователи кабинета вендора в начале теста (по умолчанию — никого) */
+  readonly cabinetUsers?: readonly VendorUser[];
 }
 
 export async function mockStaffApi(
@@ -717,6 +745,7 @@ export async function mockStaffApi(
     role = "admin",
     fail: failures = {},
     seeded = false,
+    cabinetUsers = [],
   }: StaffApiOptions = {},
 ) {
   let elevated = 0;
@@ -738,7 +767,13 @@ export async function mockStaffApi(
       return elevated;
     },
     loggedOut: [],
+    cabinet: [],
   };
+  // Пользователи кабинета: приглашают, правят и убирают тесты; владелец есть всегда (как в базе)
+  const users: VendorUser[] = [...cabinetUsers];
+  const activeOwners = (except?: string) =>
+    users.filter((u) => u.id !== except && u.role === "owner" && u.status !== "disabled").length;
+  const activeOthers = (except: string) => users.some((u) => u.id !== except && u.status !== "disabled");
   const listings: ListingDetail[] = seeded ? seededListings() : [];
   let vendorName = "Lola";
   // Занятость каждой витрины и версия её календаря (растёт с каждой правкой)
@@ -825,7 +860,7 @@ export async function mockStaffApi(
     if (key === "GET /staff/dictionaries") return json(route, 200, DICTIONARIES);
     if (key === "GET /staff/vendors") {
       state.queries.push(`vendors?${url.searchParams}`);
-      const detail = vendorDetail(listings, vendorName);
+      const detail = vendorDetail(listings, vendorName, users);
       const category = url.searchParams.get("category");
       const list: VendorList = {
         total: 1,
@@ -846,8 +881,8 @@ export async function mockStaffApi(
               status: l.status,
               categoryCode: l.categoryCode,
             })),
-            users: 0,
-            linkedUsers: 0,
+            users: users.filter((u) => u.status !== "disabled").length,
+            linkedUsers: users.filter((u) => u.status !== "disabled" && u.telegramLinked).length,
           },
         ],
       };
@@ -856,7 +891,7 @@ export async function mockStaffApi(
       return json(route, 200, list);
     }
     if (key === `GET /staff/vendors/${VENDOR_ID}`)
-      return json(route, 200, vendorDetail(listings, vendorName));
+      return json(route, 200, vendorDetail(listings, vendorName, users));
     if (key === "POST /staff/vendors") {
       // Один вендор на подмену: «новый» — тот же V101 с новым названием и первой витриной
       const input = request.postDataJSON() as Record<string, unknown>;
@@ -869,7 +904,7 @@ export async function mockStaffApi(
       vendorName = input.name.trim();
       listings.splice(0, listings.length);
       if (typeof code === "string") listings.push(emptyListing(LISTING_ID, code, vendorName, "navruz"));
-      return json(route, 201, vendorDetail(listings, vendorName));
+      return json(route, 201, vendorDetail(listings, vendorName, users));
     }
     if (key === `POST /staff/vendors/${VENDOR_ID}/listings`) {
       const input = request.postDataJSON() as Record<string, unknown>;
@@ -885,6 +920,80 @@ export async function mockStaffApi(
       const listing = emptyListing(id, code, name, `vitrina-${listings.length + 1}`);
       listings.push(listing);
       return json(route, 201, listing);
+    }
+    if (key === `POST /staff/vendors/${VENDOR_ID}/users`) {
+      const input = request.postDataJSON() as Record<string, unknown>;
+      state.cabinet.push({ key, body: input });
+      const phone = typeof input.phone === "string" ? input.phone : "";
+      if (!/^\+998\d{9}$/.test(phone)) return fail(route, 422, "invalid_input", ["phone"]);
+      const role = input.role === "member" ? "member" : "owner";
+      if (role === "member" && activeOwners() === 0) return fail(route, 409, "vendor_last_owner");
+      const created: VendorUser = {
+        id: `00000000-0000-4000-8200-0000000001${String(users.length).padStart(2, "0")}`,
+        fullName: typeof input.fullName === "string" ? input.fullName : null,
+        role,
+        locale: input.locale === "ru" ? "ru" : "uz",
+        status: "pending",
+        telegramLinked: false,
+        telegramLinkedAt: null,
+        notifiable: false,
+        accountLinked: false,
+        lastLoginAt: null,
+        disabledAt: null,
+        createdAt: iso,
+      };
+      users.push(created);
+      return json(route, 201, created);
+    }
+    const cabinetUser = new RegExp(`^/staff/vendors/${VENDOR_ID}/users/([0-9a-f-]{36})(?:/([a-z]+))?$`).exec(
+      path,
+    );
+    if (cabinetUser?.[1]) {
+      const index = users.findIndex((u) => u.id === cabinetUser[1]);
+      const current = users[index];
+      if (!current) return fail(route, 404, "not_found");
+      const action = cabinetUser[2];
+      if (method === "POST" && action === "phone") return json(route, 200, { phone: "+998901112233" });
+      const body = method === "PATCH" ? (request.postDataJSON() as Record<string, unknown>) : null;
+      state.cabinet.push({ key, body });
+      // Последнего действующего владельца при других действующих — не понизить, не отключить, не убрать
+      const lastOwner =
+        current.role === "owner" && current.status !== "disabled" && activeOwners(current.id) === 0;
+      const losesOwner =
+        method === "DELETE" || action === "disable" || (method === "PATCH" && body?.role === "member");
+      if (lastOwner && losesOwner && activeOthers(current.id)) return fail(route, 409, "vendor_last_owner");
+      if (method === "DELETE" && action === undefined) {
+        users.splice(index, 1);
+        return route.fulfill({ status: 204 });
+      }
+      let next: VendorUser | null = null;
+      if (method === "PATCH" && action === undefined && body) {
+        next = {
+          ...current,
+          ...(body.role === "owner" || body.role === "member" ? { role: body.role } : {}),
+          ...(body.locale === "ru" || body.locale === "uz" ? { locale: body.locale } : {}),
+          ...("fullName" in body
+            ? { fullName: typeof body.fullName === "string" ? body.fullName : null }
+            : {}),
+        };
+      } else if (method === "POST" && action === "disable") {
+        next = { ...current, status: "disabled", disabledAt: iso, notifiable: false };
+      } else if (method === "POST" && action === "enable") {
+        const accepted = current.accountLinked || current.telegramLinked;
+        next = { ...current, status: accepted ? "accepted" : "pending", disabledAt: null };
+      } else if (method === "POST" && action === "unlink") {
+        next = {
+          ...current,
+          status: current.status === "disabled" ? "disabled" : "pending",
+          accountLinked: false,
+          telegramLinked: false,
+          telegramLinkedAt: null,
+          notifiable: false,
+        };
+      }
+      if (next === null) return fail(route, 404, "not_found");
+      users.splice(index, 1, next);
+      return json(route, 200, next);
     }
     if (key === "GET /staff/services") return json(route, 200, serviceQueue(listings));
     const decision = /^\/staff\/services\/([0-9a-f-]{36})\/(approve|decline)$/.exec(path);
