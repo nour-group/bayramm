@@ -140,6 +140,9 @@ describe("GET /staff/me и справочники", () => {
   it("справочники: районы, категории, сотрудники, минимум фото", async () => {
     const dict = await ok<StaffDictionaries>(api("manager", "GET", "/staff/dictionaries"));
     expect(dict.districts).toHaveLength(12);
+    // Район знает свой город: в форме витрины районы — под городом
+    expect((dict.cities ?? []).map((c) => c.code)).toContain("tashkent");
+    expect(dict.districts.every((d) => d.city === "tashkent")).toBe(true);
     expect(dict.categories.filter((c) => c.enabled).map((c) => c.code)).toEqual([
       "zags",
       "hall",
@@ -191,6 +194,18 @@ describe("вендор → карточка → проверка → публи�
     expect(
       await error(api("manager", "POST", "/staff/vendors", { name: "x", stir: "12", phone: "+7 912 000" })),
     ).toEqual({ status: 422, code: "invalid_input", details: ["name", "stir", "phone"] });
+  });
+
+  it("Telegram вендора — как у витрины: ссылка t.me тоже, хранится имя", async () => {
+    const changed = await ok<VendorDetail>(
+      api("manager", "PATCH", `/staff/vendors/${vendor.id}`, {
+        telegramUsername: "https://t.me/Test_Person2/",
+      }),
+    );
+    expect(changed.contacts.telegramUsername).toBe("Test_Person2");
+    expect(
+      await error(api("manager", "PATCH", `/staff/vendors/${vendor.id}`, { telegramUsername: "t.me/ab" })),
+    ).toEqual({ status: 422, code: "invalid_input", details: ["telegramUsername"] });
   });
 
   it("поиск по названию, СТИР и телефону пользователя кабинета", async () => {
@@ -963,6 +978,28 @@ describe("удаление: витрина, вендор, приглашение
       status: 409,
       code: "staff_invite_accepted",
     });
+  });
+
+  it("приглашение по ссылке t.me или @имени — имя без «@» в нижнем регистре; не имя — 422", async () => {
+    const username = newStaffUsername();
+    const invited = await ok<TeamList>(
+      api("admin", "POST", "/staff/team", {
+        username: `https://t.me/${username.toUpperCase()}`,
+        displayName: `Ссылкой ${tag}`,
+        role: "moderator",
+      }),
+      201,
+    );
+    expect(invited.items.find((m) => m.username === username)).toMatchObject({ accepted: false });
+    expect(
+      await error(
+        api("admin", "POST", "/staff/team", {
+          username: "@ab",
+          displayName: `Коротко ${tag}`,
+          role: "manager",
+        }),
+      ),
+    ).toEqual({ status: 422, code: "invalid_input", details: ["username"] });
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isDay, tashkentToday } from "./availability";
-import { Input, likePattern, normalizeTelegram, paging } from "./input";
+import { Input, likePattern, paging } from "./input";
 
 function parse<T>(body: Record<string, unknown>, read: (input: Input) => T): { value: T; errors: string[] } {
   const input = new Input(body);
@@ -96,28 +96,35 @@ describe("дни занятости", () => {
   });
 });
 
-describe("Telegram витрины", () => {
+// Сам разбор имени — normalizeTelegram в @bayramm/shared (telegram.test.ts): один на витрину,
+// вендора и приглашение в команду
+describe("Telegram: витрина, вендор, приглашение", () => {
   it.each([
     ["bayramm_hall", "bayramm_hall"],
     ["@Bayramm_Hall", "Bayramm_Hall"],
-    ["t.me/bayramm_hall", "bayramm_hall"],
     ["https://t.me/bayramm_hall/", "bayramm_hall"],
-    ["  telegram.me/bayramm_hall ", "bayramm_hall"],
   ])("%s → %s", (raw, name) => {
-    expect(normalizeTelegram(raw)).toBe(name);
+    expect(parse({ telegram: raw }, (input) => input.telegram("telegram"))).toEqual({
+      value: name,
+      errors: [],
+    });
   });
-
-  it.each(["abc", "1hall_name", "hall_", "hall name", "https://example.com/hall", "a".repeat(33)])(
-    "%s — не имя Telegram",
-    (raw) => {
-      expect(normalizeTelegram(raw)).toBeNull();
-    },
-  );
 
   it("в правке: пусто — убрать, мусор — ошибка поля", () => {
     const input = new Input({ telegram: "", other: "@bad name" });
     expect(input.telegram("telegram")).toBeNull();
     expect(input.telegram("other")).toBeUndefined();
     expect(() => input.done()).toThrow();
+  });
+
+  it("обязательное (приглашение): нет или пусто — ошибка поля", () => {
+    expect(parse({}, (input) => input.telegram("username", true)).errors).toEqual(["username"]);
+    expect(parse({ username: " " }, (input) => input.telegram("username", true)).errors).toEqual([
+      "username",
+    ]);
+    expect(parse({ username: "t.me/ops_lead" }, (input) => input.telegram("username", true))).toEqual({
+      value: "ops_lead",
+      errors: [],
+    });
   });
 });
