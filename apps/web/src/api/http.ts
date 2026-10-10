@@ -150,6 +150,7 @@ export function createHttpApi({
         // Фильтры по полям витрины — как есть (a.<поле>=…); имена и значения проверил экран
         ...query.filters,
         category: query.category,
+        city: query.city,
         district: query.district,
         date: query.date,
         guests: query.guests,

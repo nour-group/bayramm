@@ -51,6 +51,9 @@ export interface CatalogParams {
   readonly category: string;
   /** Фильтры по полям витрины категории */
   readonly filters: readonly AttributeFilter[];
+  /** Город: его районы и витрины без района (выездные) */
+  readonly city: string | null;
+  /** Район: только витрины в нём */
   readonly district: string | null;
   readonly date: string | null;
   readonly guests: number | null;
@@ -125,6 +128,7 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
   } else {
     bad.push(...Object.keys(query).filter((name) => name.startsWith("a.")));
   }
+  const city = code(query, "city", bad);
   const district = code(query, "district", bad);
   const date = dateParam(query, bad);
   const guests = int(query, "guests", MAX_GUESTS, bad);
@@ -147,7 +151,7 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
     if (after === null || after.sort !== sort || after.date !== date || after.guests !== guests)
       throw invalidCursor();
   }
-  return { category, filters, district, date, guests, sort, limit, after };
+  return { category, filters, city, district, date, guests, sort, limit, after };
 }
 
 // ── курсор ─────────────────────────────────────────────────────────────────

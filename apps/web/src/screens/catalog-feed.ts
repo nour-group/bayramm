@@ -3,16 +3,16 @@ import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAbort } from "../api/errors";
 import type { ClientApi } from "../api/types";
-import { CLIENT_CATEGORIES, hasCapacity, hasDistrict } from "../categories";
+import { CLIENT_CATEGORIES, hasCapacity } from "../categories";
 import { addDays, isIsoDate } from "../format";
 import { ALL_CATEGORIES } from "../routes";
 import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
 
-/* Фильтры каталога живут в адресе (?category=&date=&guests=&district=&sort=&a.<поле>=):
+/* Фильтры каталога живут в адресе (?category=&city=&district=&date=&guests=&sort=&a.<поле>=):
    ссылка «похожие» из «Моих заявок», кнопки бота и «назад» из карточки возвращают ту же
-   выдачу. Без category — все разделы одной выдачей («Все»): там только дата и порядок по
-   цене. Гости и район — только у категорий, где они есть (вместимость у залов, район у
-   залов и студий); порядок «вместительнее» — только у залов. */
+   выдачу. Без category — все разделы одной выдачей («Все»). Место — везде, и в «Все»: город
+   (его районы и выездные витрины без района) или район (только он; город — его). Гости —
+   только где вместимость (залы, рестораны), порядок «вместительнее» — там же. */
 
 export const SORTS = ["price_asc", "price_desc", "capacity_desc"] as const satisfies readonly CatalogSort[];
 
@@ -29,6 +29,8 @@ export interface CatalogFilters {
   readonly category: string;
   readonly date: string | null;
   readonly guests: number | null;
+  /** Город целиком; с районом не пишется — район уже говорит, какой город */
+  readonly city: string | null;
   readonly district: string | null;
   readonly sort: CatalogSort | null;
   /** Фильтры по полям витрины: a.<поле> → значение как в адресе */
@@ -39,6 +41,7 @@ export const NO_FILTERS: CatalogFilters = {
   category: ALL_CATEGORIES,
   date: null,
   guests: null,
+  city: null,
   district: null,
   sort: null,
   attrs: NO_ATTRS,
@@ -57,6 +60,9 @@ export const sortsOf = (category: string): readonly CatalogSort[] => {
   return config && hasCapacity(config) ? SORTS : SORTS.filter((s) => s !== "capacity_desc");
 };
 
+/** Код города и района — как в справочнике (app.cities, app.districts) */
+const PLACE_CODE = /^[a-z_]{2,30}$/;
+
 export function parseGuests(value: string | null): number | null {
   if (!value || !/^\d{1,5}$/.test(value.trim())) return null;
   const n = Number(value.trim());
@@ -72,15 +78,16 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
   const category = catalogCategory(query.get("category"));
   const code = category?.code ?? ALL_CATEGORIES;
   const date = query.get("date");
+  const city = query.get("city");
   const district = query.get("district");
   const sort = query.get("sort");
   return {
     category: code,
     date: isIsoDate(date) && date >= today && date <= addDays(today, DATE_HORIZON_DAYS) ? date : null,
     guests: category && hasCapacity(category) ? parseGuests(query.get("guests")) : null,
-    // Код района — как проверяет API: иначе 400 вместо выдачи
-    district:
-      category && hasDistrict(category) && district && /^[a-z_]{2,30}$/.test(district) ? district : null,
+    // Коды города и района — как проверяет API: иначе 400 вместо выдачи
+    city: city && PLACE_CODE.test(city) ? city : null,
+    district: district && PLACE_CODE.test(district) ? district : null,
     sort: sortsOf(code).find((s) => s === sort && s !== DEFAULT_SORT) ?? null,
     attrs: category ? readAttrFilters(category, query) : NO_ATTRS,
   };
@@ -92,6 +99,7 @@ export function filtersQuery(filters: CatalogFilters): Record<string, string | n
     category: filters.category === ALL_CATEGORIES ? null : filters.category,
     date: filters.date,
     guests: filters.guests,
+    city: filters.city,
     district: filters.district,
     sort: filters.sort,
     ...filters.attrs,
@@ -102,6 +110,7 @@ export function hasFilters(filters: CatalogFilters): boolean {
   return (
     filters.date !== null ||
     filters.guests !== null ||
+    filters.city !== null ||
     filters.district !== null ||
     Object.keys(filters.attrs).length > 0
   );
@@ -164,6 +173,7 @@ export function catalogQuery(filters: CatalogFilters): CatalogQuery {
     filters: Object.keys(filters.attrs).length > 0 ? filters.attrs : undefined,
     date: filters.date ?? undefined,
     guests: filters.guests ?? undefined,
+    city: filters.city ?? undefined,
     district: filters.district ?? undefined,
     sort: filters.sort ?? undefined,
     limit: PAGE_SIZE,

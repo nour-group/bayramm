@@ -86,6 +86,26 @@ describe("listCatalog", () => {
     expect(query?.parameters[placeholder - 1]).toBe(300);
   });
 
+  it("город — его районы и витрины без района (выездные); район — только он", async () => {
+    const fake = fakeDb();
+    await listCatalog(fake.db, parseCatalogQuery({ category: ["all"], city: ["tashkent"] }));
+    const query = fake.queries.find(isCatalog);
+    const sql = (query?.sql ?? "").replace(/\s+/g, " ");
+    const match =
+      /\(l\.district_code is null or l\.district_code in \(select d\.code from app\.districts d where d\.city_code = \$(\d+)\)\)/.exec(
+        sql,
+      );
+    expect(match).not.toBeNull();
+    expect(query?.parameters[Number(match?.[1]) - 1]).toBe("tashkent");
+
+    const byDistrict = fakeDb();
+    await listCatalog(byDistrict.db, parseCatalogQuery({ category: ["all"], district: ["yunusobod"] }));
+    const district = byDistrict.queries.find(isCatalog);
+    expect(district?.sql).toMatch(/"l"\."district_code" = \$\d+/);
+    expect(district?.sql).not.toContain("district_code is null");
+    expect(district?.parameters).toContain("yunusobod");
+  });
+
   it("курсор страницы с гостями помнит их число", async () => {
     const rows = [cardRow(1), cardRow(2)];
     const fake = fakeDb((q) => (isCatalog(q) ? rows : []));
@@ -370,17 +390,19 @@ describe("getListingDetail", () => {
 });
 
 describe("справочники и тексты согласий", () => {
-  it("справочники: только включённые категории, названия на двух языках", async () => {
+  it("справочники: только включённые категории, названия на двух языках, район — с городом", async () => {
     const fake = fakeDb((q) => {
       if (q.sql.includes("categories")) return [{ code: "hall", name_ru: "Площадка", name_uz: "Maydon" }];
+      if (q.sql.includes("cities")) return [{ code: "tashkent", name_ru: "Ташкент", name_uz: "Toshkent" }];
       if (q.sql.includes("districts"))
-        return [{ code: "chilonzor", name_ru: "Чиланзар", name_uz: "Chilonzor" }];
+        return [{ code: "chilonzor", name_ru: "Чиланзар", name_uz: "Chilonzor", city_code: "tashkent" }];
       if (q.sql.includes("occasions")) return [{ code: "toy", name_ru: "Свадьба", name_uz: "Toʻy" }];
       return [];
     });
     expect(await getDictionaries(fake.db)).toEqual({
       categories: [{ code: "hall", name: { ru: "Площадка", uz: "Maydon" } }],
-      districts: [{ code: "chilonzor", name: { ru: "Чиланзар", uz: "Chilonzor" } }],
+      cities: [{ code: "tashkent", name: { ru: "Ташкент", uz: "Toshkent" } }],
+      districts: [{ code: "chilonzor", name: { ru: "Чиланзар", uz: "Chilonzor" }, city: "tashkent" }],
       occasions: [{ code: "toy", name: { ru: "Свадьба", uz: "Toʻy" } }],
     });
     expect(fake.queries.find((q) => q.sql.includes("categories"))?.sql).toContain('"enabled" = $1');

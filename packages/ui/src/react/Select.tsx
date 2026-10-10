@@ -17,6 +17,8 @@ export interface SelectOption<V extends string = string> {
   /** Вторая строка мелким: пояснение к варианту */
   readonly hint?: string;
   readonly disabled?: boolean;
+  /** Вложенный вариант (район внутри города): с отступом под вариантом уровнем выше */
+  readonly nested?: boolean;
 }
 
 export interface SelectProps<V extends string> {
@@ -238,7 +240,13 @@ export function Select<V extends string>({
                 role="option"
                 aria-selected={index === selected}
                 aria-disabled={option.disabled || undefined}
-                className={index === active ? "ui-option is-active" : "ui-option"}
+                className={[
+                  "ui-option",
+                  option.nested ? "is-nested" : "",
+                  index === active ? "is-active" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onClick={() => choose(index)}
                 onMouseMove={() => {
                   if (index !== active && enabled(index)) setActive(index);

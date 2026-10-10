@@ -81,16 +81,16 @@ const SCREENS: readonly Screen[] = [
     path: `${PATHS.catalog}?date=${BUSY_DAY}`,
     ready: ".card .chip",
     setup: async (page) => {
-      await page.locator(".filters button[aria-haspopup=dialog]").click();
+      await page.locator(".filter-row button[aria-haspopup=dialog]").click();
       await page.locator(".ui-layer .ui-cal").waitFor();
     },
   },
   {
-    name: "каталог: список районов",
+    name: "каталог: город и районы",
     path: PATHS.category("hall"),
     ready: ".card",
     setup: async (page) => {
-      await page.locator(".filters button[aria-haspopup=listbox]").click();
+      await page.locator(".filter-place").click();
       await page.getByRole("listbox").waitFor();
     },
   },
@@ -120,7 +120,7 @@ const SCREENS: readonly Screen[] = [
     },
   },
   {
-    // Фильтр задан — «Сбросить фильтры» в блоке «Фильтры» (на компьютере — в колонке слева)
+    // Фильтр задан — «Сбросить фильтры» под строкой фильтров
     name: "каталог кортежа с фильтром",
     path: `/catalog?category=car&date=${BUSY_DAY}&a.fleet.class=premium`,
     ready: ".filters-reset",
@@ -252,8 +252,8 @@ test.describe("доступность", () => {
         return document.getElementById(list?.getAttribute("aria-activedescendant") ?? "")?.textContent ?? "";
       });
 
-    // Список районов: стрелка открывает, буквы ищут, Enter выбирает
-    const district = page.locator(".filters button[aria-haspopup=listbox]");
+    // Город и районы: стрелка открывает, буквы ищут, Enter выбирает
+    const district = page.locator(".filter-place");
     await district.focus();
     const before = await scrollY();
     await page.keyboard.press("ArrowDown");
@@ -277,7 +277,7 @@ test.describe("доступность", () => {
     await expect(page).toHaveURL(/[?&]district=chilonzor/);
 
     // Дата: Enter открывает календарь с фокусом на дне, стрелка — следующий день, Enter — выбор
-    const date = page.locator(".filters button[aria-haspopup=dialog]");
+    const date = page.locator(".filter-row button[aria-haspopup=dialog]");
     await date.focus();
     await page.keyboard.press("Enter");
     const focusedDay = page.locator(".ui-layer button.ui-cal-day:focus");

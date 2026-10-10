@@ -33,6 +33,8 @@ export interface DateFieldProps {
   readonly "aria-describedby"?: string;
   /** Иконка слева; по умолчанию — календарь */
   readonly icon?: ReactNode;
+  /** field — поле формы во всю ширину; compact — пилюля в строке фильтров */
+  readonly size?: "field" | "compact";
   readonly className?: string;
 }
 
@@ -52,6 +54,7 @@ export function DateField({
   id,
   disabled = false,
   icon,
+  size = "field",
   className,
   "aria-invalid": invalid,
   "aria-describedby": describedBy,
@@ -74,7 +77,13 @@ export function DateField({
     if (date !== value) onChange(date);
   };
 
-  const classes = ["ui-select", "ui-select-field", "ui-date", value ? "has-value" : "", open ? "is-open" : ""]
+  const classes = [
+    "ui-select",
+    `ui-select-${size}`,
+    "ui-date",
+    value ? "has-value" : "",
+    open ? "is-open" : "",
+  ]
     .concat(className ?? "")
     .filter(Boolean)
     .join(" ");

@@ -109,10 +109,25 @@ describe("styles.css клиента", () => {
     expect(hover).toMatch(/:hover/);
   });
 
-  it("три поля фильтров каталога — в строку с 560px: правило того же веса, что «район во всю ширину»", () => {
-    // Раньше там стояло .filters .field:last-child — вес меньше, и район растягивался и на компьютере
-    const wide = atRuleBody(/@media \(min-width: 560px\)/);
-    expect(wide).toMatch(/\.filters \.field:nth-child\(3\):last-child \{\s*grid-column: auto;/);
+  it("фильтры каталога — одной строкой: на телефоне и планшете лента вбок (обе оси) и гаснет у края", () => {
+    const row = declarationsOf(".filter-row");
+    expect(row).toMatch(/overflow-x: auto/);
+    expect(row).toMatch(/overflow-y: hidden/);
+    expect(row).toMatch(/(^|;)\s*mask-image: linear-gradient/);
+    const desktop = atRuleBody(/@media \(min-width: 1024px\)/);
+    expect(desktop).toMatch(
+      /\.filter-row \{[^}]*flex-wrap: wrap;[^}]*overflow: visible;[^}]*mask-image: none;/,
+    );
+  });
+
+  it.each([
+    [".filter-pill", /(^|\})\s*\.filter-pill \{([^}]*)\}/],
+    [".site-nav a", /(^|\})\s*\.site-nav a \{([^}]*)\}/],
+  ] as const)("%s: пилюля с зоной нажатия 44px", (selector, pattern) => {
+    const body = selector === ".site-nav a" ? atRuleBody(/@media \(min-width: 1024px\)/) : css;
+    const rule = pattern.exec(body)?.[2] ?? "";
+    expect(rule).toMatch(/min-height: var\(--hit-min\)/);
+    expect(rule).toMatch(/border-radius: var\(--r-999\)/);
   });
 
   it("лента разделов на телефоне гаснет у края (видно, что дальше есть ещё), с планшета — нет", () => {
@@ -124,7 +139,12 @@ describe("styles.css клиента", () => {
 
   it("выбранное объявлено после наведения (ловушка №7)", () => {
     const hover = css.search(/@media \(hover: hover\)/);
-    for (const selector of ['.lang button[aria-pressed="true"]', '.tabs a[aria-current="page"]'])
+    for (const selector of [
+      '.lang button[aria-pressed="true"]',
+      '.tabs a[aria-current="page"]',
+      '.site-nav a[aria-current="page"]',
+      ".filter-pill.is-on",
+    ])
       expect(css.indexOf(selector), selector).toBeGreaterThan(hover);
   });
 

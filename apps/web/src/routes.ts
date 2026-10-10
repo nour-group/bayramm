@@ -127,7 +127,7 @@ export const isCategoryParam = (value: string | null | undefined): value is Clie
  * Параметры фильтров каталога в адресе (catalog-feed.ts). Фильтры по полям витрины —
  * «a.<поле>» (ATTRIBUTE_FILTER_PREFIX), их набор у каждой категории свой
  */
-export const CATALOG_PARAMS = ["category", "date", "guests", "district", "sort"] as const;
+export const CATALOG_PARAMS = ["category", "date", "guests", "city", "district", "sort"] as const;
 
 /**
  * Старые ссылки на каталог с фильтрами — корень с ?date=&guests=… (до лендинга каталог жил

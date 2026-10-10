@@ -41,11 +41,11 @@ describe("каталог", () => {
     const guests = field("Гости");
     expect(guests?.value).toBe("200");
     expect(guests?.inputMode).toBe("numeric");
-    const district = field("Район");
-    expect(district?.textContent).toBe("Чиланзар");
+    const place = field("Город и район");
+    expect(place?.textContent).toBe("Чиланзар");
     for (const card of document.querySelectorAll(".card")) expect(card.textContent).toContain("Чиланзар");
 
-    await choose(district, "все районы");
+    await choose(place, "Ташкент — весь город");
     await waitFor(() => !window.location.search.includes("district"), "район снят");
     expect(window.location.search).toBe("?category=hall&guests=200");
   });
@@ -60,12 +60,12 @@ describe("каталог", () => {
     expect(chips.find((c) => c.textContent === "Тойханы")?.getAttribute("href")).toBe(
       "/catalog?category=hall",
     );
-    // Разделы вперемешку: у карточки — раздел; фильтров раздела (гости, район) нет
+    // Разделы вперемешку: у карточки — раздел; гостей (они у раздела) нет, место — есть
     expect(document.querySelector(".card-meta")?.textContent).toMatch(
       /Залы|Кортежи|Фото|Торты|Цветы|Подарки|Декор/,
     );
     expect(field("Гости")).toBeNull();
-    expect(field("Район")).toBeNull();
+    expect(field("Город и район")?.textContent).toBe("Ташкент — весь город");
   });
 
   it("лента догружается по курсору, без повторов", async () => {

@@ -73,24 +73,63 @@ describe("каталог категории", () => {
     ]);
   });
 
-  it("порядок экрана: заголовок, разделы, фильтры одним блоком «Фильтры», выдача; сброс — в блоке", async () => {
+  it("порядок экрана: заголовок, разделы, строка фильтров, выдача; сброс — под строкой", async () => {
     await mount({ path: "/catalog?category=car&date=2026-10-08", mock: { listings: ALL } });
     await waitFor(() => cardNames().length === 3, "кортежи");
     const screen = document.querySelector(".catalog") as HTMLElement;
-    const order = [".catalog-head h1", ".cat-switch", ".filters-panel", ".catalog-list"].map((selector) =>
+    const order = [".catalog-head h1", ".cat-switch", ".filters-panel", ".catalog-body"].map((selector) =>
       [...screen.querySelectorAll("*")].indexOf(screen.querySelector(selector) as Element),
     );
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    // Один блок фильтров с заголовком для диктора: дата и поля витрины — внутри него
+    // Главные фильтры — одной строкой пилюль: место, дата, «Фильтры» (поля витрины), порядок
     const panel = document.querySelector(".filters-panel") as HTMLElement;
-    expect(panel.getAttribute("aria-labelledby")).toBe(panel.querySelector("h2")?.id);
-    expect(panel.querySelector("h2")?.textContent).toBe("Фильтры");
-    expect(panel.querySelector(".filters button[aria-haspopup=dialog]")).not.toBeNull();
-    expect(panel.querySelector(".filters-side .attr-filters")).not.toBeNull();
-    // Есть фильтр — «Сбросить фильтры» в блоке; он снимает всё, кроме раздела
+    expect(panel.getAttribute("aria-label")).toBe("Фильтры");
+    const row = panel.querySelector(".filter-row") as HTMLElement;
+    const visible = [...row.children].filter(
+      (el) => !el.classList.contains("sr-only") && !el.hasAttribute("hidden"),
+    );
+    expect(visible.map((el) => el.className.split(" ")[0])).toEqual([
+      "ui-select",
+      "ui-select",
+      "filter-pill",
+      "sort",
+    ]);
+    expect(field("Город и район")).toBe(row.querySelector(".filter-place"));
+    expect(field("Дата")).toBe(row.querySelector(".ui-date"));
+    expect(row.querySelector(".filter-place")?.textContent).toContain("Ташкент — весь город");
+    expect(row.querySelector(".ui-date")?.textContent).toContain("8 окт");
+    // Поля витрины — колонкой рядом с выдачей (видна на компьютере) и шторкой по «Фильтры»
+    expect(document.querySelector(".catalog-body .filters-side .attr-filters")).not.toBeNull();
+    // Есть фильтр — «Сбросить фильтры» под строкой; он снимает всё, кроме раздела
     await click(byText(".filters-panel .filters-reset", "Сбросить фильтры"));
     await waitFor(() => window.location.search === "?category=car", "фильтры сняты");
     expect(document.querySelector(".filters-reset")).toBeNull();
+  });
+
+  it("место: весь Ташкент или один район — в любом разделе; район уходит в адрес и в выдачу", async () => {
+    await mount({ path: "/catalog?category=hall" });
+    await waitFor(() => cardNames().length > 0, "залы");
+    const place = document.querySelector(".filter-place") as HTMLElement;
+    await click(place);
+    const options = [...document.querySelectorAll('[role="option"]')];
+    // Первая строка — город целиком, под ней районы с отступом
+    expect(options[0]?.textContent).toBe("Ташкент — весь город");
+    expect(options[0]?.classList.contains("is-nested")).toBe(false);
+    expect(options.slice(1).every((o) => o.classList.contains("is-nested"))).toBe(true);
+    expect(options.map((o) => o.textContent)).toContain("Юнусабад");
+    await click(options.find((o) => o.textContent === "Юнусабад"));
+    await waitFor(() => window.location.search === "?category=hall&district=yunusobod", "район в адресе");
+    await waitFor(
+      () =>
+        cardNames().length > 0 &&
+        [...document.querySelectorAll(".cards .card-meta")].every((m) => m.textContent?.includes("Юнусабад")),
+      "залы Юнусабада",
+    );
+    expect(document.querySelector(".filter-place")?.classList.contains("is-set")).toBe(true);
+    expect(document.querySelector(".filter-place")?.textContent).toContain("Юнусабад");
+    // Снова весь город — район снят
+    await choose(document.querySelector(".filter-place"), "Ташкент — весь город");
+    await waitFor(() => window.location.search === "?category=hall", "весь город");
   });
 
   it("смена категории сохраняет дату; отметки — свободно, частично занято, занято", async () => {

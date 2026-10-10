@@ -100,7 +100,7 @@ test.describe("лендинг в браузере", () => {
     expect(params.get("guests")).toBe("150");
     expect(params.get("category")).toBe("hall");
     // Каталог применил фильтры: поле гостей заполнено, отметки на дату у карточек
-    const filters = page.locator(".catalog .filters");
+    const filters = page.locator(".catalog .filter-row");
     await expect(filters.getByRole("spinbutton")).toHaveValue("150");
     await page.locator(".cards .card .chip").first().waitFor();
 
@@ -174,6 +174,17 @@ test.describe("компьютер (1280)", () => {
     await open(page, PATHS.category("hall"), ".card");
     await expect(page.locator("nav.site-nav")).toBeVisible();
     await expect(page.locator("nav.tabs")).toBeHidden();
+    // Разделы в шапке — кнопками со значком; текущий залит
+    for (const link of await page.locator("nav.site-nav a").all()) {
+      await expect(link.locator("svg")).toBeVisible();
+      expect((await link.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    // Главные фильтры — одной строкой: место, дата, гости, порядок — на одной высоте
+    const tops = await page
+      .locator(".filter-row > :is(.ui-select, .filter-guests, .sort)")
+      .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+    expect(tops.length).toBe(4);
+    expect(new Set(tops).size).toBe(1);
     // У залов есть фильтры по полям витрины (парковка, кухня, доступность) — колонкой слева
     await expect(page.locator(".filters-side")).toBeVisible();
     await expect(page.locator(".filters-open")).toBeHidden();

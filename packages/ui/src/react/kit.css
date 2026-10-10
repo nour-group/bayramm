@@ -340,6 +340,15 @@ html.ui-lock {
   background: var(--white);
 }
 
+/* Вложенный вариант (район в городе): отступ под родителем и тонкая линия дерева */
+.ui-option.is-nested {
+  padding-left: 30px;
+  background-image: linear-gradient(var(--rule), var(--rule));
+  background-position: 16px 0;
+  background-size: 1px 100%;
+  background-repeat: no-repeat;
+}
+
 .ui-option-text {
   display: flex;
   flex-direction: column;

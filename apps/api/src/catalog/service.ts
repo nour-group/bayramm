@@ -77,9 +77,15 @@ export async function getDictionaries(db: Db): Promise<Dictionaries> {
       .orderBy("sort")
       .orderBy("code")
       .execute();
+    const cities = await trx
+      .selectFrom("app.cities")
+      .select(["code", "name_ru", "name_uz"])
+      .orderBy("sort")
+      .orderBy("code")
+      .execute();
     const districts = await trx
       .selectFrom("app.districts")
-      .select(["code", "name_ru", "name_uz"])
+      .select(["code", "name_ru", "name_uz", "city_code"])
       .orderBy("sort")
       .orderBy("code")
       .execute();
@@ -95,7 +101,8 @@ export async function getDictionaries(db: Db): Promise<Dictionaries> {
     });
     return {
       categories: categories.map(item),
-      districts: districts.map(item),
+      cities: cities.map(item),
+      districts: districts.map((d) => ({ ...item(d), city: d.city_code })),
       occasions: occasions.map(item),
     } satisfies Dictionaries;
   });
@@ -352,7 +359,7 @@ export function attributeFilter(filter: AttributeFilter): RawBuilder<boolean> {
 
 /** GET /catalog/listings: страница выдачи и курсор следующей (null — последняя) */
 export async function listCatalog(db: Db, params: CatalogParams): Promise<CatalogPage> {
-  const { category, filters, district, date, guests, sort, limit, after } = params;
+  const { category, filters, city, district, date, guests, sort, limit, after } = params;
   const key = sortKey(sort, guests);
   const source: DayLoadSource = date === null ? NO_DATE : { date, category };
   const busy = busyOn(source);
@@ -360,6 +367,13 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
     publicListings(trx, source)
       .select(key.as("sort_key"))
       .$if(category !== ALL_CATEGORIES, (qb) => qb.where("l.category_code", "=", category))
+      // Город: витрины в его районах и без района — выездные (адреса нет, приезжают сами)
+      .$if(city !== null, (qb) =>
+        qb.where(
+          sql<boolean>`(l.district_code is null or l.district_code in
+            (select d.code from app.districts d where d.city_code = ${city as string}))`,
+        ),
+      )
       .$if(district !== null, (qb) => qb.where("l.district_code", "=", district as string))
       .$if(guests !== null, (qb) =>
         qb.where(sql<boolean>`(l.cap_max is null or l.cap_max >= ${guests as number})`),
