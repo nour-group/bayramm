@@ -33,6 +33,7 @@ import { ConfirmSheet, Tooltip, UiIcon } from "@bayramm/ui/react";
 import { useEffect, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { partWindow } from "../categories";
+import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
 import { ErrorText, LoadedView } from "../ui";
 
@@ -172,6 +173,15 @@ export function Calendar({ listingId, category }: { listingId: string; category:
   const [range, setRange] = useState<Range | null>(null);
   // Режим parts: открытый день — его части под сеткой
   const [opened, setOpened] = useState<string | null>(null);
+  // На телефоне части дня — под месяцем, у нижних панелей: открыли день — прокрутить к ним
+  // (scrollIntoView есть не везде — ловушка №5; запас под панелями — scroll-margin в styles.css)
+  const dayParts = useRef<HTMLElement>(null);
+  const phone = usePhone();
+  useEffect(() => {
+    if (!opened || !phone) return;
+    const frame = requestAnimationFrame(() => dayParts.current?.scrollIntoView?.({ block: "nearest" }));
+    return () => cancelAnimationFrame(frame);
+  }, [opened, phone]);
   // «Освободить» несколько дней — подтверждение со счётом
   const [freeing, setFreeing] = useState<FreeCount | null>(null);
   // Листнули месяц: на экране — прежний ответ, пока не пришёл новый (useLoad его не стирает)
@@ -421,7 +431,7 @@ export function Calendar({ listingId, category }: { listingId: string; category:
                 )}
               </ul>
               {opened && openedState ? (
-                <section className="day-parts" aria-label={t.pickedDay(dayName(opened))}>
+                <section ref={dayParts} className="day-parts" aria-label={t.pickedDay(dayName(opened))}>
                   <p className="day-parts-title">{t.pickedDay(dayName(opened))}</p>
                   <div className="day-part-row">
                     <span className="day-part-name">

@@ -2862,6 +2862,12 @@ textarea.input {
   background: var(--white);
 }
 
+/* Открытый день на телефоне прокручивается к частям: целиком над нижней панелью и панелью действий */
+.app-phone .day-parts {
+  scroll-margin-top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)) + 12px);
+  scroll-margin-bottom: calc(var(--tabbar-full) + var(--pad-b) + 84px);
+}
+
 .day-parts-title {
   margin: 0;
   color: var(--plum);
