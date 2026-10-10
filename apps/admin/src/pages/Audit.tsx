@@ -35,6 +35,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** Статусы витрины и роли — «было → стало» в подробностях */
 const STATE_WORDS: Readonly<Record<string, string>> = { ...t.status, ...t.roles };
+/** Подробности, значение которых — статус или роль; via — как пригласили сотрудника */
+const STATE_KEYS: ReadonlySet<string> = new Set(["from", "to", "status", "role"]);
 
 /** Группы действий и, если в ссылке своё начало кода, — оно тоже (как записано) */
 function actionOptions(current: string | undefined) {
@@ -371,7 +373,8 @@ function detailValue(key: string, value: unknown): string | null {
       .join(", ");
   if (typeof value === "object" && value !== null) return JSON.stringify(value);
   const raw = String(value);
-  return key === "from" || key === "to" ? (STATE_WORDS[raw] ?? raw) : raw;
+  if (key === "via") return t.auditVia[raw] ?? raw;
+  return STATE_KEYS.has(key) ? (STATE_WORDS[raw] ?? raw) : raw;
 }
 
 /** «поля: название, цена от · было: Черновик»; пусто — когда показывать нечего */

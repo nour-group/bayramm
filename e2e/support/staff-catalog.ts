@@ -118,6 +118,13 @@ export function refresh(listing: ListingDetail): ListingDetail {
     priceFromUzs: cheapest?.priceUzs ?? null,
     priceUnit: cheapest?.priceUnit ?? listing.priceUnit,
     blockers: blockersOf(withMissing),
+    // Заявки знает подмена API (staff-api.ts); здесь — только статус
+    deleteBlocker:
+      listing.deleteBlocker === "requests"
+        ? "requests"
+        : listing.status === "review" || listing.status === "active"
+          ? "published"
+          : null,
   };
 }
 
@@ -156,6 +163,7 @@ export function emptyListing(id: string, categoryCode: string, name: string, slu
     vendor: VENDOR_REF,
     history: [{ from: null, to: "draft", reason: null, actorKind: "staff", actorName: null, at: iso }],
     pendingRevision: null,
+    deleteBlocker: null,
   });
 }
 

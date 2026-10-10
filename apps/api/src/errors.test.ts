@@ -104,6 +104,24 @@ describe("toApiError: коды Postgres", () => {
     expect(mapped(pgError("BR004")).details).toEqual([]);
   });
 
+  it("нельзя удалить: 409 и причина кодом из DETAIL; у приглашения причина — не код", () => {
+    expect(mapped(pgError("BR029", { detail: "requests" }))).toEqual({
+      status: 409,
+      code: "listing_in_use",
+      details: ["requests"],
+    });
+    expect(mapped(pgError("BR030", { detail: "published" }))).toEqual({
+      status: 409,
+      code: "vendor_in_use",
+      details: ["published"],
+    });
+    expect(mapped(pgError("BR033", { detail: "приглашение принято: отключите сотрудника" }))).toEqual({
+      status: 409,
+      code: "staff_invite_accepted",
+      details: undefined,
+    });
+  });
+
   it("неизвестный BR-код — 422, а не 500", () => {
     expect(mapped(pgError("BR999"))).toMatchObject({ status: 422, code: "rule_violation" });
   });

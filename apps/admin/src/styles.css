@@ -1468,6 +1468,32 @@ textarea.input {
   margin: 0;
 }
 
+/* Шапка вендора: код и менеджер слева, «Удалить вендора» (на телефоне — «Ещё») справа */
+.vendor-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.vendor-head > p {
+  margin: 0;
+}
+
+.vendor-delete {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--gap-5);
+  max-width: 100%;
+}
+
+.vendor-delete p {
+  margin: 0;
+  text-align: end;
+}
+
 .reason {
   margin: 4px 0 0;
   color: var(--ink);

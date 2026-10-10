@@ -10,6 +10,7 @@ import type {
   StaffRequestDetail,
   StaffRequestList,
   TeamList,
+  VendorDetail,
 } from "@bayramm/shared/api/staff";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -44,6 +45,7 @@ const ADMIN: StaffMe = {
     "team.manage",
     "settings.write",
     "metrics.read",
+    "vendors.delete",
   ],
 };
 
@@ -454,6 +456,52 @@ describe("телефон: читаемость списков", () => {
     screenWidth(1280);
     await mount("/team");
     expect(order().filter(Boolean)).toEqual(["invite"]);
+  });
+
+  it("вендор: «Удалить вендора» — в «Ещё» шапки, подтверждение — шторкой с кодом вендора", async () => {
+    const mark = { done: false, at: null, by: null };
+    const vendor: VendorDetail = {
+      id: VENDOR_ID,
+      code: "V101",
+      name: "Oqsaroy",
+      legalForm: null,
+      contractNo: null,
+      manager: null,
+      createdAt: "2026-09-29T06:00:00.000Z",
+      updatedAt: "2026-09-29T06:00:00.000Z",
+      contacts: {
+        legalName: null,
+        stir: null,
+        legalAddress: null,
+        contactPerson: null,
+        contactRole: null,
+        telegramUsername: null,
+      },
+      checklist: { contract: mark, stir: mark, contacts: mark, pdConsent: mark },
+      users: [],
+      listings: [],
+      deleteBlocker: null,
+    };
+    mockApi(ADMIN, {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(vendor),
+      [`GET /api/staff/metrics/vendors/${VENDOR_ID}`]: json({ error: { code: "not_found" } }, 404),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    const more = container.querySelector<HTMLButtonElement>(".vendor-head .btn-more");
+    expect(more?.textContent).toContain(t.more);
+    // На телефоне отдельной красной кнопки в шапке нет — только «Ещё»
+    expect(
+      [...container.querySelectorAll(".vendor-head button")].some((b) => b.textContent === t.vendorDelete),
+    ).toBe(false);
+    await click(more);
+    const item = [...(dialog()?.querySelectorAll<HTMLButtonElement>(".menu-item") ?? [])].find(
+      (b) => b.textContent === t.vendorDelete,
+    );
+    expect(item?.className).toContain("menu-danger");
+    await click(item);
+    const sheet = document.querySelector<HTMLElement>("[role=alertdialog]");
+    expect(sheet?.textContent).toContain(t.vendorDeleteCode("V101"));
+    expect(sheet?.querySelector("input")?.className).toBe("input");
   });
 
   it("заявка: источник — словами; клиент и телефоны вендора выше истории везде, где нет двух колонок", async () => {

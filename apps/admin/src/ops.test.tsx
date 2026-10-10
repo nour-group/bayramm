@@ -42,12 +42,14 @@ const OUTBOX_ID = "eeeeeeee-0000-0000-0000-000000000001";
 const ADMIN: StaffMe["permissions"] = [
   "catalog.read",
   "vendors.write",
+  "vendors.delete",
   "vendor_users.write",
   "listings.write",
   "listings.submit",
   "listings.publish",
   "listings.moderate",
   "listings.draft",
+  "listings.delete",
   "photos.moderate",
   "vendor_phones.read",
   "requests.read",
@@ -695,6 +697,25 @@ describe("журнал", () => {
     expect(detailText({ vendor_id: VENDOR_ID })).toBe("");
   });
 
+  it("удаление витрины и вендора, отзыв приглашения: статус и роль словами, числа — как есть", () => {
+    expect(t.auditActions["listing.delete"]).toBeDefined();
+    expect(t.auditActions["vendor.delete"]).toBeDefined();
+    expect(t.auditActions["staff.invite_revoke"]).toBeDefined();
+    expect(
+      detailText({ vendor_id: VENDOR_ID, category: "car", status: "suspended", photos: 4, busy_days: 2 }),
+    ).toBe(
+      [
+        `${t.auditDetailKeys.category}: car`,
+        `${t.auditDetailKeys.status}: ${t.status.suspended}`,
+        `${t.auditDetailKeys.photos}: 4`,
+        `${t.auditDetailKeys.busy_days}: 2`,
+      ].join(" · "),
+    );
+    expect(detailText({ role: "manager", via: "phone" })).toBe(
+      `${t.auditDetailKeys.role}: ${t.roles.manager} · ${t.auditDetailKeys.via}: ${t.auditVia.phone}`,
+    );
+  });
+
   it("действие в фильтре — группа («Заявки»), на сервер уходит начало кода; свой код из ссылки — тоже вариант", async () => {
     mockApi(staff("admin", ADMIN), { "GET /api/staff/audit": json(LIST) });
     await mount("/audit?action=listing.");
@@ -879,6 +900,46 @@ describe("команда", () => {
       phone: "+998001234567",
     });
     expect(text()).toContain(t.invited);
+  });
+
+  it("приглашение, которое не приняли, отзывается через подтверждение; у принятых и у себя — нет", async () => {
+    const pending = "00000000-0000-0000-0000-00000000a002";
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/team": json(TEAM),
+      [`DELETE /api/staff/team/${pending}`]: json({ items: [TEAM.items[0], TEAM.items[2]] }),
+    });
+    await mount("/team");
+    const rows = () => [...container.querySelectorAll("tbody tr")];
+    const revokeIn = (row: Element | undefined) =>
+      [...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.inviteRevoke);
+    expect(rows().map((row) => revokeIn(row) !== undefined)).toEqual([false, true, false]);
+
+    await click(revokeIn(rows()[1]));
+    const sheet = document.querySelector<HTMLElement>('[role="alertdialog"]');
+    expect(sheet?.textContent).toContain(t.inviteRevokeText("Test manager"));
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    await click([...(sheet?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.inviteRevoke));
+    expect(lastCall(`/team/${pending}`)?.method).toBe("DELETE");
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(text()).not.toContain("Test manager");
+  });
+
+  it("приглашение успели принять — 409 словами в подтверждении, строка остаётся", async () => {
+    const pending = "00000000-0000-0000-0000-00000000a002";
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/team": json(TEAM),
+      [`DELETE /api/staff/team/${pending}`]: json(
+        { error: { code: "staff_invite_accepted", message: "accepted" } },
+        409,
+      ),
+    });
+    await mount("/team");
+    const row = [...container.querySelectorAll("tbody tr")][1];
+    await click([...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.inviteRevoke));
+    const sheet = document.querySelector<HTMLElement>('[role="alertdialog"]');
+    await click([...(sheet?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.inviteRevoke));
+    expect(sheet?.querySelector('[role="alert"]')?.textContent).toBe(t.api.staff_invite_accepted);
+    expect(text()).toContain("Test manager");
   });
 
   it("менеджеру раздела нет в навигации", async () => {

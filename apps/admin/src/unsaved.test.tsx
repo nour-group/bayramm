@@ -56,6 +56,7 @@ const VENDOR: VendorDetail = {
   },
   users: [],
   listings: [],
+  deleteBlocker: null,
 };
 
 const LIST: VendorList = { total: 0, items: [] };

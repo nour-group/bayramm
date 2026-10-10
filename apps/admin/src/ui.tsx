@@ -128,6 +128,18 @@ export function ErrorText({
   );
 }
 
+/**
+ * Отказ удалить (listing_in_use, vendor_in_use): у причины кодом (details) — свои слова и что
+ * сделать вместо; иначе — текст ошибки по коду
+ */
+export function deleteFailureText(
+  failure: Pick<Failure, "code" | "details">,
+  reasons: Readonly<Record<string, string>>,
+): string {
+  const reason = failure.details[0];
+  return (reason === undefined ? undefined : reasons[reason]) ?? apiErrorText(failure.code);
+}
+
 /** Повтор может помочь: нет связи, сбой сервера, лимит частоты. 403 и 404 повтор не исправит */
 export function isRetryable(failure: Pick<Failure, "status">): boolean {
   return failure.status === 0 || failure.status === 429 || failure.status >= 500;

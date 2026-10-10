@@ -1,6 +1,8 @@
 /* Вендор: данные и реквизиты, чек-лист проверки, телефоны контакта, пользователи
    кабинета, витрины (по одной на категорию, бывает и несколько). Новый вендор — та же форма
-   без остального, с выбором категории первой витрины. */
+   без остального, с выбором категории первой витрины. Удалить вендора целиком — администратор
+   (в шапке: кнопкой, на телефоне — в «Ещё»), только пока ни у одной витрины не было заявок и
+   ни одна не на проверке и не в каталоге; подтверждение — кодом вендора. */
 
 import type {
   ChecklistItem,
@@ -9,17 +11,20 @@ import type {
   VendorInput,
   VendorPhones,
 } from "@bayramm/shared/api/staff";
-import { Checkbox } from "@bayramm/ui/react";
-import { useCallback, useState } from "react";
+import { Checkbox, ConfirmSheet } from "@bayramm/ui/react";
+import { useCallback, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { CategoryChip } from "../categories";
 import { formatMoment, formatPrice } from "../format";
+import { usePhone } from "../layout";
 import { t } from "../texts";
 import {
   Blockers,
+  deleteFailureText,
   ErrorText,
   Link,
   LoadedView,
+  OverflowMenu,
   PhoneReveal,
   StatusPill,
   useEntityTitle,
@@ -86,10 +91,13 @@ function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
 
   return (
     <div className="stack">
-      <p className="sub">
-        {t.vendorCode}: {vendor.code}
-        {vendor.manager?.name ? ` · ${t.fields.managerId}: ${vendor.manager.name}` : ""}
-      </p>
+      <div className="vendor-head">
+        <p className="sub">
+          {t.vendorCode}: {vendor.code}
+          {vendor.manager?.name ? ` · ${t.fields.managerId}: ${vendor.manager.name}` : ""}
+        </p>
+        <DeleteVendor vendor={vendor} />
+      </div>
       <div className="columns">
         <div className="stack">
           <Checklist vendor={vendor} onChange={onChange} />
@@ -107,6 +115,115 @@ function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
           readOnly={!can("vendors.write")}
         />
       </div>
+    </div>
+  );
+}
+
+// ── удаление ───────────────────────────────────────────────────────────────
+
+/**
+ * Удалить вендора — только администратор. Почему нельзя, сервер говорит заранее
+ * (deleteBlocker): действие недоступно, под ним — что сделать вместо. Подтверждение — кодом
+ * вендора (V101): удаляется всё сразу, вернуть нельзя. Удалили — к списку вендоров без
+ * вопроса о несохранённом и без записи удалённого в истории
+ */
+function DeleteVendor({ vendor }: { vendor: VendorDetail }) {
+  const { api } = useSession();
+  const can = useCan();
+  const phone = usePhone();
+  const navigate = useNavigate();
+  const codeId = useId();
+  const button = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [blocked, setBlocked] = useState<string | null>(null);
+  if (!can("vendors.delete")) return null;
+  const blocker = blocked ?? vendor.deleteBlocker;
+  const typed = code.trim().toUpperCase() === vendor.code.toUpperCase();
+
+  const remove = async () => {
+    setBusy(true);
+    const result = await api.del<null>(`/staff/vendors/${vendor.id}`);
+    setBusy(false);
+    if (!result.ok) {
+      setFailure(result);
+      // Пока смотрели, появилась заявка или витрину отправили на проверку
+      if (result.code === "vendor_in_use") setBlocked(result.details[0] ?? "published");
+      return;
+    }
+    setOpen(false);
+    navigate({ name: "vendors" }, { force: true, replace: true });
+  };
+  const close = () => {
+    setOpen(false);
+    setCode("");
+    setFailure(null);
+  };
+
+  return (
+    <div className="vendor-delete">
+      {phone ? (
+        <OverflowMenu
+          title={t.actionsTitle}
+          context={t.vendorActionsContext}
+          buttonRef={button}
+          className="btn btn-sm"
+          actions={[
+            {
+              key: "delete",
+              label: t.vendorDelete,
+              danger: true,
+              disabled: blocker !== null,
+              run: () => setOpen(true),
+            },
+          ]}
+        />
+      ) : (
+        <button
+          ref={button}
+          type="button"
+          className="btn btn-sm btn-danger"
+          disabled={blocker !== null}
+          onClick={() => setOpen(true)}
+        >
+          {t.vendorDelete}
+        </button>
+      )}
+      {blocker ? (
+        <p className="muted small">{t.vendorDeleteBlocked[blocker] ?? t.api.vendor_in_use}</p>
+      ) : null}
+      <ConfirmSheet
+        open={open}
+        title={t.vendorDeleteTitle}
+        text={
+          <>
+            <p>{t.vendorDeleteText(vendor.code)}</p>
+            <label htmlFor={codeId}>{t.vendorDeleteCode(vendor.code)}</label>
+            <input
+              id={codeId}
+              className="input"
+              value={code}
+              maxLength={16}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              enterKeyHint="done"
+              onChange={(event) => setCode(event.target.value)}
+            />
+          </>
+        }
+        confirmLabel={t.vendorDelete}
+        cancelLabel={t.cancel}
+        tone="danger"
+        busy={busy}
+        confirmDisabled={!typed || failure?.code === "vendor_in_use"}
+        error={failure ? deleteFailureText(failure, t.vendorDeleteBlocked) : undefined}
+        returnFocus={button}
+        onConfirm={() => void remove()}
+        onCancel={close}
+      />
     </div>
   );
 }

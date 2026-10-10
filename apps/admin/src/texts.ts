@@ -191,6 +191,11 @@ export const t = {
     immutable_column: "Это поле после создания не меняется.",
     listing_not_active: "Витрина не опубликована — это действие недоступно.",
     consent_text_not_current: "Текст согласия обновился. Обновите страницу.",
+    listing_in_use:
+      "Витрину нельзя удалить: по ней есть заявки или она на проверке или в каталоге. Обновите страницу.",
+    vendor_in_use:
+      "Вендора нельзя удалить: у его витрин есть заявки или витрины на проверке или в каталоге. Обновите страницу.",
+    staff_invite_accepted: "Приглашение уже принято — удалить его нельзя. Отключите сотрудника.",
   } as Record<string, string>,
 
   // статусы витрины
@@ -282,6 +287,19 @@ export const t = {
   phoneKeep: "Оставьте пустым, чтобы не менять",
   phoneNew: "Новый номер",
   createVendor: "Создать вендора",
+  vendorActionsContext: "действия с вендором",
+  vendorDelete: "Удалить вендора",
+  vendorDeleteTitle: "Удалить вендора?",
+  vendorDeleteText: (code: string) =>
+    `Вендор ${code} удалится насовсем вместе со всеми витринами (фото, услуги, занятость, контакты), пользователями кабинета, реквизитами и контактами. Отменить нельзя.`,
+  vendorDeleteCode: (code: string) => `Чтобы подтвердить, впишите код вендора: ${code}`,
+  // Почему вендора нельзя удалить — DeleteBlocker
+  vendorDeleteBlocked: {
+    requests:
+      "Удалить нельзя: по витринам вендора были заявки, их история хранится. Снимите витрины с публикации — приостановите.",
+    published:
+      "Удалить нельзя, пока витрины вендора на проверке или в каталоге: сначала верните их в черновик или приостановите.",
+  } as Record<string, string>,
   vendorReadOnly: "Только просмотр: данные вендора меняют менеджер и администратор.",
   noManager: "Не назначен",
 
@@ -386,6 +404,9 @@ export const t = {
   telegramChange: "Telegram для клиентов",
   telegramHintNew: "@имя, имя или ссылка t.me/имя. Можно не указывать",
   telegramRemove: "Убрать Telegram",
+  phoneRemove: "Убрать телефон",
+  phoneRemoveHint:
+    "Клиенты не увидят ни телефона, ни Telegram витрины: Telegram уберётся вместе с телефоном.",
   contactsShow: "Показать",
   history: "История статусов",
   historyEmpty: "Пока без изменений.",
@@ -423,6 +444,21 @@ export const t = {
   },
   reason: "Причина",
   comment: "Комментарий",
+
+  // удаление витрины
+  listingDelete: "Удалить витрину",
+  listingDeleteTitle: "Удалить витрину?",
+  listingDeleteHint:
+    "Витрина удалится насовсем — вместе с фото, услугами, занятостью, контактами и предложениями изменений. Отменить нельзя.",
+  listingDeleteText: (name: string) =>
+    `«${name}» удалится насовсем: фото, услуги, занятость, контакты и предложения изменений. Отменить нельзя.`,
+  // Почему витрину нельзя удалить — DeleteBlocker
+  listingDeleteBlocked: {
+    requests:
+      "Удалить нельзя: по витрине были заявки, их история хранится. Чтобы витрины не было в каталоге, приостановите её.",
+    published:
+      "Удалить нельзя, пока витрина на проверке или в каталоге: сначала верните её в черновик или приостановите.",
+  } as Record<string, string>,
 
   // фото
   photos: "Фото",
@@ -771,10 +807,20 @@ export const t = {
     kind: "вид",
     day: "день",
     reason: "причина",
-    via: "способ",
+    status: "статус",
+    category: "категория",
+    code: "код",
+    via: "как пригласили",
+    photos: "фото",
+    services: "услуг",
+    revisions: "предложений изменений",
+    busy_days: "отметок занятости",
+    listings: "витрин",
+    users: "пользователей кабинета",
     accepted: "принято сразу",
     had_account: "входил",
   } as Record<string, string>,
+  auditVia: { phone: "по телефону", telegram: "по имени в Telegram" } as Record<string, string>,
   // Имена полей витрины и вендора в подробностях («fields»): столбцы базы → слова
   auditFields: {
     name: "название",
@@ -849,6 +895,7 @@ export const t = {
     "listing_contact.update": "Контакты витрины изменены",
     "listing_contact.delete": "Контакты витрины убраны",
     "listing.category_change": "Категория витрины изменена",
+    "listing.delete": "Витрина удалена",
     "listing_service.create": "Услуга добавлена",
     "listing_service.update": "Услуга изменена",
     "listing_service.delete": "Услуга удалена",
@@ -868,6 +915,7 @@ export const t = {
     "vendor_user.invite": "Приглашение в кабинет",
     "vendor_user.remove": "Пользователь убран из кабинета",
     "vendor.listing_add": "Вендору добавлена витрина",
+    "vendor.delete": "Вендор удалён",
     "request.update": "Заявка изменена сотрудником",
     "request.remind": "Напоминание вендору",
     "request_note.create": "Заметка к заявке",
@@ -877,6 +925,7 @@ export const t = {
     "outbox.retry": "Повтор уведомления",
     "settings.update": "Настройка изменена",
     "staff.invite": "Сотрудник приглашён",
+    "staff.invite_revoke": "Приглашение отозвано",
     "staff.role": "Роль изменена",
     "staff.deactivate": "Сотрудник отключён",
     "staff.activate": "Сотрудник включён",
@@ -930,6 +979,10 @@ export const t = {
   deactivate: "Отключить",
   activate: "Включить",
   deactivateHint: "Сотрудник сразу потеряет доступ: его сессии будут отозваны.",
+  inviteRevoke: "Отозвать приглашение",
+  inviteRevokeTitle: "Отозвать приглашение?",
+  inviteRevokeText: (name: string) =>
+    `Приглашение «${name}» удалится: войти по нему будет нельзя. Пригласить снова можно в любой момент.`,
   activateHint: "Сотрудник снова сможет входить в панель — с той же ролью.",
   roleHints: {
     admin: "Всё, включая команду, настройки, журнал и телефоны клиентов",

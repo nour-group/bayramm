@@ -7,6 +7,7 @@ import type {
   ClientList,
   ClientListItem,
   ContactMetrics,
+  DeleteBlocker,
   ListingDetail,
   ListingInput,
   ListingList,
@@ -27,6 +28,7 @@ import type {
   StaffRole,
   StaffSettings,
   TeamList,
+  TeamMember,
   VendorDetail,
   VendorList,
   VendorMetrics,
@@ -102,12 +104,14 @@ const ADMIN_MODERATOR: readonly StaffRole[] = ["admin", "moderator"];
 const PERMISSION_ROLES: Readonly<Record<StaffPermission, readonly StaffRole[]>> = {
   "catalog.read": ALL_ROLES,
   "vendors.write": ADMIN_MANAGER,
+  "vendors.delete": ["admin"],
   "vendor_users.write": ADMIN_MANAGER,
   "listings.write": ADMIN_MANAGER,
   "listings.submit": ADMIN_MANAGER,
   "listings.publish": ADMIN_MODERATOR,
   "listings.moderate": ADMIN_MODERATOR,
   "listings.draft": ALL_ROLES,
+  "listings.delete": ADMIN_MANAGER,
   "photos.moderate": ADMIN_MODERATOR,
   "vendor_phones.read": ALL_ROLES,
   "requests.read": ADMIN_MANAGER,
@@ -178,6 +182,7 @@ function vendorDetail(
   listings: readonly ListingDetail[],
   name = "Lola",
   users: readonly VendorUser[] = [],
+  deleteBlocker: DeleteBlocker | null = null,
 ): VendorDetail {
   return {
     id: VENDOR_ID,
@@ -216,6 +221,7 @@ function vendorDetail(
       updatedAt: l.updatedAt,
       blockers: l.blockers.active,
     })),
+    deleteBlocker,
   };
 }
 
@@ -274,6 +280,7 @@ function newListing(input: ListingInput): ListingDetail {
       { from: null, to: "draft", reason: null, actorKind: "staff", actorName: STAFF.displayName, at: iso },
     ],
     pendingRevision: null,
+    deleteBlocker: null,
   };
 }
 
@@ -716,6 +723,8 @@ export interface StaffApi {
   readonly loggedOut: ("account" | "staff")[];
   /** Пользователи кабинета: «МЕТОД путь» и тело (приглашение, правка, отключение, удаление) */
   readonly cabinet: { readonly key: string; readonly body: unknown }[];
+  /** Удаления: «DELETE путь» витрины, вендора, приглашения в команду — по порядку */
+  readonly deletes: string[];
 }
 
 const json = (route: Route, status: number, body: unknown) =>
@@ -787,6 +796,7 @@ export async function mockStaffApi(
     },
     loggedOut: [],
     cabinet: [],
+    deletes: [],
   };
   // Пользователи кабинета: приглашают, правят и убирают тесты; владелец есть всегда (как в базе)
   const users: VendorUser[] = [...cabinetUsers];
@@ -814,6 +824,20 @@ export async function mockStaffApi(
   );
   const contactsOf = (id: string) => contacts.get(id) ?? { phone: null, telegram: null };
   const requests = seeded ? [REQUEST, carRequest(REQUEST)] : [REQUEST];
+  // Удалить нельзя: по витрине были заявки (их история хранится) или она на проверке и в каталоге
+  const blockerOf = (listing: ListingDetail): DeleteBlocker | null =>
+    requests.some((r) => r.listing.id === listing.id) ? "requests" : listing.deleteBlocker;
+  const view = <T extends ListingDetail>(listing: T): T => ({
+    ...listing,
+    deleteBlocker: blockerOf(listing),
+  });
+  const vendorBlocker = (): DeleteBlocker | null =>
+    listings.map(blockerOf).find((b) => b === "requests") ??
+    listings.map(blockerOf).find((b) => b === "published") ??
+    null;
+  let vendorGone = false;
+  // Команда: непринятое приглашение можно отозвать
+  const team: TeamMember[] = [...TEAM.items];
   if (signedIn)
     await page.addInitScript(
       ({ key, token }) => {
@@ -879,6 +903,7 @@ export async function mockStaffApi(
     if (key === "GET /staff/dictionaries") return json(route, 200, DICTIONARIES);
     if (key === "GET /staff/vendors") {
       state.queries.push(`vendors?${url.searchParams}`);
+      if (vendorGone) return json(route, 200, { total: 0, items: [] });
       const detail = vendorDetail(listings, vendorName, users);
       const category = url.searchParams.get("category");
       const list: VendorList = {
@@ -910,7 +935,17 @@ export async function mockStaffApi(
       return json(route, 200, list);
     }
     if (key === `GET /staff/vendors/${VENDOR_ID}`)
-      return json(route, 200, vendorDetail(listings, vendorName, users));
+      return vendorGone
+        ? fail(route, 404, "not_found")
+        : json(route, 200, vendorDetail(listings, vendorName, users, vendorBlocker()));
+    if (key === `DELETE /staff/vendors/${VENDOR_ID}`) {
+      state.deletes.push(key);
+      const blocker = vendorBlocker();
+      if (blocker) return fail(route, 409, "vendor_in_use", [blocker]);
+      listings.splice(0, listings.length);
+      vendorGone = true;
+      return route.fulfill({ status: 204 });
+    }
     if (key === "POST /staff/vendors") {
       // Один вендор на подмену: «новый» — тот же V101 с новым названием и первой витриной
       const input = request.postDataJSON() as Record<string, unknown>;
@@ -1114,7 +1149,14 @@ export async function mockStaffApi(
       const listing = listings.find((l) => l.id === listingMatch[1]);
       if (!listing) return fail(route, 404, "not_found");
       const action = listingMatch[2];
-      if (!action && method === "GET") return json(route, 200, listing);
+      if (!action && method === "GET") return json(route, 200, view(listing));
+      if (!action && method === "DELETE") {
+        state.deletes.push(key);
+        const blocker = blockerOf(listing);
+        if (blocker) return fail(route, 409, "listing_in_use", [blocker]);
+        listings.splice(listings.indexOf(listing), 1);
+        return route.fulfill({ status: 204 });
+      }
       if (!action && method === "PATCH") {
         // Сотрудник — администратор: решает по правкам сам, на модерацию ничего не уходит
         const input = request.postDataJSON() as ListingInput;
@@ -1131,16 +1173,26 @@ export async function mockStaffApi(
           telegram = normalizeTelegram(input.telegram);
           if (telegram === null) return fail(route, 422, "invalid_input", ["telegram"]);
         }
-        const phone = typeof input.phone === "string" ? input.phone.replace(/\s+/g, "") : stored.phone;
+        // Телефон: null — убрать вместе с Telegram (строка контактов одна); у витрины на проверке
+        // и в каталоге — нельзя, как в базе
+        if (input.phone === null && (listing.status === "review" || listing.status === "active"))
+          return fail(route, 422, "publish_blocked", ["phone"]);
+        if (input.phone === null) telegram = null;
+        const phone =
+          typeof input.phone === "string"
+            ? input.phone.replace(/\s+/g, "")
+            : input.phone === null
+              ? null
+              : stored.phone;
         contacts.set(listing.id, { phone, telegram });
         const next = replace({
           ...fields.listing,
           ...patch,
-          hasPhone: listing.hasPhone || typeof input.phone === "string",
+          hasPhone: input.phone === null ? false : listing.hasPhone || typeof input.phone === "string",
           hasTelegram: telegram !== null,
           version: listing.version + 1,
         });
-        const saved: ListingSaveResult = { ...next, sentForModeration: [] };
+        const saved: ListingSaveResult = { ...view(next), sentForModeration: [] };
         return json(route, 200, saved);
       }
       if (action === "category" && method === "POST") {
@@ -1157,7 +1209,7 @@ export async function mockStaffApi(
           attributes: {},
           version: listing.version + 1,
         });
-        return json(route, 200, next);
+        return json(route, 200, view(next));
       }
       if (action === "availability" && method === "GET") {
         const from = url.searchParams.get("from") ?? "";
@@ -1232,7 +1284,16 @@ export async function mockStaffApi(
     if (key === "GET /staff/outbox") return json(route, 200, OUTBOX);
     if (key === "GET /staff/audit") return json(route, 200, AUDIT);
     if (key === "GET /staff/audit/pii") return json(route, 200, PII_AUDIT);
-    if (key === "GET /staff/team") return json(route, 200, TEAM);
+    if (key === "GET /staff/team") return json(route, 200, { items: team });
+    const member = /^\/staff\/team\/([0-9a-f-]{36})$/.exec(path);
+    if (member?.[1] && method === "DELETE") {
+      state.deletes.push(key);
+      const found = team.find((m) => m.id === member[1]);
+      if (!found) return fail(route, 404, "not_found");
+      if (found.accepted || found.self) return fail(route, 409, "staff_invite_accepted");
+      team.splice(team.indexOf(found), 1);
+      return json(route, 200, { items: team });
+    }
     if (key === "GET /staff/settings") return json(route, 200, SETTINGS);
     if (key === "GET /staff/metrics")
       return json(route, 200, { ...METRICS, category: url.searchParams.get("category") });

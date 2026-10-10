@@ -4,6 +4,7 @@ import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
+  CAKE_LISTING_ID,
   CAR_CONTACTS,
   CAR_LISTING_ID,
   CLIENT_ID,
@@ -179,6 +180,34 @@ test.describe("контакты витрины для клиентов", () => {
     await expect(contacts(page)).toContainText(t.telegramMissing);
     // Убрать больше нечего: галочки нет
     await expect(page.getByLabel(t.telegramRemove)).toHaveCount(0);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("«Убрать телефон» — пока витрина не на проверке и не в каталоге; Telegram уходит с ним", async ({
+    page,
+  }) => {
+    const api = await start(page);
+    // Опубликованную без телефона не оставить: галочки нет
+    await page.goto(`/listings/${CAR_LISTING_ID}`);
+    await expect(heading(page)).toHaveText("Oq kortej");
+    await expect(page.getByLabel(t.phoneRemove)).toHaveCount(0);
+
+    await page.goto(`/listings/${CAKE_LISTING_ID}`);
+    await expect(heading(page)).toHaveText("Shirin");
+    await expect(page.getByLabel(t.phoneRemove)).toHaveCount(0);
+    await page.getByLabel(t.phoneChange).fill("+998 90 111 22 33");
+    await save(page).click();
+    await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
+
+    await page.getByLabel(t.phoneRemove).check();
+    await expect(page.getByLabel(t.phoneChange)).toBeDisabled();
+    await expect(telegramField(page)).toBeDisabled();
+    await expect(page.getByText(t.phoneRemoveHint)).toBeVisible();
+    await save(page).click();
+    await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
+    expect(api.patches.map((body) => body.phone)).toEqual(["+998 90 111 22 33", null]);
+    await expect(contacts(page)).toContainText(t.phoneMissing);
+    await expect(page.getByLabel(t.phoneRemove)).toHaveCount(0);
     expect(api.unexpected).toEqual([]);
   });
 

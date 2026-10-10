@@ -81,6 +81,7 @@ const vendor = (users: VendorUser[]): VendorDetail => ({
   checklist: { contract: mark, stir: mark, contacts: mark, pdConsent: mark },
   users,
   listings: [],
+  deleteBlocker: null,
 });
 
 interface Call {

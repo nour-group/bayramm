@@ -163,6 +163,22 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
     code: "photo_ack_required",
     message: "Photo confirmation does not match the category photo policy",
   },
+  // 20261011100000_staff_deletes.sql: в DETAIL — почему (requests | published)
+  BR029: {
+    status: 409,
+    code: "listing_in_use",
+    message: "Listing has requests or is published — suspend it instead",
+  },
+  BR030: {
+    status: 409,
+    code: "vendor_in_use",
+    message: "Vendor has listings with requests or published listings",
+  },
+  BR033: {
+    status: 409,
+    code: "staff_invite_accepted",
+    message: "Invite was already accepted — deactivate the staff member instead",
+  },
   // 20261011110000_vendor_user_invites.sql
   BR031: {
     status: 409,
@@ -177,15 +193,18 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
 };
 
 // У publish_blocked в DETAIL — коды недостающих пунктов через запятую
-// (price, photos, …): их можно отдать клиенту для экрана «чего не хватает»
+// (price, photos, …): их можно отдать клиенту для экрана «чего не хватает». Так же — причина,
+// почему нельзя удалить (listing_in_use, vendor_in_use: requests | published)
 function publishBlockers(detail: string | undefined): string[] {
   return (detail ?? "").split(",").filter((item) => /^[a-z_]{1,40}$/.test(item));
 }
 
+const DETAIL_CODES: ReadonlySet<string> = new Set(["BR004", "BR029", "BR030"]);
+
 export function fromPgError(err: PgError): ApiError {
   const rule = BUSINESS_RULES[err.code];
   if (rule) {
-    const details = err.code === "BR004" ? publishBlockers(err.detail) : undefined;
+    const details = DETAIL_CODES.has(err.code) ? publishBlockers(err.detail) : undefined;
     return new ApiError(rule.status, rule.code, rule.message, details);
   }
   if (err.code.startsWith("BR")) {
