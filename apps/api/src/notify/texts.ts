@@ -286,3 +286,36 @@ export function formatDate(isoDate: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
   return match ? `${match[3]}.${match[2]}.${match[1]}` : isoDate;
 }
+
+// ── доступ в кабинет ───────────────────────────────────────────────────────
+
+/** Партнёра добавили в кабинет вендора: приглашение принято (vendor.access_granted) */
+export interface AccessGrantedFacts {
+  /** Название вендора; нет — его код (V101) */
+  readonly vendor: string;
+  /** Роль в кабинете — что в нём можно делать (apps/api/src/vendor/access.ts) */
+  readonly role: "owner" | "member";
+}
+
+export const ACCESS_TEXTS: Readonly<
+  Record<Lang, { readonly button: string; readonly granted: (f: AccessGrantedFacts) => string }>
+> = {
+  ru: {
+    button: "Открыть кабинет",
+    granted: (f) =>
+      `Вас добавили в кабинет партнёра «${f.vendor}» на Bayramm.\n` +
+      (f.role === "owner"
+        ? "Вы — владелец кабинета: отвечаете на заявки, ведёте календарь, меняете витрину, фото и услуги."
+        : "Вы — сотрудник площадки: отвечаете на заявки и ведёте календарь.") +
+      "\nНовые заявки будут приходить сюда.",
+  },
+  uz: {
+    button: "Kabinetni ochish",
+    granted: (f) =>
+      `Bayramm: sizni «${f.vendor}» hamkor kabinetiga qoʻshishdi.\n` +
+      (f.role === "owner"
+        ? "Siz kabinet egasisiz: soʻrovlarga javob berasiz, taqvimni yuritasiz, vitrina, suratlar va xizmatlarni oʻzgartirasiz."
+        : "Siz maydon xodimisiz: soʻrovlarga javob berasiz va taqvimni yuritasiz.") +
+      "\nYangi soʻrovlar shu yerga keladi.",
+  },
+};

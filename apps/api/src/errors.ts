@@ -163,6 +163,17 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
     code: "photo_ack_required",
     message: "Photo confirmation does not match the category photo policy",
   },
+  // 20261011110000_vendor_user_invites.sql
+  BR031: {
+    status: 409,
+    code: "vendor_last_owner",
+    message: "A vendor with active cabinet users must keep an active owner",
+  },
+  BR032: {
+    status: 409,
+    code: "vendor_user_exists",
+    message: "This person already has access to this vendor's cabinet",
+  },
 };
 
 // У publish_blocked в DETAIL — коды недостающих пунктов через запятую

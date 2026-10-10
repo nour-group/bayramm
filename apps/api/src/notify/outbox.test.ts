@@ -345,6 +345,42 @@ describe("dispatchOutbox: сообщения", () => {
     expect(bad.report.dead).toBe(1);
   });
 
+  it("«вас добавили в кабинет» — партнёру на его языке: вендор и роль, кнопка — кабинет; чужой вендор — в dead", async () => {
+    const granted = (vendorId: string) =>
+      outboxRow({ kind: "vendor.access_granted", request_id: null, payload: { vendor_id: vendorId } });
+    const member = {
+      vendor_id: VENDOR_ID,
+      locale: "uz",
+      disabled_at: null,
+      tg_linked_at: CREATED,
+      telegram_chat_id: "5001",
+      role: "member",
+      name: "Lola",
+      public_code: "V101",
+    };
+    const { fake, tg, report } = await run({ vendorUser: member, rows: [granted(VENDOR_ID)] });
+    expect(report.sent).toBe(1);
+    expect(tg.calls[0]?.chat_id).toBe(5001);
+    expect(tg.calls[0]?.text).toContain("«Lola» hamkor kabinetiga");
+    expect(tg.calls[0]?.text).toContain("maydon xodimisiz");
+    expect(tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [[{ text: "Kabinetni ochish", web_app: { url: "https://vendor.example" } }]],
+    });
+    // Заявки тут ни при чём: ни запроса к ним, ни данных клиента
+    expect(fake.queries.some((q) => q.sql.includes('from "app"."requests"'))).toBe(false);
+
+    const owner = await run({
+      vendorUser: { ...member, locale: "ru", role: "owner", name: null },
+      rows: [granted(VENDOR_ID)],
+    });
+    expect(owner.tg.calls[0]?.text).toContain("в кабинет партнёра «V101»");
+    expect(owner.tg.calls[0]?.text).toContain("владелец кабинета");
+
+    const other = await run({ vendorUser: member, rows: [granted("aaaaaaaa-0000-4000-8000-000000000002")] });
+    expect(other.tg.calls).toHaveLength(0);
+    expect(other.report.dead).toBe(1);
+  });
+
   it("просрочка: клиенту — предложение посмотреть похожие, администратору — оповещение по-русски", async () => {
     const { tg } = await run({
       rows: [

@@ -154,16 +154,30 @@ export interface ChecklistMark {
   readonly by: string | null;
 }
 
+/**
+ * Пользователь кабинета: pending — приглашение ждёт входа (номер ещё никто не подтвердил),
+ * accepted — партнёр вошёл: кабинет открыт его аккаунту, disabled — отключён сотрудником
+ */
+export type VendorUserStatus = "pending" | "accepted" | "disabled";
+
 export interface VendorUser {
   readonly id: string;
   readonly fullName: string | null;
   readonly role: "owner" | "member";
+  /** Язык кабинета и уведомлений партнёра */
   readonly locale: "ru" | "uz";
+  readonly status: VendorUserStatus;
   /** Уведомления о заявках привязаны к Telegram партнёра */
   readonly telegramLinked: boolean;
   readonly telegramLinkedAt: string | null;
+  /**
+   * Уведомления до партнёра доходят: Telegram привязан и бот знает его чат (партнёр писал боту
+   * или бот уже пишет ему по другой роли). Привязан, но false — пусть откроет бота
+   */
+  readonly notifiable: boolean;
   /** Партнёр доказал этот номер (контакт в боте или код из сообщения) — кабинет открыт его аккаунту */
   readonly accountLinked: boolean;
+  /** Последний вход в кабинет: Mini App или через хаб на сайте */
   readonly lastLoginAt: string | null;
   readonly disabledAt: string | null;
   readonly createdAt: string;
@@ -241,12 +255,27 @@ export interface ChecklistInput {
 }
 
 /**
- * POST /staff/vendors/:id/users → 201 VendorUser; 409 phone_taken.
- * PATCH …/users/:userId (409 user_linked — номер привязанного не сменить),
- * POST …/users/:userId/disable | enable | unlink (снять привязку Telegram) → VendorUser
+ * POST /staff/vendors/:id/users — приглашение → 201 VendorUser (status accepted — номер уже
+ * подтверждён у аккаунта, доступ открыт сразу); 409 phone_taken — номер уже у этого вендора;
+ * 409 vendor_user_exists — человек с этим номером уже в кабинете под другим номером;
+ * 409 vendor_last_owner — сотрудника площадки без действующего владельца не пригласить.
+ * PATCH …/users/:userId (409 user_linked — номер привязанного не сменить; 409 vendor_last_owner —
+ * последний действующий владелец остаётся владельцем),
+ * POST …/users/:userId/disable | enable | unlink (снять привязку входа и Telegram) → VendorUser,
+ * DELETE …/users/:userId — убрать из кабинета → 204 (409 vendor_last_owner)
  */
 export interface VendorUserInput {
   readonly phone: string;
+  readonly fullName?: string | null;
+  /** По умолчанию owner (так заводили до приглашений); панель выбирает явно */
+  readonly role?: "owner" | "member";
+  /** Язык кабинета и уведомлений; по умолчанию uz */
+  readonly locale?: "ru" | "uz";
+}
+
+/** PATCH /staff/vendors/:id/users/:userId — нет поля — не менять */
+export interface VendorUserPatch {
+  readonly phone?: string;
   readonly fullName?: string | null;
   readonly role?: "owner" | "member";
   readonly locale?: "ru" | "uz";
