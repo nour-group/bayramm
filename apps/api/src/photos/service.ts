@@ -17,6 +17,9 @@
 // Удаление: отметка deleted_at под актором (опубликованный листинг не
 // останется меньше чем с 3 фото — триггер), затем удаление объекта.
 //
+// Удаление витрины или вендора целиком (staff/listings.ts, staff/vendors.ts): строки уходят
+// в базе, ключи объектов база возвращает — их удаляет removePhotoObjects после фиксации.
+//
 // Правило фото категории (@bayramm/shared/categories): no_people — загрузивший
 // подтверждает, что лиц на фото нет (no_faces); portfolio (фото и видео, студия) — или
 // это же, или согласие людей на снимке на публикацию (people_consent). Без подтверждения
@@ -29,7 +32,7 @@ import { type Actor, continueAsSystem, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import type { AppModerationStatus, AppPhotoStatus } from "../db/schema.generated";
 import { ApiError, notFound, unauthorized } from "../errors";
-import { type ObjectStorage, StorageError } from "../storage/supabase";
+import { MAX_REMOVE_BATCH, type ObjectStorage, type ObjectSweeper, StorageError } from "../storage/supabase";
 
 export interface PhotoDeps {
   readonly db: Db;
@@ -262,4 +265,25 @@ export async function removeListingPhoto(
     console.error("photos: object not removed", row.storage_key, err);
     return { id: row.id, storageKey: row.storage_key, objectRemoved: false };
   }
+}
+
+/**
+ * Объекты фото удалённой витрины (или всех витрин вендора) — после фиксации в базе, пачками.
+ * Хранилище не ответило — не ошибка: строк уже нет, и объекты без строки уберёт ежедневная
+ * сверка (photos/sweep.ts). Сколько удалено; в лог — только числа, без ключей
+ */
+export async function removePhotoObjects(storage: ObjectSweeper, keys: readonly string[]): Promise<number> {
+  let removed = 0;
+  for (let i = 0; i < keys.length; i += MAX_REMOVE_BATCH) {
+    try {
+      removed += await storage.removeMany(keys.slice(i, i + MAX_REMOVE_BATCH));
+    } catch (err) {
+      console.error("photos: objects not removed", {
+        left: keys.length - i,
+        reason: err instanceof StorageError ? err.reason : "unknown",
+      });
+      break;
+    }
+  }
+  return removed;
 }

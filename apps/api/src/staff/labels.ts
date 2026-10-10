@@ -5,9 +5,8 @@
 
 import type { Tx } from "../db/actor";
 import { staffNames, vendorUserNames } from "../db/pii";
-import { clientRef } from "./clients";
 import { isUuid } from "./input";
-import { num } from "./shared";
+import { clientRef, num } from "./shared";
 
 /** Что подписать: вид объекта (как в журнале или у получателя) и его id */
 export interface LabelRef {

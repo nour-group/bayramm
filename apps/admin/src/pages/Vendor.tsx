@@ -1,42 +1,49 @@
 /* Вендор: данные и реквизиты, чек-лист проверки, телефоны контакта, пользователи
    кабинета, витрины (по одной на категорию, бывает и несколько). Новый вендор — та же форма
-   без остального, с выбором категории первой витрины. */
+   без остального, с выбором категории первой витрины. Удалить вендора целиком — администратор
+   (в шапке: кнопкой, на телефоне — в «Ещё»), только пока ни у одной витрины не было заявок и
+   ни одна не на проверке и не в каталоге; подтверждение — кодом вендора.
+
+   В шапке — переходы к тому, что о вендоре есть в других разделах: его заявки (поиск по
+   коду) и журнал действий с ним. Только что заведённый вендор — с подсказкой «что дальше»:
+   проверка, вход в кабинет, первая витрина. */
 
 import type {
   ChecklistItem,
-  RevealedPhone,
   StaffDictionaries,
   VendorDetail,
   VendorInput,
   VendorPhones,
-  VendorUser,
-  VendorUserInput,
 } from "@bayramm/shared/api/staff";
-import { Checkbox, ConfirmSheet } from "@bayramm/ui/react";
-import { type FormEvent, useCallback, useState } from "react";
+import { Checkbox, ConfirmSheet, useToast } from "@bayramm/ui/react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
-import { CategoryChip } from "../categories";
-import { formatMoment, formatPrice } from "../format";
-import { apiErrorText, t } from "../texts";
+import { CategoryChip, formatPrice } from "../categories";
+import { formatMoment } from "../format";
+import { usePhone } from "../layout";
+import { readQuery, writeQuery } from "../router";
+import { t } from "../texts";
 import {
   Blockers,
+  deleteFailureText,
   ErrorText,
-  Field,
-  fieldErrors,
+  focusSection,
   Link,
   LoadedView,
+  OverflowMenu,
   PhoneReveal,
-  Pill,
   StatusPill,
   useEntityTitle,
   useNavigate,
-  useRevealErrors,
 } from "../ui";
-import { useUnsaved } from "../unsaved";
 import { VendorResponsePanel } from "./Metrics";
 import { VendorForm } from "./VendorForm";
+import { VendorUsers } from "./VendorUsers";
 
 const CHECKLIST: readonly ChecklistItem[] = ["contract", "stir", "contacts", "pdConsent"];
+
+/** Метка в адресе: вендора только что завели (VendorNewPage) */
+const CREATED = ["created"] as const;
 
 /**
  * Пункты готовности, которые отмечают в «Проверке вендора» на этой же странице: у витрин их
@@ -51,8 +58,9 @@ export function VendorNewPage({ dictionaries }: { dictionaries: StaffDictionarie
     async (body: VendorInput): Promise<Failure | null> => {
       const result = await api.post<VendorDetail>("/staff/vendors", body);
       if (!result.ok) return result;
-      // Вендор создан — форма сохранена: переход без вопроса о несохранённом
-      navigate({ name: "vendor", id: result.data.id }, { force: true });
+      // Вендор создан — форма сохранена: переход без вопроса о несохранённом; на его странице —
+      // что дальше (?created=1)
+      navigate({ name: "vendor", id: result.data.id, query: { created: "1" } }, { force: true });
       return null;
     },
     [api, navigate],
@@ -64,10 +72,68 @@ export function VendorNewPage({ dictionaries }: { dictionaries: StaffDictionarie
 
 export function VendorPage({ id, dictionaries }: { id: string; dictionaries: StaffDictionaries | null }) {
   const { loaded, reload, set } = useLoad<VendorDetail>(`/staff/vendors/${id}`);
+  // Только что заведён — подсказка «что дальше»; из адреса её убираем: обновление страницы и
+  // «назад» её не повторяют
+  const [created, setCreated] = useState(() => readQuery(CREATED).created === "1");
+  useEffect(() => writeQuery(CREATED, {}), []);
   return (
-    <LoadedView loaded={loaded} onRetry={reload}>
-      {(vendor) => <VendorView vendor={vendor} dictionaries={dictionaries} onChange={set} />}
+    <LoadedView loaded={loaded} onRetry={reload} skeleton="detail">
+      {(vendor) => (
+        <VendorView
+          vendor={vendor}
+          dictionaries={dictionaries}
+          onChange={set}
+          created={created}
+          onCreatedDone={() => setCreated(false)}
+        />
+      )}
     </LoadedView>
+  );
+}
+
+/** Что делать с только что заведённым вендором: по шагу — переход к блоку на этой странице */
+function NextSteps({ vendor, onDone }: { vendor: VendorDetail; onDone: () => void }) {
+  const first = vendor.listings[0];
+  return (
+    <section className="notice notice-good next-steps" aria-labelledby="next-steps-title">
+      <p id="next-steps-title" className="notice-title" tabIndex={-1}>
+        {t.vendorCreated}
+      </p>
+      <ol className="blockers blockers-go">
+        <li>
+          <span className="blocker-text">{t.vendorNextChecklist}</span>
+          <button type="button" className="btn btn-sm" onClick={() => focusSection("checklist-title")}>
+            {t.goTo}
+            <span className="visually-hidden">: {t.checklist}</span>
+          </button>
+        </li>
+        <li>
+          <span className="blocker-text">{t.vendorNextUsers}</span>
+          <button type="button" className="btn btn-sm" onClick={() => focusSection("users-title")}>
+            {t.goTo}
+            <span className="visually-hidden">: {t.users}</span>
+          </button>
+        </li>
+        <li>
+          <span className="blocker-text">{t.vendorNextListing}</span>
+          {first ? (
+            <Link to={{ name: "listing", id: first.id }} className="btn btn-sm">
+              {first.name}
+            </Link>
+          ) : (
+            <button type="button" className="btn btn-sm" onClick={() => focusSection("listings-title")}>
+              {t.goTo}
+              <span className="visually-hidden">: {t.listings}</span>
+            </button>
+          )}
+        </li>
+      </ol>
+      <p>
+        <button type="button" className="btn btn-sm" onClick={onDone}>
+          {t.vendorNextDone}
+        </button>
+      </p>
+    </section>
   );
 }
 
@@ -75,9 +141,12 @@ interface VendorViewProps {
   vendor: VendorDetail;
   dictionaries: StaffDictionaries | null;
   onChange: (vendor: VendorDetail) => void;
+  /** Только что заведён: показать «что дальше» */
+  created: boolean;
+  onCreatedDone: () => void;
 }
 
-function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
+function VendorView({ vendor, dictionaries, onChange, created, onCreatedDone }: VendorViewProps) {
   const { api } = useSession();
   const can = useCan();
   useEntityTitle(vendor.name ?? vendor.contacts.legalName ?? vendor.code);
@@ -93,17 +162,33 @@ function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
 
   return (
     <div className="stack">
-      <p className="sub">
-        {t.vendorCode}: {vendor.code}
-        {vendor.manager?.name ? ` · ${t.fields.managerId}: ${vendor.manager.name}` : ""}
-      </p>
+      <div className="vendor-head">
+        <p className="sub">
+          {t.vendorCode}: {vendor.code}
+          {vendor.manager?.name ? ` · ${t.fields.managerId}: ${vendor.manager.name}` : ""}
+        </p>
+        <div className="head-links">
+          {can("requests.read") ? (
+            <Link to={{ name: "requests", query: { q: vendor.code } }} className="btn btn-sm">
+              {t.vendorRequests}
+            </Link>
+          ) : null}
+          {can("audit.read") ? (
+            <Link to={{ name: "audit", query: { type: "vendor", object: vendor.id } }} className="btn btn-sm">
+              {t.vendorJournal}
+            </Link>
+          ) : null}
+          <DeleteVendor vendor={vendor} />
+        </div>
+      </div>
+      {created ? <NextSteps vendor={vendor} onDone={onCreatedDone} /> : null}
       <div className="columns">
         <div className="stack">
           <Checklist vendor={vendor} onChange={onChange} />
           <ContactPhones vendorId={vendor.id} />
           <Listings vendor={vendor} />
           {can("metrics.read") && <VendorResponsePanel vendorId={vendor.id} />}
-          <Users vendor={vendor} onChange={onChange} />
+          <VendorUsers vendor={vendor} onChange={onChange} />
         </div>
         <VendorForm
           key={vendor.id}
@@ -118,11 +203,121 @@ function VendorView({ vendor, dictionaries, onChange }: VendorViewProps) {
   );
 }
 
+// ── удаление ───────────────────────────────────────────────────────────────
+
+/**
+ * Удалить вендора — только администратор. Почему нельзя, сервер говорит заранее
+ * (deleteBlocker): действие недоступно, под ним — что сделать вместо. Подтверждение — кодом
+ * вендора (V101): удаляется всё сразу, вернуть нельзя. Удалили — к списку вендоров без
+ * вопроса о несохранённом и без записи удалённого в истории
+ */
+function DeleteVendor({ vendor }: { vendor: VendorDetail }) {
+  const { api } = useSession();
+  const can = useCan();
+  const phone = usePhone();
+  const navigate = useNavigate();
+  const codeId = useId();
+  const button = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const [blocked, setBlocked] = useState<string | null>(null);
+  if (!can("vendors.delete")) return null;
+  const blocker = blocked ?? vendor.deleteBlocker;
+  const typed = code.trim().toUpperCase() === vendor.code.toUpperCase();
+
+  const remove = async () => {
+    setBusy(true);
+    const result = await api.del<null>(`/staff/vendors/${vendor.id}`);
+    setBusy(false);
+    if (!result.ok) {
+      setFailure(result);
+      // Пока смотрели, появилась заявка или витрину отправили на проверку
+      if (result.code === "vendor_in_use") setBlocked(result.details[0] ?? "published");
+      return;
+    }
+    setOpen(false);
+    navigate({ name: "vendors" }, { force: true, replace: true });
+  };
+  const close = () => {
+    setOpen(false);
+    setCode("");
+    setFailure(null);
+  };
+
+  return (
+    <div className="vendor-delete">
+      {phone ? (
+        <OverflowMenu
+          title={t.actionsTitle}
+          context={t.vendorActionsContext}
+          buttonRef={button}
+          className="btn btn-sm"
+          actions={[
+            {
+              key: "delete",
+              label: t.vendorDelete,
+              danger: true,
+              disabled: blocker !== null,
+              run: () => setOpen(true),
+            },
+          ]}
+        />
+      ) : (
+        <button
+          ref={button}
+          type="button"
+          className="btn btn-sm btn-danger"
+          disabled={blocker !== null}
+          onClick={() => setOpen(true)}
+        >
+          {t.vendorDelete}
+        </button>
+      )}
+      {blocker ? (
+        <p className="muted small">{t.vendorDeleteBlocked[blocker] ?? t.api.vendor_in_use}</p>
+      ) : null}
+      <ConfirmSheet
+        open={open}
+        title={t.vendorDeleteTitle}
+        text={
+          <>
+            <p>{t.vendorDeleteText(vendor.code)}</p>
+            <label htmlFor={codeId}>{t.vendorDeleteCode(vendor.code)}</label>
+            <input
+              id={codeId}
+              className="input"
+              value={code}
+              maxLength={16}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              enterKeyHint="done"
+              onChange={(event) => setCode(event.target.value)}
+            />
+          </>
+        }
+        confirmLabel={t.vendorDelete}
+        cancelLabel={t.cancel}
+        tone="danger"
+        busy={busy}
+        confirmDisabled={!typed || failure?.code === "vendor_in_use"}
+        error={failure ? deleteFailureText(failure, t.vendorDeleteBlocked) : undefined}
+        returnFocus={button}
+        onConfirm={() => void remove()}
+        onCancel={close}
+      />
+    </div>
+  );
+}
+
 // ── чек-лист ───────────────────────────────────────────────────────────────
 
 function Checklist({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: VendorDetail) => void }) {
   const { api } = useSession();
   const can = useCan();
+  const toast = useToast();
   const [busy, setBusy] = useState<ChecklistItem | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const done = CHECKLIST.filter((item) => vendor.checklist[item].done).length;
@@ -135,12 +330,14 @@ function Checklist({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: V
     });
     setBusy(null);
     setFailure(result.ok ? null : result);
-    if (result.ok) onChange(result.data);
+    if (!result.ok) return;
+    onChange(result.data);
+    toast(t.toastChecklist(t.checklistItems[item], value), { tone: "success" });
   };
 
   return (
     <section className="panel" aria-labelledby="checklist-title">
-      <h2 id="checklist-title">
+      <h2 id="checklist-title" tabIndex={-1}>
         {t.checklist} <span className="count">{done}/4</span>
       </h2>
       <p className="muted small">{t.checklistHint}</p>
@@ -198,7 +395,7 @@ function Listings({ vendor }: { vendor: VendorDetail }) {
   const can = useCan();
   return (
     <section className="panel" aria-labelledby="listings-title">
-      <h2 id="listings-title">
+      <h2 id="listings-title" tabIndex={-1}>
         {t.listings} <span className="count">{vendor.listings.length}</span>
       </h2>
       <p className="muted small">{t.vitrinasHint}</p>
@@ -236,175 +433,6 @@ function Listings({ vendor }: { vendor: VendorDetail }) {
           </Link>
         </p>
       )}
-    </section>
-  );
-}
-
-// ── вход в кабинет ─────────────────────────────────────────────────────────
-
-function Users({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: VendorDetail) => void }) {
-  const { api } = useSession();
-  const can = useCan();
-  const [phone, setPhone] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [failure, setFailure] = useState<Failure | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<{ user: VendorUser; action: "disable" | "unlink" } | null>(null);
-  const [confirmFailure, setConfirmFailure] = useState<Failure | null>(null);
-  const errors = fieldErrors(failure, { phone: t.fieldErrors.phone ?? "" });
-  const form = useRevealErrors(failure);
-  // Вписанный, но не добавленный пользователь — несохранённое
-  useUnsaved(phone.trim() !== "" || fullName.trim() !== "");
-
-  const replace = (user: VendorUser, exists: boolean) =>
-    onChange({
-      ...vendor,
-      users: exists ? vendor.users.map((u) => (u.id === user.id ? user : u)) : [...vendor.users, user],
-    });
-
-  const add = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    const body: VendorUserInput = { phone, ...(fullName.trim() ? { fullName } : {}) };
-    const result = await api.post<VendorUser>(`/staff/vendors/${vendor.id}/users`, body);
-    setBusy(false);
-    setFailure(result.ok ? null : result);
-    if (result.ok) {
-      replace(result.data, false);
-      setPhone("");
-      setFullName("");
-    }
-  };
-
-  const userAction = async (user: VendorUser, action: "disable" | "enable" | "unlink") => {
-    const result = await api.post<VendorUser>(`/staff/vendors/${vendor.id}/users/${user.id}/${action}`);
-    setFailure(result.ok ? null : result);
-    if (result.ok) replace(result.data, true);
-    return result;
-  };
-
-  const confirmAction = async () => {
-    if (!confirm) return;
-    setBusy(true);
-    const result = await userAction(confirm.user, confirm.action);
-    setBusy(false);
-    setConfirmFailure(result.ok ? null : result);
-    if (result.ok) setConfirm(null);
-  };
-
-  return (
-    <section className="panel" aria-labelledby="users-title">
-      <h2 id="users-title">{t.users}</h2>
-      <p className="muted small">{t.usersHint}</p>
-      {vendor.users.length === 0 ? (
-        <p className="muted">{t.usersEmpty}</p>
-      ) : (
-        <ul className="cards">
-          {vendor.users.map((user) => (
-            <li key={user.id} className="card-row">
-              <div>
-                <strong>{user.fullName ?? (user.role === "owner" ? t.owner : t.member)}</strong>{" "}
-                {user.disabledAt ? (
-                  <Pill tone="warn">{t.userDisabled}</Pill>
-                ) : user.telegramLinked ? (
-                  <Pill tone="good">{t.telegramLinked}</Pill>
-                ) : (
-                  <Pill tone="muted">{t.telegramNotLinked}</Pill>
-                )}
-              </div>
-              <PhoneReveal
-                label={t.userPhone}
-                load={async () => {
-                  const result = await api.post<RevealedPhone>(
-                    `/staff/vendors/${vendor.id}/users/${user.id}/phone`,
-                    {},
-                  );
-                  return result.ok ? { ok: true, data: result.data.phone } : result;
-                }}
-              />
-              {can("vendor_users.write") && (
-                <div className="acts">
-                  <button
-                    type="button"
-                    className={`btn btn-sm${user.disabledAt ? "" : " btn-danger"}`}
-                    onClick={() =>
-                      user.disabledAt
-                        ? void userAction(user, "enable")
-                        : setConfirm({ user, action: "disable" })
-                    }
-                  >
-                    {user.disabledAt ? t.enable : t.disable}
-                  </button>
-                  {user.telegramLinked && (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => setConfirm({ user, action: "unlink" })}
-                    >
-                      {t.unlinkTelegram}
-                    </button>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      <ConfirmSheet
-        open={confirm !== null}
-        title={confirm?.action === "unlink" ? t.unlinkTelegram : t.disable}
-        text={confirm?.action === "unlink" ? t.unlinkHint : t.disableUserHint}
-        confirmLabel={confirm?.action === "unlink" ? t.unlinkTelegram : t.disable}
-        cancelLabel={t.cancel}
-        tone="danger"
-        busy={busy}
-        error={confirmFailure ? apiErrorText(confirmFailure.code) : undefined}
-        onConfirm={() => void confirmAction()}
-        onCancel={() => {
-          setConfirm(null);
-          setConfirmFailure(null);
-        }}
-      />
-      {can("vendor_users.write") && (
-        <form ref={form} className="inline-form" onSubmit={add} noValidate>
-          <Field label={t.userPhone} error={errors.phone}>
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                type="tel"
-                inputMode="tel"
-                autoComplete="off"
-                placeholder="+998 XX XXX XX XX"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                maxLength={24}
-                enterKeyHint="next"
-                required
-              />
-            )}
-          </Field>
-          <Field label={t.userName} hint={t.optional}>
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                maxLength={120}
-                autoComplete="off"
-                enterKeyHint="done"
-              />
-            )}
-          </Field>
-          <div className="inline-form-actions">
-            <button type="submit" className="btn" disabled={busy || phone.trim() === ""}>
-              {t.addUser}
-            </button>
-          </div>
-        </form>
-      )}
-      {failure && <ErrorText failure={failure} />}
     </section>
   );
 }

@@ -9,7 +9,11 @@
    Витрина не на сайте — сверху чек-лист «что осталось до публикации» (Readiness): почему она
    не опубликована, пункты партнёра — каждый с кнопкой туда, где он делается (услуги, фото,
    предложение изменений), и одной строкой — что сделает команда (район, договор, СТИР…).
-   Новый партнёр попадает сюда из входящих (строка «что дальше»).
+   Пока витрина не опубликована, пункты партнёра — то, что мешает отправить её на проверку:
+   услуги и фото, которые ждут решения команды, уже не его забота. Всё сделал — владелец
+   кабинета сам отправляет черновик (и отклонённую) на проверку кнопкой «Отправить на
+   проверку»: команде приходит оповещение, витрина — «на проверке». Новый партнёр попадает
+   сюда из входящих (строка «что дальше»).
 
    Фото — по правилу категории (photoPolicy). no_people: на фото не должно быть лиц —
    предупреждение всегда на виду, без галочки «лиц нет» (не отмеченной заранее) файлы не
@@ -35,7 +39,7 @@ import {
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
 import { Checkbox, ConfirmSheet, FileDrop } from "@bayramm/ui/react";
-import { type MouseEvent, type ReactNode, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { AttributeFacts } from "./Attributes";
 import { ApiFailure, api } from "./api";
 import { categoryName } from "./category";
@@ -297,15 +301,31 @@ const VENDOR_BLOCKERS: ReadonlySet<string> = new Set([
   "attributes",
 ]);
 
-/** Что сказано о витрине не на сайте — по статусу */
-const STATUS_LEAD: Readonly<Record<VendorListing["status"], TextKey | null>> = {
-  lead: "readyDraft",
-  draft: "readyDraft",
-  review: "readyReview",
+/** Что сказано о витрине не на сайте — по статусу: пункты ещё есть / своё партнёр сделал */
+const STATUS_LEAD: Readonly<
+  Record<VendorListing["status"], { readonly todo: TextKey; readonly done: TextKey } | null>
+> = {
+  lead: { todo: "readyDraft", done: "readyLeadDone" },
+  draft: { todo: "readyDraft", done: "readyDraftDone" },
+  review: { todo: "readyReview", done: "readyReview" },
   active: null,
-  suspended: "readySuspended",
-  rejected: "readyRejected",
+  suspended: { todo: "readySuspended", done: "readySuspended" },
+  rejected: { todo: "readyRejected", done: "readyRejectedDone" },
 };
+
+/** Из этих статусов партнёр сам отправляет витрину на проверку (POST …/submit) */
+const SUBMITTABLE: ReadonlySet<VendorListing["status"]> = new Set(["draft", "rejected"]);
+
+/** Опубликована (или приостановлена после публикации): пункты — что мешает быть на сайте */
+const isLive = (status: VendorListing["status"]) => status === "active" || status === "suspended";
+
+/**
+ * Коды готовности, из которых пункты партнёра: пока витрина не опубликована — что мешает
+ * отправить её на проверку (услуги и фото, которые ждут решения, засчитаны — дальше дело
+ * команды), у опубликованной — что мешает ей быть на сайте
+ */
+const partnerCodes = (listing: VendorListing) =>
+  isLive(listing.status) ? listing.blockers : listing.reviewBlockers;
 
 /** Куда ведут кнопки чек-листа */
 interface TodoRoutes {
@@ -322,7 +342,7 @@ export function vendorTodos(
   lang: "ru" | "uz",
   go: TodoRoutes,
 ): Todo[] {
-  const blockers = new Set(listing.blockers);
+  const blockers = new Set(partnerCodes(listing));
   const todos: Todo[] = [];
   const toServices = { label: t.toServices, run: go.services };
   // Форма изменений — блок прямо под чек-листом со своей «Предложить изменения»: тут другая подпись
@@ -335,8 +355,9 @@ export function vendorTodos(
         : t.blocker_packages;
     todos.push({ key: "packages", lines: [fill(t.todoServices, { list })], action: toServices });
   }
-  if (blockers.has("photos")) {
-    const ready = listing.photos.filter((photo) => photo.moderation !== "declined").length;
+  const ready = listing.photos.filter((photo) => photo.moderation !== "declined").length;
+  // До публикации база засчитывает для проверки и отклонённые фото — партнёру честнее считать без них
+  if (blockers.has("photos") || (!isLive(listing.status) && ready < listing.photoLimits.min)) {
     todos.push({
       key: "photos",
       lines: [fill(t.todoPhotos, { n: ready, min: listing.photoLimits.min })],
@@ -372,28 +393,118 @@ interface ReadinessProps {
   readonly lang: "ru" | "uz";
   readonly owner: boolean;
   readonly go: TodoRoutes;
+  /** Витрину отправили на проверку (или она устарела): перечитать её и значки разделов */
+  readonly onSubmitted: () => Promise<void>;
+}
+
+/** Коды готовности словами, через запятую */
+const codesText = (codes: readonly string[], t: VendorDict) =>
+  codes.map((code) => textOf(t, `blocker_${code}`)).join(", ");
+
+/**
+ * «Отправить на проверку» — владельцу кабинета, когда свои пункты сделаны. Не всё готово
+ * (кто-то успел изменить витрину) — чего не хватает, и витрина перечитывается
+ */
+function SubmitAction({
+  listing,
+  t,
+  owner,
+  onSubmitted,
+  onDone,
+}: {
+  listing: VendorListing;
+  t: VendorDict;
+  owner: boolean;
+  onSubmitted: () => Promise<void>;
+  onDone: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!owner) return <p className="note">{t.submitOwner}</p>;
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.submitListing(listing.id);
+      onDone();
+      await onSubmitted();
+    } catch (err) {
+      const blocked = err instanceof ApiFailure && err.code === "publish_blocked" && err.details.length > 0;
+      setError(blocked ? fill(t.submitBlocked, { list: codesText(err.details, t) }) : errorText(err, t));
+      // Витрину успели изменить — чек-лист заново, как сейчас
+      if (err instanceof ApiFailure && (blocked || err.code === "illegal_transition")) await onSubmitted();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <div className="actions">
+        <button type="button" className="btn btn-dark" disabled={busy} onClick={() => void submit()}>
+          {t.submitListing}
+        </button>
+      </div>
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
 }
 
 /**
  * Готовность к публикации — чек-лист: почему витрины нет на сайте, что сделать партнёру (с
- * кнопкой туда, где это делается) и одной строкой — что сделает команда. Опубликованная
- * витрина, где делать нечего, — блока нет
+ * кнопкой туда, где это делается) и одной строкой — что сделает команда. Своё сделано —
+ * «Отправить на проверку» (черновик и отклонённая); отправили — «на проверке у команды».
+ * Опубликованная витрина, где делать нечего, — блока нет
  */
-function Readiness({ listing, category, t, lang, owner, go }: ReadinessProps) {
+function Readiness({ listing, category, t, lang, owner, go, onSubmitted }: ReadinessProps) {
   const todos = vendorTodos(listing, category, t, lang, go);
   const team = listing.blockers.filter((code) => !VENDOR_BLOCKERS.has(code));
-  const leadKey = STATUS_LEAD[listing.status];
+  // Своё партнёр сделал, а отправить мешает то, что заполняет команда (район, телефон…)
+  const teamFirst = listing.reviewBlockers.filter((code) => !VENDOR_BLOCKERS.has(code));
+  const submittable = SUBMITTABLE.has(listing.status) && todos.length === 0;
+  const canSubmit = submittable && teamFirst.length === 0;
+  // Отправили отсюда: сказать об этом и держать фокус на сказанном (кнопка исчезла)
+  const [sent, setSent] = useState(false);
+  const sentRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (sent && listing.status === "review") sentRef.current?.focus({ preventScroll: true });
+  }, [sent, listing.status]);
+  const leadKeys = STATUS_LEAD[listing.status];
   const lead =
-    leadKey === "readyDraft" && todos.length === 0 ? t.readyDraftDone : leadKey ? t[leadKey] : null;
+    submittable && teamFirst.length > 0
+      ? fill(t.readyDraftWait, { list: codesText(teamFirst, t) })
+      : leadKeys
+        ? t[todos.length === 0 ? leadKeys.done : leadKeys.todo]
+        : null;
   if (lead === null && todos.length === 0) return null;
   const reason = listing.statusReason ? (
     <p className="note">{fill(t.reasonLine, { reason: listing.statusReason })}</p>
   ) : null;
+  const action = canSubmit ? (
+    <SubmitAction
+      listing={listing}
+      t={t}
+      owner={owner}
+      onSubmitted={onSubmitted}
+      onDone={() => setSent(true)}
+    />
+  ) : null;
+  const done =
+    sent && listing.status === "review" ? (
+      <p className="note" role="status" tabIndex={-1} ref={sentRef}>
+        {t.submitDone}
+      </p>
+    ) : null;
   if (todos.length === 0 && team.length === 0) {
     return (
       <div className="notice readiness">
         <p>{lead}</p>
         {reason}
+        {action}
+        {done}
       </div>
     );
   }
@@ -429,11 +540,9 @@ function Readiness({ listing, category, t, lang, owner, go }: ReadinessProps) {
         </ul>
       ) : null}
       {!owner && todos.length > 0 ? <p className="note">{t.todoOwner}</p> : null}
-      {team.length > 0 ? (
-        <p className="note">
-          {fill(t.todoTeam, { list: team.map((code) => textOf(t, `blocker_${code}`)).join(", ") })}
-        </p>
-      ) : null}
+      {team.length > 0 ? <p className="note">{fill(t.todoTeam, { list: codesText(team, t) })}</p> : null}
+      {action}
+      {done}
     </section>
   );
 }
@@ -597,7 +706,17 @@ function VenueCard({
         </span>
       </div>
 
-      <Readiness listing={listing} category={category} t={t} lang={lang} owner={owner} go={go} />
+      {/* Ключ — витрина: «отправили на проверку» другой витрины не переносится */}
+      <Readiness
+        key={`ready-${listing.id}`}
+        listing={listing}
+        category={category}
+        t={t}
+        lang={lang}
+        owner={owner}
+        go={go}
+        onSubmitted={onChanged}
+      />
 
       {/* Изменения — сразу под чек-листом: предложение на проверке, отказ с причиной и сама
         кнопка «Предложить» не прячутся под фото и сведениями (на телефоне — через два экрана).

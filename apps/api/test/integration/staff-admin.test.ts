@@ -24,12 +24,13 @@ import type {
   StaffPhoto,
   StaffRequestDetail,
   StaffRequestList,
+  TeamList,
   VendorDetail,
   VendorList,
   VendorUser,
 } from "@bayramm/shared/api/staff";
 import { type Client, Client as PgClient } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import app from "../../src/index";
 import {
   adminClient,
@@ -43,6 +44,15 @@ import {
 
 const STORAGE_URL = trimTrailingSlashes(process.env.TEST_SUPABASE_URL ?? "http://127.0.0.1:54321");
 const SERVICE_KEY = process.env.TEST_SUPABASE_SERVICE_ROLE_KEY ?? "";
+
+// Принятое сразу приглашение отправляет «вас добавили» сразу (kickOutbox) — не в настоящий Telegram
+const realFetch = globalThis.fetch;
+vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (String(input instanceof Request ? input.url : input).startsWith("https://api.telegram.org/")) {
+    throw new TypeError("Telegram is offline in tests");
+  }
+  return realFetch(input, init);
+});
 
 let admin: Client;
 const tokens = { admin: "", manager: "", moderator: "" };
@@ -120,6 +130,8 @@ describe("GET /staff/me и справочники", () => {
     expect(me.permissions).toContain("listings.publish");
     expect(me.permissions).not.toContain("vendors.write");
     expect(me.permissions).not.toContain("requests.read");
+    // Пишет ли бот сотруднику: от этого зависят оповещения команды (баннер в панели)
+    expect(typeof me.botLinked).toBe("boolean");
     const manager = await ok<StaffMe>(api("manager", "GET", "/staff/me"));
     expect(manager.permissions).toContain("vendors.write");
     expect(manager.permissions).not.toContain("listings.publish");
@@ -128,6 +140,9 @@ describe("GET /staff/me и справочники", () => {
   it("справочники: районы, категории, сотрудники, минимум фото", async () => {
     const dict = await ok<StaffDictionaries>(api("manager", "GET", "/staff/dictionaries"));
     expect(dict.districts).toHaveLength(12);
+    // Район знает свой город: в форме витрины районы — под городом
+    expect((dict.cities ?? []).map((c) => c.code)).toContain("tashkent");
+    expect(dict.districts.every((d) => d.city === "tashkent")).toBe(true);
     expect(dict.categories.filter((c) => c.enabled).map((c) => c.code)).toEqual([
       "zags",
       "hall",
@@ -181,13 +196,32 @@ describe("вендор → карточка → проверка → публи�
     ).toEqual({ status: 422, code: "invalid_input", details: ["name", "stir", "phone"] });
   });
 
+  it("Telegram вендора — как у витрины: ссылка t.me тоже, хранится имя", async () => {
+    const changed = await ok<VendorDetail>(
+      api("manager", "PATCH", `/staff/vendors/${vendor.id}`, {
+        telegramUsername: "https://t.me/Test_Person2/",
+      }),
+    );
+    expect(changed.contacts.telegramUsername).toBe("Test_Person2");
+    expect(
+      await error(api("manager", "PATCH", `/staff/vendors/${vendor.id}`, { telegramUsername: "t.me/ab" })),
+    ).toEqual({ status: 422, code: "invalid_input", details: ["telegramUsername"] });
+  });
+
   it("поиск по названию, СТИР и телефону пользователя кабинета", async () => {
     await ok(api("manager", "PATCH", `/staff/vendors/${vendor.id}`, { stir }));
     const user = await ok<VendorUser>(
       api("manager", "POST", `/staff/vendors/${vendor.id}/users`, { phone: userPhone, fullName: "Owner" }),
       201,
     );
-    expect(user).toMatchObject({ telegramLinked: false, role: "owner", disabledAt: null });
+    // Без роли — владелец (так заводили до приглашений); номер ещё никто не подтвердил
+    expect(user).toMatchObject({
+      telegramLinked: false,
+      role: "owner",
+      status: "pending",
+      notifiable: false,
+      disabledAt: null,
+    });
 
     for (const q of [`oqsaroy ${tag}`, stir, userPhone, vendor.code]) {
       const list = await ok<VendorList>(api("moderator", "GET", `/staff/vendors?q=${encodeURIComponent(q)}`));
@@ -574,7 +608,8 @@ describe("вендор → карточка → проверка → публи�
     const queue = await ok<ListingList>(api("moderator", "GET", "/staff/listings?photos=pending&limit=100"));
     const item = queue.items.find((l) => l.id === listing.id);
     expect(item?.photos.pending).toBe(1);
-    expect(queue.items.every((l) => l.status === "active" && l.photos.pending > 0)).toBe(true);
+    // Любые витрины, кроме отклонённых: фото черновика тоже можно одобрить до публикации
+    expect(queue.items.every((l) => l.status !== "rejected" && l.photos.pending > 0)).toBe(true);
 
     // Отказ без причины — нет: партнёр должен знать, что переснять
     expect(
@@ -709,7 +744,8 @@ describe("вендор → карточка → проверка → публи�
       user?.id,
     ]);
     const linked = await ok<VendorDetail>(api("moderator", "GET", `/staff/vendors/${vendor.id}`));
-    expect(linked.users[0]).toMatchObject({ telegramLinked: true });
+    // Привязан, но бот не знает его чат — уведомления не доходят, панель говорит это отдельно
+    expect(linked.users[0]).toMatchObject({ telegramLinked: true, status: "accepted", notifiable: false });
     expect(JSON.stringify(linked)).not.toMatch(/tg_user_hash|telegram_user_id/);
     expect(
       await error(
@@ -719,12 +755,13 @@ describe("вендор → карточка → проверка → публи�
     const unlinked = await ok<VendorUser>(
       api("manager", "POST", `/staff/vendors/${vendor.id}/users/${user?.id}/unlink`),
     );
-    expect(unlinked.telegramLinked).toBe(false);
+    expect(unlinked).toMatchObject({ telegramLinked: false, status: "pending" });
 
     const disabled = await ok<VendorUser>(
       api("manager", "POST", `/staff/vendors/${vendor.id}/users/${user?.id}/disable`),
     );
     expect(disabled.disabledAt).not.toBeNull();
+    expect(disabled.status).toBe("disabled");
     const enabled = await ok<VendorUser>(
       api("manager", "POST", `/staff/vendors/${vendor.id}/users/${user?.id}/enable`),
     );
@@ -734,13 +771,14 @@ describe("вендор → карточка → проверка → публи�
   describe("заявки", () => {
     let requestId = "";
     const clientPhone = phone();
+    // Клиент заявки: его код C-… панель показывает ссылкой на страницу клиента
+    const client = randomUUID();
 
     beforeAll(async () => {
       // Опубликовать снова и завести заявку, как её создаст клиентское приложение
       listing = await ok<ListingDetail>(
         api("moderator", "POST", `/staff/listings/${listing.id}/publish`, { version: listing.version }),
       );
-      const client = randomUUID();
       const text = randomUUID();
       const consent = randomUUID();
       await admin.query("insert into app.clients (id, tg_id_hash) values ($1, $2)", [
@@ -783,10 +821,27 @@ describe("вендор → карточка → проверка → публи�
       expect((await api("moderator", "GET", "/staff/requests")).status).toBe(403);
     });
 
-    it("заявка: имя и комментарий видны, телефона в ответе нет", async () => {
+    it("список: заявки одной витрины (?listingId=) — ссылка «Заявки витрины» в панели", async () => {
+      const list = await ok<StaffRequestList>(
+        api("manager", "GET", `/staff/requests?listingId=${listing.id}`),
+      );
+      expect(list.items.map((r) => r.id)).toContain(requestId);
+      expect(list.items.every((r) => r.listing.id === listing.id)).toBe(true);
+      const other = await ok<StaffRequestList>(
+        api("manager", "GET", `/staff/requests?listingId=${randomUUID()}`),
+      );
+      expect(other).toMatchObject({ total: 0, items: [] });
+      // Не UUID — фильтра нет, а не ошибка
+      expect((await api("manager", "GET", "/staff/requests?listingId=nope")).status).toBe(200);
+    });
+
+    it("заявка: имя и комментарий видны, телефона в ответе нет; клиент — id и код C-… для ссылки", async () => {
       const detail = await ok<StaffRequestDetail>(api("manager", "GET", `/staff/requests/${requestId}`));
       expect(detail).toMatchObject({ contactName: "Client", comment: "Нужен зал", contactPurged: false });
+      expect(detail.client).toEqual({ id: client, ref: `C-${client.slice(0, 8)}` });
       expect(detail.history).toMatchObject([{ from: null, to: "new" }]);
+      // Кто сменил статус — подписью журнала (у системы — без имени); телефона там нет
+      expect(detail.history.every((h) => h.actorName === null || typeof h.actorName === "string")).toBe(true);
       expect(JSON.stringify(detail)).not.toContain(clientPhone.slice(4));
     });
 
@@ -829,5 +884,277 @@ describe("вендор → карточка → проверка → публи�
       expect(phones.phone).toBe(contactPhone);
       expect(phones.listingPhone).toMatch(/^\+99890\d{7}$/);
     });
+
+    it("витрину и вендора с заявкой не удалить — только приостановить", async () => {
+      const seen = await ok<ListingDetail>(api("manager", "GET", `/staff/listings/${listing.id}`));
+      expect(seen.deleteBlocker).toBe("requests");
+      expect(await error(api("admin", "DELETE", `/staff/listings/${listing.id}`))).toEqual({
+        status: 409,
+        code: "listing_in_use",
+        details: ["requests"],
+      });
+      const owner = await ok<VendorDetail>(api("admin", "GET", `/staff/vendors/${vendor.id}`));
+      expect(owner.deleteBlocker).toBe("requests");
+      expect(await error(api("admin", "DELETE", `/staff/vendors/${vendor.id}`))).toEqual({
+        status: 409,
+        code: "vendor_in_use",
+        details: ["requests"],
+      });
+      expect((await api("manager", "GET", `/staff/listings/${listing.id}`)).status).toBe(200);
+    });
+  });
+});
+
+describe("удаление: витрина, вендор, приглашение", () => {
+  let vendor: VendorDetail;
+  let second: ListingDetail;
+
+  beforeAll(async () => {
+    vendor = await ok<VendorDetail>(
+      api("manager", "POST", "/staff/vendors", { name: `Ошибка ${tag}`, categoryCode: "hall" }),
+      201,
+    );
+    await ok(api("manager", "POST", `/staff/vendors/${vendor.id}/users`, { phone: phone() }), 201);
+    second = await ok<ListingDetail>(
+      api("manager", "POST", `/staff/vendors/${vendor.id}/listings`, { categoryCode: "car" }),
+      201,
+    );
+  });
+
+  it("черновик без заявок удаляет менеджер (не модератор) — с фото; в журнале — одна запись", async () => {
+    expect(second.deleteBlocker).toBeNull();
+    const key = `listings/${second.id}/${randomUUID()}.webp`;
+    await admin.query(
+      `insert into app.photos (listing_id, status, storage_key, mime, bytes, width, height, sha256, sort, no_faces_ack)
+       values ($1, 'ready', $2, 'image/webp', 1000, 1600, 1200, $3, 1, true)`,
+      [second.id, key, randomBytes(32)],
+    );
+    expect((await api("moderator", "DELETE", `/staff/listings/${second.id}`)).status).toBe(403);
+    // Объекта в хранилище нет (или хранилище не настроено) — витрина всё равно удаляется
+    expect((await api("manager", "DELETE", `/staff/listings/${second.id}`)).status).toBe(204);
+    expect((await api("manager", "GET", `/staff/listings/${second.id}`)).status).toBe(404);
+    expect((await api("manager", "DELETE", `/staff/listings/${second.id}`)).status).toBe(404);
+    const { rows } = await admin.query<{ action: string; detail: Record<string, unknown> }>(
+      "select action, detail from app.audit_log where object_type = 'listing' and object_id = $1 order by id",
+      [second.id],
+    );
+    expect(rows.at(-1)).toEqual({
+      action: "listing.delete",
+      detail: {
+        vendor_id: vendor.id,
+        category: "car",
+        status: "draft",
+        photos: 1,
+        services: 0,
+        revisions: 0,
+        busy_days: 0,
+      },
+    });
+    const { rows: photos } = await admin.query("select 1 from app.photos where storage_key = $1", [key]);
+    expect(photos).toEqual([]);
+  });
+
+  it("вендора удаляет только администратор — с витринами и пользователями кабинета", async () => {
+    const current = await ok<VendorDetail>(api("manager", "GET", `/staff/vendors/${vendor.id}`));
+    expect(current.deleteBlocker).toBeNull();
+    expect(current.listings).toHaveLength(1);
+    expect((await api("manager", "DELETE", `/staff/vendors/${vendor.id}`)).status).toBe(403);
+    expect((await api("admin", "DELETE", `/staff/vendors/${vendor.id}`)).status).toBe(204);
+    expect((await api("admin", "GET", `/staff/vendors/${vendor.id}`)).status).toBe(404);
+    const { rows } = await admin.query<{ n: number }>(
+      `select (select count(*) from app.vendor_users where vendor_id = $1)::int
+            + (select count(*) from app.listings where vendor_id = $1)::int as n`,
+      [vendor.id],
+    );
+    expect(rows[0]?.n).toBe(0);
+    const audit = await admin.query<{ detail: Record<string, unknown> }>(
+      "select detail from app.audit_log where action = 'vendor.delete' and object_id = $1",
+      [vendor.id],
+    );
+    expect(audit.rows).toEqual([{ detail: { code: vendor.code, listings: 1, photos: 0, users: 1 } }]);
+  });
+
+  it("приглашение, которое не приняли, отзывается; принятое — 409, его отключают", async () => {
+    const username = newStaffUsername();
+    const invited = await ok<TeamList>(
+      api("admin", "POST", "/staff/team", { username, displayName: `Отозвать ${tag}`, role: "manager" }),
+      201,
+    );
+    const member = invited.items.find((m) => m.username === username);
+    expect(member).toMatchObject({ accepted: false });
+    expect((await api("manager", "DELETE", `/staff/team/${member?.id}`)).status).toBe(403);
+    const after = await ok<TeamList>(api("admin", "DELETE", `/staff/team/${member?.id}`));
+    expect(after.items.map((m) => m.id)).not.toContain(member?.id);
+    const { rows } = await admin.query<{ detail: Record<string, unknown> }>(
+      "select detail from app.audit_log where action = 'staff.invite_revoke' and object_id = $1",
+      [member?.id],
+    );
+    expect(rows).toEqual([{ detail: { role: "manager", via: "telegram" } }]);
+
+    const me = await ok<StaffMe>(api("manager", "GET", "/staff/me"));
+    expect(await error(api("admin", "DELETE", `/staff/team/${me.id}`))).toMatchObject({
+      status: 409,
+      code: "staff_invite_accepted",
+    });
+  });
+
+  it("приглашение по ссылке t.me или @имени — имя без «@» в нижнем регистре; не имя — 422", async () => {
+    const username = newStaffUsername();
+    const invited = await ok<TeamList>(
+      api("admin", "POST", "/staff/team", {
+        username: `https://t.me/${username.toUpperCase()}`,
+        displayName: `Ссылкой ${tag}`,
+        role: "moderator",
+      }),
+      201,
+    );
+    expect(invited.items.find((m) => m.username === username)).toMatchObject({ accepted: false });
+    expect(
+      await error(
+        api("admin", "POST", "/staff/team", {
+          username: "@ab",
+          displayName: `Коротко ${tag}`,
+          role: "manager",
+        }),
+      ),
+    ).toEqual({ status: 422, code: "invalid_input", details: ["username"] });
+  });
+});
+
+describe("пользователи кабинета: приглашение, владелец, «убрать из кабинета»", () => {
+  const ownerPhone = phone();
+  const memberPhone = phone();
+  const knownPhone = phone();
+  const usersOf = (vendorId: string) => `/staff/vendors/${vendorId}/users`;
+  let vendor: VendorDetail;
+  let owner: VendorUser;
+  let member: VendorUser;
+
+  beforeAll(async () => {
+    vendor = await ok<VendorDetail>(
+      api("manager", "POST", "/staff/vendors", { name: `Kabinet ${tag}` }),
+      201,
+    );
+  });
+
+  it("модератор не приглашает; сотрудника площадки без владельца — 409 vendor_last_owner", async () => {
+    expect(
+      (await api("moderator", "POST", usersOf(vendor.id), { phone: memberPhone, role: "member" })).status,
+    ).toBe(403);
+    expect(
+      await error(api("manager", "POST", usersOf(vendor.id), { phone: memberPhone, role: "member" })),
+    ).toMatchObject({ status: 409, code: "vendor_last_owner" });
+  });
+
+  it("приглашение ждёт входа: роль и язык — как выбрали; в журнале — без имени и номера", async () => {
+    owner = await ok<VendorUser>(
+      api("manager", "POST", usersOf(vendor.id), {
+        phone: ownerPhone,
+        fullName: "Kamola",
+        role: "owner",
+        locale: "ru",
+      }),
+      201,
+    );
+    expect(owner).toMatchObject({
+      fullName: "Kamola",
+      role: "owner",
+      locale: "ru",
+      status: "pending",
+      notifiable: false,
+      accountLinked: false,
+      lastLoginAt: null,
+    });
+    member = await ok<VendorUser>(
+      api("manager", "POST", usersOf(vendor.id), { phone: memberPhone, role: "member", locale: "uz" }),
+      201,
+    );
+    expect(member).toMatchObject({ role: "member", locale: "uz", status: "pending" });
+    const { rows } = await admin.query<{ detail: unknown }>(
+      "select detail from app.audit_log where action = 'vendor_user.invite' and object_id = $1",
+      [member.id],
+    );
+    expect(rows).toEqual([
+      { detail: { vendor_id: vendor.id, role: "member", via: "phone", accepted: false } },
+    ]);
+    expect(JSON.stringify(rows)).not.toContain(memberPhone.slice(4));
+  });
+
+  it("номер уже подтверждён у аккаунта с Telegram — принято сразу, уведомления доходят, «вас добавили» — в очереди", async () => {
+    // Аккаунт с этим номером и Telegram; бот уже может ему писать как клиенту
+    const telegramId = 700_000_000 + randomInt(0, 99_999_999);
+    const tgHash = createHmac("sha256", ID_HASH_KEY).update(String(telegramId)).digest();
+    const {
+      rows: [account],
+    } = await admin.query<{ id: string }>("insert into app.accounts default values returning id");
+    await admin.query(
+      `insert into app.account_identities (account_id, kind, value_hash) values
+         ($1, 'phone', $2), ($1, 'telegram', $3)`,
+      [account?.id, createHmac("sha256", ID_HASH_KEY).update(knownPhone).digest(), tgHash],
+    );
+    await admin.query("insert into pii.account_profiles (account_id, telegram_id) values ($1, $2)", [
+      account?.id,
+      telegramId,
+    ]);
+    await admin.query("insert into app.clients (account_id, tg_id_hash, can_message) values ($1, $2, true)", [
+      account?.id,
+      tgHash,
+    ]);
+
+    const accepted = await ok<VendorUser>(
+      api("manager", "POST", usersOf(vendor.id), { phone: knownPhone, role: "member", locale: "uz" }),
+      201,
+    );
+    expect(accepted).toMatchObject({
+      status: "accepted",
+      accountLinked: true,
+      telegramLinked: true,
+      notifiable: true,
+    });
+    const { rows } = await admin.query<{ kind: string; payload: unknown }>(
+      "select kind, payload from app.outbox where recipient_kind = 'vendor_user' and recipient_id = $1",
+      [accepted.id],
+    );
+    expect(rows).toEqual([{ kind: "vendor.access_granted", payload: { vendor_id: vendor.id } }]);
+  });
+
+  it("последнего владельца не понизить, не отключить и не убрать — 409 vendor_last_owner", async () => {
+    const url = `${usersOf(vendor.id)}/${owner.id}`;
+    expect(await error(api("manager", "PATCH", url, { role: "member" }))).toMatchObject({
+      status: 409,
+      code: "vendor_last_owner",
+    });
+    expect(await error(api("manager", "POST", `${url}/disable`))).toMatchObject({
+      status: 409,
+      code: "vendor_last_owner",
+    });
+    expect(await error(api("manager", "DELETE", url))).toMatchObject({
+      status: 409,
+      code: "vendor_last_owner",
+    });
+    // Имя и язык — можно
+    const renamed = await ok<VendorUser>(
+      api("manager", "PATCH", url, { fullName: "Kamola K.", locale: "uz" }),
+    );
+    expect(renamed).toMatchObject({ fullName: "Kamola K.", locale: "uz", role: "owner" });
+  });
+
+  it("убрать из кабинета — 204: ни пользователя, ни профиля; повтор — 404; в журнале — remove", async () => {
+    const url = `${usersOf(vendor.id)}/${member.id}`;
+    expect((await api("moderator", "DELETE", url)).status).toBe(403);
+    expect((await api("manager", "DELETE", url)).status).toBe(204);
+    const detail = await ok<VendorDetail>(api("manager", "GET", `/staff/vendors/${vendor.id}`));
+    expect(detail.users.map((u) => u.id)).not.toContain(member.id);
+    const { rows: profiles } = await admin.query(
+      "select 1 from pii.vendor_user_profiles where vendor_user_id = $1",
+      [member.id],
+    );
+    expect(profiles).toEqual([]);
+    expect((await api("manager", "DELETE", url)).status).toBe(404);
+    const { rows } = await admin.query<{ detail: unknown }>(
+      "select detail from app.audit_log where action = 'vendor_user.remove' and object_id = $1",
+      [member.id],
+    );
+    expect(rows).toEqual([{ detail: { vendor_id: vendor.id, role: "member", had_account: false } }]);
   });
 });

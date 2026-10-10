@@ -11,11 +11,15 @@ import type {
   OutboxHealth,
   RevisionDetail,
   RevisionList,
+  ServiceQueue,
+  ServiceQueueItem,
   StaffDictionaries,
   StaffMe,
   StaffRequestDetail,
   StaffSettings,
   TeamList,
+  TeamMember,
+  VendorListItem,
 } from "@bayramm/shared/api/staff";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -39,12 +43,14 @@ const OUTBOX_ID = "eeeeeeee-0000-0000-0000-000000000001";
 const ADMIN: StaffMe["permissions"] = [
   "catalog.read",
   "vendors.write",
+  "vendors.delete",
   "vendor_users.write",
   "listings.write",
   "listings.submit",
   "listings.publish",
   "listings.moderate",
   "listings.draft",
+  "listings.delete",
   "photos.moderate",
   "vendor_phones.read",
   "requests.read",
@@ -88,6 +94,7 @@ const staff = (role: StaffMe["role"], permissions: StaffMe["permissions"]): Staf
   displayName: `Test ${role}`,
   username: null,
   permissions,
+  botLinked: true,
 });
 
 const DICT: StaffDictionaries = {
@@ -96,6 +103,37 @@ const DICT: StaffDictionaries = {
   occasions: [{ code: "toy", nameRu: "Свадьба", nameUz: "Toʻy" }],
   staff: [{ id: ME_ID, displayName: "Test admin", role: "admin" }],
   settings: { minPhotos: 3, maxPhotos: 10, slaHours: 12 },
+};
+
+/** Строка списка вендоров и сотрудник команды — для поиска объекта и сотрудника в журнале */
+const VENDOR_ITEM: VendorListItem = {
+  id: VENDOR_ID,
+  code: "V101",
+  name: "Oqsaroy",
+  legalForm: null,
+  legalName: null,
+  contactPerson: null,
+  managerName: null,
+  createdAt: "2026-09-01T06:00:00.000Z",
+  checklist: { contract: false, stir: false, contacts: false, pdConsent: false },
+  listings: [],
+  users: 0,
+  linkedUsers: 0,
+};
+
+const TEAM_MEMBER: TeamMember = {
+  id: ME_ID,
+  displayName: "Test admin",
+  username: null,
+  invitedBy: "telegram",
+  role: "moderator",
+  active: true,
+  accepted: true,
+  linked: true,
+  linkedAt: "2026-09-01T06:00:00.000Z",
+  botLinked: true,
+  createdAt: "2026-09-01T06:00:00.000Z",
+  self: false,
 };
 
 interface Call {
@@ -155,6 +193,16 @@ const buttons = (name: string) =>
   [...container.querySelectorAll("button")].filter((b) => b.textContent?.trim() === name);
 const button = (name: string) => buttons(name)[0];
 const lastCall = (suffix: string) => calls.filter((c) => c.url.split("?")[0]?.endsWith(suffix)).at(-1);
+/** Вариант группы (RadioGroup) по подписи: под рисунком — настоящая радиокнопка */
+const radio = (name: string) =>
+  [...container.querySelectorAll("label.ui-radio")]
+    .find((label) => label.textContent?.trim() === name)
+    ?.querySelector<HTMLInputElement>("input[type=radio]") ?? undefined;
+/** Поиск списка уходит, когда перестали печатать: ждём задержку */
+const debounced = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+  });
 
 async function click(element: Element | undefined) {
   await act(async () => (element as HTMLElement | undefined)?.click());
@@ -214,6 +262,7 @@ const REQUEST: StaffRequestDetail = {
   contactName: "Client",
   comment: null,
   contactPurged: false,
+  client: { id: "dddddddd-0000-0000-0000-000000000001", ref: "C-dddddddd" },
   history: [],
   timeline: [
     { kind: "created", at: "2026-09-28T18:00:00.000Z" },
@@ -358,10 +407,102 @@ describe("заявка: работа с заявкой", () => {
       }),
     });
     await mount("/requests");
-    const late = button(`${t.slaLate}5`);
+    // Счётчик — в подписи варианта: на компьютере срок ответа — одной строкой пилюль
+    const late = radio(`${t.slaLate} · 5`);
     expect(late).toBeDefined();
     await click(late);
     expect(calls.at(-1)?.url).toContain("sla=late");
+    // Фильтр — в адресе: «назад» из заявки вернёт тот же список
+    expect(window.location.search).toBe("?sla=late");
+  });
+
+  it("список: фильтр статуса заявки, поиск без кнопки, пусто из-за фильтров — «Сбросить фильтры»", async () => {
+    mockApi(staff("manager", MANAGER), {
+      "GET /api/staff/requests": json({
+        total: 0,
+        items: [],
+        counts: {
+          waiting: 0,
+          overdue: 0,
+          breached: 0,
+          answered: 0,
+          answered_late: 0,
+          ops_contacted: 0,
+          closed: 0,
+        },
+      }),
+    });
+    await mount("/requests?q=V101");
+    // Пришли по ссылке «Заявки вендора»: поиск уже в поле и в запросе
+    expect((container.querySelector("input[type=search]") as HTMLInputElement).value).toBe("V101");
+    expect(lastCall("/staff/requests")?.url).toContain("q=V101");
+    await click(container.querySelector(`button[aria-haspopup=listbox]`) ?? undefined);
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.requestStatus.deal),
+    );
+    expect(lastCall("/staff/requests")?.url).toContain("status=deal");
+    expect(window.location.search).toContain("status=deal");
+    // Поиск — без кнопки «Найти»: как только перестали печатать
+    expect(button(t.search)).toBeUndefined();
+    await type(container.querySelector("input[type=search]"), "1001");
+    await debounced();
+    await settle();
+    expect(lastCall("/staff/requests")?.url).toContain("q=1001");
+    expect(text()).toContain(t.requestsFilteredEmpty);
+    await click(button(t.resetFilters));
+    expect(window.location.search).toBe("");
+    expect(lastCall("/staff/requests")?.url).toBe("/api/staff/requests?limit=50&offset=0");
+  });
+
+  it("список длиннее страницы — страницы: «Следующие» уходит со сдвигом, номер страницы — в адресе", async () => {
+    const item = (n: number) => ({
+      id: `cccccccc-0000-0000-0000-${String(n).padStart(12, "0")}`,
+      publicNo: 2000 + n,
+      status: "new",
+      sla: "waiting",
+      slaDueAt: "2026-09-29T06:00:00.000Z",
+      firstResponseAt: null,
+      firstResponseBy: null,
+      occasionCode: "toy",
+      eventDate: "2026-11-10",
+      guests: null,
+      dayPart: null,
+      createdAt: "2026-09-28T18:00:00.000Z",
+      contactName: null,
+      listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },
+      vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+      reminders: 0,
+    });
+    mockApi(staff("manager", MANAGER), {
+      "GET /api/staff/requests": () => {
+        const offset = Number(new URL(calls.at(-1)?.url ?? "", "http://x").searchParams.get("offset"));
+        const items = Array.from({ length: offset === 0 ? 50 : 10 }, (_, i) => item(offset + i));
+        return new Response(
+          JSON.stringify({
+            total: 60,
+            items,
+            counts: {
+              waiting: 60,
+              overdue: 0,
+              breached: 0,
+              answered: 0,
+              answered_late: 0,
+              ops_contacted: 0,
+              closed: 0,
+            },
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    await mount("/requests");
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(50);
+    expect(text()).toContain(t.pagerRange(1, 50, 60));
+    await click(button(t.pagerNext));
+    expect(lastCall("/staff/requests")?.url).toContain("offset=50");
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(10);
+    expect(text()).toContain(t.pagerRange(51, 60, 60));
+    expect(window.location.search).toBe("?page=2");
   });
 });
 
@@ -463,10 +604,14 @@ describe("клиенты", () => {
     expect(rows[1]).toContain(t.clientNoRequests);
     expect(rows[2]).toContain(t.signInNone);
     expect(rows[2]).toContain(t.clientDeleted);
+    // Поиск — сразу, как перестали печатать: кнопки «Найти» нет
+    expect(button(t.search)).toBeUndefined();
     const search = container.querySelector("input[type=search]");
     await type(search, "1001");
-    await click(button(t.search));
+    await debounced();
+    await settle();
     expect(calls.at(-1)?.url).toContain("q=1001");
+    expect(window.location.search).toBe("?q=1001");
   });
 
   it("клиент: имя, заявки, согласия; блокировка — только с причиной", async () => {
@@ -500,17 +645,34 @@ describe("клиенты", () => {
     expect(button(t.unblock)).toBeDefined();
   });
 
-  it("администратор: телефон — с причиной", async () => {
+  it("администратор: телефон — с причиной; частая причина — чипом, вписывается в поле", async () => {
     mockApi(staff("admin", ADMIN), {
       [`GET /api/staff/clients/${CLIENT_ID}`]: json(CLIENT),
       [`POST /api/staff/clients/${CLIENT_ID}/phone`]: json({ phone: "+998001112233" }),
     });
     await mount(`/clients/${CLIENT_ID}`);
+    // Номер скрыт маской; «Показать» открывает причину — без неё запроса нет
+    const row = [...container.querySelectorAll(".phone-row")].find(
+      (r) => r.querySelector(".phone-label")?.textContent === t.clientPhoneProfile,
+    );
+    expect(row?.textContent).toContain("+998 •• ••• •• ••");
+    expect(text()).not.toContain(t.clientPhoneReason);
+    await click([...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.show));
+    expect(calls.some((c) => c.url.endsWith("/phone"))).toBe(false);
     const form = [...container.querySelectorAll(".confirm")].find((f) =>
       f.textContent?.includes(t.clientPhoneReason),
     );
-    await type(form?.querySelector("input") ?? null, "Жалоба вендора");
-    await click(form?.querySelector("button") ?? undefined);
+    expect(document.activeElement).toBe(form);
+    const show = [...(form?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.show);
+    expect(show?.disabled).toBe(true);
+    const chip = [...(form?.querySelectorAll(".reason-chip") ?? [])].find(
+      (b) => b.textContent === "Жалоба вендора",
+    );
+    expect(chip?.getAttribute("aria-pressed")).toBe("false");
+    await click(chip);
+    expect((form?.querySelector("input") as HTMLInputElement | null)?.value).toBe("Жалоба вендора");
+    expect(chip?.getAttribute("aria-pressed")).toBe("true");
+    await click(show);
     expect(lastCall("/phone")?.body).toEqual({ reason: "Жалоба вендора" });
     expect(text()).toContain("+998 00 111 22 33");
   });
@@ -615,6 +777,89 @@ describe("журнал", () => {
     expect(text()).not.toContain(LISTING_ID.slice(0, 8));
   });
 
+  it("объект — поиском по виду: вендор по названию или коду; в адрес и на сервер — его id", async () => {
+    const OTHER = "aaaaaaaa-0000-0000-0000-000000000099";
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/audit": json(LIST),
+      "GET /api/staff/vendors": json({
+        total: 2,
+        items: [
+          { ...VENDOR_ITEM, id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+          { ...VENDOR_ITEM, id: OTHER, code: "V102", name: "Lola" },
+        ],
+      }),
+    });
+    await mount("/audit");
+    const field = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")].find(
+        (b) => b.id && container.querySelector(`label[for="${b.id}"]`)?.textContent === label,
+      );
+    // Вид объекта не выбран — искать нечего: поле недоступно и говорит почему
+    expect(field(t.auditObject)?.disabled).toBe(true);
+    expect(text()).toContain(t.auditObjectPickType);
+    await click(field(t.auditType));
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.auditTypes.vendor),
+    );
+    expect(field(t.auditObject)?.disabled).toBe(false);
+    await click(field(t.auditObject));
+    const search = document.querySelector<HTMLInputElement>('[role="combobox"]');
+    expect(search?.getAttribute("placeholder")).toBe(t.auditObjectHints.vendor);
+    await type(search, "Lo");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    await settle();
+    expect(lastCall("/staff/vendors")?.url).toBe("/api/staff/vendors?q=Lo&limit=20");
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === "Lola · V102"),
+    );
+    expect(field(t.auditObject)?.textContent).toBe("Lola · V102");
+    await click(button(t.auditApply));
+    expect(lastCall("/staff/audit")?.url).toContain(`object=${OTHER}`);
+    expect(window.location.search).toBe(`?type=vendor&object=${OTHER}`);
+  });
+
+  it("«Сотрудник» — и отключённые с пометкой; когда «Кто» не сотрудник — поле недоступно", async () => {
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/audit": json(LIST),
+      "GET /api/staff/team": json({
+        items: [
+          { ...TEAM_MEMBER, id: ME_ID, displayName: "Test admin", active: true },
+          {
+            ...TEAM_MEMBER,
+            id: "00000000-0000-0000-0000-00000000a009",
+            displayName: "Old moderator",
+            active: false,
+          },
+        ],
+      }),
+    });
+    await mount("/audit");
+    const actor = [...container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")][0];
+    await click(actor);
+    expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
+      t.auditActorAny,
+      "Test admin",
+      t.auditStaffInactive("Old moderator"),
+    ]);
+    await act(async () => {
+      document
+        .querySelector<HTMLElement>('[role="listbox"]')
+        ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    const kind = [...container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")][1];
+    await click(kind);
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.historyBy.client),
+    );
+    expect(container.querySelectorAll<HTMLButtonElement>("button[aria-haspopup=listbox]")[0]?.disabled).toBe(
+      true,
+    );
+    expect(text()).toContain(t.auditActorStaffOnly);
+  });
+
   it("нет подписи (витрины уже нет) — короткий id; партнёр и клиент — по имени и виду", async () => {
     const entry = LIST.items[0] as AuditList["items"][number];
     const odd: AuditList = {
@@ -691,6 +936,25 @@ describe("журнал", () => {
     expect(detailText({ vendor_id: VENDOR_ID })).toBe("");
   });
 
+  it("удаление витрины и вендора, отзыв приглашения: статус и роль словами, числа — как есть", () => {
+    expect(t.auditActions["listing.delete"]).toBeDefined();
+    expect(t.auditActions["vendor.delete"]).toBeDefined();
+    expect(t.auditActions["staff.invite_revoke"]).toBeDefined();
+    expect(
+      detailText({ vendor_id: VENDOR_ID, category: "car", status: "suspended", photos: 4, busy_days: 2 }),
+    ).toBe(
+      [
+        `${t.auditDetailKeys.category}: car`,
+        `${t.auditDetailKeys.status}: ${t.status.suspended}`,
+        `${t.auditDetailKeys.photos}: 4`,
+        `${t.auditDetailKeys.busy_days}: 2`,
+      ].join(" · "),
+    );
+    expect(detailText({ role: "manager", via: "phone" })).toBe(
+      `${t.auditDetailKeys.role}: ${t.roles.manager} · ${t.auditDetailKeys.via}: ${t.auditVia.phone}`,
+    );
+  });
+
   it("действие в фильтре — группа («Заявки»), на сервер уходит начало кода; свой код из ссылки — тоже вариант", async () => {
     mockApi(staff("admin", ADMIN), { "GET /api/staff/audit": json(LIST) });
     await mount("/audit?action=listing.");
@@ -734,8 +998,8 @@ describe("журнал", () => {
       }),
     });
     await mount("/audit");
-    await click(button(t.auditTabs.pii));
-    expect(calls.at(-1)?.url).toContain("/api/staff/audit/pii");
+    await click(radio(t.auditTabs.pii));
+    expect(lastCall("/staff/audit/pii")).toBeDefined();
     expect(text()).toContain("Клиент просит перезвонить");
     // Чей телефон — «№1001» ссылкой на заявку, а не начало UUID
     expect(container.querySelector(`a[href="/requests/${REQUEST_ID}"]`)?.textContent).toBe("№1001");
@@ -758,6 +1022,7 @@ describe("команда", () => {
         accepted: true,
         linked: true,
         linkedAt: "2026-09-01T06:00:00.000Z",
+        botLinked: true,
         createdAt: "2026-09-01T06:00:00.000Z",
         self: true,
       },
@@ -771,6 +1036,7 @@ describe("команда", () => {
         accepted: false,
         linked: false,
         linkedAt: null,
+        botLinked: false,
         createdAt: "2026-09-01T06:00:00.000Z",
         self: false,
       },
@@ -784,6 +1050,7 @@ describe("команда", () => {
         accepted: true,
         linked: false,
         linkedAt: null,
+        botLinked: false,
         createdAt: "2026-09-01T06:00:00.000Z",
         self: false,
       },
@@ -817,6 +1084,12 @@ describe("команда", () => {
     expect(text()).toContain(t.memberInactive);
   });
 
+  /** Роль приглашения — строкой с пояснением (свои радиокнопки, не системные) */
+  const roleRow = (form: HTMLFormElement, role: "admin" | "manager" | "moderator") =>
+    [...form.querySelectorAll("label.ui-radio")].find((l) => l.textContent?.startsWith(t.roles[role])) as
+      | HTMLElement
+      | undefined;
+
   it("приглашение: имя, имя пользователя Telegram и роль уходят на сервер", async () => {
     mockApi(staff("admin", ADMIN), {
       "GET /api/staff/team": json(TEAM),
@@ -826,20 +1099,57 @@ describe("команда", () => {
     const form = container.querySelector("form.fs") as HTMLFormElement;
     const [name, username] = inviteInputs(form);
     await type(name ?? null, "Новый модератор");
-    await type(username ?? null, "@new_moderator");
-    // Роль — свой список (Select): открыть и выбрать вариант; системного select нет
+    // Ссылка t.me и «@» снимаются сразу: в поле — имя, «@» стоит у поля
+    await type(username ?? null, "https://t.me/new_moderator");
+    expect((username as HTMLInputElement).value).toBe("new_moderator");
+    // Роль — строками с пояснением; системного select нет
     expect(form.querySelector("select")).toBeNull();
-    await click(form.querySelector("button[aria-haspopup=listbox]") ?? undefined);
-    await click(
-      [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === t.roles.moderator),
-    );
+    expect(roleRow(form, "moderator")?.textContent).toContain(t.roleHints.moderator);
+    await click(roleRow(form, "moderator"));
     await click(button(t.invite));
     expect(lastCall("/team")?.body).toEqual({
       displayName: "Новый модератор",
-      username: "@new_moderator",
+      username: "new_moderator",
       role: "moderator",
     });
     expect(text()).toContain(t.invited);
+  });
+
+  it("имя Telegram не по правилам — ошибка сразу у поля, без запроса", async () => {
+    mockApi(staff("admin", ADMIN), { "GET /api/staff/team": json(TEAM) });
+    await mount("/team");
+    const form = container.querySelector("form.fs") as HTMLFormElement;
+    const [name, username] = inviteInputs(form);
+    await type(name ?? null, "Новый");
+    await type(username ?? null, "new-moderator");
+    expect(form.querySelector(".field-error")?.textContent).toBe(t.input.telegramChars);
+    await type(username ?? null, "abc");
+    await click(button(t.invite));
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    expect(form.querySelector(".field-error")?.textContent).toBe(t.fieldErrors.telegramUsername);
+  });
+
+  it("пригласить администратора — только после подтверждения", async () => {
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/team": json(TEAM),
+      "POST /api/staff/team": json(TEAM, 201),
+    });
+    await mount("/team");
+    const form = container.querySelector("form.fs") as HTMLFormElement;
+    const [name, username] = inviteInputs(form);
+    await type(name ?? null, "Новый админ");
+    await type(username ?? null, "new_admin");
+    await click(roleRow(form, "admin"));
+    await click(button(t.invite));
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    const sheet = document.querySelector('[role="alertdialog"]') as HTMLElement;
+    expect(sheet.textContent).toContain(t.inviteAdminTitle);
+    await click([...sheet.querySelectorAll("button")].find((b) => b.textContent === t.invite));
+    expect(lastCall("/team")?.body).toEqual({
+      displayName: "Новый админ",
+      username: "new_admin",
+      role: "admin",
+    });
   });
 
   it("приглашение по телефону: номер приводится к +998…, неверный — ошибка у поля без запроса", async () => {
@@ -858,13 +1168,17 @@ describe("команда", () => {
     expect(text()).toContain(t.inviteHintPhoneOff);
     const [name, phone] = inviteInputs(form);
     expect(phone?.getAttribute("type")).toBe("tel");
+    expect(phone?.getAttribute("inputmode")).toBe("numeric");
     await type(name ?? null, "Новый менеджер");
+    // Чужой код — ошибка сразу, номер в поле не попадает: «Пригласить» неактивна
     await type(phone ?? null, "+7 900 123 45 67");
     await click(button(t.invite));
     expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/team"))).toBe(false);
-    expect(form.querySelector(".field-error")?.textContent).toBe(t.fieldErrors.phone);
+    expect(form.querySelector(".field-error")?.textContent).toBe(t.input.phoneForeign);
 
     await type(phone ?? null, "00 123-45-67");
+    // Маска «XX XXX XX XX», «+998» — у поля
+    expect((phone as HTMLInputElement).value).toBe("00 123 45 67");
     await click(button(t.invite));
     expect(lastCall("/team")?.body).toEqual({
       displayName: "Новый менеджер",
@@ -872,6 +1186,46 @@ describe("команда", () => {
       phone: "+998001234567",
     });
     expect(text()).toContain(t.invited);
+  });
+
+  it("приглашение, которое не приняли, отзывается через подтверждение; у принятых и у себя — нет", async () => {
+    const pending = "00000000-0000-0000-0000-00000000a002";
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/team": json(TEAM),
+      [`DELETE /api/staff/team/${pending}`]: json({ items: [TEAM.items[0], TEAM.items[2]] }),
+    });
+    await mount("/team");
+    const rows = () => [...container.querySelectorAll("tbody tr")];
+    const revokeIn = (row: Element | undefined) =>
+      [...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.inviteRevoke);
+    expect(rows().map((row) => revokeIn(row) !== undefined)).toEqual([false, true, false]);
+
+    await click(revokeIn(rows()[1]));
+    const sheet = document.querySelector<HTMLElement>('[role="alertdialog"]');
+    expect(sheet?.textContent).toContain(t.inviteRevokeText("Test manager"));
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    await click([...(sheet?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.inviteRevoke));
+    expect(lastCall(`/team/${pending}`)?.method).toBe("DELETE");
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(text()).not.toContain("Test manager");
+  });
+
+  it("приглашение успели принять — 409 словами в подтверждении, строка остаётся", async () => {
+    const pending = "00000000-0000-0000-0000-00000000a002";
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/team": json(TEAM),
+      [`DELETE /api/staff/team/${pending}`]: json(
+        { error: { code: "staff_invite_accepted", message: "accepted" } },
+        409,
+      ),
+    });
+    await mount("/team");
+    const row = [...container.querySelectorAll("tbody tr")][1];
+    await click([...(row?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.inviteRevoke));
+    const sheet = document.querySelector<HTMLElement>('[role="alertdialog"]');
+    await click([...(sheet?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.inviteRevoke));
+    expect(sheet?.querySelector('[role="alert"]')?.textContent).toBe(t.api.staff_invite_accepted);
+    expect(text()).toContain("Test manager");
   });
 
   it("менеджеру раздела нет в навигации", async () => {
@@ -882,11 +1236,97 @@ describe("команда", () => {
     expect(nav).not.toContain(t.settings);
     expect(nav).not.toContain(t.audit);
   });
+
+  it("бот не пишет сотруднику — «бот: нет» у действующих; у отключённых и тех, кому пишет, — ничего", async () => {
+    const team: TeamList = {
+      items: [
+        ...TEAM.items,
+        {
+          ...(TEAM.items[2] as TeamMember),
+          id: "00000000-0000-0000-0000-00000000a004",
+          displayName: "Gone",
+          active: false,
+        },
+      ],
+    };
+    mockApi(staff("admin", ADMIN), { "GET /api/staff/team": json(team) });
+    await mount("/team");
+    const rows = [...container.querySelectorAll("tbody tr")];
+    expect(rows.map((row) => row.querySelector(".no-bot")?.textContent ?? null)).toEqual([
+      null,
+      `${t.memberNoBot}, ${t.memberNoBotHint}`,
+      `${t.memberNoBot}, ${t.memberNoBotHint}`,
+      null,
+    ]);
+  });
+});
+
+describe("бот не пишет сотруднику", () => {
+  const METHODS = {
+    telegram: { bot: "bayramm_test_bot", loginDomain: null },
+    phone: false,
+    turnstileSiteKey: null,
+    apps: {
+      web: "https://bayramm.uz",
+      vendor: "https://vendor.bayramm.uz",
+      admin: "https://admin.bayramm.uz",
+    },
+  };
+  const banner = () => container.querySelector(".bot-banner");
+
+  it("решает по модерации без чата — просьба написать боту со ссылкой; «Скрыть» — до конца сессии вкладки", async () => {
+    const handlers = {
+      "GET /api/auth/methods": json(METHODS),
+      "GET /api/staff/vendors": json({ total: 0, items: [] }),
+    };
+    mockApi({ ...staff("moderator", MODERATOR), botLinked: false }, handlers);
+    await mount("/vendors");
+    expect(banner()?.textContent).toContain(t.botBanner);
+    expect(banner()?.querySelector("a")?.getAttribute("href")).toBe(
+      "https://t.me/bayramm_test_bot?start=admin",
+    );
+    await click(button(t.botBannerHide));
+    expect(banner()).toBeNull();
+    act(() => root.unmount());
+    container.remove();
+    // Перезагрузка в той же вкладке — скрыто
+    await mount("/vendors");
+    expect(banner()).toBeNull();
+  });
+
+  it("бот пишет — просьбы нет; менеджер по модерации не решает — тоже нет", async () => {
+    mockApi(staff("moderator", MODERATOR), { "GET /api/staff/vendors": json({ total: 0, items: [] }) });
+    await mount("/vendors");
+    expect(banner()).toBeNull();
+    act(() => root.unmount());
+    container.remove();
+    window.sessionStorage.clear();
+    mockApi(
+      { ...staff("manager", MANAGER), botLinked: false },
+      { "GET /api/staff/vendors": json({ total: 0, items: [] }) },
+    );
+    await mount("/vendors");
+    expect(banner()).toBeNull();
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
 
 describe("настройки", () => {
+  it("вне границ — ошибка до запроса", async () => {
+    mockApi(staff("admin", ADMIN), {
+      "GET /api/staff/settings": json({
+        items: [{ key: "sla_hours", value: 12, updatedAt: "2026-09-01T06:00:00.000Z", updatedBy: null }],
+      }),
+    });
+    await mount("/settings");
+    const form = container.querySelector("form.setting");
+    await type(form?.querySelector("input") ?? null, "99");
+    await click(form?.querySelector("button[type=submit]") ?? undefined);
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+    expect(form?.textContent).toContain(t.settingInvalid);
+  });
+
   const SETTINGS: StaffSettings = {
     items: [
       { key: "sla_hours", value: 12, updatedAt: "2026-09-01T06:00:00.000Z", updatedBy: null },
@@ -926,6 +1366,11 @@ describe("настройки", () => {
     // Числа — текст с цифровой клавиатурой, тихие часы — свой список времени, не системные
     expect(container.querySelector('input[type="number"], input[type="time"]')).toBeNull();
     expect(forms[0]?.querySelector("input")?.inputMode).toBe("numeric");
+    // Границы — общие с API (SETTING_LIMITS), единица — после поля
+    const sla = forms[0]?.querySelector("input");
+    expect(sla?.getAttribute("aria-valuemin")).toBe("1");
+    expect(sla?.getAttribute("aria-valuemax")).toBe("72");
+    expect(forms[0]?.querySelector(".num-unit")?.textContent).toBe(t.settingUnits.sla_hours);
     const times = [...(forms[2]?.querySelectorAll("button[aria-haspopup=listbox]") ?? [])];
     expect(times.map((b) => b.textContent)).toEqual(["22:00", "08:00"]);
   });
@@ -997,6 +1442,51 @@ describe("правки карточек", () => {
     expect(container.querySelector("thead")?.textContent).toContain(t.revisionProposed.staff);
   });
 
+  it("очереди: число — всего на сервере, а не загруженная сотня; у услуги черновика — статус витрины", async () => {
+    const item: ServiceQueueItem = {
+      kind: "review",
+      service: {
+        id: "eeeeeeee-0000-0000-0000-0000000000a1",
+        type: "banquet_weekday",
+        status: "review",
+        name: { ru: "Банкет в будни", uz: "Ish kunlari banket" },
+        customName: false,
+        priceUzs: 150_000,
+        priceUnit: "per_guest",
+        minQty: null,
+        leadDays: null,
+        includes: null,
+        options: [],
+        sort: 0,
+        proposal: null,
+        decision: null,
+        submittedAt: "2026-09-29T06:00:00.000Z",
+        updatedAt: "2026-09-29T06:00:00.000Z",
+      },
+      listing: { id: LISTING_ID, name: "Oqsaroy Hall", status: "draft", categoryCode: "hall" },
+      vendor: { id: VENDOR_ID, code: "V101", name: "Oqsaroy" },
+      proposedBy: { kind: "partner", name: null },
+      submittedAt: "2026-09-29T06:00:00.000Z",
+    };
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 140, items: [item] } satisfies ServiceQueue),
+    });
+    await mount("/moderation");
+    const section = container.querySelector("section[aria-labelledby=queue-services-title]");
+    expect(section?.querySelector("h2")?.textContent).toBe(`${t.serviceQueue} 140`);
+    expect([...container.querySelectorAll(".queue-jump button")].map((b) => b.textContent)).toContain(
+      `${t.serviceQueue}140`,
+    );
+    // Партнёр видит «на проверке» и у черновика — модератор видит, что витрины ещё нет на сайте
+    expect([...(section?.querySelectorAll(".pill") ?? [])].map((p) => p.textContent)).toEqual([
+      t.serviceQueueKinds.review,
+      t.status.draft,
+    ]);
+    expect(section?.textContent).toContain(t.serviceApprove);
+  });
+
   it("новые фото: опубликованные карточки с фото на решении — ссылка на карточку и сколько ждут", async () => {
     const PHOTO_LISTING_ID = "bbbbbbbb-0000-0000-0000-000000000002";
     const queue: ListingList = {
@@ -1025,13 +1515,13 @@ describe("правки карточек", () => {
     };
     mockApi(staff("moderator", MODERATOR), {
       // Очередь фото — свой запрос; карточки на проверке — остальные запросы списка
-      "GET /api/staff/listings?photos=pending&limit=100": json(queue),
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": json(queue),
       "GET /api/staff/listings": json(EMPTY_LISTINGS),
       "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
       "GET /api/staff/services": json({ total: 0, items: [] }),
     });
     await mount("/moderation");
-    expect(calls.some((c) => c.url === "/api/staff/listings?photos=pending&limit=100")).toBe(true);
+    expect(calls.some((c) => c.url === "/api/staff/listings?photos=pending&limit=20&offset=0")).toBe(true);
     const section = container.querySelector("section[aria-labelledby=queue-photos-title]");
     // У заголовка очереди — сколько ждёт; в сводке вверху — то же число кнопкой к очереди
     expect(section?.querySelector("h2")?.textContent).toBe(`${t.photoQueue} 1`);
@@ -1042,7 +1532,10 @@ describe("правки карточек", () => {
       `${t.serviceQueue}0`,
       `${t.photoQueue}1`,
     ]);
-    expect(section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}"]`)?.textContent).toBe("Lola zali");
+    // Витрина — сразу на блоке фото (?focus=photos): решать по ним, а не листать страницу
+    expect(section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}?focus=photos"]`)?.textContent).toBe(
+      "Lola zali",
+    );
     expect(section?.textContent).toContain(t.pendingPhotos(2));
     expect(section?.textContent).toContain("Lola · V102");
     // Остальные очереди пусты

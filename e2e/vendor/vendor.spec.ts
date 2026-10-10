@@ -59,10 +59,11 @@ async function start(
     listings = "one" as "one" | "many",
     declined = false,
     staffReply = false,
+    readyDraft = false,
   } = {},
 ) {
   await page.clock.setFixedTime(NOW);
-  const api = await mockVendorApi(page, { signIn, role, listings, declined, staffReply });
+  const api = await mockVendorApi(page, { signIn, role, listings, declined, staffReply, readyDraft });
   if (telegram) await fakeTelegram(page);
   return api;
 }
@@ -645,6 +646,49 @@ test.describe("витрины в разных категориях", () => {
     await expect(heading(page)).toHaveText(t.services);
     await expect(page.locator(".svc-head")).toBeVisible();
     expect(api.unexpected).toEqual([]);
+  });
+
+  test("черновик готов: «Отправить на проверку» — витрина на проверке у команды, и в статусе тоже", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many", readyDraft: true });
+    await page.goto("/card");
+    await chooseVitrina(page, "Kadr Studio");
+    const ready = page.locator(".readiness");
+    // Услуга и фото ждут решения команды — это уже не пункты партнёра
+    await expect(ready).toContainText(t.readyDraftDone);
+    await expect(ready.locator(".todo-item")).toHaveCount(0);
+    await expectNoAxeViolations(page, "витрина: готова к проверке");
+    await expectHitAreas(page, "витрина: готова к проверке", CONTROLS);
+    await expectNoOverflow(page, "витрина: готова к проверке");
+    await ready.getByRole("button", { name: t.submitListing }).click();
+    await expect(ready).toContainText(t.readyReview);
+    const said = ready.getByRole("status");
+    await expect(said).toHaveText(t.submitDone);
+    await expect(said).toBeFocused();
+    await expect(ready.getByRole("button", { name: t.submitListing })).toHaveCount(0);
+    expect(api.submits).toEqual([PHOTO_ID]);
+    // Статус витрины — «На проверке» и у самой витрины
+    await expect(page.locator(".venue-chips .chip").last()).toHaveText(t.ls_review);
+    await expectNoAxeViolations(page, "витрина: отправлена на проверку");
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("черновик не готов — кнопки «Отправить на проверку» нет", async ({ page }) => {
+    await start(page, { listings: "many" });
+    await page.goto("/card");
+    await chooseVitrina(page, "Kadr Studio");
+    await expect(page.locator(".readiness")).toContainText(t.readyDraft);
+    await expect(page.getByRole("button", { name: t.submitListing })).toHaveCount(0);
+  });
+
+  test("сотрудник площадки на проверку не отправляет — это делает владелец", async ({ page }) => {
+    const api = await start(page, { listings: "many", readyDraft: true, role: "member" });
+    await page.goto("/card");
+    await chooseVitrina(page, "Kadr Studio");
+    await expect(page.locator(".readiness")).toContainText(t.submitOwner);
+    await expect(page.getByRole("button", { name: t.submitListing })).toHaveCount(0);
+    expect(api.submits).toEqual([]);
   });
 
   test("услуги: новая из каталога, правка услуги на витрине — предложением, отзыв — через подтверждение", async ({

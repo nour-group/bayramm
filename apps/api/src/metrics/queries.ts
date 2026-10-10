@@ -241,6 +241,7 @@ interface QueuesRow {
   listings_review: number;
   revisions_pending: number;
   photos_pending: number;
+  services_pending: number;
 }
 
 /** Что ждёт команду сейчас: заявки без ответа, недоставленное, модерация */
@@ -255,5 +256,6 @@ export async function loadQueues(trx: Tx): Promise<OpsQueues> {
     listingsReview: row.listings_review,
     revisionsPending: row.revisions_pending,
     photosPending: row.photos_pending,
+    servicesPending: row.services_pending,
   };
 }

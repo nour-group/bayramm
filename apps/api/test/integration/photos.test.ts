@@ -95,6 +95,9 @@ afterAll(async () => {
   await db?.destroy();
   if (!admin) return;
   await admin.query("delete from app.photos where listing_id = $1", [listing]);
+  // Фото партнёра на черновике — оповещение команде: без витрины оно мёртвое и попало бы чужому
+  // прогону outbox в соседнем файле
+  await admin.query("delete from app.outbox where payload ->> 'listing_id' = $1", [listing]);
   await admin.query("delete from app.listings where id = $1", [listing]);
   await admin.query("delete from app.vendor_users where vendor_id = any($1::uuid[])", [[vendorA, vendorB]]);
   await admin.query("delete from app.vendor_accounts where id = any($1::uuid[])", [[vendorA, vendorB]]);

@@ -119,6 +119,8 @@ export interface ConfirmSheetProps {
   readonly tone?: "default" | "danger";
   /** Идёт запрос: кнопки недоступны, диалог не закрывается */
   readonly busy?: boolean;
+  /** Подтвердить пока нельзя (не вписан код подтверждения, действие запрещено): отмена доступна */
+  readonly confirmDisabled?: boolean;
   /** Ошибка запроса — под текстом, с role="alert" */
   readonly error?: ReactNode;
   readonly onConfirm: () => void;
@@ -138,6 +140,7 @@ export function ConfirmSheet({
   cancelLabel,
   tone = "default",
   busy = false,
+  confirmDisabled = false,
   error,
   onConfirm,
   onCancel,
@@ -168,7 +171,7 @@ export function ConfirmSheet({
           <button
             type="button"
             className={tone === "danger" ? "ui-btn ui-btn-danger" : "ui-btn ui-btn-primary"}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             aria-busy={busy || undefined}
             onClick={onConfirm}
           >

@@ -19,8 +19,9 @@
   --app-h: 100vh;
   /* Шапка телефона и планшета без верхней безопасной зоны: 8 + 44 + 8 + линия */
   --bar-h: 61px;
-  /* Нижняя панель телефона без нижней безопасной зоны: 6 + 48 + 6 + линия.
-     0 — когда её нет (компьютер, планшет, открыта клавиатура) */
+  /* Нижняя панель телефона без нижней безопасной зоны: 6 + 48 + 6 + линия */
+  --tabbar-full: 61px;
+  /* Сколько она занимает сейчас: 0 — когда её нет (компьютер, планшет, открыта клавиатура) */
   --tabbar-h: 0px;
   /* Колонка разделов планшета */
   --rail-w: 96px;
@@ -74,7 +75,7 @@ html.in-telegram body {
 
 /* Нижняя панель телефона есть — от неё отсчитываются прилипшие панели действий */
 .app-phone {
-  --tabbar-h: 61px;
+  --tabbar-h: var(--tabbar-full);
 }
 
 /* Открыта клавиатура (поле ввода в фокусе): нижней панели нет */
@@ -459,7 +460,10 @@ html.in-telegram body {
 }
 
 .app-phone .main {
-  padding: 16px calc(var(--sa-r) + 16px) calc(61px + var(--pad-b) + 24px) calc(var(--sa-l) + 16px);
+  /* Место под нижней панелью — и пока её прячет клавиатура: иначе страница укорачивается под
+     пальцем, и кнопка у низа уезжает под вернувшуюся панель между нажатием и отпусканием */
+  padding: 16px calc(var(--sa-r) + 16px) calc(var(--tabbar-full) + var(--pad-b) + 24px)
+    calc(var(--sa-l) + 16px);
 }
 
 /* Клавиатура открыта: нижняя панель не заслоняет поле */
@@ -487,7 +491,7 @@ html.in-telegram body {
 }
 
 .nav .badge {
-  margin-left: 7px;
+  margin-left: 8px;
 }
 
 .tab-icon .badge,
@@ -587,6 +591,39 @@ html.in-telegram body {
   max-width: 640px;
   margin: 0 0 16px;
   color: var(--muted);
+}
+
+/* Путь к странице объекта над заголовком (компьютер): «Вендоры › Lola · V101 ›» */
+.crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5);
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+  min-width: 0;
+}
+
+.crumbs li::after {
+  content: "›";
+  color: var(--muted);
+}
+
+.crumbs a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  color: var(--plum);
+  text-decoration: none;
 }
 
 .soon {
@@ -715,11 +752,12 @@ html.in-telegram body {
   min-height: var(--hit-min);
   padding: 0 16px;
   border: 1px solid var(--rule);
-  border-radius: var(--r-11);
+  /* Скругление и кегль — как у кнопок набора (.ui-btn): одна кнопка во всех шторках и формах */
+  border-radius: var(--r-14);
   background: var(--raise);
   color: var(--plum);
   font-family: inherit;
-  font-size: var(--fs-14);
+  font-size: var(--fs-15);
   font-weight: 700;
   text-align: center;
   text-decoration: none;
@@ -729,7 +767,7 @@ html.in-telegram body {
 
 .btn-sm {
   padding: 0 12px;
-  font-size: var(--fs-13-5);
+  font-size: var(--fs-14);
 }
 
 .btn-primary {
@@ -738,10 +776,18 @@ html.in-telegram body {
   color: var(--btn-ink);
 }
 
+/* Красная рамка — действие, которое откроет подтверждение (удалить, отклонить, отключить) */
 .btn-danger {
   border-color: var(--berry);
   background: var(--white);
   color: var(--berry);
+}
+
+/* Залитая красная — само подтверждение необратимого, как .ui-btn-danger набора */
+.btn-danger-fill {
+  border-color: var(--berry);
+  background: var(--berry);
+  color: var(--btn-ink);
 }
 
 @media (hover: hover) {
@@ -756,6 +802,11 @@ html.in-telegram body {
 
   .btn-danger:hover {
     background: var(--white);
+    text-decoration: underline;
+  }
+
+  .btn-danger-fill:hover {
+    background: var(--berry);
     text-decoration: underline;
   }
 }
@@ -838,6 +889,86 @@ textarea.input {
 
 .chip-count {
   font-weight: 600;
+}
+
+/* Страницы списка (компьютер) и «Показать ещё» (телефон) — под списком */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.show-more {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--gap-9);
+}
+
+.show-more > p {
+  margin: 0;
+  text-align: center;
+}
+
+/* Пустой список из-за фильтров: «Сбросить фильтры» — под словами */
+.empty-filtered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-12);
+}
+
+.empty-filtered > p {
+  margin: 0;
+}
+
+/* Фильтр одной строкой пилюль и подсказка к выбранному под ним */
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+}
+
+/* Переходы в шапке страницы объекта: заявки, журнал, витрина на сайте */
+.head-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7);
+  margin: 0;
+}
+
+/* Оглавление витрины на телефоне: прилипает под шапкой, листается вбок (обе оси — ловушка №2) */
+.section-index {
+  position: sticky;
+  top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)));
+  z-index: 2;
+  margin: 0 -16px;
+  padding: 6px 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+  scrollbar-width: none;
+}
+
+.section-index ul {
+  display: flex;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.section-index .chip {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Переход к блоку на телефоне: заголовок встаёт под шапкой и оглавлением, а не под ними */
+.app-phone .page [id$="-title"] {
+  scroll-margin-top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)) + 64px);
 }
 
 /* Модерация: сводка очередей вверху — кнопками к ним; где есть что решать — выделена */
@@ -1018,6 +1149,34 @@ textarea.input {
   font-weight: 700;
 }
 
+/* «бот: нет» у сотрудника в «Команде»: оповещения до него не дойдут */
+.no-bot {
+  color: var(--coral-deep);
+  font-weight: 700;
+}
+
+/* Бот не пишет сотруднику: просьба написать ему /start — над экраном, пока не скрыли */
+.bot-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+  margin-bottom: 16px;
+}
+
+.bot-banner-text {
+  flex: 1 1 220px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.bot-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
 /* Правка карточки ждёт решения: поля, кто и когда, ссылка на неё */
 .pending-revision {
   display: flex;
@@ -1056,6 +1215,11 @@ textarea.input {
   flex: 1 1 200px;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* Только что заведённый вендор: что дальше — после общего правила списка (ловушка №7) */
+.next-steps .blockers {
+  margin: 8px 0;
 }
 
 /* Панели и формы */
@@ -1161,6 +1325,266 @@ textarea.input {
   color: var(--muted);
   font-size: var(--fs-12-5);
   font-weight: 500;
+}
+
+/* ── поля под свои данные (fields.tsx, reason.tsx) ──────────────────────── */
+
+/* Поле с приставкой («+998», «@», «…/venue/») или единицей («сум»): одна рамка на всё, текст
+   приставки — вторичным цветом, стереть его нельзя. Рамка фокуса — вокруг всего поля */
+.affix {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--hit-min);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--white);
+}
+
+.affix-pre,
+.affix-post {
+  display: flex;
+  flex: none;
+  align-items: center;
+  color: var(--muted);
+  font-size: var(--fs-15);
+  white-space: nowrap;
+}
+
+.affix-pre {
+  padding-left: 12px;
+}
+
+.affix-post {
+  padding-right: 12px;
+}
+
+/* Поле внутри — без своей рамки и кольца: их держит .affix */
+.affix .affix-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+
+.affix .affix-pre + .affix-input {
+  padding-left: 6px;
+}
+
+.affix .affix-input:focus-visible {
+  outline: none;
+}
+
+.affix:focus-within {
+  outline: 3px solid var(--coral);
+  outline-offset: 2px;
+}
+
+.field-bad .affix {
+  border-color: var(--berry);
+}
+
+.affix.is-disabled {
+  background: var(--paper);
+}
+
+/* Сумма — цифрами одной ширины, к единице: разряды стоят столбиком */
+.money-input {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Адрес витрины и «Из названия» — в строку, кнопка уходит вниз, если не влезла */
+.slug-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.slug-row .affix {
+  flex: 1 1 260px;
+  width: auto;
+}
+
+/* Число: «−», поле, «+» и единица — в строку */
+.num-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.num-unit {
+  color: var(--muted);
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+/* Поле между «−» и «+» не сжимается уже пальца: узкая колонка переносит строку, а не поле */
+.num-row .ui-number-input {
+  min-width: 64px;
+}
+
+/* Один из вариантов сегментами — во всю ширину поля: сегменты делят её поровну, длинная
+   подпись переносится, а не выталкивает страницу вбок на 320px */
+.choice-segmented {
+  display: flex;
+  width: 100%;
+  max-width: 480px;
+}
+
+.choice-segmented .ui-radio {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 4px 10px;
+  text-align: center;
+}
+
+/* Строки с пояснением (роль) — не шире чтения: на компьютере строка во весь экран теряет глаз */
+.choice-row {
+  width: 100%;
+  max-width: 560px;
+}
+
+.choice-row .ui-radio {
+  padding: 6px 12px;
+}
+
+/* Несколько вариантов — чипами, в рамке группы, как список данных витрины */
+.chips-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-11);
+}
+
+.chips-field legend {
+  padding: 0 4px;
+  color: var(--plum);
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
+.chips-field > p {
+  margin: 0;
+}
+
+.chips-field.field-bad {
+  border-color: var(--berry);
+}
+
+.chip-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+/* Чип — галочка набора (ui-check) в рамке пилюли: под рисунком настоящий checkbox */
+.chip-check {
+  align-items: center;
+  gap: var(--gap-7);
+  padding: 0 14px 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  background: var(--white);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
+.chip-check .ui-check-box {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-999);
+}
+
+.chip-check .ui-check-label {
+  padding-top: 0;
+}
+
+/* Выбранный чип — рамкой и подложкой (где нет :has — его видно по галочке) */
+.chip-check:has(.ui-native:checked) {
+  border-color: var(--plum);
+  background: var(--lilac);
+  color: var(--plum);
+}
+
+/* Частые причины — чипами над полем причины */
+.reason-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+.reason-chip {
+  font-weight: 600;
+}
+
+/* Телефон, который не показан: маска и «Изменить номер» — в строку */
+.phone-change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+/* Вместимость: «от» и «до» — парой полей с общей подписью */
+.cap-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-12);
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+}
+
+.cap-pair legend {
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--plum);
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
+.cap-pair > p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+/* Настройка-число: «−», поле, «+» и единица — по своей ширине, а не в колонку поля времени;
+   два напоминания на узком телефоне встают друг под другом */
+.setting-inputs .field.setting-num {
+  flex: 0 1 auto;
+  width: auto;
+}
+
+/* Единица цены одна — словами, на высоте поля рядом */
+.svc-unit-fixed {
+  display: flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+@media (max-width: 719px) {
+  /* Приставка — тем же кеглем, что поле (16px на телефоне) */
+  .affix-pre,
+  .affix-post {
+    font-size: var(--fs-16);
+  }
+
+  /* «От» и «до» с «−» и «+» в две колонки на телефоне не влезают — друг под другом */
+  .cap-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Кнопка сохранения прилипает к низу экрана: длинная форма не прячет её */
@@ -1283,39 +1707,56 @@ textarea.input {
   grid-column: 1 / -1;
 }
 
-/* Пакеты цен */
-.packages {
+/* Пользователи кабинета: имя и плашки роли и статуса в строку; приглашение — под списком */
+.vuser-name {
+  min-width: 0;
+  color: var(--plum);
+}
+
+.vuser-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5);
+}
+
+.vuser-invite {
   display: flex;
   flex-direction: column;
   gap: var(--gap-12);
-  margin: 16px 0 0;
-  padding: 0;
-  border: 0;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
 }
 
-.packages legend {
-  margin-bottom: 8px;
+.vuser-invite-title {
+  margin: 0;
   color: var(--plum);
-  font-weight: 700;
+  font-size: var(--fs-15);
 }
 
-/* Подсказка и ошибка под заголовком пакетов: отступы задаёт gap */
-.packages > p {
+.vuser-invited {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+}
+
+.vuser-invited p {
   margin: 0;
 }
 
-.package-row {
-  display: grid;
-  grid-template-columns: 100px repeat(2, minmax(0, 1.2fr)) minmax(0, 1fr) minmax(0, 1fr) auto;
-  align-items: end;
-  gap: var(--gap-9);
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--rule);
+/* Правка пользователя: на телефоне — в шторке, шире — под его карточкой */
+.vuser-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  padding: 8px 0 4px;
 }
 
-.package-kind {
-  align-self: center;
-  font-weight: 700;
+/* Текст приглашения, когда буфер обмена недоступен: выделяется целиком при фокусе */
+.vuser-copy-text {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
 }
 
 /* Фото */
@@ -1371,6 +1812,32 @@ textarea.input {
 /* Действия со статусом */
 .listing-head p {
   margin: 0;
+}
+
+/* Шапка вендора: код и менеджер слева, «Удалить вендора» (на телефоне — «Ещё») справа */
+.vendor-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.vendor-head > p {
+  margin: 0;
+}
+
+.vendor-delete {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--gap-5);
+  max-width: 100%;
+}
+
+.vendor-delete p {
+  margin: 0;
+  text-align: end;
 }
 
 .reason {
@@ -1432,9 +1899,13 @@ textarea.input {
   margin: 8px 0;
 }
 
+/* Месяц — между стрелками, «Сегодня» — рядом со стрелкой вперёд */
 .cal-title {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   font-weight: 700;
+  text-align: center;
 }
 
 /* Дорожки без зазора: вся ширина дорожки — зона нажатия дня. Видимый зазор между днями —
@@ -1446,7 +1917,7 @@ textarea.input {
 }
 
 .cal-wd {
-  padding-bottom: 3px;
+  padding-bottom: 4px;
   color: var(--muted-lt);
   font-size: var(--fs-12-5);
   font-weight: 700;
@@ -1547,6 +2018,12 @@ textarea.input {
 /* Проблемное — коралловой рамкой; цифра остаётся цветом текста (контраст) */
 .stat-warn {
   border-left: 4px solid var(--coral);
+}
+
+/* Очередь «Сейчас» — ссылкой в раздел, где её разбирают: плитка целиком */
+.stat-link {
+  color: inherit;
+  text-decoration: none;
 }
 
 /* Длинные причины и подробности переносятся, а не растягивают таблицу */
@@ -1728,18 +2205,6 @@ textarea.input {
 
   .fields-3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* Пакет в одну строку — только когда колонке формы хватает ширины: на 1024px «за гостя»
-   обрезалось до «за г…». Уже — по два поля в строку, вид пакета — заголовком */
-@media (max-width: 1279px) {
-  .package-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .package-kind {
-    grid-column: 1 / -1;
   }
 }
 
@@ -1969,15 +2434,6 @@ textarea.input {
 /* «Позже» — та же стрелка, развёрнутая вправо */
 .btn-flip .icon {
   transform: scaleX(-1);
-}
-
-/* Ссылка «← К вендору» над формой: зона нажатия 44px */
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--hit-min);
-  font-weight: 700;
-  text-decoration: none;
 }
 
 /* ── календарь: несколько дней, обозначения ──────────────────────────────── */
@@ -2406,6 +2862,12 @@ textarea.input {
   background: var(--white);
 }
 
+/* Открытый день на телефоне прокручивается к частям: целиком над нижней панелью и панелью действий */
+.app-phone .day-parts {
+  scroll-margin-top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)) + 12px);
+  scroll-margin-bottom: calc(var(--tabbar-full) + var(--pad-b) + 84px);
+}
+
 .day-parts-title {
   margin: 0;
   color: var(--plum);
@@ -2418,7 +2880,7 @@ textarea.input {
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-9);
-  padding-top: 7px;
+  padding-top: 8px;
   border-top: 1px solid var(--rule);
 }
 
@@ -2473,8 +2935,7 @@ textarea.input {
 @media (max-width: 719px) {
   .fields,
   .fields-3,
-  .inline-form,
-  .package-row {
+  .inline-form {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2636,7 +3097,8 @@ textarea.input {
     background: var(--lilac);
   }
 
-  .rcard-tap:hover {
+  .rcard-tap:hover,
+  .stat-link:hover {
     border-color: var(--plum-mid);
   }
 }

@@ -37,7 +37,14 @@ describe("styles.css панели оператора", () => {
     expect(missing).toEqual([]);
     expect(used.size).toBeGreaterThan(10);
     // Свои — только размеры и высота экрана, не цвета: цвета только из токенов
-    expect([...own].sort()).toEqual(["--app-h", "--bar-h", "--net-h", "--rail-w", "--tabbar-h"]);
+    expect([...own].sort()).toEqual([
+      "--app-h",
+      "--bar-h",
+      "--net-h",
+      "--rail-w",
+      "--tabbar-full",
+      "--tabbar-h",
+    ]);
   });
 
   it("цвета не вписаны числом", () => {
@@ -68,7 +75,6 @@ describe("styles.css панели оператора", () => {
     ".appbar-account",
     ".tab",
     ".rail-link",
-    ".back-link",
   ])("%s: зона нажатия не меньше 44px", (selector) => {
     expect(declarationsOf(selector)).toMatch(/min-height:\s*var\(--hit-min\)/);
   });

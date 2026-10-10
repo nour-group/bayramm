@@ -120,6 +120,8 @@ export interface VendorApi {
   readonly signIns: unknown[];
   /** Запросы, которым API отказало по роли (vendor_owner_required) */
   readonly ownerOnly: string[];
+  /** Витрины, отправленные на проверку (POST …/submit) */
+  readonly submits: string[];
 }
 
 export interface FakeCalendar {
@@ -173,12 +175,16 @@ const MANY_REFS: readonly ListingBase[] = [
   { id: CAKE_ID, name: "Shirin Tort", status: "active", categoryCode: "cake" },
 ];
 
-/** GET /vendor/me: attention считает вызывающий по состоянию витрины (без него — нули) */
+/**
+ * GET /vendor/me: attention считает вызывающий по состоянию витрины (без него — нули); statusOf —
+ * статус витрины сейчас (её могли отправить на проверку), без него — исходный
+ */
 export function vendorMe(
   locale: "ru" | "uz" = "ru",
   role: VendorRole = "owner",
   listings: "one" | "many" = "one",
   attention: (listingId: string) => VendorAttention = () => NO_ATTENTION,
+  statusOf: (listingId: string) => VendorListingRef["status"] | undefined = () => undefined,
 ): VendorMe {
   return {
     user: { id: "00000000-0000-4000-8200-000000000001", locale, fullName: "Шахло Каримова", role },
@@ -189,6 +195,7 @@ export function vendorMe(
     },
     listings: (listings === "many" ? MANY_REFS : [HALL_REF]).map((ref) => ({
       ...ref,
+      status: statusOf(ref.id) ?? ref.status,
       // Исправляет владелец: у сотрудника площадки значков нет
       attention: role === "owner" ? attention(ref.id) : NO_ATTENTION,
     })),
@@ -253,6 +260,7 @@ const LISTING: VendorListing = {
   ],
   phone: "+998000000001",
   blockers: [],
+  reviewBlockers: [],
   photoLimits: { min: 3, max: 10 },
   attributes: { halls_count: 2, parking_spaces: 80, stage: true },
   missingAttributes: [],
@@ -337,9 +345,38 @@ const PHOTO_LISTING: VendorListing = {
   capMax: null,
   photos: [],
   blockers: ["price", "descriptions", "attributes", "photos"],
+  reviewBlockers: ["price", "descriptions", "attributes", "photos"],
   attributes: {},
   missingAttributes: ["team", "delivery_days"],
 };
+
+/**
+ * «Kadr Studio» готова к проверке (readyDraft): описания и данные витрины заполнены, услуга и
+ * фото отправлены и ждут решения команды — для публикации их ещё одобрят, для проверки
+ * хватает. Договор и прочее — дело команды
+ */
+const PHOTO_READY: VendorListing = {
+  ...PHOTO_LISTING,
+  description: { ru: "Свадебная съёмка.", uz: "Toʻy suratga olish." },
+  priceFromUzs: 500_000,
+  priceUnit: "per_hour",
+  photos: [41, 42, 43].map((n) => photoOf(n, "pending", n === 41, PHOTO_ID)),
+  blockers: ["price", "photos", "contract", "stir", "contacts", "pd_consent"],
+  reviewBlockers: [],
+  attributes: { team: ["photographer"], delivery_days: 14 },
+  missingAttributes: [],
+};
+
+const PHOTO_READY_SERVICES: readonly ListingService[] = [
+  svc({
+    id: "00000000-0000-4000-8800-000000000041",
+    type: "photo_shoot",
+    name: categoryTexts("svc_photo_photo_shoot"),
+    status: "review",
+    priceUzs: 500_000,
+    priceUnit: "per_hour",
+  }),
+];
 
 const CAKE: VendorListing = {
   ...LISTING,
@@ -397,6 +434,8 @@ export interface VendorApiOptions {
   readonly declined?: boolean;
   /** Заявка, на которую первым ответил менеджер Bayramm */
   readonly staffReply?: boolean;
+  /** С listings: "many" — «Kadr Studio» (черновик) готова к отправке на проверку */
+  readonly readyDraft?: boolean;
 }
 
 /** Значения услуги из формы (validateServiceInput) → поля услуги, как их вернул бы API */
@@ -456,6 +495,7 @@ export async function mockVendorApi(
     listings: listingMode = "one",
     declined = false,
     staffReply = false,
+    readyDraft = false,
   }: VendorApiOptions = {},
 ): Promise<VendorApi> {
   const many = listingMode === "many";
@@ -484,15 +524,17 @@ export async function mockVendorApi(
     inboxQueries: [],
     signIns: [],
     ownerOnly: [],
+    submits: [],
   };
   const cards = new Map<string, VendorListing>([[LISTING_ID, LISTING]]);
   const photosOf = new Map<string, VendorPhoto[]>([[LISTING_ID, state.photos]]);
   if (many) {
-    for (const [card, services] of [
+    const others: readonly (readonly [VendorListing, readonly ListingService[]])[] = [
       [CAR, CAR_SERVICES],
-      [PHOTO_LISTING, []],
+      readyDraft ? [PHOTO_READY, PHOTO_READY_SERVICES] : [PHOTO_LISTING, []],
       [CAKE, CAKE_SERVICES],
-    ] as const) {
+    ];
+    for (const [card, services] of others) {
       cards.set(card.id, card);
       photosOf.set(card.id, [...card.photos]);
       state.services.set(card.id, [...services]);
@@ -704,10 +746,12 @@ export async function mockVendorApi(
       );
     if (key === "POST /auth/logout") return route.fulfill({ status: 204 });
 
-    if (key === "GET /vendor/me") return json(route, 200, vendorMe(locale, role, listingMode, attentionOf));
+    const statusOf = (id: string) => cards.get(id)?.status;
+    if (key === "GET /vendor/me")
+      return json(route, 200, vendorMe(locale, role, listingMode, attentionOf, statusOf));
     if (key === "PATCH /vendor/me") {
       locale = (request.postDataJSON() as { locale: "ru" | "uz" }).locale;
-      return json(route, 200, vendorMe(locale, role, listingMode, attentionOf));
+      return json(route, 200, vendorMe(locale, role, listingMode, attentionOf, statusOf));
     }
     if (key === "GET /vendor/requests") {
       const tab = (url.searchParams.get("tab") ?? "new") as RequestTab;
@@ -765,6 +809,20 @@ export async function mockVendorApi(
     const card = listingMatch ? cards.get(listingId) : undefined;
     if (listingMatch && !card) return fail(route, 404, "not_found");
     if (card && rest === "" && method === "GET") return json(route, 200, listingView(listingId));
+
+    // На проверку — как API (vendor/submit.ts): владелец, черновик или отклонённая, всё готово
+    if (card && rest === "/submit" && method === "POST") {
+      if (role !== "owner") {
+        state.ownerOnly.push(key);
+        return fail(route, 403, "vendor_owner_required");
+      }
+      if (card.status !== "draft" && card.status !== "rejected")
+        return fail(route, 409, "illegal_transition");
+      if (card.reviewBlockers.length > 0) return fail(route, 422, "publish_blocked", card.reviewBlockers);
+      state.submits.push(listingId);
+      cards.set(listingId, { ...card, status: "review", statusReason: null });
+      return json(route, 200, listingView(listingId));
+    }
 
     // Карточку (фото, правки, услуги) меняет только владелец кабинета — как vendor/access.ts
     const changesCard = method !== "GET" && /^\/(revisions|photos|services)(\/|$)/.test(rest);
@@ -886,9 +944,14 @@ export async function mockVendorApi(
           if (Object.keys(changes).length === 0) return fail(route, 422, "no_changes");
           return save({ ...current, proposal: { changes, submittedAt: NOW.toISOString() } });
         }
+        // Отклонённая, сохранённая черновиком, — черновик: прежний отказ больше не действует
         const status =
-          submit && (current.status === "draft" || current.status === "rejected") ? "review" : current.status;
-        return save({ ...edited, status });
+          submit && (current.status === "draft" || current.status === "rejected")
+            ? "review"
+            : !submit && current.status === "rejected"
+              ? "draft"
+              : current.status;
+        return save({ ...edited, status, ...(status === "draft" ? { decision: null } : {}) });
       }
       if (one[2] === "/submit" && method === "POST") {
         if (!["draft", "rejected", "paused"].includes(current.status))

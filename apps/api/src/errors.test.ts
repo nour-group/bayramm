@@ -80,6 +80,11 @@ describe("toApiError: коды Postgres", () => {
     expect(mapped(pgError("BR015"))).toMatchObject({ status: 422, code: "guests_over_capacity" });
   });
 
+  it("пользователи кабинета: последний владелец и второе членство того же человека — 409", () => {
+    expect(mapped(pgError("BR031"))).toMatchObject({ status: 409, code: "vendor_last_owner" });
+    expect(mapped(pgError("BR032"))).toMatchObject({ status: 409, code: "vendor_user_exists" });
+  });
+
   it("каждое правило — 4xx", () => {
     for (const [sqlstate, rule] of Object.entries(BUSINESS_RULES)) {
       const e = toApiError(pgError(sqlstate));
@@ -97,6 +102,24 @@ describe("toApiError: коды Postgres", () => {
     });
     expect(mapped(pgError("BR004", { detail: "price,<script>,Photos" })).details).toEqual(["price"]);
     expect(mapped(pgError("BR004")).details).toEqual([]);
+  });
+
+  it("нельзя удалить: 409 и причина кодом из DETAIL; у приглашения причина — не код", () => {
+    expect(mapped(pgError("BR029", { detail: "requests" }))).toEqual({
+      status: 409,
+      code: "listing_in_use",
+      details: ["requests"],
+    });
+    expect(mapped(pgError("BR030", { detail: "published" }))).toEqual({
+      status: 409,
+      code: "vendor_in_use",
+      details: ["published"],
+    });
+    expect(mapped(pgError("BR033", { detail: "приглашение принято: отключите сотрудника" }))).toEqual({
+      status: 409,
+      code: "staff_invite_accepted",
+      details: undefined,
+    });
   });
 
   it("неизвестный BR-код — 422, а не 500", () => {

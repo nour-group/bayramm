@@ -6,7 +6,7 @@ import {
   type ListField,
 } from "@bayramm/shared/categories";
 import { describe, expect, it } from "vitest";
-import { formErrors, formParts, formState, listingBody } from "./pages/ListingForm";
+import { districtChoices, formErrors, formParts, formState, listingBody } from "./pages/ListingForm";
 
 /* Форма витрины по категории: что спрашивать, что уходит в правку (только изменённое) и
    какие ошибки видны до отправки — те же пути, что в ответе 422 сервера. */
@@ -19,7 +19,7 @@ const cfg = (code: string): CategoryConfig => {
 
 const listing = (categoryCode: string, extra: Partial<ListingDetail> = {}): ListingDetail => ({
   id: "bbbbbbbb-0000-0000-0000-000000000001",
-  slug: "v",
+  slug: "vitrina",
   categoryCode,
   status: "draft",
   statusReason: null,
@@ -51,6 +51,7 @@ const listing = (categoryCode: string, extra: Partial<ListingDetail> = {}): List
   vendor: { id: "aaaaaaaa-0000-0000-0000-000000000001", code: "V101", name: "Lola" },
   history: [],
   pendingRevision: null,
+  deleteBlocker: null,
   ...extra,
 });
 
@@ -120,7 +121,7 @@ describe("правка витрины — только изменённое", ()
 describe("телефон и Telegram для клиентов", () => {
   const hall = cfg("hall");
 
-  it("пишутся только вписанные: пустые поля не уходят, Telegram — как вписали (разбирает сервер)", () => {
+  it("пишутся только вписанные: пустые поля не уходят, номер — +998XXXXXXXXX, Telegram — как вписали", () => {
     const before = formState(listing("hall"), hall);
     expect(listingBody(hall, before, before)).toEqual({});
     const now = {
@@ -128,8 +129,14 @@ describe("телефон и Telegram для клиентов", () => {
       values: { ...before.values, phone: " +998 90 111 22 33 ", telegram: " t.me/Lola_Hall " },
     };
     expect(listingBody(hall, now, before)).toEqual({
-      phone: "+998 90 111 22 33",
+      phone: "+998901112233",
       telegram: "t.me/Lola_Hall",
+    });
+    // Поле телефона отдаёт цифры после +998
+    expect(
+      listingBody(hall, { ...before, values: { ...before.values, phone: "901112233" } }, before),
+    ).toEqual({
+      phone: "+998901112233",
     });
   });
 
@@ -141,6 +148,18 @@ describe("телефон и Telegram для клиентов", () => {
     expect(
       listingBody(hall, { ...cleared, values: { ...cleared.values, telegram: "@lola_hall" } }, before),
     ).toEqual({ telegram: null });
+  });
+
+  it("«Убрать телефон» — phone: null, без Telegram (он уходит вместе с телефоном) и вписанного", () => {
+    const before = formState(listing("hall", { hasPhone: true, hasTelegram: true }), hall);
+    expect(before.clearPhone).toBe(false);
+    const cleared = {
+      ...before,
+      clearPhone: true,
+      clearTelegram: true,
+      values: { ...before.values, phone: "+998 90 111 22 33", telegram: "@lola_hall" },
+    };
+    expect(listingBody(hall, cleared, before)).toEqual({ phone: null });
   });
 });
 
@@ -165,5 +184,74 @@ describe("ошибки до отправки", () => {
     expect(formErrors(photo, { ...photoBefore, videos: ["", "https://example.com/x"] })).toEqual([
       "videoLinks.0",
     ]);
+  });
+});
+
+describe("ошибки до отправки: адрес, вместимость, телефон, Telegram", () => {
+  const hall = cfg("hall");
+  const before = formState(listing("hall"), hall);
+  const at = (values: Partial<typeof before.values>) => ({
+    ...before,
+    values: { ...before.values, ...values },
+  });
+
+  it("адрес страницы — латиница, 3–40 знаков", () => {
+    expect(formErrors(hall, at({ slug: "ok-slug" }))).toEqual([]);
+    expect(formErrors(hall, at({ slug: "ab" }))).toEqual(["slug"]);
+    expect(formErrors(hall, at({ slug: "-oq" }))).toEqual(["slug"]);
+    expect(formErrors(hall, at({ slug: "" }))).toEqual(["slug"]);
+  });
+
+  it("вместимость: «до» не меньше «от», в границах сервера", () => {
+    expect(formErrors(hall, at({ capMin: "50", capMax: "300" }))).toEqual([]);
+    expect(formErrors(hall, at({ capMin: "300", capMax: "50" }))).toEqual(["capMax"]);
+    expect(formErrors(hall, at({ capMin: "0", capMax: "6000" })).sort()).toEqual(["capMax", "capMin"]);
+    // У торта вместимости нет — и проверки нет
+    const cake = cfg("cake");
+    const cakeBefore = formState(listing("cake"), cake);
+    expect(
+      formErrors(cake, { ...cakeBefore, values: { ...cakeBefore.values, capMin: "9", capMax: "1" } }),
+    ).toEqual([]);
+  });
+
+  it("неполный номер и не то имя Telegram — ошибки полей; «Убрать телефон» их снимает", () => {
+    expect(formErrors(hall, at({ phone: "90111", telegram: "ab" })).sort()).toEqual(["phone", "telegram"]);
+    expect(formErrors(hall, at({ phone: "901112233", telegram: "@lola_hall" }))).toEqual([]);
+    expect(formErrors(hall, { ...at({ phone: "90111", telegram: "ab" }), clearPhone: true })).toEqual([]);
+  });
+});
+
+describe("район — по городам", () => {
+  it("город — заголовком (не выбрать), районы — вложенными; без города — в конце", () => {
+    const options = districtChoices({
+      categories: [],
+      cities: [{ code: "tashkent", nameRu: "Ташкент", nameUz: "Toshkent" }],
+      districts: [
+        { code: "chilonzor", nameRu: "Чиланзар", nameUz: "Chilonzor", city: "tashkent" },
+        { code: "yunusobod", nameRu: "Юнусабад", nameUz: "Yunusobod", city: "tashkent" },
+        { code: "far", nameRu: "Где-то", nameUz: "Qayerda", city: "samarkand" },
+      ],
+      occasions: [],
+      staff: [],
+      settings: { minPhotos: 3, maxPhotos: 10, slaHours: 12 },
+    });
+    expect(options.map((o) => [o.value, Boolean(o.disabled), Boolean(o.nested)])).toEqual([
+      ["", false, false],
+      ["city:tashkent", true, false],
+      ["chilonzor", false, true],
+      ["yunusobod", false, true],
+      ["far", false, false],
+    ]);
+  });
+
+  it("справочник без городов — районы плоским списком", () => {
+    const options = districtChoices({
+      categories: [],
+      districts: [{ code: "chilonzor", nameRu: "Чиланзар", nameUz: "Chilonzor" }],
+      occasions: [],
+      staff: [],
+      settings: { minPhotos: 3, maxPhotos: 10, slaHours: 12 },
+    });
+    expect(options.map((o) => o.value)).toEqual(["", "chilonzor"]);
   });
 });

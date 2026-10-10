@@ -8,6 +8,7 @@
 //   POST  /staff/listings/:id/submit | publish | suspend | reject | draft   { version, reason? }
 //   POST  /staff/listings/:id/category { categoryCode, version } сменить категорию (пока нет заявок)
 //   POST  /staff/listings/:id/phone  { reason? }                телефон и Telegram для клиентов (в журнал)
+//   DELETE /staff/listings/:id                                  удалить (без заявок, не на проверке и не в каталоге)
 //
 // Жизненный цикл и правила публикации — в базе (listings_before_update,
 // app.listing_publish_blockers): API только выбирает шаги и переводит ошибки.
@@ -25,6 +26,7 @@
 // витрины проверяются по конфигурации категории (@bayramm/shared/categories).
 
 import type {
+  DeleteBlocker,
   ListingAction,
   ListingDetail,
   ListingList,
@@ -61,6 +63,8 @@ import type { Json } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound, versionConflict } from "../errors";
 import { approveReviewServices, listServices, type ServiceActor } from "../listing-services/store";
+import { removePhotoObjects } from "../photos/service";
+import { listingPhotoStorage } from "../storage/supabase";
 import { can, requirePermission } from "./access";
 import { Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
 import { changedOnly, revisionFields } from "./revision-diff";
@@ -142,6 +146,7 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       listingContactKinds("l.id").as("contact_kinds"),
       blockers("l.id", "review").as("blockers_review"),
       blockers("l.id", "active").as("blockers_active"),
+      sql<DeleteBlocker | null>`app.listing_delete_blocker(l.id)`.as("delete_blocker"),
     ])
     .where("l.id", "=", id)
     .executeTakeFirst();
@@ -222,6 +227,7 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       at: iso(h.at),
     })),
     pendingRevision: pending === undefined ? null : pendingView(pending),
+    deleteBlocker: row.delete_blocker,
   };
 }
 
@@ -256,7 +262,8 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
   const vendorId = vendorParam ? pathId(vendorParam) : undefined;
   const categoryParam = c.req.query("category");
   const category = categoryParam && /^[a-z_]{2,20}$/.test(categoryParam) ? categoryParam : undefined;
-  // Очередь «Новые фото»: опубликованные карточки, у которых есть фото на решении
+  // Очередь «Новые фото»: карточки (кроме отклонённых), у которых есть фото на решении — у
+  // черновика тоже: партнёр загрузил, решить можно до публикации (как app.metrics_ops_now)
   const pendingPhotos = c.req.query("photos") === "pending";
   const { limit, offset } = paging((key) => c.req.query(key));
 
@@ -299,7 +306,7 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
       ]);
     if (status) query = query.where("l.status", "=", status);
     if (pendingPhotos) {
-      query = query.where("l.status", "=", "active").where(
+      query = query.where("l.status", "<>", "rejected").where(
         sql<boolean>`exists (select 1 from app.photos p
                      where p.listing_id = l.id and p.deleted_at is null and p.status = 'ready'
                        and p.moderation = 'pending')`,
@@ -821,4 +828,20 @@ listings.post("/:id/phone", requirePermission("vendor_phones.read"), limitJson, 
     return readListingContacts(trx, id, reason);
   });
   return c.json(contacts satisfies RevealedListingContacts);
+});
+
+// ── удалить ─────────────────────────────────────────────────────────────────
+// Только без заявок, не на проверке и не в каталоге (иначе 409 listing_in_use, details —
+// requests | published): решает база под блокировкой витрины (app.staff_delete_listing) и
+// отдаёт ключи её фото — объекты удаляются после фиксации. Нет витрины — 404 (42501)
+
+listings.delete("/:id", requirePermission("listings.delete"), async (c) => {
+  const id = pathId(c.req.param("id"));
+  const keys = await withActor(c.var.db, staffOf(c), async (trx) => {
+    const { rows } = await sql<{ keys: string[] }>`
+      select app.staff_delete_listing(${id}::uuid) as keys`.execute(trx);
+    return rows[0]?.keys ?? [];
+  });
+  await removePhotoObjects(listingPhotoStorage(c.env), keys);
+  return c.body(null, 204);
 });

@@ -1,13 +1,19 @@
 /* Форма вендора: создание и правка. Телефоны только пишутся — текущий номер форма не
    знает (его видно только по «Показать»); пустое поле при правке — «не менять».
    При создании команда выбирает категорию: с ней заводится первая витрина вендора.
-   Категория — у витрины, а не у вендора: при правке её здесь нет. */
+   Категория — у витрины, а не у вендора: при правке её здесь нет.
+   Поля — под свои данные (fields.tsx): телефон с +998 и маской, Telegram с «@», СТИР —
+   только цифры, форма — сегментами, менеджер — администраторы и менеджеры (нынешний остаётся
+   в списке, даже если его отключили). Неполный номер, СТИР не из 9 цифр и не то имя Telegram
+   видны до отправки — теми же словами, что ответил бы сервер. */
 
-import type { StaffDictionaries, VendorDetail, VendorInput } from "@bayramm/shared/api/staff";
+import { normalizeTelegram, normalizeUzPhone } from "@bayramm/shared";
+import type { LegalForm, StaffDictionaries, VendorDetail, VendorInput } from "@bayramm/shared/api/staff";
 import { Select } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
 import type { Failure } from "../api";
 import { categoryOptions } from "../categories";
+import { ChoiceField, PhoneField, TelegramField } from "../fields";
 import { t } from "../texts";
 import { ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
 import { useUnsaved } from "../unsaved";
@@ -25,6 +31,11 @@ const TEXT_KEYS = [
   "contactRole",
   "telegramUsername",
 ] as const;
+
+const LEGAL_FORMS: readonly LegalForm[] = ["ooo", "yatt", "self_employed"];
+
+/** Кого можно назначить менеджером вендора: ведут вендоров администратор и менеджер */
+const MANAGER_ROLES: ReadonlySet<string> = new Set(["admin", "manager"]);
 
 function initial(vendor: VendorDetail | null): Values {
   return {
@@ -50,12 +61,24 @@ export function vendorBody(values: Values, before: Values, creating: boolean): V
     const value = values[key].trim();
     if (creating ? value !== "" : value !== before[key].trim()) body[key] = value === "" ? null : value;
   }
-  // Телефоны: пустое поле — не трогать
+  // Телефоны: пустое поле — не трогать; вписанный — в виде +998XXXXXXXXX
   for (const key of ["phone", "phoneAlt"] as const) {
     const value = values[key].trim();
-    if (value !== "") body[key] = value;
+    if (value !== "") body[key] = normalizeUzPhone(value) ?? value;
   }
   return body as VendorInput;
+}
+
+/** Ошибки до отправки — те же поля, что в ответе 422: СТИР, телефоны, Telegram */
+export function vendorErrors(values: Values): string[] {
+  const errors: string[] = [];
+  const stir = values.stir.trim();
+  if (stir !== "" && !/^\d{9}$/.test(stir)) errors.push("stir");
+  for (const key of ["phone", "phoneAlt"] as const)
+    if (values[key].trim() !== "" && normalizeUzPhone(values[key]) === null) errors.push(key);
+  const telegram = values.telegramUsername.trim();
+  if (telegram !== "" && normalizeTelegram(telegram) === null) errors.push("telegramUsername");
+  return errors;
 }
 
 interface VendorFormProps {
@@ -66,6 +89,8 @@ interface VendorFormProps {
   submitLabel: string;
   readOnly?: boolean;
 }
+
+const invalid = (details: string[]): Failure => ({ ok: false, status: 422, code: "invalid_input", details });
 
 export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOnly }: VendorFormProps) {
   const [before, setBefore] = useState(() => initial(vendor));
@@ -91,9 +116,10 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (creating && categoryCode === "") {
-      // Без категории вендор остался бы без витрины: спрашиваем до запроса
-      setFailure({ ok: false, status: 422, code: "invalid_input", details: ["categoryCode"] });
+    // Без категории вендор остался бы без витрины: спрашиваем до запроса
+    const found = [...(creating && categoryCode === "" ? ["categoryCode"] : []), ...vendorErrors(values)];
+    if (found.length > 0) {
+      setFailure(invalid(found));
       return;
     }
     setBusy(true);
@@ -110,8 +136,8 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
   };
 
   const text = (
-    key: (typeof TEXT_KEYS)[number],
-    extra: { maxLength: number; inputMode?: "numeric"; latin?: boolean },
+    key: Exclude<(typeof TEXT_KEYS)[number], "telegramUsername" | "stir" | "legalAddress">,
+    extra: { maxLength: number },
   ) => (
     <Field label={t.fields[key] ?? key} error={errors[key]}>
       {(props) => (
@@ -121,11 +147,9 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           value={values[key]}
           onChange={set(key)}
           maxLength={extra.maxLength}
-          inputMode={extra.inputMode}
           // Данные вендора, а не сотрудника: подсказки браузера из своего профиля здесь мешают
           autoComplete="off"
           enterKeyHint="done"
-          {...(extra.latin ? { autoCapitalize: "none", spellCheck: false } : {})}
           readOnly={readOnly}
           required={key === "name"}
         />
@@ -134,24 +158,29 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
   );
 
   const phone = (key: "phone" | "phoneAlt") => (
-    <Field label={t.fields[key] ?? key} error={errors[key]} hint={creating ? undefined : t.phoneKeep}>
-      {(props) => (
-        <input
-          {...props}
-          className="input"
-          type="tel"
-          inputMode="tel"
-          autoComplete="off"
-          placeholder={creating ? "+998 XX XXX XX XX" : t.phoneNew}
-          value={values[key]}
-          onChange={set(key)}
-          maxLength={24}
-          enterKeyHint="done"
-          readOnly={readOnly}
-        />
-      )}
-    </Field>
+    <PhoneField
+      label={t.fields[key] ?? key}
+      value={values[key]}
+      onChange={put(key)}
+      error={errors[key]}
+      hint={creating ? undefined : t.phoneKeep}
+    />
   );
+
+  // Менеджер — администраторы и менеджеры; нынешний остаётся в списке, даже если его отключили
+  // или он модератор: иначе поле показало бы «не назначен», а в карточке он есть
+  const staff = (dictionaries?.staff ?? []).filter((member) => MANAGER_ROLES.has(member.role));
+  const current = vendor?.manager ?? null;
+  const managerOptions = [
+    { value: "", label: t.noManager },
+    ...staff.map((member) => ({
+      value: member.id,
+      label: `${member.displayName} · ${t.roles[member.role]}`,
+    })),
+    ...(current && !staff.some((member) => member.id === current.id)
+      ? [{ value: current.id, label: `${current.name ?? t.none} · ${t.input.managerInactive}` }]
+      : []),
+  ];
 
   return (
     <form id={formId} ref={form} className="form" onSubmit={submit} noValidate>
@@ -182,29 +211,30 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
             </Field>
           )}
           {text("name", { maxLength: 120 })}
-          <Field label={t.fields.legalForm ?? ""}>
+          <ChoiceField
+            label={t.fields.legalForm ?? ""}
+            value={values.legalForm === "" ? null : (values.legalForm as LegalForm)}
+            onChange={put("legalForm")}
+            disabled={readOnly}
+            options={LEGAL_FORMS.map((legal) => ({ value: legal, label: t.legalForms[legal] }))}
+          />
+          {text("legalName", { maxLength: 200 })}
+          <Field label={t.fields.stir ?? ""} error={errors.stir} hint={t.input.stir}>
             {(props) => (
-              <Select
+              <input
                 {...props}
                 className="input"
-                label={t.fields.legalForm ?? ""}
-                value={values.legalForm}
-                onChange={put("legalForm")}
-                disabled={readOnly}
-                options={[
-                  { value: "", label: t.none },
-                  ...(["ooo", "yatt", "self_employed"] as const).map((form) => ({
-                    value: form,
-                    label: t.legalForms[form],
-                  })),
-                ]}
+                value={values.stir}
+                // Только цифры: буквы и пробелы из скопированного реестра не попадают в поле
+                onChange={(event) => put("stir")(event.target.value.replace(/\D+/g, ""))}
+                maxLength={9}
+                inputMode="numeric"
+                autoComplete="off"
+                enterKeyHint="done"
+                readOnly={readOnly}
               />
             )}
           </Field>
-          {text("legalName", { maxLength: 200 })}
-          {text("stir", { maxLength: 9, inputMode: "numeric" })}
-          {text("legalAddress", { maxLength: 300 })}
-          {text("contractNo", { maxLength: 64 })}
           <Field label={t.fields.managerId ?? ""} error={errors.managerId}>
             {(props) => (
               <Select
@@ -214,13 +244,22 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
                 value={values.managerId}
                 onChange={put("managerId")}
                 disabled={readOnly}
-                options={[
-                  { value: "", label: t.noManager },
-                  ...(dictionaries?.staff ?? []).map((member) => ({
-                    value: member.id,
-                    label: `${member.displayName} · ${t.roles[member.role]}`,
-                  })),
-                ]}
+                options={managerOptions}
+              />
+            )}
+          </Field>
+          {text("contractNo", { maxLength: 64 })}
+          <Field label={t.fields.legalAddress ?? ""} error={errors.legalAddress} full>
+            {(props) => (
+              <textarea
+                {...props}
+                className="input"
+                rows={2}
+                value={values.legalAddress}
+                onChange={set("legalAddress")}
+                maxLength={300}
+                autoComplete="off"
+                readOnly={readOnly}
               />
             )}
           </Field>
@@ -237,7 +276,14 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel, readOn
           {/* Номера только пишутся: без права правки полям «новый номер» здесь нечего делать */}
           {readOnly ? null : phone("phone")}
           {readOnly ? null : phone("phoneAlt")}
-          {text("telegramUsername", { maxLength: 33, latin: true })}
+          <TelegramField
+            label={t.fields.telegramUsername ?? ""}
+            value={values.telegramUsername}
+            onChange={put("telegramUsername")}
+            error={errors.telegramUsername}
+            hint={t.input.telegramHint}
+            readOnly={readOnly}
+          />
         </div>
       </section>
       {failure && <ErrorText failure={failure} />}

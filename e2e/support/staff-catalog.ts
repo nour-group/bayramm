@@ -46,6 +46,8 @@ export const CAR_REQUEST_ID = "00000000-0000-4000-8300-000000000c01";
 /** Услуги кортежа: на витрине (с предложением правки цены) и новая — на проверке */
 export const BRIDE_CAR_ID = "00000000-0000-4000-8b00-000000000001";
 export const LIMOUSINE_ID = "00000000-0000-4000-8b00-000000000002";
+/** Услуга, которую партнёр отправил на проверку у черновика тортов (draftService) */
+export const BENTO_ID = "00000000-0000-4000-8b00-000000000003";
 const CHAMPAGNE_ID = "00000000-0000-4000-8c00-000000000001";
 /** Фото витрины «Kadr studio»: два ждут решения, третье отклонено с причиной */
 export const PHOTO_PENDING_ID = "00000000-0000-4000-8d00-000000000001";
@@ -74,15 +76,7 @@ export const CAR_CONTACTS = { phone: "+998901112233", telegram: "oq_kortej" } as
  * Telegram витрины, как его понимает сервер (apps/api/src/staff/input.ts): «@имя», «имя» или ссылка
  * t.me/имя → имя без @ (5–32 знака, латиница, цифры и «_», с буквы, не на «_»); иначе null
  */
-export function normalizeTelegram(value: string): string | null {
-  const name = value
-    .trim()
-    .replace(/^https?:\/\//i, "")
-    .replace(/^(www\.)?(t\.me|telegram\.me)\//i, "")
-    .replace(/^@/, "")
-    .replace(/\/$/, "");
-  return /^[A-Za-z][A-Za-z0-9_]{3,30}[A-Za-z0-9]$/.test(name) ? name : null;
-}
+export { normalizeTelegram } from "@bayramm/shared";
 
 const BASE_REVIEW: readonly PublishBlocker[] = ["price", "descriptions", "phone", "photos"];
 const CHECKLIST: readonly PublishBlocker[] = ["contract", "stir", "contacts", "pd_consent"];
@@ -116,6 +110,13 @@ export function refresh(listing: ListingDetail): ListingDetail {
     priceFromUzs: cheapest?.priceUzs ?? null,
     priceUnit: cheapest?.priceUnit ?? listing.priceUnit,
     blockers: blockersOf(withMissing),
+    // Заявки знает подмена API (staff-api.ts); здесь — только статус
+    deleteBlocker:
+      listing.deleteBlocker === "requests"
+        ? "requests"
+        : listing.status === "review" || listing.status === "active"
+          ? "published"
+          : null,
   };
 }
 
@@ -154,6 +155,7 @@ export function emptyListing(id: string, categoryCode: string, name: string, slu
     vendor: VENDOR_REF,
     history: [{ from: null, to: "draft", reason: null, actorKind: "staff", actorName: null, at: iso }],
     pendingRevision: null,
+    deleteBlocker: null,
   });
 }
 
@@ -205,8 +207,11 @@ function stubPhoto(
   };
 }
 
-/** Витрины вендора в категориях, кроме зала: кортеж (опубликован), фото и видео, торты */
-export function seededListings(): ListingDetail[] {
+/**
+ * Витрины вендора в категориях, кроме зала: кортеж (опубликован), фото и видео, торты.
+ * draftService — у черновика тортов ещё и услуга, которую партнёр отправил на проверку
+ */
+export function seededListings({ draftService = false } = {}): ListingDetail[] {
   const car = emptyListing(CAR_LISTING_ID, "car", "Oq kortej", "oq-kortej");
   const photo = emptyListing(PHOTO_LISTING_ID, "photo", "Kadr studio", "kadr-studio");
   const cake = emptyListing(CAKE_LISTING_ID, "cake", "Shirin", "shirin");
@@ -268,6 +273,16 @@ export function seededListings(): ListingDetail[] {
           minQty: 3,
           leadDays: 5,
         }),
+        ...(draftService
+          ? [
+              service(BENTO_ID, "cake", "bento", {
+                status: "review",
+                priceUzs: 45_000,
+                priceUnit: "per_item",
+                sort: 1,
+              }),
+            ]
+          : []),
       ],
     }),
   ];
@@ -423,11 +438,14 @@ export function updateService(
   return { ok: true, service: { ...current, ...changes, updatedAt: iso } };
 }
 
-/** Очередь модерации услуг: только у опубликованных витрин — новые и предложения правок */
+/**
+ * Очередь модерации услуг: новые и предложения правок у любых витрин, кроме отклонённых (у
+ * черновика тоже — как staff/services.ts)
+ */
 export function serviceQueue(listings: readonly ListingDetail[]): ServiceQueue {
   const items: ServiceQueueItem[] = [];
   for (const listing of listings) {
-    if (listing.status !== "active" && listing.status !== "suspended") continue;
+    if (listing.status === "rejected") continue;
     for (const s of listing.services) {
       if (s.status !== "review" && s.proposal === null) continue;
       items.push({

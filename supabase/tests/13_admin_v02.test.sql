@@ -319,7 +319,10 @@ select throws_ok($$update app.staff set active = false where id = '00000000-0000
   'BR017', 'staff_last_admin', 'последнего администратора не отключить');
 select throws_ok($$update app.staff set role = 'manager' where id = '00000000-0000-0000-0000-00000000a001'$$,
   'BR017', 'staff_last_admin', 'последнего администратора не понизить');
-insert into app.staff (id, role) values ('00000000-0000-0000-0000-00000000a004', 'admin');
+-- другой администратор принял приглашение (роль на аккаунте): непринятое замену не даёт
+insert into app.accounts (id) values ('acacacac-0000-0000-0000-00000000a004');
+insert into app.staff (id, role, account_id)
+values ('00000000-0000-0000-0000-00000000a004', 'admin', 'acacacac-0000-0000-0000-00000000a004');
 select lives_ok($$update app.staff set active = false where id = '00000000-0000-0000-0000-00000000a001'$$,
   'есть другой администратор — можно');
 

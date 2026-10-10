@@ -305,19 +305,6 @@ export async function saveListingTelegram(
   return updated !== undefined || telegram === null;
 }
 
-/** Профиль нового пользователя вендора: телефон входа и ФИО. Панель оператора */
-export async function insertVendorUserProfile(
-  trx: Tx,
-  vendorUserId: string,
-  phone: string,
-  fullName: string | null,
-): Promise<void> {
-  await trx
-    .insertInto("pii.vendor_user_profiles")
-    .values({ vendor_user_id: vendorUserId, phone, full_name: fullName })
-    .execute();
-}
-
 /** Правка профиля пользователя вендора: телефон входа и/или ФИО. Панель оператора */
 export async function updateVendorUserProfile(
   trx: Tx,
@@ -338,6 +325,35 @@ export async function clearVendorUserTelegram(trx: Tx, vendorUserId: string): Pr
     .set({ telegram_user_id: null, telegram_chat_id: null })
     .where("vendor_user_id", "=", vendorUserId)
     .execute();
+}
+
+/**
+ * Приглашение в кабинет вендора: строку пользователя и профиль с номером и именем
+ * (pii.vendor_user_profiles) пишет функция базы app.staff_invite_vendor_user — администратору
+ * и менеджеру. phoneHash — HMAC того же номера (phoneHash из auth/crypto.ts). accepted —
+ * номер уже подтверждён у аккаунта, приглашение принято сразу. Номер уже у вендора — 23505
+ * (phone_taken), сотрудник площадки без владельца — BR031, человек уже в кабинете — BR032.
+ * Панель оператора
+ */
+export async function inviteVendorUser(
+  trx: Tx,
+  invite: {
+    vendorId: string;
+    phone: string;
+    phoneHash: Uint8Array;
+    fullName: string | null;
+    role: "owner" | "member";
+    locale: "ru" | "uz" | null;
+  },
+): Promise<{ id: string; accepted: boolean }> {
+  const { rows } = await sql<{ vendor_user_id: string; accepted: boolean }>`
+    select vendor_user_id, accepted
+    from app.staff_invite_vendor_user(${invite.vendorId}::uuid, ${invite.phoneHash}::bytea, ${invite.phone}::text,
+                                      ${invite.fullName}::text, ${invite.role}::text,
+                                      ${invite.locale}::app.locale)`.execute(trx);
+  const row = rows[0];
+  if (row === undefined) throw new Error("app.staff_invite_vendor_user: нет строки");
+  return { id: row.vendor_user_id, accepted: row.accepted };
 }
 
 /**

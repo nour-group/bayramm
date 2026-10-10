@@ -1,9 +1,10 @@
-/* Свои контролы Bayramm вместо системных: выпадающий список, галочка, переключатель,
+/* Свои контролы Bayramm вместо системных: выпадающий список (и список с поиском), галочка, переключатель,
    группа вариантов, число, дата, время, файлы, поиск, диалог, уведомления, подсказка;
    связь (есть ли сеть и баннер «нет связи»).
    Стили — @bayramm/ui/kit.css (только токены), тексты — из словаря приложения. */
 
 export { Calendar, type CalendarProps, type CalendarTexts } from "./Calendar";
+export { Combobox, type ComboboxProps } from "./Combobox";
 export { Checkbox, RadioGroup, type RadioGroupProps, type RadioOption, Switch } from "./choices";
 export { DateField, type DateFieldProps } from "./DateField";
 export { ConfirmSheet, type ConfirmSheetProps, Dialog, type DialogProps } from "./Dialog";

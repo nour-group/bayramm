@@ -1,5 +1,6 @@
-// Справочники для форм панели: категории, районы, поводы, сотрудники (выбор
-// менеджера) и настройки, от которых зависят подсказки (минимум фото, SLA).
+// Справочники для форм панели: категории, города и районы (район знает свой город — список
+// районов в форме витрины сгруппирован по городам), поводы, сотрудники (выбор менеджера) и
+// настройки, от которых зависят подсказки (минимум фото, SLA).
 //
 //   GET /staff/dictionaries
 
@@ -21,9 +22,15 @@ dictionaries.get("/", requirePermission("catalog.read"), async (c) => {
       .select(["code", "name_ru", "name_uz", "enabled"])
       .orderBy("sort")
       .execute();
+    const cities = await trx
+      .selectFrom("app.cities")
+      .select(["code", "name_ru", "name_uz"])
+      .orderBy("sort")
+      .orderBy("code")
+      .execute();
     const districts = await trx
       .selectFrom("app.districts")
-      .select(["code", "name_ru", "name_uz"])
+      .select(["code", "name_ru", "name_uz", "city_code"])
       .orderBy("sort")
       .execute();
     const occasions = await trx
@@ -53,7 +60,8 @@ dictionaries.get("/", requirePermission("catalog.read"), async (c) => {
     });
     return {
       categories: categories.map((row) => ({ ...item(row), enabled: row.enabled })),
-      districts: districts.map(item),
+      cities: cities.map(item),
+      districts: districts.map((row) => ({ ...item(row), city: row.city_code })),
       occasions: occasions.map(item),
       staff: staff.map((row) => ({ id: row.id, displayName: row.display_name, role: row.role })),
       settings: {

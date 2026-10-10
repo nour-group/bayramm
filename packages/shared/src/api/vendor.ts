@@ -391,7 +391,15 @@ export const PHOTO_CONSENT_HEADER = "X-Photo-Consent";
  * (ниже), услуги — своими маршрутами (ниже), фото — загрузкой (выше): их проверяет команда.
  * Цена «от» — из одобренных услуг (до публикации — и из отправленных на проверку). Адрес,
  * вместимость и телефон меняет менеджер. blockers — чего не хватает для публикации (коды из
- * базы: price, attributes, photos, …), missingAttributes — какие поля витрины не заполнены.
+ * базы: price, attributes, photos, …), reviewBlockers — чего не хватает, чтобы отправить
+ * витрину на проверку (услуги и фото, которые ждут решения, тут засчитываются),
+ * missingAttributes — какие поля витрины не заполнены.
+ *
+ * POST /vendor/listings/:id/submit → 200 VendorListing (status review): владелец кабинета
+ * отправляет черновик (и отклонённую — через черновик) на проверку команде, команде —
+ * оповещение. Не черновик и не отклонённая — 409 illegal_transition; не всё готово — 422
+ * publish_blocked (details — коды reviewBlockers); сотруднику площадки — 403
+ * vendor_owner_required. Чужая витрина — 404.
  */
 export interface VendorListing {
   readonly id: string;
@@ -421,6 +429,8 @@ export interface VendorListing {
   /** Телефон для заявок, который клиент видит сразу */
   readonly phone: string | null;
   readonly blockers: readonly string[];
+  /** Чего не хватает, чтобы отправить на проверку (POST …/submit) */
+  readonly reviewBlockers: readonly string[];
   /** Сколько фото нужно для публикации (по категории) и сколько можно загрузить всего */
   readonly photoLimits: { readonly min: number; readonly max: number };
 }
@@ -434,7 +444,7 @@ export interface VendorListing {
  *        (review) или черновиком (submit: false). 422 invalid_input — поля; 409 too_many_services.
  * PATCH  /vendor/listings/:id/services/:sid  ServiceInput     → 200 ListingService:
  *          · черновик, на проверке, отклонённая — правится сразу (и уходит на проверку, если
- *            submit не false);
+ *            submit не false; отклонённая с submit: false становится черновиком);
  *          · активная или снятая у опубликованной витрины — изменённые поля уходят предложением
  *            (proposal), клиент видит прежнее; ничего не изменилось — 422 no_changes.
  * POST   /vendor/listings/:id/services/:sid/submit            → 200: черновик, отклонённая или

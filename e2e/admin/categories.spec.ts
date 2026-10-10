@@ -4,6 +4,7 @@ import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
+  BENTO_ID,
   BOOKED_DAY,
   BRIDE_CAR_ID,
   CAKE_LISTING_ID,
@@ -88,8 +89,13 @@ test("вторая витрина в другой категории: катег
   await expect(ack.getByRole("radio", { name: t.photoAckConsent })).not.toBeChecked();
   await expect(ack.getByRole("radio", { name: t.photoAckNoFaces })).not.toBeChecked();
   await expect(page.getByText(t.portfolioWarning)).toBeVisible();
-  // Категорию сменить можно, пока услуг нет
-  await expect(page.getByRole("button", { name: t.categoryChange })).toBeVisible();
+  // Категорию сменить можно, пока услуг нет: что будет — в форме, кнопка — цвета отказа
+  await page.getByRole("button", { name: t.categoryChange }).click();
+  const change = page.locator("form.confirm").filter({ hasText: t.categoryChangeConsequence });
+  await expect(change).toBeVisible();
+  await expect(change.getByRole("button", { name: t.categoryChange })).toHaveClass(/btn-danger/);
+  await change.getByRole("button", { name: t.cancel }).click();
+  await expect(change).toHaveCount(0);
   expect(api.unexpected).toEqual([]);
 });
 
@@ -100,12 +106,17 @@ test("кортеж: автопарк — ошибка поля до отправ
   await page.getByRole("button", { name: `${t.listAdd}: автопарк` }).click();
   const car = page.getByRole("region", { name: t.listItem("Автопарк", 2) });
   await car.getByLabel("Марка и модель").fill("Lexus LX");
-  await car.getByLabel("Мест").fill("семь");
+  // Число — с «−» и «+»: буквы в поле не попадают, границы видны заранее
+  const seats = car.getByLabel("Мест", { exact: true });
+  await seats.fill("семь");
+  await expect(seats).toHaveValue("");
+  await expect(car.getByText(t.input.range(1, 60))).toBeVisible();
+  await seats.fill("70");
   await save(page).click();
   await expect(car.locator(".field-error")).toContainText([t.attributeIntError(1, 60)]);
   expect(api.patches).toEqual([]);
 
-  await car.getByLabel("Мест").fill("7");
+  await seats.fill("7");
   await pick(page, "Класс", "Премиум", car);
   await save(page).click();
   await expect(page.getByText(t.saved, { exact: true })).toBeVisible();
@@ -143,7 +154,7 @@ test("фото и видео: чего не хватает — по полям; 
 
   await page.getByLabel(t.videoLink(1)).fill("https://youtu.be/dQw4w9WgXcQ");
   await page.getByRole("group", { name: "Команда" }).getByRole("checkbox", { name: "Фотограф" }).check();
-  await page.getByLabel("Готовый материал через, дней").fill("30");
+  await page.getByLabel("Готовый материал через, дней", { exact: true }).fill("30");
   await save(page).click();
   await expect(page.getByText(t.saved, { exact: true })).toBeVisible();
   expect(api.patches[0]).toEqual({
@@ -178,8 +189,12 @@ test("услуги: из каталога с добавкой; правка; с�
   await expect(form.locator(".field-error")).toContainText([t.serviceErrors.priceUzs ?? ""]);
   expect(api.services.filter((c) => c.key.startsWith("POST"))).toEqual([]);
 
-  await form.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true }).fill("450 000");
-  await pick(page, t.serviceFields.priceUnit ?? "", "за мероприятие", form);
+  const price = form.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true });
+  await price.fill("450000");
+  // Разряды — узким неразрывным пробелом, «сум» — у поля
+  await expect(price).toHaveValue("450\u202f000");
+  // Две единицы — пилюлями, а не списком
+  await form.getByRole("radio", { name: "за мероприятие" }).check();
   await pick(page, t.optionFromCatalog, "Остановки для фотосессии", form);
   await form
     .getByRole("region", { name: t.optionN(1) })
@@ -205,8 +220,16 @@ test("услуги: из каталога с добавкой; правка; с�
   const retro = services.getByRole("listitem").filter({ hasText: "Ретро-автомобиль" });
   await expect(retro).toContainText(t.serviceStatus.active ?? "");
 
+  // Снять с витрины — через подтверждение: услуга пропадёт у клиентов
   await act(retro, t.servicePause, "Ретро-автомобиль").click();
+  const pause = page.getByRole("alertdialog", { name: t.servicePauseTitle });
+  await expect(pause).toContainText(t.servicePauseText("Ретро-автомобиль"));
+  await pause.getByRole("button", { name: t.servicePause }).click();
   await expect(retro).toContainText(t.serviceStatus.paused ?? "");
+  // Кнопка исчезла вместе с услугой на витрине — что сделали, говорит всплывающая строка
+  await expect(
+    page.getByRole("status").filter({ hasText: t.toastServicePaused("Ретро-автомобиль") }),
+  ).toBeVisible();
   await act(retro, t.serviceDelete, "Ретро-автомобиль").click();
   await page
     .getByRole("alertdialog", { name: t.serviceDeleteTitle })
@@ -218,9 +241,9 @@ test("услуги: из каталога с добавкой; правка; с�
   await act(services, t.serviceEdit, "Машина для молодожёнов").click();
   const edit = services.locator("form.service-form");
   // Цена услуги — первое поле «Цена, сум» формы (дальше — цены добавок)
-  const price = edit.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true }).first();
-  await expect(price).toHaveValue("350000");
-  await price.fill("380000");
+  const editPrice = edit.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true }).first();
+  await expect(editPrice).toHaveValue("350\u202f000");
+  await editPrice.fill("380000");
   await edit.getByRole("button", { name: t.serviceSave }).click();
   await expect(edit).toHaveCount(0);
   const patched = api.services.find(
@@ -268,6 +291,37 @@ test("модерация услуг: правка — сейчас → пред�
   expect(api.services.find((c) => c.key === `POST /staff/services/${LIMOUSINE_ID}/decline`)?.body).toEqual({
     reason: "Нужно фото лимузина",
   });
+  expect(api.unexpected).toEqual([]);
+});
+
+test("услуга партнёра у черновика — в очереди со статусом витрины; на её странице — «Одобрить» и «Отклонить»", async ({
+  page,
+}) => {
+  const api = await start(page, { seeded: true, draftService: true });
+  await page.goto("/moderation");
+  const queue = page.getByRole("region", { name: t.serviceQueue });
+  const bento = queue.getByRole("listitem").filter({ hasText: "Shirin" });
+  // Партнёр видит «на проверке» и у черновика: модератору видно, что витрины ещё нет на сайте
+  await expect(bento).toContainText(t.serviceQueueKinds.review ?? "");
+  await expect(bento).toContainText(t.status.draft);
+  await expect(queue.getByRole("heading", { level: 2 })).toHaveText(`${t.serviceQueue} 3`);
+  await expectNoAxeViolations(page, "модерация: услуга черновика");
+  await expectHitAreas(page, "модерация: услуга черновика", CONTROLS);
+
+  // Карточка очереди — ссылкой на витрину, сразу на блоке услуг: там те же решения
+  await bento.getByRole("link").click();
+  await expect(page).toHaveURL(`/listings/${CAKE_LISTING_ID}?focus=services`);
+  const services = page.getByRole("region", { name: t.services });
+  await expect(services.getByRole("heading", { level: 2 })).toBeFocused();
+  await expect(services.getByText(t.serviceWaits)).toBeVisible();
+  await expect(act(services, t.serviceDecline, "Бенто")).toBeVisible();
+  await expectNoAxeViolations(page, "витрина: услуга ждёт решения");
+  await expectHitAreas(page, "витрина: услуга ждёт решения", CONTROLS);
+  await act(services, t.serviceApprove, "Бенто").click();
+  await expect(act(services, t.serviceApprove, "Бенто")).toHaveCount(0);
+  expect(api.services.map((c) => c.key)).toContain(`POST /staff/services/${BENTO_ID}/approve`);
+  // Решили — фокус на заголовке блока услуг: кнопки решения исчезли
+  await expect(services.getByRole("heading", { level: 2 })).toBeFocused();
   expect(api.unexpected).toEqual([]);
 });
 

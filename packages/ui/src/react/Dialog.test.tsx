@@ -11,7 +11,15 @@ afterEach(() => {
 
 let log: string[] = [];
 
-function Withdraw({ busy = false, error }: { busy?: boolean; error?: string }) {
+function Withdraw({
+  busy = false,
+  error,
+  confirmDisabled,
+}: {
+  busy?: boolean;
+  error?: string;
+  confirmDisabled?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   return (
@@ -28,6 +36,7 @@ function Withdraw({ busy = false, error }: { busy?: boolean; error?: string }) {
         tone="danger"
         busy={busy}
         error={error}
+        confirmDisabled={confirmDisabled}
         returnFocus={opener}
         onConfirm={() => {
           log.push("confirm");
@@ -107,6 +116,15 @@ describe("ConfirmSheet вместо window.confirm", () => {
     press(dialog(), "Escape");
     expect(log).toEqual([]);
     expect(dialog()?.querySelector('[role="alert"]')?.textContent).toBe("Не получилось");
+  });
+
+  it("подтвердить пока нельзя — недоступна только кнопка подтверждения; отмена работает", () => {
+    log = [];
+    render(<Withdraw confirmDisabled />);
+    click(opener());
+    expect(buttons().map((b) => b.disabled)).toEqual([false, true]);
+    click(buttons()[0]);
+    expect(log).toEqual(["cancel"]);
   });
 });
 

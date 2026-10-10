@@ -4,17 +4,24 @@
    проверяются теми же правилами, что на сервере (serviceErrors), — ошибки подсвечиваются до
    отправки. Модератор и администратор заводят и правят сразу на витрину; менеджер — на
    проверку (у опубликованной витрины правка активной услуги — предложением).
+   Услуга на проверке или с предложением изменений (от партнёра или менеджера, и у черновика
+   тоже) — тому, кто решает по модерации, здесь же «Одобрить» и «Отклонить» с причиной для
+   партнёра, как в очереди «Модерации» (ServiceDecision — один на оба места).
    Форма услуги — на месте, под списком: длинная, со своими списками выбора, в шторке ей
-   тесно. После любого действия витрина перечитывается: меняются цена «от» и готовность. */
+   тесно. Цена — с разрядами и «сум», единица одна — словами, две–четыре — пилюлями, минимум и
+   срок — числами с «−» и «+»; у дополнения — единицы категории и шаблона. «Снять с витрины» —
+   через подтверждение: услуга пропадёт у клиентов, цена «от» пересчитается.
+   После любого действия витрина перечитывается: меняются цена «от» и готовность. */
 
 import type { ListingDetail, ListingService } from "@bayramm/shared/api/staff";
 import {
   type CategoryConfig,
+  categoryPriceUnits,
   newOptionDraft,
   newServiceDraft,
   type OptionDraft,
-  PRICE_UNITS,
   type PriceUnit,
+  SERVICE_LIMITS,
   type ServiceDraft,
   serviceChangeRows,
   serviceDirty,
@@ -24,24 +31,21 @@ import {
   serviceType,
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
-import { ConfirmSheet, Select } from "@bayramm/ui/react";
+import { ConfirmSheet, Select, useToast } from "@bayramm/ui/react";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
-import { ru, unitName } from "../categories";
-import { formatPrice, formatSum } from "../format";
+import { formatPrice, ru, unitName } from "../categories";
+import { ChoiceField, MoneyField, NumberField } from "../fields";
+import { formatSum } from "../format";
 import { apiErrorText, t } from "../texts";
-import { ErrorText, Field, Pill, type Tone } from "../ui";
+import { busyLabel, ConfirmForm, ErrorText, Field, focusSection, PhoneSheet, Pill, toneOf } from "../ui";
 import { useUnsaved } from "../unsaved";
 
-const STATUS_TONE: Record<ListingService["status"], Tone> = {
-  draft: "muted",
-  review: "outline",
-  active: "good",
-  rejected: "warn",
-  paused: "muted",
-};
-
-const ALL_UNITS: readonly PriceUnit[] = PRICE_UNITS;
+/** Единицы цены дополнения: единицы категории и единица шаблона, если её там нет (как в кабинете) */
+export function optionUnits(category: CategoryConfig, option: Pick<OptionDraft, "priceUnit">): PriceUnit[] {
+  const units = categoryPriceUnits(category);
+  return units.includes(option.priceUnit) ? units : [...units, option.priceUnit];
+}
 
 /** Строка услуги: цена и единица, минимум, срок */
 function serviceFacts(service: ListingService): string {
@@ -101,6 +105,95 @@ export function ServiceChanges({ service }: { service: ListingService }) {
   );
 }
 
+/** Услуга ждёт решения: новая на проверке или с предложением изменений */
+export const awaitsDecision = (service: ListingService) =>
+  service.status === "review" || service.proposal !== null;
+
+/**
+ * Одобрить или отклонить услугу (новую или её изменения) — в очереди «Модерации» и на странице
+ * витрины. Отказ — с причиной, её увидит партнёр (на телефоне — в шторке). approveClass —
+ * класс кнопки «Одобрить»: очередь по нему ставит фокус на следующую услугу
+ */
+export function ServiceDecision({
+  service,
+  onDecided,
+  approveClass,
+}: {
+  service: ListingService;
+  onDecided: (outcome: "approved" | "declined") => void;
+  approveClass?: string;
+}) {
+  const { api } = useSession();
+  const [declining, setDeclining] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure | null>(null);
+  const declineButton = useRef<HTMLButtonElement>(null);
+  const name = service.name.ru;
+
+  const approve = async () => {
+    setBusy(true);
+    const result = await api.post<ListingService>(`/staff/services/${service.id}/approve`);
+    setBusy(false);
+    setFailure(result.ok ? null : result);
+    if (result.ok) onDecided("approved");
+  };
+  const decline = async (reason: string): Promise<Failure | null> => {
+    const result = await api.post<ListingService>(`/staff/services/${service.id}/decline`, { reason });
+    if (!result.ok) return result;
+    setDeclining(false);
+    onDecided("declined");
+    return null;
+  };
+
+  return (
+    <>
+      <div className="rcard-actions">
+        <button
+          type="button"
+          className={`btn btn-primary${approveClass ? ` ${approveClass}` : ""}`}
+          aria-busy={busy || undefined}
+          disabled={busy}
+          onClick={() => void approve()}
+        >
+          {busyLabel(t.serviceApprove, busy)}
+          <span className="visually-hidden">: {name}</span>
+        </button>
+        <button
+          ref={declineButton}
+          type="button"
+          className="btn btn-danger"
+          aria-expanded={declining}
+          disabled={busy}
+          onClick={() => setDeclining(!declining)}
+        >
+          {t.serviceDecline}
+          <span className="visually-hidden">: {name}</span>
+        </button>
+      </div>
+      {failure ? <ErrorText failure={failure} /> : null}
+      <PhoneSheet
+        open={declining}
+        title={`${t.serviceDecline}: ${name}`}
+        onClose={() => setDeclining(false)}
+        returnFocus={declineButton}
+      >
+        <div className="rcard-actions">
+          <ConfirmForm
+            hint={t.serviceDeclineHint}
+            label={t.reason}
+            required
+            danger
+            presets={t.reasons.serviceDecline}
+            submitLabel={t.serviceDecline}
+            onSubmit={decline}
+            onCancel={() => setDeclining(false)}
+          />
+        </div>
+      </PhoneSheet>
+    </>
+  );
+}
+
 interface ServicesProps {
   listing: ListingDetail;
   category: CategoryConfig;
@@ -113,12 +206,19 @@ type Editing = { readonly kind: "new" } | { readonly kind: "edit"; readonly serv
 export function Services({ listing, category, onChanged }: ServicesProps) {
   const { api } = useSession();
   const can = useCan();
+  const toast = useToast();
   const editable = can("listings.write");
+  // Решает по услугам тот, у кого право модерации (как очередь GET /staff/services)
+  const decides = can("revisions.moderate");
+  // Что решили здесь — строкой статуса: кнопки решения исчезли, фокус — на заголовке блока
+  const [said, setSaid] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [removing, setRemoving] = useState<ListingService | null>(null);
   const [removeFailure, setRemoveFailure] = useState<Failure | null>(null);
+  // «Снять с витрины» — через подтверждение: услуга пропадёт у клиентов
+  const [pausing, setPausing] = useState<ListingService | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const base = `/staff/listings/${listing.id}/services`;
 
@@ -127,7 +227,23 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
     const result = await api.post<ListingService>(`${base}/${service.id}/${action}`);
     setBusy(null);
     setFailure(result.ok ? null : result);
-    if (result.ok) onChanged();
+    if (!result.ok) return false;
+    onChanged();
+    // Что стало с услугой — словами: кнопка, которую нажали, исчезла вместе со строкой статуса
+    const name = service.name.ru;
+    const said =
+      action === "pause"
+        ? t.toastServicePaused(name)
+        : result.data.status === "active"
+          ? t.toastServiceResumed(name)
+          : t.toastServiceSubmitted(name);
+    toast(said, { tone: "success" });
+    return true;
+  };
+
+  const pause = async () => {
+    if (!pausing) return;
+    if (await act(pausing, "pause")) setPausing(null);
   };
 
   const remove = async () => {
@@ -144,6 +260,16 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
 
   const saved = () => {
     setEditing(null);
+    onChanged();
+  };
+
+  const decided = (service: ListingService, outcome: "approved" | "declined") => {
+    setSaid(
+      outcome === "approved"
+        ? t.serviceApprovedHere(service.name.ru)
+        : t.serviceDeclinedHere(service.name.ru),
+    );
+    focusSection("services-title");
     onChanged();
   };
 
@@ -168,6 +294,9 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
         ) : null}
       </div>
       <p className="muted small">{t.servicesHint}</p>
+      <p className="visually-hidden" aria-live="polite">
+        {said}
+      </p>
       <p className="price-from">
         <span className="muted">{t.priceFromAuto}: </span>
         <strong>
@@ -211,7 +340,7 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
               <li key={service.id} className="card-row service-row">
                 <div className="rcard-head">
                   <strong className="service-name">{service.name.ru}</strong>
-                  <Pill tone={STATUS_TONE[service.status]}>{t.serviceStatus[service.status]}</Pill>
+                  <Pill tone={toneOf("service", service.status)}>{t.serviceStatus[service.status]}</Pill>
                 </div>
                 {service.customName ? <span className="sub">{typeLabel}</span> : null}
                 <span className="sub">{serviceFacts(service)}</span>
@@ -236,6 +365,12 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
                     <ServiceChanges service={service} />
                   </div>
                 ) : null}
+                {decides && awaitsDecision(service) ? (
+                  <div className="notice notice-warn">
+                    <p className="notice-title">{t.serviceWaits}</p>
+                    <ServiceDecision service={service} onDecided={(outcome) => decided(service, outcome)} />
+                  </div>
+                ) : null}
                 {editable ? (
                   <div className="acts">
                     <button
@@ -255,7 +390,10 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
                         type="button"
                         className="btn btn-sm"
                         disabled={busy !== null}
-                        onClick={() => void act(service, "pause")}
+                        onClick={() => {
+                          setFailure(null);
+                          setPausing(service);
+                        }}
                       >
                         {t.servicePause}
                         <span className="visually-hidden">: {service.name.ru}</span>
@@ -314,6 +452,21 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
         error={removeFailure ? apiErrorText(removeFailure.code) : undefined}
         onConfirm={() => void remove()}
         onCancel={() => setRemoving(null)}
+      />
+      <ConfirmSheet
+        open={pausing !== null}
+        title={t.servicePauseTitle}
+        text={pausing ? t.servicePauseText(pausing.name.ru) : undefined}
+        confirmLabel={t.servicePause}
+        cancelLabel={t.cancel}
+        tone="danger"
+        busy={busy !== null}
+        error={pausing && failure ? apiErrorText(failure.code) : undefined}
+        onConfirm={() => void pause()}
+        onCancel={() => {
+          setPausing(null);
+          setFailure(null);
+        }}
       />
     </section>
   );
@@ -441,67 +594,61 @@ function ServiceForm({ listingId, category, service, onSaved, onCancel }: Servic
                 </Field>
               </>
             ) : null}
-            <Field label={t.serviceFields.priceUzs ?? ""} error={errorOf(details, "priceUzs")}>
-              {(props) => (
-                <input
-                  {...props}
-                  className="input"
-                  inputMode="numeric"
-                  value={draft.price}
-                  maxLength={16}
-                  autoComplete="off"
-                  enterKeyHint="done"
-                  onChange={(event) => patch({ price: event.target.value })}
-                />
-              )}
-            </Field>
-            <Field label={t.serviceFields.priceUnit ?? ""} error={errorOf(details, "priceUnit")}>
-              {(props) => (
-                <Select
-                  {...props}
-                  className="input"
-                  label={t.serviceFields.priceUnit ?? ""}
-                  value={draft.priceUnit}
-                  disabled={type.units.length < 2}
-                  onChange={(priceUnit) => patch({ priceUnit })}
-                  options={type.units.map((unit) => ({ value: unit, label: unitName(unit) }))}
-                />
-              )}
-            </Field>
-            <Field
-              label={t.serviceFields.minQty ?? ""}
+            <MoneyField
+              label={t.serviceFields.priceUzs ?? ""}
+              value={draft.price}
+              onChange={(price) => patch({ price })}
+              max={SERVICE_LIMITS.maxPrice}
+              error={errorOf(details, "priceUzs")}
+            />
+            {/* Единица одна — выбирать нечего: написано, за что цена; две–четыре — пилюлями */}
+            {type.units.length === 1 ? (
+              <div className="field">
+                <span>{t.serviceFields.priceUnit}</span>
+                <p className="svc-unit-fixed">{unitName(draft.priceUnit)}</p>
+              </div>
+            ) : type.units.length <= 4 ? (
+              <ChoiceField
+                label={t.serviceFields.priceUnit ?? ""}
+                value={draft.priceUnit}
+                options={type.units.map((unit) => ({ value: unit, label: unitName(unit) }))}
+                onChange={(priceUnit) => patch({ priceUnit })}
+                variant="pill"
+                full={false}
+                error={errorOf(details, "priceUnit")}
+              />
+            ) : (
+              <Field label={t.serviceFields.priceUnit ?? ""} error={errorOf(details, "priceUnit")}>
+                {(props) => (
+                  <Select
+                    {...props}
+                    className="input"
+                    label={t.serviceFields.priceUnit ?? ""}
+                    value={draft.priceUnit}
+                    onChange={(priceUnit) => patch({ priceUnit })}
+                    options={type.units.map((unit) => ({ value: unit, label: unitName(unit) }))}
+                  />
+                )}
+              </Field>
+            )}
+            <NumberField
+              label={t.serviceMinQtyIn[draft.priceUnit] ?? t.serviceFields.minQty ?? ""}
+              value={draft.minQty}
+              onChange={(minQty) => patch({ minQty })}
+              min={1}
+              max={SERVICE_LIMITS.maxMinQty}
               error={errorOf(details, "minQty")}
               hint={t.serviceFields.minQtyHint}
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  className="input"
-                  inputMode="numeric"
-                  value={draft.minQty}
-                  maxLength={6}
-                  autoComplete="off"
-                  onChange={(event) => patch({ minQty: event.target.value })}
-                />
-              )}
-            </Field>
-            <Field
+            />
+            <NumberField
               label={t.serviceFields.leadDays ?? ""}
+              value={draft.leadDays}
+              onChange={(leadDays) => patch({ leadDays })}
+              min={0}
+              max={SERVICE_LIMITS.maxLeadDays}
               error={errorOf(details, "leadDays")}
               hint={t.serviceFields.leadDaysHint}
-            >
-              {(props) => (
-                <input
-                  {...props}
-                  className="input"
-                  inputMode="numeric"
-                  value={draft.leadDays}
-                  maxLength={3}
-                  autoComplete="off"
-                  onChange={(event) => patch({ leadDays: event.target.value })}
-                />
-              )}
-            </Field>
+            />
             {(["Ru", "Uz"] as const).map((lang) => (
               <Field
                 key={lang}
@@ -571,23 +718,14 @@ function ServiceForm({ listingId, category, service, onSaved, onCancel }: Servic
                       />
                     )}
                   </Field>
-                  <Field
+                  <MoneyField
                     label={t.serviceFields.priceUzs ?? ""}
+                    value={option.price}
+                    onChange={(price) => putOption(option.key, { price })}
+                    max={SERVICE_LIMITS.maxPrice}
                     error={bad("priceUzs") ? t.serviceErrors.priceUzs : undefined}
-                  >
-                    {(props) => (
-                      <input
-                        {...props}
-                        className="input"
-                        inputMode="numeric"
-                        value={option.price}
-                        maxLength={16}
-                        autoComplete="off"
-                        onChange={(event) => putOption(option.key, { price: event.target.value })}
-                      />
-                    )}
-                  </Field>
-                  <Field label={t.serviceFields.priceUnit ?? ""}>
+                  />
+                  <Field label={t.serviceFields.priceUnit ?? ""} hint={t.optionUnitsHint}>
                     {(props) => (
                       <Select
                         {...props}
@@ -595,7 +733,10 @@ function ServiceForm({ listingId, category, service, onSaved, onCancel }: Servic
                         label={`${t.serviceFields.priceUnit ?? ""} · ${title}`}
                         value={option.priceUnit}
                         onChange={(priceUnit) => putOption(option.key, { priceUnit })}
-                        options={ALL_UNITS.map((unit) => ({ value: unit, label: unitName(unit) }))}
+                        options={optionUnits(category, option).map((unit) => ({
+                          value: unit,
+                          label: unitName(unit),
+                        }))}
                       />
                     )}
                   </Field>

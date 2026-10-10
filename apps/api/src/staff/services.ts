@@ -16,8 +16,9 @@
 //
 // Решает по модерации тот, у кого revisions.moderate (администратор, модератор): его
 // услуги сразу одобрены. Менеджер заводит услуги на проверку (у неопубликованной
-// витрины их одобрит публикация). Решение по услуге опубликованной витрины —
-// уведомление владельцам кабинета (триггер базы listing_services_notify).
+// витрины их одобрит публикация, если не решили раньше). Очередь — услуги любых витрин,
+// кроме отклонённых: у черновика тоже. Решение — уведомление владельцам кабинета (триггер
+// базы listing_services_notify: одобрение — у опубликованной витрины, отказ — у любой).
 
 import type { ServiceQueue, ServiceQueueItem, ServiceQueueKind } from "@bayramm/shared/api/staff";
 import { Hono } from "hono";
@@ -177,8 +178,9 @@ serviceModeration.get("/", requirePermission("revisions.moderate"), async (c) =>
         sql<Date>`coalesce(s.proposal_at, s.submitted_at, s.updated_at)`.as("queued_at"),
         sql<number>`(count(*) over ())::int`.as("total"),
       ])
-      // Неопубликованную витрину решают вместе с карточкой — публикацией
-      .where("l.status", "in", ["active", "suspended"])
+      // У любой витрины, кроме отклонённой: партнёр видит «на проверке» и у черновика — решить
+      // можно до публикации (публикация одобрит оставшиеся). Тот же фильтр — у app.metrics_ops_now
+      .where("l.status", "<>", "rejected")
       .$if(filter === "pending", (qb) =>
         qb.where((eb) => eb.or([eb("s.status", "=", "review"), eb("s.proposal", "is not", null)])),
       )

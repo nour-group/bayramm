@@ -165,66 +165,77 @@ export function vendorPhoto(p: PhotoRow, media: MediaEnv): VendorPhoto | null {
 }
 
 /** GET /vendor/listings/:id: своя площадка как есть в базе; чужая (даже опубликованная) — 404 */
-export async function getListing(
+export function getListing(
   db: Db,
   actor: VendorActor,
   listingId: string,
   media: MediaEnv,
 ): Promise<VendorListing> {
-  return withActor(db, actor, async (trx) => {
-    const listing = await trx
-      .selectFrom("app.listings")
-      .selectAll()
-      .select([
-        sql<string[] | null>`app.listing_publish_blockers(id, 'active')`.as("blockers"),
-        listingPhone("id").as("phone"),
-        sql<number>`greatest(3, coalesce(app.setting_int('min_photos'), 3),
-          (select c.min_photos from app.categories c where c.code = category_code))`.as("min_photos"),
-        sql<number>`coalesce(app.setting_int('max_photos'), 10)`.as("max_photos"),
-      ])
-      .where("id", "=", listingId)
-      .where("vendor_id", "=", actor.vendorId)
-      .executeTakeFirst();
-    if (listing === undefined) throw notFound();
+  return withActor(db, actor, (trx) => readListing(trx, actor, listingId, media));
+}
 
-    const services = await listServices(trx, listingId);
-    const category = categoryConfig(listing.category_code);
-    const attributes = category === undefined ? {} : readAttributes(category, listing.attributes);
+/** Своя площадка в транзакции актора: после действия (отправка на проверку) — как GET */
+export async function readListing(
+  trx: Tx,
+  actor: VendorActor,
+  listingId: string,
+  media: MediaEnv,
+): Promise<VendorListing> {
+  const listing = await trx
+    .selectFrom("app.listings")
+    .selectAll()
+    .select([
+      sql<string[] | null>`app.listing_publish_blockers(id, 'active')`.as("blockers"),
+      // Чего не хватает, чтобы отправить на проверку: услуги и фото на проверке засчитываются
+      sql<string[] | null>`app.listing_publish_blockers(id, 'review')`.as("review_blockers"),
+      listingPhone("id").as("phone"),
+      sql<number>`greatest(3, coalesce(app.setting_int('min_photos'), 3),
+        (select c.min_photos from app.categories c where c.code = category_code))`.as("min_photos"),
+      sql<number>`coalesce(app.setting_int('max_photos'), 10)`.as("max_photos"),
+    ])
+    .where("id", "=", listingId)
+    .where("vendor_id", "=", actor.vendorId)
+    .executeTakeFirst();
+  if (listing === undefined) throw notFound();
 
-    const photos = await trx
-      .selectFrom("app.photos")
-      .select(["id", "storage_key", "width", "height", "moderation", "moderation_reason", "is_cover"])
-      .where("listing_id", "=", listingId)
-      .where("deleted_at", "is", null)
-      .where("status", "=", "ready")
-      .orderBy("is_cover", "desc")
-      .orderBy("sort")
-      .orderBy("created_at")
-      .execute();
+  const services = await listServices(trx, listingId);
+  const category = categoryConfig(listing.category_code);
+  const attributes = category === undefined ? {} : readAttributes(category, listing.attributes);
 
-    return {
-      id: listing.id,
-      slug: listing.slug,
-      name: listing.name,
-      status: listing.status,
-      statusReason: listing.status_reason,
-      categoryCode: listing.category_code,
-      districtCode: listing.district_code,
-      address: { ru: listing.address_ru ?? "", uz: listing.address_uz ?? "" },
-      description: { ru: listing.description_ru ?? "", uz: listing.description_uz ?? "" },
-      priceFromUzs: listing.price_from_uzs === null ? null : Number(listing.price_from_uzs),
-      priceUnit: listing.price_unit,
-      capMin: listing.cap_min,
-      capMax: listing.cap_max,
-      attributes,
-      missingAttributes: category === undefined ? [] : missingAttributes(category, attributes),
-      videoLinks: listing.video_links,
-      parallelCapacity: listing.parallel_capacity,
-      services,
-      photos: photos.flatMap((p) => vendorPhoto(p, media) ?? []),
-      phone: listing.phone,
-      blockers: listing.blockers ?? [],
-      photoLimits: { min: listing.min_photos, max: listing.max_photos },
-    };
-  });
+  const photos = await trx
+    .selectFrom("app.photos")
+    .select(["id", "storage_key", "width", "height", "moderation", "moderation_reason", "is_cover"])
+    .where("listing_id", "=", listingId)
+    .where("deleted_at", "is", null)
+    .where("status", "=", "ready")
+    .orderBy("is_cover", "desc")
+    .orderBy("sort")
+    .orderBy("created_at")
+    .execute();
+
+  return {
+    id: listing.id,
+    slug: listing.slug,
+    name: listing.name,
+    status: listing.status,
+    statusReason: listing.status_reason,
+    categoryCode: listing.category_code,
+    districtCode: listing.district_code,
+    address: { ru: listing.address_ru ?? "", uz: listing.address_uz ?? "" },
+    description: { ru: listing.description_ru ?? "", uz: listing.description_uz ?? "" },
+    priceFromUzs: listing.price_from_uzs === null ? null : Number(listing.price_from_uzs),
+    priceUnit: listing.price_unit,
+    capMin: listing.cap_min,
+    capMax: listing.cap_max,
+    attributes,
+    missingAttributes: category === undefined ? [] : missingAttributes(category, attributes),
+    videoLinks: listing.video_links,
+    parallelCapacity: listing.parallel_capacity,
+    services,
+    photos: photos.flatMap((p) => vendorPhoto(p, media) ?? []),
+    phone: listing.phone,
+    blockers: listing.blockers ?? [],
+    reviewBlockers: listing.review_blockers ?? [],
+    photoLimits: { min: listing.min_photos, max: listing.max_photos },
+  };
 }

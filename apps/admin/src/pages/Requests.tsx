@@ -6,6 +6,7 @@
    команды, история; телефоны — скрыты до «Показать» (в журнал). */
 
 import type {
+  RequestStatus,
   RequestVendorPhones,
   RevealedPhone,
   SlaEvent,
@@ -13,6 +14,7 @@ import type {
   SlaState,
   StaffDictionaries,
   StaffRequestDetail,
+  StaffRequestItem,
   StaffRequestList,
 } from "@bayramm/shared/api/staff";
 import {
@@ -22,27 +24,42 @@ import {
   type DayPart,
   detailRows,
 } from "@bayramm/shared/categories";
-import { Dialog, RadioGroup, SearchField, Select } from "@bayramm/ui/react";
+import { Dialog, RadioGroup, type RadioOption, SearchField, Select } from "@bayramm/ui/react";
 import { type FormEvent, Fragment, useCallback, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
-import { CategoryChip, categoryName, categoryOptions, partWindow } from "../categories";
-import { formatDay, formatMoment, formatPrice, formatSum, vendorLabel } from "../format";
+import {
+  CategoryChip,
+  categoryName,
+  categoryOptions,
+  formatPrice,
+  knownCategory,
+  partWindow,
+} from "../categories";
+import { formatDay, formatMoment, formatSum, vendorLabel } from "../format";
 import { useLayout, usePhone } from "../layout";
+import { useQueryState } from "../router";
 import { t } from "../texts";
 import {
   ActionBar,
   ActiveFilter,
+  busyLabel,
   ConfirmForm,
+  EmptyList,
   ErrorText,
   FilterButton,
   Link,
+  ListFooter,
   LoadedView,
+  offsetOf,
   PhoneReveal,
   PhoneSheet,
   Pill,
   ReasonPhoneReveal,
-  type Tone,
+  toneOf,
+  useBreadcrumbs,
   useEntityTitle,
+  useListSearch,
+  usePagedList,
 } from "../ui";
 import { useUnsaved } from "../unsaved";
 
@@ -58,18 +75,32 @@ const SLA_FILTERS: readonly (SlaFilter | null)[] = [
   "closed",
 ];
 
-const SLA_TONE: Record<SlaState, Tone> = {
-  waiting: "outline",
-  overdue: "warn",
-  breached: "warn",
-  answered: "good",
-  answered_late: "muted",
-  ops_contacted: "muted",
-  closed: "muted",
-};
+const STATUSES: readonly RequestStatus[] = [
+  "new",
+  "viewed",
+  "contacted",
+  "deal",
+  "declined",
+  "withdrawn",
+  "expired",
+];
+
+/** Заявок на странице */
+const PAGE = 50;
+
+const KEYS = ["q", "sla", "status", "category", "listingId", "page"] as const;
+
+type Key = (typeof KEYS)[number];
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export function SlaPill({ sla }: { sla: SlaState }) {
-  return <Pill tone={SLA_TONE[sla]}>{t.sla[sla]}</Pill>;
+  return <Pill tone={toneOf("sla", sla)}>{t.sla[sla]}</Pill>;
+}
+
+/** Статус заявки плашкой: тот же цвет, что у статусов в других разделах */
+export function RequestStatusPill({ status }: { status: RequestStatus }) {
+  return <Pill tone={toneOf("request", status)}>{t.requestStatus[status]}</Pill>;
 }
 
 function occasionName(dictionaries: StaffDictionaries | null, code: string): string {
@@ -90,30 +121,72 @@ function partName(part: DayPart | null): string {
   return part === null ? "" : (t.dayParts[part] ?? part);
 }
 
+const slaOf = (value: string | undefined): SlaFilter | null =>
+  SLA_FILTERS.find((filter) => filter !== null && filter === value) ?? null;
+const statusOf = (value: string | undefined): RequestStatus | null =>
+  STATUSES.find((status) => status === value) ?? null;
+
+const STATUS_OPTIONS = [
+  { value: "", label: t.allStatuses },
+  ...STATUSES.map((value) => ({ value, label: t.requestStatus[value] ?? value })),
+];
+
+/**
+ * Заявки: поиск (номер, витрина, вендор) — как только перестали печатать; фильтры срока,
+ * статуса и категории, страница и одна витрина (?listingId= — ссылка «Заявки витрины») — в
+ * адресе: «назад» из заявки возвращает тот же список, а ссылки ведут сразу на отфильтрованный
+ * (/requests?sla=late — плитка метрик, ?q=V101 — «Заявки вендора»)
+ */
 export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries | null }) {
   const phone = usePhone();
-  const [sla, setSla] = useState<SlaFilter | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
-  const [q, setQ] = useState("");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useQueryState(KEYS);
+  const [q, setQ] = useListSearch(query.q ?? "", (search) => setQuery({ q: search, page: null }));
+  const sla = slaOf(query.sla);
+  const status = statusOf(query.status);
+  const category = knownCategory(query.category);
+  const listingId = query.listingId && UUID.test(query.listingId) ? query.listingId : null;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterId = useId();
-  const params = new URLSearchParams({ limit: "100" });
+  const offset = phone ? 0 : offsetOf(query.page, PAGE);
+  const params = new URLSearchParams();
   if (sla) params.set("sla", sla);
+  if (status) params.set("status", status);
   if (category) params.set("category", category);
-  if (query) params.set("q", query);
-  const { loaded, reload } = useLoad<StaffRequestList>(`/staff/requests?${params}`);
-  const list = loaded.state === "ready" ? loaded.data : null;
+  if (listingId) params.set("listingId", listingId);
+  if (query.q) params.set("q", query.q);
+  const list = usePagedList<StaffRequestItem, StaffRequestList>(`/staff/requests?${params}`, {
+    size: PAGE,
+    offset,
+    append: phone,
+  });
+  const data = list.loaded.state === "ready" ? list.loaded.data : null;
+  const filtered = Boolean(query.q || sla || status || category || listingId);
+  // Другой фильтр — с первой страницы
+  const set = (patch: Partial<Record<Key, string | null>>) => setQuery({ ...patch, page: null });
+  const reset = () => {
+    setQ("");
+    setQuery({ q: null, sla: null, status: null, category: null, listingId: null, page: null });
+  };
+  const onPage = (next: number) => {
+    setQuery({ page: next > 0 ? String(next / PAGE + 1) : null });
+    window.scrollTo?.(0, 0);
+  };
+  const listingName = listingId
+    ? list.items.find((r) => r.listing.id === listingId)?.listing.name
+    : undefined;
+  // Сколько заявок в каждом состоянии срока: на компьютере — в подписи пилюли, в шторке — второй строкой
+  const slaOptions = (inLabel: boolean): RadioOption<SlaFilter | "all">[] =>
+    SLA_FILTERS.map((filter) => {
+      const count = filter && data ? filterCount(data, filter) : null;
+      if (count === null) return { value: filter ?? "all", label: filterLabel(filter) };
+      return inLabel
+        ? { value: filter ?? "all", label: `${filterLabel(filter)} · ${count}` }
+        : { value: filter ?? "all", label: filterLabel(filter), hint: t.requestsCount(count) };
+    });
 
   return (
     <div className="stack">
-      <form
-        className="toolbar"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setQuery(q.trim());
-        }}
-      >
+      <div className="toolbar">
         <SearchField
           className="search"
           value={q}
@@ -124,7 +197,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
         />
         {phone ? (
           <FilterButton
-            count={(sla ? 1 : 0) + (category ? 1 : 0)}
+            count={(sla ? 1 : 0) + (status ? 1 : 0) + (category ? 1 : 0)}
             open={filtersOpen}
             onOpen={() => setFiltersOpen(true)}
           />
@@ -132,20 +205,33 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
           <>
             <Select
               size="compact"
+              label={t.requestStatusFilter}
+              value={status ?? ""}
+              onChange={(value) => set({ status: value === "" ? null : value })}
+              options={STATUS_OPTIONS}
+            />
+            <Select
+              size="compact"
               label={t.colCategory}
               value={category ?? ""}
-              onChange={(code) => setCategory(code === "" ? null : code)}
+              onChange={(code) => set({ category: code === "" ? null : code })}
               options={[{ value: "", label: t.allCategories }, ...categoryOptions()]}
             />
-            <button type="submit" className="btn">
-              {t.search}
-            </button>
           </>
         )}
-      </form>
-      {phone && sla ? <ActiveFilter label={filterLabel(sla)} onClear={() => setSla(null)} /> : null}
+      </div>
+      {listingId ? (
+        <ActiveFilter
+          label={listingName ? t.requestsOfListing(listingName) : t.requestsOfListingUnknown}
+          onClear={() => set({ listingId: null })}
+        />
+      ) : null}
+      {phone && sla ? <ActiveFilter label={filterLabel(sla)} onClear={() => set({ sla: null })} /> : null}
+      {phone && status ? (
+        <ActiveFilter label={t.requestStatus[status] ?? status} onClear={() => set({ status: null })} />
+      ) : null}
       {phone && category ? (
-        <ActiveFilter label={categoryName(category)} onClear={() => setCategory(null)} />
+        <ActiveFilter label={categoryName(category)} onClear={() => set({ category: null })} />
       ) : null}
       {phone ? (
         <Dialog
@@ -157,10 +243,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
               <button
                 type="button"
                 className="ui-btn ui-btn-secondary"
-                onClick={() => {
-                  setSla(null);
-                  setCategory(null);
-                }}
+                onClick={() => set({ sla: null, status: null, category: null })}
               >
                 {t.reset}
               </button>
@@ -177,12 +260,18 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
             variant="row"
             aria-labelledby={`${filterId}-sla`}
             value={sla ?? "all"}
-            onChange={(value) => setSla(value === "all" ? null : value)}
-            options={SLA_FILTERS.map((filter) => ({
-              value: filter ?? "all",
-              label: filterLabel(filter),
-              ...(filter && list ? { hint: t.requestsCount(filterCount(list, filter)) } : {}),
-            }))}
+            onChange={(value) => set({ sla: value === "all" ? null : value })}
+            options={slaOptions(false)}
+          />
+          <p className="sheet-group" id={`${filterId}-status`}>
+            {t.requestStatusFilter}
+          </p>
+          <RadioGroup<string>
+            variant="row"
+            aria-labelledby={`${filterId}-status`}
+            value={status ?? ""}
+            onChange={(value) => set({ status: value === "" ? null : value })}
+            options={STATUS_OPTIONS}
           />
           <p className="sheet-group" id={`${filterId}-category`}>
             {t.colCategory}
@@ -191,125 +280,140 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
             variant="row"
             aria-labelledby={`${filterId}-category`}
             value={category ?? "all"}
-            onChange={(value) => setCategory(value === "all" ? null : value)}
+            onChange={(value) => set({ category: value === "all" ? null : value })}
             options={[{ value: "all", label: t.allCategories }, ...categoryOptions()]}
           />
         </Dialog>
-      ) : null}
-      <LoadedView loaded={loaded} onRetry={reload}>
-        {(list) => (
-          <>
-            {phone ? null : (
-              <fieldset className="chips">
-                <legend className="visually-hidden">{t.colDue}</legend>
-                {SLA_FILTERS.map((filter) => (
-                  <button
-                    key={filter ?? "all"}
-                    type="button"
-                    className="chip"
-                    aria-pressed={sla === filter}
-                    onClick={() => setSla(filter)}
-                  >
-                    {filterLabel(filter)}
-                    {filter && <span className="chip-count">{filterCount(list, filter)}</span>}
-                  </button>
-                ))}
-              </fieldset>
-            )}
-            {list.items.length === 0 ? (
-              <p className="empty">{t.requestsEmpty}</p>
-            ) : phone ? (
-              <ul className="rcards">
-                {list.items.map((request) => (
-                  <li key={request.id} className="rcard rcard-tap">
-                    <div className="rcard-head">
-                      <Link to={{ name: "request", id: request.id }} className="rcard-link">
-                        {t.requestNo(request.publicNo)}
-                      </Link>
-                      <SlaPill sla={request.sla} />
-                    </div>
-                    <p className="rcard-meta">
-                      {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
-                    </p>
-                    <dl className="rcard-facts">
-                      <dt>{t.colClient}</dt>
-                      <dd>{request.contactName ?? t.none}</dd>
-                      <dt>{t.colListing}</dt>
-                      <dd>
-                        <CategoryChip code={request.listing.categoryCode} /> {request.listing.name} ·{" "}
-                        {vendorLabel(request.vendor)}
-                      </dd>
-                      <dt>{t.colEvent}</dt>
-                      <dd>
-                        {formatDay(request.eventDate)}
-                        {request.dayPart ? ` · ${partName(request.dayPart)}` : ""} ·{" "}
-                        {occasionName(dictionaries, request.occasionCode)}
-                        {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
-                      </dd>
-                      <dt>{t.colDue}</dt>
-                      <dd>
-                        {formatMoment(request.slaDueAt)}
-                        {request.reminders > 0 ? ` · ${t.reminders(request.reminders)}` : ""}
-                      </dd>
-                    </dl>
-                  </li>
-                ))}
-              </ul>
+      ) : (
+        <RadioGroup<SlaFilter | "all">
+          variant="pill"
+          label={t.colDue}
+          name="requests-sla"
+          value={sla ?? "all"}
+          onChange={(value) => set({ sla: value === "all" ? null : value })}
+          options={slaOptions(true)}
+        />
+      )}
+      <LoadedView loaded={list.loaded} onRetry={list.reload}>
+        {() =>
+          list.items.length === 0 ? (
+            filtered ? (
+              <EmptyList text={t.requestsFilteredEmpty} onReset={reset} />
             ) : (
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th scope="col">{t.colRequest}</th>
-                      <th scope="col">{t.colClient}</th>
-                      <th scope="col">{t.colListing}</th>
-                      <th scope="col">{t.colEvent}</th>
-                      <th scope="col">{t.colDue}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {list.items.map((request) => (
-                      <tr key={request.id}>
-                        <td>
-                          <Link to={{ name: "request", id: request.id }} className="row-link">
-                            {t.requestNo(request.publicNo)}
-                          </Link>
-                          <span className="sub">
-                            {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
-                          </span>
-                        </td>
-                        <td>{request.contactName ?? t.none}</td>
-                        <td>
-                          <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
-                          <span className="sub">
-                            <CategoryChip code={request.listing.categoryCode} /> {vendorLabel(request.vendor)}
-                          </span>
-                        </td>
-                        <td>
-                          {formatDay(request.eventDate)}
-                          {request.dayPart ? ` · ${partName(request.dayPart)}` : ""}
-                          <span className="sub">
-                            {occasionName(dictionaries, request.occasionCode)}
-                            {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
-                          </span>
-                        </td>
-                        <td>
-                          <SlaPill sla={request.sla} />
-                          <span className="sub">
-                            {t.dueIn} {formatMoment(request.slaDueAt)}
-                            {request.reminders > 0 ? ` · ${t.reminders(request.reminders)}` : ""}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <p className="muted small">{t.total(list.total)}</p>
-          </>
-        )}
+              <EmptyList text={t.requestsEmpty} />
+            )
+          ) : (
+            <>
+              {phone ? (
+                <RequestCards items={list.items} dictionaries={dictionaries} />
+              ) : (
+                <RequestTable items={list.items} dictionaries={dictionaries} />
+              )}
+              <ListFooter list={list} offset={offset} size={PAGE} onPage={onPage} />
+            </>
+          )
+        }
       </LoadedView>
+    </div>
+  );
+}
+
+interface RowsProps {
+  items: readonly StaffRequestItem[];
+  dictionaries: StaffDictionaries | null;
+}
+
+function RequestCards({ items, dictionaries }: RowsProps) {
+  return (
+    <ul className="rcards">
+      {items.map((request) => (
+        <li key={request.id} className="rcard rcard-tap">
+          <div className="rcard-head">
+            <Link to={{ name: "request", id: request.id }} className="rcard-link">
+              {t.requestNo(request.publicNo)}
+            </Link>
+            <SlaPill sla={request.sla} />
+          </div>
+          <p className="rcard-meta">
+            {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
+          </p>
+          <dl className="rcard-facts">
+            <dt>{t.colClient}</dt>
+            <dd>{request.contactName ?? t.none}</dd>
+            <dt>{t.colListing}</dt>
+            <dd>
+              <CategoryChip code={request.listing.categoryCode} /> {request.listing.name} ·{" "}
+              {vendorLabel(request.vendor)}
+            </dd>
+            <dt>{t.colEvent}</dt>
+            <dd>
+              {formatDay(request.eventDate)}
+              {request.dayPart ? ` · ${partName(request.dayPart)}` : ""} ·{" "}
+              {occasionName(dictionaries, request.occasionCode)}
+              {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
+            </dd>
+            <dt>{t.colDue}</dt>
+            <dd>
+              {formatMoment(request.slaDueAt)}
+              {request.reminders > 0 ? ` · ${t.reminders(request.reminders)}` : ""}
+            </dd>
+          </dl>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RequestTable({ items, dictionaries }: RowsProps) {
+  return (
+    <div className="table-wrap">
+      <table className="table">
+        <thead>
+          <tr>
+            <th scope="col">{t.colRequest}</th>
+            <th scope="col">{t.colClient}</th>
+            <th scope="col">{t.colListing}</th>
+            <th scope="col">{t.colEvent}</th>
+            <th scope="col">{t.colDue}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((request) => (
+            <tr key={request.id}>
+              <td>
+                <Link to={{ name: "request", id: request.id }} className="row-link">
+                  {t.requestNo(request.publicNo)}
+                </Link>
+                <span className="sub">
+                  {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
+                </span>
+              </td>
+              <td>{request.contactName ?? t.none}</td>
+              <td>
+                <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
+                <span className="sub">
+                  <CategoryChip code={request.listing.categoryCode} /> {vendorLabel(request.vendor)}
+                </span>
+              </td>
+              <td>
+                {formatDay(request.eventDate)}
+                {request.dayPart ? ` · ${partName(request.dayPart)}` : ""}
+                <span className="sub">
+                  {occasionName(dictionaries, request.occasionCode)}
+                  {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
+                </span>
+              </td>
+              <td>
+                <SlaPill sla={request.sla} />
+                <span className="sub">
+                  {t.dueIn} {formatMoment(request.slaDueAt)}
+                  {request.reminders > 0 ? ` · ${t.reminders(request.reminders)}` : ""}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -317,7 +421,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
 export function RequestPage({ id, dictionaries }: { id: string; dictionaries: StaffDictionaries | null }) {
   const { loaded, reload, set } = useLoad<StaffRequestDetail>(`/staff/requests/${id}`);
   return (
-    <LoadedView loaded={loaded} onRetry={reload}>
+    <LoadedView loaded={loaded} onRetry={reload} skeleton="detail">
       {(request) => <RequestView request={request} dictionaries={dictionaries} onChange={set} />}
     </LoadedView>
   );
@@ -333,6 +437,11 @@ function RequestView({
   onChange: (request: StaffRequestDetail) => void;
 }) {
   useEntityTitle(`${t.views.request} ${t.requestNo(request.publicNo)}`);
+  // Путь на компьютере: заявки → вендор → витрина
+  useBreadcrumbs([
+    { label: vendorLabel(request.vendor), to: { name: "vendor", id: request.vendor.id } },
+    { label: request.listing.name, to: { name: "listing", id: request.listing.id } },
+  ]);
   const { api } = useSession();
   const can = useCan();
   const [vendorPhones, setVendorPhones] = useState<Promise<Result<RequestVendorPhones>> | null>(null);
@@ -358,10 +467,7 @@ function RequestView({
   const category = categoryConfig(request.listing.categoryCode);
   const district = (code: string) => dictionaries?.districts.find((d) => d.code === code)?.nameRu;
   const details = <RequestDetails category={category} request={request} district={district} />;
-  const budget =
-    request.budgetMinUzs !== null || request.budgetMaxUzs !== null
-      ? `${formatSum(request.budgetMinUzs)} — ${formatSum(request.budgetMaxUzs)}`
-      : t.none;
+  const budget = budgetText(request.budgetMinUzs, request.budgetMaxUzs);
 
   const facts = (
     <section className="panel" aria-label={t.views.request}>
@@ -423,7 +529,7 @@ function RequestView({
         {request.history.map((entry) => (
           <li key={`${entry.at}-${entry.to}`}>
             <span className="sub">
-              {formatMoment(entry.at)} · {t.historyBy[entry.actorKind]}
+              {formatMoment(entry.at)} · {actorOf(entry)}
             </span>
             {entry.from ? `${t.requestStatus[entry.from]} → ` : ""}
             <strong>{t.requestStatus[entry.to]}</strong>
@@ -436,6 +542,14 @@ function RequestView({
   const client = (
     <section className="panel" aria-labelledby="client-title">
       <h2 id="client-title">{t.requestClient}</h2>
+      {/* Карточка клиента — по коду C-…: заявки, согласия, блокировка. Телефона в ссылке нет */}
+      {request.client && can("clients.read") ? (
+        <p>
+          <Link to={{ name: "client", id: request.client.id }}>
+            {t.requestClientOpen(request.client.ref)}
+          </Link>
+        </p>
+      ) : null}
       {request.contactPurged ? (
         <p className="muted">{t.contactPurged}</p>
       ) : (
@@ -451,6 +565,7 @@ function RequestView({
           )}
           {can("client_phones.read") && (
             <ReasonPhoneReveal
+              presets={t.reasons.clientPhone}
               label={t.clientPhone}
               hint={t.clientPhoneHint}
               reasonLabel={t.clientPhoneReason}
@@ -473,7 +588,7 @@ function RequestView({
   return (
     <div className="stack">
       <p className="pills">
-        <SlaPill sla={request.sla} /> <Pill tone="outline">{t.requestStatus[request.status]}</Pill>
+        <SlaPill sla={request.sla} /> <RequestStatusPill status={request.status} />
       </p>
       {can("requests.write") && <RequestActions request={request} onChange={onChange} />}
       {stacked ? (
@@ -504,6 +619,21 @@ function RequestView({
       )}
     </div>
   );
+}
+
+/** Бюджет одной строкой: «от … до …», «от …» или «до …» — без прочерка на месте пустой границы */
+export function budgetText(min: number | null, max: number | null): string {
+  if (min !== null && max !== null) return t.budgetRange(formatSum(min), formatSum(max));
+  if (min !== null) return t.budgetFrom(formatSum(min));
+  if (max !== null) return t.budgetTo(formatSum(max));
+  return t.none;
+}
+
+/** Кто сменил статус: имя сотрудника или пользователя кабинета, код клиента; иначе — вид */
+function actorOf(entry: StaffRequestDetail["history"][number]): string {
+  const kind = t.historyBy[entry.actorKind] ?? entry.actorKind;
+  if (!entry.actorName) return kind;
+  return entry.actorKind === "staff" ? entry.actorName : `${entry.actorName} · ${kind}`;
 }
 
 // ── работа с заявкой ───────────────────────────────────────────────────────
@@ -562,10 +692,11 @@ function RequestActions({
         <button
           type="button"
           className="btn btn-primary"
+          aria-busy={busy || undefined}
           onClick={remind}
           disabled={busy || unreachable || paused}
         >
-          {t.remindVendor}
+          {busyLabel(t.remindVendor, busy)}
         </button>
         <button
           ref={contactButton}
@@ -706,8 +837,13 @@ function Notes({
           />
           <p className="field-hint">{t.notesHint}</p>
           <div>
-            <button type="submit" className="btn" disabled={busy || text.trim() === ""}>
-              {t.addNote}
+            <button
+              type="submit"
+              className="btn"
+              aria-busy={busy || undefined}
+              disabled={busy || text.trim() === ""}
+            >
+              {busyLabel(t.addNote, busy)}
             </button>
           </div>
           {failure && <ErrorText failure={failure} />}

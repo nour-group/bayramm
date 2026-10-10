@@ -19,6 +19,7 @@ const ADMIN: StaffMe = {
   role: "admin",
   displayName: "Test Admin",
   username: null,
+  botLinked: true,
   permissions: ["catalog.read", "vendors.write", "vendor_users.write", "listings.write", "settings.write"],
 };
 
@@ -55,6 +56,7 @@ const VENDOR: VendorDetail = {
   },
   users: [],
   listings: [],
+  deleteBlocker: null,
 };
 
 const LIST: VendorList = { total: 0, items: [] };
@@ -172,7 +174,7 @@ describe("несохранённые правки", () => {
     await click(navLink(t.vendors));
     await click(buttonIn(question() as HTMLElement, t.unsavedLeave));
     expect(window.location.pathname).toBe("/vendors");
-    expect(calls).toContain("GET /api/staff/vendors?limit=100");
+    expect(calls).toContain("GET /api/staff/vendors?limit=50&offset=0");
   });
 
   it("«назад» браузера с правками — экран остаётся, вопрос; «Уйти» — назад", async () => {

@@ -20,12 +20,14 @@ const ROLES: readonly StaffRole[] = ["admin", "manager", "moderator"];
 const SPEC: Record<Permission, readonly StaffRole[]> = {
   "catalog.read": ["admin", "manager", "moderator"],
   "vendors.write": ["admin", "manager"],
+  "vendors.delete": ["admin"],
   "vendor_users.write": ["admin", "manager"],
   "listings.write": ["admin", "manager"],
   "listings.submit": ["admin", "manager"],
   "listings.publish": ["admin", "moderator"],
   "listings.moderate": ["admin", "moderator"],
   "listings.draft": ["admin", "manager", "moderator"],
+  "listings.delete": ["admin", "manager"],
   "photos.moderate": ["admin", "moderator"],
   "vendor_phones.read": ["admin", "manager", "moderator"],
   "requests.read": ["admin", "manager"],
@@ -49,6 +51,7 @@ const ROUTES: readonly [method: string, path: string, permission: Permission][] 
   ["POST", "/vendors", "vendors.write"],
   ["GET", `/vendors/${ID}`, "catalog.read"],
   ["PATCH", `/vendors/${ID}`, "vendors.write"],
+  ["DELETE", `/vendors/${ID}`, "vendors.delete"],
   ["POST", `/vendors/${ID}/checklist`, "vendors.write"],
   ["POST", `/vendors/${ID}/phones`, "vendor_phones.read"],
   ["POST", `/vendors/${ID}/users`, "vendor_users.write"],
@@ -67,6 +70,7 @@ const ROUTES: readonly [method: string, path: string, permission: Permission][] 
   ["POST", `/listings/${ID}/reject`, "listings.moderate"],
   ["POST", `/listings/${ID}/draft`, "listings.draft"],
   ["POST", `/listings/${ID}/phone`, "vendor_phones.read"],
+  ["DELETE", `/listings/${ID}`, "listings.delete"],
   ["GET", `/listings/${ID}/photos`, "catalog.read"],
   ["POST", `/listings/${ID}/photos`, "listings.write"],
   ["PUT", `/listings/${ID}/photos/order`, "listings.write"],
@@ -102,6 +106,7 @@ const ROUTES: readonly [method: string, path: string, permission: Permission][] 
   ["POST", `/team/${ID}/role`, "team.manage"],
   ["POST", `/team/${ID}/deactivate`, "team.manage"],
   ["POST", `/team/${ID}/activate`, "team.manage"],
+  ["DELETE", `/team/${ID}`, "team.manage"],
   ["GET", "/metrics", "metrics.read"],
   ["GET", "/metrics/vendors", "metrics.read"],
   ["GET", `/metrics/vendors/${ID}`, "metrics.read"],
@@ -168,8 +173,14 @@ describe("права ролей", () => {
     expect(ROLES.filter((role) => can(role, "client_phones.read"))).toEqual(["admin"]);
   });
 
-  it("команда, настройки, журнал и повтор уведомлений — только администратору", () => {
-    for (const permission of ["team.manage", "settings.write", "audit.read", "outbox.retry"] as const) {
+  it("команда, настройки, журнал, повтор уведомлений и удаление вендора — только администратору", () => {
+    for (const permission of [
+      "team.manage",
+      "settings.write",
+      "audit.read",
+      "outbox.retry",
+      "vendors.delete",
+    ] as const) {
       expect(
         ROLES.filter((role) => can(role, permission)),
         permission,
@@ -183,6 +194,10 @@ describe("права ролей", () => {
     expect(can("moderator", "clients.read")).toBe(false);
     expect(can("moderator", "revisions.moderate")).toBe(true);
     expect(can("manager", "revisions.moderate")).toBe(false);
+  });
+
+  it("витрину удаляют те, кто её заполняет (администратор, менеджер); модератор — нет", () => {
+    expect(ROLES.filter((role) => can(role, "listings.delete"))).toEqual(["admin", "manager"]);
   });
 
   it("администратор может всё", () => {

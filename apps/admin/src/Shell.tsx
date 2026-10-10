@@ -8,10 +8,16 @@
      · компьютер — шапка с разделами в строку, как раньше.
    В Telegram «назад» — кнопка Telegram (BackButton), своя в шапке не рисуется. */
 
-import type { MetricsOverview, OpsQueues, StaffDictionaries } from "@bayramm/shared/api/staff";
+import type {
+  MetricsOverview,
+  OpsQueues,
+  StaffDictionaries,
+  StaffPermission,
+} from "@bayramm/shared/api/staff";
 import { getWebApp } from "@bayramm/tg/webapp";
-import { Dialog, useOnReconnect } from "@bayramm/ui/react";
+import { Dialog, ToastProvider, useOnReconnect } from "@bayramm/ui/react";
 import {
+  Fragment,
   type ReactNode,
   type RefObject,
   Suspense,
@@ -26,12 +32,14 @@ import { Icon, type IconName } from "./icons";
 import { type Layout, useLayout } from "./layout";
 import {
   goBack,
-  HOME,
+  homeOf,
   isNested,
   NAV,
   pathOf,
+  restoreScroll,
   SECTION_PERMISSION,
   type Section,
+  savedScroll,
   sectionOf,
   tabsFor,
   useRoute,
@@ -59,7 +67,16 @@ import {
 import { fetchAccount, fetchMethods, SIGNIN_PARAM, type Staff } from "./session";
 import { hasNativeBack, useBackButton } from "./telegram";
 import { t } from "./texts";
-import { ActionSlotContext, Link, NavigateContext, SheetClose, Skeleton, TitleContext } from "./ui";
+import {
+  ActionSlotContext,
+  type Crumb,
+  CrumbsContext,
+  Link,
+  NavigateContext,
+  SheetClose,
+  Skeleton,
+  TitleContext,
+} from "./ui";
 import { UnsavedContext, useUnsavedGuard } from "./unsaved";
 
 /** Заголовок экрана: раздел — его название, страница объекта — вид объекта */
@@ -100,9 +117,31 @@ interface PageProps {
   dictionaries: StaffDictionaries | null;
   /** Разделы роли: чужой раздел (старая ссылка, ссылка из бота) — «нет доступа», а не 403 */
   sections: readonly Section[];
+  /** Главный экран роли */
+  home: Section;
+  /** Путь к странице объекта над заголовком (компьютер); пусто — пути нет */
+  crumbs: readonly Crumb[];
+  /** Номер перехода: экран монтируется заново и читает фильтры из адреса */
+  seq: number;
 }
 
-function Page({ view, title, headingRef, dictionaries, sections }: PageProps) {
+/** Путь к странице объекта: раздел и объекты выше — ссылками, сама страница — заголовком под ним */
+function Breadcrumbs({ crumbs }: { crumbs: readonly Crumb[] }) {
+  if (crumbs.length === 0) return null;
+  return (
+    <nav className="crumbs" aria-label={t.crumbs}>
+      <ol>
+        {crumbs.map((crumb) => (
+          <li key={pathOf(crumb.to)}>
+            <Link to={crumb.to}>{crumb.label}</Link>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, seq }: PageProps) {
   // Место под панель действий — последним в странице (ActionBar на телефоне)
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const heading = (
@@ -115,14 +154,13 @@ function Page({ view, title, headingRef, dictionaries, sections }: PageProps) {
       <section className="page" aria-labelledby="page-title">
         {heading}
         <p className="lead">{t.notFoundLead}</p>
-        <Link to={{ name: HOME }} className="action">
-          {t.toHome}
+        <Link to={{ name: home }} className="action">
+          {t.toSection(t[home])}
         </Link>
       </section>
     );
   if (!sections.includes(sectionOf(view))) {
     // Раздела у роли нет: сервер всё равно ответит 403 — не грузим и не предлагаем «Повторить»
-    const home = sections[0] ?? HOME;
     return (
       <section className="page" aria-labelledby="page-title">
         {heading}
@@ -188,14 +226,23 @@ function Page({ view, title, headingRef, dictionaries, sections }: PageProps) {
 
   const section = sectionOf(view);
   const nested = view.name !== section;
-  const lead = nested ? null : t[`${section}Lead`];
+  // Срок ответа — из настроек, а не числом в тексте: его меняет администратор
+  const lead = nested
+    ? null
+    : section === "requests" && dictionaries
+      ? t.requestsLeadSla(dictionaries.settings.slaHours)
+      : t[`${section}Lead`];
   return (
     <section className={`page${nested ? " page-wide" : ""}`} aria-labelledby="page-title">
+      <Breadcrumbs crumbs={crumbs} />
       {heading}
       {lead && <p className="lead">{lead}</p>}
       <ActionSlotContext.Provider value={slot}>
-        {/* Кусок экрана ещё грузится (первый заход в раздел) — заготовка его формы */}
-        <Suspense fallback={<Skeleton kind={nested ? "detail" : "list"} />}>{content}</Suspense>
+        {/* Кусок экрана ещё грузится (первый заход в раздел) — заготовка его формы. Каждый
+            переход — экран заново: фильтры и страница списка читаются из адреса */}
+        <Suspense fallback={<Skeleton kind={nested ? "detail" : "list"} />}>
+          <Fragment key={seq}>{content}</Fragment>
+        </Suspense>
       </ActionSlotContext.Provider>
       <div ref={setSlot} className="actionbar-slot" />
     </section>
@@ -278,20 +325,33 @@ function OtherAppLinks({ apps, className }: { apps: OtherApps | null; className:
 
 export type Badges = Partial<Record<Section, number>>;
 
-/** Что ждёт команду — из очередей метрик: просроченные заявки, решения модерации, недоставленное */
-export function badgesOf(queues: OpsQueues): Badges {
+/**
+ * Что ждёт команду — из очередей метрик: просроченные заявки, недоставленное и решения
+ * модерации — только те очереди, по которым роль решает: витрины на проверке — кто публикует,
+ * предложения и услуги — кто решает по правкам, фото — кто решает по фото. Менеджеру счётчик
+ * модерации не горит: разобрать ему там нечего
+ */
+export function badgesOf(queues: OpsQueues, permissions: readonly StaffPermission[]): Badges {
+  const may = (permission: StaffPermission) => permissions.includes(permission);
   return {
     requests: queues.overdue,
-    moderation: queues.listingsReview + queues.revisionsPending + queues.photosPending,
+    moderation:
+      (may("listings.publish") ? queues.listingsReview : 0) +
+      (may("revisions.moderate") ? queues.revisionsPending + queues.servicesPending : 0) +
+      (may("photos.moderate") ? queues.photosPending : 0),
     notifications: queues.deadTotal,
   };
 }
 
+/** Высота нижней панели телефона без безопасной зоны, px — как --tabbar-full в styles.css */
+const TABBAR_H = 61;
+
 /** Раз в минуту, не чаще: при смене раздела и когда вернулась связь. Без права метрик — нет */
 const BADGES_TTL_MS = 60_000;
 
-function useBadges(enabled: boolean, section: Section | null): Badges {
+function useBadges(permissions: readonly StaffPermission[], section: Section | null): Badges {
   const { api } = useSession();
+  const enabled = permissions.includes("metrics.read");
   const [badges, setBadges] = useState<Badges>({});
   const fetched = useRef<number | null>(null);
   const refresh = useCallback(
@@ -301,15 +361,64 @@ function useBadges(enabled: boolean, section: Section | null): Badges {
       if (!force && fetched.current !== null && now - fetched.current < BADGES_TTL_MS) return;
       fetched.current = now;
       void api.get<MetricsOverview>("/staff/metrics?weeks=1").then((result) => {
-        if (result.ok) setBadges(badgesOf(result.data.queues));
+        if (result.ok) setBadges(badgesOf(result.data.queues, permissions));
       });
     },
-    [api, enabled],
+    [api, enabled, permissions],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: section — повод перечитать
   useEffect(() => refresh(false), [refresh, section]);
   useOnReconnect(() => refresh(true));
   return badges;
+}
+
+// ── бот не пишет сотруднику ────────────────────────────────────────────────
+
+/** Решает по модерации: ему идут оповещения о том, что прислали на проверку */
+const DECIDES: readonly StaffPermission[] = ["listings.publish", "revisions.moderate", "photos.moderate"];
+const BOT_BANNER_KEY = "bayramm.admin.botBanner";
+
+function bannerHidden(): boolean {
+  try {
+    return window.sessionStorage.getItem(BOT_BANNER_KEY) === "hidden";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Сотрудник решает по модерации, а чата с ботом нет (не писал боту /start): оповещения команды
+ * ему не приходят — то, что прислал партнёр, он увидит, только заглянув в «Модерацию». Ссылка —
+ * на бота (в Telegram — через openTelegramLink); скрыть — до конца сессии вкладки
+ */
+function BotBanner({ staff, bot }: { staff: Staff; bot: string | null }) {
+  const [hidden, setHidden] = useState(bannerHidden);
+  // Старая сборка API без поля — молчим: незачем пугать тех, кому бот пишет
+  if (hidden || staff.botLinked !== false || !DECIDES.some((p) => staff.permissions.includes(p))) return null;
+  const hide = () => {
+    setHidden(true);
+    try {
+      window.sessionStorage.setItem(BOT_BANNER_KEY, "hidden");
+    } catch {
+      // не запомнится — покажем снова после перезагрузки
+    }
+  };
+  const link = bot ? `https://t.me/${bot}?start=admin` : null;
+  return (
+    <div className="notice notice-warn bot-banner">
+      <p className="bot-banner-text">{t.botBanner}</p>
+      <div className="bot-banner-actions">
+        {link ? (
+          <a className="btn btn-sm" href={link} target="_blank" rel="noreferrer" onClick={viaBot(link)}>
+            {t.botBannerLink}
+          </a>
+        ) : null}
+        <button type="button" className="btn btn-sm" onClick={hide}>
+          {t.botBannerHide}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Badge({ section, count }: { section: Section; count: number | undefined }) {
@@ -373,6 +482,12 @@ function isTextEntry(element: EventTarget | null): boolean {
   return element instanceof HTMLElement && element.isContentEditable;
 }
 
+/**
+ * Ушли из поля — нижняя панель и панель действий возвращаются не сразу: нажатие, которым
+ * ушли (кнопка у низа экрана), успевает закончиться, пока под пальцем ничего не сдвинулось
+ */
+const TYPING_OUT_MS = 300;
+
 function useTyping(enabled: boolean): boolean {
   const [typing, setTyping] = useState(false);
   useEffect(() => {
@@ -380,11 +495,19 @@ function useTyping(enabled: boolean): boolean {
       setTyping(false);
       return;
     }
-    const onIn = (event: FocusEvent) => setTyping(isTextEntry(event.target));
-    const onOut = (event: FocusEvent) => setTyping(isTextEntry(event.relatedTarget));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = (next: boolean) => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      if (next) setTyping(true);
+      else timer = setTimeout(() => setTyping(false), TYPING_OUT_MS);
+    };
+    const onIn = (event: FocusEvent) => settle(isTextEntry(event.target));
+    const onOut = (event: FocusEvent) => settle(isTextEntry(event.relatedTarget));
     document.addEventListener("focusin", onIn);
     document.addEventListener("focusout", onOut);
     return () => {
+      if (timer !== undefined) clearTimeout(timer);
       document.removeEventListener("focusin", onIn);
       document.removeEventListener("focusout", onOut);
     };
@@ -394,6 +517,7 @@ function useTyping(enabled: boolean): boolean {
 
 interface BarProps {
   staff: Staff;
+  home: Section;
   view: View | null;
   title: string;
   showTitle: boolean;
@@ -404,7 +528,17 @@ interface BarProps {
 }
 
 /** Шапка телефона и планшета: «назад» или название панели, заголовок экрана, аккаунт */
-function TopBar({ staff, view, title, showTitle, onBack, accountRef, accountOpen, onAccount }: BarProps) {
+function TopBar({
+  staff,
+  home,
+  view,
+  title,
+  showTitle,
+  onBack,
+  accountRef,
+  accountOpen,
+  onAccount,
+}: BarProps) {
   const section = view ? sectionOf(view) : null;
   // Экран объекта, пока его заголовок на виду, — название раздела; ушёл под шапку — сам заголовок
   const barTitle = showTitle ? title : view && isNested(view) && section ? t[section] : null;
@@ -416,7 +550,7 @@ function TopBar({ staff, view, title, showTitle, onBack, accountRef, accountOpen
         </button>
       ) : null}
       {!onBack && !barTitle ? (
-        <Link to={{ name: HOME }} className="appbar-brand">
+        <Link to={{ name: home }} className="appbar-brand">
           Bayramm <span className="brand-area">{t.area}</span>
         </Link>
       ) : null}
@@ -544,12 +678,18 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
   const webApp = getWebApp();
   // Несохранённые правки на экране: уход — по ссылке, «назад», выход — с вопросом
   const unsaved = useUnsavedGuard(webApp);
-  const [view, navigate] = useRoute(unsaved.guard);
+  const sections = useMemo(
+    () => NAV.filter((item) => staff.permissions.includes(SECTION_PERMISSION[item])),
+    [staff],
+  );
+  // Главный экран — первый раздел нижней панели, доступный роли
+  const home = homeOf(sections);
+  const [view, navigate, arrival] = useRoute(unsaved.guard, home);
   const layout: Layout = useLayout();
   const compact = layout !== "desktop";
   const apps = useOtherApps(token);
   const heading = useRef<HTMLHeadingElement>(null);
-  const shownPath = useRef(view ? pathOf(view) : null);
+  const shownSeq = useRef(arrival.seq);
   const path = view ? pathOf(view) : null;
   const nested = isNested(view);
   // Справочники — один раз на сессию: районы, сотрудники, настройки
@@ -565,12 +705,25 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
     [],
   );
   const title = (entityTitle.path === window.location.pathname ? entityTitle.title : null) ?? titleOf(view);
-  const sections = useMemo(
-    () => NAV.filter((item) => staff.permissions.includes(SECTION_PERMISSION[item])),
-    [staff],
+  // Путь к странице объекта: раздел — сразу, объекты выше — когда страница загрузилась
+  const [entityCrumbs, setEntityCrumbs] = useState<{ path: string | null; crumbs: readonly Crumb[] }>({
+    path: null,
+    crumbs: [],
+  });
+  const setCrumbs = useCallback(
+    (crumbs: readonly Crumb[]) => setEntityCrumbs({ path: window.location.pathname, crumbs }),
+    [],
   );
   const current = view ? sectionOf(view) : null;
-  const badges = useBadges(staff.permissions.includes("metrics.read"), current);
+  // Путь — только на компьютере: на телефоне и планшете «назад» — в шапке
+  const crumbs: readonly Crumb[] =
+    layout === "desktop" && view && current && nested
+      ? [
+          { label: t[current], to: { name: current } },
+          ...(entityCrumbs.path === window.location.pathname ? entityCrumbs.crumbs : []),
+        ]
+      : [];
+  const badges = useBadges(staff.permissions, current);
   const [sheet, setSheet] = useState<"more" | "account" | null>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
   const accountButton = useRef<HTMLButtonElement>(null);
@@ -586,13 +739,16 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
   }, [title]);
 
   // После перехода фокус — на заголовок нового экрана, чтобы экранный диктор его прочёл.
-  // При первом показе фокус не трогаем. Без прокрутки (ловушка №3); scrollTo есть не везде (ловушка №5)
+  // При первом показе фокус не трогаем. Без прокрутки (ловушка №3); scrollTo есть не везде
+  // (ловушка №5). «Назад» к списку — прокрутка, где была: когда список дорастёт до неё
   useEffect(() => {
-    if (shownPath.current === path) return;
-    shownPath.current = path;
+    if (shownSeq.current === arrival.seq) return;
+    shownSeq.current = arrival.seq;
     heading.current?.focus({ preventScroll: true });
+    const scroll = arrival.back ? savedScroll() : null;
+    if (scroll !== null) return restoreScroll(scroll);
     window.scrollTo?.(0, 0);
-  }, [path]);
+  }, [arrival]);
 
   // Пока человек смотрит на первый экран — подгрузить разделы нижней панели (или все)
   useEffect(() => {
@@ -612,138 +768,148 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
 
   return (
     <NavigateContext.Provider value={navigate}>
-      <div className={`app app-${layout}${typing ? " app-typing" : ""}`}>
-        <a className="skip" href="#main">
-          {t.skip}
-        </a>
-        {compact ? (
-          <TopBar
-            staff={staff}
-            view={view}
-            title={title}
-            showTitle={titleShown}
-            onBack={ownBack}
-            accountRef={accountButton}
-            accountOpen={sheet === "account"}
-            onAccount={() => setSheet("account")}
-          />
-        ) : (
-          <header className="top">
-            <Link to={{ name: HOME }} className="brand">
-              Bayramm <span className="brand-area">{t.area}</span>
-            </Link>
-            <nav className="nav" aria-label={t.sections}>
-              {sections.map((item) => (
-                <Link
-                  key={item}
-                  to={{ name: item }}
-                  current={current === item}
-                  onPrefetch={() => preloadSections([item])}
-                >
-                  {t[item]}
-                  <Badge section={item} count={badges[item]} />
-                </Link>
-              ))}
+      {/* Уведомления о сделанном — над нижней панелью телефона, шире — у низа окна */}
+      <ToastProvider offset={layout === "phone" ? TABBAR_H + 12 : 16}>
+        <div className={`app app-${layout}${typing ? " app-typing" : ""}`}>
+          <a className="skip" href="#main">
+            {t.skip}
+          </a>
+          {compact ? (
+            <TopBar
+              staff={staff}
+              home={home}
+              view={view}
+              title={title}
+              showTitle={titleShown}
+              onBack={ownBack}
+              accountRef={accountButton}
+              accountOpen={sheet === "account"}
+              onAccount={() => setSheet("account")}
+            />
+          ) : (
+            <header className="top">
+              <Link to={{ name: home }} className="brand">
+                Bayramm <span className="brand-area">{t.area}</span>
+              </Link>
+              <nav className="nav" aria-label={t.sections}>
+                {sections.map((item) => (
+                  <Link
+                    key={item}
+                    to={{ name: item }}
+                    current={current === item}
+                    onPrefetch={() => preloadSections([item])}
+                  >
+                    {t[item]}
+                    <Badge section={item} count={badges[item]} />
+                  </Link>
+                ))}
+              </nav>
+              <div className="who">
+                <p className="who-name">
+                  <span className="visually-hidden">{t.signedInAs} </span>
+                  {staff.displayName}
+                  <span className="who-role">{t.roles[staff.role]}</span>
+                </p>
+                <OtherAppLinks apps={apps} className="action" />
+                <button type="button" className="action" onClick={signOut}>
+                  {t.signOut}
+                </button>
+              </div>
+            </header>
+          )}
+          {layout === "tablet" ? <Rail sections={sections} current={current} badges={badges} /> : null}
+          <main id="main" className="main" tabIndex={-1}>
+            <BotBanner staff={staff} bot={apps?.bot ?? null} />
+            <UnsavedContext.Provider value={unsaved.registry}>
+              <TitleContext.Provider value={setTitle}>
+                <CrumbsContext.Provider value={setCrumbs}>
+                  <Page
+                    view={view}
+                    title={title}
+                    headingRef={heading}
+                    dictionaries={dictionaries}
+                    sections={sections}
+                    home={home}
+                    crumbs={crumbs}
+                    seq={arrival.seq}
+                  />
+                </CrumbsContext.Provider>
+              </TitleContext.Provider>
+            </UnsavedContext.Provider>
+          </main>
+          {layout === "phone" ? (
+            <TabBar
+              sections={sections}
+              current={current}
+              badges={badges}
+              moreRef={moreButton}
+              moreOpen={sheet === "more"}
+              onMore={() => setSheet("more")}
+            />
+          ) : null}
+          <Dialog
+            open={sheet === "more"}
+            title={t.moreSections}
+            onClose={closeSheet}
+            returnFocus={moreButton}
+            actions={<SheetClose onClose={closeSheet} />}
+          >
+            <nav aria-label={t.moreSections}>
+              <ul className="menu">
+                {tabsFor(sections).more.map((section) => (
+                  <li key={section}>
+                    <Link
+                      to={{ name: section }}
+                      current={current === section}
+                      className="menu-item"
+                      onNavigate={closeSheet}
+                    >
+                      <Icon
+                        name={current === section ? SECTION_ICON[section].active : SECTION_ICON[section].icon}
+                        size={20}
+                      />
+                      <span>{t[section]}</span>
+                      <Badge section={section} count={badges[section]} />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </nav>
-            <div className="who">
+          </Dialog>
+          <Dialog
+            open={sheet === "account"}
+            title={t.account}
+            onClose={closeSheet}
+            returnFocus={accountButton}
+            actions={<SheetClose onClose={closeSheet} />}
+          >
+            <div className="who who-sheet">
+              <span className="avatar avatar-lg" aria-hidden="true">
+                {initialsOf(staff.displayName)}
+              </span>
               <p className="who-name">
                 <span className="visually-hidden">{t.signedInAs} </span>
                 {staff.displayName}
                 <span className="who-role">{t.roles[staff.role]}</span>
               </p>
-              <OtherAppLinks apps={apps} className="action" />
-              <button type="button" className="action" onClick={signOut}>
-                {t.signOut}
-              </button>
             </div>
-          </header>
-        )}
-        {layout === "tablet" ? <Rail sections={sections} current={current} badges={badges} /> : null}
-        <main id="main" className="main" tabIndex={-1}>
-          <UnsavedContext.Provider value={unsaved.registry}>
-            <TitleContext.Provider value={setTitle}>
-              <Page
-                view={view}
-                title={title}
-                headingRef={heading}
-                dictionaries={dictionaries}
-                sections={sections}
-              />
-            </TitleContext.Provider>
-          </UnsavedContext.Provider>
-        </main>
-        {layout === "phone" ? (
-          <TabBar
-            sections={sections}
-            current={current}
-            badges={badges}
-            moreRef={moreButton}
-            moreOpen={sheet === "more"}
-            onMore={() => setSheet("more")}
-          />
-        ) : null}
-        <Dialog
-          open={sheet === "more"}
-          title={t.moreSections}
-          onClose={closeSheet}
-          returnFocus={moreButton}
-          actions={<SheetClose onClose={closeSheet} />}
-        >
-          <nav aria-label={t.moreSections}>
             <ul className="menu">
-              {tabsFor(sections).more.map((section) => (
-                <li key={section}>
-                  <Link
-                    to={{ name: section }}
-                    current={current === section}
-                    className="menu-item"
-                    onNavigate={closeSheet}
-                  >
-                    <Icon
-                      name={current === section ? SECTION_ICON[section].active : SECTION_ICON[section].icon}
-                      size={20}
-                    />
-                    <span>{t[section]}</span>
-                    <Badge section={section} count={badges[section]} />
-                  </Link>
+              {apps ? (
+                <li className="menu-group">
+                  <OtherAppLinks apps={apps} className="menu-item" />
                 </li>
-              ))}
-            </ul>
-          </nav>
-        </Dialog>
-        <Dialog
-          open={sheet === "account"}
-          title={t.account}
-          onClose={closeSheet}
-          returnFocus={accountButton}
-          actions={<SheetClose onClose={closeSheet} />}
-        >
-          <div className="who who-sheet">
-            <span className="avatar avatar-lg" aria-hidden="true">
-              {initialsOf(staff.displayName)}
-            </span>
-            <p className="who-name">
-              <span className="visually-hidden">{t.signedInAs} </span>
-              {staff.displayName}
-              <span className="who-role">{t.roles[staff.role]}</span>
-            </p>
-          </div>
-          <ul className="menu">
-            {apps ? (
-              <li className="menu-group">
-                <OtherAppLinks apps={apps} className="menu-item" />
+              ) : null}
+              <li>
+                <button type="button" className="menu-item menu-danger" onClick={signOut}>
+                  <Icon name="signOut" size={20} />
+                  <span>{t.signOut}</span>
+                </button>
               </li>
-            ) : null}
-            <li>
-              <button type="button" className="menu-item menu-danger" onClick={signOut}>
-                <Icon name="signOut" size={20} />
-                <span>{t.signOut}</span>
-              </button>
-            </li>
-          </ul>
-        </Dialog>
-        {unsaved.sheet}
-      </div>
+            </ul>
+          </Dialog>
+          {unsaved.sheet}
+        </div>
+      </ToastProvider>
     </NavigateContext.Provider>
   );
 }

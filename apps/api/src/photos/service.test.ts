@@ -6,10 +6,10 @@ import { DatabaseError } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Actor } from "../db/actor";
 import { ApiError } from "../errors";
-import type { ObjectStorage } from "../storage/supabase";
-import { StorageError } from "../storage/supabase";
+import type { ObjectStorage, ObjectSweeper } from "../storage/supabase";
+import { MAX_REMOVE_BATCH, StorageError } from "../storage/supabase";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
-import { addListingPhoto, removeListingPhoto } from "./service";
+import { addListingPhoto, removeListingPhoto, removePhotoObjects } from "./service";
 
 const LISTING = "aaaaaaaa-0000-4000-8000-000000000101";
 const VENDOR: Actor = {
@@ -319,5 +319,44 @@ describe("removeListingPhoto", () => {
     const { storage, calls } = fakeStorage();
     await expect(removeListingPhoto({ db: db.db, storage }, VENDOR, LISTING, PHOTO)).rejects.toBe(blocked);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("объекты фото удалённой витрины", () => {
+  function sweeper(failOn?: number) {
+    const batches: string[][] = [];
+    const storage: ObjectSweeper = {
+      async list() {
+        return { objects: [], cursor: null };
+      },
+      async removeMany(keys) {
+        batches.push([...keys]);
+        if (batches.length === failOn) throw new StorageError("unavailable", 503, "down");
+        return keys.length;
+      },
+    };
+    return { storage, batches };
+  }
+  const keys = (n: number) => Array.from({ length: n }, (_, i) => `listings/${LISTING}/${i}.webp`);
+
+  it("пачками не больше предела хранилища; сколько удалено", async () => {
+    const { storage, batches } = sweeper();
+    expect(await removePhotoObjects(storage, keys(MAX_REMOVE_BATCH + 2))).toBe(MAX_REMOVE_BATCH + 2);
+    expect(batches.map((b) => b.length)).toEqual([MAX_REMOVE_BATCH, 2]);
+  });
+
+  it("нечего удалять — хранилище не трогаем", async () => {
+    const { storage, batches } = sweeper();
+    expect(await removePhotoObjects(storage, [])).toBe(0);
+    expect(batches).toEqual([]);
+  });
+
+  it("хранилище не ответило — не ошибка (сирот уберёт сверка); в лог — числа, без ключей", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { storage, batches } = sweeper(1);
+    expect(await removePhotoObjects(storage, keys(3))).toBe(0);
+    expect(batches).toHaveLength(1);
+    expect(log).toHaveBeenCalledWith("photos: objects not removed", { left: 3, reason: "unavailable" });
+    expect(JSON.stringify(log.mock.calls)).not.toContain("listings/");
   });
 });

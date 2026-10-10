@@ -2,17 +2,23 @@
    номеру телефона, роль, отключение. Номер проверяется здесь же (+998 и 9 цифр) и ещё раз
    сервером; хранится только его HMAC — в списке видно лишь «по телефону». Себя не
    отключить и роль не сменить; последнего администратора база не даст ни отключить, ни
-   понизить. */
+   понизить. Приглашение, которое ещё не приняли, можно отозвать (удалить); принятое —
+   только отключить.
+   Телефон — с +998 и маской, имя Telegram — с «@» (ссылку t.me поле снимает само), роль —
+   строками с пояснением, что она может. Сделать администратором (пригласить или повысить) —
+   через подтверждение: он получит всё, включая команду и телефоны клиентов. */
 
-import { normalizeUzPhone } from "@bayramm/shared";
+import { normalizeTelegram, normalizeUzPhone } from "@bayramm/shared";
 import type { StaffRole, TeamInviteInput, TeamList, TeamMember } from "@bayramm/shared/api/staff";
-import { RadioGroup, Select } from "@bayramm/ui/react";
-import { type FormEvent, useId, useRef, useState } from "react";
+import { ConfirmSheet, RadioGroup, Select } from "@bayramm/ui/react";
+import { type FormEvent, type RefObject, useId, useRef, useState } from "react";
 import { type Failure, useAuthMethods, useLoad, useSession } from "../api";
+import { ChoiceField, PhoneField, TelegramField } from "../fields";
 import { formatMoment } from "../format";
 import { usePhone } from "../layout";
-import { t } from "../texts";
+import { apiErrorText, t } from "../texts";
 import {
+  busyLabel,
   ConfirmForm,
   ErrorText,
   Field,
@@ -20,12 +26,19 @@ import {
   LoadedView,
   PhoneSheet,
   Pill,
+  toneOf,
   useRevealErrors,
 } from "../ui";
 import { useUnsaved } from "../unsaved";
 
 const ROLES: readonly StaffRole[] = ["admin", "manager", "moderator"];
 const ROLE_OPTIONS = ROLES.map((role) => ({ value: role, label: t.roles[role] }));
+// Приглашение: роль — строками, с тем, что она может; администратор — последним (реже нужен)
+const INVITE_ROLES = (["manager", "moderator", "admin"] as const).map((role) => ({
+  value: role,
+  label: t.roles[role],
+  hint: t.roleHints[role],
+}));
 
 type InviteBy = TeamMember["invitedBy"];
 const BY_OPTIONS: readonly { value: InviteBy; label: string }[] = [
@@ -33,8 +46,13 @@ const BY_OPTIONS: readonly { value: InviteBy; label: string }[] = [
   { value: "phone", label: t.inviteByPhone },
 ];
 
-/** Ошибка номера до запроса: сервер ответил бы так же (422, поле phone) */
-const phoneFailure: Failure = { ok: false, status: 422, code: "invalid_input", details: ["phone"] };
+/** Ошибка поля до запроса: сервер ответил бы так же (422, поле phone или username) */
+const invalid = (field: string): Failure => ({
+  ok: false,
+  status: 422,
+  code: "invalid_input",
+  details: [field],
+});
 
 export function TeamPage() {
   const { loaded, reload, set } = useLoad<TeamList>("/staff/team");
@@ -64,6 +82,8 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [done, setDone] = useState(false);
+  // Пригласить администратора — после подтверждения: тело запроса ждёт ответа
+  const [confirmAdmin, setConfirmAdmin] = useState<TeamInviteInput | null>(null);
   const errors = fieldErrors(failure, {
     displayName: t.inviteName,
     username: t.fieldErrors.telegramUsername ?? "",
@@ -81,31 +101,47 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
     setDone(false);
   };
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setDone(false);
-    let body: TeamInviteInput;
-    if (by === "phone") {
-      const normalized = normalizeUzPhone(phone);
-      if (normalized === null) {
-        setFailure(phoneFailure);
-        return;
-      }
-      body = { displayName, role, phone: normalized };
-    } else {
-      body = { displayName, role, username };
-    }
+  const send = async (body: TeamInviteInput) => {
     setBusy(true);
     const result = await api.post<TeamList>("/staff/team", body);
     setBusy(false);
     setFailure(result.ok ? null : result);
     if (result.ok) {
+      setConfirmAdmin(null);
       setDone(true);
       setDisplayName("");
       setUsername("");
       setPhone("");
       onDone(result.data);
     }
+  };
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    setDone(false);
+    let body: TeamInviteInput;
+    if (by === "phone") {
+      const normalized = normalizeUzPhone(phone);
+      if (normalized === null) {
+        setFailure(invalid("phone"));
+        return;
+      }
+      body = { displayName, role, phone: normalized };
+    } else {
+      const name = normalizeTelegram(username);
+      if (name === null) {
+        setFailure(invalid("username"));
+        return;
+      }
+      body = { displayName, role, username: name };
+    }
+    // Администратор получит всё — сначала переспросить
+    if (role === "admin") {
+      setFailure(null);
+      setConfirmAdmin(body);
+      return;
+    }
+    void send(body);
   };
 
   const hint = by === "telegram" ? t.inviteHint : methods?.phone ? t.inviteHintPhone : t.inviteHintPhoneOff;
@@ -141,60 +177,39 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
           )}
         </Field>
         {by === "phone" ? (
-          <Field label={t.invitePhone} error={errors.phone}>
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                type="tel"
-                inputMode="tel"
-                autoComplete="off"
-                placeholder="+998 XX XXX XX XX"
-                value={phone}
-                maxLength={24}
-                enterKeyHint="send"
-                onChange={(event) => setPhone(event.target.value)}
-              />
-            )}
-          </Field>
+          <PhoneField
+            label={t.invitePhone}
+            value={phone}
+            onChange={setPhone}
+            error={errors.phone}
+            enterKeyHint="send"
+          />
         ) : (
-          <Field label={t.inviteUsername} error={errors.username}>
-            {(props) => (
-              <input
-                {...props}
-                className="input"
-                value={username}
-                maxLength={33}
-                placeholder="@username"
-                autoCapitalize="none"
-                autoComplete="off"
-                spellCheck={false}
-                enterKeyHint="send"
-                onChange={(event) => setUsername(event.target.value)}
-              />
-            )}
-          </Field>
+          <TelegramField
+            label={t.inviteUsername}
+            value={username}
+            onChange={setUsername}
+            error={errors.username}
+            enterKeyHint="send"
+          />
         )}
-        <Field label={t.inviteRole} error={errors.role} hint={t.roleHints[role]}>
-          {(props) => (
-            <Select
-              {...props}
-              className="input"
-              label={t.inviteRole}
-              value={role}
-              onChange={setRole}
-              options={ROLE_OPTIONS}
-            />
-          )}
-        </Field>
+        <ChoiceField
+          label={t.inviteRole}
+          value={role}
+          options={INVITE_ROLES}
+          onChange={setRole}
+          variant="row"
+          error={errors.role}
+        />
       </div>
       <div className="acts invite-acts">
         <button
           type="submit"
           className="btn btn-primary"
+          aria-busy={busy || undefined}
           disabled={busy || displayName.trim() === "" || contact.trim() === ""}
         >
-          {t.invite}
+          {busyLabel(t.invite, busy)}
         </button>
         {done && (
           <span className="saved" role="status">
@@ -203,6 +218,22 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
         )}
       </div>
       {failure && failure.code !== "invalid_input" && <ErrorText failure={failure} />}
+      <ConfirmSheet
+        open={confirmAdmin !== null}
+        title={t.inviteAdminTitle}
+        text={t.inviteAdminText(displayName.trim() || t.roles.admin)}
+        confirmLabel={t.invite}
+        cancelLabel={t.cancel}
+        busy={busy}
+        error={confirmAdmin && failure ? apiErrorText(failure.code) : undefined}
+        onConfirm={() => {
+          if (confirmAdmin) void send(confirmAdmin);
+        }}
+        onCancel={() => {
+          setConfirmAdmin(null);
+          setFailure(null);
+        }}
+      />
     </form>
   );
 }
@@ -247,15 +278,30 @@ function useMember(member: TeamMember, onChange: (list: TeamList) => void) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [revoking, setRevoking] = useState(false);
+  const [revokeFailure, setRevokeFailure] = useState<Failure | null>(null);
+  // Сделать администратором — после подтверждения
+  const [promoting, setPromoting] = useState(false);
   // Новая роль выбрана, но не применена — несохранённое
   useUnsaved(member.active && !member.self && role !== member.role);
 
-  const changeRole = async () => {
+  const applyRole = async () => {
     setBusy(true);
     const result = await api.post<TeamList>(`/staff/team/${member.id}/role`, { role });
     setBusy(false);
     setFailure(result.ok ? null : result);
-    if (result.ok) onChange(result.data);
+    if (result.ok) {
+      setPromoting(false);
+      onChange(result.data);
+    }
+  };
+  const changeRole = () => {
+    if (role === "admin") {
+      setFailure(null);
+      setPromoting(true);
+      return;
+    }
+    void applyRole();
   };
 
   const toggle = async (): Promise<Failure | null> => {
@@ -268,7 +314,94 @@ function useMember(member: TeamMember, onChange: (list: TeamList) => void) {
     return null;
   };
 
-  return { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle };
+  // Отозвать приглашение: в ответе — команда уже без него (строка исчезнет)
+  const revoke = async () => {
+    setBusy(true);
+    const result = await api.del<TeamList>(`/staff/team/${member.id}`);
+    setBusy(false);
+    setRevokeFailure(result.ok ? null : result);
+    if (result.ok) {
+      setRevoking(false);
+      onChange(result.data);
+    }
+  };
+  const revokeOpen = () => {
+    setRevokeFailure(null);
+    setRevoking(true);
+  };
+  const revokeClose = () => {
+    setRevoking(false);
+    setRevokeFailure(null);
+  };
+
+  return {
+    role,
+    setRole,
+    confirming,
+    setConfirming,
+    busy,
+    failure,
+    changeRole,
+    applyRole,
+    promoting,
+    promoteClose: () => {
+      setPromoting(false);
+      setFailure(null);
+    },
+    toggle,
+    revoking,
+    revokeOpen,
+    revokeClose,
+    revoke,
+    revokeFailure,
+  };
+}
+
+/** Приглашение ещё не приняли — его можно отозвать (удалить); себя — нет */
+const revocable = (member: TeamMember) => !member.accepted && !member.self;
+
+/** Подтверждение «Отозвать приглашение»: что будет, ошибка — под текстом */
+function RevokeSheet({
+  member,
+  state,
+  returnFocus,
+}: {
+  member: TeamMember;
+  state: ReturnType<typeof useMember>;
+  returnFocus: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <ConfirmSheet
+      open={state.revoking}
+      title={t.inviteRevokeTitle}
+      text={t.inviteRevokeText(member.displayName)}
+      confirmLabel={t.inviteRevoke}
+      cancelLabel={t.cancel}
+      tone="danger"
+      busy={state.busy}
+      error={state.revokeFailure ? apiErrorText(state.revokeFailure.code) : undefined}
+      returnFocus={returnFocus}
+      onConfirm={() => void state.revoke()}
+      onCancel={state.revokeClose}
+    />
+  );
+}
+
+/** Подтверждение «Сделать администратором»: что он получит, ошибка — под текстом */
+function PromoteSheet({ member, state }: { member: TeamMember; state: ReturnType<typeof useMember> }) {
+  return (
+    <ConfirmSheet
+      open={state.promoting}
+      title={t.promoteTitle}
+      text={t.promoteText(member.displayName)}
+      confirmLabel={t.promote}
+      cancelLabel={t.cancel}
+      busy={state.busy}
+      error={state.promoting && state.failure ? apiErrorText(state.failure.code) : undefined}
+      onConfirm={() => void state.applyRole()}
+      onCancel={state.promoteClose}
+    />
+  );
 }
 
 function linkState(member: TeamMember): string {
@@ -276,28 +409,44 @@ function linkState(member: TeamMember): string {
   return member.accepted ? t.memberAccepted : t.memberPending;
 }
 
+/** Действующему сотруднику бот не пишет (не было /start): оповещения команды до него не дойдут */
+function NoBot({ member }: { member: TeamMember }) {
+  if (!member.active || member.botLinked) return null;
+  return (
+    <>
+      {" · "}
+      <span className="no-bot">
+        {t.memberNoBot}
+        <span className="visually-hidden">, {t.memberNoBotHint}</span>
+      </span>
+    </>
+  );
+}
+
 function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
   const roleId = useId();
   const toggleButton = useRef<HTMLButtonElement>(null);
-  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = useMember(
-    member,
-    onChange,
-  );
+  const revokeButton = useRef<HTMLButtonElement>(null);
+  const state = useMember(member, onChange);
+  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = state;
   return (
     <li className="rcard">
       <div className="rcard-head">
         <p className="rcard-title">{member.displayName}</p>
         {member.active ? (
-          <Pill tone="outline">{t.memberActive}</Pill>
+          <Pill tone={toneOf("member", "active")}>{t.memberActive}</Pill>
         ) : (
-          <Pill tone="muted">{t.memberInactive}</Pill>
+          <Pill tone={toneOf("member", "inactive")}>{t.memberInactive}</Pill>
         )}
       </div>
       <p className="rcard-meta">
         {member.self ? `${t.you} · ` : ""}
         {member.username ? `@${member.username}` : member.invitedBy === "phone" ? t.invitedByPhone : t.none}
       </p>
-      <p className="rcard-meta">{linkState(member)}</p>
+      <p className="rcard-meta">
+        {linkState(member)}
+        <NoBot member={member} />
+      </p>
       {member.self || !member.active ? (
         <p className="rcard-meta">
           {t.colRole}: {t.roles[member.role]}
@@ -333,8 +482,15 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
           >
             {member.active ? t.deactivate : t.activate}
           </button>
+          {revocable(member) ? (
+            <button ref={revokeButton} type="button" className="btn btn-danger" onClick={state.revokeOpen}>
+              {t.inviteRevoke}
+            </button>
+          ) : null}
         </div>
       )}
+      <RevokeSheet member={member} state={state} returnFocus={revokeButton} />
+      <PromoteSheet member={member} state={state} />
       <PhoneSheet
         open={confirming}
         title={member.active ? t.deactivate : t.activate}
@@ -356,10 +512,9 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
 
 function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
   const roleId = useId();
-  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = useMember(
-    member,
-    onChange,
-  );
+  const revokeButton = useRef<HTMLButtonElement>(null);
+  const state = useMember(member, onChange);
+  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = state;
 
   return (
     <tr>
@@ -393,11 +548,14 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
       </td>
       <td>
         {member.active ? (
-          <Pill tone="outline">{t.memberActive}</Pill>
+          <Pill tone={toneOf("member", "active")}>{t.memberActive}</Pill>
         ) : (
-          <Pill tone="muted">{t.memberInactive}</Pill>
+          <Pill tone={toneOf("member", "inactive")}>{t.memberInactive}</Pill>
         )}
-        <span className="sub">{linkState(member)}</span>
+        <span className="sub">
+          {linkState(member)}
+          <NoBot member={member} />
+        </span>
       </td>
       <td>
         {!member.self &&
@@ -410,14 +568,28 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
               onCancel={() => setConfirming(false)}
             />
           ) : (
-            <button
-              type="button"
-              className={`btn btn-sm${member.active ? " btn-danger" : ""}`}
-              onClick={() => setConfirming(true)}
-            >
-              {member.active ? t.deactivate : t.activate}
-            </button>
+            <div className="acts">
+              <button
+                type="button"
+                className={`btn btn-sm${member.active ? " btn-danger" : ""}`}
+                onClick={() => setConfirming(true)}
+              >
+                {member.active ? t.deactivate : t.activate}
+              </button>
+              {revocable(member) ? (
+                <button
+                  ref={revokeButton}
+                  type="button"
+                  className="btn btn-sm btn-danger"
+                  onClick={state.revokeOpen}
+                >
+                  {t.inviteRevoke}
+                </button>
+              ) : null}
+            </div>
           ))}
+        <RevokeSheet member={member} state={state} returnFocus={revokeButton} />
+        <PromoteSheet member={member} state={state} />
         {failure && <ErrorText failure={failure} />}
       </td>
     </tr>

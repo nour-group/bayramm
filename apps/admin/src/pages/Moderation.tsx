@@ -1,42 +1,60 @@
 /* Модерация: витрины на проверке — по порядку отправки (решение — на странице витрины),
-   предложения изменений опубликованных витрин от вендоров и менеджеров (решение — на странице
-   предложения), услуги и изменения услуг опубликованных витрин (решение — прямо в очереди:
-   одобрить или отклонить с причиной для партнёра) и новые фото опубликованных витрин — старые
-   загрузки первыми (одобрить или отклонить — на странице витрины, в блоке фото). Элемент
-   очереди — карточка целиком: нажатие в любом её месте открывает то, по чему решать.
+   предложения изменений от вендоров и менеджеров (решение — на странице предложения), услуги
+   и изменения услуг (решение — прямо в очереди: одобрить или отклонить с причиной для
+   партнёра) и новые фото — старые загрузки первыми (одобрить или отклонить — на странице
+   витрины, в блоке фото). Услуги и фото — у любых витрин, кроме отклонённых: партнёр видит
+   «на проверке» и у черновика, поэтому у карточки очереди — статус витрины, если она не на
+   сайте. Элемент очереди — карточка целиком: нажатие в любом её месте открывает то, по чему
+   решать.
 
    Разбор с телефона: вверху — сколько ждёт в каждой очереди (кнопки ведут к ней), у заголовка
-   очереди — число, пустая очередь — одной строкой, пояснение — только у непустой. Решение по
-   услуге — без клавиатуры (одобрить) или с причиной в шторке; после решения очередь
-   перечитывается тихо, фокус — на следующей услуге (или на заголовке очереди, если она
-   кончилась), что решили — говорит строка статуса. */
+   очереди — число (всего, а не только загруженное), пустая очередь — одной строкой, пояснение —
+   только у непустой. Решение по услуге — без клавиатуры (одобрить) или с причиной в шторке
+   (ServiceDecision — тот же, что на странице витрины); после решения очередь перечитывается
+   тихо, фокус — на следующей услуге (или на заголовке очереди, если она кончилась), что
+   решили — говорит строка статуса.
+
+   Очередь — страницами: на компьютере листается, на телефоне «Показать ещё» дописывает
+   следующую; число у заголовка — всего. Какая очередь открыта — в адресе (?queue=photos):
+   «назад» из витрины и ссылка из метрик ведут к ней. Фото и услуги очереди открывают витрину
+   сразу на своём блоке (?focus=). */
 
 import type {
   ListingList,
-  ListingService,
+  ListingListItem,
+  ListingStatus,
   RevisionList,
+  RevisionListItem,
   ServiceQueue,
   ServiceQueueItem,
 } from "@bayramm/shared/api/staff";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { type Failure, type Loaded, useCan, useLoad, useSession } from "../api";
-import { CategoryChip } from "../categories";
-import { formatMoment, formatPrice, vendorLabel } from "../format";
+import { useCan } from "../api";
+import { CategoryChip, formatPrice } from "../categories";
+import { formatMoment, vendorLabel } from "../format";
+import { usePhone } from "../layout";
+import { useQueryState } from "../router";
 import { t } from "../texts";
 import {
   Blockers,
-  ConfirmForm,
-  ErrorText,
   focusSection,
   Link,
+  ListFooter,
   LoadedView,
-  PhoneSheet,
   Pill,
   publishBlockers,
+  StatusPill,
+  toneOf,
+  usePagedList,
 } from "../ui";
-import { ServiceChanges } from "./Services";
+import { ServiceChanges, ServiceDecision } from "./Services";
 
 type Queue = "review" | "revisions" | "services" | "photos";
+
+const QUEUES: readonly Queue[] = ["review", "revisions", "services", "photos"];
+
+/** Карточек очереди на странице */
+const PAGE = 20;
 
 const QUEUE_TITLE: Readonly<Record<Queue, string>> = {
   review: t.listingsInReview,
@@ -61,9 +79,47 @@ const QUEUE_EMPTY: Readonly<Record<Queue, string>> = {
 
 const titleId = (queue: Queue) => `queue-${queue}-title`;
 
-/** Сколько в очереди, когда загрузилась: для сводки вверху и числа у заголовка */
-function countOf<T extends { readonly items: readonly unknown[] }>(loaded: Loaded<T>): number | null {
-  return loaded.state === "ready" ? loaded.data.items.length : null;
+/** Очередь страницами: компьютер — своя страница у каждой очереди, телефон — «Показать ещё» */
+function useQueue<I, L extends { readonly total: number; readonly items: readonly I[] }>(
+  path: string | null,
+) {
+  const phone = usePhone();
+  const [offset, setOffset] = useState(0);
+  const list = usePagedList<I, L>(path, { size: PAGE, offset, append: phone });
+  // Сколько всего (не только показанная страница), когда загрузилась: для сводки и заголовка
+  const count = list.loaded.state === "ready" ? list.total : null;
+  return { list, offset, setOffset, count };
+}
+
+/** Подвал очереди: страницы или «Показать ещё» — только когда в ней больше страницы */
+function QueueFooter({
+  queue,
+  state,
+}: {
+  queue: Queue;
+  state: {
+    readonly list: Parameters<typeof ListFooter>[0]["list"];
+    readonly offset: number;
+    readonly setOffset: (offset: number) => void;
+  };
+}) {
+  if (state.list.total <= PAGE && state.offset === 0) return null;
+  return (
+    <ListFooter
+      list={state.list}
+      offset={state.offset}
+      size={PAGE}
+      onPage={(next) => {
+        state.setOffset(next);
+        focusSection(titleId(queue));
+      }}
+    />
+  );
+}
+
+/** Витрина не на сайте (черновик, на проверке…) — её статус у карточки очереди; опубликованная — без него */
+function NotLiveStatus({ status }: { status: ListingStatus }) {
+  return status === "active" ? null : <StatusPill status={status} />;
 }
 
 /**
@@ -99,18 +155,31 @@ function QueueEmpty({ queue }: { queue: Queue }) {
 export function ModerationPage({ minPhotos }: { minPhotos: number }) {
   const can = useCan();
   const services = can("revisions.moderate");
-  const review = useLoad<ListingList>("/staff/listings?status=review&limit=100");
-  const revisions = useLoad<RevisionList>("/staff/revisions?status=pending&limit=100");
-  const photos = useLoad<ListingList>("/staff/listings?photos=pending&limit=100");
-  const queues: readonly Queue[] = services
-    ? ["review", "revisions", "services", "photos"]
-    : ["review", "revisions", "photos"];
+  const [query, setQuery] = useQueryState(["queue"] as const);
+  const review = useQueue<ListingListItem, ListingList>("/staff/listings?status=review");
+  const revisions = useQueue<RevisionListItem, RevisionList>("/staff/revisions?status=pending");
+  const photos = useQueue<ListingListItem, ListingList>("/staff/listings?photos=pending");
+  const queues = QUEUES.filter((queue) => queue !== "services" || services);
   const [serviceCount, setServiceCount] = useState<number | null>(null);
   const counts: Readonly<Record<Queue, number | null>> = {
-    review: countOf(review.loaded),
-    revisions: countOf(revisions.loaded),
+    review: review.count,
+    revisions: revisions.count,
     services: serviceCount,
-    photos: countOf(photos.loaded),
+    photos: photos.count,
+  };
+  // Очередь из адреса (?queue=photos — ссылка из метрик или «назад» из витрины): к ней, когда
+  // она загрузилась
+  const anchor = queues.find((queue) => queue === query.queue) ?? null;
+  const anchorReady = anchor !== null && counts[anchor] !== null;
+  const jumped = useRef(false);
+  useEffect(() => {
+    if (!anchorReady || jumped.current || anchor === null) return;
+    jumped.current = true;
+    focusSection(titleId(anchor));
+  }, [anchor, anchorReady]);
+  const jump = (queue: Queue) => {
+    setQuery({ queue });
+    focusSection(titleId(queue));
   };
 
   return (
@@ -123,7 +192,7 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
             key={queue}
             type="button"
             className={`chip${counts[queue] ? " is-active" : ""}`}
-            onClick={() => focusSection(titleId(queue))}
+            onClick={() => jump(queue)}
           >
             {QUEUE_TITLE[queue]}
             <span className="chip-count">{counts[queue] ?? "…"}</span>
@@ -132,14 +201,16 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
       </nav>
 
       <QueueSection queue="review" count={counts.review}>
-        <LoadedView loaded={review.loaded} onRetry={review.reload} skeleton="block">
-          {(list) => <ReviewQueue list={list} minPhotos={minPhotos} />}
+        <LoadedView loaded={review.list.loaded} onRetry={review.list.reload} skeleton="block">
+          {() => <ReviewQueue items={review.list.items} minPhotos={minPhotos} />}
         </LoadedView>
+        <QueueFooter queue="review" state={review} />
       </QueueSection>
       <QueueSection queue="revisions" count={counts.revisions}>
-        <LoadedView loaded={revisions.loaded} onRetry={revisions.reload} skeleton="block">
-          {(list) => <RevisionQueue list={list} />}
+        <LoadedView loaded={revisions.list.loaded} onRetry={revisions.list.reload} skeleton="block">
+          {() => <RevisionQueue items={revisions.list.items} />}
         </LoadedView>
+        <QueueFooter queue="revisions" state={revisions} />
       </QueueSection>
       {services ? (
         <QueueSection queue="services" count={counts.services}>
@@ -147,9 +218,10 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
         </QueueSection>
       ) : null}
       <QueueSection queue="photos" count={counts.photos}>
-        <LoadedView loaded={photos.loaded} onRetry={photos.reload} skeleton="block">
-          {(list) => <PhotoQueue list={list} />}
+        <LoadedView loaded={photos.list.loaded} onRetry={photos.list.reload} skeleton="block">
+          {() => <PhotoQueue items={photos.list.items} />}
         </LoadedView>
+        <QueueFooter queue="photos" state={photos} />
       </QueueSection>
     </div>
   );
@@ -158,11 +230,11 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
 /** «до 300 гостей» — вместимость там, где она есть (залы) */
 const capacityText = (capMax: number | null) => (capMax ? ` · ${t.guestsUpTo(capMax)}` : "");
 
-function ReviewQueue({ list, minPhotos }: { list: ListingList; minPhotos: number }) {
-  if (list.items.length === 0) return <QueueEmpty queue="review" />;
+function ReviewQueue({ items, minPhotos }: { items: readonly ListingListItem[]; minPhotos: number }) {
+  if (items.length === 0) return <QueueEmpty queue="review" />;
   return (
     <ul className="rcards">
-      {list.items.map((listing) => (
+      {items.map((listing) => (
         <li key={listing.id} className="rcard rcard-tap">
           <div className="rcard-head">
             <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
@@ -187,11 +259,11 @@ function ReviewQueue({ list, minPhotos }: { list: ListingList; minPhotos: number
   );
 }
 
-function RevisionQueue({ list }: { list: RevisionList }) {
-  if (list.items.length === 0) return <QueueEmpty queue="revisions" />;
+function RevisionQueue({ items }: { items: readonly RevisionListItem[] }) {
+  if (items.length === 0) return <QueueEmpty queue="revisions" />;
   return (
     <ul className="rcards">
-      {list.items.map((revision) => (
+      {items.map((revision) => (
         <li key={revision.id} className="rcard rcard-tap">
           <Link to={{ name: "revision", id: revision.id }} className="rcard-link">
             {revision.listing.name}
@@ -210,15 +282,19 @@ function RevisionQueue({ list }: { list: RevisionList }) {
   );
 }
 
-function PhotoQueue({ list }: { list: ListingList }) {
-  if (list.items.length === 0) return <QueueEmpty queue="photos" />;
+function PhotoQueue({ items }: { items: readonly ListingListItem[] }) {
+  if (items.length === 0) return <QueueEmpty queue="photos" />;
   return (
     <ul className="rcards">
-      {list.items.map((listing) => (
+      {items.map((listing) => (
         <li key={listing.id} className="rcard rcard-tap">
-          <Link to={{ name: "listing", id: listing.id }} className="rcard-link">
-            {listing.name}
-          </Link>
+          <div className="rcard-head">
+            {/* Витрина — сразу на блоке фото: решать по ним, а не листать страницу */}
+            <Link to={{ name: "listing", id: listing.id, query: { focus: "photos" } }} className="rcard-link">
+              {listing.name}
+            </Link>
+            <NotLiveStatus status={listing.status} />
+          </div>
           <p className="rcard-meta">{vendorLabel(listing.vendor)}</p>
           <p className="rcard-meta">
             {t.pendingPhotos(listing.photos.pending)} ·{" "}
@@ -236,12 +312,13 @@ function PhotoQueue({ list }: { list: ListingList }) {
  * кончилась — на её заголовок; строка статуса говорит, что решили
  */
 function ServiceQueueList({ onCount }: { onCount: (n: number | null) => void }) {
-  const { loaded, reload } = useLoad<ServiceQueue>("/staff/services?status=pending&limit=100");
+  const state = useQueue<ServiceQueueItem, ServiceQueue>("/staff/services?status=pending");
+  const { loaded, reload } = state.list;
   const list = useRef<HTMLUListElement>(null);
   // Место решённой услуги в очереди: после перечитывания фокус — туда
   const decidedAt = useRef<number | null>(null);
   const [said, setSaid] = useState("");
-  const count = countOf(loaded);
+  const count = state.count;
   useEffect(() => onCount(count), [count, onCount]);
   useEffect(() => {
     if (loaded.state !== "ready" || decidedAt.current === null) return;
@@ -266,12 +343,12 @@ function ServiceQueueList({ onCount }: { onCount: (n: number | null) => void }) 
         {said}
       </p>
       <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
-        {(queue) =>
-          queue.items.length === 0 ? (
+        {() =>
+          state.list.items.length === 0 ? (
             <QueueEmpty queue="services" />
           ) : (
             <ul className="rcards" ref={list}>
-              {queue.items.map((item, index) => (
+              {state.list.items.map((item, index) => (
                 <ServiceQueueCard
                   key={`${item.kind}-${item.service.id}`}
                   item={item}
@@ -282,6 +359,7 @@ function ServiceQueueList({ onCount }: { onCount: (n: number | null) => void }) 
           )
         }
       </LoadedView>
+      <QueueFooter queue="services" state={state} />
     </>
   );
 }
@@ -294,39 +372,23 @@ function ServiceQueueCard({
   item: ServiceQueueItem;
   onDecided: (said: string) => void;
 }) {
-  const { api } = useSession();
-  const [declining, setDeclining] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<Failure | null>(null);
-  const declineButton = useRef<HTMLButtonElement>(null);
   const { service } = item;
   const name = service.name.ru;
-
-  const approve = async () => {
-    setBusy(true);
-    const result = await api.post<ListingService>(`/staff/services/${service.id}/approve`);
-    setBusy(false);
-    setFailure(result.ok ? null : result);
-    if (result.ok) onDecided(t.serviceApproved(name));
-  };
-  const decline = async (reason: string): Promise<Failure | null> => {
-    const result = await api.post<ListingService>(`/staff/services/${service.id}/decline`, { reason });
-    if (!result.ok) return result;
-    setDeclining(false);
-    onDecided(t.serviceDeclinedSaid(name));
-    return null;
-  };
 
   return (
     <li className="rcard rcard-tap">
       <div className="rcard-head">
-        <Link to={{ name: "listing", id: item.listing.id }} className="rcard-link">
+        <Link
+          to={{ name: "listing", id: item.listing.id, query: { focus: "services" } }}
+          className="rcard-link"
+        >
           {name}
         </Link>
-        <Pill tone={item.kind === "proposal" ? "outline" : "muted"}>{t.serviceQueueKinds[item.kind]}</Pill>
+        <Pill tone={toneOf("serviceQueue", item.kind)}>{t.serviceQueueKinds[item.kind]}</Pill>
       </div>
       <p className="rcard-meta">
-        <CategoryChip code={item.listing.categoryCode} /> {item.listing.name} · {vendorLabel(item.vendor)}
+        <CategoryChip code={item.listing.categoryCode} /> {item.listing.name} · {vendorLabel(item.vendor)}{" "}
+        <NotLiveStatus status={item.listing.status} />
       </p>
       <p className="rcard-meta">
         {t.proposedBy(item.proposedBy.kind, item.proposedBy.name)} · {formatMoment(item.submittedAt)}
@@ -342,47 +404,13 @@ function ServiceQueueCard({
           {service.includes?.ru ? ` · ${service.includes.ru}` : ""}
         </p>
       )}
-      <div className="rcard-actions">
-        <button
-          type="button"
-          className="btn btn-primary queue-approve"
-          disabled={busy}
-          onClick={() => void approve()}
-        >
-          {t.serviceApprove}
-          <span className="visually-hidden">: {name}</span>
-        </button>
-        <button
-          ref={declineButton}
-          type="button"
-          className="btn btn-danger"
-          aria-expanded={declining}
-          disabled={busy}
-          onClick={() => setDeclining(!declining)}
-        >
-          {t.serviceDecline}
-          <span className="visually-hidden">: {name}</span>
-        </button>
-      </div>
-      {failure ? <ErrorText failure={failure} /> : null}
-      <PhoneSheet
-        open={declining}
-        title={`${t.serviceDecline}: ${name}`}
-        onClose={() => setDeclining(false)}
-        returnFocus={declineButton}
-      >
-        <div className="rcard-actions">
-          <ConfirmForm
-            hint={t.serviceDeclineHint}
-            label={t.reason}
-            required
-            danger
-            submitLabel={t.serviceDecline}
-            onSubmit={decline}
-            onCancel={() => setDeclining(false)}
-          />
-        </div>
-      </PhoneSheet>
+      <ServiceDecision
+        service={service}
+        approveClass="queue-approve"
+        onDecided={(outcome) =>
+          onDecided(outcome === "approved" ? t.serviceApproved(name) : t.serviceDeclinedSaid(name))
+        }
+      />
     </li>
   );
 }

@@ -379,11 +379,20 @@ describe("сессия сотрудника — только по свежему
 });
 
 describe("хаб входа: одноразовый код + PKCE", () => {
-  it("код меняется на сессию кабинета один раз, с origin кабинета", async () => {
+  it("код меняется на сессию кабинета один раз, с origin кабинета; панель видит вход партнёра", async () => {
     const phone = randomPhone();
-    await createVendor(phone);
+    const { userId } = await createVendor(phone);
     const hub = await phoneSignIn(phone);
     phoneAccounts.push((await me(hub)).account.id);
+    const lastLogin = async () =>
+      (
+        await admin.query<{ last_login_at: Date | null }>(
+          "select last_login_at from app.vendor_users where id = $1",
+          [userId],
+        )
+      ).rows[0]?.last_login_at ?? null;
+    // Вход на сайте — ещё не вход в кабинет
+    expect(await lastLogin()).toBeNull();
 
     const { res, p } = await hubCode(hub, "vendor");
     const { redirectUrl } = await ok<{ redirectUrl: string }>(res);
@@ -394,6 +403,8 @@ describe("хаб входа: одноразовый код + PKCE", () => {
 
     const session = await ok<SessionToken>(exchange("vendor", code, p.verifier, p.state, VENDOR_ORIGIN));
     expect((await call("/vendor/me", bearer(session.token))).status).toBe(200);
+    // Обмен кода на сессию кабинета — вход в кабинет из браузера: его время видно в панели
+    expect(await lastLogin()).not.toBeNull();
     const cabinetMe = await me(session.token);
     expect(cabinetMe.session).toEqual({ kind: "account", app: "vendor" });
     expect(cabinetMe.account.id).toBe((await me(hub)).account.id);

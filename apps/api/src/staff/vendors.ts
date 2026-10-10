@@ -8,22 +8,26 @@
 //   PATCH /staff/vendors/:id                                 правка
 //   POST  /staff/vendors/:id/checklist  { item, done }       отметка проверки
 //   POST  /staff/vendors/:id/phones     { reason? }          телефоны контакта (в журнал)
-//   POST  /staff/vendors/:id/users      { phone, … }         пользователь кабинета
+//   POST  /staff/vendors/:id/users      { phone, role, … }   пригласить в кабинет
 //   PATCH /staff/vendors/:id/users/:userId                   правка (телефон — пока не привязан)
-//   POST  /staff/vendors/:id/users/:userId/disable | enable | unlink (снять привязку Telegram)
+//   POST  /staff/vendors/:id/users/:userId/disable | enable | unlink (снять привязку входа и Telegram)
+//   DELETE /staff/vendors/:id/users/:userId                  убрать из кабинета
 //   POST  /staff/vendors/:id/users/:userId/phone { reason? } телефон входа (в журнал)
+//   DELETE /staff/vendors/:id                                удалить целиком (без заявок и публикаций)
 //
 // Витрина в другой категории существующему вендору — POST /staff/vendors/:id/listings
 // (staff/listings.ts). Пользователи, контакты, согласия и чек-лист — у вендора общие.
 //
 // Телефоны только пишутся: прочитать их можно лишь функциями базы read_* — каждое
 // чтение ложится в app.pii_access_log. Telegram ID пользователя наружу не
-// отдаётся — только «привязан / нет». Журнал действий пишет база (триггер
-// audit_staff), API его не трогает.
+// отдаётся — только «привязан / нет» и «уведомления доходят / нет». Журнал действий пишет
+// база (триггер audit_staff, функции приглашения и удаления), API его не трогает. У кабинета с
+// действующими пользователями всегда есть действующий владелец — проверяет база (BR031).
 
 import { normalizeUzPhone } from "@bayramm/shared";
 import type {
   ChecklistItem,
+  DeleteBlocker,
   LegalForm,
   ListingRef,
   RevealedPhone,
@@ -39,7 +43,7 @@ import { staffOf } from "../auth/session";
 import { type Tx, withActor } from "../db/actor";
 import {
   clearVendorUserTelegram,
-  insertVendorUserProfile,
+  inviteVendorUser,
   readVendorContactPhones,
   readVendorUserPhone,
   saveVendorContacts,
@@ -50,6 +54,9 @@ import {
 import type { AppVendorAccounts, PiiVendorContacts } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
+import { kickOutbox } from "../notify/kick";
+import { removePhotoObjects } from "../photos/service";
+import { listingPhotoStorage } from "../storage/supabase";
 import { requirePermission } from "./access";
 import { type Body, Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
 import { iso, LISTING_STATUSES, listingBriefs, pathId, staffName } from "./shared";
@@ -61,7 +68,6 @@ const LEGAL_FORMS = ["ooo", "yatt", "self_employed"] as const satisfies readonly
 const LOCALES = ["ru", "uz"] as const;
 const USER_ROLES = ["owner", "member"] as const;
 const STIR_RE = /^\d{9}$/;
-const TELEGRAM_USERNAME_RE = /^@?[A-Za-z0-9_]{5,32}$/;
 
 // ── чек-лист проверки вендора ───────────────────────────────────────────────
 // Все четыре пункта нужны для публикации (app.listing_publish_blockers)
@@ -112,7 +118,8 @@ function parseVendor(body: Body, creating: boolean): { account: AccountFields; c
   const name = input.text("name", { min: 2, max: 120, required: creating });
   // Название обязательно: у существующего вендора его можно сменить, но не стереть
   if (name === null) input.fail("name");
-  const username = input.pattern("telegramUsername", TELEGRAM_USERNAME_RE);
+  // Как у витрины и приглашения в команду: имя, @имя или ссылка t.me — хранится имя без «@»
+  const username = input.telegram("telegramUsername");
   const account = definedOnly<AccountFields>({
     name,
     legal_form: input.oneOf("legalForm", LEGAL_FORMS),
@@ -127,7 +134,7 @@ function parseVendor(body: Body, creating: boolean): { account: AccountFields; c
     contact_role: input.text("contactRole", { max: 80 }),
     phone: input.phone("phone"),
     phone_alt: input.phone("phoneAlt"),
-    telegram_username: typeof username === "string" ? username.replace(/^@/, "") : username,
+    telegram_username: username,
   });
   input.done();
   return { account, contacts };
@@ -175,6 +182,7 @@ export async function loadVendor(trx: Tx, id: string): Promise<VendorDetail> {
       "vc.contact_person",
       "vc.contact_role",
       "vc.telegram_username",
+      sql<DeleteBlocker | null>`app.vendor_delete_blocker(v.id)`.as("delete_blocker"),
     ])
     .where("v.id", "=", id)
     .executeTakeFirst();
@@ -209,6 +217,7 @@ export async function loadVendor(trx: Tx, id: string): Promise<VendorDetail> {
     },
     users: users.map(userView),
     listings,
+    deleteBlocker: row.delete_blocker,
   };
 }
 
@@ -222,6 +231,7 @@ const selectUsers = (trx: Tx) =>
       "u.locale",
       "u.tg_linked_at",
       sql<boolean>`u.account_id is not null`.as("account_linked"),
+      sql<boolean>`p.telegram_chat_id is not null`.as("has_chat"),
       "u.last_login_at",
       "u.disabled_at",
       "u.created_at",
@@ -230,15 +240,21 @@ const selectUsers = (trx: Tx) =>
 
 type UserRow = Awaited<ReturnType<ReturnType<typeof selectUsers>["executeTakeFirstOrThrow"]>>;
 
-// Telegram ID и хэши наружу не отдаём: только факт привязки
+// Telegram ID, чат и хэши наружу не отдаём: только факт привязки и доходят ли уведомления —
+// те же условия, что у app.enqueue_vendor_notice
 function userView(row: UserRow): VendorUser {
+  const disabled = row.disabled_at !== null;
+  const linked = row.tg_linked_at !== null;
   return {
     id: row.id,
     fullName: row.full_name,
     role: row.role === "member" ? "member" : "owner",
     locale: row.locale,
-    telegramLinked: row.tg_linked_at !== null,
+    // Принят — вошёл аккаунтом; привязка Telegram до аккаунтов — тоже вход
+    status: disabled ? "disabled" : row.account_linked || linked ? "accepted" : "pending",
+    telegramLinked: linked,
     telegramLinkedAt: iso(row.tg_linked_at),
+    notifiable: !disabled && linked && row.has_chat,
     accountLinked: row.account_linked,
     lastLoginAt: iso(row.last_login_at),
     disabledAt: iso(row.disabled_at),
@@ -428,6 +444,21 @@ vendors.patch("/:id", requirePermission("vendors.write"), limitJson, async (c) =
   return c.json(vendor);
 });
 
+// Удалить вендора целиком — только администратор и только без заявок и витрин на проверке
+// или в каталоге (иначе 409 vendor_in_use, details — requests | published): решает база под
+// блокировкой (app.staff_delete_vendor) и отдаёт ключи фото всех витрин — объекты удаляются
+// после фиксации. Нет вендора — 404 (42501)
+vendors.delete("/:id", requirePermission("vendors.delete"), async (c) => {
+  const id = pathId(c.req.param("id"));
+  const keys = await withActor(c.var.db, staffOf(c), async (trx) => {
+    const { rows } = await sql<{ keys: string[] }>`
+      select app.staff_delete_vendor(${id}::uuid) as keys`.execute(trx);
+    return rows[0]?.keys ?? [];
+  });
+  await removePhotoObjects(listingPhotoStorage(c.env), keys);
+  return c.body(null, 204);
+});
+
 // ── чек-лист проверки ───────────────────────────────────────────────────────
 
 /**
@@ -542,8 +573,9 @@ vendors.post("/:id/phones", requirePermission("vendor_phones.read"), limitJson, 
 });
 
 // ── пользователи кабинета ───────────────────────────────────────────────────
-// Сотрудник заводит пользователя по телефону; привязку к Telegram делает бот,
-// когда вендор поделится своим контактом (тот же номер → тот же phone_hash)
+// Сотрудник приглашает пользователя по телефону: приглашение принимает вход партнёра,
+// доказавшего этот номер, — контакт в боте (тот же номер → тот же phone_hash) или код на
+// телефон; номер, уже подтверждённый у аккаунта, — сразу (app.staff_invite_vendor_user)
 
 async function loadUser(trx: Tx, vendor: string, user: string): Promise<VendorUser> {
   const row = await selectUsers(trx)
@@ -563,21 +595,26 @@ vendors.post("/:id/users", requirePermission("vendor_users.write"), limitJson, a
   const input = new Input(await readBody(c.req.raw));
   const phone = input.phone("phone", true);
   const fullName = input.text("fullName", { max: 120 });
+  // Без роли — владелец: так заводили до приглашений (старые сборки панели)
   const role = input.oneOf("role", USER_ROLES) ?? "owner";
-  const locale = input.oneOf("locale", LOCALES) ?? undefined;
+  const locale = input.oneOf("locale", LOCALES) ?? null;
   input.done();
   if (typeof phone !== "string") throw invalidInput(["phone"]);
 
   const hash = await phoneHash(c.env.ID_HASH_KEY, phone);
-  const user = await withActor(c.var.db, staffOf(c), async (trx) => {
-    const created = await trx
-      .insertInto("app.vendor_users")
-      .values({ vendor_id: id, phone_hash: hash, role, ...(locale ? { locale } : {}) })
-      .returning("id")
-      .executeTakeFirstOrThrow();
-    await insertVendorUserProfile(trx, created.id, phone, fullName ?? null);
-    return loadUser(trx, id, created.id);
+  const { user, accepted } = await withActor(c.var.db, staffOf(c), async (trx) => {
+    const invited = await inviteVendorUser(trx, {
+      vendorId: id,
+      phone,
+      phoneHash: hash,
+      fullName: fullName ?? null,
+      role,
+      locale,
+    });
+    return { user: await loadUser(trx, id, invited.id), accepted: invited.accepted };
   });
+  // Принято сразу — «вас добавили в кабинет» уходит, не дожидаясь cron
+  if (accepted) kickOutbox(c.env, (promise) => c.executionCtx.waitUntil(promise));
   return c.json(user, 201);
 });
 
@@ -669,6 +706,17 @@ vendors.post("/:id/users/:userId/unlink", requirePermission("vendor_users.write"
     return loadUser(trx, ids.vendor, ids.user);
   });
   return c.json(user);
+});
+
+// Убрать из кабинета: и ждущее приглашение, и вошедшего (его аккаунт и другие роли остаются).
+// Сессии до аккаунтов, неотправленные ему уведомления и профиль с номером — вместе с ним
+vendors.delete("/:id/users/:userId", requirePermission("vendor_users.write"), async (c) => {
+  const ids = userIds(c);
+  await withActor(c.var.db, staffOf(c), async (trx) => {
+    await loadUser(trx, ids.vendor, ids.user);
+    await sql`select app.staff_remove_vendor_user(${ids.user}::uuid)`.execute(trx);
+  });
+  return c.body(null, 204);
 });
 
 vendors.post("/:id/users/:userId/phone", requirePermission("vendor_phones.read"), limitJson, async (c) => {

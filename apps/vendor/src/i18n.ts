@@ -342,10 +342,20 @@ const ru = {
   readyDraft:
     "Витрина ещё не на сайте. Сделайте пункты ниже — команда Bayramm проверит витрину и опубликует её.",
   readyDraftDone:
-    "Витрина ещё не на сайте. С вашей стороны всё готово — команда Bayramm проверит и опубликует её.",
+    "Витрина ещё не на сайте. С вашей стороны всё готово — отправьте её на проверку команде Bayramm.",
+  // лид готовит команда: на проверку его отправляет она же
+  readyLeadDone:
+    "Витрина ещё не на сайте. С вашей стороны всё готово — команда Bayramm отправит её на проверку и опубликует.",
   readyReview: "Витрина на проверке у команды Bayramm — клиенты увидят её после одобрения.",
   readySuspended: "Витрина приостановлена — клиенты её не видят.",
-  readyRejected: "Витрина отклонена. Исправьте пункты ниже — команда Bayramm проверит её снова.",
+  readyRejected: "Витрина отклонена. Исправьте пункты ниже и отправьте её на проверку снова.",
+  readyRejectedDone: "Витрина отклонена. Если всё исправили — отправьте её на проверку снова.",
+  readyDraftWait:
+    "С вашей стороны всё готово. Отправить на проверку можно, когда команда Bayramm заполнит: {list}.",
+  submitListing: "Отправить на проверку",
+  submitDone: "Отправили: витрина на проверке у команды Bayramm.",
+  submitOwner: "На проверку витрину отправляет владелец кабинета.",
+  submitBlocked: "Для проверки ещё не хватает: {list}.",
   todoPrice: "Добавьте услугу с ценой",
   todoServices: "Добавьте обязательные услуги: {list}",
   todoPhotos: "Загрузите фото: есть {n} из {min}",
@@ -890,10 +900,19 @@ const uz: VendorDict = {
   readyDraft:
     "Vitrina hali saytda yoʻq. Quyidagilarni bajaring — Bayramm jamoasi vitrinani tekshirib, eʼlon qiladi.",
   readyDraftDone:
-    "Vitrina hali saytda yoʻq. Siz tomoningizdan hammasi tayyor — Bayramm jamoasi tekshirib, eʼlon qiladi.",
+    "Vitrina hali saytda yoʻq. Siz tomoningizdan hammasi tayyor — uni Bayramm jamoasiga tekshiruvga yuboring.",
+  readyLeadDone:
+    "Vitrina hali saytda yoʻq. Siz tomoningizdan hammasi tayyor — Bayramm jamoasi uni tekshiruvga yuborib, eʼlon qiladi.",
   readyReview: "Vitrina Bayramm jamoasi tekshiruvida — mijozlar uni tasdiqlangandan keyin koʻradi.",
   readySuspended: "Vitrina toʻxtatilgan — mijozlar uni koʻrmaydi.",
-  readyRejected: "Vitrina rad etilgan. Quyidagilarni tuzating — Bayramm jamoasi uni qayta tekshiradi.",
+  readyRejected: "Vitrina rad etilgan. Quyidagilarni tuzating va uni qayta tekshiruvga yuboring.",
+  readyRejectedDone: "Vitrina rad etilgan. Hammasini tuzatgan boʻlsangiz — uni qayta tekshiruvga yuboring.",
+  readyDraftWait:
+    "Siz tomoningizdan hammasi tayyor. Bayramm jamoasi quyidagilarni toʻldirgach, tekshiruvga yuborish mumkin: {list}.",
+  submitListing: "Tekshiruvga yuborish",
+  submitDone: "Yuborildi: vitrina Bayramm jamoasi tekshiruvida.",
+  submitOwner: "Vitrinani tekshiruvga kabinet egasi yuboradi.",
+  submitBlocked: "Tekshiruv uchun hali yetishmaydi: {list}.",
   todoPrice: "Narxli xizmat qoʻshing",
   todoServices: "Majburiy xizmatlarni qoʻshing: {list}",
   todoPhotos: "Foto yuklang: {min} tadan {n} ta bor",

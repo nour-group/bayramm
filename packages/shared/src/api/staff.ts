@@ -33,12 +33,14 @@ export type StaffRole = "admin" | "manager" | "moderator";
 export type StaffPermission =
   | "catalog.read"
   | "vendors.write"
+  | "vendors.delete"
   | "vendor_users.write"
   | "listings.write"
   | "listings.submit"
   | "listings.publish"
   | "listings.moderate"
   | "listings.draft"
+  | "listings.delete"
   | "photos.moderate"
   | "vendor_phones.read"
   | "requests.read"
@@ -61,6 +63,11 @@ export interface StaffMe {
   readonly displayName: string;
   readonly username: string | null;
   readonly permissions: readonly StaffPermission[];
+  /**
+   * Бот знает чат сотрудника (написал боту /start): только тогда приходят оповещения команды.
+   * false — панель просит написать боту
+   */
+  readonly botLinked: boolean;
 }
 
 // ── справочники ────────────────────────────────────────────────────────────
@@ -75,7 +82,12 @@ export interface StaffDictItem {
 export interface StaffDictionaries {
   /** Все категории; создать карточку можно только во включённой */
   readonly categories: readonly (StaffDictItem & { readonly enabled: boolean })[];
-  readonly districts: readonly StaffDictItem[];
+  /**
+   * Города; районы — внутри города (city — код города района). Панель обходится и без них:
+   * районы без города — плоским списком
+   */
+  readonly cities?: readonly StaffDictItem[];
+  readonly districts: readonly (StaffDictItem & { readonly city?: string })[];
   readonly occasions: readonly StaffDictItem[];
   /** Действующие сотрудники — для выбора менеджера */
   readonly staff: readonly { readonly id: string; readonly displayName: string; readonly role: StaffRole }[];
@@ -87,6 +99,23 @@ export interface StaffDictionaries {
 export type LegalForm = "ooo" | "yatt" | "self_employed";
 export type ListingStatus = "lead" | "draft" | "review" | "active" | "suspended" | "rejected";
 export type ChecklistItem = "contract" | "stir" | "contacts" | "pdConsent";
+
+/**
+ * Почему витрину (или вендора) нельзя удалить — app.listing_delete_blocker,
+ * app.vendor_delete_blocker:
+ *   requests  — по витрине (у вендора — по какой-то витрине) были заявки: удалить нельзя
+ *               никогда, снимают с публикации (приостановить) — история заявок остаётся;
+ *   published — витрина на проверке или в каталоге: сначала вернуть в черновик или
+ *               приостановить.
+ *
+ * DELETE /staff/listings/:id → 204 (право listings.delete — администратор и менеджер): витрина
+ *   со всеми фото, услугами, занятостью, контактами и предложениями изменений;
+ *   409 listing_in_use, details — [DeleteBlocker].
+ * DELETE /staff/vendors/:id → 204 (право vendors.delete — только администратор): вендор со
+ *   всеми витринами, пользователями кабинета, реквизитами и контактами;
+ *   409 vendor_in_use, details — [DeleteBlocker]
+ */
+export type DeleteBlocker = "requests" | "published";
 
 /**
  * Коды из app.listing_publish_blockers: чего не хватает для проверки или публикации.
@@ -154,16 +183,30 @@ export interface ChecklistMark {
   readonly by: string | null;
 }
 
+/**
+ * Пользователь кабинета: pending — приглашение ждёт входа (номер ещё никто не подтвердил),
+ * accepted — партнёр вошёл: кабинет открыт его аккаунту, disabled — отключён сотрудником
+ */
+export type VendorUserStatus = "pending" | "accepted" | "disabled";
+
 export interface VendorUser {
   readonly id: string;
   readonly fullName: string | null;
   readonly role: "owner" | "member";
+  /** Язык кабинета и уведомлений партнёра */
   readonly locale: "ru" | "uz";
+  readonly status: VendorUserStatus;
   /** Уведомления о заявках привязаны к Telegram партнёра */
   readonly telegramLinked: boolean;
   readonly telegramLinkedAt: string | null;
+  /**
+   * Уведомления до партнёра доходят: Telegram привязан и бот знает его чат (партнёр писал боту
+   * или бот уже пишет ему по другой роли). Привязан, но false — пусть откроет бота
+   */
+  readonly notifiable: boolean;
   /** Партнёр доказал этот номер (контакт в боте или код из сообщения) — кабинет открыт его аккаунту */
   readonly accountLinked: boolean;
+  /** Последний вход в кабинет: Mini App или через хаб на сайте */
   readonly lastLoginAt: string | null;
   readonly disabledAt: string | null;
   readonly createdAt: string;
@@ -203,6 +246,8 @@ export interface VendorDetail {
   readonly checklist: Readonly<Record<ChecklistItem, ChecklistMark>>;
   readonly users: readonly VendorUser[];
   readonly listings: readonly ListingBrief[];
+  /** Почему вендора нельзя удалить; null — можно (DELETE /staff/vendors/:id) */
+  readonly deleteBlocker: DeleteBlocker | null;
 }
 
 /**
@@ -241,12 +286,27 @@ export interface ChecklistInput {
 }
 
 /**
- * POST /staff/vendors/:id/users → 201 VendorUser; 409 phone_taken.
- * PATCH …/users/:userId (409 user_linked — номер привязанного не сменить),
- * POST …/users/:userId/disable | enable | unlink (снять привязку Telegram) → VendorUser
+ * POST /staff/vendors/:id/users — приглашение → 201 VendorUser (status accepted — номер уже
+ * подтверждён у аккаунта, доступ открыт сразу); 409 phone_taken — номер уже у этого вендора;
+ * 409 vendor_user_exists — человек с этим номером уже в кабинете под другим номером;
+ * 409 vendor_last_owner — сотрудника площадки без действующего владельца не пригласить.
+ * PATCH …/users/:userId (409 user_linked — номер привязанного не сменить; 409 vendor_last_owner —
+ * последний действующий владелец остаётся владельцем),
+ * POST …/users/:userId/disable | enable | unlink (снять привязку входа и Telegram) → VendorUser,
+ * DELETE …/users/:userId — убрать из кабинета → 204 (409 vendor_last_owner)
  */
 export interface VendorUserInput {
   readonly phone: string;
+  readonly fullName?: string | null;
+  /** По умолчанию owner (так заводили до приглашений); панель выбирает явно */
+  readonly role?: "owner" | "member";
+  /** Язык кабинета и уведомлений; по умолчанию uz */
+  readonly locale?: "ru" | "uz";
+}
+
+/** PATCH /staff/vendors/:id/users/:userId — нет поля — не менять */
+export interface VendorUserPatch {
+  readonly phone?: string;
   readonly fullName?: string | null;
   readonly role?: "owner" | "member";
   readonly locale?: "ru" | "uz";
@@ -289,8 +349,9 @@ export interface ListingListItem extends ListingBrief {
 
 /**
  * GET /staff/listings?status=&q=&vendorId=&category=&photos=pending&limit=&offset=
- * photos=pending — только опубликованные карточки с фото, которые ждут решения (очередь
- * «Новые фото» в модерации: их загрузил партнёр или менеджер), старые загрузки первыми.
+ * photos=pending — карточки (любые, кроме отклонённых: фото черновика тоже можно одобрить до
+ * публикации) с фото, которые ждут решения (очередь «Новые фото» в модерации: их загрузил
+ * партнёр или менеджер), старые загрузки первыми.
  * category — только витрины этой категории
  */
 export interface ListingList {
@@ -377,6 +438,8 @@ export interface ListingDetail {
   readonly history: readonly ListingHistoryEntry[];
   /** Правка карточки, которая ждёт решения модератора (от партнёра или менеджера) */
   readonly pendingRevision: PendingRevision | null;
+  /** Почему витрину нельзя удалить; null — можно (DELETE /staff/listings/:id) */
+  readonly deleteBlocker: DeleteBlocker | null;
 }
 
 export interface PendingRevision {
@@ -572,12 +635,14 @@ export interface AvailabilityInput {
  *
  * Модерация (право revisions.moderate — администратор, модератор):
  * GET    /staff/services?status=pending|review|proposal&limit=&offset= → ServiceQueue: новые услуги
- *        на проверке и предложения правок у опубликованных витрин, старые первыми
+ *        на проверке и предложения правок у любых витрин, кроме отклонённых (и у черновика: партнёр
+ *        видит «на проверке»), старые первыми; total — сколько всего, items — не больше limit
  * POST   /staff/services/:sid/approve                       → ListingService: одобрить услугу или
  *        применить предложение (422 service_invalid — не проходит проверку полей)
  * POST   /staff/services/:sid/decline { reason }            → ListingService: отклонить услугу или
  *        предложение; причину увидит партнёр
- * Решение по услуге опубликованной витрины — уведомление владельцам кабинета (vendor.service_decided)
+ * Решение по услуге — уведомление владельцам кабинета (vendor.service_decided): одобрение — у
+ * опубликованной витрины, отказ — у любой
  */
 
 /** Что ждёт решения: новая услуга (review) или предложение правки активной (proposal) */
@@ -655,9 +720,9 @@ export interface StaffRequestItem {
 }
 
 /**
- * GET /staff/requests?status=&sla=&category=&q=&limit=&offset= — сначала без ответа: ближайший
- * (или самый давний) срок первым. sla=late — очередь просроченных и нарушенных; category —
- * заявки витрин этой категории
+ * GET /staff/requests?status=&sla=&category=&listingId=&q=&limit=&offset= — сначала без ответа:
+ * ближайший (или самый давний) срок первым. sla=late — очередь просроченных и нарушенных;
+ * category — заявки витрин этой категории; listingId — заявки одной витрины
  */
 export interface StaffRequestList {
   readonly total: number;
@@ -670,6 +735,11 @@ export interface RequestHistoryEntry {
   readonly from: RequestStatus | null;
   readonly to: RequestStatus;
   readonly actorKind: "client" | "vendor_user" | "staff" | "system";
+  /**
+   * Кто сменил статус словами (подписи журнала, apps/api/src/staff/labels.ts): имя сотрудника
+   * или пользователя кабинета, код клиента C-…; у системы и без подписи — null. Телефонов нет
+   */
+  readonly actorName: string | null;
   readonly source: string;
   readonly reason: string | null;
   readonly at: string;
@@ -677,6 +747,8 @@ export interface RequestHistoryEntry {
 
 /** GET /staff/requests/:id */
 export interface StaffRequestDetail extends StaffRequestItem {
+  /** Чья заявка: id и код C-… — ссылка на страницу клиента (ПДн в ней нет) */
+  readonly client: { readonly id: string; readonly ref: string };
   readonly budgetMinUzs: number | null;
   readonly budgetMaxUzs: number | null;
   readonly declineReason: DeclineReason | null;
@@ -968,6 +1040,22 @@ export type SettingKey =
 /** Значение: число; sla_reminder_hours — [часы, часы]; quiet_hours — { from: "22:00", to: "08:00" } */
 export type SettingValue = number | readonly number[] | { readonly from: string; readonly to: string };
 
+/**
+ * Границы числовых настроек — как в app.setting_value_ok: их проверяет API до базы, а панель —
+ * до отправки (поле с «−» и «+» дальше границ не уходит). sla_reminder_hours — каждое из двух
+ */
+export const SETTING_LIMITS = {
+  sla_hours: [1, 72],
+  sla_reminder_hours: [1, 72],
+  min_photos: [3, 10],
+  max_photos: [3, 30],
+  client_requests_per_day: [1, 100],
+  request_contact_retention_days: [1, 3650],
+  otp_retention_hours: [1, 720],
+  session_retention_days: [1, 365],
+  ops_reminder_pause_minutes: [5, 1440],
+} as const satisfies Record<Exclude<SettingKey, "quiet_hours">, readonly [number, number]>;
+
 export interface StaffSetting {
   readonly key: SettingKey;
   readonly value: SettingValue;
@@ -1006,6 +1094,8 @@ export interface TeamMember {
   /** Telegram привязан (оповещения команды): первый вход через Telegram был */
   readonly linked: boolean;
   readonly linkedAt: string | null;
+  /** Бот знает чат (написал боту /start): оповещения команды приходят только тогда */
+  readonly botLinked: boolean;
   readonly createdAt: string;
   /** Это вы: себя не отключить и роль не сменить */
   readonly self: boolean;
@@ -1018,7 +1108,9 @@ export interface TeamMember {
  *   этим номером уже есть роль сотрудника; 422 invalid_input — поле phone не номер
  *   Узбекистана (+998 и 9 цифр).
  * POST /staff/team/:id/role { role } | /deactivate | /activate → TeamList;
- * 409 staff_self — себя нельзя, staff_last_admin — должен остаться администратор
+ * 409 staff_self — себя нельзя, staff_last_admin — должен остаться администратор.
+ * DELETE /staff/team/:id → TeamList: отозвать приглашение, которое ещё не приняли (accepted —
+ * false); 409 staff_invite_accepted — уже принято или им пользовались: сотрудника отключают
  */
 export interface TeamList {
   readonly items: readonly TeamMember[];
@@ -1174,8 +1266,10 @@ export interface OpsQueues {
   readonly deadTotal: number;
   readonly listingsReview: number;
   readonly revisionsPending: number;
-  /** Новые фото опубликованных карточек ждут решения */
+  /** Новые фото ждут решения (у любых витрин, кроме отклонённых) */
   readonly photosPending: number;
+  /** Новые услуги и предложения правок услуг ждут решения — как очередь GET /staff/services */
+  readonly servicesPending: number;
 }
 
 /**
