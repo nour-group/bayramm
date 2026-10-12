@@ -6,7 +6,8 @@
 //
 // /bot — без входа: имя бота нужно странице входа панели оператора ещё до входа
 // (виджет Telegram). Имя — из getMe (кэш на час), адрес Mini App — из переменной
-// WEB_APP_URL. Telegram не ответил — 503.
+// WEB_APP_URL. Telegram не ответил — 503. Клиент (сайт) берёт то же из GET /auth/methods
+// (telegram.bot, apps.web) и сюда не ходит; маршрут остаётся для старых сборок.
 //
 // /sync — настройка бота из кода (telegram/bot-profile.ts), её вызывает деплой.
 // Закрыт отдельным секретом TELEGRAM_SYNC_KEY (auth/service-key.ts): не задан —

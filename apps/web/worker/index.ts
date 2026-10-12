@@ -15,8 +15,9 @@ const site = createSiteWorker({
   imageOrigins: mediaImageOrigins(dev),
   // Mini App в Telegram Web открывается во фрейме web.telegram.org — встраивать разрешено только ему
   frameAncestors: ["https://web.telegram.org"],
-  // SDK Mini App: telegram-web-app.js в script-src. Грузит его код приложения и только
-  // внутри Telegram (loadTelegramWebApp в @bayramm/tg/webapp); в index.html его нет
+  // SDK Mini App: telegram-web-app.js в script-src. Тег ставит скрипт, а не index.html, и только
+  // внутри Telegram: public/boot.js — сразу, до бандла, loadTelegramWebApp в @bayramm/tg/webapp —
+  // если boot.js не отработал или тег упал
   telegramWebApp: true,
   // Хаб входа (/auth): виджет входа Telegram — только на его страницах. У бота в @BotFather
   // /setdomain — домен сайта окружения; остальные страницы сайта виджета не пускают

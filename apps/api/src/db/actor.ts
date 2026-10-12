@@ -97,7 +97,8 @@ export async function withActor<T>(db: Db, actor: Actor, fn: (trx: Tx) => Promis
   if (carried !== undefined) {
     // Забирает один вызов: параллельный второй откроет свою транзакцию и дождётся соединения
     preambles.delete(db);
-    return finishIn(carried, async (trx) => {
+    clearTimeout(carried.timer);
+    return finishIn(carried.trx, async (trx) => {
       await setActor(trx, s);
       return fn(trx);
     });
@@ -117,8 +118,21 @@ export async function withActor<T>(db: Db, actor: Actor, fn: (trx: Tx) => Promis
 // как прежде, отдельные: каждая фиксируется сама (журнал попыток кода, например, переживает
 // последующий отказ). До обработчика ничего в ней не пишется: шаги преамбулы только читают.
 
+/**
+ * Сколько транзакция преамбулы ждёт обработчика, прежде чем её закроют: до первого обращения к
+ * базе обработчик может читать тело запроса (фото — до 10 МБ по мобильной сети) или звать
+ * внешний сервис, а открытая транзакция всё это время держит соединение с базой (Hyperdrive).
+ * Закрыли — обработчик откроет свою, как до объединения
+ */
+export const PREAMBLE_HOLD_MS = 1_000;
+
+interface Held {
+  readonly trx: ControlledTransaction<DB>;
+  timer: ReturnType<typeof setTimeout> | undefined;
+}
+
 /** Транзакция преамбулы запроса, ещё не отданная обработчику; ключ — база запроса (один Db на запрос) */
-const preambles = new WeakMap<Db, ControlledTransaction<DB>>();
+const preambles = new WeakMap<Db, Held>();
 /** Что выставлено в GUC транзакции сейчас: повторный set_config тем же актором пропускается */
 const current = new WeakMap<Tx, string>();
 
@@ -144,18 +158,22 @@ async function finishIn<T>(trx: ControlledTransaction<DB>, fn: (trx: Tx) => Prom
  * откатывает транзакцию и закрывает её: запрос всё равно ответит ошибкой.
  */
 export async function inPreamble<T>(db: Db, fn: (trx: Tx) => Promise<T>): Promise<T> {
-  let trx = preambles.get(db);
-  if (trx === undefined) {
-    trx = await db.startTransaction().execute();
-    preambles.set(db, trx);
+  let held = preambles.get(db);
+  if (held === undefined) {
+    held = { trx: await db.startTransaction().execute(), timer: undefined };
+    preambles.set(db, held);
   }
-  const open = trx;
+  const open = held;
+  // Пока идёт шаг, часы не нужны; между шагами и до обработчика — PREAMBLE_HOLD_MS
+  clearTimeout(open.timer);
   try {
-    await setActor(open, actorSettings(SYSTEM));
-    return await fn(open);
+    await setActor(open.trx, actorSettings(SYSTEM));
+    const result = await fn(open.trx);
+    open.timer = setTimeout(() => void closePreamble(db), PREAMBLE_HOLD_MS);
+    return result;
   } catch (error) {
     if (preambles.get(db) === open) preambles.delete(db);
-    await open
+    await open.trx
       .rollback()
       .execute()
       .catch(() => {});
@@ -163,13 +181,14 @@ export async function inPreamble<T>(db: Db, fn: (trx: Tx) => Promise<T>): Promis
   }
 }
 
-/** Закрыть транзакцию преамбулы, которую никто не взял: обработчик базы не касался или запрос отклонён */
+/** Закрыть транзакцию преамбулы, которую никто не взял: обработчик базы не касался, ждал дольше срока или запрос отклонён */
 export async function closePreamble(db: Db): Promise<void> {
-  const trx = preambles.get(db);
-  if (trx === undefined) return;
+  const held = preambles.get(db);
+  if (held === undefined) return;
   preambles.delete(db);
+  clearTimeout(held.timer);
   try {
-    await finishIn(trx, async () => undefined);
+    await finishIn(held.trx, async () => undefined);
   } catch (err) {
     console.error("db: preamble close failed", err instanceof Error ? err.name : typeof err);
   }

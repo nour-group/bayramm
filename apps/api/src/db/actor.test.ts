@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeDb } from "../testing/fake-db";
 import {
   type Actor,
@@ -8,6 +8,7 @@ import {
   continueAsSystem,
   GUEST,
   inPreamble,
+  PREAMBLE_HOLD_MS,
   SYSTEM,
   withActor,
 } from "./actor";
@@ -253,5 +254,48 @@ describe("транзакция преамбулы запроса", () => {
     expect(a.log).not.toContain("commit");
     await closePreamble(a.db);
     expect(a.log.at(-1)).toBe("commit");
+  });
+});
+
+describe("транзакция преамбулы не висит без дела", () => {
+  const vendor: Actor = { kind: "vendor_user", id: VENDOR_USER_ID, vendorId: VENDOR_ID, role: "owner" };
+  afterEach(() => vi.useRealTimers());
+
+  it("обработчик не пришёл за PREAMBLE_HOLD_MS (читает тело запроса) — транзакция закрыта, потом он откроет свою", async () => {
+    vi.useFakeTimers();
+    const fake = fakeDb();
+    await inPreamble(fake.db, async () => undefined);
+    await vi.advanceTimersByTimeAsync(PREAMBLE_HOLD_MS - 1);
+    expect(fake.log).not.toContain("commit");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.log.filter((e) => e === "commit")).toHaveLength(1);
+
+    await withActor(fake.db, vendor, async () => undefined);
+    expect(fake.log.filter((e) => e === "begin")).toHaveLength(2);
+    expect(fake.log.filter((e) => e === "commit")).toHaveLength(2);
+  });
+
+  it("пришёл вовремя — срок снят, второго commit нет; каждый шаг преамбулы срок начинает заново", async () => {
+    vi.useFakeTimers();
+    const fake = fakeDb();
+    await inPreamble(fake.db, async () => undefined);
+    await vi.advanceTimersByTimeAsync(PREAMBLE_HOLD_MS - 1);
+    await inPreamble(fake.db, async () => undefined);
+    await vi.advanceTimersByTimeAsync(PREAMBLE_HOLD_MS - 1);
+    expect(fake.log).not.toContain("commit");
+
+    await withActor(fake.db, vendor, async () => undefined);
+    await vi.advanceTimersByTimeAsync(PREAMBLE_HOLD_MS * 5);
+    expect(fake.log.filter((e) => e === "begin")).toHaveLength(1);
+    expect(fake.log.filter((e) => e === "commit")).toHaveLength(1);
+  });
+
+  it("closePreamble снимает срок", async () => {
+    vi.useFakeTimers();
+    const fake = fakeDb();
+    await inPreamble(fake.db, async () => undefined);
+    await closePreamble(fake.db);
+    await vi.advanceTimersByTimeAsync(PREAMBLE_HOLD_MS * 5);
+    expect(fake.log.filter((e) => e === "commit")).toHaveLength(1);
   });
 });
