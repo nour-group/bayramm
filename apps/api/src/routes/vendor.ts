@@ -8,6 +8,8 @@
 //   PATCH  /vendor/requests/:id        { status, declineReason?, declineNote? } → 200 VendorRequestItem
 //   POST   /vendor/requests/:id/call               → 204 (нажатие на телефон — в журнал)
 //   GET    /vendor/listings/:id                    → 200 VendorListing
+//   PATCH  /vendor/listings/:id                    VendorListingPatch → 200 VendorListingSaved (сразу, пока
+//                                                  витрины нет на сайте; иначе — предложением)
 //   POST   /vendor/listings/:id/submit             → 200 VendorListing (черновик — на проверку команде)
 //   POST   /vendor/listings/:id/withdraw           → 200 VendorListing (с проверки — обратно в черновик)
 //   PUT    /vendor/listings/:id/contacts           { phone, telegram? } → 200 VendorContactsSave
@@ -31,7 +33,7 @@
 //   DELETE /vendor/listings/:id/services/:sid      → 204
 //
 // Чужая заявка или листинг — 404, как несуществующие. Клиент или сотрудник с
-// сессией — 403, без сессии — 401. Фото и предложения правок — только владелец
+// сессией — 403, без сессии — 401. Фото, изменения витрины и предложения правок — только владелец
 // кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required. Услуги,
 // отправка витрины на проверку и её отзыв, порядок и обложка фото, публичные контакты — тоже
 // только владелец; календарь и сколько заказов одновременно — любой пользователь.
@@ -60,6 +62,7 @@ import {
   setCapacity,
 } from "../vendor/calendar";
 import { parseContacts, saveContacts, withdrawContacts } from "../vendor/contacts";
+import { patchListing } from "../vendor/listing";
 import { deletePhoto, reorderPhotos, setCoverPhoto, uploadPhoto } from "../vendor/photos";
 import { getListing, getMe, parseLocale, setLocale } from "../vendor/profile";
 import {
@@ -155,6 +158,13 @@ vendor.post("/requests/:id/call", async (c) => {
 vendor.get("/listings/:id", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   return c.json(await getListing(c.var.db, vendorOf(c), id, c.env.APP_ENV));
+});
+
+// Сохранить изменения витрины: сразу, пока её нет на сайте, иначе предложением команде
+// (ops.revision_submitted ставит триггер базы; outboxKick отправляет сразу после ответа)
+vendor.patch("/listings/:id", limitRevision, outboxKick, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await patchListing(c.var.db, vendorOf(c), id, await readJson(c.req.raw), c.env.APP_ENV));
 });
 
 // Витрину — на проверку команде (draft → review). Оповещение тем, кто публикует, ставит

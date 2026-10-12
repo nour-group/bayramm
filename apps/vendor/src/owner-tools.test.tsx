@@ -37,6 +37,7 @@ const photo = (
 function listingOf(patch: Partial<VendorListing> = {}): VendorListing {
   return {
     id: LISTING_ID,
+    version: 1,
     slug: "test-hall",
     name: "Test Hall",
     status: "active",

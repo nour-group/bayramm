@@ -38,16 +38,7 @@ import type {
   StaffPermission,
   StaffPhoto,
 } from "@bayramm/shared/api/staff";
-import {
-  type AttributeValue,
-  type CategoryConfig,
-  categoryConfig,
-  mergeAttributes,
-  missingAttributes,
-  readAttributes,
-  validateAttributePatch,
-  validateVideoLinks,
-} from "@bayramm/shared/categories";
+import { categoryConfig, missingAttributes, readAttributes } from "@bayramm/shared/categories";
 import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
@@ -62,6 +53,7 @@ import {
 import type { Json } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound, versionConflict } from "../errors";
+import { assertDistrict, type CardFields, categoryFields, readCardFields } from "../listing-fields";
 import { approveReviewServices, listServices, type ServiceActor } from "../listing-services/store";
 import { removePhotoObjects } from "../photos/service";
 import { listingPhotoStorage } from "../storage/supabase";
@@ -381,16 +373,8 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
 
 // ── разбор полей карточки ───────────────────────────────────────────────────
 
-interface ListingFields {
-  name?: string;
+interface ListingFields extends CardFields {
   slug?: string;
-  district_code?: string | null;
-  address_ru?: string | null;
-  address_uz?: string | null;
-  description_ru?: string | null;
-  description_uz?: string | null;
-  cap_min?: number | null;
-  cap_max?: number | null;
   /** Поля витрины после слияния с правкой — строкой JSON */
   attributes?: string;
   video_links?: string[];
@@ -409,27 +393,15 @@ interface ParsedListing {
 }
 
 function parseListing(input: Input, creating: boolean): ParsedListing {
-  const name = input.text("name", { min: 2, max: 80, required: creating });
-  if (name === null) input.fail("name");
   const slug = input.pattern("slug", SLUG_RE);
   if (slug === null) input.fail("slug");
-  const capMin = input.int("capMin", { min: 1, max: 5000 });
-  const capMax = input.int("capMax", { min: 1, max: 5000 });
-  if (typeof capMin === "number" && typeof capMax === "number" && capMax < capMin) input.fail("capMax");
   const parallel = input.int("parallelCapacity", { min: 1, max: 50 });
   if (parallel === null) input.fail("parallelCapacity");
-  const fields = definedOnly<ListingFields>({
-    name: name ?? undefined,
-    slug: slug ?? undefined,
-    district_code: input.pattern("districtCode", /^[a-z_]{2,30}$/),
-    address_ru: input.text("addressRu", { max: 300 }),
-    address_uz: input.text("addressUz", { max: 300 }),
-    description_ru: input.text("descriptionRu", { max: 4000, multiline: true }),
-    description_uz: input.text("descriptionUz", { max: 4000, multiline: true }),
-    cap_min: capMin,
-    cap_max: capMax,
-    parallel_capacity: parallel ?? undefined,
-  });
+  // Название, описания, адрес, район и вместимость — общие с кабинетом (listing-fields.ts)
+  const fields: ListingFields = {
+    ...readCardFields(input, creating),
+    ...definedOnly<ListingFields>({ slug: slug ?? undefined, parallel_capacity: parallel ?? undefined }),
+  };
   return {
     fields,
     phone: input.phone("phone"),
@@ -437,53 +409,6 @@ function parseListing(input: Input, creating: boolean): ParsedListing {
     attributes: input.peek("attributes"),
     videoLinks: input.peek("videoLinks"),
   };
-}
-
-/**
- * Поля витрины и ссылки на видео из тела — по категории карточки; поля витрины
- * сливаются с текущими (null — убрать). Неверные — 422 invalid_input (attributes.<поле>…)
- */
-function categoryFields(
-  category: CategoryConfig | undefined,
-  parsed: ParsedListing,
-  current: Json,
-): Pick<ListingFields, "attributes" | "video_links"> {
-  const out: Pick<ListingFields, "attributes" | "video_links"> = {};
-  const errors: string[] = [];
-  if (parsed.attributes !== undefined) {
-    const result = category === undefined ? null : validateAttributePatch(category, parsed.attributes);
-    if (result === null || !result.ok) errors.push(...(result?.errors ?? ["attributes"]));
-    else {
-      const base =
-        typeof current === "object" && current !== null && !Array.isArray(current)
-          ? (current as Record<string, AttributeValue>)
-          : {};
-      out.attributes = JSON.stringify(mergeAttributes(base, result.value));
-    }
-  }
-  if (parsed.videoLinks !== undefined) {
-    const result =
-      parsed.videoLinks === null
-        ? ({ ok: true, value: [] as string[] } as const)
-        : category === undefined
-          ? null
-          : validateVideoLinks(category, parsed.videoLinks);
-    if (result === null || !result.ok) errors.push(...(result?.errors ?? ["videoLinks"]));
-    else out.video_links = result.value;
-  }
-  if (errors.length > 0) throw invalidInput(errors);
-  return out;
-}
-
-// Район — из справочника: внешний ключ дал бы непонятный 404
-async function assertDistrict(trx: Tx, code: string | null | undefined): Promise<void> {
-  if (code === undefined || code === null) return;
-  const found = await trx
-    .selectFrom("app.districts")
-    .select("code")
-    .where("code", "=", code)
-    .executeTakeFirst();
-  if (!found) throw invalidInput(["districtCode"]);
 }
 
 /** Кто правит услуги из панели: решает ли по модерации и правит ли активные только предложением */

@@ -80,6 +80,7 @@ const service = (patch: Partial<ListingService> = {}): ListingService => ({
 
 const listing = (ref: VendorListingRef, patch: Partial<VendorListing> = {}): VendorListing => ({
   id: ref.id,
+  version: 3,
   slug: ref.name.toLowerCase().replace(/\s+/g, "-"),
   name: ref.name,
   status: ref.status,
@@ -767,38 +768,30 @@ describe("карточка по категории", () => {
     resize(1280);
   });
 
-  it("кортеж: автопарк — записи списка; в правке — только изменённые поля витрины", async () => {
-    const revisions = `/api/vendor/listings/${CAR}/revisions`;
-    routes[`POST ${revisions}`] = (init) => ({
-      status: 201,
-      body: {
-        id: "cccccccc-0000-0000-0000-0000000000f1",
-        status: "pending",
-        submittedAt: new Date().toISOString(),
-        decidedAt: null,
-        decisionReason: null,
-        payload: JSON.parse(String(init.body)),
-        byTeam: false,
-      },
+  it("кортеж: автопарк — записи списка; в предложении — только изменённые поля витрины", async () => {
+    const card = `/api/vendor/listings/${CAR}`;
+    routes[`PATCH ${card}`] = () => ({
+      body: { listing: LISTINGS[CAR], sentForModeration: ["attributes"] },
     });
     await mount("/card");
     await click(byText(".side-vitrinas button", "Kortej Premium"));
     expect(container.querySelector(".venue-side")?.textContent).toContain("Chevrolet Malibu · Седан");
-    await click(byText("button", "Предложить изменения"));
+    await click(document.querySelector('button[aria-label="Изменить: Данные витрины"]'));
     await click(byText("button", "Добавить ещё: Автопарк"));
-    const rows = container.querySelectorAll(".attr-list .package-row");
+    const rows = document.querySelectorAll(".attr-list .package-row");
     expect(rows).toHaveLength(2);
     // Новая машина без класса — ошибка у поля записи, без запроса
     await type(rows[1]?.querySelector<HTMLInputElement>("input.field") ?? undefined, "Lincoln");
-    await click(byText(".proposal-form button", "Отправить на проверку"));
-    expect(sent("POST", revisions)).toEqual([]);
+    await click(byText("button", "Отправить изменения"));
+    expect(sent("PATCH", card)).toEqual([]);
     expect(rows[1]?.classList.contains("package-row-bad")).toBe(true);
 
     const classTrigger = rows[1]?.querySelector('button[aria-haspopup="listbox"]');
     await pick(classTrigger, "Лимузин");
-    await click(byText(".proposal-form button", "Отправить на проверку"));
-    expect(sent("POST", revisions).map((c) => c.body)).toEqual([
+    await click(byText("button", "Отправить изменения"));
+    expect(sent("PATCH", card).map((c) => c.body)).toEqual([
       {
+        version: 3,
         attributes: {
           fleet: [
             { model: "Chevrolet Malibu", class: "sedan" },
@@ -807,7 +800,8 @@ describe("карточка по категории", () => {
         },
       },
     ]);
-    expect(container.querySelector(".proposal-pending")?.textContent).toContain("Lincoln · Лимузин");
+    // Предложение ушло: окно закрыто
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("фото и видео: чего не хватает; ссылки на видео; фото людей — с их согласием (X-Photo-Consent)", async () => {
@@ -828,10 +822,10 @@ describe("карточка по категории", () => {
         srcSet: "",
       },
     });
-    const revisions = `/api/vendor/listings/${PHOTO}/revisions`;
-    routes[`POST ${revisions}`] = () => ({
+    const card = `/api/vendor/listings/${PHOTO}`;
+    routes[`PATCH ${card}`] = () => ({
       status: 422,
-      body: { error: { code: "invalid_input", message: "x", details: ["video_links.0"] } },
+      body: { error: { code: "invalid_input", message: "x", details: ["videoLinks.0"] } },
     });
     await mount("/card");
     await click(byText(".side-vitrinas button", "Kadr Studio"));
@@ -853,11 +847,14 @@ describe("карточка по категории", () => {
       "К фото",
       "Заполнить",
     ]);
-    // «Данные витрины» — кнопкой чек-листа: форма предложения открыта, фокус — на первом поле
+    // «Данные витрины» — кнопкой чек-листа: открыто окно этой карточки; витрины нет на сайте —
+    // «Сохранить», а не «Отправить изменения»
     await click(todos[2]?.querySelector("button"));
-    expect(container.querySelector(".proposal-form")).not.toBeNull();
-    expect(document.activeElement).toBe(container.querySelector(".proposal-form input"));
-    await click(byText(".proposal-form button", "Отмена"));
+    const attributesDialog = document.querySelector('[role="dialog"]');
+    expect(attributesDialog?.querySelector("h2")?.textContent).toBe("Данные витрины");
+    expect(byText("button", "Сохранить", attributesDialog ?? document)).toBeDefined();
+    expect(byText("button", "Отправить изменения", attributesDialog ?? document)).toBeUndefined();
+    await click(byText("button", "Отмена", attributesDialog ?? document));
     // «Фото» — к блоку фото на этом же экране
     await click(todos[1]?.querySelector("button"));
     expect(document.activeElement?.id).toBe("photos-title");
@@ -880,20 +877,19 @@ describe("карточка по категории", () => {
     expect(upload?.headers.get("X-Photo-Consent")).toBe("1");
     expect(upload?.headers.get("X-No-Faces")).toBeNull();
 
-    await click(byText("button", "Предложить изменения"));
+    await click(document.querySelector('button[aria-label="Изменить: Видео"]'));
     // Ссылка не на YouTube или Instagram — ошибка до запроса
     await type(field("Ссылка на видео 1"), "https://vimeo.com/123");
-    await click(byText(".proposal-form button", "Отправить на проверку"));
-    expect(sent("POST", revisions)).toEqual([]);
+    await click(byText("button", "Сохранить", document.querySelector('[role="dialog"]') ?? document));
+    expect(sent("PATCH", card)).toEqual([]);
     expect(field("Ссылка на видео 1")?.getAttribute("aria-invalid")).toBe("true");
     await type(field("Ссылка на видео 1"), "https://youtu.be/dQw4w9WgXcQ");
     await click(byText("button", "Добавить ссылку"));
     await type(field("Ссылка на видео 2"), "https://www.instagram.com/reel/Cabc123/");
-    await click(byText(".attr-checks label", "Фотограф")?.querySelector("input"));
-    await click(byText(".proposal-form button", "Отправить на проверку"));
-    expect(sent("POST", revisions)[0]?.body).toEqual({
-      attributes: { team: ["photographer"] },
-      video_links: ["https://youtu.be/dQw4w9WgXcQ", "https://www.instagram.com/reel/Cabc123/"],
+    await click(byText("button", "Сохранить", document.querySelector('[role="dialog"]') ?? document));
+    expect(sent("PATCH", card)[0]?.body).toEqual({
+      version: 3,
+      videoLinks: ["https://youtu.be/dQw4w9WgXcQ", "https://www.instagram.com/reel/Cabc123/"],
     });
     // Ответ сервера про первую ссылку — подсвечена она
     expect(field("Ссылка на видео 1")?.getAttribute("aria-invalid")).toBe("true");
@@ -902,25 +898,55 @@ describe("карточка по категории", () => {
 });
 
 describe("чек-лист готовности", () => {
-  it("пункты с одной кнопкой — один пункт: двух «Предложить изменения» подряд нет", () => {
-    const go = { services: () => {}, photos: () => {}, propose: () => {} };
+  it("пункты с одним местом — один пункт: двух «Заполнить» в одно окно подряд нет", () => {
+    const edits: string[] = [];
+    const go = { services: () => {}, photos: () => {}, edit: (group: string) => edits.push(group) };
+    const card = {
+      ...(LISTINGS[HALL] as VendorListing),
+      description: { ru: "", uz: "" },
+      capMax: null,
+      districtCode: null,
+      blockers: ["price", "packages", "descriptions", "capacity", "district", "contract"],
+    };
+    const todos = vendorTodos(card, categoryConfig("hall"), vendorDict.ru, "ru", go);
+    expect(todos.map((todo) => todo.action?.label)).toEqual(["К услугам", "Заполнить", "Заполнить"]);
+    // Вместимость и район — одно окно «Место», один пункт
+    expect(todos[2]?.lines).toEqual([
+      "Укажите вместимость: от скольки и до скольки гостей",
+      "Выберите район",
+    ]);
+    expect(todos[1]?.lines).toEqual(["Напишите описание на русском и узбекском"]);
+    todos[1]?.action?.run();
+    todos[2]?.action?.run();
+    expect(edits).toEqual(["basics", "place"]);
+    // Договор — дело команды: пункта партнёра для него нет
+    expect(todos.flatMap((todo) => todo.lines).join(" ")).not.toMatch(/договор/i);
+  });
+
+  it("то, что уже предложено и ждёт проверки, в чек-листе второй раз не просится", () => {
+    const go = { services: () => {}, photos: () => {}, edit: () => {} };
     const card = {
       ...(LISTINGS[CAR] as VendorListing),
-      blockers: ["price", "packages", "descriptions", "attributes", "district", "contract"],
+      description: { ru: "Кортеж", uz: "" },
+      blockers: ["descriptions", "attributes", "contract"],
       missingAttributes: ["service_area"],
     };
-    const todos = vendorTodos(card, categoryConfig("car"), vendorDict.ru, "ru", go);
-    expect(todos.map((todo) => todo.action?.label)).toEqual(["К услугам", "Заполнить"]);
-    expect(todos[1]?.lines).toEqual([
+    const lines = (pending: Parameters<typeof vendorTodos>[5]) =>
+      vendorTodos(card, categoryConfig("car"), vendorDict.ru, "ru", go, pending).flatMap(
+        (todo) => todo.lines,
+      );
+    expect(lines({})).toEqual([
       "Напишите описание на русском и узбекском",
       "Заполните данные витрины: Где работает",
     ]);
-    // Район и договор — дело команды: пунктов партнёра для них нет
-    expect(todos.flatMap((todo) => todo.lines).join(" ")).not.toMatch(/район|договор/i);
+    // Узбекское описание предложено — описание не просится; поле витрины ещё нет
+    expect(lines({ description_uz: "Kortej" })).toEqual(["Заполните данные витрины: Где работает"]);
+    // И поле витрины предложено
+    expect(lines({ description_uz: "Kortej", attributes: { service_area: "tashkent" } })).toEqual([]);
   });
 
   it("черновик: услуги и фото на проверке — не пункты партнёра; отклонённые фото не в счёт", () => {
-    const go = { services: () => {}, photos: () => {}, propose: () => {} };
+    const go = { services: () => {}, photos: () => {}, edit: () => {} };
     const pending = (n: number, moderation: VendorPhoto["moderation"] = "pending"): VendorPhoto => ({
       id: `dddddddd-0000-0000-0000-00000000000${n}`,
       width: 1600,
@@ -1013,11 +1039,11 @@ describe("чек-лист готовности", () => {
     });
 
     it("команда ещё не заполнила своё — кнопки нет, сказано чего ждать; сотрудник площадки не отправляет", async () => {
-      routes[`GET ${listingPath}`] = () => ({ body: { ...ready("draft"), reviewBlockers: ["district"] } });
+      routes[`GET ${listingPath}`] = () => ({ body: { ...ready("draft"), reviewBlockers: ["phone"] } });
       await mount("/card");
       await click(byText(".side-vitrinas button", "Kadr Studio"));
       expect(container.querySelector(".readiness")?.textContent).toContain(
-        "Отправить на проверку можно, когда команда Bayramm заполнит: район.",
+        "Отправить на проверку можно, когда команда Bayramm заполнит: телефон для заявок.",
       );
       expect(byText(".readiness button", "Отправить на проверку", container)).toBeUndefined();
       act(() => root.unmount());

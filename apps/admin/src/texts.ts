@@ -520,7 +520,20 @@ export const t = {
     descriptionUz: "Tavsif (UZ)",
     attributes: "Данные витрины",
     videoLinks: "Видео",
+    capacity: "Вместимость",
+    districtCode: "Район",
+    addressRu: "Адрес (RU)",
+    addressUz: "Manzil (UZ)",
   } as Record<string, string>,
+  // Вместимость в правке: «80–300 гостей», «до 300 гостей», «от 80 гостей»
+  revisionCapacity: (min: number | null, max: number | null) =>
+    min !== null && max !== null
+      ? `${min}–${max} гостей`
+      : max !== null
+        ? `до ${max} гостей`
+        : min !== null
+          ? `от ${min} гостей`
+          : "",
   revisionStatus: {
     pending: "На проверке",
     approved: "Одобрено",
@@ -875,6 +888,7 @@ export const t = {
   auditActions: {
     "listing.create": "Витрина создана",
     "listing.update": "Витрина изменена",
+    "listing.vendor_update": "Витрина изменена партнёром",
     "listing_package.create": "Пакет добавлен",
     "listing_package.update": "Пакет изменён",
     "listing_package.delete": "Пакет удалён",

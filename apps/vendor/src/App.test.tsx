@@ -744,6 +744,7 @@ describe("календарь", () => {
 
 const LISTING: VendorListing = {
   id: LISTING_ID,
+  version: 3,
   slug: "test-hall",
   name: "Test Hall",
   status: "active",
@@ -782,12 +783,18 @@ const revision = (patch: Partial<VendorRevision> = {}): VendorRevision => ({
   ...patch,
 });
 
-describe("изменения карточки", () => {
-  const revisionsPath = `/api/vendor/listings/${LISTING_ID}/revisions`;
+describe("изменения витрины", () => {
+  const listingPath = `/api/vendor/listings/${LISTING_ID}`;
+  const revisionsPath = `${listingPath}/revisions`;
+  const patched = () => calls.filter((c) => c.method === "PATCH" && c.path === listingPath);
   const posted = () => calls.filter((c) => c.method === "POST" && c.path === revisionsPath);
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const inDialog = <T extends Element>(selector: string, text: string) =>
+    [...(dialog()?.querySelectorAll<T>(selector) ?? [])].find((el) => el.textContent?.includes(text));
+  /** Поле окна по подписи */
   const field = (label: string) => {
-    const id = byText<HTMLLabelElement>("label", label)?.htmlFor;
-    return (id ? container.querySelector<HTMLInputElement>(`[id="${id}"]`) : null) ?? undefined;
+    const id = inDialog<HTMLLabelElement>("label", label)?.htmlFor;
+    return (id ? document.querySelector<HTMLInputElement>(`[id="${id}"]`) : null) ?? undefined;
   };
   const type = async (input: HTMLInputElement | HTMLTextAreaElement | undefined, value: string) => {
     if (!input) throw new Error("поле не найдено");
@@ -797,143 +804,355 @@ describe("изменения карточки", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   };
+  // Имя кнопки для диктора — «Изменить: Основное» (aria-label), на экране — «Изменить»
+  const edit = (group: string) =>
+    [...container.querySelectorAll("button")].find(
+      (b) => b.getAttribute("aria-label") === `Изменить: ${group}`,
+    );
+  const submit = (label = "Отправить изменения") => inDialog<HTMLButtonElement>("button", label);
+  const confirm = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
+  const confirmButton = (text: string) =>
+    [...(confirm()?.querySelectorAll("button") ?? [])].find((b) => b.textContent === text);
+  const pick = async (trigger: Element | undefined, option: string) => {
+    await click(trigger);
+    await click(
+      [...document.querySelectorAll('[role="option"]')].find((el) => el.textContent?.includes(option)),
+    );
+  };
+  let items: VendorRevision[];
+  const DICTIONARIES = {
+    categories: [],
+    cities: [{ code: "tashkent", name: { ru: "Ташкент", uz: "Toshkent" } }],
+    districts: [
+      { code: "chilonzor", name: { ru: "Чиланзар", uz: "Chilonzor" }, city: "tashkent" },
+      { code: "sergeli", name: { ru: "Сергели", uz: "Sergeli" }, city: "tashkent" },
+    ],
+    occasions: [],
+  };
+  const stub = (card: VendorListing) => {
+    routes[`GET ${listingPath}`] = () => ({ body: card });
+    routes[`GET ${revisionsPath}`] = () => ({ body: { items } });
+    routes["GET /api/dictionaries"] = () => ({ body: DICTIONARIES });
+  };
 
   beforeEach(() => {
     insideTelegram();
-    routes[`GET /api/vendor/listings/${LISTING_ID}`] = () => ({ body: LISTING });
-    routes[`GET ${revisionsPath}`] = () => ({ body: { items: [] } });
+    items = [];
+    stub(LISTING);
   });
 
-  it("предложение уходит только с изменёнными полями и ждёт проверки; клиент видит прежнюю карточку", async () => {
-    routes[`POST ${revisionsPath}`] = (init) => ({
-      status: 201,
-      body: revision({ payload: JSON.parse(String(init.body)) }),
-    });
+  it("на сайте: окно только своей группы; изменённое уходит предложением, клиенты видят прежнюю карточку", async () => {
+    routes[`PATCH ${listingPath}`] = (init) => {
+      items = [revision({ payload: { name: JSON.parse(String(init.body)).name } })];
+      return { body: { listing: LISTING, sentForModeration: ["name"] } };
+    };
     await mount("/card");
-    await click(byText("button", "Предложить изменения"));
-    // Цены здесь нет: она — из услуг
-    expect(field("Цена от, сум")).toBeUndefined();
-    // Ничего не изменили — без запроса
-    await click(byText("button", "Отправить на проверку"));
+    // Карточки-группы с «Изменить»; предложения-панели и пояснений вверху больше нет
+    expect(container.querySelectorAll(".group")).toHaveLength(3);
+    expect(byText("button", "Предложить изменения")).toBeUndefined();
+    expect(container.querySelector(".proposal")).toBeNull();
+    await click(edit("Основное"));
+    expect(dialog()?.querySelector("h2")?.textContent).toBe("Основное");
+    expect(field("Название")?.value).toBe("Test Hall");
+    expect(field("Описание на русском")?.value).toBe("Большой зал");
+    // Вместимости и района в этой группе нет, цены — тоже
+    expect(field("Гостей от")).toBeUndefined();
+    expect(field("Цена")).toBeUndefined();
+    // Одна строка про проверку; «Отправить на проверку» — только у витрины целиком
+    expect(dialog()?.textContent).toContain("Клиенты увидят изменения после проверки командой Bayramm.");
+    expect(submit("Отправить на проверку")).toBeUndefined();
+    // Ничего не меняли — отправить нельзя
+    expect(submit()?.disabled).toBe(true);
+
+    await type(field("Название"), "New Hall");
+    expect(submit()?.disabled).toBe(false);
+    await click(submit());
+    // Только изменённые поля и версия карточки, которую видел человек
+    expect(patched().map((c) => c.body)).toEqual([{ version: 3, name: "New Hall" }]);
     expect(posted()).toEqual([]);
-    expect(container.textContent).toContain("Вы ничего не изменили.");
-
-    await type(field("Название"), "New Hall");
-    // Поле витрины категории (зал): в правке — только изменённый ключ
-    await type(field("Мест на парковке"), "120");
-    await click(byText("button", "Отправить на проверку"));
-    expect(posted().map((c) => c.body)).toEqual([{ name: "New Hall", attributes: { parking_spaces: 120 } }]);
-    expect(container.textContent).toContain("Предложение на проверке");
-    const pending = container.querySelector(".proposal-pending")?.textContent ?? "";
-    expect(pending).toContain("New Hall");
-    expect(pending).toContain("Мест на парковке");
-    expect(pending).toContain("120");
+    expect(dialog()).toBeNull();
     expect(container.textContent).toContain("Отправлено на проверку");
-    // Карточка — прежняя: название не изменилось
+    // Карточка прежняя, у неё метка и строка «Предложено»; «Изменить» скрыто, пока предложение открыто
     expect(container.querySelector(".venue-name")?.textContent).toBe("Test Hall");
+    const group = container.querySelector('[data-group="basics"]');
+    expect(group?.querySelector(".chip")?.textContent).toBe("на проверке");
+    expect(group?.textContent).toContain("Предложено: New Hall");
+    expect(container.querySelector('[data-group="place"] .chip')).toBeNull();
+    expect(container.textContent).toContain("Предложение на проверке");
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 
-  it("фокус не теряется: форма — на первое поле, «Отмена» — на «Предложить», отправка — на заголовок", async () => {
-    routes[`POST ${revisionsPath}`] = (init) => ({
-      status: 201,
-      body: revision({ payload: JSON.parse(String(init.body)) }),
+  it("вместимость и район: окно «Место», список районов по городам из справочника", async () => {
+    routes[`PATCH ${listingPath}`] = () => ({
+      body: { listing: LISTING, sentForModeration: ["capacity", "districtCode"] },
     });
     await mount("/card");
-    await click(byText("button", "Предложить изменения"));
-    expect(document.activeElement).toBe(field("Название"));
-    await click(byText(".proposal-form button", "Отмена"));
-    expect(document.activeElement?.textContent).toBe("Предложить изменения");
-    await click(byText("button", "Предложить изменения"));
-    await type(field("Название"), "New Hall");
-    await click(byText("button", "Отправить на проверку"));
-    expect(document.activeElement?.id).toBe("proposal-title");
+    expect(container.querySelector('[data-group="place"]')?.textContent).toContain("50–300 гостей");
+    await click(edit("Место"));
+    expect(field("Гостей от")?.value).toBe("50");
+    expect(field("Гостей до")?.value).toBe("300");
+    expect(field("Адрес на русском")?.value).toBe("ул. Тестовая, 1");
+    await type(field("Гостей до"), "350");
+    await pick(field("Район"), "Сергели");
+    // Город — заголовок группы (выбрать нельзя), районы под ним
+    await click(submit());
+    expect(patched().map((c) => c.body)).toEqual([{ version: 3, districtCode: "sergeli", capMax: 350 }]);
+  });
+
+  it("у категории без вместимости в «Месте» только адрес", async () => {
+    stub({
+      ...LISTING,
+      categoryCode: "cake",
+      districtCode: null,
+      capMin: null,
+      capMax: null,
+      attributes: {},
+    });
+    await mount("/card");
+    await click(edit("Место"));
+    expect(field("Адрес на русском")).toBeDefined();
+    expect(field("Гостей до")).toBeUndefined();
+    expect(field("Район")).toBeUndefined();
+  });
+
+  it("витрины нет на сайте: «Сохранить» — сразу, без предложения; значения на месте, чек-лист короче", async () => {
+    const draft: VendorListing = {
+      ...LISTING,
+      status: "draft",
+      districtCode: null,
+      capMin: null,
+      capMax: null,
+      blockers: ["capacity", "district", "contract"],
+      reviewBlockers: ["capacity", "district"],
+    };
+    stub(draft);
+    routes[`PATCH ${listingPath}`] = (init) => {
+      const body = JSON.parse(String(init.body));
+      return {
+        body: {
+          listing: {
+            ...draft,
+            version: 4,
+            capMin: body.capMin,
+            capMax: body.capMax,
+            districtCode: body.districtCode,
+            blockers: ["contract"],
+            reviewBlockers: [],
+          },
+          sentForModeration: [],
+        },
+      };
+    };
+    await mount("/card");
+    // Чек-лист просит вместимость и район одним пунктом с одной кнопкой (рядом — пункт про фото)
+    const todo = [...container.querySelectorAll(".todo-item")].find((li) =>
+      li.textContent?.includes("Укажите вместимость"),
+    );
+    expect(todo?.querySelector(".todo-text")?.textContent).toContain("Выберите район");
+    expect(container.querySelectorAll(".todo-item")).toHaveLength(2);
+    await click(todo?.querySelector("button") ?? undefined);
+    expect(dialog()?.querySelector("h2")?.textContent).toBe("Место");
+    // Не на сайте — «Сохранить», про проверку командой в окне ни слова
+    expect(submit("Сохранить")).toBeDefined();
+    expect(dialog()?.textContent).not.toContain("после проверки командой");
+    await type(field("Гостей от"), "80");
+    await type(field("Гостей до"), "300");
+    await pick(field("Район"), "Чиланзар");
+    await click(submit("Сохранить"));
+
+    expect(patched().map((c) => c.body)).toEqual([
+      { version: 3, districtCode: "chilonzor", capMin: 80, capMax: 300 },
+    ]);
+    expect(posted()).toEqual([]);
+    expect(dialog()).toBeNull();
+    expect(container.textContent).toContain("Сохранено.");
+    expect(container.querySelector('[data-group="place"]')?.textContent).toContain("80–300 гостей");
+    expect(container.querySelector('[data-group="place"]')?.textContent).toContain("Чиланзар");
+    expect(container.querySelector('[data-group="place"] .chip')).toBeNull();
+    // Пункт выполнен — его больше нет; предложения не было
+    expect(container.querySelector(".readiness")?.textContent).not.toContain("Укажите вместимость");
+    expect(edit("Место")).toBeDefined();
+    // Фокус — на строку «Сохранено»: кнопка чек-листа исчезла
+    expect(document.activeElement?.getAttribute("role")).toBe("status");
+  });
+
+  it("«до» меньше «от» и вне 1–5000 — ошибка у поля, без запроса", async () => {
+    await mount("/card");
+    await click(edit("Место"));
+    await type(field("Гостей от"), "400");
+    await type(field("Гостей до"), "100");
+    await click(submit());
+    expect(patched()).toEqual([]);
+    expect(field("Гостей до")?.getAttribute("aria-invalid")).toBe("true");
+    expect(dialog()?.textContent).toContain("«До» не меньше «от»");
+    await type(field("Гостей до"), "6000");
+    await click(submit());
+    expect(dialog()?.textContent).toContain("От 1 до 5000");
+    // Стереть вместимость нельзя
+    await type(field("Гостей до"), "");
+    await type(field("Гостей от"), "50");
+    await click(submit());
+    expect(patched()).toEqual([]);
+    expect(dialog()?.textContent).toContain("От 1 до 5000");
   });
 
   it("поле витрины вне границ категории — ошибка у поля без запроса", async () => {
     await mount("/card");
-    await click(byText("button", "Предложить изменения"));
+    await click(edit("Данные витрины"));
     // Залов — от 1 до 20 (конфигурация категории)
     await type(field("Сколько залов"), "50");
-    await click(byText("button", "Отправить на проверку"));
-    expect(posted()).toEqual([]);
+    await click(submit());
+    expect(patched()).toEqual([]);
     expect(field("Сколько залов")?.getAttribute("aria-invalid")).toBe("true");
-    expect(container.textContent).toContain("Проверьте выделенные поля.");
+    expect(dialog()?.textContent).toContain("Проверьте выделенные поля.");
+    // Верное значение — в запросе только изменённый ключ
+    routes[`PATCH ${listingPath}`] = () => ({
+      body: { listing: LISTING, sentForModeration: ["attributes"] },
+    });
+    await type(field("Сколько залов"), "3");
+    await type(field("Мест на парковке"), "120");
+    await click(submit());
+    expect(patched().map((c) => c.body)).toEqual([
+      { version: 3, attributes: { halls_count: 3, parking_spaces: 120 } },
+    ]);
   });
 
-  it("неверные поля от сервера подсвечиваются", async () => {
-    routes[`POST ${revisionsPath}`] = () => ({
+  it("неверные поля от сервера подсвечиваются; окно остаётся с вписанным", async () => {
+    routes[`PATCH ${listingPath}`] = () => ({
       status: 422,
       body: { error: { code: "invalid_input", message: "x", details: ["name"] } },
     });
     await mount("/card");
-    await click(byText("button", "Предложить изменения"));
-    await type(field("Название"), "X");
-    await click(byText("button", "Отправить на проверку"));
+    await click(edit("Основное"));
+    await type(field("Название"), "Xx");
+    await click(submit());
     expect(field("Название")?.getAttribute("aria-invalid")).toBe("true");
-    expect(container.textContent).toContain("Проверьте выделенные поля.");
+    expect(dialog()?.textContent).toContain("Проверьте выделенные поля.");
+    expect(field("Название")?.value).toBe("Xx");
   });
 
-  it("открытое предложение: видно, что предложено; отозвать — через подтверждение", async () => {
-    routes[`GET ${revisionsPath}`] = () => ({ body: { items: [revision()] } });
-    routes[`POST ${revisionsPath}/${REVISION_ID}/withdraw`] = () => ({
-      body: revision({ status: "withdrawn" }),
+  it("карточку успели изменить (409): витрина перечитана, вписанное осталось, сказано словами", async () => {
+    routes[`PATCH ${listingPath}`] = () => ({
+      status: 409,
+      body: { error: { code: "version_conflict", message: "x" } },
     });
     await mount("/card");
-    expect(byText("button", "Предложить изменения")).toBeUndefined();
+    const reads = () => calls.filter((c) => c.method === "GET" && c.path === listingPath).length;
+    expect(reads()).toBe(1);
+    await click(edit("Основное"));
+    await type(field("Название"), "New Hall");
+    await click(submit());
+    expect(reads()).toBe(2);
+    expect(dialog()?.textContent).toContain("Витрину уже изменили — показали, как сейчас.");
+    expect(field("Название")?.value).toBe("New Hall");
+  });
+
+  it("предложение уже открыто (409 revision_pending) — сказано, предложения перечитаны", async () => {
+    routes[`PATCH ${listingPath}`] = () => {
+      items = [revision()];
+      return { status: 409, body: { error: { code: "revision_pending", message: "x" } } };
+    };
+    await mount("/card");
+    await click(edit("Основное"));
+    await type(field("Название"), "New Hall");
+    await click(submit());
+    expect(dialog()?.textContent).toContain("Предложение уже на проверке");
+    // Открытое предложение подтянулось: «Изменить» на карточках скрыто
+    expect(byText("button", "Отозвать предложение")).toBeDefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
+  });
+
+  it("вписанное и не сохранённое: закрыть окно — спросят «Уйти без сохранения?»", async () => {
+    await mount("/card");
+    await click(edit("Основное"));
+    // Ничего не меняли — «Отмена» закрывает сразу
+    await click(inDialog("button", "Отмена"));
+    expect(dialog()).toBeNull();
+
+    // Нажатие в jsdom фокус не переносит: как в браузере — фокус на кнопке
+    edit("Основное")?.focus();
+    await click(edit("Основное"));
+    await type(field("Название"), "New Hall");
+    await click(inDialog("button", "Отмена"));
+    expect(confirm()?.textContent).toContain("Уйти без сохранения?");
+    await click(confirmButton("Остаться"));
+    expect(dialog()).not.toBeNull();
+    expect(field("Название")?.value).toBe("New Hall");
+    await click(inDialog("button", "Отмена"));
+    await click(confirmButton("Уйти"));
+    expect(dialog()).toBeNull();
+    expect(patched()).toEqual([]);
+    // Фокус вернулся на «Изменить»
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Изменить: Основное");
+  });
+
+  it("открытое предложение: что предложено видно у карточек; отозвать — через подтверждение", async () => {
+    items = [revision({ payload: { cap_max: 350, address_uz: "Yangi manzil" } })];
+    routes[`POST ${revisionsPath}/${REVISION_ID}/withdraw`] = () => {
+      items = [revision({ status: "withdrawn" })];
+      return { body: items[0] };
+    };
+    await mount("/card");
+    expect(container.querySelector(".proposal-pending")?.textContent).toContain("Предложение на проверке");
+    const place = container.querySelector('[data-group="place"]');
+    expect(place?.querySelector(".chip")?.textContent).toBe("на проверке");
+    expect(place?.textContent).toContain("Предложено: 50–350 гостей");
+    expect(place?.textContent).toContain("Предложено: Yangi manzil");
+    expect(container.querySelector('[data-group="basics"] .chip')).toBeNull();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
+
     await click(byText("button", "Отозвать предложение"));
-    const dialog = document.querySelector('[role="alertdialog"]');
-    expect(dialog?.textContent).toContain("Отозвать предложение?");
-    await click(
-      [...(dialog?.querySelectorAll("button") ?? [])].find((b) => b.textContent === "Отозвать предложение"),
-    );
+    expect(confirm()?.textContent).toContain("Отозвать предложение?");
+    await click(confirmButton("Отозвать предложение"));
     expect(
       calls.some((c) => c.method === "POST" && c.path === `${revisionsPath}/${REVISION_ID}/withdraw`),
     ).toBe(true);
-    expect(byText("button", "Предложить изменения")).toBeDefined();
+    expect(edit("Место")).toBeDefined();
+    expect(container.querySelector(".chip-wait")?.textContent).not.toBe("на проверке");
   });
 
-  it("отказ команды — причина видна; можно предложить заново", async () => {
-    routes[`GET ${revisionsPath}`] = () => ({
-      body: {
-        items: [
-          revision({
-            status: "declined",
-            decidedAt: new Date().toISOString(),
-            decisionReason: "Цена ниже, чем в договоре",
-          }),
-        ],
-      },
-    });
+  it("отказ команды — причина видна; можно изменить заново", async () => {
+    items = [
+      revision({
+        status: "declined",
+        decidedAt: new Date().toISOString(),
+        decisionReason: "Цена ниже, чем в договоре",
+      }),
+    ];
     await mount("/card");
     expect(container.textContent).toContain(
       "Прошлое предложение отклонено. Причина: Цена ниже, чем в договоре",
     );
-    expect(byText("button", "Предложить изменения")).toBeDefined();
+    expect(edit("Основное")).toBeDefined();
   });
 
-  it("предложение команды Bayramm: видно, что предложено и что ждёт модератора; отозвать нельзя", async () => {
-    routes[`GET ${revisionsPath}`] = () => ({ body: { items: [revision({ byTeam: true })] } });
+  it("предложение команды Bayramm: отозвать нельзя, менять — после решения", async () => {
+    items = [revision({ byTeam: true })];
     await mount("/card");
     expect(container.querySelector(".proposal-pending")?.textContent).toContain(
       "Команда Bayramm предложила изменения",
     );
-    expect(container.querySelector(".proposal-pending")?.textContent).toContain("Большой зал на 300 гостей");
+    expect(container.querySelector('[data-group="basics"]')?.textContent).toContain(
+      "Предложено: Большой зал на 300 гостей",
+    );
     expect(byText("button", "Отозвать предложение")).toBeUndefined();
-    expect(byText("button", "Предложить изменения")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 
-  it("сотрудник площадки видит открытое предложение, но не отзывает его", async () => {
+  it("сотрудник площадки видит открытое предложение, но не отзывает его и не меняет витрину", async () => {
     routes["GET /api/vendor/me"] = () => ({ body: me("ru", "member") });
-    routes[`GET ${revisionsPath}`] = () => ({ body: { items: [revision()] } });
+    items = [revision()];
     await mount("/card");
     expect(container.textContent).toContain("Предложение на проверке");
     expect(byText("button", "Отозвать предложение")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 
-  it("сотрудник площадки: формы нет, кто меняет витрину — сказано один раз, вверху экрана", async () => {
+  it("сотрудник площадки: кнопок «Изменить» нет, кто меняет витрину — сказано один раз, вверху", async () => {
     routes["GET /api/vendor/me"] = () => ({ body: me("ru", "member") });
     await mount("/card");
-    expect(byText("button", "Предложить изменения")).toBeUndefined();
+    expect(container.querySelectorAll(".group").length).toBeGreaterThan(0);
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
     const text = container.textContent ?? "";
     expect(text).toContain("Менять её и услуги может только владелец кабинета.");
     expect(text.match(/владелец кабинета/g)).toHaveLength(1);
@@ -994,42 +1213,54 @@ describe("площадка", () => {
     vi.mocked(compressForUpload).mockResolvedValue(compressed());
   });
 
-  it("витрина как в базе: подсказка про проверку и менеджера, код вендора; текстовых полей нет", async () => {
+  it("витрина как в базе: карточки-группы со значениями, цена из услуг, контакты — своей карточкой; текстовых полей нет", async () => {
     await mount("/card");
     expect(heading()).toBe("Витрина");
-    expect(container.textContent).toContain(
-      "Так витрину видят клиенты. Всё, что вы меняете, сначала проверяет команда Bayramm.",
-    );
-    // Цена «от» — из услуг, сказано один раз, рядом — переход к услугам; списка услуг второй раз нет
-    expect(container.textContent).toContain("Самая низкая цена среди одобренных услуг.");
-    expect(container.textContent?.match(/«Услуги»|из услуг/g) ?? []).toEqual([]);
+    // Баннера «всё проверяет команда» нет: об этом — одна строка в окне «Изменить»
+    expect(container.textContent).not.toContain("Так витрину видят клиенты");
+    expect(container.textContent).not.toContain("Изменения витрины");
+    expect(container.querySelector(".venue .chip-cat")?.textContent).toBe("Тойхона");
+    expect([...container.querySelectorAll(".group .panel-title")].map((h) => h.textContent)).toEqual([
+      "Основное",
+      "Место",
+      "Данные витрины",
+    ]);
+    // Цена «от» — из услуг: в «Основном», рядом переход к услугам; повторять пояснение не нужно
+    const basics = container.querySelector('[data-group="basics"]');
+    expect(basics?.textContent).toContain("от 150\u202F000 сум за гостя");
+    expect(basics?.textContent).not.toContain("Самая низкая цена");
     expect(byText<HTMLAnchorElement>(".venue a", "К услугам")?.getAttribute("href")).toBe("/services");
     expect(container.querySelector(".venue .packages")).toBeNull();
-    expect(container.querySelector(".venue .chip-cat")?.textContent).toBe("Тойхона");
-    expect(container.textContent).toContain("Эти данные меняет менеджер Bayramm — назовите ему код V101.");
-    expect(container.textContent).toContain("от 150 000 сум за гостя");
-    expect(container.textContent).toContain("50–300 гостей");
-    expect(container.textContent).toContain("Чиланзар");
+    // Телефон — в карточке «Контакты»: его владелец меняет сам, «назовите код менеджеру» больше нет
+    expect(basics?.textContent).not.toContain("+998");
+    expect(container.querySelector(".contacts .fact-phone")?.textContent).toBe("+998 00 000 09 99");
+    expect(container.textContent).not.toContain("назовите ему код");
+    // Район, адрес, вместимость — в «Месте» и уже без «меняет менеджер»
+    const place = container.querySelector('[data-group="place"]');
+    expect(place?.textContent).toContain("50–300 гостей");
+    expect(place?.textContent).toContain("Чиланзар");
+    expect(place?.textContent).toContain("ул. Тестовая, 1");
     expect(container.textContent).not.toMatch(/★|рейтинг|отзыв/i);
     // Карточка не правится на месте: только галочка «лиц нет» и выбор фото
     expect(
       container.querySelector('input:not([type="checkbox"]):not([type="file"]), textarea, select'),
     ).toBeNull();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(3);
+    // Для диктора кнопка называет карточку; зона нажатия — как у всех кнопок
+    const placeEdit = container.querySelector('button[aria-label="Изменить: Место"]');
+    expect(placeEdit?.textContent).toBe("Изменить");
+    expect(placeEdit?.className).toContain("btn");
   });
 
-  it("изменения витрины — выше фото и сведений; «проверит команда» сказано один раз", async () => {
+  it("предложение на проверке — выше фото и карточек, а не двумя экранами ниже", async () => {
+    routes[`GET ${listingPath}/revisions`] = () => ({ body: { items: [revision()] } });
     await mount("/card");
     const proposal = container.querySelector(".proposal");
     const grid = container.querySelector(".venue-grid");
     expect(proposal).not.toBeNull();
-    // Предложение на проверке, отказ с причиной и «Предложить» — не двумя экранами ниже фото
     expect(
       proposal && grid && proposal.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(container.querySelector(".proposal .note")?.textContent).toBe(
-      "Предложить можно: название, описание, данные витрины и ссылки на видео.",
-    );
-    expect(container.textContent?.match(/проверяет команда|его проверит/g) ?? []).toHaveLength(1);
   });
 
   it("фото: одна галочка про людей и лиц вместо плашки, без неё файлы не выбрать; загрузка — после сжатия, с подтверждением", async () => {
@@ -1141,7 +1372,7 @@ describe("площадка", () => {
     expect(container.textContent).not.toContain("На фото нет людей и лиц");
     expect(container.querySelector("input, textarea, select")).toBeNull();
     expect(container.querySelector(".photo-x, button.photo-tile")).toBeNull();
-    expect(byText("button", "Предложить изменения")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 });
 

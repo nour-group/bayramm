@@ -211,6 +211,15 @@ describe("тексты уведомлений", () => {
       expect(text).toContain(part);
   });
 
+  it("вместимость в правке — одно слово на два ключа; район и адрес — словами", () => {
+    const text = opsRevisionSubmitted({
+      listing: "Test Hall",
+      vendorCode: "V101",
+      fields: ["cap_min", "cap_max", "district_code", "address_ru"],
+    });
+    expect(text).toContain("Меняет: вместимость, район, адрес (рус.).");
+  });
+
   it("дата события — ДД.ММ.ГГГГ", () => {
     expect(formatDate("2026-10-12")).toBe("12.10.2026");
     expect(formatDate("not a date")).toBe("not a date");

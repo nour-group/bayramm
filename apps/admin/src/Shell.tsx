@@ -208,7 +208,7 @@ function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, s
       content = <ClientPage key={view.id} id={view.id} />;
       break;
     case "revision":
-      content = <RevisionPage key={view.id} id={view.id} />;
+      content = <RevisionPage key={view.id} id={view.id} dictionaries={dictionaries} />;
       break;
     case "notifications":
       content = <NotificationsPage />;

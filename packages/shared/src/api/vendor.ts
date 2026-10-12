@@ -24,6 +24,7 @@ import type {
   RequestStatus,
 } from "./client";
 import type { ListingService } from "./services";
+import type { RevisionField } from "./staff";
 
 export * from "./services";
 export type {
@@ -464,6 +465,8 @@ export interface VendorContactsSave {
  */
 export interface VendorListing {
   readonly id: string;
+  /** Версия карточки: PATCH /vendor/listings/:id сохраняет, только если её с тех пор не меняли */
+  readonly version: number;
   readonly slug: string;
   readonly name: string;
   readonly status: ListingStatus;
@@ -530,7 +533,10 @@ export type RevisionStatus = "pending" | "approved" | "declined" | "withdrawn";
  * Правка карточки от партнёра (app.listing_revisions.payload): только эти ключи, как
  * столбцы базы; нет ключа — поле не меняется. Цен в правке нет — они в услугах.
  *   · attributes — изменённые поля витрины: { ключ: значение | null } (null — убрать);
- *   · video_links — ссылки на видео целиком (YouTube, Instagram; не больше maxVideoLinks).
+ *   · video_links — ссылки на видео целиком (YouTube, Instagram; не больше maxVideoLinks);
+ *   · cap_min, cap_max — вместимость (только у категорий с guest_capacity), cap_max не меньше cap_min;
+ *   · district_code — район из справочника (только у категорий с district);
+ *   · address_ru, address_uz — адрес; пустая строка — убрать.
  */
 export interface ListingRevisionPayload {
   readonly name?: string;
@@ -538,6 +544,11 @@ export interface ListingRevisionPayload {
   readonly description_uz?: string;
   readonly attributes?: Readonly<Record<string, AttributeValue | null>>;
   readonly video_links?: readonly string[];
+  readonly cap_min?: number;
+  readonly cap_max?: number;
+  readonly district_code?: string;
+  readonly address_ru?: string;
+  readonly address_uz?: string;
 }
 
 /** Ключи правки в порядке показа */
@@ -547,6 +558,11 @@ export const REVISION_KEYS = [
   "description_uz",
   "attributes",
   "video_links",
+  "cap_min",
+  "cap_max",
+  "district_code",
+  "address_ru",
+  "address_uz",
 ] as const satisfies readonly (keyof ListingRevisionPayload)[];
 
 /** Предложение правки глазами партнёра */
@@ -579,6 +595,47 @@ export interface VendorRevision {
  */
 export interface VendorRevisionList {
   readonly items: readonly VendorRevision[];
+}
+
+/**
+ * PATCH /vendor/listings/:id VendorListingPatch → 200 VendorListingSaved. Одно правило: пока
+ * витрины нет на сайте (lead, draft, rejected) — всё сохраняется сразу; на проверке, в
+ * каталоге и приостановленная (review, active, suspended) — изменённые поля уходят
+ * предложением (то же, что POST …/revisions), клиенты видят прежнее до решения команды;
+ * sentForModeration — какие поля ушли предложением (пусто — всё сохранено). Только владелец
+ * кабинета (403 vendor_owner_required). version — из VendorListing: карточку с тех пор
+ * меняли — 409 version_conflict (перечитать). Ничего не изменилось — 422 no_changes;
+ * неверные поля — 422 invalid_input (details: name, descriptionRu, districtCode, addressRu,
+ * capMin, capMax, attributes.<поле>…, videoLinks.<номер>); поле, которого у категории нет
+ * (вместимость без guest_capacity, район без district), и неизвестные ключи — тоже.
+ * Открытое предложение уже есть — 409 revision_pending. Адрес страницы, категорию и цену партнёр
+ * не меняет (цена — в услугах).
+ */
+export interface VendorListingPatch {
+  readonly version: number;
+  readonly name?: string;
+  /** Пустая строка — убрать (у витрины на сайте нельзя: она без описания не готова) */
+  readonly descriptionRu?: string;
+  readonly descriptionUz?: string;
+  readonly districtCode?: string;
+  /** Пустая строка — убрать */
+  readonly addressRu?: string;
+  readonly addressUz?: string;
+  /** Гостей от (1–5000) */
+  readonly capMin?: number;
+  /** Гостей до (1–5000), не меньше capMin */
+  readonly capMax?: number;
+  /** Изменённые поля витрины: { ключ: значение | null } */
+  readonly attributes?: Readonly<Record<string, AttributeValue | null>>;
+  /** Ссылки на видео целиком */
+  readonly videoLinks?: readonly string[];
+}
+
+export interface VendorListingSaved {
+  /** Витрина как GET /vendor/listings/:id после сохранения */
+  readonly listing: VendorListing;
+  /** Какие поля ушли предложением на проверку (RevisionField панели); пусто — всё сохранено */
+  readonly sentForModeration: readonly RevisionField[];
 }
 
 /** Длина описания на одном языке */

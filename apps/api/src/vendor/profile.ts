@@ -259,6 +259,7 @@ export async function readListing(
 
   return {
     id: listing.id,
+    version: listing.version,
     slug: listing.slug,
     name: listing.name,
     status: listing.status,

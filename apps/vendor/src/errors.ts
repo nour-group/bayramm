@@ -42,6 +42,7 @@ export const API_ERROR_CODES = [
   "contacts_require_review",
   "contact_change_not_pending",
   "contacts_not_live",
+  "version_conflict",
 ] as const;
 
 /** Текст ошибки действия: нет связи, код API или общий «не удалось» */

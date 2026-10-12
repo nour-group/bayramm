@@ -2410,9 +2410,55 @@ body {
   flex: none;
 }
 
-/* Цена «от» — с кнопкой к услугам под пояснением */
-.fact-link {
-  margin-top: 8px;
+/* Цена «от»: значение и кнопка к услугам справа от подписи; не помещаются — друг под другом */
+.detail-rows .price-row dd {
+  flex: 1 1 0;
+  min-width: 12ch;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-5) var(--gap-9);
+  text-align: right;
+}
+
+/* ── витрина: карточки-группы и окна «Изменить» ───────────────────────────── */
+
+/* Заголовок карточки: название, метка «на проверке», «Изменить» справа (узко — на новой строке) */
+.group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5) var(--gap-9);
+}
+
+.group-head .panel-title {
+  margin-right: auto;
+}
+
+.group-edit {
+  flex: none;
+}
+
+/* Значение строки карточки — не жирным: описание длинное */
+.detail-rows .description-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  font-weight: 400;
+}
+
+.proposed-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+/* Гостей «от» и «до»: рядом, когда окно шире; на узком телефоне — друг под другом */
+.cap-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--gap-9);
 }
 
 /* Число рядом с заголовком: «Услуги витрины 3» */
@@ -2838,9 +2884,9 @@ body {
     min-height: 56px;
   }
 
-  /* Кнопка начала правок — по содержимому, а не на всю ширину раздела */
-  .proposal-start {
-    align-self: flex-start;
+  /* Окно «Изменить» шире обычного диалога: два описания, адреса, поля витрины */
+  .ui-dialog.sheet-wide {
+    width: 620px;
   }
 
   /* Поля витрины в правке — парами (число, список, да/нет); списки, группы и тексты — во всю

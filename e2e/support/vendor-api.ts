@@ -1,3 +1,4 @@
+import type { Dictionaries } from "@bayramm/shared/api";
 import type {
   BusyDay,
   BusyPart,
@@ -14,6 +15,7 @@ import type {
   VendorContactsInput,
   VendorListing,
   VendorListingRef,
+  VendorListingSaved,
   VendorMe,
   VendorPhoto,
   VendorPhotoList,
@@ -29,9 +31,13 @@ import {
   categoryConfig,
   categoryTexts,
   DAY_PARTS,
+  mergeAttributes,
+  missingAttributes,
   type ServiceValues,
   serviceType,
+  validateAttributePatch,
   validateServiceInput,
+  validateVideoLinks,
 } from "@bayramm/shared/categories";
 import type { Page, Route } from "@playwright/test";
 import { APPS, accountMe, BOT, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
@@ -64,7 +70,14 @@ import { APPS, accountMe, BOT, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from 
    Фото: порядок и обложка (PUT …/photos/order, POST …/photos/:id/cover) — только одобренные, сразу;
    отзыв витрины с проверки (POST …/withdraw: review → draft); контакты (PUT …/contacts): витрина
    вне сайта — сохраняются сразу, на проверке и на сайте — запросом (listing.contactChange — «на
-   проверке»), отзыв — POST …/contact-change/withdraw. Всё — только владельцу (member — 403). */
+   проверке»), отзыв — POST …/contact-change/withdraw. Всё — только владельцу (member — 403).
+
+   Изменения витрины — PATCH /vendor/listings/:id, как vendor/listing.ts: пока витрины нет на
+   сайте (черновик) — сохраняется сразу, версия растёт; на проверке, на сайте, приостановлена —
+   предложением (одно открытое: 409 revision_pending). Версия устарела — 409 version_conflict;
+   поля проверяются по категории (вместимость — только guest_capacity, район — district, «до» не
+   меньше «от»); ничего не изменилось — 422 no_changes. Черновик зала без вместимости и района —
+   hallDraft: true. Справочник районов — GET /dictionaries. */
 
 export const NOW = new Date("2026-10-01T07:00:00Z");
 const HOUR = 3_600_000;
@@ -136,6 +149,8 @@ export interface VendorApi {
   readonly photoWrites: string[];
   /** Контакты: тела PUT …/contacts как пришли, и «withdraw» — отзывы запроса */
   readonly contactWrites: (VendorContactsInput | "withdraw")[];
+  /** Изменения витрин: PATCH /vendor/listings/:id — какая витрина и тело, как пришло */
+  readonly saves: { readonly listingId: string; readonly body: Record<string, unknown> }[];
 }
 
 export interface FakeCalendar {
@@ -254,6 +269,7 @@ const svc = (
 
 const LISTING: VendorListing = {
   id: LISTING_ID,
+  version: 3,
   slug: "lola-zali",
   name: "Lola zali",
   status: "active",
@@ -283,6 +299,31 @@ const LISTING: VendorListing = {
   videoLinks: [],
   parallelCapacity: 1,
   services: [],
+};
+
+/** Зал-черновик (hallDraft): вместимость, район и адрес ещё не заполнены — партнёр делает их сам */
+const HALL_DRAFT: VendorListing = {
+  ...LISTING,
+  status: "draft",
+  districtCode: null,
+  address: { ru: "", uz: "" },
+  capMin: null,
+  capMax: null,
+  blockers: ["capacity", "district", "contract"],
+  reviewBlockers: ["capacity", "district"],
+};
+
+/** Справочник районов: GET /dictionaries (открытый адрес API) */
+export const DICTIONARIES: Dictionaries = {
+  categories: [],
+  cities: [{ code: "tashkent", name: { ru: "Ташкент", uz: "Toshkent" } }],
+  districts: [
+    { code: "yunusobod", name: { ru: "Юнусабад", uz: "Yunusobod" }, city: "tashkent" },
+    { code: "chilonzor", name: { ru: "Чиланзар", uz: "Chilonzor" }, city: "tashkent" },
+    { code: "sergeli", name: { ru: "Сергели", uz: "Sergeli" }, city: "tashkent" },
+    { code: "mirobod", name: { ru: "Мирабад", uz: "Mirobod" }, city: "tashkent" },
+  ],
+  occasions: [],
 };
 
 /** Услуги зала: банкеты будни и выходные — на витрине */
@@ -455,6 +496,8 @@ export interface VendorApiOptions {
   readonly staffReply?: boolean;
   /** С listings: "many" — «Kadr Studio» (черновик) готова к отправке на проверку */
   readonly readyDraft?: boolean;
+  /** Зал — черновик без вместимости, района и адреса (их партнёр заполняет сам, сохраняется сразу) */
+  readonly hallDraft?: boolean;
 }
 
 /** Значения услуги из формы (validateServiceInput) → поля услуги, как их вернул бы API */
@@ -515,6 +558,7 @@ export async function mockVendorApi(
     declined = false,
     staffReply = false,
     readyDraft = false,
+    hallDraft = false,
   }: VendorApiOptions = {},
 ): Promise<VendorApi> {
   const many = listingMode === "many";
@@ -547,8 +591,9 @@ export async function mockVendorApi(
     withdraws: [],
     photoWrites: [],
     contactWrites: [],
+    saves: [],
   };
-  const cards = new Map<string, VendorListing>([[LISTING_ID, LISTING]]);
+  const cards = new Map<string, VendorListing>([[LISTING_ID, hallDraft ? HALL_DRAFT : LISTING]]);
   const photosOf = new Map<string, VendorPhoto[]>([[LISTING_ID, state.photos]]);
   if (many) {
     const others: readonly (readonly [VendorListing, readonly ListingService[]])[] = [
@@ -738,6 +783,159 @@ export async function mockVendorApi(
     };
   };
 
+  const BODY_KEYS = [
+    "version",
+    "name",
+    "descriptionRu",
+    "descriptionUz",
+    "districtCode",
+    "addressRu",
+    "addressUz",
+    "capMin",
+    "capMax",
+    "attributes",
+    "videoLinks",
+  ];
+  type SaveResult = { ok: VendorListingSaved } | { error: [number, string, (readonly string[])?] };
+  /** PATCH /vendor/listings/:id в памяти: те же правила, что у vendor/listing.ts */
+  const saveListing = (current: VendorListing, body: Record<string, unknown>): SaveResult => {
+    const bad = Object.keys(body).filter((k) => !BODY_KEYS.includes(k));
+    const category = categoryConfig(current.categoryCode);
+    const fields = category?.listingFields ?? [];
+    const whole = (v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 5000;
+    const text = (v: unknown, max: number) => typeof v === "string" && v.trim().length <= max;
+    if (typeof body.version !== "number") bad.push("version");
+    if (body.name !== undefined && !(text(body.name, 80) && String(body.name).trim().length >= 2))
+      bad.push("name");
+    for (const key of ["descriptionRu", "descriptionUz"])
+      if (body[key] !== undefined && !text(body[key], 4000)) bad.push(key);
+    for (const key of ["addressRu", "addressUz"])
+      if (body[key] !== undefined && !text(body[key], 300)) bad.push(key);
+    for (const key of ["capMin", "capMax"])
+      if (body[key] !== undefined && (!whole(body[key]) || !fields.includes("guest_capacity"))) bad.push(key);
+    const min = (body.capMin ?? current.capMin) as number | null;
+    const max = (body.capMax ?? current.capMax) as number | null;
+    if (!bad.includes("capMax") && typeof min === "number" && typeof max === "number" && max < min)
+      bad.push("capMax");
+    if (
+      body.districtCode !== undefined &&
+      (!fields.includes("district") || !DICTIONARIES.districts.some((d) => d.code === body.districtCode))
+    )
+      bad.push("districtCode");
+    let attributes: Record<string, unknown> | undefined;
+    if (body.attributes !== undefined && category) {
+      const result = validateAttributePatch(category, body.attributes);
+      if (result.ok) attributes = result.value;
+      else bad.push(...result.errors);
+    }
+    let videoLinks: readonly string[] | undefined;
+    if (body.videoLinks !== undefined && category) {
+      const result = validateVideoLinks(category, body.videoLinks);
+      if (result.ok) videoLinks = result.value;
+      else bad.push(...result.errors);
+    }
+    if (bad.length > 0) return { error: [422, "invalid_input", bad] };
+    if (body.version !== current.version) return { error: [409, "version_conflict"] };
+
+    // Только изменённое — как changedOnly у API
+    const moderated = ["review", "active", "suspended"].includes(current.status);
+    const changes: Record<string, unknown> = {};
+    const setText = (key: string, was: string, now: unknown) => {
+      if (typeof now === "string" && now.trim() !== was.trim()) changes[key] = now.trim();
+    };
+    setText("name", current.name, body.name);
+    setText("description_ru", current.description.ru, body.descriptionRu);
+    setText("description_uz", current.description.uz, body.descriptionUz);
+    setText("address_ru", current.address.ru, body.addressRu);
+    setText("address_uz", current.address.uz, body.addressUz);
+    if (typeof body.districtCode === "string" && body.districtCode !== current.districtCode)
+      changes.district_code = body.districtCode;
+    if (typeof body.capMin === "number" && body.capMin !== current.capMin) changes.cap_min = body.capMin;
+    if (typeof body.capMax === "number" && body.capMax !== current.capMax) changes.cap_max = body.capMax;
+    if (attributes) {
+      const changed = Object.entries(attributes).filter(
+        ([k, v]) =>
+          JSON.stringify(v) !== JSON.stringify((current.attributes as Record<string, unknown>)[k] ?? null),
+      );
+      if (changed.length > 0) changes.attributes = Object.fromEntries(changed);
+    }
+    if (videoLinks && JSON.stringify(videoLinks) !== JSON.stringify(current.videoLinks))
+      changes.video_links = videoLinks;
+    if (Object.keys(changes).length === 0) return { error: [422, "no_changes"] };
+
+    if (moderated) {
+      const revisions = state.revisionsOf.get(current.id) ?? [];
+      if (revisions.some((r) => r.status === "pending")) return { error: [409, "revision_pending"] };
+      revisions.unshift({
+        id: `00000000-0000-4000-8700-0000000000${String(revisions.length + 1).padStart(2, "0")}`,
+        status: "pending",
+        submittedAt: NOW.toISOString(),
+        decidedAt: null,
+        decisionReason: null,
+        payload: changes as ListingRevisionPayload,
+        byTeam: false,
+      });
+      state.revisionsOf.set(current.id, revisions);
+      const keys = Object.keys(changes);
+      const names: [string, string][] = [
+        ["name", "name"],
+        ["description_ru", "descriptionRu"],
+        ["description_uz", "descriptionUz"],
+        ["attributes", "attributes"],
+        ["video_links", "videoLinks"],
+        ["cap_min", "capacity"],
+        ["cap_max", "capacity"],
+        ["district_code", "districtCode"],
+        ["address_ru", "addressRu"],
+        ["address_uz", "addressUz"],
+      ];
+      const sent = [...new Set(names.filter(([k]) => keys.includes(k)).map(([, f]) => f))];
+      return {
+        ok: {
+          listing: listingView(current.id) as VendorListing,
+          sentForModeration: sent as VendorListingSaved["sentForModeration"],
+        },
+      };
+    }
+
+    const next: VendorListing = {
+      ...current,
+      version: current.version + 1,
+      name: (changes.name as string | undefined) ?? current.name,
+      description: {
+        ru: (changes.description_ru as string | undefined) ?? current.description.ru,
+        uz: (changes.description_uz as string | undefined) ?? current.description.uz,
+      },
+      address: {
+        ru: (changes.address_ru as string | undefined) ?? current.address.ru,
+        uz: (changes.address_uz as string | undefined) ?? current.address.uz,
+      },
+      districtCode: (changes.district_code as string | undefined) ?? current.districtCode,
+      capMin: (changes.cap_min as number | undefined) ?? current.capMin,
+      capMax: (changes.cap_max as number | undefined) ?? current.capMax,
+      attributes: attributes
+        ? (mergeAttributes(current.attributes as never, attributes as never) as VendorListing["attributes"])
+        : current.attributes,
+      videoLinks: videoLinks ?? current.videoLinks,
+    };
+    // Готовность пересчитывает база: заполненное из чек-листа уходит
+    const done = (code: string) =>
+      (code === "capacity" && next.capMax !== null) ||
+      (code === "district" && next.districtCode !== null) ||
+      (code === "descriptions" && next.description.ru.trim() !== "" && next.description.uz.trim() !== "") ||
+      (code === "attributes" &&
+        category !== undefined &&
+        missingAttributes(category, next.attributes).length === 0);
+    const ready: VendorListing = {
+      ...next,
+      blockers: next.blockers.filter((c) => !done(c)),
+      reviewBlockers: next.reviewBlockers.filter((c) => !done(c)),
+      missingAttributes: category ? missingAttributes(category, next.attributes) : [],
+    };
+    cards.set(current.id, ready);
+    return { ok: { listing: listingView(current.id) as VendorListing, sentForModeration: [] } };
+  };
+
   // Только /api/* своего origin: исходники в разработке тоже бывают по путям с «/api/»
   await page.route(match, async (route) => {
     const request = route.request();
@@ -747,6 +945,7 @@ export async function mockVendorApi(
     const key = `${method} ${path}`;
 
     if (key === "GET /telegram/bot") return json(route, 200, { username: BOT, miniAppUrl: APPS.web });
+    if (key === "GET /dictionaries") return json(route, 200, DICTIONARIES);
     if (key === "GET /auth/methods") return json(route, 200, METHODS);
     if (key === "POST /auth/hub/exchange") {
       const ok = hub?.exchange(url.origin, "vendor", request.postDataJSON()) ?? false;
@@ -841,6 +1040,19 @@ export async function mockVendorApi(
     const card = listingMatch ? cards.get(listingId) : undefined;
     if (listingMatch && !card) return fail(route, 404, "not_found");
     if (card && rest === "" && method === "GET") return json(route, 200, listingView(listingId));
+
+    // Изменения витрины — как API (vendor/listing.ts): сразу или предложением
+    if (card && rest === "" && method === "PATCH") {
+      if (role !== "owner") {
+        state.ownerOnly.push(key);
+        return fail(route, 403, "vendor_owner_required");
+      }
+      const body = request.postDataJSON() as Record<string, unknown>;
+      state.saves.push({ listingId, body });
+      const saved = saveListing(card, body);
+      if ("error" in saved) return fail(route, saved.error[0], saved.error[1], saved.error[2]);
+      return json(route, 200, saved.ok);
+    }
 
     // На проверку — как API (vendor/submit.ts): владелец, черновик или отклонённая, всё готово
     if (card && rest === "/submit" && method === "POST") {
