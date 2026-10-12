@@ -101,7 +101,8 @@ end`;
 // Без ответа — наверху, ближайший срок первым; остальные — свежие сверху
 const awaitingFirst = sql<number>`case when r.first_response_at is null and r.status in ('new', 'viewed') then 0 else 1 end`;
 
-const selectRequests = (trx: Tx) =>
+/** Поля заявки без имени из заявки: имя тянет таблицу контактов, список берёт его только для своей страницы */
+const requestFields = (trx: Tx) =>
   trx
     .selectFrom("app.requests as r")
     .innerJoin("app.listings as l", "l.id", "r.listing_id")
@@ -125,16 +126,34 @@ const selectRequests = (trx: Tx) =>
       "v.public_code",
       "v.name as vendor_name",
       slaState.as("sla"),
-      // Чья заявка: имя из неё (в списке нужно, чтобы узнать клиента); телефон не читается
-      requestContactName("r.id").as("contact_name"),
       // Одно напоминание — одно событие, даже если получателей несколько
       sql<number>`(select count(distinct (o.kind, o.created_at))::int from app.outbox o
                    where o.request_id = r.id and o.kind in (${sql.join(REMINDER_KINDS)}))`.as("reminders"),
     ]);
 
+// Чья заявка: имя из неё (в списке нужно, чтобы узнать клиента); телефон не читается
+const selectRequests = (trx: Tx) => requestFields(trx).select(requestContactName("r.id").as("contact_name"));
+
 type RequestRow = Awaited<ReturnType<ReturnType<typeof selectRequests>["executeTakeFirstOrThrow"]>>;
 
-function itemView(row: RequestRow) {
+/**
+ * Имена из заявок — только для своей страницы. В запросе страницы подзапрос имени выполнялся бы
+ * для каждой заявки таблицы ещё до сортировки (75 тысяч раз), а не для пятидесяти
+ */
+async function contactNamesOf(
+  trx: Tx,
+  ids: readonly string[],
+): Promise<Map<string, RequestRow["contact_name"]>> {
+  if (ids.length === 0) return new Map();
+  const rows = await trx
+    .selectFrom("app.requests as r")
+    .select(["r.id", requestContactName("r.id").as("contact_name")])
+    .where("r.id", "in", [...ids])
+    .execute();
+  return new Map(rows.map((row) => [row.id, row.contact_name]));
+}
+
+function itemView(row: Omit<RequestRow, "contact_name"> & { contact_name: RequestRow["contact_name"] }) {
   return {
     id: row.id,
     publicNo: num(row.public_no),
@@ -183,7 +202,7 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
       );
     }
     const where = allOf(conditions);
-    const rows = await selectRequests(trx)
+    const page = await requestFields(trx)
       .where(where)
       .orderBy(awaitingFirst)
       .orderBy(
@@ -193,6 +212,11 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
       .limit(limit)
       .offset(offset)
       .execute();
+    const names = await contactNamesOf(
+      trx,
+      page.map((row) => row.id),
+    );
+    const rows = page.map((row) => ({ ...row, contact_name: names.get(row.id) ?? null }));
     // Без count(*) over (): оно проходит все строки выборки (page-total.ts)
     const total = await pageTotal(rows.length, limit, offset, async () => {
       // Витрина и вендор заявки есть всегда (внешние ключи) — соединять их ради числа нужно,
