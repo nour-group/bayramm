@@ -19,6 +19,8 @@ async function start(page: Page, options: Parameters<typeof mockStaffApi>[1] = {
 }
 
 const block = (page: Page) => page.getByRole("region", { name: t.contactChange.title });
+// Подтверждение — форма: на телефоне в шторке, на компьютере под кнопками (PhoneSheet)
+const confirmForm = (page: Page) => page.locator("form.confirm");
 const PROPOSED = "+998 90 999 88 77";
 
 test.describe("смена контактов витрины", () => {
@@ -50,7 +52,7 @@ test.describe("смена контактов витрины", () => {
     await expectHitAreas(page, "контакты: показаны", CONTROLS);
 
     await region.getByRole("button", { name: t.contactChange.approve }).click();
-    const sheet = page.getByRole("dialog", { name: t.contactChange.approve });
+    const sheet = confirmForm(page);
     await expect(sheet).toContainText(t.contactChange.approveHint);
     await expectNoAxeViolations(page, "контакты: одобрить");
     await sheet.getByRole("button", { name: t.contactChange.approve }).click();
@@ -68,7 +70,7 @@ test.describe("смена контактов витрины", () => {
     const region = block(page);
     await region.getByRole("button", { name: t.show }).click();
     await region.getByRole("button", { name: t.contactChange.decline }).click();
-    const sheet = page.getByRole("dialog", { name: t.contactChange.decline });
+    const sheet = confirmForm(page);
     await expect(sheet).toContainText(t.contactChange.declineHint);
     // Без причины отклонить нельзя
     const submit = sheet.getByRole("button", { name: t.contactChange.decline });
