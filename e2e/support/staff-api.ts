@@ -15,6 +15,7 @@ import type {
   ListingSaveResult,
   MetricsOverview,
   OutboxHealth,
+  PendingPhoto,
   PiiAccessList,
   PublishBlocker,
   RevealedListingContacts,
@@ -36,6 +37,7 @@ import type {
   VendorResponseStats,
   VendorUser,
 } from "@bayramm/shared/api/staff";
+import { PENDING_PHOTOS_CAP } from "@bayramm/shared/api/staff";
 import { categoryConfig } from "@bayramm/shared/categories";
 import type { Page, Route } from "@playwright/test";
 import { accountMe, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
@@ -303,6 +305,15 @@ const PHOTO_QUEUE_ITEM: ListingListItem = {
   vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
   photos: { ready: 7, approved: 5, pending: 2 },
 };
+
+/** Ждущее решения фото этой карточки: плитка в очереди «Новые фото» (n — с единицы) */
+export const photoQueueId = (n: number) => `00000000-0000-4000-8500-${String(n).padStart(12, "0")}`;
+const photoQueuePhoto = (n: number): PendingPhoto => ({
+  id: photoQueueId(n),
+  key: `listings/${PHOTO_QUEUE_LISTING_ID}/${photoQueueId(n)}.webp`,
+  width: 1600,
+  height: 1200,
+});
 
 /** PATCH карточки: поля, которые заглушка переносит в карточку */
 const EDITABLE = [
@@ -802,6 +813,8 @@ export interface StaffApiOptions {
   readonly botLinked?: boolean;
   /** Ещё столько заявок в списке: проверка страниц и «Показать ещё» */
   readonly manyRequests?: number;
+  /** Сколько фото ждёт решения в очереди «Новые фото» (по умолчанию 2; 0 — очереди нет) */
+  readonly photoQueue?: number;
 }
 
 export async function mockStaffApi(
@@ -818,9 +831,12 @@ export async function mockStaffApi(
     draftService = false,
     botLinked = true,
     manyRequests = 0,
+    photoQueue = 2,
   }: StaffApiOptions = {},
 ) {
   let elevated = 0;
+  // Фото очереди «Новые фото»: решённое уходит из неё, пока тест её не перечитал
+  const queuePhotos: PendingPhoto[] = Array.from({ length: photoQueue }, (_, i) => photoQueuePhoto(i + 1));
   const state: StaffApi = {
     unexpected: [],
     created: [],
@@ -1117,9 +1133,20 @@ export async function mockStaffApi(
     if (key === "GET /staff/listings") {
       // Очередь «Новые фото» — опубликованные карточки с фото на решении; остальное пусто
       const photos = url.searchParams.get("photos") === "pending";
+      // Карточка очереди несёт сами фото (pendingPhotos) — как GET /staff/listings?photos=pending
+      const queued: ListingListItem[] =
+        photos && queuePhotos.length > 0
+          ? [
+              {
+                ...PHOTO_QUEUE_ITEM,
+                photos: { ready: 5 + queuePhotos.length, approved: 5, pending: queuePhotos.length },
+                pendingPhotos: queuePhotos.slice(0, PENDING_PHOTOS_CAP),
+              },
+            ]
+          : [];
       const list: ListingList = {
-        total: photos ? 1 : 0,
-        items: photos ? [PHOTO_QUEUE_ITEM] : [],
+        total: queued.length,
+        items: queued,
         counts: { lead: 0, draft: listings.length, review: 0, active: 1, suspended: 0, rejected: 0 },
       };
       return json(route, 200, list);
@@ -1168,6 +1195,20 @@ export async function mockStaffApi(
     }
     // Решение по фото: отказ — только с причиной (1–500 знаков), как на сервере; ответ — фото витрины
     const photoMatch = /^\/staff\/listings\/([0-9a-f-]{36})\/photos\/([0-9a-f-]{36})\/moderation$/.exec(path);
+    if (photoMatch?.[1] === PHOTO_QUEUE_LISTING_ID && photoMatch[2] && method === "POST") {
+      // Фото очереди «Новые фото»: у карточки очереди нет полной витрины — решение просто снимает его
+      const index = queuePhotos.findIndex((p) => p.id === photoMatch[2]);
+      if (index < 0) return fail(route, 404, "not_found");
+      const body = request.postDataJSON() as { decision?: unknown; reason?: unknown };
+      state.photoDecisions.push({ listingId: PHOTO_QUEUE_LISTING_ID, photoId: photoMatch[2], body });
+      if (body.decision !== "approved" && body.decision !== "declined")
+        return fail(route, 422, "invalid_input", ["decision"]);
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (body.decision === "declined" && (reason === "" || reason.length > 500))
+        return fail(route, 422, "invalid_input", ["reason"]);
+      queuePhotos.splice(index, 1);
+      return json(route, 200, []);
+    }
     if (photoMatch?.[1] && photoMatch[2] && method === "POST") {
       const owner = listings.find((l) => l.id === photoMatch[1]);
       const current = owner?.photos.find((p) => p.id === photoMatch[2]);

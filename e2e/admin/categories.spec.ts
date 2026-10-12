@@ -263,7 +263,7 @@ test("модерация услуг: правка — сейчас → пред�
   page,
 }) => {
   const api = await start(page);
-  await page.goto("/moderation");
+  await page.goto("/moderation?queue=services");
   const queue = page.getByRole("region", { name: t.serviceQueue });
   const proposal = queue.getByRole("listitem").filter({ hasText: "Машина для молодожёнов" });
   await expect(proposal).toContainText(t.serviceQueueKinds.proposal ?? "");
@@ -287,7 +287,12 @@ test("модерация услуг: правка — сейчас → пред�
   const reasonForm = page.locator("form.confirm");
   await reasonForm.getByLabel(t.reason).fill("Нужно фото лимузина");
   await reasonForm.getByRole("button", { name: t.serviceDecline }).click();
-  await expect(queue.getByText(t.serviceQueueEmpty)).toBeVisible();
+  // Очередь опустела: из сегментов она пропала, открыта следующая непустая, фокус — на сегментах
+  await expect(page.getByRole("region", { name: t.serviceQueue })).toHaveCount(0);
+  await expect(page.locator(".queue-tabs .ui-radio").filter({ hasText: t.queueTabs.services })).toHaveCount(
+    0,
+  );
+  await expect(page.locator(".queue-tabs input:checked")).toBeFocused();
   expect(api.services.find((c) => c.key === `POST /staff/services/${LIMOUSINE_ID}/decline`)?.body).toEqual({
     reason: "Нужно фото лимузина",
   });
@@ -298,7 +303,7 @@ test("услуга партнёра у черновика — в очереди 
   page,
 }) => {
   const api = await start(page, { seeded: true, draftService: true });
-  await page.goto("/moderation");
+  await page.goto("/moderation?queue=services");
   const queue = page.getByRole("region", { name: t.serviceQueue });
   const bento = queue.getByRole("listitem").filter({ hasText: "Shirin" });
   // Партнёр видит «на проверке» и у черновика: модератору видно, что витрины ещё нет на сайте

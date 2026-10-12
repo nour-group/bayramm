@@ -199,7 +199,7 @@ export const t = {
 
   // статусы витрины
   status: {
-    lead: "Лид",
+    lead: "Не заполнен",
     draft: "Черновик",
     review: "На проверке",
     active: "Опубликована",
@@ -236,23 +236,24 @@ export const t = {
   vendorsEmpty: "Вендоров не нашлось.",
   vendorsEmptyAll: "Вендоров пока нет. Начните с «Новый вендор».",
   colVendor: "Вендор",
-  colContact: "Контакт",
   colListings: "Витрины",
-  colChecklist: "Проверка",
-  colCabinet: "Кабинет",
-  cabinetUsers: (users: number, linked: number) =>
-    users === 0 ? "нет входа" : `${linked} из ${users} в Telegram`,
+  colAttention: "Что не так",
+  // что не так у вендора: показывается только в проблемных состояниях (Vendors.tsx)
+  checksShort: (done: number) => `Проверка ${done}/4`,
+  cabinetNone: "нет входа",
+  cabinetNoNotify: "уведомления не приходят",
   noListings: "нет витрин",
 
   // вендор
   vendorCode: "Код",
-  vendorSections: {
-    business: "Бизнес",
-    businessHint: "Название для панели и реквизиты. Скан документов не храним — только отметку о проверке.",
-    contact: "Контакт",
-    contactHint:
-      "Контактное лицо вендора. Телефоны видны только по кнопке «Показать» — просмотр пишется в журнал.",
-  },
+  // Страница вендора: «Контакт» — кто и как с ним связаться; «Реквизиты» — свёрнуты, правка на месте
+  contactTitle: "Контакт",
+  contactNone: "Контактное лицо не указано",
+  requisites: "Реквизиты",
+  requisitesEmpty: "Не заполнены",
+  requisitesStir: (stir: string) => `СТИР ${stir}`,
+  requisitesContract: (no: string) => `договор № ${no}`,
+  phonesShow: "Показать телефоны",
   fields: {
     name: "Название",
     legalForm: "Форма",
@@ -290,11 +291,9 @@ export const t = {
     published:
       "Удалить нельзя, пока витрины вендора на проверке или в каталоге: сначала верните их в черновик или приостановите.",
   } as Record<string, string>,
-  vendorReadOnly: "Только просмотр: данные вендора меняют менеджер и администратор.",
   noManager: "Не назначен",
 
   checklist: "Проверка вендора",
-  checklistHint: "Все четыре отметки нужны для публикации. Каждая отметка — в журнале действий.",
   checklistItems: {
     contract: "Договор подписан",
     stir: "СТИР сверен с реестром",
@@ -302,13 +301,10 @@ export const t = {
     pdConsent: "Согласие на обработку ПДн подписано",
   },
   checkedBy: (by: string | null, at: string) => (by ? `${by}, ${at}` : at),
-  phones: "Телефоны контакта",
   phoneMain: "Основной",
   phoneAlternative: "Второй",
 
   users: "Вход в кабинет",
-  usersHint:
-    "Пригласите партнёра по номеру телефона — он войдёт сам: в боте Bayramm поделится контактом с этого номера или на сайте введёт код. Номер уже подтверждён в аккаунте Bayramm — доступ откроется сразу.",
   usersEmpty: "Пока никого нет — пригласите владельца кабинета.",
   userPhone: "Телефон для входа",
   userName: "Имя",
@@ -317,6 +313,7 @@ export const t = {
   enable: "Включить",
   // пользователи кабинета: приглашение, статус и действия (pages/VendorUsers.tsx)
   vuInviteTitle: "Пригласить в кабинет",
+  vuInviteOpen: "+ Пригласить",
   vuRole: "Роль",
   vuRoles: { owner: "Владелец", member: "Сотрудник площадки" },
   vuRoleHints: {
@@ -327,13 +324,11 @@ export const t = {
   vuOwnerFirst: "Сначала пригласите владельца: сотрудник площадки работает в кабинете вместе с ним.",
   vuLocale: "Язык уведомлений",
   vuLocales: { ru: "Русский", uz: "Oʻzbekcha" },
-  vuLocaleHint: "На этом языке бот пишет партнёру; на нём же — текст приглашения",
   vuInvite: "Пригласить",
   vuInvited: "Приглашение создано — отправьте партнёру текст приглашения.",
   vuInvitedAccepted: "Номер уже подтверждён в аккаунте Bayramm — доступ открыт сразу.",
   vuStatus: { pending: "Ждёт входа", accepted: "Вошёл", disabled: "Отключён" },
   vuNoName: "Имя не указано",
-  vuNotifiable: "Telegram: уведомления приходят",
   vuNotNotifiable: "Telegram: уведомления не приходят",
   vuOpenBot: "пусть партнёр откроет бота Bayramm",
   vuLastLogin: (at: string) => `Последний вход: ${at}`,
@@ -525,14 +520,18 @@ export const t = {
   weekdays: ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
 
   // модерация
-  moderationEmpty: "Витрин на проверке нет.",
+  moderationAllDone: "Всё разобрано",
+  // Сегменты очередей: коротко, число — рядом (пустые очереди не показываются)
+  queueTabs: { review: "Витрины", revisions: "Предложения", services: "Услуги", photos: "Фото" },
+  // «Не хватает: 2» — вместо списка пунктов: что именно, видно на странице витрины
+  missingN: (n: number) => `Не хватает: ${n}`,
+  // Кто предложил — одним словом в карточке очереди (на странице предложения — полной фразой)
+  queueProposer: (kind: "partner" | "staff", name: string | null) =>
+    kind === "partner" ? "партнёр" : `сотрудник${name ? ` · ${name}` : ""}`,
   submittedAt: "Отправлена",
   photosCount: (ready: number, approved: number) => `фото: ${ready}, одобрено: ${approved}`,
   listingsInReview: "Витрины на проверке",
   revisions: "Предложения изменений",
-  revisionsHint:
-    "Название, описания, данные и видео опубликованных витрин — от партнёра из кабинета или от менеджера.",
-  revisionsEmpty: "Предложений, ждущих решения, нет.",
   revisionFields: {
     name: "Название",
     descriptionRu: "Описание (RU)",
@@ -564,10 +563,16 @@ export const t = {
     `${status}${by ? ` · ${by}` : ""} · ${at}`,
   openListing: "К витрине",
   photoQueue: "Новые фото",
-  photoQueueHint:
-    "Новые фото — от партнёра или менеджера, и у черновиков тоже. Одобрить или отклонить — на странице витрины; что не решите, одобрит публикация.",
-  photoQueueEmpty: "Новых фото, ждущих решения, нет.",
   pendingPhotos: (n: number) => `ждут решения: ${n}`,
+  // Очередь фото: решение — по плитке (✓ и ✕), «Одобрить все» — по карточке
+  photoApproveOne: (n: number, listing: string) => `Одобрить фото ${n}: ${listing}`,
+  photoDeclineOne: (n: number, listing: string) => `Отклонить фото ${n}: ${listing}`,
+  photoApproveAll: (n: number) => `Одобрить все (${n})`,
+  photoApprovedSaid: (listing: string) => `Одобрено: фото, ${listing}. Дальше — следующее.`,
+  photoApprovedAllSaid: (n: number, listing: string) =>
+    `Одобрено фото: ${n}, ${listing}. Дальше — следующее.`,
+  photoDeclinedSaid: (listing: string) => `Отклонено: фото, ${listing}. Дальше — следующее.`,
+  photosMoreOnPage: (n: number) => `Ещё ${n} — на странице витрины`,
 
   // заявки
   requestsEmpty: "Заявок нет.",
@@ -1086,11 +1091,8 @@ export const t = {
   colCategory: "Категория",
   allCategories: "Все категории",
   categoryFirst: "Категория витрины",
-  categoryFirstHint: "С ней заведётся первая витрина. Другие — потом, на странице вендора.",
   categoryRequired: "Выберите категорию",
-  vitrinasHint:
-    "Витрина — страница вендора в одной категории: свои данные, услуги, фото, занятость и заявки. Вход в кабинет, контакты и проверка — общие у вендора.",
-  addVitrina: "Добавить витрину в другой категории",
+  addVitrina: "+ Витрина",
   addVitrinaLead:
     "Новая витрина появится черновиком: дальше — данные витрины, услуги и фото на её странице. Категорию партнёр не меняет.",
   vitrinaHas: (names: string) => `Уже есть: ${names}`,
@@ -1203,9 +1205,6 @@ export const t = {
 
   // очередь услуг в модерации
   serviceQueue: "Услуги",
-  serviceQueueHint:
-    "Новые услуги и изменения услуг — от партнёра или менеджера, и у черновиков тоже: партнёр видит «на проверке». Что не решите до публикации, одобрит публикация витрины.",
-  serviceQueueEmpty: "Услуг, ждущих решения, нет.",
   serviceQueueKinds: { review: "Новая услуга", proposal: "Изменения услуги" } as Record<string, string>,
   serviceNow: "Сейчас",
   serviceProposed: "Предлагают",
@@ -1441,13 +1440,6 @@ export const t = {
   // ── фото: выбрали больше предела ──
   photosOverLimit: (uploaded: number, picked: number, max: number) =>
     `Загружено ${uploaded} из ${picked}, предел — ${max} фото на витрине. Остальные не загружены.`,
-
-  // ── новый вендор: что дальше ──
-  vendorCreated: "Вендор заведён. Что дальше:",
-  vendorNextChecklist: "Проверка вендора: договор, СТИР, звонок, согласие на ПДн",
-  vendorNextUsers: "Вход в кабинет: пригласите владельца по номеру телефона",
-  vendorNextListing: "Первая витрина: фото, услуги и данные",
-  vendorNextDone: "Понятно",
 
   // ── журнал: объект — поиском, сотрудник — и отключённые ──
   auditObjectAny: "Любой",

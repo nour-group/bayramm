@@ -8,7 +8,9 @@ import type {
   ClientList,
   ClientListItem,
   ListingList,
+  ListingListItem,
   OutboxHealth,
+  PendingPhoto,
   RevisionDetail,
   RevisionList,
   ServiceQueue,
@@ -1384,6 +1386,45 @@ describe("правки карточек", () => {
     items: [],
     counts: { lead: 0, draft: 0, review: 0, active: 0, suspended: 0, rejected: 0 },
   };
+  /** Очередь «Новые фото»: карточка с n ждущими фото — они приходят в самом списке (pendingPhotos) */
+  const PHOTO_LISTING_ID = "bbbbbbbb-0000-0000-0000-000000000002";
+  const photoId = (n: number) => `ffffffff-0000-0000-0000-${String(n).padStart(12, "0")}`;
+  const PHOTO_ITEM: ListingListItem = {
+    id: PHOTO_LISTING_ID,
+    name: "Lola zali",
+    categoryCode: "hall",
+    status: "active",
+    slug: "lola",
+    districtCode: null,
+    priceFromUzs: 150000,
+    priceUnit: "per_guest",
+    capMax: 200,
+    updatedAt: "2026-09-29T06:00:00.000Z",
+    blockers: [],
+    statusReason: null,
+    capMin: 20,
+    submittedAt: null,
+    vendor: { id: VENDOR_ID, code: "V102", name: "Lola" },
+    photos: { ready: 6, approved: 4, pending: 2 },
+  };
+  const pendingOf = (n: number): PendingPhoto[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: photoId(i + 1),
+      key: `listings/${PHOTO_LISTING_ID}/${photoId(i + 1)}.webp`,
+      width: 1600,
+      height: 1200,
+    }));
+  const photoQueue = (n: number): ListingList => ({
+    total: n === 0 ? 0 : 1,
+    items:
+      n === 0
+        ? []
+        : [{ ...PHOTO_ITEM, photos: { ready: 4 + n, approved: 4, pending: n }, pendingPhotos: pendingOf(n) }],
+    counts: EMPTY_LISTINGS.counts,
+  });
+  /** Подписи сегментов очередей: «Услуги 3» */
+  const queueTabs = () =>
+    [...container.querySelectorAll(".queue-tabs .ui-radio")].map((label) => label.textContent?.trim());
   const REVISION: RevisionDetail = {
     id: REVISION_ID,
     status: "pending",
@@ -1416,13 +1457,100 @@ describe("правки карточек", () => {
         counts: { lead: 0, draft: 0, review: 0, active: 0, suspended: 0, rejected: 0 },
       }),
       "GET /api/staff/revisions": json(list),
+      "GET /api/staff/services": json({ total: 0, items: [] } satisfies ServiceQueue),
     });
     await mount("/moderation");
     expect(container.querySelector(`a[href="/revisions/${REVISION_ID}"]`)?.textContent).toBe("Oqsaroy Hall");
     expect(text()).toContain(t.revisionStale);
-    expect(text()).toContain(t.proposedBy("partner", null));
-    // Новых фото нет — пустая очередь словами
-    expect(text()).toContain(t.photoQueueEmpty);
+    // Две строки: кто и когда прислал, кто предложил и что меняют
+    expect(container.querySelector(".rcard")?.querySelectorAll(".rcard-meta")).toHaveLength(2);
+    expect(text()).toContain(
+      `${t.queueProposer("partner", null)} · ${t.revisionFields.name}, ${t.revisionFields.videoLinks}`,
+    );
+    // Пустые очереди не показываются и ничего о себе не говорят: в сегментах — только эта
+    expect(queueTabs()).toEqual([`${t.queueTabs.revisions} 1`]);
+    expect(text()).not.toContain("нет.");
+  });
+
+  it("все очереди пусты — одна строка «Всё разобрано», без сегментов и пояснений", async () => {
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] } satisfies ServiceQueue),
+    });
+    await mount("/moderation");
+    expect(queueTabs()).toEqual([]);
+    expect(container.querySelector(".queue-empty")?.textContent).toBe(t.moderationAllDone);
+    expect(container.querySelectorAll("section.queue")).toHaveLength(0);
+  });
+
+  it("открыта первая непустая очередь; ?queue= из адреса важнее, но пустую не открывает", async () => {
+    const list: RevisionList = { total: 1, items: [REVISION] };
+    const handlers = {
+      "GET /api/staff/listings?status=review&limit=20&offset=0": json(EMPTY_LISTINGS),
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": json(photoQueue(2)),
+      "GET /api/staff/revisions": json(list),
+      "GET /api/staff/services": json({ total: 0, items: [] } satisfies ServiceQueue),
+    };
+    mockApi(staff("moderator", MODERATOR), handlers);
+    await mount("/moderation");
+    // Витрин на проверке нет — первая непустая: предложения; фото — второй сегмент
+    expect(queueTabs()).toEqual([`${t.queueTabs.revisions} 1`, `${t.queueTabs.photos} 1`]);
+    expect(radio(`${t.queueTabs.revisions} 1`)?.checked).toBe(true);
+    expect(container.querySelector("section.queue")?.getAttribute("aria-labelledby")).toBe(
+      "queue-revisions-title",
+    );
+    act(() => root.unmount());
+    container.remove();
+
+    // Ссылка из метрик на фото — открывает фото
+    mockApi(staff("moderator", MODERATOR), handlers);
+    await mount("/moderation?queue=photos");
+    expect(radio(`${t.queueTabs.photos} 1`)?.checked).toBe(true);
+    expect(container.querySelector("section.queue")?.getAttribute("aria-labelledby")).toBe(
+      "queue-photos-title",
+    );
+    act(() => root.unmount());
+    container.remove();
+
+    // Пустая очередь из адреса не открывается — первая непустая
+    mockApi(staff("moderator", MODERATOR), handlers);
+    await mount("/moderation?queue=review");
+    expect(radio(`${t.queueTabs.revisions} 1`)?.checked).toBe(true);
+    // Сегмент переключает очередь, адрес запоминает её
+    await click(radio(`${t.queueTabs.photos} 1`));
+    expect(window.location.search).toBe("?queue=photos");
+    expect(container.querySelector("section.queue")?.getAttribute("aria-labelledby")).toBe(
+      "queue-photos-title",
+    );
+  });
+
+  it("у карточки витрины на проверке — «Не хватает: N» вместо списка пунктов", async () => {
+    const review: ListingList = {
+      total: 1,
+      items: [
+        {
+          ...PHOTO_ITEM,
+          status: "review",
+          submittedAt: "2026-09-29T06:00:00.000Z",
+          blockers: ["price", "descriptions", "phone"],
+          photos: { ready: 5, approved: 5, pending: 0 },
+        },
+      ],
+      counts: EMPTY_LISTINGS.counts,
+    };
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings?status=review&limit=20&offset=0": json(review),
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": json({ ...EMPTY_LISTINGS }),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] } satisfies ServiceQueue),
+    });
+    await mount("/moderation");
+    const card = container.querySelector(".rcard") as HTMLElement;
+    expect(card.textContent).toContain(t.missingN(3));
+    // Списка пунктов нет: что именно — на странице витрины
+    expect(card.querySelector(".blockers")).toBeNull();
+    expect(card.textContent).not.toContain(t.blockers.price ?? "");
   });
 
   it("правку предложил менеджер — в очереди и в сравнении видно кто", async () => {
@@ -1430,10 +1558,11 @@ describe("правки карточек", () => {
     mockApi(staff("moderator", MODERATOR), {
       "GET /api/staff/listings": json(EMPTY_LISTINGS),
       "GET /api/staff/revisions": json({ total: 1, items: [byStaff] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] } satisfies ServiceQueue),
       [`GET /api/staff/revisions/${REVISION_ID}`]: json(byStaff),
     });
     await mount("/moderation");
-    expect(text()).toContain(t.proposedBy("staff", "Test manager"));
+    expect(text()).toContain(t.queueProposer("staff", "Test manager"));
     act(() => root.unmount());
     container.remove();
 
@@ -1476,9 +1605,8 @@ describe("правки карточек", () => {
     await mount("/moderation");
     const section = container.querySelector("section[aria-labelledby=queue-services-title]");
     expect(section?.querySelector("h2")?.textContent).toBe(`${t.serviceQueue} 140`);
-    expect([...container.querySelectorAll(".queue-jump button")].map((b) => b.textContent)).toContain(
-      `${t.serviceQueue}140`,
-    );
+    // Число — в сегменте, и оно же всего на сервере; больше ни у заголовка, ни в сводке
+    expect(queueTabs()).toEqual([`${t.queueTabs.services} 140`]);
     // Партнёр видит «на проверке» и у черновика — модератор видит, что витрины ещё нет на сайте
     expect([...(section?.querySelectorAll(".pill") ?? [])].map((p) => p.textContent)).toEqual([
       t.serviceQueueKinds.review,
@@ -1487,60 +1615,139 @@ describe("правки карточек", () => {
     expect(section?.textContent).toContain(t.serviceApprove);
   });
 
-  it("новые фото: опубликованные карточки с фото на решении — ссылка на карточку и сколько ждут", async () => {
-    const PHOTO_LISTING_ID = "bbbbbbbb-0000-0000-0000-000000000002";
-    const queue: ListingList = {
-      total: 1,
-      items: [
-        {
-          id: PHOTO_LISTING_ID,
-          name: "Lola zali",
-          categoryCode: "hall",
-          status: "active",
-          slug: "lola",
-          districtCode: null,
-          priceFromUzs: 150000,
-          priceUnit: "per_guest",
-          capMax: 200,
-          updatedAt: "2026-09-29T06:00:00.000Z",
-          blockers: [],
-          statusReason: null,
-          capMin: 20,
-          submittedAt: null,
-          vendor: { id: VENDOR_ID, code: "V102", name: "Lola" },
-          photos: { ready: 6, approved: 4, pending: 2 },
-        },
-      ],
-      counts: EMPTY_LISTINGS.counts,
-    };
+  it("новые фото: карточка витрины с плитками ждущих фото — они приходят в списке, без запроса на каждую", async () => {
     mockApi(staff("moderator", MODERATOR), {
-      // Очередь фото — свой запрос; карточки на проверке — остальные запросы списка
-      "GET /api/staff/listings?photos=pending&limit=20&offset=0": json(queue),
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": json(photoQueue(2)),
       "GET /api/staff/listings": json(EMPTY_LISTINGS),
       "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
       "GET /api/staff/services": json({ total: 0, items: [] }),
     });
     await mount("/moderation");
     expect(calls.some((c) => c.url === "/api/staff/listings?photos=pending&limit=20&offset=0")).toBe(true);
+    // Единственная непустая очередь — открыта; в сегментах — она одна, с числом карточек
+    expect(queueTabs()).toEqual([`${t.queueTabs.photos} 1`]);
     const section = container.querySelector("section[aria-labelledby=queue-photos-title]");
-    // У заголовка очереди — сколько ждёт; в сводке вверху — то же число кнопкой к очереди
     expect(section?.querySelector("h2")?.textContent).toBe(`${t.photoQueue} 1`);
-    const jump = [...container.querySelectorAll(".queue-jump button")].map((b) => b.textContent);
-    expect(jump).toEqual([
-      `${t.listingsInReview}0`,
-      `${t.revisions}0`,
-      `${t.serviceQueue}0`,
-      `${t.photoQueue}1`,
-    ]);
-    // Витрина — сразу на блоке фото (?focus=photos): решать по ним, а не листать страницу
+    // Витрина — сразу на блоке фото (?focus=photos): целиком посмотреть и решить там
     expect(section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}?focus=photos"]`)?.textContent).toBe(
       "Lola zali",
     );
-    expect(section?.textContent).toContain(t.pendingPhotos(2));
-    expect(section?.textContent).toContain("Lola · V102");
-    // Остальные очереди пусты
-    expect(text()).toContain(t.moderationEmpty);
-    expect(text()).toContain(t.revisionsEmpty);
+    expect(section?.textContent).toContain(`Lola · V102 · ${t.pendingPhotos(2)}`);
+    // Две плитки, под каждой ✓ и ✕; запросов за фото карточки по одной — нет
+    const tiles = [...(section?.querySelectorAll(".photo-tile") ?? [])];
+    expect(tiles).toHaveLength(2);
+    expect(tiles.map((tile) => tile.querySelectorAll("button").length)).toEqual([2, 2]);
+    expect(tiles[0]?.querySelector("img")?.getAttribute("src")).toContain(
+      `listings/${PHOTO_LISTING_ID}/${photoId(1)}.webp`,
+    );
+    expect(calls.filter((c) => c.url.includes("/photos"))).toEqual([]);
+    expect(section?.querySelector(".photo-approve-all")?.textContent).toContain(t.photoApproveAll(2));
+    // Очередей, где ничего нет, нет и в тексте
+    expect(text()).not.toContain("нет.");
+  });
+
+  it("новые фото: ✓ одобряет одно, очередь перечитывается тихо, фокус — на ✓ следующей плитки", async () => {
+    let queue = photoQueue(3);
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": () =>
+        new Response(JSON.stringify(queue), { status: 200, headers: { "content-type": "application/json" } }),
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] }),
+      [`POST /api/staff/listings/${PHOTO_LISTING_ID}/photos/${photoId(1)}/moderation`]: () => {
+        queue = photoQueue(2);
+        return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    await mount("/moderation");
+    const approveFirst = container.querySelector<HTMLButtonElement>(".photo-tile .photo-approve");
+    expect(approveFirst?.textContent).toBe(t.photoApproveOne(1, "Lola zali"));
+    await click(approveFirst ?? undefined);
+    expect(lastCall("/moderation")?.body).toEqual({ decision: "approved" });
+    // Очередь перечитана, на карточке осталось две плитки, фокус на ✓ той, что встала на место
+    expect(container.querySelectorAll(".photo-tile")).toHaveLength(2);
+    expect(document.activeElement?.classList.contains("photo-approve")).toBe(true);
+    expect(container.querySelector("[aria-live=polite]")?.textContent).toBe(t.photoApprovedSaid("Lola zali"));
+  });
+
+  it("новые фото: ✕ — причина в шторке с готовыми вариантами; без причины отказа нет", async () => {
+    let queue = photoQueue(2);
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": () =>
+        new Response(JSON.stringify(queue), { status: 200, headers: { "content-type": "application/json" } }),
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] }),
+      [`POST /api/staff/listings/${PHOTO_LISTING_ID}/photos/${photoId(2)}/moderation`]: () => {
+        queue = photoQueue(1);
+        return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    await mount("/moderation");
+    const decline = [...container.querySelectorAll<HTMLButtonElement>(".photo-tile .btn-danger")][1];
+    expect(decline?.textContent).toBe(t.photoDeclineOne(2, "Lola zali"));
+    await click(decline);
+    const sheet = document.querySelector<HTMLElement>("[role=dialog]") as HTMLElement;
+    expect(sheet.textContent).toContain(t.declinePhotoTitle(2));
+    const submit = [...sheet.querySelectorAll("button")].find((b) => b.textContent === t.declinePhoto);
+    expect(submit?.disabled).toBe(true);
+    expect(calls.some((c) => c.url.endsWith("/moderation"))).toBe(false);
+    // Готовая причина вписывается в поле
+    const preset = sheet.querySelector<HTMLButtonElement>(".reason-chip");
+    await click(preset ?? undefined);
+    expect(sheet.querySelector("textarea")?.value).toBe(t.reasons.photoDecline[0]);
+    await click(submit);
+    expect(lastCall("/moderation")?.body).toEqual({
+      decision: "declined",
+      reason: t.reasons.photoDecline[0],
+    });
+    expect(document.querySelector("[role=dialog]")).toBeNull();
+    expect(container.querySelectorAll(".photo-tile")).toHaveLength(1);
+  });
+
+  it("новые фото: «Одобрить все» — по одному запросу на фото, очередь потом пуста", async () => {
+    let queue = photoQueue(3);
+    const approved: string[] = [];
+    const decide = (n: number) => ({
+      [`POST /api/staff/listings/${PHOTO_LISTING_ID}/photos/${photoId(n)}/moderation`]: () => {
+        approved.push(photoId(n));
+        if (approved.length === 3) queue = photoQueue(0);
+        return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": () =>
+        new Response(JSON.stringify(queue), { status: 200, headers: { "content-type": "application/json" } }),
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] }),
+      ...decide(1),
+      ...decide(2),
+      ...decide(3),
+    });
+    await mount("/moderation");
+    await click(container.querySelector(".photo-approve-all") ?? undefined);
+    expect(approved).toEqual([photoId(1), photoId(2), photoId(3)]);
+    expect(
+      calls
+        .filter((c) => c.url.endsWith("/moderation"))
+        .every((c) => (c.body as { decision: string }).decision === "approved"),
+    ).toBe(true);
+    // Решили всё — очередь пропала из сегментов, «Всё разобрано»
+    expect(queueTabs()).toEqual([]);
+    expect(container.querySelector(".queue-empty")?.textContent).toBe(t.moderationAllDone);
+  });
+
+  it("новые фото: без права на решение по фото — плитки без кнопок", async () => {
+    mockApi(staff("manager", MANAGER), {
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": json(photoQueue(2)),
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+    });
+    await mount("/moderation");
+    expect(container.querySelectorAll(".photo-tile")).toHaveLength(2);
+    expect(container.querySelector(".photo-tile button")).toBeNull();
+    expect(container.querySelector(".photo-approve-all")).toBeNull();
   });
 
   it("сравнение «сейчас / предлагает»; отклонить — только с причиной", async () => {
