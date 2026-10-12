@@ -1383,3 +1383,63 @@ export interface VendorResponseStats {
   readonly vendor: VendorMetrics;
   readonly listings: readonly ListingMetrics[];
 }
+
+// ── смена публичных контактов витрины ──────────────────────────────────────
+
+/**
+ * Запрос партнёра на смену публичных телефона и Telegram витрины, которая на проверке или на
+ * сайте (pii.listing_contact_changes): одна ждущая строка на витрину. Значений здесь нет —
+ * только что меняется; значения — ContactChangeReveal, по «Показать», в журнал доступа к ПДн.
+ */
+export interface ContactChange {
+  readonly id: string;
+  readonly submittedAt: string;
+  readonly phoneChanged: boolean;
+  /** Telegram меняется или убирается */
+  readonly telegramChanged: boolean;
+}
+
+/**
+ * GET /staff/listings/:id/contact-change → 200 { change } — ждущий запрос или null (право
+ * catalog.read; значений нет, в журнал не пишется). Решает администратор и модератор
+ * (revisions.moderate):
+ *   POST /staff/listings/:id/contact-change/reveal { reason? } → ContactChangeReveal — значения
+ *        запроса и нынешние контакты; чтение — в журнал доступа к ПДн
+ *   POST /staff/listings/:id/contact-change/approve         → 200 { change: null } — значения
+ *        применены к витрине, партнёру — уведомление
+ *   POST /staff/listings/:id/contact-change/decline { reason } → 200 { change: null } — причину
+ *        увидит партнёр; прежние контакты остаются
+ * 409 contact_change_not_pending — решать нечего (уже решён или отозван).
+ */
+export interface ContactChangeResponse {
+  readonly change: ContactChange | null;
+}
+
+export interface ContactChangeReveal {
+  /** Что просит партнёр: телефон обязателен, Telegram — имя без @ или null (убрать) */
+  readonly phone: string;
+  readonly telegram: string | null;
+  /** Что у витрины сейчас */
+  readonly current: RevealedListingContacts;
+}
+
+export interface ContactChangeDeclineInput {
+  readonly reason: string;
+}
+
+/** Строка очереди запросов на смену контактов */
+export interface ContactChangeListItem extends ContactChange {
+  readonly listing: {
+    readonly id: string;
+    readonly name: string;
+    readonly status: ListingStatus;
+    readonly categoryCode: string;
+  };
+  readonly vendor: { readonly id: string; readonly code: string };
+}
+
+/** GET /staff/contact-changes?limit=&offset= (право revisions.moderate) — ждущие запросы, старые сверху */
+export interface ContactChangeList {
+  readonly total: number;
+  readonly items: readonly ContactChangeListItem[];
+}

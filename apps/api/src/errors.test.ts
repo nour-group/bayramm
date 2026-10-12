@@ -83,6 +83,9 @@ describe("toApiError: коды Postgres", () => {
   it("пользователи кабинета: последний владелец и второе членство того же человека — 409", () => {
     expect(mapped(pgError("BR031"))).toMatchObject({ status: 409, code: "vendor_last_owner" });
     expect(mapped(pgError("BR032"))).toMatchObject({ status: 409, code: "vendor_user_exists" });
+    expect(mapped(pgError("BR036"))).toMatchObject({ status: 409, code: "contacts_require_review" });
+    expect(mapped(pgError("BR037"))).toMatchObject({ status: 409, code: "contact_change_not_pending" });
+    expect(mapped(pgError("BR038"))).toMatchObject({ status: 409, code: "contacts_not_live" });
   });
 
   it("каждое правило — 4xx", () => {

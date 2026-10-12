@@ -67,6 +67,7 @@ import {
 } from "../ui";
 import { useUnsaved } from "../unsaved";
 import { Calendar, LeadTime } from "./Calendar";
+import { ContactChange } from "./ContactChange";
 import { ListingForm } from "./ListingForm";
 import { NextInQueue } from "./NextInQueue";
 import { Photos } from "./Photos";
@@ -366,6 +367,9 @@ function CategoryListing({
       {(listing.status === "review" || listing.status === "suspended") && activeBlockers.length === 0 && (
         <p className="notice notice-good">{t.readyToPublish}</p>
       )}
+
+      {/* Партнёр просит сменить контакты витрины на проверке или на сайте (блок сам прячется, если просьбы нет) */}
+      <ContactChange listingId={listing.id} onDecided={onReload} />
 
       {/* Оглавление — перед блоками, которые оно перечисляет: прилипает, когда до них дошли */}
       {phone ? <SectionIndex category={category} showAttributes={showAttributes} /> : null}

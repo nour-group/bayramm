@@ -10,10 +10,13 @@ import type {
   VendorAttention,
   VendorCalendar,
   VendorCalendarChange,
+  VendorContactChange,
+  VendorContactsInput,
   VendorListing,
   VendorListingRef,
   VendorMe,
   VendorPhoto,
+  VendorPhotoList,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPatch,
@@ -56,7 +59,12 @@ import { APPS, accountMe, BOT, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from 
    отклонённые услуги, отклонённые фото, последнее предложение партнёра отклонено — поэтому
    после удаления фото или нового предложения значок меняется. У сотрудника площадки — нули.
    Первый ответ менеджера (staffReply: true): заявка «связались», которую отметил сотрудник
-   (firstResponseBy: "staff"). */
+   (firstResponseBy: "staff").
+
+   Фото: порядок и обложка (PUT …/photos/order, POST …/photos/:id/cover) — только одобренные, сразу;
+   отзыв витрины с проверки (POST …/withdraw: review → draft); контакты (PUT …/contacts): витрина
+   вне сайта — сохраняются сразу, на проверке и на сайте — запросом (listing.contactChange — «на
+   проверке»), отзыв — POST …/contact-change/withdraw. Всё — только владельцу (member — 403). */
 
 export const NOW = new Date("2026-10-01T07:00:00Z");
 const HOUR = 3_600_000;
@@ -122,6 +130,12 @@ export interface VendorApi {
   readonly ownerOnly: string[];
   /** Витрины, отправленные на проверку (POST …/submit) */
   readonly submits: string[];
+  /** Витрины, отозванные с проверки (POST …/withdraw) */
+  readonly withdraws: string[];
+  /** Порядок и обложка: «PUT order» с id по порядку и «POST cover» с id фото */
+  readonly photoWrites: string[];
+  /** Контакты: тела PUT …/contacts как пришли, и «withdraw» — отзывы запроса */
+  readonly contactWrites: (VendorContactsInput | "withdraw")[];
 }
 
 export interface FakeCalendar {
@@ -259,6 +273,8 @@ const LISTING: VendorListing = {
     photoOf(4, "pending"),
   ],
   phone: "+998000000001",
+  telegram: "lola_zali",
+  contactChange: null,
   blockers: [],
   reviewBlockers: [],
   photoLimits: { min: 3, max: 10 },
@@ -293,6 +309,7 @@ const CAR: VendorListing = {
   name: "Kortej Premium",
   categoryCode: "car",
   districtCode: null,
+  telegram: null,
   description: { ru: "Свадебный кортеж.", uz: "Toʻy korteji." },
   priceFromUzs: 300_000,
   priceUnit: "per_hour",
@@ -338,6 +355,7 @@ const PHOTO_LISTING: VendorListing = {
   status: "draft",
   categoryCode: "photo",
   districtCode: null,
+  telegram: null,
   description: { ru: "", uz: "" },
   priceFromUzs: null,
   priceUnit: "per_event",
@@ -385,6 +403,7 @@ const CAKE: VendorListing = {
   name: "Shirin Tort",
   categoryCode: "cake",
   districtCode: null,
+  telegram: null,
   description: { ru: "Торты на заказ.", uz: "Buyurtma tortlar." },
   priceFromUzs: 180_000,
   priceUnit: "per_kg",
@@ -525,6 +544,9 @@ export async function mockVendorApi(
     signIns: [],
     ownerOnly: [],
     submits: [],
+    withdraws: [],
+    photoWrites: [],
+    contactWrites: [],
   };
   const cards = new Map<string, VendorListing>([[LISTING_ID, LISTING]]);
   const photosOf = new Map<string, VendorPhoto[]>([[LISTING_ID, state.photos]]);
@@ -699,11 +721,21 @@ export async function mockVendorApi(
     const { declineNote: _n, contact: _c, history: _h, ...rest } = detail;
     return rest;
   };
+  // Просьбы сменить контакты витрин на проверке и на сайте: ждут решения команды (в тесте — не решаются)
+  const contactChanges = new Map<string, VendorContactChange>();
   const listingView = (id: string): VendorListing | null => {
     const card = cards.get(id);
     if (!card) return null;
     const services = state.services.get(id) ?? [];
-    return { ...card, photos: photosOf.get(id) ?? [], services };
+    const contactChange = contactChanges.get(id) ?? null;
+    return {
+      ...card,
+      photos: photosOf.get(id) ?? [],
+      services,
+      // Сотрудник площадки видит, что запрос ждёт, но не номера
+      contactChange:
+        contactChange && role !== "owner" ? { ...contactChange, phone: null, telegram: null } : contactChange,
+    };
   };
 
   // Только /api/* своего origin: исходники в разработке тоже бывают по путям с «/api/»
@@ -825,10 +857,90 @@ export async function mockVendorApi(
     }
 
     // Карточку (фото, правки, услуги) меняет только владелец кабинета — как vendor/access.ts
-    const changesCard = method !== "GET" && /^\/(revisions|photos|services)(\/|$)/.test(rest);
+    const changesCard =
+      method !== "GET" && /^\/(revisions|photos|services|contacts|contact-change|withdraw)(\/|$)/.test(rest);
     if (card && changesCard && role !== "owner") {
       state.ownerOnly.push(key);
       return fail(route, 403, "vendor_owner_required");
+    }
+
+    // Отозвать с проверки: review → draft; очередь команды в тесте не моделируется
+    if (card && rest === "/withdraw" && method === "POST") {
+      if (card.status !== "review") return fail(route, 409, "illegal_transition");
+      state.withdraws.push(listingId);
+      cards.set(listingId, { ...card, status: "draft", statusReason: null });
+      return json(route, 200, listingView(listingId));
+    }
+
+    // Контакты: вне сайта — сразу, на проверке и на сайте — запросом; значения те же — 422 no_changes
+    if (card && rest === "/contacts" && method === "PUT") {
+      const input = request.postDataJSON() as VendorContactsInput;
+      state.contactWrites.push(input);
+      if (!/^\+998\d{9}$/.test(input.phone ?? "")) return fail(route, 422, "invalid_input", ["phone"]);
+      const telegram = input.telegram ?? null;
+      if (telegram !== null && !/^[A-Za-z][A-Za-z0-9_]{3,30}[A-Za-z0-9]$/.test(telegram))
+        return fail(route, 422, "invalid_input", ["telegram"]);
+      if (input.phone === card.phone && telegram === card.telegram) return fail(route, 422, "no_changes");
+      const moderated = ["review", "active", "suspended"].includes(card.status);
+      if (moderated) {
+        contactChanges.set(listingId, {
+          status: "pending",
+          submittedAt: NOW.toISOString(),
+          decidedAt: null,
+          reason: null,
+          phone: input.phone,
+          telegram,
+        });
+      } else {
+        cards.set(listingId, { ...card, phone: input.phone, telegram });
+        contactChanges.delete(listingId);
+      }
+      return json(route, 200, { sentForModeration: moderated, listing: listingView(listingId) });
+    }
+    if (card && rest === "/contact-change/withdraw" && method === "POST") {
+      if (contactChanges.get(listingId)?.status !== "pending")
+        return fail(route, 409, "contact_change_not_pending");
+      state.contactWrites.push("withdraw");
+      contactChanges.delete(listingId);
+      return json(route, 200, listingView(listingId));
+    }
+
+    // Порядок и обложка: только одобренные фото, сразу; обложка всегда первая
+    const approvedOf = (id: string) => (photosOf.get(id) ?? []).filter((p) => p.moderation === "approved");
+    const arranged = (id: string, order: readonly string[], coverId: string | null) => {
+      const photos = photosOf.get(id) ?? [];
+      const rank = new Map(order.map((photoId, index) => [photoId, index]));
+      const approved = approvedOf(id)
+        .map((p) => ({ ...p, isCover: coverId === null ? p.isCover : p.id === coverId }))
+        .sort(
+          (a, b) => Number(b.isCover) - Number(a.isCover) || (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0),
+        );
+      photos.splice(0, photos.length, ...approved, ...photos.filter((p) => p.moderation !== "approved"));
+      const list: VendorPhotoList = { photos };
+      return list;
+    };
+    if (card && rest === "/photos/order" && method === "PUT") {
+      const ids = (request.postDataJSON() as { ids?: string[] }).ids ?? [];
+      const known = approvedOf(listingId).map((p) => p.id);
+      if (
+        ids.length !== known.length ||
+        new Set(ids).size !== ids.length ||
+        !ids.every((id) => known.includes(id))
+      )
+        return fail(route, 422, "invalid_input", ["ids"]);
+      state.photoWrites.push(`PUT order ${ids.join(",")}`);
+      return json(route, 200, arranged(listingId, ids, null));
+    }
+    const coverMatch = /^\/photos\/([0-9a-f-]{36})\/cover$/.exec(rest);
+    if (card && coverMatch?.[1] && method === "POST") {
+      const found = (photosOf.get(listingId) ?? []).find((p) => p.id === coverMatch[1]);
+      if (!found) return fail(route, 404, "not_found");
+      if (found.moderation !== "approved") return fail(route, 422, "invalid_input", ["photoId"]);
+      state.photoWrites.push(`POST cover ${found.id}`);
+      const rest_ = approvedOf(listingId)
+        .filter((p) => p.id !== found.id)
+        .map((p) => p.id);
+      return json(route, 200, arranged(listingId, [found.id, ...rest_], found.id));
     }
 
     if (card && rest === "/photos" && method === "POST") {

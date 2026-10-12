@@ -144,13 +144,15 @@ describe("getListing", () => {
     parallel_capacity: 1,
     blockers: ["photos", "contract"],
     review_blockers: ["photos"],
-    phone: "+998000000999",
     min_photos: 3,
     max_photos: 10,
   };
 
   it("своя площадка: цены числом, фото — адреса воркера media окружения", async () => {
     const fake = fakeDb((q) => {
+      if (q.sql.includes("pii.read_listing_contacts"))
+        return [{ phone: "+998000000999", telegram: "lola_zali" }];
+      if (q.sql.includes("app.contact_change_state")) return [];
       if (q.sql.includes('from "app"."listings"')) return [listing];
       if (q.sql.includes('from "app"."listing_services"'))
         return [
@@ -224,6 +226,8 @@ describe("getListing", () => {
         { id: "s1", type: "banquet_weekday", status: "active", priceUzs: 150_000, customName: false },
       ],
       phone: "+998000000999",
+      telegram: "lola_zali",
+      contactChange: null,
       blockers: ["photos", "contract"],
       // На проверку отправить нельзя без фото; договор — уже для публикации
       reviewBlockers: ["photos"],
@@ -264,11 +268,83 @@ describe("getListing", () => {
       },
     ]);
     const main = fake.queries.find((q) => q.sql.includes('from "app"."listings"'));
-    expect(main?.sql).toContain('pii.read_listing_phone("id")');
+    // Телефон и Telegram — одним вызовом функции базы, не столбцами
+    expect(main?.sql).not.toContain("read_listing_phone");
+    const contacts = fake.queries.filter((q) => q.sql.includes("pii.read_listing_contacts"));
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0]?.parameters).toEqual([LISTING_ID, null]);
     expect(main?.sql).toContain("app.listing_publish_blockers(id, 'review')");
     expect(main?.parameters).toEqual([LISTING_ID, ACTOR.vendorId]);
     const photos = fake.queries.find((q) => q.sql.includes('"app"."photos"'));
     expect(photos?.sql).toContain('"deleted_at" is null');
+  });
+
+  describe("запрос на смену контактов", () => {
+    const at = new Date("2026-10-12T05:00:00Z");
+    const state = (over: Record<string, unknown>) => ({
+      change_id: "c1",
+      status: "pending",
+      reason: null,
+      submitted_at: at,
+      decided_at: null,
+      phone_changed: true,
+      telegram_changed: false,
+      ...over,
+    });
+    const db = (row: Record<string, unknown> | null) =>
+      fakeDb((q) => {
+        if (q.sql.includes("pii.read_listing_contact_change"))
+          return [{ phone: "+998000000555", telegram: "new_lola" }];
+        if (q.sql.includes("pii.read_listing_contacts")) return [{ phone: "+998000000999", telegram: null }];
+        if (q.sql.includes("app.contact_change_state")) return row === null ? [] : [row];
+        if (q.sql.includes('from "app"."listings"')) return [listing];
+        return [];
+      });
+
+    it("ждёт решения: владельцу — что просил, значения читает функция базы (в журнал «сам себе»)", async () => {
+      const fake = db(state({}));
+      const result = await getListing(fake.db, ACTOR, LISTING_ID, "staging");
+      expect(result.phone).toBe("+998000000999");
+      expect(result.contactChange).toEqual({
+        status: "pending",
+        submittedAt: at.toISOString(),
+        decidedAt: null,
+        reason: null,
+        phone: "+998000000555",
+        telegram: "new_lola",
+      });
+    });
+
+    it("сотрудник площадки видит только, что запрос ждёт: номер не читается", async () => {
+      const fake = db(state({}));
+      const result = await getListing(fake.db, { ...ACTOR, role: "member" }, LISTING_ID, "staging");
+      expect(result.contactChange).toMatchObject({ status: "pending", phone: null, telegram: null });
+      expect(fake.queries.some((q) => q.sql.includes("pii.read_listing_contact_change"))).toBe(false);
+    });
+
+    it("отклонён — с причиной, без значений; одобренный и отозванный не показываются", async () => {
+      const declined = await getListing(
+        db(state({ status: "declined", reason: "Номер не зала", decided_at: at, phone_changed: false })).db,
+        ACTOR,
+        LISTING_ID,
+        "staging",
+      );
+      expect(declined.contactChange).toMatchObject({
+        status: "declined",
+        reason: "Номер не зала",
+        phone: null,
+        telegram: null,
+      });
+      for (const status of ["approved", "withdrawn"]) {
+        const result = await getListing(
+          db(state({ status, decided_at: at })).db,
+          ACTOR,
+          LISTING_ID,
+          "staging",
+        );
+        expect(result.contactChange, status).toBeNull();
+      }
+    });
   });
 
   it("чужая — 404, фото и услуги не читаются", async () => {

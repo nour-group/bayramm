@@ -687,6 +687,8 @@ const LISTING: VendorListing = {
   capMax: 300,
   photos: [],
   phone: "+998000000999",
+  telegram: null,
+  contactChange: null,
   blockers: [],
   reviewBlockers: [],
   photoLimits: { min: 3, max: 10 },
@@ -887,8 +889,7 @@ describe("площадка", () => {
   const uploads = () => calls.filter((c) => c.method === "POST" && c.path === photosPath);
   const alert = () => container.querySelector('[role="alert"]')?.textContent ?? "";
   const images = () => container.querySelectorAll(".photos img").length;
-  const checkbox = () =>
-    byText("label", "Подтверждаю: на выбранных фото нет лиц")?.querySelector("input") ?? undefined;
+  const checkbox = () => byText("label", "На фото нет людей и лиц")?.querySelector("input") ?? undefined;
   const fileInput = () => container.querySelector<HTMLInputElement>('input[type="file"]') ?? undefined;
   const file = (name: string, type = "image/jpeg") => new File([new Uint8Array([1, 2, 3])], name, { type });
   const compressed = () =>
@@ -960,11 +961,15 @@ describe("площадка", () => {
     expect(container.textContent?.match(/проверяет команда|его проверит/g) ?? []).toHaveLength(1);
   });
 
-  it("фото: предупреждение про лица на виду, без галочки файлы не выбрать; загрузка — после сжатия, с подтверждением", async () => {
+  it("фото: одна галочка про людей и лиц вместо плашки, без неё файлы не выбрать; загрузка — после сжатия, с подтверждением", async () => {
     await mount("/card");
-    expect(container.textContent).toContain("На фото не должно быть людей и лиц");
-    expect(container.textContent).toContain("Для публикации — не меньше 3 фото, всего до 10.");
-    expect(container.querySelector(".photos .photo-chip")?.textContent).toBe("на проверке");
+    expect(container.textContent).not.toContain("На фото не должно быть людей и лиц");
+    expect(container.querySelector(".photos-block .notice-warn, .venue .notice-warn")).toBeNull();
+    expect(container.textContent).toContain("Нужно от 3, всего до 10.");
+    expect([...container.querySelectorAll(".photos .photo-chip")].map((c) => c.textContent)).toEqual([
+      "обложка",
+      "на проверке",
+    ]);
     // Галочка не отмечена заранее; без неё выбор файлов недоступен
     expect(checkbox()?.checked).toBe(false);
     expect(fileInput()?.disabled).toBe(true);
@@ -985,7 +990,7 @@ describe("площадка", () => {
     // Карточка перечитана: новые фото — на проверке
     expect(reads()).toHaveLength(2);
     expect(images()).toBe(5);
-    expect(container.querySelectorAll(".photos .photo-chip")).toHaveLength(3);
+    expect(container.querySelectorAll(".photos .photo-chip")).toHaveLength(4);
     // Подтверждение — про выбранные фото: для следующих — снова
     expect(checkbox()?.checked).toBe(false);
     expect(fileInput()?.disabled).toBe(true);
@@ -1062,9 +1067,9 @@ describe("площадка", () => {
     await mount("/card");
     expect(images()).toBe(3);
     expect(container.textContent).toContain("Менять её и услуги может только владелец кабинета");
-    expect(container.textContent).not.toContain("На фото не должно быть людей");
+    expect(container.textContent).not.toContain("На фото нет людей и лиц");
     expect(container.querySelector("input, textarea, select")).toBeNull();
-    expect(container.querySelector(".photo-delete")).toBeNull();
+    expect(container.querySelector(".photo-x, button.photo-tile")).toBeNull();
     expect(byText("button", "Предложить изменения")).toBeUndefined();
   });
 });
@@ -1378,23 +1383,19 @@ describe("что ждёт партнёра", () => {
     await mount("/card");
     const tiles = [...container.querySelectorAll(".photos li")];
     expect(tiles[0]?.querySelector(".photo-decline")).toBeNull();
-    expect(tiles[1]?.querySelector(".photo-decline")?.textContent).toBe(
-      "Отклонено: На фото виден человекУдалите это фото и загрузите новое.",
-    );
-    expect(tiles[2]?.querySelector(".photo-decline")?.textContent).toBe(
-      "Отклонено командой Bayramm.Удалите это фото и загрузите новое.",
-    );
+    expect(tiles[1]?.querySelector(".photo-decline")?.textContent).toBe("Отклонено: На фото виден человек");
+    expect(tiles[2]?.querySelector(".photo-decline")?.textContent).toBe("Отклонено командой Bayramm.");
     expect(tiles[3]?.querySelector(".photo-decline")).toBeNull();
   });
 
-  it("отклонённое фото глазами сотрудника площадки: причина есть, призыва удалить нет", async () => {
+  it("отклонённое фото глазами сотрудника площадки: причина есть, действий с фото нет", async () => {
     routes[`GET ${mePath}`] = () => ({ body: me("ru", "member") });
     routes[`GET ${listingPath}`] = () => ({
       body: { ...LISTING, photos: [photoOf(1, "approved"), photoOf(2, "declined", "Нет лиц — но размыто")] },
     });
     await mount("/card");
     expect(container.querySelector(".photo-decline")?.textContent).toBe("Отклонено: Нет лиц — но размыто");
-    expect(container.querySelector(".photo-decline-next")).toBeNull();
+    expect(container.querySelector("button.photo-x, button.photo-tile")).toBeNull();
   });
 
   it("история предложений: свёрнута; открыл — последние пять решений с датой, причиной и полями", async () => {

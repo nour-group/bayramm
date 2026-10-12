@@ -47,6 +47,8 @@ interface World {
   listing?: Record<string, unknown> | null;
   /** Услуга решения vendor.service_decided */
   service?: Record<string, unknown> | null;
+  /** Последний запрос на смену контактов витрины (app.contact_change_state) */
+  contactChange?: Record<string, unknown> | null;
 }
 
 function db(world: World = {}) {
@@ -66,6 +68,7 @@ function db(world: World = {}) {
     world.staff === undefined ? { active: true, role: "admin", telegram_chat_id: "9001" } : world.staff;
   return fakeDb((q: RecordedQuery) => {
     if (q.sql.includes("skip locked")) return world.rows ?? [outboxRow()];
+    if (q.sql.includes("app.contact_change_state")) return world.contactChange ? [world.contactChange] : [];
     if (q.sql.includes('from "app"."vendor_users"')) return vendorUser ? [vendorUser] : [];
     if (q.sql.includes('from "app"."clients"')) return client ? [client] : [];
     if (q.sql.includes('from "app"."staff"')) return staff ? [staff] : [];
@@ -488,6 +491,96 @@ describe("dispatchOutbox: сообщения", () => {
     const decided = await run({ listing: { ...listing, status: "active" }, rows: [submittedRow(3)] });
     expect(decided.tg.calls).toHaveLength(0);
     expect(decided.report.dead).toBe(1);
+  });
+
+  it("смена контактов витрины — решающим команды без номеров, с кнопкой к блоку «Контакты»; решили — не о чем", async () => {
+    const LISTING = "aaaaaaaa-0000-4000-8000-000000000102";
+    const submittedRow = (n: number) =>
+      outboxRow({
+        id: `0b0b0b0b-0000-4000-8000-00000000004${n}`,
+        kind: "ops.contact_change_submitted",
+        recipient_kind: "staff",
+        recipient_id: STAFF_ID,
+        request_id: null,
+        payload: { listing_id: LISTING },
+      });
+    const listing = { name: "Lola zali", status: "active", public_code: "V101" };
+    const pending = {
+      change_id: "c1",
+      status: "pending",
+      reason: null,
+      submitted_at: CREATED,
+      decided_at: null,
+      phone_changed: true,
+      telegram_changed: false,
+    };
+    const moderator = await run({
+      listing,
+      contactChange: pending,
+      staff: { active: true, role: "moderator", telegram_chat_id: "9002" },
+      rows: [submittedRow(1)],
+    });
+    expect(moderator.report.sent).toBe(1);
+    for (const part of ["сменить контакты витрины", "Lola zali", "V101", "Меняет: телефон."])
+      expect(moderator.tg.calls[0]?.text).toContain(part);
+    // Ни номера, ни имени Telegram в оповещении нет
+    expect(moderator.tg.calls[0]?.text).not.toMatch(/\+998|@/);
+    expect(moderator.tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [
+        [
+          {
+            text: "Открыть в панели",
+            web_app: { url: `https://admin.example/listings/${LISTING}?focus=contacts` },
+          },
+        ],
+      ],
+    });
+    // Менеджер контакты не решает — ему не шлём
+    const manager = await run({
+      listing,
+      contactChange: pending,
+      staff: { active: true, role: "manager", telegram_chat_id: "9003" },
+      rows: [submittedRow(2)],
+    });
+    expect(manager.tg.calls).toHaveLength(0);
+    // Решили или отозвали до отправки — оповещать не о чем
+    const decided = await run({
+      listing,
+      contactChange: { ...pending, status: "approved" },
+      rows: [submittedRow(3)],
+    });
+    expect(decided.tg.calls).toHaveLength(0);
+    expect(decided.report.dead).toBe(1);
+  });
+
+  it("решение по смене контактов — владельцу кабинета: одобрено или отказ с причиной, кнопка к витрине", async () => {
+    const LISTING = "aaaaaaaa-0000-4000-8000-000000000102";
+    const decidedRow = (decision: string) =>
+      outboxRow({
+        kind: "vendor.contact_change_decided",
+        request_id: null,
+        payload: { listing_id: LISTING, decision },
+      });
+    const listing = { name: "Lola zali", vendor_id: VENDOR_ID };
+    const approved = await run({ listing, rows: [decidedRow("approved")] });
+    expect(approved.report.sent).toBe(1);
+    expect(approved.tg.calls[0]?.text).toContain("одобрены");
+    expect(approved.tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [[{ text: "Открыть витрину", web_app: { url: "https://vendor.example/card" } }]],
+    });
+    const declined = await run({
+      listing,
+      contactChange: { change_id: "c1", status: "declined", reason: "Номер не зала" },
+      rows: [decidedRow("declined")],
+    });
+    expect(declined.tg.calls[0]?.text).toContain("Номер не зала");
+    // Чужая витрина — не наше уведомление
+    const other = await run({
+      listing: { ...listing, vendor_id: "bbbbbbbb-0000-4000-8000-000000000001" },
+      rows: [decidedRow("approved")],
+    });
+    expect(other.tg.calls).toHaveLength(0);
+    expect(other.report.dead).toBe(1);
   });
 
   it("решение по услуге — владельцу кабинета, кнопка ведёт в «Услуги»", async () => {

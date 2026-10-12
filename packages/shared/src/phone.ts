@@ -24,3 +24,44 @@ export function formatUzPhone(value: string): string {
   if (!E164_UZ.test(value)) return value;
   return `+998 ${value.slice(4, 6)} ${value.slice(6, 9)} ${value.slice(9, 11)} ${value.slice(11, 13)}`;
 }
+
+// ── поле ввода: девять цифр после +998 с маской ────────────────────────────
+// «+998» стоит у поля, в поле — «XX XXX XX XX». Те же правила, что у PhoneField панели.
+
+const UZ_CODE = "+998";
+export const UZ_PHONE_DIGITS = 9;
+const PHONE_GROUPS = [2, 3, 2, 2] as const;
+
+/**
+ * Цифры после +998 из любой записи: «+998 90 111-22-33», «998901112233», «90 111». Начатый
+ * по привычке код («+», «+99») — пусто: код уже написан у поля. Чужой код (+7…) или больше
+ * девяти цифр — null: не обрезаем в похожий номер, а говорим «только Узбекистан»
+ */
+export function readUzPhoneDigits(raw: string): string | null {
+  const normal = normalizeUzPhone(raw);
+  if (normal) return normal.slice(UZ_CODE.length);
+  const text = raw.trim();
+  const compact = text.replace(/\s+/g, "");
+  if (compact !== "" && UZ_CODE.startsWith(compact)) return "";
+  let digits = text.replace(/\D+/g, "");
+  if (text.startsWith("+")) {
+    if (!digits.startsWith("998")) return null;
+    digits = digits.slice(3);
+  } else if (digits.length > UZ_PHONE_DIGITS && digits.startsWith("998")) {
+    // Набирают с кодом страны без «+»: на десятой цифре код уходит, номер остаётся
+    digits = digits.slice(3);
+  }
+  return digits.length > UZ_PHONE_DIGITS ? null : digits;
+}
+
+/** «901112233» → «90 111 22 33»; неполный — сколько набрано: «90 1» */
+export function maskUzPhoneDigits(digits: string): string {
+  const parts: string[] = [];
+  let at = 0;
+  for (const size of PHONE_GROUPS) {
+    if (at >= digits.length) break;
+    parts.push(digits.slice(at, at + size));
+    at += size;
+  }
+  return parts.join(" ");
+}

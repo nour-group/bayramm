@@ -259,6 +259,57 @@ export function opsListingSubmitted(f: OpsListingFacts): string {
   );
 }
 
+/**
+ * Партнёр просит сменить публичные контакты витрины, которая на проверке или на сайте, — команде.
+ * Ни номера, ни Telegram в тексте нет (ПДн): только что меняется; значения — в панели, «Показать»
+ */
+export interface OpsContactChangeFacts {
+  readonly listing: string;
+  readonly vendorCode: string;
+  readonly status: ListingStatus;
+  readonly phoneChanged: boolean;
+  readonly telegramChanged: boolean;
+}
+
+export function opsContactChangeSubmitted(f: OpsContactChangeFacts): string {
+  const what = [f.phoneChanged ? "телефон" : null, f.telegramChanged ? "Telegram" : null]
+    .filter((item): item is string => item !== null)
+    .join(" и ");
+  return (
+    `Партнёр просит сменить контакты витрины: ${f.listing} (вендор ${f.vendorCode}).\n` +
+    `Меняет: ${what || "—"}. Клиенты видят прежние, пока запрос не решён.${notLiveNote(f.status)}\n` +
+    "Решение — в панели, на странице витрины."
+  );
+}
+
+/** Решение команды по смене контактов — владельцам кабинета: одобрено или отклонено с причиной */
+export interface ContactDecisionFacts {
+  readonly listing: string;
+  readonly outcome: "approved" | "declined";
+  readonly reason: string | null;
+}
+
+export const CONTACT_TEXTS: Readonly<
+  Record<Lang, { readonly button: string; readonly decided: (f: ContactDecisionFacts) => string }>
+> = {
+  ru: {
+    button: "Открыть витрину",
+    decided: (f) =>
+      f.outcome === "approved"
+        ? `Новые контакты витрины «${f.listing}» одобрены — клиенты видят их по кнопке «Связаться».`
+        : `Команда Bayramm не приняла новые контакты витрины «${f.listing}»${f.reason ? `: ${f.reason}` : "."}\n` +
+          "Клиенты видят прежние контакты. Исправьте и отправьте снова в кабинете.",
+  },
+  uz: {
+    button: "Vitrinani ochish",
+    decided: (f) =>
+      f.outcome === "approved"
+        ? `«${f.listing}» vitrinasining yangi kontaktlari tasdiqlandi — mijozlar ularni «Bogʻlanish» tugmasi orqali koʻradi.`
+        : `Bayramm jamoasi «${f.listing}» vitrinasining yangi kontaktlarini qabul qilmadi${f.reason ? `: ${f.reason}` : "."}\n` +
+          "Mijozlar oldingi kontaktlarni koʻradi. Tuzatib, kabinetdan qayta yuboring.",
+  },
+};
+
 /** Правка карточки от партнёра — команде: площадка, код вендора, какие поля */
 export interface OpsRevisionFacts {
   /** Название площадки */
