@@ -163,6 +163,7 @@ describe("index.html", () => {
       .map((m) => m[1])
       .sort();
     expect(fonts).toEqual(["manrope-cyrillic", "manrope-latin", "unbounded-latin"]);
-    expect(html).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
+    expect(html).not.toContain("fonts.googleapis.com");
+    expect(html).not.toContain("fonts.gstatic.com");
   });
 });
