@@ -1887,7 +1887,7 @@ describe("переходы между объектами", () => {
     expect(crumbs()).toEqual([t.vendors, "Oqsaroy · V101"]);
     expect(link("Oqsaroy · V101")?.getAttribute("href")).toBe(`/vendors/${VENDOR_ID}`);
     // На компьютере вендор — только в пути: второй ссылки в шапке страницы нет
-    expect(container.querySelector(".listing-head a[href^='/vendors/']")).toBeNull();
+    expect(container.querySelector(".listing-top a[href^='/vendors/']")).toBeNull();
     // «Открыть на сайте» и «Заявки витрины» — в «…» шапки: ссылка наружу и переход к заявкам
     const trigger = [...container.querySelectorAll<HTMLButtonElement>("button.btn-more")].find((b) =>
       b.textContent?.includes(t.listingActionsContext),

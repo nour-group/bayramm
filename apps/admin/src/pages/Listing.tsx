@@ -419,7 +419,7 @@ function CategoryListing({
 
   return (
     <div className="stack listing-page">
-      <div className="listing-head">
+      <div className="listing-top">
         <div className="listing-meta">
           <CategoryChip code={listing.categoryCode} />
           <StatusPill status={listing.status} />
@@ -428,7 +428,7 @@ function CategoryListing({
             <Link to={{ name: "vendor", id: listing.vendor.id }}>{vendorLabel(listing.vendor)}</Link>
           )}
         </div>
-        <div className="listing-head-actions">
+        <div className="listing-top-actions">
           {phone ? null : primary}
           <OverflowMenu
             title={t.actionsTitle}

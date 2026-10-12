@@ -3190,8 +3190,9 @@ textarea.input {
 
 /* ── страница витрины: строка «что это», блоки парами, служебное ─────────── */
 
-/* Шапка: категория, статус и вендор — одной строкой; справа главное действие (шире телефона) и «…» */
-.listing-head {
+/* Шапка: категория, статус и вендор — одной строкой; справа главное действие (шире телефона) и «…».
+   Не .listing-head: у страницы предложения изменений он свой — столбец строк */
+.listing-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3207,7 +3208,7 @@ textarea.input {
   min-width: 0;
 }
 
-.listing-head-actions {
+.listing-top-actions {
   display: flex;
   flex: none;
   align-items: center;
@@ -3255,27 +3256,27 @@ textarea.input {
   border-bottom: 0;
 }
 
-/* Заголовки частей формы: у блока одна подпись, без пояснений под ней */
-.fs-head {
+/* Заголовки частей формы витрины: у блока одна подпись, без пояснений под ней */
+.listing-page .fs-head {
   margin-bottom: 12px;
 }
 
-.fs-head h2 {
+.listing-page .fs-head h2 {
   margin: 0;
 }
 
-.fs-sub {
+.listing-page .fs-sub {
   margin: 16px 0 8px;
 }
 
-.fs-sub h3 {
+.listing-page .fs-sub h3 {
   margin: 0;
   color: var(--plum);
   font-size: var(--fs-14);
   font-weight: 800;
 }
 
-.fs > .notice {
+.listing-page .fs > .notice {
   margin-bottom: 12px;
 }
 
@@ -3376,7 +3377,7 @@ textarea.input {
 }
 
 /* «Служебное»: свёрнуто — одна строка; внутри история, категория, удалить */
-.service-block h2 {
+.listing-page .service-block h2 {
   margin: 0;
 }
 

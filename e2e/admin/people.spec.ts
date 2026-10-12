@@ -155,6 +155,9 @@ test.describe("контакты витрины для клиентов", () => {
     await row(page, t.telegramLabel).getByRole("button", { name: t.contactEdit }).click();
     await expect(telegramField(page)).toBeFocused();
     await telegramField(page).fill("ab");
+    // Уход из поля показывает его собственную ошибку и сдвигает страницу: «Сохранить» нажимаем после
+    await telegramField(page).blur();
+    await expect(page.locator(".field-error")).toBeVisible();
     await save(page).click();
     await expect(
       page.locator(".field-error").filter({ hasText: t.listingFieldErrors.telegram ?? "" }),

@@ -81,7 +81,7 @@ test("вторая витрина в другой категории: катег
   await page.getByRole("button", { name: t.createVitrina }).click();
   await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
   expect(api.vitrinas).toEqual([{ categoryCode: "photo" }]);
-  await expect(page.locator(".listing-head .cat-chip")).toHaveText("Фото и видео");
+  await expect(page.locator(".listing-top .cat-chip")).toHaveText("Фото и видео");
   await expect(page.getByRole("heading", { name: t.listingDataSections.videos })).toBeVisible();
   // «Заказов одновременно» — в шапке календаря, у занятости по частям дня
   await expect(
