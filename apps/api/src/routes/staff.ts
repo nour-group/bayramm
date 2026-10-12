@@ -8,6 +8,8 @@
 //   /staff/vendors        вендоры, чек-лист проверки, пользователи кабинета
 //   /staff/listings       карточки, статусы, фото, занятость
 //   /staff/revisions      правки опубликованных карточек: очередь и решение
+//   /staff/contact-changes и /staff/listings/:id/contact-change  запросы партнёров на смену
+//                         публичных контактов витрины: очередь, «Показать», решение
 //   /staff/services       услуги витрин (кроме отклонённых): очередь модерации и решение
 //   /staff/requests       заявки, срок ответа вендора, напоминания, заметки
 //   /staff/clients        клиенты (псевдонимы), блокировка
@@ -32,6 +34,7 @@ import { permissionsOf } from "../staff/access";
 import { audit } from "../staff/audit";
 import { availability } from "../staff/availability";
 import { clients } from "../staff/clients";
+import { contactChangeQueue, contactChanges } from "../staff/contact-changes";
 import { dictionaries } from "../staff/dictionaries";
 import { listings } from "../staff/listings";
 import { metrics } from "../staff/metrics";
@@ -54,6 +57,8 @@ sections.route("/listings", listings);
 sections.route("/listings", listingServices);
 sections.route("/listings", photos);
 sections.route("/listings", availability);
+sections.route("/listings", contactChanges);
+sections.route("/contact-changes", contactChangeQueue);
 sections.route("/revisions", revisions);
 sections.route("/services", serviceModeration);
 sections.route("/requests", requests);

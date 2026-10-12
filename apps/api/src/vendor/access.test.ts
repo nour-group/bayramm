@@ -16,6 +16,7 @@ describe("роли кабинета", () => {
     expect(vendorCan("member", "calendar.write")).toBe(true);
     expect(vendorCan("member", "card.propose")).toBe(false);
     expect(vendorCan("member", "photos.write")).toBe(false);
+    expect(vendorCan("member", "contacts.write")).toBe(false);
     for (const permission of Object.keys(VENDOR_PERMISSIONS) as (keyof typeof VENDOR_PERMISSIONS)[]) {
       expect(vendorCan("owner", permission), permission).toBe(true);
     }

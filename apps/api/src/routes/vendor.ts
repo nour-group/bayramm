@@ -9,12 +9,18 @@
 //   POST   /vendor/requests/:id/call               → 204 (нажатие на телефон — в журнал)
 //   GET    /vendor/listings/:id                    → 200 VendorListing
 //   POST   /vendor/listings/:id/submit             → 200 VendorListing (черновик — на проверку команде)
+//   POST   /vendor/listings/:id/withdraw           → 200 VendorListing (с проверки — обратно в черновик)
+//   PUT    /vendor/listings/:id/contacts           { phone, telegram? } → 200 VendorContactsSave
+//                                                  (вне сайта — сразу, иначе запросом на проверку)
+//   POST   /vendor/listings/:id/contact-change/withdraw → 200 VendorListing (отозвать запрос)
 //   GET    /vendor/listings/:id/calendar?month=    → 200 VendorCalendar (+ ETag версии)
 //   PUT    /vendor/listings/:id/calendar/capacity  If-Match: <версия> { parallelCapacity } → 200
 //   PUT    /vendor/listings/:id/calendar/:day[?part=] If-Match: <версия> → 200 VendorCalendarChange
 //   DELETE /vendor/listings/:id/calendar/:day[?part=] If-Match: <версия> → 200 VendorCalendarChange
 //   POST   /vendor/listings/:id/photos             файл, X-No-Faces: 1 | X-Photo-Consent: 1 → 201 VendorPhoto
 //   DELETE /vendor/listings/:id/photos/:photoId    → 204
+//   PUT    /vendor/listings/:id/photos/order       { ids } → 200 VendorPhotoList (порядок одобренных фото)
+//   POST   /vendor/listings/:id/photos/:photoId/cover → 200 VendorPhotoList (обложка)
 //   GET    /vendor/listings/:id/revisions          → 200 VendorRevisionList
 //   POST   /vendor/listings/:id/revisions          ListingRevisionPayload → 201 VendorRevision
 //   POST   /vendor/listings/:id/revisions/:rid/withdraw → 200 VendorRevision
@@ -26,9 +32,9 @@
 //
 // Чужая заявка или листинг — 404, как несуществующие. Клиент или сотрудник с
 // сессией — 403, без сессии — 401. Фото и предложения правок — только владелец
-// кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required. Услуги и
-// отправка витрины на проверку — тоже только владелец; календарь и сколько заказов
-// одновременно — любой пользователь.
+// кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required. Услуги,
+// отправка витрины на проверку и её отзыв, порядок и обложка фото, публичные контакты — тоже
+// только владелец; календарь и сколько заказов одновременно — любой пользователь.
 
 import { MAX_UPLOAD_BYTES } from "@bayramm/media";
 import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
@@ -41,6 +47,7 @@ import type { AppEnv } from "../env";
 import { ApiError } from "../errors";
 import { outboxKick } from "../notify/kick";
 import { type PhotoDeps, photoAckFromHeaders } from "../photos/service";
+import { invalidInput, isUuid } from "../staff/input";
 import { listingPhotoStorage } from "../storage/supabase";
 import { assertVendorCan } from "../vendor/access";
 import {
@@ -52,7 +59,8 @@ import {
   parsePart,
   setCapacity,
 } from "../vendor/calendar";
-import { deletePhoto, uploadPhoto } from "../vendor/photos";
+import { parseContacts, saveContacts, withdrawContacts } from "../vendor/contacts";
+import { deletePhoto, reorderPhotos, setCoverPhoto, uploadPhoto } from "../vendor/photos";
 import { getListing, getMe, parseLocale, setLocale } from "../vendor/profile";
 import {
   getRequest,
@@ -72,7 +80,7 @@ import {
   updateVendorService,
   withdrawVendorService,
 } from "../vendor/services";
-import { submitListing } from "../vendor/submit";
+import { submitListing, withdrawListing } from "../vendor/submit";
 
 // Тела здесь крошечные: статус с причиной, язык
 const limitBody = bodyLimit({
@@ -156,6 +164,26 @@ vendor.post("/listings/:id/submit", outboxKick, async (c) => {
   return c.json(await submitListing(c.var.db, vendorOf(c), id, c.env.APP_ENV));
 });
 
+// С проверки — обратно в черновик: партнёр снова правит витрину напрямую. Из очереди команды она
+// уходит сама (очередь — по статусу); отдельного оповещения нет
+vendor.post("/listings/:id/withdraw", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await withdrawListing(c.var.db, vendorOf(c), id, c.env.APP_ENV));
+});
+
+// Публичные телефон и Telegram: вне сайта — сразу, на проверке и на сайте — запросом команде
+// (оповещение ей ставит база; outboxKick отправляет его сразу после ответа)
+vendor.put("/listings/:id/contacts", limitBody, outboxKick, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const contacts = parseContacts(await readJson(c.req.raw));
+  return c.json(await saveContacts(c.var.db, vendorOf(c), id, contacts, c.env.APP_ENV));
+});
+
+vendor.post("/listings/:id/contact-change/withdraw", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await withdrawContacts(c.var.db, vendorOf(c), id, c.env.APP_ENV));
+});
+
 vendor.get("/listings/:id/calendar", async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const calendar = await getCalendar(c.var.db, vendorOf(c), id, c.req.query("month"));
@@ -207,6 +235,35 @@ vendor.post("/listings/:id/photos", limitUpload, outboxKick, async (c) => {
   if (ack === null) throw new ApiError(422, "no_faces_ack_required", "Confirm that the photo shows no faces");
   const bytes = new Uint8Array(await c.req.arrayBuffer());
   return c.json(await uploadPhoto(photoDeps(c), actor, id, bytes, c.env.APP_ENV, ack), 201);
+});
+
+// Порядок и обложка — сразу, без проверки: только одобренные фото (клиенты видят их)
+vendor.put("/listings/:id/photos/order", limitBody, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const body = (await readJson(c.req.raw)) as { ids?: unknown } | null;
+  const ids = body !== null && typeof body === "object" ? body.ids : undefined;
+  if (
+    !Array.isArray(ids) ||
+    ids.length > 50 ||
+    !ids.every((v): v is string => typeof v === "string" && isUuid(v))
+  ) {
+    throw invalidInput(["ids"]);
+  }
+  return c.json(
+    await reorderPhotos(
+      c.var.db,
+      vendorOf(c),
+      id,
+      ids.map((v) => v.toLowerCase()),
+      c.env.APP_ENV,
+    ),
+  );
+});
+
+vendor.post("/listings/:id/photos/:photoId/cover", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const photoId = idOrNotFound(c.req.param("photoId"));
+  return c.json(await setCoverPhoto(c.var.db, vendorOf(c), id, photoId, c.env.APP_ENV));
 });
 
 vendor.delete("/listings/:id/photos/:photoId", async (c) => {

@@ -6,6 +6,9 @@ import type {
   ClientDetail,
   ClientList,
   ClientListItem,
+  ContactChange,
+  ContactChangeList,
+  ContactChangeReveal,
   ContactMetrics,
   DeleteBlocker,
   ListingDetail,
@@ -759,6 +762,8 @@ export interface StaffApi {
   readonly cabinet: { readonly key: string; readonly body: unknown }[];
   /** Удаления: «DELETE путь» витрины, вендора, приглашения в команду — по порядку */
   readonly deletes: string[];
+  /** Запросы по смене контактов витрины: «МЕТОД путь» и тело (показать, одобрить, отклонить) */
+  readonly contactChanges: { readonly key: string; readonly body: unknown }[];
 }
 
 /** Страница списка, как у API: limit (по умолчанию 50) и offset из адреса */
@@ -815,6 +820,8 @@ export interface StaffApiOptions {
   readonly manyRequests?: number;
   /** Сколько фото ждёт решения в очереди «Новые фото» (по умолчанию 2; 0 — очереди нет) */
   readonly photoQueue?: number;
+  /** С seeded: партнёр просит сменить контакты витрины кортежа (телефон и Telegram) — ждёт решения */
+  readonly contactChange?: boolean;
 }
 
 export async function mockStaffApi(
@@ -832,6 +839,7 @@ export async function mockStaffApi(
     botLinked = true,
     manyRequests = 0,
     photoQueue = 2,
+    contactChange: contactChangeSeed = false,
   }: StaffApiOptions = {},
 ) {
   let elevated = 0;
@@ -857,6 +865,7 @@ export async function mockStaffApi(
     loggedOut: [],
     cabinet: [],
     deletes: [],
+    contactChanges: [],
   };
   // Пользователи кабинета: приглашают, правят и убирают тесты; владелец есть всегда (как в базе)
   const users: VendorUser[] = [...cabinetUsers];
@@ -883,6 +892,21 @@ export async function mockStaffApi(
     seeded ? [[CAR_LISTING_ID, { ...CAR_CONTACTS }]] : [],
   );
   const contactsOf = (id: string) => contacts.get(id) ?? { phone: null, telegram: null };
+  // Просьба партнёра сменить контакты витрины на сайте: ждёт решения; значения — только по «Показать»
+  let proposed: { listingId: string; phone: string; telegram: string | null; submittedAt: string } | null =
+    seeded && contactChangeSeed
+      ? { listingId: CAR_LISTING_ID, phone: "+998909998877", telegram: null, submittedAt: iso }
+      : null;
+  const pendingChange = (id: string): ContactChange | null => {
+    if (proposed === null || proposed.listingId !== id) return null;
+    const current = contactsOf(id);
+    return {
+      id: "00000000-0000-4000-8b00-000000000001",
+      submittedAt: proposed.submittedAt,
+      phoneChanged: proposed.phone !== current.phone,
+      telegramChanged: proposed.telegram !== current.telegram,
+    };
+  };
   const requests = [
     ...(seeded ? [REQUEST, carRequest(REQUEST)] : [REQUEST]),
     ...moreRequests(REQUEST, manyRequests),
@@ -1231,6 +1255,56 @@ export async function mockStaffApi(
       );
       replace({ ...owner, photos });
       return json(route, 200, photos);
+    }
+    // Смена контактов витрины партнёром: состояние (любой сотрудник), «Показать» и решение (revisions.moderate)
+    const contactMatch =
+      /^\/staff\/listings\/([0-9a-f-]{36})\/contact-change(?:\/(reveal|approve|decline))?$/.exec(path);
+    if (contactMatch?.[1]) {
+      const id = contactMatch[1];
+      if (!listings.some((l) => l.id === id)) return fail(route, 404, "not_found");
+      const step = contactMatch[2];
+      if (!step && method === "GET") return json(route, 200, { change: pendingChange(id) });
+      if (!PERMISSION_ROLES["revisions.moderate"].includes(role)) return fail(route, 403, "forbidden");
+      const body = request.postData() ? (request.postDataJSON() as Record<string, unknown>) : {};
+      state.contactChanges.push({ key, body });
+      if (proposed === null || proposed.listingId !== id)
+        return fail(route, 409, "contact_change_not_pending");
+      if (step === "reveal") {
+        const revealed: ContactChangeReveal = {
+          phone: proposed.phone,
+          telegram: proposed.telegram,
+          current: contactsOf(id),
+        };
+        return json(route, 200, revealed);
+      }
+      if (step === "decline" && (typeof body.reason !== "string" || body.reason.trim() === ""))
+        return fail(route, 422, "invalid_input", ["reason"]);
+      if (step === "approve") contacts.set(id, { phone: proposed.phone, telegram: proposed.telegram });
+      proposed = null;
+      return json(route, 200, { change: null });
+    }
+    if (key === "GET /staff/contact-changes") {
+      const listing = proposed && listings.find((l) => l.id === proposed?.listingId);
+      const change = proposed && pendingChange(proposed.listingId);
+      const list: ContactChangeList =
+        proposed && listing && change
+          ? {
+              total: 1,
+              items: [
+                {
+                  ...change,
+                  listing: {
+                    id: listing.id,
+                    name: listing.name,
+                    status: listing.status,
+                    categoryCode: listing.categoryCode,
+                  },
+                  vendor: { id: VENDOR_ID, code: "V101" },
+                },
+              ],
+            }
+          : { total: 0, items: [] };
+      return json(route, 200, list);
     }
     const listingMatch = /^\/staff\/listings\/([0-9a-f-]{36})(?:\/(\w+))?$/.exec(path);
     if (listingMatch?.[1]) {

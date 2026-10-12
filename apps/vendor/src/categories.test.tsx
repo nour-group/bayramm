@@ -94,6 +94,8 @@ const listing = (ref: VendorListingRef, patch: Partial<VendorListing> = {}): Ven
   capMax: null,
   photos: [],
   phone: "+998000000999",
+  telegram: null,
+  contactChange: null,
   blockers: [],
   reviewBlockers: [],
   photoLimits: { min: 3, max: 10 },
@@ -860,11 +862,13 @@ describe("карточка по категории", () => {
     await click(todos[1]?.querySelector("button"));
     expect(document.activeElement?.id).toBe("photos-title");
 
-    // Портфолио: «люди согласны» — вместо «лиц нет»; ни одна не отмечена заранее
-    expect(container.textContent).toContain("Людей на фото можно показывать");
-    const consent = byText("label", "люди на выбранных фото согласны")?.querySelector("input");
+    // Портфолио: «Что на фото» — «Лиц нет» или «Люди согласны»; ничего не выбрано заранее
+    expect(container.textContent).toContain("Что на фото");
+    expect(container.querySelector('.panel input[type="checkbox"][name]')).toBeNull();
+    const radios = [...container.querySelectorAll<HTMLInputElement>('.upload-kind input[type="radio"]')];
+    const consent = radios[1];
     const input = () => container.querySelector<HTMLInputElement>('input[type="file"]');
-    expect(consent?.checked).toBe(false);
+    expect(radios.map((r) => r.checked)).toEqual([false, false]);
     expect(input()?.disabled).toBe(true);
     await click(consent);
     expect(input()?.disabled).toBe(false);

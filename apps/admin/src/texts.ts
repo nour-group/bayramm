@@ -184,6 +184,12 @@ export const t = {
     vendor_in_use:
       "Вендора нельзя удалить: у его витрин есть заявки или витрины на проверке или в каталоге. Обновите страницу.",
     staff_invite_accepted: "Приглашение уже принято — удалить его нельзя. Отключите сотрудника.",
+    contact_change_not_pending:
+      "Предложения по контактам уже нет: партнёр его отозвал или по нему решили. Обновите страницу.",
+    contacts_require_review:
+      "Витрина на проверке или на сайте: контакты меняются только предложением, решает модератор.",
+    contacts_not_live:
+      "Витрина не на проверке и не на сайте: её контакты сохраняются сразу. Обновите страницу.",
   } as Record<string, string>,
 
   // статусы витрины
@@ -537,6 +543,24 @@ export const t = {
   revisionWhoDecides: "Предложение ждёт решения: одобряет или отклоняет модератор или администратор.",
   revisionDecided: (status: string, by: string | null, at: string) =>
     `${status}${by ? ` · ${by}` : ""} · ${at}`,
+  // Партнёр просит сменить телефон и Telegram витрины на проверке или на сайте (блок на странице витрины)
+  contactChange: {
+    title: "Партнёр предлагает новые контакты",
+    what: (phone: boolean, telegram: boolean, at: string) =>
+      `Меняет: ${[phone ? "телефон" : null, telegram ? "Telegram" : null].filter(Boolean).join(" и ")} · подано ${at}`,
+    keep: "Клиенты видят прежние контакты, пока предложение не решено.",
+    who: "Решает модератор или администратор.",
+    now: "Сейчас",
+    proposed: "Предлагает партнёр",
+    removeTelegram: "убрать Telegram",
+    approve: "Одобрить",
+    approveHint:
+      "Новые контакты сразу появятся у клиентов по кнопке «Связаться», партнёру придёт уведомление.",
+    decline: "Отклонить",
+    declineHint: "Витрина останется с прежними контактами. Причину увидит партнёр в кабинете.",
+    approved: "Контакты витрины обновлены.",
+    declined: "Предложение отклонено, партнёр увидит причину.",
+  },
   openListing: "К витрине",
   photoQueue: "Новые фото",
   pendingPhotos: (n: number) => `ждут решения: ${n}`,
@@ -727,6 +751,8 @@ export const t = {
     "ops.weekly_report": "Команде: отчёт за неделю",
     "ops.api_error": "Команде: ошибки сервера",
     "vendor.access_granted": "Вендору: добавлен в кабинет",
+    "ops.contact_change_submitted": "Команде: партнёр просит сменить контакты витрины",
+    "vendor.contact_change_decided": "Вендору: решение по новым контактам витрины",
   } as Record<string, string>,
 
   // журнал
@@ -744,6 +770,7 @@ export const t = {
     "listing.": "Витрины",
     "listing_service.": "Услуги",
     "listing_contact.": "Контакты витрин",
+    "listing_contact_change.": "Смена контактов витрин партнёром",
     "listing_revision.": "Предложения изменений",
     "photo.": "Фото",
     "availability.": "Занятость",
@@ -854,6 +881,13 @@ export const t = {
     "listing_contact.create": "Контакты витрины вписаны",
     "listing_contact.update": "Контакты витрины изменены",
     "listing_contact.delete": "Контакты витрины убраны",
+    "listing_contact_change.submit": "Партнёр просит сменить контакты витрины",
+    "listing_contact_change.withdraw": "Партнёр отозвал просьбу о контактах",
+    "listing_contact_change.approve": "Новые контакты витрины одобрены",
+    "listing_contact_change.decline": "Новые контакты витрины отклонены",
+    "listing.withdraw": "Витрина отозвана с проверки партнёром",
+    "photo.order": "Порядок фото изменил партнёр",
+    "photo.cover": "Обложку выбрал партнёр",
     "listing.category_change": "Категория витрины изменена",
     "listing.delete": "Витрина удалена",
     "listing_service.create": "Услуга добавлена",
@@ -902,6 +936,8 @@ export const t = {
     staff_listing: "телефон витрины",
     request_inbox: "вендор в кабинете",
     self: "сам себе",
+    staff_contact_change: "новые контакты витрины",
+    self_contact_change: "своя просьба о контактах",
     system_notification: "уведомление",
   } as Record<string, string>,
 
@@ -1258,6 +1294,12 @@ export const t = {
       "Контакты или реклама в тексте",
       "Ошибки в тексте",
       "Нет текста на узбекском",
+    ],
+    contactChangeDecline: [
+      "Номер не принадлежит витрине",
+      "Номер не отвечает",
+      "Telegram не относится к витрине",
+      "Не удалось проверить",
     ],
     clientBlock: ["Спам заявками", "Ложные заявки", "Оскорбления вендоров", "По просьбе клиента"],
     clientPhone: ["Вендор не может дозвониться", "Жалоба вендора", "Проверка заявки"],

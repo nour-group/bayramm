@@ -377,20 +377,65 @@ export interface VendorPhoto {
  * DELETE /vendor/listings/:id/photos/:photoId → 204. Опубликованная площадка не останется
  *        без минимума одобренных фото — 422 publish_blocked (details: photos).
  *
- * Порядок и обложку выбирает команда при модерации. Чужая площадка или фото — 404.
+ * PUT    /vendor/listings/:id/photos/order { ids } → 200 VendorPhotoList: порядок одобренных фото —
+ *        ids — все одобренные фото витрины (не удалённые), без лишних и пропущенных, обложка
+ *        остаётся первой; ждущие решения и отклонённые фото не затрагиваются. 422 invalid_input
+ *        (ids) — набор не тот.
+ * POST   /vendor/listings/:id/photos/:photoId/cover → 200 VendorPhotoList: обложка — одобренное
+ *        фото (первым в порядке); ждущее и отклонённое — 422 invalid_input.
+ * Порядок и обложка применяются сразу, без проверки; новые фото встают в конец. Чужая площадка
+ * или фото — 404.
  */
 export const NO_FACES_HEADER = "X-No-Faces";
 
 /** Подтверждение согласия людей на фото — у категорий с правилом portfolio */
 export const PHOTO_CONSENT_HEADER = "X-Photo-Consent";
 
+/** Ответ порядка и обложки: фото витрины в новом порядке (обложка первой) */
+export interface VendorPhotoList {
+  readonly photos: readonly VendorPhoto[];
+}
+
+/**
+ * Смена публичных телефона и Telegram витрины, которая на проверке или на сайте: запрос ждёт
+ * решения команды, клиенты видят прежние контакты (телефон виден сразу — «Связаться»).
+ *   · pending — ждёт решения; phone и telegram — что просили (только владельцу кабинета: у
+ *     сотрудника площадки null);
+ *   · declined — отклонён, reason — причина от команды; прежние контакты остаются.
+ * Одобренный и отозванный запросы не показываются: контакты витрины — уже новые или прежние.
+ */
+export interface VendorContactChange {
+  readonly status: "pending" | "declined";
+  readonly submittedAt: string;
+  readonly decidedAt: string | null;
+  readonly reason: string | null;
+  readonly phone: string | null;
+  readonly telegram: string | null;
+}
+
+/** Тело PUT /vendor/listings/:id/contacts: телефон обязателен (+998…), Telegram — имя, @name или t.me/name */
+export interface VendorContactsInput {
+  readonly phone: string;
+  /** null или пусто — Telegram у витрины не нужен */
+  readonly telegram?: string | null;
+}
+
+/**
+ * Ответ PUT /vendor/listings/:id/contacts: sentForModeration — витрина на проверке или на сайте,
+ * изменение ушло запросом (listing.contactChange — «на проверке»); иначе контакты сохранены сразу
+ */
+export interface VendorContactsSave {
+  readonly sentForModeration: boolean;
+  readonly listing: VendorListing;
+}
+
 /**
  * GET /vendor/listings/:id → 200: витрина как есть в базе — то, что видит клиент (плюс фото
  * и услуги, которые ждут решения или отклонены, — с отметкой статуса).
  * Название, описания, поля витрины и ссылки на видео партнёр меняет предложением правки
  * (ниже), услуги — своими маршрутами (ниже), фото — загрузкой (выше): их проверяет команда.
- * Цена «от» — из одобренных услуг (до публикации — и из отправленных на проверку). Адрес,
- * вместимость и телефон меняет менеджер. blockers — чего не хватает для публикации (коды из
+ * Цена «от» — из одобренных услуг (до публикации — и из отправленных на проверку). Адрес и
+ * вместимость меняет менеджер; телефон и Telegram — владелец кабинета (контакты, ниже). blockers — чего не хватает для публикации (коды из
  * базы: price, attributes, photos, …), reviewBlockers — чего не хватает, чтобы отправить
  * витрину на проверку (услуги и фото, которые ждут решения, тут засчитываются),
  * missingAttributes — какие поля витрины не заполнены.
@@ -400,6 +445,22 @@ export const PHOTO_CONSENT_HEADER = "X-Photo-Consent";
  * оповещение. Не черновик и не отклонённая — 409 illegal_transition; не всё готово — 422
  * publish_blocked (details — коды reviewBlockers); сотруднику площадки — 403
  * vendor_owner_required. Чужая витрина — 404.
+ *
+ * POST /vendor/listings/:id/withdraw → 200 VendorListing (status draft): владелец кабинета
+ * отзывает витрину с проверки (review → draft) и снова правит её напрямую; очередь проверки у
+ * команды её больше не содержит. Не на проверке — 409 illegal_transition; сотруднику площадки —
+ * 403 vendor_owner_required.
+ *
+ * Контакты (только владелец кабинета; телефон и Telegram витрины — те, что клиент видит по
+ * «Связаться»):
+ * PUT  /vendor/listings/:id/contacts VendorContactsInput → 200 VendorContactsSave. Витрина вне
+ *      сайта (черновик, отклонённая) — контакты сохраняются сразу; на проверке, опубликованная
+ *      или приостановленная — запросом (одна ждущая строка, новый заменяет прежний), клиенты
+ *      до решения команды видят прежние. Телефон у витрины обязателен, Telegram — нет. 422
+ *      invalid_input (phone | telegram), no_changes — значения те же, что сейчас.
+ * POST /vendor/listings/:id/contact-change/withdraw → 200 VendorListing: отозвать ждущий запрос;
+ *      ждущего нет — 409 contact_change_not_pending.
+ * Решение команды — уведомление владельцам кабинета; отказ с причиной — listing.contactChange.
  */
 export interface VendorListing {
   readonly id: string;
@@ -428,6 +489,10 @@ export interface VendorListing {
   readonly photos: readonly VendorPhoto[];
   /** Телефон для заявок, который клиент видит сразу */
   readonly phone: string | null;
+  /** Telegram витрины для клиентов (имя без @); null — не указан */
+  readonly telegram: string | null;
+  /** Запрос на смену телефона и Telegram: ждёт решения или отклонён; null — запроса нет */
+  readonly contactChange: VendorContactChange | null;
   readonly blockers: readonly string[];
   /** Чего не хватает, чтобы отправить на проверку (POST …/submit) */
   readonly reviewBlockers: readonly string[];

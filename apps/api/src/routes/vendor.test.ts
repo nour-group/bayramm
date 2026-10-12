@@ -23,6 +23,12 @@ describe("/vendor без сессии кабинета", () => {
     ["GET", `/vendor/listings/${ID}/revisions`],
     ["POST", `/vendor/listings/${ID}/revisions`],
     ["POST", `/vendor/listings/${ID}/revisions/${ID}/withdraw`],
+    ["POST", `/vendor/listings/${ID}/submit`],
+    ["POST", `/vendor/listings/${ID}/withdraw`],
+    ["PUT", `/vendor/listings/${ID}/contacts`],
+    ["POST", `/vendor/listings/${ID}/contact-change/withdraw`],
+    ["PUT", `/vendor/listings/${ID}/photos/order`],
+    ["POST", `/vendor/listings/${ID}/photos/${ID}/cover`],
   ])("%s %s без токена — 401", async (method, path) => {
     const { res } = await call(path, { method });
     expect(res.status).toBe(401);

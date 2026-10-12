@@ -87,6 +87,7 @@ import {
 } from "../ui";
 import { useUnsaved } from "../unsaved";
 import { Calendar, LeadTime } from "./Calendar";
+import { ContactChange } from "./ContactChange";
 import {
   CapacityControl,
   ContactsSection,
@@ -498,6 +499,8 @@ function CategoryListing({
               />
             )}
             <DataSection />
+            {/* Партнёр просит сменить контакты витрины на проверке или на сайте (блок сам прячется, если просьбы нет) */}
+            <ContactChange listingId={listing.id} onDecided={onReload} />
             <ContactsSection />
           </div>
         </div>

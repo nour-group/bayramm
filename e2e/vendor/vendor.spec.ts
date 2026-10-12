@@ -382,7 +382,7 @@ test.describe("кабинет", () => {
     expect(api.unexpected).toEqual([]);
   });
 
-  test("фото: без галочки «лиц нет» файлы не выбрать; фото уходит сжатым и ждёт проверки; удаление — через подтверждение", async ({
+  test("фото: без галочки про людей и лиц файлы не выбрать; фото уходит сжатым и ждёт проверки; удаление — через подтверждение", async ({
     page,
   }) => {
     const api = await start(page);
@@ -391,7 +391,8 @@ test.describe("кабинет", () => {
     const section = page.locator("section[aria-labelledby='photos-title']");
     const photos = section.locator(".photos img");
     await expect(photos).toHaveCount(4);
-    await expect(section.getByText(t.noFacesWarning)).toBeVisible();
+    // Плашки-предупреждения нет: правило — в самой галочке
+    await expect(section.locator(".notice-warn")).toHaveCount(0);
     await expect(section.getByText(fill(t.photosLimits, { min: 3, max: 10 }))).toBeVisible();
 
     // Галочка не отмечена заранее; без неё выбор файлов закрыт
@@ -415,7 +416,8 @@ test.describe("кабинет", () => {
     expect(api.uploads[0]?.noFaces).toBe("1");
     expect(api.uploads[0]?.contentType).toMatch(/^image\/(webp|jpeg)$/);
     expect(api.uploads[0]?.bytes).toBeGreaterThan(0);
-    await expect(section.locator(".photo-chip")).toHaveCount(2);
+    // Обложка и два фото на проверке
+    await expect(section.locator(".photo-chip")).toHaveCount(3);
     await expect(section.getByRole("alert")).toHaveCount(0);
     // Подтверждение — про выбранные фото: для следующих — снова
     await expect(ack).not.toBeChecked();
@@ -450,7 +452,7 @@ test.describe("кабинет", () => {
     await expect(page.locator(".photos img")).toHaveCount(4);
     await expect(page.locator('input[type="file"]')).toHaveCount(0);
     await expect(page.getByRole("checkbox")).toHaveCount(0);
-    await expect(page.locator(".photo-delete")).toHaveCount(0);
+    await expect(page.locator(".photo-x, button.photo-tile")).toHaveCount(0);
     await expect(page.getByRole("button", { name: t.proposalStart })).toHaveCount(0);
     // Кто меняет витрину — сказано один раз, вверху; блока изменений без предложений нет
     await expect(page.locator(".proposal")).toHaveCount(0);
@@ -921,9 +923,10 @@ test.describe("витрины в разных категориях", () => {
     else await expect(page.locator(".venue-name")).toHaveCount(0);
     await expect(page.locator(".readiness")).toContainText("Команда");
     const section = page.locator("section[aria-labelledby='photos-title']");
-    await expect(section.getByText(t.portfolioWarning)).toBeVisible();
-    const consent = section.getByRole("checkbox", { name: t.consentAck });
-    const noFaces = section.getByRole("checkbox", { name: t.noFacesAck });
+    // Портфолио: «Что на фото» — «Лиц нет» / «Люди согласны», ничего не выбрано заранее
+    const consent = section.getByRole("radio", { name: t.photoKindConsent });
+    const noFaces = section.getByRole("radio", { name: t.photoKindNoFaces });
+    await expect(section.getByRole("radiogroup", { name: t.photoKindLabel })).toBeVisible();
     await expect(consent).not.toBeChecked();
     await expect(noFaces).not.toBeChecked();
     const input = section.locator('input[type="file"]');
@@ -1120,8 +1123,7 @@ test.describe("что ждёт партнёра после решений ком
     const section = page.locator("section[aria-labelledby='photos-title']");
     const decline = section.locator(".photo-decline");
     await expect(decline).toHaveCount(1);
-    await expect(decline).toContainText(fill(t.photoDeclinedReason, { reason: "На фото виден человек" }));
-    await expect(decline).toContainText(t.photoDeclinedNext);
+    await expect(decline).toHaveText(fill(t.photoDeclinedReason, { reason: "На фото виден человек" }));
     await expectNoAxeViolations(page, "площадка: отклонённое фото");
     await expectHitAreas(page, "площадка: отклонённое фото", CONTROLS);
 
@@ -1193,11 +1195,11 @@ test.describe("что ждёт партнёра после решений ком
     await expect(badge(page, t.services)).toHaveCount(0);
     await page.goto("/card");
     await expect(heading(page)).toHaveText(t.card);
-    // Причина отказа видна и ему, а призыва удалить и загрузить новое — нет
+    // Причина отказа видна и ему, а действий с фото — нет
     await expect(page.locator(".photo-decline")).toContainText(
       fill(t.photoDeclinedReason, { reason: "На фото виден человек" }),
     );
-    await expect(page.locator(".photo-decline-next")).toHaveCount(0);
+    await expect(page.locator(".photo-x, button.photo-tile")).toHaveCount(0);
   });
 
   test("несколько витрин: значок раздела — по всем, у витрины в выборе — слова «требует внимания»", async ({
