@@ -1,21 +1,19 @@
 /* Метрики запуска — только чтение, только числа (все роли). Считает база, определения — одни
    с отчётами бота: ответ вендора (не «связались» от команды), в срок, какие заявки в расчёте
-   доли. Здесь — очереди команды (плитка — ссылка в раздел, где очередь разбирают, если он есть
-   у роли), сводка по категориям за 30 дней, таблица по неделям и вендоры
-   за 30 дней с сортировкой по доле ответов в срок; фильтр категории — у недель и вендоров
-   (на телефоне — в шторке). Ниже вендоров — «Контакты витрин»: у каких витрин чаще открывают
-   контакты и звонят или пишут в Telegram (те же 30 дней и тот же фильтр категории). На странице
-   вендора — его ответы по витринам с категориями (VendorResponsePanel). Полосы — классами:
-   CSP не пускает встроенные стили. Фильтр категории — в адресе (?category=): «назад» с
+   доли — они в листе «Как считаем», а не абзацами над таблицами.
+   Таблица — одна за раз, вкладками: недели (по неделям с заявками), вендоры за 30 дней (сортировка по
+   доле ответов в срок), сводка по категориям за 30 дней, контакты витрин за 30 дней (у каких чаще
+   открывают контакты и звонят или пишут в Telegram). Фильтр категории — у недель, вендоров и
+   контактов (на телефоне — в шторке). Очереди «что ждёт решения» — счётчики у разделов и сами разделы.
+   На странице вендора — его ответы строкой (VendorResponsePanel) и ссылка сюда. Полосы — классами:
+   CSP не пускает встроенные стили. Вкладка и категория — в адресе (?tab=&category=): «назад» с
    вендора или витрины возвращает те же цифры. */
 
 import type {
   CategoryMetrics,
   CategoryMetricsList,
   ContactMetrics,
-  ListingMetrics,
   MetricsOverview,
-  OpsQueues,
   ResponseStats,
   VendorMetrics,
   VendorMetricsList,
@@ -24,105 +22,81 @@ import type {
 } from "@bayramm/shared/api/staff";
 import { Dialog, RadioGroup, Select } from "@bayramm/ui/react";
 import { useState } from "react";
-import { useCan, useLoad } from "../api";
+import { useLoad } from "../api";
 import { CategoryChip, categoryName, categoryOptions, knownCategory } from "../categories";
-import { formatDuration, formatMoment, formatPercent, formatWeek, vendorLabel, weekNumber } from "../format";
+import { formatDuration, formatPercent, formatWeek, vendorLabel, weekNumber } from "../format";
 import { usePhone } from "../layout";
-import { SECTION_PERMISSION, sectionOf, useQueryState, type View } from "../router";
+import { useQueryState } from "../router";
 import { t } from "../texts";
-import { ActiveFilter, EmptyList, FilterButton, Link, LoadedView, Pill, StatusPill } from "../ui";
+import { ActiveFilter, EmptyList, FilterButton, Link, LoadedView, Pill, SheetClose, StatusPill } from "../ui";
 
 /** Меньше половины заявок отвечено в срок — полоса коралловая */
 const RATE_LOW = 50;
 
-const QUEUES: readonly (keyof OpsQueues)[] = [
-  "awaiting",
-  "overdue",
-  "deadTotal",
-  "listingsReview",
-  "revisionsPending",
-  "servicesPending",
-  "photosPending",
-];
-/**
- * Где очередь разбирают: плитка «Сейчас» ведёт туда — сразу к нужной очереди или с нужным
- * фильтром (просроченные заявки — «Требуют действия»)
- */
-const QUEUE_LINK: Readonly<Record<keyof OpsQueues, View>> = {
-  awaiting: { name: "requests" },
-  overdue: { name: "requests", query: { sla: "late" } },
-  deadTotal: { name: "notifications" },
-  listingsReview: { name: "moderation", query: { queue: "review" } },
-  revisionsPending: { name: "moderation", query: { queue: "revisions" } },
-  servicesPending: { name: "moderation", query: { queue: "services" } },
-  photosPending: { name: "moderation", query: { queue: "photos" } },
-};
-/** Эти очереди, если не пусты, — выделить */
-const QUEUE_WARN: ReadonlySet<keyof OpsQueues> = new Set(["overdue", "deadTotal"]);
+type Tab = "weeks" | "vendors" | "categories" | "contacts";
+const TABS: readonly Tab[] = ["weeks", "vendors", "categories", "contacts"];
+/** Вкладки, где фильтр категории что-то сужает; сводка по категориям — сама по категориям */
+const FILTERED: ReadonlySet<Tab> = new Set(["weeks", "vendors", "contacts"]);
 
-export function MetricsPage() {
-  const [query, setQuery] = useQueryState(["category"] as const);
-  const category = knownCategory(query.category);
+const KEYS = ["tab", "category"] as const;
+
+export function MetricsPage({ slaHours }: { slaHours?: number | undefined }) {
+  const [query, setQuery] = useQueryState(KEYS);
+  const tab = TABS.find((candidate) => candidate === query.tab) ?? "weeks";
+  const category = FILTERED.has(tab) ? knownCategory(query.category) : null;
+  // Категория остаётся в адресе и при взгляде на сводку: вернулись на вкладку — те же цифры
   const setCategory = (next: string | null) => setQuery({ category: next });
-  const filter = category === null ? "" : `?category=${encodeURIComponent(category)}`;
-  const overview = useLoad<MetricsOverview>(`/staff/metrics${filter}`);
-  const vendors = useLoad<VendorMetricsList>(`/staff/metrics/vendors${filter}`);
-  const categories = useLoad<CategoryMetricsList>("/staff/metrics/categories");
   return (
     <div className="stack">
-      <LoadedView loaded={overview.loaded} onRetry={overview.reload} skeleton="stats">
-        {(data) => (
-          <section className="stack" aria-labelledby="queues-title">
-            <h2 id="queues-title" className="section-title">
-              {t.metricsNow}
-            </h2>
-            <Queues queues={data.queues} />
-          </section>
-        )}
-      </LoadedView>
-      <section className="stack" aria-labelledby="categories-metrics-title">
-        <h2 id="categories-metrics-title" className="section-title">
-          {t.metricsCategories}
-        </h2>
-        <p className="muted small">{t.metricsCategoriesHint}</p>
-        <LoadedView loaded={categories.loaded} onRetry={categories.reload}>
-          {(list) => <CategoryTable items={list.items} />}
-        </LoadedView>
-      </section>
-      <CategoryFilter category={category} onChange={setCategory} />
-      <LoadedView loaded={overview.loaded} onRetry={overview.reload} skeleton="stats">
-        {(data) => (
-          <section className="stack" aria-labelledby="weekly-title">
-            <h2 id="weekly-title" className="section-title">
-              {t.metricsWeekly}
-            </h2>
-            <p className="muted small">{t.metricsWeeklyHint(data.slaHours)}</p>
-            <WeeklyTable weeks={data.weeks} />
-          </section>
-        )}
-      </LoadedView>
-      <section className="stack" aria-labelledby="vendors-metrics-title">
-        <h2 id="vendors-metrics-title" className="section-title">
-          {t.metricsVendors}
-        </h2>
-        <p className="muted small">{t.metricsVendorsHint}</p>
-        <LoadedView loaded={vendors.loaded} onRetry={vendors.reload}>
-          {(list) =>
-            list.items.length === 0 ? (
-              // Пусто из-за категории — снять фильтр одной кнопкой
-              <EmptyList text={t.metricsVendorsEmpty} onReset={category ? () => setCategory(null) : null} />
-            ) : (
-              <VendorTable items={list.items} />
-            )
-          }
-        </LoadedView>
-      </section>
-      <ContactsSection category={category} onReset={() => setCategory(null)} />
+      <RadioGroup<Tab>
+        variant="segmented"
+        label={t.metrics}
+        name="metrics-tab"
+        value={tab}
+        onChange={(next) => setQuery({ tab: next === "weeks" ? null : next })}
+        options={TABS.map((value) => ({ value, label: t.metricsTabs[value] }))}
+      />
+      <div className="toolbar">
+        {FILTERED.has(tab) ? <CategoryFilter category={category} onChange={setCategory} /> : null}
+        {tab === "weeks" ? null : <span className="muted small">{t.metricsPeriod}</span>}
+        <HowWeCount slaHours={slaHours} />
+      </div>
+      {tab === "weeks" ? <WeeksTab category={category} onReset={() => setCategory(null)} /> : null}
+      {tab === "vendors" ? <VendorsTab category={category} onReset={() => setCategory(null)} /> : null}
+      {tab === "categories" ? <CategoriesTab /> : null}
+      {tab === "contacts" ? <ContactsTab category={category} onReset={() => setCategory(null)} /> : null}
     </div>
   );
 }
 
-/** Фильтр категории недель и вендоров: на компьютере — список, на телефоне — шторка */
+/** Определения — одним листом: что считаем «в срок», чьи заявки в доле, за какой период */
+function HowWeCount({ slaHours }: { slaHours: number | undefined }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="btn btn-sm" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+        {t.metricsHow}
+      </button>
+      <Dialog
+        open={open}
+        title={t.metricsHow}
+        onClose={() => setOpen(false)}
+        actions={<SheetClose onClose={() => setOpen(false)} />}
+      >
+        <dl className="how-we-count">
+          {t.metricsHowItems(slaHours).map((item) => (
+            <div key={item.term}>
+              <dt>{item.term}</dt>
+              <dd>{item.text}</dd>
+            </div>
+          ))}
+        </dl>
+      </Dialog>
+    </>
+  );
+}
+
+/** Фильтр категории: на компьютере — список, на телефоне — кнопка «Фильтры» и шторка */
 function CategoryFilter({
   category,
   onChange,
@@ -132,36 +106,22 @@ function CategoryFilter({
 }) {
   const phone = usePhone();
   const [open, setOpen] = useState(false);
-  // Что именно фильтр сужает — всегда словами: он стоит между сводкой по категориям и неделями
-  const hint = (
-    <p className="muted small">
-      {category === null ? t.metricsFilterScope : t.metricsCategoryFilter(categoryName(category))}
-    </p>
-  );
   if (!phone)
     return (
-      <div className="stack">
-        <div className="toolbar">
-          <Select
-            size="compact"
-            label={t.colCategory}
-            value={category ?? ""}
-            onChange={(code) => onChange(code === "" ? null : code)}
-            options={[{ value: "", label: t.allCategories }, ...categoryOptions()]}
-          />
-        </div>
-        {hint}
-      </div>
+      <Select
+        size="compact"
+        label={t.colCategory}
+        value={category ?? ""}
+        onChange={(code) => onChange(code === "" ? null : code)}
+        options={[{ value: "", label: t.allCategories }, ...categoryOptions()]}
+      />
     );
   return (
-    <div className="stack">
-      <div className="toolbar">
-        <FilterButton count={category === null ? 0 : 1} open={open} onOpen={() => setOpen(true)} />
-      </div>
+    <>
+      <FilterButton count={category === null ? 0 : 1} open={open} onOpen={() => setOpen(true)} />
       {category === null ? null : (
         <ActiveFilter label={categoryName(category)} onClear={() => onChange(null)} />
       )}
-      {hint}
       <Dialog
         open={open}
         title={t.filters}
@@ -180,37 +140,64 @@ function CategoryFilter({
           options={[{ value: "all", label: t.allCategories }, ...categoryOptions()]}
         />
       </Dialog>
-    </div>
+    </>
   );
 }
 
-function Queues({ queues }: { queues: OpsQueues }) {
-  const can = useCan();
+const filterOf = (category: string | null) =>
+  category === null ? "" : `?category=${encodeURIComponent(category)}`;
+
+interface TabProps {
+  category: string | null;
+  onReset: () => void;
+}
+
+function WeeksTab({ category }: TabProps) {
+  const overview = useLoad<MetricsOverview>(`/staff/metrics${filterOf(category)}`);
   return (
-    <ul className="stats">
-      {QUEUES.map((key) => {
-        const className = `stat${QUEUE_WARN.has(key) && queues[key] > 0 ? " stat-warn" : ""}`;
-        const link = QUEUE_LINK[key];
-        const body = (
-          <>
-            <span className="stat-value">{queues[key]}</span>
-            <span className="stat-label">{t.metricsQueues[key]}</span>
-          </>
-        );
-        // Раздела у роли нет (модератору — заявки): плитка без ссылки, иначе — «нет доступа»
-        return can(SECTION_PERMISSION[sectionOf(link)]) ? (
-          <li key={key}>
-            <Link to={link} className={`${className} stat-link`}>
-              {body}
-            </Link>
-          </li>
-        ) : (
-          <li key={key} className={className}>
-            {body}
-          </li>
-        );
-      })}
-    </ul>
+    <section aria-labelledby="weekly-title">
+      <h2 id="weekly-title" className="visually-hidden">
+        {t.metricsWeekly}
+      </h2>
+      <LoadedView loaded={overview.loaded} onRetry={overview.reload}>
+        {(data) => <WeeklyTable weeks={data.weeks} />}
+      </LoadedView>
+    </section>
+  );
+}
+
+function VendorsTab({ category, onReset }: TabProps) {
+  const vendors = useLoad<VendorMetricsList>(`/staff/metrics/vendors${filterOf(category)}`);
+  return (
+    <section aria-labelledby="vendors-metrics-title">
+      <h2 id="vendors-metrics-title" className="visually-hidden">
+        {t.metricsVendors}
+      </h2>
+      <LoadedView loaded={vendors.loaded} onRetry={vendors.reload}>
+        {(list) =>
+          list.items.length === 0 ? (
+            // Пусто из-за категории — снять фильтр одной кнопкой
+            <EmptyList text={t.metricsVendorsEmpty} onReset={category ? onReset : null} />
+          ) : (
+            <VendorTable items={list.items} />
+          )
+        }
+      </LoadedView>
+    </section>
+  );
+}
+
+function CategoriesTab() {
+  const categories = useLoad<CategoryMetricsList>("/staff/metrics/categories");
+  return (
+    <section aria-labelledby="categories-metrics-title">
+      <h2 id="categories-metrics-title" className="visually-hidden">
+        {t.metricsCategories}
+      </h2>
+      <LoadedView loaded={categories.loaded} onRetry={categories.reload}>
+        {(list) => <CategoryTable items={list.items} />}
+      </LoadedView>
+    </section>
   );
 }
 
@@ -235,6 +222,23 @@ function Rate({ stats }: { stats: Pick<ResponseStats, "answeredRate" | "answered
   );
 }
 
+type Numbers = Pick<ResponseStats, "requests" | "answeredRate" | "medianResponseMinutes" | "slaBreaches">;
+
+/**
+ * Главные числа одной строкой: заявок · в срок · медиана ответа (и «срок сорван», когда он был).
+ * Карточка телефона и страница вендора — таблицы там не нужны
+ */
+export function statLine(stats: Numbers): string {
+  return [
+    t.requestsOf(stats.requests),
+    t.inTimeShort(formatPercent(stats.answeredRate)),
+    t.medianTime(formatDuration(stats.medianResponseMinutes)),
+    stats.slaBreaches > 0 ? t.breachesShort(stats.slaBreaches) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 // ── по неделям ─────────────────────────────────────────────────────────────
 
 function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
@@ -248,27 +252,7 @@ function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
               <p className="rcard-title">{formatWeek(week.weekStart)}</p>
               {week.partial && <Pill tone="outline">{t.weekNow}</Pill>}
             </div>
-            <p className="rcard-meta">{weekNumber(week.weekLabel)}</p>
-            <Rate stats={week} />
-            <dl className="rcard-facts">
-              <dt>{t.colRequests}</dt>
-              <dd>
-                {week.requests} · {t.clientsCount(week.clients)}
-              </dd>
-              <dt>{t.colResponseTime}</dt>
-              <dd>
-                {t.medianTime(formatDuration(week.medianResponseMinutes))} ·{" "}
-                {t.p90Time(formatDuration(week.p90ResponseMinutes))}
-              </dd>
-              <dt>{t.colAgreed}</dt>
-              <dd>
-                {week.agreed} · {formatPercent(week.agreedRate)}
-              </dd>
-              <dt>{t.colBreaches}</dt>
-              <dd>{week.slaBreaches}</dd>
-              <dt>{t.colDead}</dt>
-              <dd>{week.deadNotifications}</dd>
-            </dl>
+            <p className="rcard-meta">{statLine(week)}</p>
           </li>
         ))}
       </ul>
@@ -281,10 +265,8 @@ function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
             <th scope="col">{t.colWeek}</th>
             <th scope="col">{t.colRequests}</th>
             <th scope="col">{t.colAnswered}</th>
-            <th scope="col">{t.colResponseTime}</th>
-            <th scope="col">{t.colAgreed}</th>
+            <th scope="col">{t.colMedian}</th>
             <th scope="col">{t.colBreaches}</th>
-            <th scope="col">{t.colDead}</th>
           </tr>
         </thead>
         <tbody>
@@ -296,23 +278,12 @@ function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
                   {weekNumber(week.weekLabel)} {week.partial && <Pill tone="outline">{t.weekNow}</Pill>}
                 </span>
               </th>
-              <td>
-                {week.requests}
-                <span className="sub">{t.clientsCount(week.clients)}</span>
-              </td>
+              <td>{week.requests}</td>
               <td>
                 <Rate stats={week} />
               </td>
-              <td>
-                {t.medianTime(formatDuration(week.medianResponseMinutes))}
-                <span className="sub">{t.p90Time(formatDuration(week.p90ResponseMinutes))}</span>
-              </td>
-              <td>
-                {week.agreed}
-                <span className="sub">{formatPercent(week.agreedRate)}</span>
-              </td>
+              <td>{formatDuration(week.medianResponseMinutes)}</td>
               <td>{week.slaBreaches}</td>
-              <td>{week.deadNotifications}</td>
             </tr>
           ))}
         </tbody>
@@ -336,21 +307,7 @@ function CategoryTable({ items }: { items: readonly CategoryMetrics[] }) {
             <p className="rcard-meta">
               {t.activeListings(row.activeListings)} · {t.activeVendors(row.activeVendors)}
             </p>
-            <Rate stats={row} />
-            <dl className="rcard-facts">
-              <dt>{t.colRequests}</dt>
-              <dd>
-                {row.requests} · {t.clientsCount(row.clients)}
-              </dd>
-              <dt>{t.colMedian}</dt>
-              <dd>{formatDuration(row.medianResponseMinutes)}</dd>
-              <dt>{t.colAgreed}</dt>
-              <dd>
-                {row.agreed} · {formatPercent(row.agreedRate)}
-              </dd>
-              <dt>{t.colBreaches}</dt>
-              <dd>{row.slaBreaches}</dd>
-            </dl>
+            <p className="rcard-meta">{statLine(row)}</p>
           </li>
         ))}
       </ul>
@@ -363,8 +320,7 @@ function CategoryTable({ items }: { items: readonly CategoryMetrics[] }) {
             <th scope="col">{t.colCategory}</th>
             <th scope="col">{t.colRequests}</th>
             <th scope="col">{t.colAnswered}</th>
-            <th scope="col">{t.colResponseTime}</th>
-            <th scope="col">{t.colAgreed}</th>
+            <th scope="col">{t.colMedian}</th>
             <th scope="col">{t.colBreaches}</th>
           </tr>
         </thead>
@@ -377,21 +333,11 @@ function CategoryTable({ items }: { items: readonly CategoryMetrics[] }) {
                   {t.activeListings(row.activeListings)} · {t.activeVendors(row.activeVendors)}
                 </span>
               </th>
-              <td>
-                {row.requests}
-                <span className="sub">{t.clientsCount(row.clients)}</span>
-              </td>
+              <td>{row.requests}</td>
               <td>
                 <Rate stats={row} />
               </td>
-              <td>
-                {t.medianTime(formatDuration(row.medianResponseMinutes))}
-                <span className="sub">{t.p90Time(formatDuration(row.p90ResponseMinutes))}</span>
-              </td>
-              <td>
-                {row.agreed}
-                <span className="sub">{formatPercent(row.agreedRate)}</span>
-              </td>
+              <td>{formatDuration(row.medianResponseMinutes)}</td>
               <td>{row.slaBreaches}</td>
             </tr>
           ))}
@@ -520,19 +466,7 @@ function VendorCards({
               </Link>
             </div>
             <p className="rcard-meta">{vendorMeta(row)}</p>
-            <Rate stats={row} />
-            <dl className="rcard-facts">
-              <dt>{t.colRequests}</dt>
-              <dd>{row.requests}</dd>
-              <dt>{t.colMedian}</dt>
-              <dd>{formatDuration(row.medianResponseMinutes)}</dd>
-              <dt>{t.colBreaches}</dt>
-              <dd>{row.slaBreaches}</dd>
-              <dt>{t.colAgreed}</dt>
-              <dd>{row.agreed}</dd>
-              <dt>{t.colLastRequest}</dt>
-              <dd>{formatMoment(row.lastRequestAt)}</dd>
-            </dl>
+            <p className="rcard-meta">{statLine(row)}</p>
           </li>
         ))}
       </ul>
@@ -555,8 +489,6 @@ function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
             <SortHeader label={t.colAnswered} column="rate" sort={sort} onSort={setSort} />
             <SortHeader label={t.colMedian} column="median" sort={sort} onSort={setSort} />
             <th scope="col">{t.colBreaches}</th>
-            <th scope="col">{t.colAgreed}</th>
-            <th scope="col">{t.colLastRequest}</th>
           </tr>
         </thead>
         <tbody>
@@ -574,8 +506,6 @@ function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
               </td>
               <td>{formatDuration(row.medianResponseMinutes)}</td>
               <td>{row.slaBreaches}</td>
-              <td>{row.agreed}</td>
-              <td>{formatMoment(row.lastRequestAt)}</td>
             </tr>
           ))}
         </tbody>
@@ -589,16 +519,15 @@ function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
 type ContactRow = ContactMetrics["items"][number];
 
 /** Контакты витрин за 30 дней: сколько раз открыли окно контактов, позвонили, написали в Telegram */
-function ContactsSection({ category, onReset }: { category: string | null; onReset: () => void }) {
+function ContactsTab({ category, onReset }: TabProps) {
   const query = new URLSearchParams({ days: "30" });
   if (category !== null) query.set("category", category);
   const { loaded, reload } = useLoad<ContactMetrics>(`/staff/metrics/contacts?${query}`);
   return (
-    <section className="stack" aria-labelledby="contacts-metrics-title">
-      <h2 id="contacts-metrics-title" className="section-title">
+    <section aria-labelledby="contacts-metrics-title">
+      <h2 id="contacts-metrics-title" className="visually-hidden">
         {t.metricsContacts}
       </h2>
-      <p className="muted small">{t.metricsContactsHint}</p>
       <LoadedView loaded={loaded} onRetry={reload}>
         {(data) =>
           data.items.length === 0 ? (
@@ -696,111 +625,24 @@ function ContactTable({ items, days }: { items: readonly ContactRow[]; days: num
 
 // ── страница вендора ───────────────────────────────────────────────────────
 
-/** Ответы вендора на заявки за 30 дней и по его витринам (если их несколько) */
+/** Ответы вендора на заявки за 30 дней: одна строка и ссылка на метрики вендоров */
 export function VendorResponsePanel({ vendorId }: { vendorId: string }) {
   const { loaded, reload } = useLoad<VendorResponseStats>(`/staff/metrics/vendors/${vendorId}`);
   return (
     <section className="panel" aria-labelledby="response-title">
-      <h2 id="response-title">{t.vendorResponse}</h2>
-      <p className="muted small">{t.vendorResponseHint}</p>
+      <div className="panel-head">
+        <h2 id="response-title">{t.vendorResponse}</h2>
+        <Link to={{ name: "metrics", query: { tab: "vendors" } }}>{t.metrics}</Link>
+      </div>
       <LoadedView loaded={loaded} onRetry={reload}>
         {(stats) =>
           stats.vendor.requests === 0 ? (
             <p className="muted">{t.vendorResponseEmpty}</p>
           ) : (
-            <div className="stack">
-              <ResponseList stats={stats.vendor} />
-              {stats.listings.length > 1 && <ListingTable listings={stats.listings} />}
-            </div>
+            <p>{statLine(stats.vendor)}</p>
           )
         }
       </LoadedView>
     </section>
-  );
-}
-
-function ResponseList({ stats }: { stats: VendorMetrics }) {
-  return (
-    <dl className="dl">
-      {stats.categories.length > 0 ? (
-        <>
-          <dt>{t.vendorCategories}</dt>
-          <dd>{stats.categories.map(categoryName).join(", ")}</dd>
-        </>
-      ) : null}
-      <dt>{t.colRequests}</dt>
-      <dd>{stats.requests}</dd>
-      <dt>{t.colAnswered}</dt>
-      <dd>
-        <Rate stats={stats} />
-      </dd>
-      <dt>{t.colMedian}</dt>
-      <dd>{formatDuration(stats.medianResponseMinutes)}</dd>
-      <dt>{t.colBreaches}</dt>
-      <dd>{stats.slaBreaches}</dd>
-      <dt>{t.colAgreed}</dt>
-      <dd>{stats.agreed}</dd>
-      <dt>{t.colLastRequest}</dt>
-      <dd>{formatMoment(stats.lastRequestAt)}</dd>
-    </dl>
-  );
-}
-
-function ListingTable({ listings }: { listings: readonly ListingMetrics[] }) {
-  const phone = usePhone();
-  if (phone)
-    return (
-      <ul className="rcards">
-        {listings.map((row) => (
-          <li key={row.listing.id} className="rcard rcard-tap">
-            <div className="rcard-head">
-              <Link to={{ name: "listing", id: row.listing.id }} className="rcard-link">
-                {row.listing.name}
-              </Link>
-              <StatusPill status={row.listing.status} />
-            </div>
-            <p className="rcard-meta">
-              <CategoryChip code={row.listing.categoryCode} />
-            </p>
-            <Rate stats={row} />
-            <dl className="rcard-facts">
-              <dt>{t.colRequests}</dt>
-              <dd>{row.requests}</dd>
-              <dt>{t.colMedian}</dt>
-              <dd>{formatDuration(row.medianResponseMinutes)}</dd>
-            </dl>
-          </li>
-        ))}
-      </ul>
-    );
-  return (
-    <div className="table-wrap">
-      <table className="table table-compact">
-        <thead>
-          <tr>
-            <th scope="col">{t.listings}</th>
-            <th scope="col">{t.colRequests}</th>
-            <th scope="col">{t.colAnswered}</th>
-            <th scope="col">{t.colMedian}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {listings.map((row) => (
-            <tr key={row.listing.id}>
-              <th scope="row" className="row-head">
-                <CategoryChip code={row.listing.categoryCode} />{" "}
-                <Link to={{ name: "listing", id: row.listing.id }}>{row.listing.name}</Link>{" "}
-                <StatusPill status={row.listing.status} />
-              </th>
-              <td>{row.requests}</td>
-              <td>
-                <Rate stats={row} />
-              </td>
-              <td>{formatDuration(row.medianResponseMinutes)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }

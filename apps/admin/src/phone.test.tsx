@@ -182,6 +182,13 @@ async function click(element: Element | null | undefined) {
 
 const tabs = () => [...container.querySelectorAll<HTMLElement>("nav.tabbar > *")];
 const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
+const byText = (text: string) =>
+  [...container.querySelectorAll<HTMLElement>("button")].find((el) => el.textContent?.trim() === text);
+/** Вариант группы (RadioGroup) по подписи */
+const radioLabel = (text: string) =>
+  [...container.querySelectorAll<HTMLElement>("label.ui-radio")].find(
+    (el) => el.textContent?.trim() === text,
+  );
 const byLabel = (label: string) =>
   [...document.querySelectorAll<HTMLElement>("[aria-label]")].find(
     (el) => el.getAttribute("aria-label") === label,
@@ -345,10 +352,14 @@ describe("телефон: экраны", () => {
     expect(container.querySelector("table")).toBeNull();
     const card = container.querySelector(".rcard");
     expect(card?.querySelector("a.rcard-link")?.getAttribute("href")).toBe(`/requests/${REQUEST_ID}`);
-    expect(card?.textContent).toContain(t.sla.overdue);
-    // Чья заявка — имя клиента первой строкой фактов
-    expect(card?.querySelector(".rcard-facts dt")?.textContent).toBe(t.colClient);
-    expect(card?.querySelector(".rcard-facts dd")?.textContent).toBe("Client");
+    // Три строки: № и имя клиента с плашкой срока, витрина, событие; подписанных фактов нет
+    expect(card?.querySelector("a.rcard-link")?.textContent).toBe(`${t.requestNo(1001)} · Client`);
+    expect(card?.querySelector(".pill")?.textContent).toMatch(/^Просрочена \d+ (мин|ч|дн)$/);
+    expect(card?.querySelectorAll(".rcard-meta")).toHaveLength(2);
+    expect(card?.querySelector(".rcard-facts")).toBeNull();
+    expect(card?.textContent).not.toContain("создана");
+    // Быстрые фильтры — пилюлями на виду, не в шторке
+    expect(radioLabel(t.all)).toBeDefined();
   });
 
   it("фильтры — в шторке: выбор уходит на сервер, кнопка говорит «Фильтры (1)», снять — одним нажатием", async () => {
@@ -356,16 +367,25 @@ describe("телефон: экраны", () => {
     await mount("/requests");
     const open = [...container.querySelectorAll("button")].find((b) => b.textContent === t.filters);
     await click(open);
-    const late = [...(dialog()?.querySelectorAll<HTMLInputElement>("input[type=radio]") ?? [])].find(
-      (input) => input.value === "late",
+    // В шторке — только то, чего нет в пилюлях: ответили или закрыта
+    const answered = [...(dialog()?.querySelectorAll<HTMLInputElement>("input[type=radio]") ?? [])].find(
+      (input) => input.value === "answered",
     );
-    await click(late);
-    expect(calls.some((c) => c.startsWith("GET /api/staff/requests?") && c.includes("sla=late"))).toBe(true);
+    expect(
+      [
+        ...(dialog()?.querySelectorAll<HTMLInputElement>("[aria-labelledby$='-sla'] input[type=radio]") ??
+          []),
+      ].some((input) => input.value === "late"),
+    ).toBe(false);
+    await click(answered);
+    expect(calls.some((c) => c.startsWith("GET /api/staff/requests?") && c.includes("sla=answered"))).toBe(
+      true,
+    );
     const done = [...(dialog()?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.done);
     await click(done);
     expect(dialog()).toBeNull();
     expect(container.textContent).toContain(`${t.filters} (1)`);
-    await click(byLabel(`${t.reset}: ${t.slaLate}`));
+    await click(byLabel(`${t.reset}: ${t.sla.answered}`));
     expect(container.textContent).not.toContain(`${t.filters} (1)`);
   });
 
@@ -408,12 +428,14 @@ describe("телефон: читаемость списков", () => {
     await mount("/clients");
     const card = container.querySelector(".rcard");
     expect(card?.querySelector("a.rcard-link")?.textContent).toBe("Азиза К.");
-    expect(card?.querySelector(".rcard-meta")?.textContent).toBe("C-1a2b3c4d");
-    const facts = card?.querySelector(".rcard-facts")?.textContent ?? "";
-    expect(facts).toContain("Telegram, телефон");
-    expect(facts).toContain(t.locales.ru);
-    expect(facts).toContain(`${t.requestNo(1001)} · Oqsaroy Hall`);
-    expect(facts).toContain(t.requestStatus.contacted);
+    // Три строки: имя; код · вход · язык; заявки · когда был. Активному плашка не нужна
+    const meta = [...(card?.querySelectorAll(".rcard-meta") ?? [])].map((el) => el.textContent ?? "");
+    expect(meta).toHaveLength(2);
+    expect(meta[0]).toBe(`C-1a2b3c4d · Telegram, телефон · ${t.locales.ru}`);
+    expect(meta[1]).toContain(t.requestsOf(2));
+    expect(meta[1]).toContain("был");
+    expect(card?.querySelector(".pill")).toBeNull();
+    expect(card?.querySelector(".rcard-facts")).toBeNull();
   });
 
   it("фильтры заявок: у каждой группы переключателей — видимый заголовок", async () => {
@@ -426,7 +448,7 @@ describe("телефон: читаемость списков", () => {
       expect(dialog()?.querySelector(`[role=radiogroup][aria-labelledby="${title.id}"]`)).not.toBeNull();
   });
 
-  it("команда: на телефоне сначала сотрудники, приглашение — ниже; на компьютере — наоборот", async () => {
+  it("команда: сотрудники первыми на любой ширине; приглашение — по «+ Пригласить», в листе", async () => {
     const team: TeamList = {
       items: [
         {
@@ -449,14 +471,17 @@ describe("телефон: читаемость списков", () => {
     await mount("/team");
     const order = () =>
       [...container.querySelectorAll(".stack > *")].map((el) =>
-        el.matches("form.fs") ? "invite" : el.matches(".rcards") ? "list" : null,
+        el.matches(".rcards") || el.matches(".table-wrap") ? "list" : null,
       );
-    expect(order().filter(Boolean)).toEqual(["list", "invite"]);
+    expect(order().filter(Boolean)).toEqual(["list"]);
+    expect(container.querySelector("form.invite-form")).toBeNull();
+    expect(byText(t.inviteOpen)).toBeDefined();
     act(() => root.unmount());
     container.remove();
     screenWidth(1280);
     await mount("/team");
-    expect(order().filter(Boolean)).toEqual(["invite"]);
+    expect(order().filter(Boolean)).toEqual(["list"]);
+    expect(container.querySelector("form.invite-form")).toBeNull();
   });
 
   it("вендор: «Удалить вендора» — в «Ещё» шапки, подтверждение — шторкой с кодом вендора", async () => {
@@ -505,7 +530,7 @@ describe("телефон: читаемость списков", () => {
     expect(sheet?.querySelector("input")?.className).toBe("input");
   });
 
-  it("заявка: источник — словами; клиент и телефоны вендора выше истории везде, где нет двух колонок", async () => {
+  it("заявка: клиент и телефоны вендора выше хода заявки везде, где нет двух колонок", async () => {
     const order = () =>
       [...container.querySelectorAll("section.panel")].map((el) => el.getAttribute("aria-labelledby"));
     mockApi(ADMIN);
@@ -515,10 +540,11 @@ describe("телефон: читаемость списков", () => {
       expect(container.querySelector(".columns")).toBeNull();
       const ids = order();
       expect(ids.indexOf("client-title"), `${width}px`).toBeGreaterThan(-1);
-      expect(ids.indexOf("client-title")).toBeLessThan(ids.indexOf("history-title"));
-      expect(ids.indexOf("vendor-phones-title")).toBeLessThan(ids.indexOf("timeline-title"));
-      expect(container.textContent).toContain(`${t.source}${t.sources.tma}`);
-      expect(container.textContent).not.toContain(`${t.source}tma`);
+      expect(ids.indexOf("facts-title"), `${width}px`).toBeLessThan(ids.indexOf("client-title"));
+      expect(ids.indexOf("client-title")).toBeLessThan(ids.indexOf("vendor-phones-title"));
+      expect(ids.indexOf("vendor-phones-title")).toBeLessThan(ids.indexOf("course-title"));
+      // Откуда заявка и «просмотрена вендором» — не отдельными строками: они в ходе заявки
+      expect(container.textContent).not.toContain("Откуда заявка");
       act(() => root.unmount());
       container.remove();
     }

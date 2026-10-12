@@ -58,14 +58,20 @@ test.describe("клиенты", () => {
     await expect(first).toContainText("C-00000000");
     await expect(first).toContainText("Telegram");
     await expect(first).toContainText(t.locales.uz ?? "");
-    await expect(first).toContainText(`${t.requestNo(1051)} · Lola zali`);
-    await expect(first).toContainText(t.requestStatus.viewed ?? "");
+    // Телефон — карточка в три строки: имя, код · вход · язык, заявки · когда был; последняя заявка
+    // — на странице клиента, а в таблице компьютера — под числом заявок
+    await expect(first).toContainText(t.requestsOf(1));
+    if (isPhone(page)) await expect(first.locator(".rcard-meta")).toHaveCount(2);
+    else {
+      await expect(first).toContainText(`${t.requestNo(1051)} · Lola zali`);
+      await expect(first).toContainText(t.requestStatus.viewed ?? "");
+    }
     // Код — не название ссылки: по нему ищут, но человека им не называют
     await expect(page.getByRole("link", { name: "C-00000000" })).toHaveCount(0);
 
     await expect(rows(page).nth(1)).toContainText("Рустам Б.");
     await expect(rows(page).nth(1)).toContainText("Telegram, телефон");
-    await expect(rows(page).nth(1)).toContainText(t.requestStatus.contacted ?? "");
+    if (!isPhone(page)) await expect(rows(page).nth(1)).toContainText(t.requestStatus.contacted ?? "");
     // Без имени и без заявок — словами, а не пустотой
     await expect(rows(page).nth(2)).toContainText(t.clientNoName);
     await expect(rows(page).nth(2)).toContainText(t.clientNoRequests);
@@ -87,7 +93,13 @@ test.describe("клиенты", () => {
     await expect(heading(page)).toHaveText("Азиза Каримова");
     await expect(page.locator(".client-ref")).toHaveText("C-00000000");
     const profile = page.getByRole("region", { name: t.clientProfile });
-    await expect(profile).toContainText(`${t.clientSignIn}Telegram`);
+    await expect(profile).toContainText(`${t.clientSignInLocale}Telegram`);
+    // Имя — только в заголовке; заявки клиента — первым блоком
+    await expect(profile).not.toContainText("Азиза");
+    await expect(page.locator("section.panel").first()).toHaveAttribute(
+      "aria-labelledby",
+      "client-requests-title",
+    );
     await expect(profile).toContainText("@aziza_k");
     // Источник согласия — словами, а не «tma»
     await expect(page.getByRole("region", { name: t.clientConsents })).toContainText(t.sources.tma ?? "");

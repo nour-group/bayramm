@@ -1,8 +1,10 @@
-/* Настройки — только администратор. Каждая — своей формой: значение проверяет сервер и
+/* Настройки — только администратор. Одним списком по группам (ответ вендора, фото, данные):
+   строка — название с границами («1–72 ч»), число с «−» и «+» и единица. Каждая строка — своей
+   формой: «Сохранить» появляется, только когда её значение изменили. Значение проверяет сервер и
    ещё раз база (границы и согласованность: напоминания раньше срока ответа, минимум фото
    не больше максимума). Ошибка — у той настройки, которую меняли.
-   Число — с «−» и «+» в границах SETTING_LIMITS (те же у API) и единицей после поля; вне
-   границ или напоминания не по возрастанию — ошибка до запроса. */
+   Число — в границах SETTING_LIMITS (те же у API); вне границ или напоминания не по возрастанию —
+   ошибка до запроса. */
 
 import {
   SETTING_LIMITS,
@@ -11,27 +13,58 @@ import {
   type StaffSetting,
   type StaffSettings,
 } from "@bayramm/shared/api/staff";
-import { NumberStepper, TimeField } from "@bayramm/ui/react";
+import { NumberStepper, TimeField, useToast } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
 import { type Failure, useLoad, useSession } from "../api";
-import { formatMoment } from "../format";
 import { t } from "../texts";
 import { ErrorText, LoadedView } from "../ui";
 import { useUnsaved } from "../unsaved";
+
+/** Группы строк: что настраивают рядом. Ключ вне групп (новее сборки панели) попадает в «Данные» */
+const GROUPS: readonly { readonly id: string; readonly keys: readonly SettingKey[] }[] = [
+  { id: "vendor", keys: ["sla_hours", "sla_reminder_hours", "quiet_hours", "ops_reminder_pause_minutes"] },
+  { id: "photos", keys: ["min_photos", "max_photos"] },
+  {
+    id: "data",
+    keys: [
+      "client_requests_per_day",
+      "request_contact_retention_days",
+      "session_retention_days",
+      "otp_retention_hours",
+    ],
+  },
+];
 
 export function SettingsPage() {
   const { loaded, reload, set } = useLoad<StaffSettings>("/staff/settings");
   return (
     <LoadedView loaded={loaded} onRetry={reload}>
-      {(settings) => (
-        <ul className="cards">
-          {settings.items.map((setting) => (
-            <li key={setting.key} className="panel card-row">
-              <SettingForm setting={setting} onSaved={set} />
-            </li>
-          ))}
-        </ul>
-      )}
+      {(settings) => {
+        const grouped = new Set(GROUPS.flatMap((group) => group.keys));
+        const rest = settings.items.filter((setting) => !grouped.has(setting.key));
+        return (
+          <div className="stack">
+            {GROUPS.map((group) => {
+              const items = settings.items.filter(
+                (setting) =>
+                  group.keys.includes(setting.key) || (group.id === "data" && rest.includes(setting)),
+              );
+              return items.length === 0 ? null : (
+                <section key={group.id} className="panel" aria-labelledby={`settings-${group.id}`}>
+                  <h2 id={`settings-${group.id}`}>{t.settingGroups[group.id]}</h2>
+                  <ul className="settings-list">
+                    {items.map((setting) => (
+                      <li key={setting.key} className="setting-item">
+                        <SettingForm setting={setting} onSaved={set} />
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        );
+      }}
     </LoadedView>
   );
 }
@@ -82,15 +115,15 @@ const invalidOf = (key: SettingKey): Failure => ({
 
 function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s: StaffSettings) => void }) {
   const { api } = useSession();
+  const toast = useToast();
   const id = useId();
   const [draft, setDraft] = useState(() => draftOf(setting));
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [saved, setSaved] = useState(false);
   const label = t.settingsLabels[setting.key] ?? setting.key;
   const hintId = `${id}-hint`;
   const invalid = failure?.code === "invalid_input";
-  // Значение изменено и не сохранено: «Сохранить» доступна, уход переспросит. Без изменений
+  // Значение изменено и не сохранено: «Сохранить» появляется, уход переспросит. Без изменений
   // сохранять нечего — и в журнал не уходит пустая запись
   const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(setting));
   useUnsaved(dirty);
@@ -99,7 +132,6 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
     const next = [...draft];
     next[index] = value;
     setDraft(next);
-    setSaved(false);
   };
 
   const submit = async (event: FormEvent) => {
@@ -107,7 +139,6 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
     const value = settingValue(setting.key, draft);
     // Вне границ — сервер ответил бы так же: говорим сразу, без запроса
     if (!settingFits(setting.key, value)) {
-      setSaved(false);
       setFailure(invalidOf(setting.key));
       return;
     }
@@ -116,7 +147,7 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
     setBusy(false);
     setFailure(result.ok ? null : result);
     if (result.ok) {
-      setSaved(true);
+      toast(`${label}: ${t.saved.toLowerCase()}`, { tone: "success" });
       // Поля — как сохранил сервер («04» → 4): иначе форма осталась бы «изменённой»
       const next = result.data.items.find((item) => item.key === setting.key);
       if (next) setDraft(draftOf(next));
@@ -124,14 +155,19 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
     }
   };
 
-  // Число — NumberStepper в границах настройки и с единицей, время — TimeField (список «ЧЧ:ММ»)
+  // Число — NumberStepper в границах настройки и с единицей, время — TimeField (список «ЧЧ:ММ»).
+  // Подпись у поля — только когда их несколько (два напоминания, «с» и «до»); одно — по названию строки
   const limits = limitsOf(setting.key);
   const unit = t.settingUnits[setting.key];
+  const several = setting.key === "sla_reminder_hours" || setting.key === "quiet_hours";
   const input = (index: number, extra: { label: string; type: "number" | "time" }) => {
     const common = { id: `${id}-${index}`, "aria-invalid": invalid, "aria-describedby": hintId };
+    const name = several ? extra.label : label;
     return (
       <div className={`field${extra.type === "number" ? " setting-num" : ""}`} key={index}>
-        <label htmlFor={common.id}>{extra.label}</label>
+        <label htmlFor={common.id} className={several ? undefined : "visually-hidden"}>
+          {name}
+        </label>
         {extra.type === "time" ? (
           <TimeField
             {...common}
@@ -149,8 +185,8 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
               min={limits?.[0] ?? 0}
               max={limits?.[1] ?? Number.MAX_SAFE_INTEGER}
               maxLength={String(limits?.[1] ?? 99999).length}
-              decrementLabel={`${extra.label}: ${t.input.less}`}
-              incrementLabel={`${extra.label}: ${t.input.more}`}
+              decrementLabel={`${name}: ${t.input.less}`}
+              incrementLabel={`${name}: ${t.input.more}`}
             />
             {unit ? (
               <span className="num-unit" aria-hidden="true">
@@ -164,13 +200,14 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
   };
 
   return (
-    <form className={`setting${invalid ? " field-bad" : ""}`} onSubmit={submit} noValidate>
-      <h2 className="setting-title">{label}</h2>
-      {/* Границы — до полей: на телефоне «Сохранить» встаёт под полем, подсказка — не под ней */}
-      <p id={hintId} className={invalid ? "field-error" : "field-hint"}>
-        {invalid ? t.settingInvalid : t.settingsHints[setting.key]}
-      </p>
-      <div className="setting-inputs">
+    <form className={`setting-row${invalid ? " field-bad" : ""}`} onSubmit={submit} noValidate>
+      <div className="setting-text">
+        <h3 className="setting-title">{label}</h3>
+        <p id={hintId} className={invalid ? "field-error" : "field-hint"}>
+          {invalid ? t.settingInvalid : t.settingsHints[setting.key]}
+        </p>
+      </div>
+      <div className="setting-controls">
         {setting.key === "sla_reminder_hours"
           ? [
               input(0, { label: t.reminderFirst, type: "number" }),
@@ -179,23 +216,12 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
           : setting.key === "quiet_hours"
             ? [input(0, { label: t.quietFrom, type: "time" }), input(1, { label: t.quietTo, type: "time" })]
             : input(0, { label: t.settingValue, type: "number" })}
-        <div className="setting-save">
-          <button
-            type="submit"
-            className="btn btn-primary"
-            aria-busy={busy || undefined}
-            disabled={busy || !dirty}
-          >
+        {dirty || busy ? (
+          <button type="submit" className="btn btn-primary" aria-busy={busy || undefined} disabled={busy}>
             {busy ? t.saving : t.save}
           </button>
-        </div>
+        ) : null}
       </div>
-      <p className="sub">{t.updatedBy(formatMoment(setting.updatedAt), setting.updatedBy)}</p>
-      {saved && (
-        <p className="saved" role="status">
-          {t.saved}
-        </p>
-      )}
       {failure && !invalid && <ErrorText failure={failure} />}
     </form>
   );

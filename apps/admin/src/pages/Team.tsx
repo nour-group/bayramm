@@ -1,5 +1,6 @@
-/* Команда — только администратор: приглашение по имени пользователя Telegram или по
-   номеру телефона, роль, отключение. Номер проверяется здесь же (+998 и 9 цифр) и ещё раз
+/* Команда — только администратор: сначала те, кто в команде (роль — списком, отключение и отзыв
+   приглашения — в «…»), приглашение — «+ Пригласить» открывает лист. Приглашают по имени
+   пользователя Telegram или по номеру телефона. Номер проверяется здесь же (+998 и 9 цифр) и ещё раз
    сервером; хранится только его HMAC — в списке видно лишь «по телефону». Себя не
    отключить и роль не сменить; последнего администратора база не даст ни отключить, ни
    понизить. Приглашение, которое ещё не приняли, можно отозвать (удалить); принятое —
@@ -10,20 +11,23 @@
 
 import { normalizeTelegram, normalizeUzPhone } from "@bayramm/shared";
 import type { StaffRole, TeamInviteInput, TeamList, TeamMember } from "@bayramm/shared/api/staff";
-import { ConfirmSheet, RadioGroup, Select } from "@bayramm/ui/react";
-import { type FormEvent, type RefObject, useId, useRef, useState } from "react";
+import { ConfirmSheet, Dialog, RadioGroup, Select, useToast } from "@bayramm/ui/react";
+import { type FormEvent, type RefObject, useRef, useState } from "react";
 import { type Failure, useAuthMethods, useLoad, useSession } from "../api";
 import { ChoiceField, PhoneField, TelegramField } from "../fields";
 import { formatMoment } from "../format";
-import { usePhone } from "../layout";
+import { useLayout } from "../layout";
 import { apiErrorText, t } from "../texts";
 import {
+  ActionBar,
   busyLabel,
   ConfirmForm,
   ErrorText,
   Field,
   fieldErrors,
   LoadedView,
+  type MenuAction,
+  OverflowMenu,
   PhoneSheet,
   Pill,
   toneOf,
@@ -56,24 +60,48 @@ const invalid = (field: string): Failure => ({
 
 export function TeamPage() {
   const { loaded, reload, set } = useLoad<TeamList>("/staff/team");
-  // На телефоне форма приглашения — на весь экран: сначала те, кто в команде, приглашение — ниже
-  const phone = usePhone();
-  const invite = <InviteForm onDone={set} />;
+  const [inviting, setInviting] = useState(false);
+  const inviteButton = useRef<HTMLButtonElement>(null);
   return (
     <div className="stack">
-      {phone ? null : invite}
+      {/* Главное действие экрана; список — сразу под ним, на любой ширине */}
+      <ActionBar label={t.team}>
+        <button
+          ref={inviteButton}
+          type="button"
+          className="btn btn-primary"
+          aria-haspopup="dialog"
+          onClick={() => setInviting(true)}
+        >
+          {t.inviteOpen}
+        </button>
+      </ActionBar>
       <LoadedView loaded={loaded} onRetry={reload}>
         {(list) => <Members list={list} onChange={set} />}
       </LoadedView>
-      {phone ? invite : null}
+      <Dialog
+        open={inviting}
+        title={t.inviteTitle}
+        onClose={() => setInviting(false)}
+        returnFocus={inviteButton}
+        className="sheet-form"
+      >
+        <InviteForm
+          onDone={(list) => {
+            set(list);
+            setInviting(false);
+          }}
+          onCancel={() => setInviting(false)}
+        />
+      </Dialog>
     </div>
   );
 }
 
-function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
+function InviteForm({ onDone, onCancel }: { onDone: (list: TeamList) => void; onCancel: () => void }) {
   const { api } = useSession();
   const methods = useAuthMethods();
-  const byId = useId();
+  const toast = useToast();
   const [by, setBy] = useState<InviteBy>("telegram");
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -81,7 +109,6 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
   const [role, setRole] = useState<StaffRole>("manager");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [done, setDone] = useState(false);
   // Пригласить администратора — после подтверждения: тело запроса ждёт ответа
   const [confirmAdmin, setConfirmAdmin] = useState<TeamInviteInput | null>(null);
   const errors = fieldErrors(failure, {
@@ -98,7 +125,6 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
   const choose = (next: InviteBy) => {
     setBy(next);
     setFailure(null);
-    setDone(false);
   };
 
   const send = async (body: TeamInviteInput) => {
@@ -108,17 +134,13 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
     setFailure(result.ok ? null : result);
     if (result.ok) {
       setConfirmAdmin(null);
-      setDone(true);
-      setDisplayName("");
-      setUsername("");
-      setPhone("");
+      toast(t.invited, { tone: "success" });
       onDone(result.data);
     }
   };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    setDone(false);
     let body: TeamInviteInput;
     if (by === "phone") {
       const normalized = normalizeUzPhone(phone);
@@ -146,62 +168,54 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
 
   const hint = by === "telegram" ? t.inviteHint : methods?.phone ? t.inviteHintPhone : t.inviteHintPhoneOff;
   return (
-    <form ref={form} className="fs" onSubmit={submit} noValidate>
-      <div className="fs-head">
-        <h2>{t.inviteTitle}</h2>
-        <p>{hint}</p>
-      </div>
-      <div className="field invite-by">
-        <span id={byId}>{t.inviteBy}</span>
-        <RadioGroup
-          variant="segmented"
-          aria-labelledby={byId}
-          name="invite-by"
-          value={by}
-          options={BY_OPTIONS}
-          onChange={choose}
-        />
-      </div>
-      <div className="fields fields-3">
-        <Field label={t.inviteName} error={errors.displayName}>
-          {(props) => (
-            <input
-              {...props}
-              className="input"
-              value={displayName}
-              maxLength={80}
-              autoComplete="off"
-              enterKeyHint="next"
-              onChange={(event) => setDisplayName(event.target.value)}
-            />
-          )}
-        </Field>
-        {by === "phone" ? (
-          <PhoneField
-            label={t.invitePhone}
-            value={phone}
-            onChange={setPhone}
-            error={errors.phone}
-            enterKeyHint="send"
-          />
-        ) : (
-          <TelegramField
-            label={t.inviteUsername}
-            value={username}
-            onChange={setUsername}
-            error={errors.username}
-            enterKeyHint="send"
+    <form ref={form} className="invite-form" onSubmit={submit} noValidate>
+      <RadioGroup
+        variant="segmented"
+        label={t.inviteBy}
+        name="invite-by"
+        value={by}
+        options={BY_OPTIONS}
+        onChange={choose}
+      />
+      <Field label={t.inviteName} error={errors.displayName}>
+        {(props) => (
+          <input
+            {...props}
+            className="input"
+            value={displayName}
+            maxLength={80}
+            autoComplete="off"
+            enterKeyHint="next"
+            onChange={(event) => setDisplayName(event.target.value)}
           />
         )}
-        <ChoiceField
-          label={t.inviteRole}
-          value={role}
-          options={INVITE_ROLES}
-          onChange={setRole}
-          variant="row"
-          error={errors.role}
+      </Field>
+      {by === "phone" ? (
+        <PhoneField
+          label={t.invitePhone}
+          value={phone}
+          onChange={setPhone}
+          error={errors.phone}
+          enterKeyHint="send"
         />
-      </div>
+      ) : (
+        <TelegramField
+          label={t.inviteUsername}
+          value={username}
+          onChange={setUsername}
+          error={errors.username}
+          enterKeyHint="send"
+        />
+      )}
+      <p className="field-hint">{hint}</p>
+      <ChoiceField
+        label={t.inviteRole}
+        value={role}
+        options={INVITE_ROLES}
+        onChange={setRole}
+        variant="row"
+        error={errors.role}
+      />
       <div className="acts invite-acts">
         <button
           type="submit"
@@ -211,11 +225,9 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
         >
           {busyLabel(t.invite, busy)}
         </button>
-        {done && (
-          <span className="saved" role="status">
-            {t.invited}
-          </span>
-        )}
+        <button type="button" className="btn" onClick={onCancel}>
+          {t.cancel}
+        </button>
       </div>
       {failure && failure.code !== "invalid_input" && <ErrorText failure={failure} />}
       <ConfirmSheet
@@ -239,8 +251,9 @@ function InviteForm({ onDone }: { onDone: (list: TeamList) => void }) {
 }
 
 function Members({ list, onChange }: { list: TeamList; onChange: (list: TeamList) => void }) {
-  const phone = usePhone();
-  if (phone)
+  // Таблица — только на компьютере: на планшете строки со своими действиями не влезают
+  const cards = useLayout() !== "desktop";
+  if (cards)
     return (
       <ul className="rcards" aria-label={t.team}>
         {list.items.map((member) => (
@@ -257,7 +270,7 @@ function Members({ list, onChange }: { list: TeamList; onChange: (list: TeamList
             <th scope="col">{t.colRole}</th>
             <th scope="col">{t.colStatus}</th>
             <th scope="col">
-              <span className="visually-hidden">{t.requestActions}</span>
+              <span className="visually-hidden">{t.actionsTitle}</span>
             </th>
           </tr>
         </thead>
@@ -423,12 +436,56 @@ function NoBot({ member }: { member: TeamMember }) {
   );
 }
 
+/** Роль списком; «Сменить роль» — когда выбрали другую (администратор — после подтверждения) */
+function RoleEdit({
+  member,
+  state,
+  small,
+}: {
+  member: TeamMember;
+  state: ReturnType<typeof useMember>;
+  small?: boolean;
+}) {
+  const { role, setRole, busy, changeRole } = state;
+  return (
+    <>
+      <Select
+        className="input"
+        label={`${t.changeRole}: ${member.displayName}`}
+        value={role}
+        onChange={setRole}
+        options={ROLE_OPTIONS}
+      />
+      {role !== member.role && (
+        <button type="button" className={`btn${small ? " btn-sm" : ""}`} onClick={changeRole} disabled={busy}>
+          {t.changeRole}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** «…» сотрудника: отключить или включить, отозвать непринятое приглашение. Себя — ничего */
+function memberActions(member: TeamMember, state: ReturnType<typeof useMember>): MenuAction[] {
+  if (member.self) return [];
+  return [
+    {
+      key: "toggle",
+      label: member.active ? t.deactivate : t.activate,
+      danger: member.active,
+      run: () => state.setConfirming(true),
+    },
+    ...(revocable(member)
+      ? [{ key: "revoke", label: t.inviteRevoke, danger: true, run: state.revokeOpen }]
+      : []),
+  ];
+}
+
 function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
-  const roleId = useId();
-  const toggleButton = useRef<HTMLButtonElement>(null);
-  const revokeButton = useRef<HTMLButtonElement>(null);
+  const more = useRef<HTMLButtonElement>(null);
   const state = useMember(member, onChange);
-  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = state;
+  const { confirming, setConfirming, failure, toggle } = state;
+  const editable = !member.self && member.active;
   return (
     <li className="rcard">
       <div className="rcard-head">
@@ -442,60 +499,30 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
       <p className="rcard-meta">
         {member.self ? `${t.you} · ` : ""}
         {member.username ? `@${member.username}` : member.invitedBy === "phone" ? t.invitedByPhone : t.none}
+        {editable ? "" : ` · ${t.roles[member.role]}`}
       </p>
       <p className="rcard-meta">
         {linkState(member)}
         <NoBot member={member} />
       </p>
-      {member.self || !member.active ? (
-        <p className="rcard-meta">
-          {t.colRole}: {t.roles[member.role]}
-        </p>
-      ) : (
+      {member.self ? null : (
         <div className="rcard-actions role-edit">
-          <label className="role-label" htmlFor={roleId}>
-            {t.colRole}
-          </label>
-          <Select
-            id={roleId}
-            className="input"
-            label={`${t.changeRole}: ${member.displayName}`}
-            value={role}
-            onChange={setRole}
-            options={ROLE_OPTIONS}
+          {editable ? <RoleEdit member={member} state={state} /> : null}
+          <OverflowMenu
+            title={member.displayName}
+            context={member.displayName}
+            actions={memberActions(member, state)}
+            buttonRef={more}
           />
-          {role !== member.role && (
-            <button type="button" className="btn" onClick={changeRole} disabled={busy}>
-              {t.changeRole}
-            </button>
-          )}
         </div>
       )}
-      {!member.self && (
-        <div className="rcard-actions">
-          <button
-            ref={toggleButton}
-            type="button"
-            className={`btn${member.active ? " btn-danger" : ""}`}
-            aria-expanded={confirming}
-            onClick={() => setConfirming(true)}
-          >
-            {member.active ? t.deactivate : t.activate}
-          </button>
-          {revocable(member) ? (
-            <button ref={revokeButton} type="button" className="btn btn-danger" onClick={state.revokeOpen}>
-              {t.inviteRevoke}
-            </button>
-          ) : null}
-        </div>
-      )}
-      <RevokeSheet member={member} state={state} returnFocus={revokeButton} />
+      <RevokeSheet member={member} state={state} returnFocus={more} />
       <PromoteSheet member={member} state={state} />
       <PhoneSheet
         open={confirming}
         title={member.active ? t.deactivate : t.activate}
         onClose={() => setConfirming(false)}
-        returnFocus={toggleButton}
+        returnFocus={more}
       >
         <ConfirmForm
           hint={member.active ? t.deactivateHint : t.activateHint}
@@ -511,10 +538,9 @@ function MemberCard({ member, onChange }: { member: TeamMember; onChange: (list:
 }
 
 function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: TeamList) => void }) {
-  const roleId = useId();
-  const revokeButton = useRef<HTMLButtonElement>(null);
+  const more = useRef<HTMLButtonElement>(null);
   const state = useMember(member, onChange);
-  const { role, setRole, confirming, setConfirming, busy, failure, changeRole, toggle } = state;
+  const { confirming, setConfirming, failure, toggle } = state;
 
   return (
     <tr>
@@ -530,19 +556,7 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
           t.roles[member.role]
         ) : (
           <div className="role-edit">
-            <Select
-              id={roleId}
-              className="input"
-              label={`${t.changeRole}: ${member.displayName}`}
-              value={role}
-              onChange={setRole}
-              options={ROLE_OPTIONS}
-            />
-            {role !== member.role && (
-              <button type="button" className="btn btn-sm" onClick={changeRole} disabled={busy}>
-                {t.changeRole}
-              </button>
-            )}
+            <RoleEdit member={member} state={state} small />
           </div>
         )}
       </td>
@@ -568,27 +582,14 @@ function MemberRow({ member, onChange }: { member: TeamMember; onChange: (list: 
               onCancel={() => setConfirming(false)}
             />
           ) : (
-            <div className="acts">
-              <button
-                type="button"
-                className={`btn btn-sm${member.active ? " btn-danger" : ""}`}
-                onClick={() => setConfirming(true)}
-              >
-                {member.active ? t.deactivate : t.activate}
-              </button>
-              {revocable(member) ? (
-                <button
-                  ref={revokeButton}
-                  type="button"
-                  className="btn btn-sm btn-danger"
-                  onClick={state.revokeOpen}
-                >
-                  {t.inviteRevoke}
-                </button>
-              ) : null}
-            </div>
+            <OverflowMenu
+              title={member.displayName}
+              context={member.displayName}
+              actions={memberActions(member, state)}
+              buttonRef={more}
+            />
           ))}
-        <RevokeSheet member={member} state={state} returnFocus={revokeButton} />
+        <RevokeSheet member={member} state={state} returnFocus={more} />
         <PromoteSheet member={member} state={state} />
         {failure && <ErrorText failure={failure} />}
       </td>

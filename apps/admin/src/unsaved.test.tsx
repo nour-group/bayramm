@@ -244,7 +244,9 @@ describe("несохранённые правки", () => {
     mockApi();
     await mount("/vendors/new");
     await type(nameField(), "Navruz");
-    await click(buttonIn(container, t.signOut));
+    // Выход — в листе аккаунта (кнопка с кружком в шапке)
+    await click(container.querySelector<HTMLElement>(".appbar-account") as HTMLElement);
+    await click(buttonIn(document.body, t.signOut));
     expect(question()?.textContent).toContain(t.unsavedTitle);
     expect(calls).not.toContain("POST /api/auth/logout");
     await click(buttonIn(question() as HTMLElement, t.unsavedLeave));
@@ -260,9 +262,9 @@ describe("несохранённые правки", () => {
         }),
     });
     await mount("/settings");
-    const save = buttonIn(container, t.save);
-    expect(save.disabled).toBe(true);
-    const input = container.querySelector<HTMLInputElement>(".setting input") as HTMLInputElement;
+    // Без изменений «Сохранить» в строке нет совсем
+    expect(buttonIn(container, t.save)).toBeUndefined();
+    const input = container.querySelector<HTMLInputElement>(".setting-row input") as HTMLInputElement;
     await type(input, "24");
     expect(buttonIn(container, t.save).disabled).toBe(false);
     await click(navLink(t.vendors));

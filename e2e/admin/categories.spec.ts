@@ -370,7 +370,7 @@ test("заявки: фильтр по категории; заявка корт�
   await page.getByRole("link", { name: t.requestNo(1052) }).click();
   await expect(page).toHaveURL(`/requests/${CAR_REQUEST_ID}`);
   await expect(page.getByText("Вечер · 17:00–24:00")).toBeVisible();
-  const details = page.getByRole("region", { name: t.requestDetails });
+  const details = page.getByRole("region", { name: t.requestWhatWhen });
   await expect(details).toContainText("Сколько машин");
   await expect(details).toContainText("Премиум");
   await expect(details).toContainText("Машина для молодожёнов × 4");
