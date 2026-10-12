@@ -1532,8 +1532,9 @@ describe("что ждёт партнёра", () => {
     expect(container.querySelector(".rq .rq-staff")?.textContent).toBe("Первым ответил менеджер Bayramm");
 
     await click(container.querySelector(".rq") ?? undefined);
+    // Полчаса назад могли быть вчера по Ташкенту — тогда перед временем ещё и дата
     expect(container.querySelector(".staff-reply")?.textContent).toMatch(
-      /^Первым ответил менеджер Bayramm · \d\d:\d\d$/,
+      /^Первым ответил менеджер Bayramm · (.+ )?\d\d:\d\d$/,
     );
     // История переходов — прежняя (два перехода — строкой)
     expect(container.querySelector(".history-line")?.textContent).toContain("Новая");
