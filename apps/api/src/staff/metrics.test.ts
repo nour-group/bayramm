@@ -90,6 +90,7 @@ function appAs(role: StaffRole, vendorFound = true) {
           revisions_pending: 0,
           photos_pending: 1,
           services_pending: 2,
+          contacts_pending: 0,
         },
       ];
     if (q.sql.includes("app.metrics_vendors"))
@@ -197,6 +198,7 @@ describe("GET /metrics", () => {
       revisionsPending: 0,
       photosPending: 1,
       servicesPending: 2,
+      contactsPending: 0,
     });
     expect(fake.queries.find((q) => q.sql.includes("app.metrics_weekly"))?.parameters).toEqual([2, null]);
     // под актором сотрудника, не системы
@@ -233,6 +235,7 @@ describe("GET /queues", () => {
       revisionsPending: 0,
       photosPending: 1,
       servicesPending: 2,
+      contactsPending: 0,
     });
 
     const { app: only, fake: onlyFake } = appAs("manager");

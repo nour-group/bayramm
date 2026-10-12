@@ -8,12 +8,7 @@
      · компьютер — шапка с разделами в строку, как раньше.
    В Telegram «назад» — кнопка Telegram (BackButton), своя в шапке не рисуется. */
 
-import type {
-  MetricsOverview,
-  OpsQueues,
-  StaffDictionaries,
-  StaffPermission,
-} from "@bayramm/shared/api/staff";
+import type { OpsQueues, StaffDictionaries, StaffPermission, StaffQueues } from "@bayramm/shared/api/staff";
 import { getWebApp } from "@bayramm/tg/webapp";
 import { Dialog, ToastProvider, useOnReconnect } from "@bayramm/ui/react";
 import {
@@ -320,7 +315,7 @@ export type Badges = Partial<Record<Section, number>>;
 /**
  * Что ждёт команду — из очередей метрик: просроченные заявки, недоставленное и решения
  * модерации — только те очереди, по которым роль решает: витрины на проверке — кто публикует,
- * предложения и услуги — кто решает по правкам, фото — кто решает по фото. Менеджеру счётчик
+ * предложения, услуги и смена контактов — кто решает по правкам, фото — кто решает по фото. Менеджеру счётчик
  * модерации не горит: разобрать ему там нечего
  */
 export function badgesOf(queues: OpsQueues, permissions: readonly StaffPermission[]): Badges {
@@ -329,7 +324,9 @@ export function badgesOf(queues: OpsQueues, permissions: readonly StaffPermissio
     requests: queues.overdue,
     moderation:
       (may("listings.publish") ? queues.listingsReview : 0) +
-      (may("revisions.moderate") ? queues.revisionsPending + queues.servicesPending : 0) +
+      (may("revisions.moderate")
+        ? queues.revisionsPending + queues.servicesPending + queues.contactsPending
+        : 0) +
       (may("photos.moderate") ? queues.photosPending : 0),
     notifications: queues.deadTotal,
   };
@@ -352,7 +349,8 @@ function useBadges(permissions: readonly StaffPermission[], section: Section | n
       const now = Date.now();
       if (!force && fetched.current !== null && now - fetched.current < BADGES_TTL_MS) return;
       fetched.current = now;
-      void api.get<MetricsOverview>("/staff/metrics?weeks=1").then((result) => {
+      // Только очереди — без недельных метрик, которые тяжело считать
+      void api.get<StaffQueues>("/staff/queues").then((result) => {
         if (result.ok) setBadges(badgesOf(result.data.queues, permissions));
       });
     },

@@ -100,6 +100,7 @@ const OVERVIEW: MetricsOverview = {
     revisionsPending: 1,
     photosPending: 0,
     servicesPending: 4,
+    contactsPending: 0,
   },
 };
 

@@ -1308,6 +1308,8 @@ export interface OpsQueues {
   readonly photosPending: number;
   /** Новые услуги и предложения правок услуг ждут решения — как очередь GET /staff/services */
   readonly servicesPending: number;
+  /** Партнёры просят сменить контакты витрины — как очередь GET /staff/contact-changes */
+  readonly contactsPending: number;
 }
 
 /**

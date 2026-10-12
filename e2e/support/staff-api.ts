@@ -693,6 +693,7 @@ const METRICS: MetricsOverview = {
     revisionsPending: 1,
     photosPending: 0,
     servicesPending: 2,
+    contactsPending: 0,
   },
 };
 

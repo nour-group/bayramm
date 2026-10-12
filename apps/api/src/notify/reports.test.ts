@@ -47,6 +47,7 @@ const QUEUES: OpsQueues = {
   revisionsPending: 1,
   photosPending: 0,
   servicesPending: 3,
+  contactsPending: 0,
 };
 const DIGEST: DigestFacts = { day: "2026-09-29", today: PERIOD, week: PERIOD, queues: QUEUES };
 const WEEKLY: WeeklyFacts = { weekStart: "2026-09-21", metrics: PERIOD, queues: QUEUES };
@@ -174,6 +175,7 @@ const QUEUES_ROW = {
   revisions_pending: 1,
   photos_pending: 0,
   services_pending: 0,
+  contacts_pending: 0,
 };
 
 const reportRow = (patch: Partial<OutboxRow>): OutboxRow => ({

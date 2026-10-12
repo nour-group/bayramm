@@ -72,6 +72,7 @@ const QUEUES = {
   revisionsPending: 2,
   photosPending: 0,
   servicesPending: 3,
+  contactsPending: 0,
 };
 const METRICS: MetricsOverview = { slaHours: 12, category: null, weeks: [], queues: QUEUES };
 
@@ -135,6 +136,7 @@ function mockApi(me: StaffMe, handlers: Record<string, Handler> = {}) {
     // Очередь смены контактов в «Модерации» — пустая, если тест не задал свою
     "GET /api/staff/contact-changes": json({ total: 0, items: [] }),
     "GET /api/staff/metrics": json(METRICS),
+    "GET /api/staff/queues": json({ queues: METRICS.queues }),
     "GET /api/staff/requests": json(LIST),
     [`GET /api/staff/requests/${REQUEST_ID}`]: json(REQUEST),
     ...handlers,
@@ -254,7 +256,8 @@ describe("телефон: оболочка", () => {
       permissions: [...ADMIN.permissions, "listings.publish", "revisions.moderate", "photos.moderate"],
     });
     await mount("/requests");
-    expect(calls).toContain("GET /api/staff/metrics?weeks=1");
+    expect(calls).toContain("GET /api/staff/queues");
+    expect(calls).not.toContain("GET /api/staff/metrics?weeks=1");
     const requests = tabs()[0];
     expect(requests?.querySelector(".badge")?.textContent).toBe("2");
     expect(requests?.textContent).toContain(t.badges.requests(2));
@@ -573,6 +576,10 @@ describe("счётчики и инициалы", () => {
     expect(badgesOf(QUEUES, ["catalog.read", "listings.write", "requests.read"]).moderation).toBe(0);
     // Решает только по фото — только фото (их здесь нет)
     expect(badgesOf({ ...QUEUES, photosPending: 4 }, ["photos.moderate"]).moderation).toBe(4);
+    // Смена контактов — тем, кто решает по правкам
+    expect(badgesOf({ ...QUEUES, contactsPending: 2 }, ["revisions.moderate"]).moderation).toBe(
+      QUEUES.revisionsPending + QUEUES.servicesPending + 2,
+    );
   });
 
   it("инициалы — две первые буквы; пустое имя — точка", () => {
