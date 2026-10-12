@@ -32,6 +32,42 @@ export function formatDay(day: string): string {
     : new Intl.DateTimeFormat("ru-RU", { dateStyle: "long", timeZone: "UTC" }).format(date);
 }
 
+const timeOnly = formatter({ hour: "2-digit", minute: "2-digit" });
+const dayKey = formatter({ year: "numeric", month: "2-digit", day: "2-digit" });
+const yearOnly = formatter({ year: "numeric" });
+const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });
+const shortDateYear = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** Срок «до»: сегодня по Ташкенту — только время («09:00»), другой день — с датой («1 окт., 09:00») */
+export function formatUntil(iso: string, now = Date.now()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return t.none;
+  return dayKey.format(date) === dayKey.format(now) ? timeOnly.format(date) : dateTime.format(date);
+}
+
+/** Сколько прошло с момента одним числом: «15 мин», «3 ч», «2 дн» */
+export function formatSince(iso: string, now = Date.now()): string {
+  const minutes = Math.floor((now - new Date(iso).getTime()) / 60_000);
+  if (!Number.isFinite(minutes)) return t.none;
+  if (minutes < 60) return `${Math.max(minutes, 1)} мин`;
+  if (minutes < 48 * 60) return `${Math.floor(minutes / 60)} ч`;
+  return `${Math.floor(minutes / (24 * 60))} дн`;
+}
+
+/** День события коротко: «24 окт.»; не этого года — «24 окт. 2027 г.» */
+export function formatDayShort(day: string, now = Date.now()): string {
+  const date = new Date(`${day}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return day;
+  return date.getUTCFullYear() === Number(yearOnly.format(now))
+    ? shortDate.format(date)
+    : shortDateYear.format(date);
+}
+
 /** «Название · V101»; без названия — только код */
 export function vendorLabel(vendor: { readonly name: string | null; readonly code: string }): string {
   return vendor.name ? `${vendor.name} · ${vendor.code}` : vendor.code;

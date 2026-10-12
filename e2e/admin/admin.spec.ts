@@ -254,7 +254,10 @@ test.describe("работа сотрудника", () => {
     const api = await start(page);
     await page.goto("/team");
     await expect(signedIn(page)).toBeVisible();
-    const form = page.locator("form.fs");
+    // Список первым; форма приглашения — в листе по «+ Пригласить»
+    await expect(page.locator("form.invite-form")).toHaveCount(0);
+    await page.getByRole("button", { name: t.inviteOpen }).click();
+    const form = page.locator("form.invite-form");
     await form.getByRole("radio", { name: t.inviteByPhone }).check();
     // Вход по телефону в окружении выключен — подсказка честно об этом
     await expect(form).toContainText(t.inviteHintPhoneOff);

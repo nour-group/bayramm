@@ -292,10 +292,12 @@ test.describe("навигация на телефоне", () => {
     await page.goto("/requests");
     await page.getByRole("button", { name: t.filters, exact: true }).click();
     const sheet = page.getByRole("dialog", { name: t.filters });
-    await sheet.getByRole("radio", { name: t.slaLate }).check();
+    // «Требуют действия» и «Ждут ответа» — пилюлями на виду; в шторке — остальные состояния срока
+    await expect(sheet.getByRole("radio", { name: t.slaLate })).toHaveCount(0);
+    await sheet.getByRole("radio", { name: t.sla.answered, exact: true }).check();
     await sheet.getByRole("button", { name: t.done }).click();
     await expect(page.getByRole("button", { name: `${t.filters} (1)` })).toBeVisible();
-    await expect(page.getByRole("button", { name: `${t.reset}: ${t.slaLate}` })).toBeVisible();
+    await expect(page.getByRole("button", { name: `${t.reset}: ${t.sla.answered}` })).toBeVisible();
   });
 });
 

@@ -151,9 +151,11 @@ test.describe("команда", () => {
     await page.goto("/team");
     const rows = page.locator(".rcards .rcard, tbody tr");
     await expect(rows).toHaveCount(2);
-    await expect(rows.nth(0).getByRole("button", { name: t.inviteRevoke })).toHaveCount(0);
+    // Свой ряд — без «Ещё»: себя не отключить и приглашение не отозвать
+    await expect(rows.nth(0).getByRole("button", { name: t.more })).toHaveCount(0);
     const pending = rows.filter({ hasText: "Бахтиёр Менеджеров" });
-    await pending.getByRole("button", { name: t.inviteRevoke }).click();
+    await pending.getByRole("button", { name: t.more }).click();
+    await page.getByRole("dialog").getByRole("button", { name: t.inviteRevoke }).click();
 
     const sheet = page.getByRole("alertdialog", { name: t.inviteRevokeTitle });
     await expect(sheet).toContainText(t.inviteRevokeText("Бахтиёр Менеджеров"));

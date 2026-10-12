@@ -1,12 +1,13 @@
-/* Уведомления: здоровье очереди бота — сколько ждёт, сколько не доставлено и почему.
-   Получатель — подпись (имя пользователя кабинета или вендор, имя сотрудника, код клиента),
-   вид и начало id; телефонов нет. Повторить недоставленное — администратор. */
+/* Уведомления: здоровье очереди бота. Всё доставлено — одна строка; иначе — плитки только тех
+   состояний, где что-то есть (и «Не доставлены» всегда), и таблица недоставленного: получатель —
+   подпись (имя пользователя кабинета или вендор, имя сотрудника, код клиента), вид и начало id;
+   телефонов нет. Повторить недоставленное — администратор. */
 
 import type { OutboxDeadItem, OutboxHealth, OutboxStatus } from "@bayramm/shared/api/staff";
 import { useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { formatMoment } from "../format";
-import { usePhone } from "../layout";
+import { useLayout } from "../layout";
 import { t } from "../texts";
 import { ErrorText, Link, LoadedView } from "../ui";
 
@@ -47,11 +48,19 @@ export function NotificationsPage() {
   );
 }
 
+/** Очередь пуста и ничего не застряло: тревожиться не о чем, числа — одной строкой */
+const healthy = (health: OutboxHealth) =>
+  health.counts.dead === 0 &&
+  health.counts.failed === 0 &&
+  health.counts.pending === 0 &&
+  health.counts.sending === 0;
+
 function HealthView({ health, onChange }: { health: OutboxHealth; onChange: (h: OutboxHealth) => void }) {
+  if (healthy(health)) return <p className="notice notice-good">{t.outboxHealthy(health.counts.sent)}</p>;
   return (
     <div className="stack">
       <ul className="stats">
-        {COUNTS.map((status) => (
+        {COUNTS.filter((status) => status === "dead" || health.counts[status] > 0).map((status) => (
           <li
             key={status}
             className={`stat${status === "dead" && health.counts.dead > 0 ? " stat-warn" : ""}`}
@@ -61,23 +70,17 @@ function HealthView({ health, onChange }: { health: OutboxHealth; onChange: (h: 
           </li>
         ))}
       </ul>
-      {health.oldestPendingAt && (
+      {health.counts.pending > 0 && health.oldestPendingAt && (
         <p className="muted small">{t.outboxOldest(formatMoment(health.oldestPendingAt))}</p>
       )}
-      <section className="panel" aria-labelledby="dead-title">
-        <h2 id="dead-title">
-          {t.outboxDead} <span className="count">{health.deadTotal}</span>
-        </h2>
-        <p className="muted small">{t.outboxDeadHint}</p>
-        {health.dead.length === 0 ? (
-          <p className="empty">{t.outboxDeadEmpty}</p>
-        ) : (
+      {health.dead.length > 0 && (
+        <section className="stack" aria-label={t.outboxDead}>
           <DeadTable items={health.dead} onChange={onChange} />
-        )}
-        {health.deadTotal > health.dead.length && (
-          <p className="muted small">{t.outboxShown(health.dead.length, health.deadTotal)}</p>
-        )}
-      </section>
+          {health.deadTotal > health.dead.length && (
+            <p className="muted small">{t.outboxShown(health.dead.length, health.deadTotal)}</p>
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -91,7 +94,8 @@ function DeadTable({
 }) {
   const { api } = useSession();
   const can = useCan();
-  const phone = usePhone();
+  // Таблица — только на компьютере: шесть колонок на планшете обрезались бы справа
+  const cards = useLayout() !== "desktop";
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
 
@@ -103,7 +107,7 @@ function DeadTable({
     if (result.ok) onChange(result.data);
   };
 
-  if (phone)
+  if (cards)
     return (
       <div className="stack">
         {failure && <ErrorText failure={failure} />}

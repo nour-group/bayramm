@@ -2148,19 +2148,23 @@ describe("переходы между объектами", () => {
     expect(document.activeElement?.id).toBe("photos-title");
   });
 
-  it("заявка: путь — заявки → вендор → витрина; клиент — ссылкой по коду; бюджет одной границей; кто менял статус", async () => {
+  it("заявка: над заголовком только «Заявки» (вендор и витрина — ссылками в «Что и когда»); клиент — ссылкой по коду; бюджет одной границей; кто менял статус", async () => {
     mockApi(staff("manager", ["catalog.read", "requests.read", "clients.read"]), {
       [`GET /api/staff/requests/${REQUEST_ID}`]: json(REQUEST_DETAIL),
     });
     await mount(`/requests/${REQUEST_ID}`);
-    expect(crumbs()).toEqual([t.requests, "Oqsaroy · V101", "Oqsaroy Hall"]);
+    expect(crumbs()).toEqual([t.requests]);
+    expect(link("Oqsaroy · V101")?.getAttribute("href")).toBe(`/vendors/${VENDOR_ID}`);
+    expect(link("Oqsaroy Hall")?.getAttribute("href")).toBe(`/listings/${LISTING_ID}`);
     expect(link(t.requestClientOpen("C-dddddddd"))?.getAttribute("href")).toBe(
       "/clients/dddddddd-0000-0000-0000-000000000001",
     );
     // Одна граница бюджета — «до …», а не «— — 5 000 000»
     expect(text()).toContain(t.budgetTo(formatSum(5_000_000)));
     expect(text()).not.toContain("— —");
-    expect(container.querySelector("#history-title")?.parentElement?.textContent).toContain(
+    // Смены статуса — в общем потоке «Ход заявки», а не отдельной панелью
+    expect(container.querySelector("#history-title")).toBeNull();
+    expect(container.querySelector("#course-title")?.closest("section")?.textContent).toContain(
       `Бахтиёр Р. · ${t.historyBy.vendor_user}`,
     );
   });

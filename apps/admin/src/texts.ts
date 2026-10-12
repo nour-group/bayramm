@@ -5,26 +5,14 @@ export const t = {
   skip: "К содержимому",
   sections: "Разделы панели",
   vendors: "Вендоры",
-  vendorsLead: "Вендоры и их витрины: заведение, проверка, вход в кабинет.",
   moderation: "Модерация",
-  moderationLead:
-    "Всё, что ждёт решения: витрины, предложения изменений, услуги и новые фото. Клиенты видят прежнее, пока здесь не решат.",
   requests: "Заявки",
-  requestsLead: "Заявки клиентов и ответы вендоров. Без ответа — вверху, ближайший срок первым.",
   clients: "Клиенты",
-  clientsLead:
-    "Имя из Telegram, чем входит и последняя заявка. Поиск — по номеру заявки или коду клиента (C-…). Выгрузки базы клиентов нет.",
   notifications: "Уведомления",
-  notificationsLead: "Очередь сообщений бота: сколько ждёт отправки и что не доставлено.",
   audit: "Журнал",
-  auditLead: "Кто, что и когда сделал в панели, и кто смотрел телефоны. Только чтение.",
   team: "Команда",
-  teamLead: "Сотрудники панели: приглашение по имени в Telegram или по номеру телефона, роли, отключение.",
   settings: "Настройки",
-  settingsLead: "Срок ответа, напоминания, фото, лимиты и сроки хранения. Каждое изменение — в журнале.",
   metrics: "Метрики",
-  metricsLead:
-    "Главное на запуске: клиент отправил заявку — вендор ответил в срок. Только числа: по неделям, категориям и вендорам.",
   noAccess: "У вашей роли нет доступа к этому разделу.",
   notFound: "Страница не найдена",
   notFoundLead: "Проверьте адрес или откройте главный раздел.",
@@ -107,7 +95,8 @@ export const t = {
   moreSections: "Ещё разделы",
   moreCurrent: (section: string) => `Ещё, открыт раздел «${section}»`,
   // Сотрудник решает по модерации, а бот ему не пишет: оповещения команды не доходят
-  botBanner: "Уведомления от бота не приходят: напишите боту /start",
+  botBanner: "Бот вам не пишет",
+  botBannerWrite: "Бот вам не пишет: напишите ему /start",
   botBannerLink: "Открыть бота",
   botBannerHide: "Скрыть",
   // Счётчики у разделов (из очередей метрик): что ждёт команду
@@ -564,17 +553,20 @@ export const t = {
   // заявки
   requestsEmpty: "Заявок нет.",
   requestNo: (n: number) => `№ ${n}`,
-  requestsCount: (n: number) => `заявок: ${n}`,
   sla: {
     waiting: "Ждёт ответа",
     overdue: "Просрочена",
-    breached: "Нарушен срок",
+    breached: "Просрочена",
     answered: "Ответ в срок",
     answered_late: "Ответ с опозданием",
     ops_contacted: "Связались мы",
     closed: "Закрыта",
   } as Record<string, string>,
   slaLate: "Требуют действия",
+  slaWaitingFilter: "Ждут ответа",
+  // Плашка срока в строке заявки: когда ответ ждут и сколько уже просрочена
+  slaUntil: (time: string) => `Ответ до ${time}`,
+  slaOverdue: (span: string) => `Просрочена ${span}`,
   requestStatus: {
     new: "Новая",
     viewed: "Просмотрена",
@@ -590,14 +582,12 @@ export const t = {
     price: "Не сошлись в цене",
     other: "Другое",
   } as Record<string, string>,
-  requestsSearch: "Номер, витрина, вендор",
+  requestsSearch: "Номер или витрина",
   colRequest: "Заявка",
   colListing: "Витрина",
-  createdAt: (at: string) => `создана ${at}`,
   colEvent: "Событие",
   colDue: "Срок ответа",
   guests: (n: number | null) => (n === null ? "гости не указаны" : `${n} гостей`),
-  dueIn: "до",
   requestClient: "Клиент",
   requestComment: "Комментарий",
   requestBudget: "Бюджет",
@@ -605,11 +595,10 @@ export const t = {
   clientPhone: "Телефон клиента",
   clientPhoneHint: "Только администратор и только с причиной. Просмотр пишется в журнал.",
   clientPhoneReason: "Зачем нужен номер",
-  vendorPhones: "Кому звонить у вендора",
+  vendorPhones: "Телефоны вендора",
+  showPhones: "Показать телефоны",
   listingPhone: "Телефон для клиентов",
   firstResponse: "Первый ответ",
-  firstViewed: "Просмотрена вендором",
-  source: "Откуда заявка",
   // Откуда пришла запись (app.source): словами, а не кодом базы
   sources: {
     tma: "Mini App",
@@ -620,13 +609,10 @@ export const t = {
     offline: "Не из приложения",
     system: "Система",
   } as Record<string, string>,
-  reminders: (n: number) => `напоминаний: ${n}`,
 
   // работа с заявкой
   requestActions: "Работа с заявкой",
   remindVendor: "Напомнить вендору",
-  remindHint:
-    "Сообщение в Telegram всем, кто вошёл в кабинет вендора. Между напоминаниями — пауза из настроек.",
   remindUnreachable: "У вендора никто не привязал Telegram — напоминание не дойдёт. Позвоните.",
   remindAgainAt: (at: string) => `Следующее напоминание — после ${at}`,
   remindSent: "Напоминание отправлено",
@@ -634,7 +620,8 @@ export const t = {
   markContactedHint:
     "Отметка оператора: связь с клиентом состоялась. В ответы вендора она не засчитывается; клиенту уйдёт то же сообщение, что при ответе вендора.",
   notAwaiting: "Заявка уже не ждёт первого ответа вендора.",
-  timeline: "Срок ответа по шагам",
+  requestWhatWhen: "Что и когда",
+  requestCourse: "Ход заявки",
   timelineEvents: {
     created: "Заявка создана",
     viewed: "Вендор открыл заявку",
@@ -647,15 +634,14 @@ export const t = {
   reminderOps: (by: string | null) => `Напоминание от команды${by ? ` · ${by}` : ""}`,
   reminderDelivery: (recipients: number, delivered: number, failed: number) =>
     `получателей: ${recipients}, доставлено: ${delivered}${failed ? `, не доставлено: ${failed}` : ""}`,
-  notes: "Заметки команды",
-  notesHint: "Видны только сотрудникам. Добавить можно, изменить и удалить — нет. Без телефонов клиента.",
-  notesEmpty: "Заметок нет.",
+  note: "Заметка",
+  noteAdd: "+ Заметка",
+  noteHint: "Видно только команде",
   noteText: "Новая заметка",
   addNote: "Добавить заметку",
 
   // клиенты
   clientsSearch: "Номер заявки или код клиента (C-…)",
-  clientsSearchHint: "По имени и телефону не ищем.",
   clientsEmpty: "Клиентов не нашлось.",
   onlyBlocked: "Только заблокированные",
   colClient: "Клиент",
@@ -664,21 +650,20 @@ export const t = {
   clientNoNameTitle: "Клиент без имени",
   clientDeletedTitle: "Клиент удалил аккаунт",
   colSignIn: "Вход и язык",
-  clientSignIn: "Вход",
+  clientSignInLocale: "Вход · язык",
   signInKinds: { telegram: "Telegram", phone: "телефон" } as Record<string, string>,
   signInNone: "нет способа входа",
   clientNoRequests: "заявок нет",
-  colSince: "С нами с",
-  colLastSeen: "Был в приложении",
+  colSeen: "Был",
+  seenAgo: (span: string) => `был ${span} назад`,
+  seenNever: "не заходил",
+  requestsOf: (n: number) => `заявок: ${n}`,
   colRequests: "Заявки",
-  colState: "Состояние",
   clientBlocked: "Заблокирован",
   clientDeleted: "Удалил аккаунт",
   clientActive: "Активен",
   clientProfile: "Профиль",
-  clientName: "Имя в Telegram",
   clientUsername: "Имя пользователя",
-  clientLocale: "Язык",
   clientCanMessage: "Бот может писать",
   clientDeletedNote: "Клиент удалил аккаунт: имени и телефона больше нет, заявки и журналы остались.",
   yes: "да",
@@ -697,7 +682,6 @@ export const t = {
   } as Record<string, string>,
   consentActions: { grant: "дал", withdraw: "отозвал" } as Record<string, string>,
   consentVersion: (v: number) => `версия текста ${v}`,
-  blockTitle: "Блокировка",
   blockHint:
     "Заблокированный клиент не входит в приложение и не создаёт заявок. Причина обязательна; блокировка — в журнале.",
   block: "Заблокировать",
@@ -714,11 +698,9 @@ export const t = {
     dead: "Не доставлены",
     sent: "Отправлено за сутки",
   } as Record<string, string>,
-  outboxOldest: (at: string) => `Самое давнее ожидающее — с ${at}. Если давно, отправитель не работает.`,
+  outboxOldest: (at: string) => `Самое давнее ожидающее — с ${at}`,
+  outboxHealthy: (sent: number) => `Всё доставлено · за сутки ${sent}`,
   outboxDead: "Не доставлены",
-  outboxDeadHint:
-    "Бот не смог отправить сообщение: получатель заблокировал бота, не привязан или Telegram не ответил. Повтор ставит сообщение в очередь заново.",
-  outboxDeadEmpty: "Всё доставлено.",
   retryNotice: (kind: string) => `Повторить: ${kind}`,
   outboxShown: (shown: number, total: number) => `Показаны последние ${shown} из ${total}.`,
   colKind: "Вид",
@@ -925,12 +907,11 @@ export const t = {
 
   // команда
   inviteTitle: "Пригласить сотрудника",
-  inviteHint:
-    "Сотрудник войдёт через Telegram: имя пользователя должно совпадать с его именем в Telegram. При первом входе приглашение привяжется к его аккаунту.",
-  inviteHintPhone:
-    "Сотрудник войдёт на сайте Bayramm по коду на этот номер — при первом входе приглашение привяжется к его аккаунту. Если номер уже подтверждён в аккаунте Bayramm, приглашение примется сразу. Номер не хранится: только его отпечаток.",
-  inviteHintPhoneOff:
-    "Вход по коду на телефон в этом окружении пока выключен: приглашение примется, когда сотрудник подтвердит номер в аккаунте Bayramm. Номер не хранится: только его отпечаток.",
+  inviteOpen: "+ Пригласить",
+  // Одна строка под полем: как сотрудник войдёт
+  inviteHint: "Имя должно совпадать с его именем пользователя в Telegram.",
+  inviteHintPhone: "Войдёт по коду на этот номер. Номер не хранится: только его отпечаток.",
+  inviteHintPhoneOff: "Вход по телефону выключен: приглашение примется, когда номер подтвердят в аккаунте.",
   inviteBy: "Как войдёт",
   inviteByTelegram: "По имени в Telegram",
   inviteByPhone: "По номеру телефона",
@@ -969,32 +950,31 @@ export const t = {
   } as Record<string, string>,
 
   // настройки
+  settingGroups: { vendor: "Ответ вендора", photos: "Фото", data: "Данные" } as Record<string, string>,
   settingsLabels: {
-    sla_hours: "Срок ответа вендора, часов",
-    sla_reminder_hours: "Напоминания вендору через, часов",
+    sla_hours: "Срок ответа вендора",
+    sla_reminder_hours: "Напоминания вендору через",
     quiet_hours: "Тихие часы (по Ташкенту)",
-    ops_reminder_pause_minutes: "Пауза между напоминаниями от команды, минут",
+    ops_reminder_pause_minutes: "Пауза между напоминаниями от команды",
     min_photos: "Минимум фото для публикации",
     max_photos: "Максимум фото на витрине",
     client_requests_per_day: "Заявок клиента за сутки",
-    request_contact_retention_days: "Хранить контакты из заявки, дней после события",
-    session_retention_days: "Хранить истёкшие сессии, дней",
-    otp_retention_hours: "Хранить коды входа, часов",
+    request_contact_retention_days: "Хранить контакты из заявки после события",
+    session_retention_days: "Хранить истёкшие сессии",
+    otp_retention_hours: "Хранить коды входа",
   } as Record<string, string>,
+  // Границы значения — вместо абзацев: новое значение сервер проверит ещё раз
   settingsHints: {
-    sla_hours:
-      "1–72. Действует на новые заявки: у созданной срок уже зафиксирован. Напоминания — раньше срока.",
-    sla_reminder_hours:
-      "До двух, по возрастанию, каждое 1–72 и раньше срока ответа. Пусто — без напоминаний.",
-    quiet_hours: "Ночью напоминания ждут утра. Начало и конец — ЧЧ:ММ.",
-    ops_reminder_pause_minutes:
-      "5–1440. Кнопка «Напомнить» на заявке снова доступна через столько минут после прошлого напоминания.",
-    min_photos: "3–10: меньше трёх нельзя — правило продукта. Не больше максимума.",
-    max_photos: "3–30, не меньше минимума.",
-    client_requests_per_day: "1–100: защита вендоров от спама.",
-    request_contact_retention_days: "1–3650. Потом имя, телефон и комментарий стираются.",
-    session_retention_days: "1–365.",
-    otp_retention_hours: "1–720.",
+    sla_hours: "1–72 ч · для новых заявок",
+    sla_reminder_hours: "1–72 ч, по возрастанию, раньше срока ответа",
+    quiet_hours: "ночью напоминания ждут утра",
+    ops_reminder_pause_minutes: "5–1440 мин",
+    min_photos: "3–10, не больше максимума",
+    max_photos: "3–30, не меньше минимума",
+    client_requests_per_day: "1–100",
+    request_contact_retention_days: "1–3650 дн.",
+    session_retention_days: "1–365 дн.",
+    otp_retention_hours: "1–720 ч",
   } as Record<string, string>,
   settingInvalid: "Значение не подходит: проверьте границы и согласованность с другими настройками.",
   settingValue: "Значение",
@@ -1002,31 +982,38 @@ export const t = {
   reminderSecond: "Второе",
   quietFrom: "С",
   quietTo: "До",
-  updatedBy: (at: string, by: string | null) => `Изменено ${at}${by ? ` · ${by}` : ""}`,
 
   // метрики запуска
-  metricsNow: "Сейчас",
-  metricsQueues: {
-    awaiting: "Ждут ответа вендора",
-    overdue: "Из них срок вышел",
-    deadTotal: "Не доставлено уведомлений",
-    listingsReview: "Витрин на проверке",
-    revisionsPending: "Предложений ждут решения",
-    photosPending: "Новых фото ждут решения",
-    servicesPending: "Услуг ждут решения",
-  } as Record<string, string>,
   metricsWeekly: "По неделям",
-  metricsWeeklyHint: (hours: number) =>
-    `Неделя — с понедельника, по Ташкенту; заявка — в неделе, когда её отправили. «В срок» — вендор сам ответил за ${hours} ч: связались, договорились или отказ. Просмотр, звонок и «связались» от команды — не ответ вендора. Доля — от заявок, исход которых известен: вендор ответил в срок или срок уже прошёл; отозванные клиентом до срока без ответа — не в расчёте. Время ответа — по заявкам с ответом вендора.`,
+  metricsTabs: { weeks: "Недели", vendors: "Вендоры", categories: "Категории", contacts: "Контакты" },
+  metricsPeriod: "За 30 дней",
+  // Определения одним листом: чьи заявки и что считаем ответом — не абзацами над таблицами
+  metricsHow: "Как считаем",
+  metricsHowItems: (hours: number | undefined) => [
+    {
+      term: "В срок",
+      text: `Вендор сам ответил${hours ? ` за ${hours} ч` : " в срок"}: связался, договорился или отказал. Просмотр, звонок и «связались» от команды ответом вендора не считаются.`,
+    },
+    {
+      term: "Доля",
+      text: "От заявок, исход которых известен: вендор ответил в срок или срок уже прошёл. Отозванные клиентом до срока без ответа в расчёт не входят.",
+    },
+    { term: "Медиана", text: "Время ответа по заявкам, на которые вендор ответил." },
+    { term: "Срок сорван", text: "Срок вышел, ответа нет." },
+    { term: "Неделя", text: "С понедельника, по Ташкенту; заявка — в неделе, когда её отправили." },
+    {
+      term: "Категория",
+      text: "Категория заявки — категория витрины. Витрины и вендоры — сейчас, заявки и ответы — за 30 дней. Фильтр категории сужает недели, вендоров и контакты.",
+    },
+    {
+      term: "Контакты",
+      text: "Сколько раз открыли окно контактов витрины и нажали «Позвонить» или «Написать в Telegram». Только числа, без клиентов. Под числом открытий — на сколько их больше или меньше, чем в предыдущие 30 дней.",
+    },
+  ],
+  inTimeShort: (percent: string) => `в срок ${percent}`,
+  breachesShort: (n: number) => `срок сорван: ${n}`,
   metricsCategories: "По категориям за 30 дней",
-  metricsCategoriesHint:
-    "Категория заявки — категория витрины. Опубликованные витрины и их вендоры — сейчас; заявки, ответы и договорённости — за 30 дней.",
-  metricsCategoryFilter: (name: string) =>
-    `Недели, вендоры и контакты — только «${name}». Очереди и сводка выше — по всем категориям.`,
-  metricsFilterScope: "Категория — для недель, вендоров и контактов ниже.",
   metricsContacts: "Контакты витрин за 30 дней",
-  metricsContactsHint:
-    "Как часто клиенты открывали окно контактов витрины и нажимали «Позвонить» или «Написать в Telegram». Только числа, без клиентов. Сверху — чаще открывают; под числом открытий — на сколько их больше или меньше, чем в предыдущие 30 дней.",
   // Изменение числа открытий к предыдущему такому же периоду: знак — не только цветом
   opensChange: (now: number, prev: number) =>
     now === prev
@@ -1043,22 +1030,14 @@ export const t = {
   colContactTelegram: "Telegram",
   weekNumber: (n: number) => `неделя ${n}`,
   metricsVendors: "Вендоры за 30 дней",
-  metricsVendorsHint:
-    "Вендоры с заявками за 30 дней или с опубликованной витриной. По умолчанию худшие по доле ответов в срок — сверху: им стоит позвонить.",
   metricsVendorsEmpty: "Пока нет ни заявок, ни опубликованных витрин.",
   colWeek: "Неделя",
   colAnswered: "Ответ в срок",
-  colResponseTime: "Время ответа",
   colMedian: "Медиана ответа",
-  colAgreed: "Договорились",
   colBreaches: "Срок сорван",
-  colDead: "Не доставлено",
-  colLastRequest: "Последняя заявка",
   weekNow: "идёт",
-  clientsCount: (n: number) => `клиентов: ${n}`,
   answeredOf: (answered: number, measurable: number) => `${answered} из ${measurable}`,
   medianTime: (median: string) => `медиана ${median}`,
-  p90Time: (p90: string) => `у 90% — до ${p90}`,
   sortAsc: "по возрастанию",
   sortDesc: "по убыванию",
   // Сортировка вендоров на телефоне: столбец и направление одним выбором
@@ -1067,12 +1046,9 @@ export const t = {
   sortRequestsDesc: "Больше заявок — сверху",
   sortMedianDesc: "Дольше отвечают — сверху",
   vendorResponse: "Ответы на заявки",
-  vendorResponseHint:
-    "За 30 дней. «В срок» — вендор сам ответил за срок заявки; «связались» от команды не считается.",
   vendorResponseEmpty: "За 30 дней заявок не было.",
   activeListings: (n: number) => `опубликовано витрин: ${n}`,
   activeVendors: (n: number) => `вендоров: ${n}`,
-  vendorCategories: "Категории",
 
   // ── категории, витрины, услуги (v0.2) ──
   colCategory: "Категория",
@@ -1213,7 +1189,6 @@ export const t = {
 
   // заявки по категориям
   dayPart: "Часть дня",
-  requestDetails: "Что нужно клиенту",
   requestServices: "Выбранные услуги",
 
   // ── поля форм и подтверждения (fields.tsx, reason.tsx) ───────────────────
@@ -1352,8 +1327,6 @@ export const t = {
   statusHints: {
     lead: "Вендор в работе у команды: витрина ещё не заполнена, клиенты её не видят",
   } as Record<string, string>,
-  requestsLeadSla: (hours: number) =>
-    `Заявки клиентов и ответы вендоров. Без ответа — вверху, ближайший срок первым; срок ответа — ${hours} ч.`,
   requestStatusFilter: "Статус заявки",
   allStatuses: "Все статусы",
   // заявки одной витрины (?listingId=) — снятый фильтр возвращает все

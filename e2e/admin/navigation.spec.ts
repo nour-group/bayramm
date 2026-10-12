@@ -78,7 +78,7 @@ test.describe("главный экран и разделы", () => {
 });
 
 test.describe("путь к странице и переходы", () => {
-  test("компьютер — путь над заголовком: витрина → вендор, заявка → вендор → витрина; телефон — без него", async ({
+  test("компьютер — путь над заголовком: витрина → вендор, заявка — только «Заявки»; телефон — без него", async ({
     page,
   }) => {
     const api = await start(page);
@@ -89,8 +89,12 @@ test.describe("путь к странице и переходы", () => {
       expect(api.unexpected).toEqual([]);
       return;
     }
-    await expect(crumbs(page).getByRole("link")).toHaveText([t.requests, "Lola · V101", "Oq kortej"]);
-    await crumbs(page).getByRole("link", { name: "Oq kortej" }).click();
+    await expect(crumbs(page).getByRole("link")).toHaveText([t.requests]);
+    // Витрина и вендор заявки — ссылками в «Что и когда», путь их не дублирует
+    await page
+      .getByRole("region", { name: t.requestWhatWhen })
+      .getByRole("link", { name: "Oq kortej" })
+      .click();
     await expect(page).toHaveURL(`/listings/${CAR_LISTING_ID}`);
     await expect(crumbs(page).getByRole("link")).toHaveText([t.vendors, "Lola · V101"]);
     await crumbs(page).getByRole("link", { name: "Lola · V101" }).click();
@@ -105,7 +109,7 @@ test.describe("путь к странице и переходы", () => {
     await page.goto(`/requests/${REQUEST_ID}`);
     // Бюджет с двумя границами — «от … до …»; кто менял статус — по имени
     await expect(page.getByText(/^от 30\s000\s000 сум до 50\s000\s000 сум$/)).toBeVisible();
-    await expect(page.getByRole("region", { name: t.history })).toContainText(
+    await expect(page.getByRole("region", { name: t.requestCourse })).toContainText(
       `Бахтиёр Рашидов · ${t.historyBy.vendor_user}`,
     );
     await page.getByRole("link", { name: t.requestClientOpen("C-00000000") }).click();
@@ -167,21 +171,14 @@ test.describe("фильтры в адресе", () => {
   test("заявки: фильтр срока — в адресе; «назад» из заявки — тот же список", async ({ page }) => {
     const api = await start(page);
     await page.goto("/requests");
-    if (isPhone(page)) {
-      await page.getByRole("button", { name: t.filters, exact: true }).click();
-      const sheet = page.getByRole("dialog", { name: t.filters });
-      await sheet.getByRole("radio", { name: t.slaLate }).check();
-      await sheet.getByRole("button", { name: t.done }).click();
-    } else {
-      await page.getByRole("radio", { name: new RegExp(`^${t.slaLate}`) }).check();
-    }
+    // «Требуют действия» — пилюля на виду и на телефоне, и на компьютере
+    await page.getByRole("radio", { name: new RegExp(`^${t.slaLate}`) }).check();
     await expect(page).toHaveURL("/requests?sla=late");
     await rows(page).first().getByRole("link").first().click();
     await expect(page).toHaveURL(`/requests/${REQUEST_ID}`);
     await page.goBack();
     await expect(page).toHaveURL("/requests?sla=late");
-    if (isPhone(page)) await expect(page.getByRole("button", { name: `${t.filters} (1)` })).toBeVisible();
-    else await expect(page.getByRole("radio", { name: new RegExp(`^${t.slaLate}`) })).toBeChecked();
+    await expect(page.getByRole("radio", { name: new RegExp(`^${t.slaLate}`) })).toBeChecked();
     expect(api.queries.at(-1)).toContain("sla=late");
     expect(api.unexpected).toEqual([]);
   });
@@ -215,12 +212,28 @@ test.describe("фильтры в адресе", () => {
     expect(api.unexpected).toEqual([]);
   });
 
-  test("метрики: плитка просрочки — заявки «Требуют действия»; категория — в адресе", async ({ page }) => {
+  test("метрики: вкладка и категория — в адресе; «Как считаем» — листом, без абзацев", async ({ page }) => {
     const api = await start(page);
-    await page.goto("/metrics?category=car");
-    await expect(page.getByText(t.metricsCategoryFilter("Кортеж"))).toBeVisible();
-    await page.getByRole("link", { name: new RegExp(t.metricsQueues.overdue ?? "") }).click();
-    await expect(page).toHaveURL("/requests?sla=late");
+    await page.goto("/metrics?tab=vendors&category=car");
+    await expect(heading(page)).toHaveText(t.metrics);
+    // Вкладка выбрана, фильтр категории — тоже; таблица одна — вендоры
+    await expect(page.getByRole("radio", { name: t.metricsTabs.vendors })).toBeChecked();
+    if (isPhone(page)) await expect(page.getByRole("button", { name: `${t.filters} (1)` })).toBeVisible();
+    else
+      await expect(page.getByRole("button", { name: new RegExp(`^${t.colCategory}`) })).toContainText(
+        "Кортеж",
+      );
+    // Таблица одна: таблицей на компьютере, карточками на телефоне
+    await expect(page.locator("table, ul.rcards")).toHaveCount(1);
+    await expect(page.locator("main .muted.small").filter({ hasText: t.metricsPeriod })).toBeVisible();
+    // Определения — в листе
+    await page.getByRole("button", { name: t.metricsHow }).click();
+    await expect(page.getByRole("dialog", { name: t.metricsHow })).toContainText(
+      t.metricsHowItems(12)[0]?.text ?? "",
+    );
+    await page.getByRole("dialog", { name: t.metricsHow }).getByRole("button", { name: t.close }).click();
+    await page.getByRole("radio", { name: t.metricsTabs.weeks }).check();
+    await expect(page).toHaveURL("/metrics?category=car");
     expect(api.unexpected).toEqual([]);
   });
 });
@@ -265,8 +278,9 @@ test.describe("журнал: объект — поиском", () => {
   }) => {
     const api = await start(page);
     await page.goto("/audit");
-    if (isPhone(page)) await page.getByRole("button", { name: t.filters, exact: true }).click();
-    const scope = isPhone(page) ? page.getByRole("dialog", { name: t.filters }) : page.locator("main");
+    // Сначала журнал; фильтры — в листе «Фильтры» на любой ширине
+    await page.getByRole("button", { name: t.filters, exact: true }).click();
+    const scope = page.getByRole("dialog", { name: t.filters });
     await expect(scope.getByRole("button", { name: new RegExp(`^${t.auditObject}`) })).toBeDisabled();
     await pick(page, t.auditType, t.auditTypes.vendor ?? "", scope);
     await scope.getByRole("button", { name: new RegExp(`^${t.auditObject}`) }).click();
@@ -277,7 +291,7 @@ test.describe("журнал: объект — поиском", () => {
     await expect(scope.getByRole("button", { name: new RegExp(`^${t.auditObject}`) })).toContainText(
       "Lola · V101",
     );
-    await scope.getByRole("button", { name: t.auditApply }).click();
+    // Без кнопки «Показать»: выбор действует сразу
     await expect(page).toHaveURL(`/audit?type=vendor&object=${VENDOR_ID}`);
     expect(api.queries.some((q) => q.startsWith("vendors?") && q.includes("q=Lo"))).toBe(true);
     expect(api.unexpected).toEqual([]);
@@ -286,8 +300,8 @@ test.describe("журнал: объект — поиском", () => {
   test("ссылка «Журнал вендора» — объект в фильтре назван, а не id", async ({ page }) => {
     const api = await start(page);
     await page.goto(`/audit?type=vendor&object=${VENDOR_ID}`);
-    if (isPhone(page)) await page.getByRole("button", { name: `${t.filters} (2)` }).click();
-    const scope = isPhone(page) ? page.getByRole("dialog", { name: t.filters }) : page.locator("main");
+    await page.getByRole("button", { name: `${t.filters} (2)` }).click();
+    const scope = page.getByRole("dialog", { name: t.filters });
     await expect(scope.getByRole("button", { name: new RegExp(`^${t.auditObject}`) })).toContainText("Lola");
     expect(api.unexpected).toEqual([]);
   });
