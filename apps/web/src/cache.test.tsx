@@ -134,15 +134,40 @@ describe("кэш на экранах", () => {
   });
   afterEach(cleanup);
 
-  it("лендинг: категории, бот и способы входа — по одному запросу на всех", async () => {
+  it("лендинг: категории, витрины и способы входа — по одному запросу на всех; бот и выдача по разделам не нужны", async () => {
     const { api, calls } = counted();
     await mount({ path: "/", identity: "guest", api: withCache(api) });
     await waitFor(() => document.querySelectorAll(".ln-cards .card").length === 4, "витрины");
     await settle();
-    // Сетка разделов и витрины лендинга спрашивают категории; подвал и блок партнёров — бот и вход
+    // Сетка разделов — категории; витрины лендинга — один featured, а не категории и выдача на
+    // каждый раздел; подвал, меню и блок партнёров — имя бота и вход из одних способов входа
     expect(calls.catalogCategories).toBe(1);
-    expect(calls.bot).toBe(1);
-    expect(calls.authMethods ?? 0).toBeLessThanOrEqual(1);
+    expect(calls.featured).toBe(1);
+    expect(calls.catalog ?? 0).toBe(0);
+    expect(calls.bot ?? 0).toBe(0);
+    expect(calls.authMethods).toBe(1);
+  });
+
+  it("бот берётся из способов входа: один запрос на всех, нет имени — как 503 у старого маршрута", async () => {
+    const { api, calls } = counted();
+    const cached = withCache(api);
+    const bot = await cached.bot();
+    expect(bot.username).toBe("bayramm_demo_bot");
+    expect((await cached.authMethods()).telegram.bot).toBe("bayramm_demo_bot");
+    expect(calls.authMethods).toBe(1);
+    expect(calls.bot ?? 0).toBe(0);
+
+    const { api: noBot } = counted(
+      createMockApi({ now: () => NOW, listings: LISTINGS, failWith: () => null }),
+    );
+    const broken = withCache({
+      ...noBot,
+      authMethods: async () => ({
+        ...(await noBot.authMethods()),
+        telegram: { bot: null, loginDomain: null },
+      }),
+    });
+    await expect(broken.bot()).rejects.toMatchObject({ status: 503, code: "telegram_unavailable" });
   });
 
   it("витрина → форма заявки: карточка витрины не запрашивается второй раз, заглушки нет", async () => {

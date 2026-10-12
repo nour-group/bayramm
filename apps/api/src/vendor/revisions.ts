@@ -1,7 +1,10 @@
-// Правки карточки из кабинета: партнёр предлагает новое название, описания, поля витрины
-// и ссылки на видео — карточку меняет только решение команды (staff/revisions.ts); цены —
-// в услугах (vendor/services.ts). Клиент видит одобренную версию, пока правка ждёт. Поля
-// витрины проверяются по конфигурации категории витрины.
+// Правки карточки из кабинета: когда витрина уже на проверке, в каталоге или приостановлена,
+// партнёр предлагает новое название, описания, поля витрины, ссылки на видео, вместимость,
+// район и адрес — карточку меняет только решение команды (staff/revisions.ts); цены — в
+// услугах (vendor/services.ts). Клиент видит одобренную версию, пока правка ждёт. Поля
+// проверяются по конфигурации категории витрины. Пока витрины нет на сайте, то же партнёр
+// сохраняет сразу (vendor/listing.ts, PATCH /vendor/listings/:id); этот маршрут остаётся для
+// старых сборок кабинета и работает у любой витрины, как раньше.
 //
 //   · одна открытая правка на площадку (индекс listing_revisions_one_pending): вторая —
 //     409 revision_pending, открытую можно отозвать;
@@ -24,15 +27,17 @@ import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import type { Json } from "../db/schema.generated";
 import { ApiError, notFound } from "../errors";
+import { assertCapacityOrder, assertDistrict } from "../listing-fields";
 import type { Body } from "../staff/input";
-import { changedOnly } from "../staff/revision-diff";
+import { changedOnly, type ModeratedColumns, type ProposedValues } from "../staff/revision-diff";
 import { revisionFromBody } from "../staff/revisions";
 import { assertVendorCan } from "./access";
 
 /** Сколько последних предложений показывать партнёру */
 const HISTORY = 10;
 
-const noChanges = () => new ApiError(422, "no_changes", "Proposal does not change the listing");
+/** Ничего не изменилось: 422 no_changes */
+export const noChanges = () => new ApiError(422, "no_changes", "Proposal does not change the listing");
 
 interface RevisionRow {
   readonly id: string;
@@ -87,6 +92,11 @@ async function ownListing(trx: Tx, actor: VendorActor, listingId: string) {
       "description_uz",
       "attributes",
       "video_links",
+      "cap_min",
+      "cap_max",
+      "district_code",
+      "address_ru",
+      "address_uz",
     ])
     .where("id", "=", listingId)
     .where("vendor_id", "=", actor.vendorId)
@@ -111,6 +121,25 @@ export function listRevisions(db: Db, actor: VendorActor, listingId: string): Pr
   });
 }
 
+/**
+ * Предложение из проверенных значений: в него идут только изменённые поля, ничего не
+ * изменилось — 422 no_changes. Общее для POST …/revisions и PATCH /vendor/listings/:id
+ */
+export async function insertRevision(
+  trx: Tx,
+  listing: ModeratedColumns & { readonly id: string; readonly version: number },
+  values: ProposedValues,
+): Promise<VendorRevision> {
+  const payload = changedOnly(values, listing);
+  if (Object.keys(payload).length === 0) throw noChanges();
+  const row = await trx
+    .insertInto("app.listing_revisions")
+    .values({ listing_id: listing.id, payload: payload as Json, base_version: listing.version })
+    .returning(COLUMNS)
+    .executeTakeFirstOrThrow();
+  return view(row);
+}
+
 /** POST /vendor/listings/:id/revisions: предложить правку карточки */
 export function submitRevision(
   db: Db,
@@ -125,14 +154,10 @@ export function submitRevision(
   return withActor(db, actor, async (trx) => {
     const listing = await ownListing(trx, actor, listingId);
     const values = revisionFromBody(body as Body, listing.category_code);
-    const payload = changedOnly(values, listing);
-    if (Object.keys(payload).length === 0) throw noChanges();
-    const row = await trx
-      .insertInto("app.listing_revisions")
-      .values({ listing_id: listingId, payload: payload as Json, base_version: listing.version })
-      .returning(COLUMNS)
-      .executeTakeFirstOrThrow();
-    return view(row);
+    // «До» не меньше «от» вместе с карточкой, район — из справочника
+    assertCapacityOrder(values.fields, listing, "cap_max");
+    await assertDistrict(trx, values.fields.district_code, "district_code");
+    return insertRevision(trx, listing, values);
   });
 }
 

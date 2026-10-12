@@ -2,7 +2,7 @@
 // политики читают GUC app.actor_kind / app.actor_id / app.vendor_id
 // (supabase/migrations/20260928120000_foundation.sql, «контекст актора»).
 
-import { sql, type Transaction } from "kysely";
+import { type ControlledTransaction, sql, type Transaction } from "kysely";
 import type { Db } from "./client";
 import type { AppActorKind, AppStaffRole, DB } from "./schema.generated";
 
@@ -85,19 +85,124 @@ export function actorSettings(actor: Actor): ActorSettings {
  *
  * Все запросы внутри fn — только через trx: запрос через db в обход транзакции
  * пошёл бы без актора, а при пуле в одно соединение — повис бы.
+ *
+ * Если до этого запрос открыл транзакцию преамбулы (inPreamble: вход по токену, членства
+ * вендора), её продолжает первый withActor обработчика: актор переключается set_config'ом, а не
+ * новой транзакцией — без лишних begin и commit и без своего круга до базы на каждый шаг.
+ * Фиксируется она так же, как обычная: по концу fn (commit) или откатом по ошибке.
  */
 export async function withActor<T>(db: Db, actor: Actor, fn: (trx: Tx) => Promise<T>): Promise<T> {
   const s = actorSettings(actor);
+  const carried = preambles.get(db);
+  if (carried !== undefined) {
+    // Забирает один вызов: параллельный второй откроет свою транзакцию и дождётся соединения
+    preambles.delete(db);
+    clearTimeout(carried.timer);
+    return finishIn(carried.trx, async (trx) => {
+      await setActor(trx, s);
+      return fn(trx);
+    });
+  }
   return db.transaction().execute(async (trx) => {
     await setActor(trx, s);
     return fn(trx);
   });
 }
 
+// ── одна транзакция на запрос ───────────────────────────────────────────────
+//
+// Запрос с токеном раньше открывал отдельную транзакцию на каждый шаг (сессия, членства
+// вендора, сам обработчик) — по четыре оператора (begin, set_config, запрос, commit) и по кругу
+// до базы на каждый. Теперь шаги преамбулы (authenticate, requireVendor) идут в одной открытой
+// транзакции, и её продолжает первый withActor обработчика. Остальные транзакции обработчика —
+// как прежде, отдельные: каждая фиксируется сама (журнал попыток кода, например, переживает
+// последующий отказ). До обработчика ничего в ней не пишется: шаги преамбулы только читают.
+
+/**
+ * Сколько транзакция преамбулы ждёт обработчика, прежде чем её закроют: до первого обращения к
+ * базе обработчик может читать тело запроса (фото — до 10 МБ по мобильной сети) или звать
+ * внешний сервис, а открытая транзакция всё это время держит соединение с базой (Hyperdrive).
+ * Закрыли — обработчик откроет свою, как до объединения
+ */
+export const PREAMBLE_HOLD_MS = 1_000;
+
+interface Held {
+  readonly trx: ControlledTransaction<DB>;
+  timer: ReturnType<typeof setTimeout> | undefined;
+}
+
+/** Транзакция преамбулы запроса, ещё не отданная обработчику; ключ — база запроса (один Db на запрос) */
+const preambles = new WeakMap<Db, Held>();
+/** Что выставлено в GUC транзакции сейчас: повторный set_config тем же актором пропускается */
+const current = new WeakMap<Tx, string>();
+
+async function finishIn<T>(trx: ControlledTransaction<DB>, fn: (trx: Tx) => Promise<T>): Promise<T> {
+  try {
+    const result = await fn(trx);
+    await trx.commit().execute();
+    return result;
+  } catch (error) {
+    // Исходную ошибку не подменяем сбоем отката (обрыв связи)
+    await trx
+      .rollback()
+      .execute()
+      .catch(() => {});
+    throw error;
+  }
+}
+
+/**
+ * Шаг преамбулы под актором system: сессия по токену, членства аккаунта. Транзакция остаётся
+ * открытой для следующего шага и для первого withActor обработчика; если обработчик базы не
+ * коснулся, закрывает её closePreamble (authenticate и database — в finally). Ошибка шага
+ * откатывает транзакцию и закрывает её: запрос всё равно ответит ошибкой.
+ */
+export async function inPreamble<T>(db: Db, fn: (trx: Tx) => Promise<T>): Promise<T> {
+  let held = preambles.get(db);
+  if (held === undefined) {
+    held = { trx: await db.startTransaction().execute(), timer: undefined };
+    preambles.set(db, held);
+  }
+  const open = held;
+  // Пока идёт шаг, часы не нужны; между шагами и до обработчика — PREAMBLE_HOLD_MS
+  clearTimeout(open.timer);
+  try {
+    await setActor(open.trx, actorSettings(SYSTEM));
+    const result = await fn(open.trx);
+    open.timer = setTimeout(() => void closePreamble(db), PREAMBLE_HOLD_MS);
+    return result;
+  } catch (error) {
+    if (preambles.get(db) === open) preambles.delete(db);
+    await open.trx
+      .rollback()
+      .execute()
+      .catch(() => {});
+    throw error;
+  }
+}
+
+/** Закрыть транзакцию преамбулы, которую никто не взял: обработчик базы не касался, ждал дольше срока или запрос отклонён */
+export async function closePreamble(db: Db): Promise<void> {
+  const held = preambles.get(db);
+  if (held === undefined) return;
+  preambles.delete(db);
+  clearTimeout(held.timer);
+  try {
+    await finishIn(held.trx, async () => undefined);
+  } catch (err) {
+    console.error("db: preamble close failed", err instanceof Error ? err.name : typeof err);
+  }
+}
+
 async function setActor(trx: Tx, s: ActorSettings): Promise<void> {
+  const key = `${s.kind}|${s.id}|${s.vendorId}`;
+  // Тот же актор уже выставлен в этой транзакции (SQL-функции, подменяющие GUC, возвращают его
+  // назад) — лишний круг до базы не нужен
+  if (current.get(trx) === key) return;
   await sql`select set_config('app.actor_kind', ${s.kind}, true),
                    set_config('app.actor_id', ${s.id}, true),
                    set_config('app.vendor_id', ${s.vendorId}, true)`.execute(trx);
+  current.set(trx, key);
 }
 
 /**

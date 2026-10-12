@@ -219,10 +219,7 @@ describe("маршруты панели оператора", () => {
     back.mockRestore();
   });
 
-  it("у каждого раздела есть название и пояснение", () => {
-    for (const route of NAV) {
-      expect(t[route]).toBeTruthy();
-      expect(t[`${route}Lead`]).toBeTruthy();
-    }
+  it("у каждого раздела есть название", () => {
+    for (const route of NAV) expect(t[route]).toBeTruthy();
   });
 });

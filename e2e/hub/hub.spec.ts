@@ -45,7 +45,10 @@ test("кабинет из браузера через хаб, оттуда — �
   const toAdmin = page.getByRole("link", { name: v.toAdmin });
   await expect(toAdmin).toHaveAttribute("href", `${APPS.admin}/?signin=1`);
   await toAdmin.click();
-  await expect(page.locator(".who").getByText(STAFF.displayName)).toBeVisible();
+  // Кто вошёл — кружок аккаунта в шапке панели (имя и роль — в его подписи)
+  await expect(
+    page.getByRole("button", { name: adminT.accountOf(STAFF.displayName, adminT.roles[STAFF.role]) }),
+  ).toBeVisible();
   expect(new URL(page.url()).origin).toBe(APPS.admin);
   // Код, state и ?signin не остаются в адресе
   expect(page.url()).not.toMatch(/code=|state=|signin=/);
@@ -59,8 +62,12 @@ test("кабинет из браузера через хаб, оттуда — �
   expect(staff.loggedOut).toEqual(["account"]);
 
   // Из панели — в клиентское приложение и в кабинет; в кабинет — без второго входа
-  await expect(page.getByRole("link", { name: adminT.toClientApp })).toHaveAttribute("href", APPS.web);
-  const toCabinet = page.getByRole("link", { name: adminT.toCabinet });
+  await page
+    .getByRole("button", { name: adminT.accountOf(STAFF.displayName, adminT.roles[STAFF.role]) })
+    .click();
+  const account = page.getByRole("dialog", { name: adminT.account });
+  await expect(account.getByRole("link", { name: adminT.toClientApp })).toHaveAttribute("href", APPS.web);
+  const toCabinet = account.getByRole("link", { name: adminT.toCabinet });
   await expect(toCabinet).toHaveAttribute("href", `${APPS.vendor}/?signin=1`);
   await toCabinet.click();
   await expect(heading(page)).toHaveText(v.requests);

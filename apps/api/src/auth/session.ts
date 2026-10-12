@@ -6,12 +6,12 @@ import {
   type AccountActor,
   type Actor,
   type ClientActor,
+  closePreamble,
   GUEST,
+  inPreamble,
   type StaffActor,
   type StaffRole,
-  SYSTEM,
   type VendorActor,
-  withActor,
 } from "../db/actor";
 import type { AppEnv, SessionInfo } from "../env";
 import { clientBlocked, forbidden, unauthorized } from "../errors";
@@ -44,7 +44,20 @@ export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
   if (bearer.kind === "invalid") throw unauthorized();
 
   const tokenHash = await hashToken(bearer.token);
-  const row = await withActor(c.var.db, SYSTEM, (trx) =>
+  try {
+    await identify(c, tokenHash);
+    await next();
+  } finally {
+    // Сессия читается в транзакции преамбулы: членства вендора (requireVendor) и первый
+    // withActor обработчика продолжают её, а не открывают свои (db/actor.ts). Никто не взял —
+    // база обработчику не понадобилась или запрос отклонён — закрываем здесь
+    await closePreamble(c.var.db);
+  }
+});
+
+/** Сессия по хэшу токена → актор, сессия и аккаунт запроса в контексте; не подошла — 401 */
+async function identify(c: Context<AppEnv>, tokenHash: Uint8Array): Promise<void> {
+  const row = await inPreamble(c.var.db, (trx) =>
     trx
       .selectFrom("app.sessions as s")
       .innerJoin("app.accounts as a", "a.id", "s.account_id")
@@ -101,8 +114,7 @@ export const authenticate = createMiddleware<AppEnv>(async (c, next) => {
   c.set("actor", actor);
   c.set("session", session);
   c.set("sessionId", session.id);
-  await next();
-});
+}
 
 /** Сессия запроса (любая) или 401. Для выхода и своего аккаунта */
 export function requireSession(c: Context<AppEnv>): {

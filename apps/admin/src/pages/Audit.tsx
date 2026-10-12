@@ -3,7 +3,8 @@
    (UUID) не показываются: объект — ссылкой в своей колонке, подписанной словами (название
    витрины, «№1051», код клиента, имя), а нет подписи — коротким id. Действие в фильтре — группой
    («Витрины», «Заявки»): на сервер уходит начало кода (listing.).
-   Фильтры — в адресе страницы (?type=&object=…): ссылку можно переслать.
+   Фильтры — в адресе страницы (?type=&object=…): ссылку можно переслать. Сначала список, фильтры —
+   в листе «Фильтры» (и на компьютере тоже) и действуют сразу, без кнопки «Показать».
 
    Объект выбирают поиском, а не вписывают id: что искать, решает «Объект» — вендора по
    названию или коду, витрину по названию, клиента по коду C-… или номеру заявки, заявку по
@@ -31,10 +32,10 @@ import {
   Select,
   type SelectOption,
 } from "@bayramm/ui/react";
-import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { type Api, useLoad, useSession } from "../api";
 import { formatDay, formatMoment, vendorLabel } from "../format";
-import { usePhone } from "../layout";
+import { useLayout } from "../layout";
 import { type View, writeQuery } from "../router";
 import { t } from "../texts";
 import { EmptyList, FilterButton, Link, LoadedView, Pager } from "../ui";
@@ -215,9 +216,9 @@ function staffOptions(team: TeamList | null, dictionaries: StaffDictionaries | n
 }
 
 export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | null }) {
-  const phone = usePhone();
+  // Таблица — только на компьютере: пять колонок на планшете обрезались бы справа
+  const cards = useLayout() !== "desktop";
   const [state, setState] = useState(() => initialState(window.location.search));
-  const [draft, setDraft] = useState<Filters>(state.filters);
   const [offset, setOffset] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const active = FILTER_KEYS.filter((key) => Boolean(state.filters[key])).length;
@@ -225,9 +226,13 @@ export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | 
   const staff = staffOptions(teamLoaded.state === "ready" ? teamLoaded.data : null, dictionaries);
   // Подписи найденных объектов (и из записей журнала): выбранный показывается словами, а не id
   const [labels, setLabels] = useState<ReadonlyMap<string, string>>(() => new Map());
-  const remember = useCallback((options: readonly SelectOption[]) => {
+  // Подпись из поиска — главная; подписи из записей журнала только дополняют (иначе выбранный
+  // «Lola · V101» после применения фильтра сменился бы на название из записи)
+  const remember = useCallback((options: readonly SelectOption[], keep = false) => {
     setLabels((prev) => {
-      const fresh = options.filter((option) => prev.get(option.value) !== option.label);
+      const fresh = options.filter((option) =>
+        keep ? !prev.has(option.value) : prev.get(option.value) !== option.label,
+      );
       if (fresh.length === 0) return prev;
       const next = new Map(prev);
       for (const option of fresh) next.set(option.value, option.label);
@@ -241,71 +246,65 @@ export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | 
     // Запись истории — та же (её номер нужен «назад» панели), меняется только адрес
     writeQuery(["tab", ...FILTER_KEYS], Object.fromEntries(queryOf(tab, filters)));
   };
-  const reset = () => {
-    setDraft({});
-    apply(state.tab, {});
-  };
+  const reset = () => apply(state.tab, {});
 
   const params = queryOf(state.tab, state.filters, offset);
   params.delete("tab");
   params.set("limit", String(PAGE));
   const path = state.tab === "pii" ? `/staff/audit/pii?${params}` : `/staff/audit?${params}`;
-  const form = {
-    tab: state.tab,
-    draft,
-    onDraft: setDraft,
-    dictionaries,
-    staff,
-    labels,
-    onFound: remember,
-  };
+  const closeFilters = () => setFiltersOpen(false);
 
   return (
     <div className="stack">
-      <RadioGroup<Tab>
-        variant="pill"
-        label={t.audit}
-        name="audit-tab"
-        value={state.tab}
-        onChange={(tab) => apply(tab, state.filters)}
-        options={(["actions", "pii"] as const).map((tab) => ({ value: tab, label: t.auditTabs[tab] }))}
-      />
-      {phone ? (
-        <div className="toolbar">
-          <FilterButton count={active} open={filtersOpen} onOpen={() => setFiltersOpen(true)} />
-        </div>
-      ) : null}
-      {phone ? (
-        <Dialog
-          open={filtersOpen}
-          title={t.filters}
-          onClose={() => {
-            // Закрыли, не нажав «Показать», — в следующий раз форма снова как действующие фильтры
-            setDraft(state.filters);
-            setFiltersOpen(false);
-          }}
-        >
-          <FilterForm
-            {...form}
-            onApply={() => {
-              apply(state.tab, draft);
-              setFiltersOpen(false);
-            }}
-            onReset={() => {
-              reset();
-              setFiltersOpen(false);
-            }}
-          />
-        </Dialog>
-      ) : (
-        <FilterForm {...form} onApply={() => apply(state.tab, draft)} onReset={reset} />
-      )}
+      <div className="toolbar">
+        <RadioGroup<Tab>
+          variant="pill"
+          label={t.audit}
+          name="audit-tab"
+          value={state.tab}
+          onChange={(tab) => apply(tab, state.filters)}
+          options={(["actions", "pii"] as const).map((tab) => ({ value: tab, label: t.auditTabs[tab] }))}
+        />
+        <FilterButton count={active} open={filtersOpen} onOpen={() => setFiltersOpen(true)} />
+      </div>
+      <Dialog
+        open={filtersOpen}
+        title={t.filters}
+        onClose={closeFilters}
+        actions={
+          <>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary"
+              onClick={() => {
+                reset();
+                closeFilters();
+              }}
+            >
+              {t.auditReset}
+            </button>
+            <button type="button" className="ui-btn ui-btn-primary" onClick={closeFilters}>
+              {t.done}
+            </button>
+          </>
+        }
+      >
+        <FilterForm
+          tab={state.tab}
+          filters={state.filters}
+          onChange={(filters) => apply(state.tab, filters)}
+          dictionaries={dictionaries}
+          staff={staff}
+          labels={labels}
+          onFound={remember}
+        />
+      </Dialog>
       {state.tab === "pii" ? (
         <PiiList
           path={path}
           offset={offset}
           onPage={setOffset}
-          phone={phone}
+          cards={cards}
           onReset={active > 0 ? reset : null}
           onLabels={remember}
         />
@@ -314,7 +313,7 @@ export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | 
           path={path}
           offset={offset}
           onPage={setOffset}
-          phone={phone}
+          cards={cards}
           onReset={active > 0 ? reset : null}
           onLabels={remember}
         />
@@ -327,8 +326,9 @@ export function AuditPage({ dictionaries }: { dictionaries: StaffDictionaries | 
 
 interface FilterFormProps {
   tab: Tab;
-  draft: Filters;
-  onDraft: (filters: Filters) => void;
+  /** Действующие фильтры: каждое изменение применяется сразу */
+  filters: Filters;
+  onChange: (filters: Filters) => void;
   dictionaries: StaffDictionaries | null;
   /** Сотрудники: действующие и отключённые */
   staff: readonly SelectOption[];
@@ -336,25 +336,20 @@ interface FilterFormProps {
   labels: ReadonlyMap<string, string>;
   /** Нашли объекты — запомнить их подписи */
   onFound: (options: readonly SelectOption[]) => void;
-  onApply: () => void;
-  onReset: () => void;
 }
 
-function FilterForm({ tab, draft, onDraft, staff, labels, onFound, onApply, onReset }: FilterFormProps) {
+function FilterForm({ tab, filters, onChange, staff, labels, onFound }: FilterFormProps) {
   const id = useId();
-  const set = (key: FilterKey) => (value: string) => onDraft({ ...draft, [key]: value });
+  const set = (key: FilterKey) => (value: string) => onChange({ ...filters, [key]: value });
   // Сотрудник — только у действий сотрудников: выбрали другого «Кто» — сотрудника не держим
-  const staffOnly = !draft.actorKind || draft.actorKind === "staff";
-  const searchKind = draft.type ? (SEARCH_OF[draft.type] ?? null) : null;
+  const staffOnly = !filters.actorKind || filters.actorKind === "staff";
+  const searchKind = filters.type ? (SEARCH_OF[filters.type] ?? null) : null;
   const objects = useObjectSearch(searchKind, staff);
   useEffect(() => onFound(objects.options), [objects.options, onFound]);
-  const objectLabel = draft.object
-    ? (labels.get(draft.object) ?? (draft.object.length > 13 ? `${draft.object.slice(0, 8)}…` : draft.object))
+  const objectLabel = filters.object
+    ? (labels.get(filters.object) ??
+      (filters.object.length > 13 ? `${filters.object.slice(0, 8)}…` : filters.object))
     : null;
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    onApply();
-  };
   const types = tab === "pii" ? t.piiSubjects : t.auditTypes;
   // Журнал — не старше двух лет назад и не позже сегодняшнего дня по Ташкенту
   const today = tashkentToday();
@@ -366,7 +361,7 @@ function FilterForm({ tab, draft, onDraft, staff, labels, onFound, onApply, onRe
         className="input"
         label={label}
         placeholder={t.auditAnyDate}
-        value={draft[key] ?? null}
+        value={filters[key] ?? null}
         min={min}
         max={max}
         defaultMonth={max}
@@ -380,103 +375,95 @@ function FilterForm({ tab, draft, onDraft, staff, labels, onFound, onApply, onRe
   );
 
   return (
-    <form className="panel filters" onSubmit={submit} noValidate>
-      <div className="fields fields-3">
-        <FilterField id={`${id}-actor`} label={t.auditActor}>
+    <div className="filters-sheet">
+      <FilterField id={`${id}-type`} label={t.auditType}>
+        <Select
+          id={`${id}-type`}
+          className="input"
+          label={t.auditType}
+          value={filters.type ?? ""}
+          // Другой вид — прежний объект к нему не относится
+          onChange={(type) => onChange({ ...filters, type, object: "" })}
+          options={[
+            { value: "", label: t.auditTypeAny },
+            ...Object.entries(types).map(([code, label]) => ({ value: code, label })),
+          ]}
+        />
+      </FilterField>
+      <FilterField id={`${id}-object`} label={t.auditObject}>
+        <Combobox
+          id={`${id}-object`}
+          className="input"
+          label={t.auditObject}
+          value={filters.object || null}
+          valueLabel={objectLabel}
+          options={objects.options}
+          anyLabel={t.auditObjectAny}
+          placeholder={t.auditObjectAny}
+          searchPlaceholder={searchKind ? t.auditObjectHints[searchKind] : undefined}
+          loading={objects.loading}
+          loadingText={t.auditObjectSearching}
+          emptyText={t.auditObjectEmpty}
+          disabled={searchKind === null && !filters.object}
+          aria-describedby={searchKind === null && !filters.object ? `${id}-object-note` : undefined}
+          onSearch={objects.search}
+          onChange={(value) => set("object")(value ?? "")}
+        />
+        {searchKind === null && !filters.object ? (
+          <span id={`${id}-object-note`} className="field-hint">
+            {filters.type ? t.auditObjectNoSearch : t.auditObjectPickType}
+          </span>
+        ) : null}
+      </FilterField>
+      {tab === "actions" && (
+        <FilterField id={`${id}-action`} label={t.auditAction}>
           <Select
-            id={`${id}-actor`}
+            id={`${id}-action`}
             className="input"
-            label={t.auditActor}
-            value={staffOnly ? (draft.actor ?? "") : ""}
-            disabled={!staffOnly}
-            aria-describedby={staffOnly ? undefined : `${id}-actor-note`}
-            onChange={set("actor")}
-            options={[{ value: "", label: t.auditActorAny }, ...staff]}
-          />
-          {staffOnly ? null : (
-            <span id={`${id}-actor-note`} className="field-hint">
-              {t.auditActorStaffOnly}
-            </span>
-          )}
-        </FilterField>
-        <FilterField id={`${id}-kind`} label={t.auditActorKind}>
-          <Select
-            id={`${id}-kind`}
-            className="input"
-            label={t.auditActorKind}
-            value={draft.actorKind ?? ""}
-            onChange={(kind) =>
-              onDraft({ ...draft, actorKind: kind, ...(kind && kind !== "staff" ? { actor: "" } : {}) })
-            }
-            options={[
-              { value: "", label: t.auditActorAny },
-              ...ACTOR_KINDS.map((kind) => ({ value: kind, label: t.historyBy[kind] ?? kind })),
-            ]}
+            label={t.auditAction}
+            value={filters.action ?? ""}
+            onChange={set("action")}
+            options={actionOptions(filters.action)}
           />
         </FilterField>
-        <FilterField id={`${id}-type`} label={t.auditType}>
-          <Select
-            id={`${id}-type`}
-            className="input"
-            label={t.auditType}
-            value={draft.type ?? ""}
-            // Другой вид — прежний объект к нему не относится
-            onChange={(type) => onDraft({ ...draft, type, object: "" })}
-            options={[
-              { value: "", label: t.auditTypeAny },
-              ...Object.entries(types).map(([code, label]) => ({ value: code, label })),
-            ]}
-          />
-        </FilterField>
-        <FilterField id={`${id}-object`} label={t.auditObject}>
-          <Combobox
-            id={`${id}-object`}
-            className="input"
-            label={t.auditObject}
-            value={draft.object || null}
-            valueLabel={objectLabel}
-            options={objects.options}
-            anyLabel={t.auditObjectAny}
-            placeholder={t.auditObjectAny}
-            searchPlaceholder={searchKind ? t.auditObjectHints[searchKind] : undefined}
-            loading={objects.loading}
-            loadingText={t.auditObjectSearching}
-            emptyText={t.auditObjectEmpty}
-            disabled={searchKind === null && !draft.object}
-            aria-describedby={searchKind === null && !draft.object ? `${id}-object-note` : undefined}
-            onSearch={objects.search}
-            onChange={(value) => set("object")(value ?? "")}
-          />
-          {searchKind === null && !draft.object ? (
-            <span id={`${id}-object-note`} className="field-hint">
-              {draft.type ? t.auditObjectNoSearch : t.auditObjectPickType}
-            </span>
-          ) : null}
-        </FilterField>
-        {tab === "actions" && (
-          <FilterField id={`${id}-action`} label={t.auditAction}>
-            <Select
-              id={`${id}-action`}
-              className="input"
-              label={t.auditAction}
-              value={draft.action ?? ""}
-              onChange={set("action")}
-              options={actionOptions(draft.action)}
-            />
-          </FilterField>
+      )}
+      <FilterField id={`${id}-kind`} label={t.auditActorKind}>
+        <Select
+          id={`${id}-kind`}
+          className="input"
+          label={t.auditActorKind}
+          value={filters.actorKind ?? ""}
+          onChange={(kind) =>
+            onChange({ ...filters, actorKind: kind, ...(kind && kind !== "staff" ? { actor: "" } : {}) })
+          }
+          options={[
+            { value: "", label: t.auditActorAny },
+            ...ACTOR_KINDS.map((kind) => ({ value: kind, label: t.historyBy[kind] ?? kind })),
+          ]}
+        />
+      </FilterField>
+      <FilterField id={`${id}-actor`} label={t.auditActor}>
+        <Select
+          id={`${id}-actor`}
+          className="input"
+          label={t.auditActor}
+          value={staffOnly ? (filters.actor ?? "") : ""}
+          disabled={!staffOnly}
+          aria-describedby={staffOnly ? undefined : `${id}-actor-note`}
+          onChange={set("actor")}
+          options={[{ value: "", label: t.auditActorAny }, ...staff]}
+        />
+        {staffOnly ? null : (
+          <span id={`${id}-actor-note`} className="field-hint">
+            {t.auditActorStaffOnly}
+          </span>
         )}
-        {date("from", t.auditFrom, earliest, draft.to || today)}
-        {date("to", t.auditTo, draft.from || earliest, today)}
+      </FilterField>
+      <div className="filters-dates">
+        {date("from", t.auditFrom, earliest, filters.to || today)}
+        {date("to", t.auditTo, filters.from || earliest, today)}
       </div>
-      <div className="acts">
-        <button type="submit" className="btn btn-primary">
-          {t.auditApply}
-        </button>
-        <button type="button" className="btn" onClick={onReset}>
-          {t.auditReset}
-        </button>
-      </div>
-    </form>
+    </div>
   );
 }
 
@@ -579,12 +566,12 @@ interface ListProps {
   path: string;
   offset: number;
   onPage: (offset: number) => void;
-  /** Телефон: записи — карточками */
-  phone: boolean;
+  /** Не компьютер: записи — карточками */
+  cards: boolean;
   /** Фильтры заданы: пустой журнал — с «Сбросить фильтры» */
   onReset: (() => void) | null;
   /** Подписи объектов из записей: выбранный в фильтре объект — словами */
-  onLabels: (options: readonly SelectOption[]) => void;
+  onLabels: (options: readonly SelectOption[], keep?: boolean) => void;
 }
 
 /** Журнал листают от новых к старым: «Новее» и «Старше» */
@@ -622,11 +609,12 @@ function useEntryLabels(
           "objectId" in entry ? [entry.objectId, entry.objectLabel] : [entry.subjectId, entry.subjectLabel];
         return label ? [{ value: objectId, label }] : [];
       }),
+      true,
     );
   }, [loaded, onLabels]);
 }
 
-function ActionList({ path, offset, onPage, phone, onReset, onLabels }: ListProps) {
+function ActionList({ path, offset, onPage, cards, onReset, onLabels }: ListProps) {
   const { loaded, reload } = useLoad<AuditList>(path);
   useEntryLabels(loaded, onLabels);
   return (
@@ -634,7 +622,7 @@ function ActionList({ path, offset, onPage, phone, onReset, onLabels }: ListProp
       {(list) =>
         list.items.length === 0 ? (
           <EmptyList text={t.auditEmpty} onReset={onReset} />
-        ) : phone ? (
+        ) : cards ? (
           <>
             <ul className="rcards">
               {list.items.map((entry: AuditEntry) => (
@@ -643,20 +631,16 @@ function ActionList({ path, offset, onPage, phone, onReset, onLabels }: ListProp
                     {formatMoment(entry.at)} · {actorText(entry)}
                   </p>
                   <p className="rcard-title">{t.auditActions[entry.action] ?? entry.action}</p>
-                  <dl className="rcard-facts">
-                    <dt>{t.colObject}</dt>
-                    <dd>
-                      <ObjectRef
-                        type={entry.objectType}
-                        id={entry.objectId}
-                        label={entry.objectLabel}
-                        labels={t.auditTypes}
-                        inline
-                      />
-                    </dd>
-                    <dt>{t.colDetail}</dt>
-                    <dd className="detail-cell">{detailText(entry.detail) || t.none}</dd>
-                  </dl>
+                  <p className="rcard-meta detail-cell">
+                    <ObjectRef
+                      type={entry.objectType}
+                      id={entry.objectId}
+                      label={entry.objectLabel}
+                      labels={t.auditTypes}
+                      inline
+                    />
+                    {detailText(entry.detail) ? ` · ${detailText(entry.detail)}` : ""}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -703,7 +687,7 @@ function ActionList({ path, offset, onPage, phone, onReset, onLabels }: ListProp
   );
 }
 
-function PiiList({ path, offset, onPage, phone, onReset, onLabels }: ListProps) {
+function PiiList({ path, offset, onPage, cards, onReset, onLabels }: ListProps) {
   const { loaded, reload } = useLoad<PiiAccessList>(path);
   useEntryLabels(loaded, onLabels);
   return (
@@ -711,7 +695,7 @@ function PiiList({ path, offset, onPage, phone, onReset, onLabels }: ListProps) 
       {(list) =>
         list.items.length === 0 ? (
           <EmptyList text={t.auditEmpty} onReset={onReset} />
-        ) : phone ? (
+        ) : cards ? (
           <>
             <ul className="rcards">
               {list.items.map((entry: PiiAccessEntry) => (
@@ -720,20 +704,16 @@ function PiiList({ path, offset, onPage, phone, onReset, onLabels }: ListProps) 
                     {formatMoment(entry.at)} · {actorText(entry)}
                   </p>
                   <p className="rcard-title">{t.piiPurposes[entry.purpose] ?? entry.purpose}</p>
-                  <dl className="rcard-facts">
-                    <dt>{t.colObject}</dt>
-                    <dd>
-                      <ObjectRef
-                        type={entry.subjectKind}
-                        id={entry.subjectId}
-                        label={entry.subjectLabel}
-                        labels={t.piiSubjects}
-                        inline
-                      />
-                    </dd>
-                    <dt>{t.reason}</dt>
-                    <dd className="detail-cell">{entry.reason ?? t.none}</dd>
-                  </dl>
+                  <p className="rcard-meta detail-cell">
+                    <ObjectRef
+                      type={entry.subjectKind}
+                      id={entry.subjectId}
+                      label={entry.subjectLabel}
+                      labels={t.piiSubjects}
+                      inline
+                    />
+                    {entry.reason ? ` · ${entry.reason}` : ""}
+                  </p>
                 </li>
               ))}
             </ul>

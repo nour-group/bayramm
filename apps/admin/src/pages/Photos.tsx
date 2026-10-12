@@ -1,15 +1,16 @@
-/* Фото карточки: загрузка (сжатие в браузере, без метаданных), порядок, обложка,
-   решение модератора (отказ — только с причиной: её видит партнёр, она подписана у отклонённого
-   фото), удаление (через подтверждение). Подтверждение — по правилу фото
-   категории: «без людей» (площадка, кортеж, цветы, торты, подарки, декор) — на фото нет лиц
-   (X-No-Faces); портфолио (фото и видео, студия) — люди на фото согласны на публикацию
-   (X-Photo-Consent) или лиц нет. Предупреждение всегда на виду, без подтверждения файлы не
-   выбрать; ничего не отмечено заранее. Выбор файлов —
-   FileDrop: на телефоне — камера или галерея, на компьютере — ещё и перетаскивание.
-   Порядок — кнопками «раньше / позже», не перетаскиванием: так и пальцем, и с клавиатуры.
-   На телефоне — две колонки; у фото «раньше», «позже» и «Ещё» (обложка, решение, удаление).
-   Стрелки — одни и те же значки на телефоне и компьютере. Выбрали больше, чем помещается до
-   предела, — загружаются первые, а строка говорит, сколько из выбранных и почему не все.
+/* Фото карточки: загрузка (сжатие в браузере, без метаданных), обложка, порядок, решение
+   модератора (отказ — только с причиной: её видит партнёр, она подписана у отклонённого фото),
+   удаление (через подтверждение). Плитка — фото и плашка состояния; нажатие открывает шторку:
+   обложка, «в начало», одобрить, отклонить, удалить. В шапке — сколько фото из предела и
+   минимум; модератору, пока есть ждущие решения, — «Одобрить все (n)». Порядок меняется «в
+   начало» (стрелок «раньше / позже» нет: плитка — одна кнопка).
+   Подтверждение — по правилу фото категории, и спрашивается при загрузке («Добавить фото»):
+   «без людей» (площадка, кортеж, цветы, торты, подарки, декор) — на фото нет лиц (X-No-Faces);
+   портфолио (фото и видео, студия) — люди на фото согласны на публикацию (X-Photo-Consent) или
+   лиц нет. Правило — подписью над выбором, ничего не отмечено заранее, без подтверждения файлы не
+   выбрать. Выбор файлов — FileDrop: на телефоне — камера или галерея, на компьютере — ещё и
+   перетаскивание. Выбрали больше, чем помещается до предела, — загружаются первые, а строка
+   говорит, сколько из выбранных и почему не все.
    Обложка и одобрение — без перезагрузки экрана: о сделанном — всплывающей строкой. */
 
 import { isImageError } from "@bayramm/media";
@@ -17,14 +18,13 @@ import { compressForUpload } from "@bayramm/media/browser";
 import type { StaffPhoto } from "@bayramm/shared/api/staff";
 import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
 import type { PhotoPolicy } from "@bayramm/shared/categories";
-import { Checkbox, ConfirmSheet, FileDrop, RadioGroup, useToast } from "@bayramm/ui/react";
+import { Checkbox, ConfirmSheet, Dialog, FileDrop, RadioGroup, useToast } from "@bayramm/ui/react";
 import { useEffect, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
 import { photoSrc, photoSrcSet } from "../format";
-import { Icon } from "../icons";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
-import { ConfirmForm, ErrorText, type MenuAction, OverflowMenu, PhoneSheet, Pill, toneOf } from "../ui";
+import { ConfirmForm, ErrorText, PhoneSheet, Pill, SheetClose, toneOf } from "../ui";
 
 /** Форматы фото; на телефоне — любое фото: так точно предлагают и камеру, и галерею (HEIC — по расширению) */
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
@@ -47,6 +47,13 @@ interface PhotosProps {
   onChanged: () => void;
 }
 
+interface SheetItem {
+  readonly key: string;
+  readonly label: string;
+  readonly danger?: boolean;
+  readonly run: () => void;
+}
+
 export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, onChanged }: PhotosProps) {
   const { api } = useSession();
   const can = useCan();
@@ -65,6 +72,12 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState<StaffPhoto | null>(null);
+  // Загрузка: подпись правила, подтверждение и выбор файлов — по «Добавить фото»
+  const [adding, setAdding] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
+  // Шторка фото — по его id: после решения список перечитается, а номер сдвинется
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const sheetReturn = useRef<HTMLElement | null>(null);
   // Фото, которое отклоняют, и его номер в ряду; форма причины — шторка на телефоне, на месте шире
   const [declining, setDeclining] = useState<{ photo: StaffPhoto; n: number } | null>(null);
   const declineReturn = useRef<HTMLElement | null>(null);
@@ -76,11 +89,15 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
   // Обложка — отмеченное фото, а пока отметки нет — первое
   const hasCover = photos.some((photo) => photo.isCover);
   const isCover = (photo: StaffPhoto, index: number) => photo.isCover || (!hasCover && index === 0);
+  const pending = photos.filter((photo) => photo.moderation === "pending");
+  const full = photos.length >= maxPhotos;
 
   const upload = async (picked: readonly File[]) => {
     const files = picked.slice(0, Math.max(0, maxPhotos - photos.length));
     setOverLimit(null);
     if (files.length === 0) return;
+    // Файлы выбраны — шторка и подтверждение свою работу сделали; ход загрузки — в блоке
+    setAdding(false);
     setProblems([]);
     setFailure(null);
     const found: string[] = [];
@@ -123,12 +140,12 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
     onChanged();
   };
 
-  const move = (index: number, delta: number) => {
+  const toStart = (index: number) => {
     const ids = photos.map((p) => p.id);
     const [moved] = ids.splice(index, 1);
     if (moved === undefined) return;
-    ids.splice(index + delta, 0, moved);
-    void act(() => api.put(`${base}/order`, { ids }));
+    ids.unshift(moved);
+    void act(() => api.put(`${base}/order`, { ids }), t.toastPhotoFirst(index + 1));
   };
 
   const cover = (photo: StaffPhoto, index: number) =>
@@ -138,11 +155,28 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
       () => api.post(`${base}/${photo.id}/moderation`, { decision: "approved" }),
       t.toastPhotoApproved(index + 1),
     );
+  // Все ждущие решения — по одному (у API решение по одному фото); остановка на первой ошибке
+  const approveAll = async () => {
+    setBusy(true);
+    let done = 0;
+    let stopped: Failure | null = null;
+    for (const photo of pending) {
+      const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
+      if (!result.ok) {
+        stopped = result;
+        break;
+      }
+      done += 1;
+    }
+    setBusy(false);
+    setFailure(stopped);
+    if (done > 0) toast(t.toastPhotosApproved(done), { tone: "success" });
+    onChanged();
+  };
   // Отказ без причины сервер не примет (422): сначала спрашиваем её, а фокус вернётся на ту
-  // кнопку, с которой начали («Отклонить» у фото — она у нажатия; «Ещё» — где фокус после меню)
-  const startDecline = (photo: StaffPhoto, index: number, opener?: HTMLElement) => {
-    const focused = document.activeElement;
-    declineReturn.current = opener ?? (focused instanceof HTMLElement ? focused : null);
+  // плитку, с которой начали
+  const startDecline = (photo: StaffPhoto, index: number, opener: HTMLElement | null) => {
+    declineReturn.current = opener;
     setFailure(null);
     setDeclining({ photo, n: index + 1 });
   };
@@ -153,15 +187,15 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
       reason,
     });
     if (!result.ok) return result;
-    // Фото решено — кнопки «Отклонить» у него больше нет: на компьютере фокус — на заголовок блока
-    // (на телефоне шторка вернёт его на «Ещё», она остаётся)
+    // Фото решено: на компьютере фокус — на заголовок блока (плитка осталась, но форма закрылась
+    // там же, где открылась); на телефоне шторка вернёт его на плитку
     if (!phone) declineReturn.current = null;
     setDeclining(null);
     onChanged();
     return null;
   };
-  // На компьютере форма — под рядом фото, далеко от кнопки: фокус — на её заголовок, а когда форма
-  // закрылась, — обратно на кнопку «Отклонить» (после решения — на заголовок «Фото»)
+  // На компьютере форма — под рядом фото, далеко от плитки: фокус — на её заголовок, а когда форма
+  // закрылась, — обратно на плитку (после решения — на заголовок «Фото»)
   const wasDeclining = useRef(false);
   useEffect(() => {
     if (phone) return;
@@ -182,33 +216,33 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
     await act(() => api.del(`${base}/${photo.id}`));
   };
 
-  /** Шторка «Ещё» у фото на телефоне: обложка, решение модератора, удаление */
-  const menuOf = (photo: StaffPhoto, index: number): MenuAction[] => [
+  const sheetIndex = sheetId === null ? -1 : photos.findIndex((photo) => photo.id === sheetId);
+  const sheetPhoto = sheetIndex >= 0 ? photos[sheetIndex] : undefined;
+  const closeSheet = () => setSheetId(null);
+  /** Действия шторки фото: обложка, в начало, решение модератора, удаление */
+  const sheetItems = (photo: StaffPhoto, index: number): SheetItem[] => [
     ...(editable && !isCover(photo, index)
-      ? [
-          {
-            key: "cover",
-            label: t.makeCover,
-            icon: "star" as const,
-            disabled: busy,
-            run: () => cover(photo, index),
-          },
-        ]
+      ? [{ key: "cover", label: t.makeCover, run: () => cover(photo, index) }]
       : []),
+    ...(editable && index > 0 ? [{ key: "first", label: t.moveToStart, run: () => toStart(index) }] : []),
     ...(moderates && photo.moderation !== "approved"
-      ? [{ key: "approve", label: t.approve, disabled: busy, run: () => approve(photo, index) }]
+      ? [{ key: "approve", label: t.approve, run: () => approve(photo, index) }]
       : []),
     ...(moderates && photo.moderation !== "declined"
-      ? [{ key: "decline", label: t.decline, disabled: busy, run: () => startDecline(photo, index) }]
+      ? [
+          {
+            key: "decline",
+            label: t.decline,
+            run: () => startDecline(photo, index, sheetReturn.current),
+          },
+        ]
       : []),
     ...(editable
       ? [
           {
             key: "delete",
             label: t.deletePhoto,
-            icon: "trash" as const,
             danger: true,
-            disabled: busy,
             run: () => setRemoving(photo),
           },
         ]
@@ -217,137 +251,118 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
 
   return (
     <section className="panel" aria-labelledby="photos-title">
-      <h2 id="photos-title" tabIndex={-1}>
-        {t.photos} <span className="count">{photos.length}</span>
-      </h2>
-      <p className="muted small">{t.photosHint(minPhotos, maxPhotos)}</p>
-      <p className="notice notice-warn">{portfolio ? t.portfolioWarning : t.noFacesWarning}</p>
+      <div className="panel-head">
+        <h2 id="photos-title" tabIndex={-1}>
+          {t.photos} <span className="count">{t.photosOf(photos.length, maxPhotos)}</span>
+        </h2>
+        <span className={`photos-min${photos.length < minPhotos ? " is-short" : ""}`}>
+          {t.photosMin(minPhotos)}
+        </span>
+        <div className="head-acts">
+          {moderates && pending.length > 0 ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-busy={busy || undefined}
+              disabled={busy}
+              onClick={() => void approveAll()}
+            >
+              {t.photosApproveAll(pending.length)}
+            </button>
+          ) : null}
+          {editable && !full ? (
+            <button
+              ref={addButton}
+              type="button"
+              className="btn btn-sm"
+              aria-expanded={adding}
+              disabled={progress !== null}
+              onClick={() => setAdding(!adding)}
+            >
+              {t.photosAdd}
+            </button>
+          ) : null}
+        </div>
+      </div>
 
       {photos.length === 0 ? (
         <p className="muted">{t.photosEmpty}</p>
       ) : (
         <ol className="photos">
-          {photos.map((photo, index) => (
-            <li key={photo.id} className="photo">
-              <img
-                src={photoSrc(photo.key)}
-                srcSet={photoSrcSet(photo.key)}
-                sizes="(max-width: 719px) 50vw, 200px"
-                width={photo.width}
-                height={photo.height}
-                alt=""
-                loading="lazy"
-                decoding="async"
-              />
-              <div className="photo-tags">
-                {isCover(photo, index) && <Pill tone="strong">{t.cover}</Pill>}
-                <Pill tone={toneOf("photo", photo.moderation)}>{t.moderationStates[photo.moderation]}</Pill>
-              </div>
-              {photo.moderation === "declined" && photo.declineReason && (
-                <p className="muted small photo-reason">{t.photoDeclineReason(photo.declineReason)}</p>
-              )}
-              {phone ? (
-                <div className="photo-actions">
-                  {editable && (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-icon"
-                        disabled={busy || index === 0}
-                        onClick={() => move(index, -1)}
-                        aria-label={t.moveEarlier(index + 1)}
-                      >
-                        <Icon name="back" size={20} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-icon btn-flip"
-                        disabled={busy || index === photos.length - 1}
-                        onClick={() => move(index, 1)}
-                        aria-label={t.moveLater(index + 1)}
-                      >
-                        <Icon name="back" size={20} />
-                      </button>
-                    </>
-                  )}
-                  <OverflowMenu
-                    title={t.photoN(index + 1)}
-                    label={t.more}
-                    context={t.photoN(index + 1)}
-                    className="btn btn-icon"
-                    actions={menuOf(photo, index)}
+          {photos.map((photo, index) => {
+            const states = [
+              ...(isCover(photo, index) ? [t.cover] : []),
+              t.moderationStates[photo.moderation] ?? photo.moderation,
+            ];
+            return (
+              <li key={photo.id} className="photo">
+                <button
+                  type="button"
+                  className="photo-tile"
+                  aria-haspopup="dialog"
+                  aria-label={`${t.photoN(index + 1)}: ${states.join(", ")}`}
+                  onClick={(event) => {
+                    sheetReturn.current = event.currentTarget;
+                    setSheetId(photo.id);
+                  }}
+                >
+                  <img
+                    src={photoSrc(photo.key)}
+                    srcSet={photoSrcSet(photo.key)}
+                    sizes="(max-width: 719px) 33vw, 160px"
+                    width={photo.width}
+                    height={photo.height}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
                   />
-                </div>
-              ) : (
-                <div className="photo-actions">
-                  {editable && (
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-icon"
-                        disabled={busy || index === 0}
-                        onClick={() => move(index, -1)}
-                        aria-label={t.moveEarlier(index + 1)}
-                      >
-                        <Icon name="back" size={20} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-icon btn-flip"
-                        disabled={busy || index === photos.length - 1}
-                        onClick={() => move(index, 1)}
-                        aria-label={t.moveLater(index + 1)}
-                      >
-                        <Icon name="back" size={20} />
-                      </button>
-                      {!isCover(photo, index) && (
-                        <button
-                          type="button"
-                          className="btn btn-sm"
-                          disabled={busy}
-                          onClick={() => cover(photo, index)}
-                        >
-                          {t.makeCover}
-                        </button>
-                      )}
-                    </>
-                  )}
-                  {moderates && photo.moderation !== "approved" && (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={busy}
-                      onClick={() => approve(photo, index)}
-                    >
-                      {t.approve}
-                    </button>
-                  )}
-                  {moderates && photo.moderation !== "declined" && (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={busy}
-                      onClick={(event) => startDecline(photo, index, event.currentTarget)}
-                    >
-                      {t.decline}
-                    </button>
-                  )}
-                  {editable && (
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-danger"
-                      disabled={busy}
-                      onClick={() => setRemoving(photo)}
-                    >
-                      {t.deletePhoto}
-                    </button>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
+                  <span className="photo-tags" aria-hidden="true">
+                    {isCover(photo, index) ? <Pill tone="strong">{t.cover}</Pill> : null}
+                    {photo.moderation === "approved" ? null : (
+                      <Pill tone={toneOf("photo", photo.moderation)}>
+                        {t.moderationStates[photo.moderation]}
+                      </Pill>
+                    )}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ol>
       )}
+
+      <Dialog
+        open={sheetPhoto !== undefined}
+        title={t.photoN(sheetIndex + 1)}
+        onClose={closeSheet}
+        returnFocus={sheetReturn}
+        actions={<SheetClose onClose={closeSheet} />}
+      >
+        {sheetPhoto ? (
+          <>
+            {sheetPhoto.moderation === "declined" && sheetPhoto.declineReason ? (
+              <p className="muted small photo-reason">{t.photoDeclineReason(sheetPhoto.declineReason)}</p>
+            ) : null}
+            <ul className="menu">
+              {sheetItems(sheetPhoto, sheetIndex).map((item) => (
+                <li key={item.key}>
+                  <button
+                    type="button"
+                    className={`menu-item${item.danger ? " menu-danger" : ""}`}
+                    disabled={busy}
+                    onClick={() => {
+                      closeSheet();
+                      setTimeout(item.run, 0);
+                    }}
+                  >
+                    <span>{item.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </Dialog>
 
       <PhoneSheet
         open={declining !== null}
@@ -378,38 +393,52 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
         )}
       </PhoneSheet>
 
-      {editable && photos.length < maxPhotos && (
-        <div className="upload">
-          {portfolio ? (
-            <RadioGroup<PhotoAck>
-              variant="row"
-              label={t.photoAckLabel}
-              value={portfolioAck}
-              onChange={setPortfolioAck}
-              options={[
-                { value: "consent", label: t.photoAckConsent },
-                { value: "no_faces", label: t.photoAckNoFaces },
-              ]}
+      {editable && !full ? (
+        <PhoneSheet
+          open={adding}
+          title={t.photosAdd}
+          onClose={() => setAdding(false)}
+          returnFocus={addButton}
+        >
+          <div className="upload">
+            {/* Правило категории — подписью к выбору: человек видит его в тот момент, когда подтверждает */}
+            <p className="muted small">{portfolio ? t.portfolioWarning : t.noFacesWarning}</p>
+            {portfolio ? (
+              <RadioGroup<PhotoAck>
+                variant="row"
+                label={t.photoAckLabel}
+                value={portfolioAck}
+                onChange={setPortfolioAck}
+                options={[
+                  { value: "consent", label: t.photoAckConsent },
+                  { value: "no_faces", label: t.photoAckNoFaces },
+                ]}
+              />
+            ) : (
+              <Checkbox checked={ack} onChange={setAck}>
+                {t.noFacesAck}
+              </Checkbox>
+            )}
+            <FileDrop
+              title={phone ? t.addPhotosPhone : t.addPhotos}
+              hint={phone ? t.photosPick : t.photosDrop}
+              accept={phone ? ACCEPT_PHONE : ACCEPT}
+              multiple
+              disabled={!acknowledged || progress !== null}
+              onFiles={(files) => void upload(files)}
             />
-          ) : (
-            <Checkbox checked={ack} onChange={setAck}>
-              {t.noFacesAck}
-            </Checkbox>
-          )}
-          <FileDrop
-            title={phone ? t.addPhotosPhone : t.addPhotos}
-            hint={phone ? t.photosPick : t.photosDrop}
-            accept={phone ? ACCEPT_PHONE : ACCEPT}
-            multiple
-            disabled={!acknowledged || progress !== null}
-            onFiles={(files) => void upload(files)}
-          />
-          {progress && (
-            <p role="status" className="muted">
-              {t.uploading(progress.done + 1, progress.total)}
-            </p>
-          )}
-        </div>
+            <div className="acts">
+              <button type="button" className="btn" onClick={() => setAdding(false)}>
+                {t.cancel}
+              </button>
+            </div>
+          </div>
+        </PhoneSheet>
+      ) : null}
+      {progress && (
+        <p role="status" className="muted">
+          {t.uploading(progress.done + 1, progress.total)}
+        </p>
       )}
       {overLimit ? (
         <p className="notice notice-warn" role="status">

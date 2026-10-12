@@ -6,6 +6,9 @@ import type {
   ClientDetail,
   ClientList,
   ClientListItem,
+  ContactChange,
+  ContactChangeList,
+  ContactChangeReveal,
   ContactMetrics,
   DeleteBlocker,
   ListingDetail,
@@ -15,6 +18,7 @@ import type {
   ListingSaveResult,
   MetricsOverview,
   OutboxHealth,
+  PendingPhoto,
   PiiAccessList,
   PublishBlocker,
   RevealedListingContacts,
@@ -36,6 +40,7 @@ import type {
   VendorResponseStats,
   VendorUser,
 } from "@bayramm/shared/api/staff";
+import { PENDING_PHOTOS_CAP } from "@bayramm/shared/api/staff";
 import { categoryConfig } from "@bayramm/shared/categories";
 import type { Page, Route } from "@playwright/test";
 import { accountMe, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
@@ -303,6 +308,15 @@ const PHOTO_QUEUE_ITEM: ListingListItem = {
   vendor: { id: VENDOR_ID, code: "V101", name: "Lola" },
   photos: { ready: 7, approved: 5, pending: 2 },
 };
+
+/** Ждущее решения фото этой карточки: плитка в очереди «Новые фото» (n — с единицы) */
+export const photoQueueId = (n: number) => `00000000-0000-4000-8500-${String(n).padStart(12, "0")}`;
+const photoQueuePhoto = (n: number): PendingPhoto => ({
+  id: photoQueueId(n),
+  key: `listings/${PHOTO_QUEUE_LISTING_ID}/${photoQueueId(n)}.webp`,
+  width: 1600,
+  height: 1200,
+});
 
 /** PATCH карточки: поля, которые заглушка переносит в карточку */
 const EDITABLE = [
@@ -679,6 +693,7 @@ const METRICS: MetricsOverview = {
     revisionsPending: 1,
     photosPending: 0,
     servicesPending: 2,
+    contactsPending: 0,
   },
 };
 
@@ -716,8 +731,28 @@ const REVISION: RevisionDetail = {
   decidedBy: null,
 };
 
+/**
+ * Предложение партнёра с фактами витрины (revision: "facts"): вместимость 80–300 → 100–350,
+ * район и адрес. Одобрить и отклонить можно — решение остаётся в decisions
+ */
+const REVISION_FACTS: RevisionDetail = {
+  ...REVISION,
+  fields: ["capacity", "districtCode", "addressRu"],
+  changes: [
+    { field: "capacity", before: { min: 80, max: 300 }, after: { min: 100, max: 350 } },
+    { field: "districtCode", before: "yunusobod", after: "chilonzor" },
+    { field: "addressRu", before: null, after: "ул. Навои, 5" },
+  ],
+};
+
 export interface StaffApi {
   readonly unexpected: string[];
+  /** Решения по предложению изменений: approve — без тела, decline — с причиной */
+  readonly decisions: {
+    readonly id: string;
+    readonly decision: "approve" | "decline";
+    readonly body: unknown;
+  }[];
   /** POST /staff/listings — прежний путь создания карточки (панель им больше не ходит) */
   readonly created: ListingInput[];
   /** POST /staff/vendors — тела создания вендора (с категорией первой витрины) */
@@ -748,6 +783,8 @@ export interface StaffApi {
   readonly cabinet: { readonly key: string; readonly body: unknown }[];
   /** Удаления: «DELETE путь» витрины, вендора, приглашения в команду — по порядку */
   readonly deletes: string[];
+  /** Запросы по смене контактов витрины: «МЕТОД путь» и тело (показать, одобрить, отклонить) */
+  readonly contactChanges: { readonly key: string; readonly body: unknown }[];
 }
 
 /** Страница списка, как у API: limit (по умолчанию 50) и offset из адреса */
@@ -802,6 +839,12 @@ export interface StaffApiOptions {
   readonly botLinked?: boolean;
   /** Ещё столько заявок в списке: проверка страниц и «Показать ещё» */
   readonly manyRequests?: number;
+  /** Сколько фото ждёт решения в очереди «Новые фото» (по умолчанию 2; 0 — очереди нет) */
+  readonly photoQueue?: number;
+  /** С seeded: партнёр просит сменить контакты витрины кортежа (телефон и Telegram) — ждёт решения */
+  readonly contactChange?: boolean;
+  /** Какое предложение изменений ждёт решения: по умолчанию название и описание, facts — вместимость, район, адрес */
+  readonly revision?: "default" | "facts";
 }
 
 export async function mockStaffApi(
@@ -818,11 +861,18 @@ export async function mockStaffApi(
     draftService = false,
     botLinked = true,
     manyRequests = 0,
+    photoQueue = 2,
+    contactChange: contactChangeSeed = false,
+    revision: revisionKind = "default",
   }: StaffApiOptions = {},
 ) {
   let elevated = 0;
+  // Фото очереди «Новые фото»: решённое уходит из неё, пока тест её не перечитал
+  const queuePhotos: PendingPhoto[] = Array.from({ length: photoQueue }, (_, i) => photoQueuePhoto(i + 1));
+  let revision: RevisionDetail = revisionKind === "facts" ? REVISION_FACTS : REVISION;
   const state: StaffApi = {
     unexpected: [],
+    decisions: [],
     created: [],
     vendorsCreated: [],
     vitrinas: [],
@@ -841,6 +891,7 @@ export async function mockStaffApi(
     loggedOut: [],
     cabinet: [],
     deletes: [],
+    contactChanges: [],
   };
   // Пользователи кабинета: приглашают, правят и убирают тесты; владелец есть всегда (как в базе)
   const users: VendorUser[] = [...cabinetUsers];
@@ -867,6 +918,21 @@ export async function mockStaffApi(
     seeded ? [[CAR_LISTING_ID, { ...CAR_CONTACTS }]] : [],
   );
   const contactsOf = (id: string) => contacts.get(id) ?? { phone: null, telegram: null };
+  // Просьба партнёра сменить контакты витрины на сайте: ждёт решения; значения — только по «Показать»
+  let proposed: { listingId: string; phone: string; telegram: string | null; submittedAt: string } | null =
+    seeded && contactChangeSeed
+      ? { listingId: CAR_LISTING_ID, phone: "+998909998877", telegram: null, submittedAt: iso }
+      : null;
+  const pendingChange = (id: string): ContactChange | null => {
+    if (proposed === null || proposed.listingId !== id) return null;
+    const current = contactsOf(id);
+    return {
+      id: "00000000-0000-4000-8b00-000000000001",
+      submittedAt: proposed.submittedAt,
+      phoneChanged: proposed.phone !== current.phone,
+      telegramChanged: proposed.telegram !== current.telegram,
+    };
+  };
   const requests = [
     ...(seeded ? [REQUEST, carRequest(REQUEST)] : [REQUEST]),
     ...moreRequests(REQUEST, manyRequests),
@@ -1117,9 +1183,20 @@ export async function mockStaffApi(
     if (key === "GET /staff/listings") {
       // Очередь «Новые фото» — опубликованные карточки с фото на решении; остальное пусто
       const photos = url.searchParams.get("photos") === "pending";
+      // Карточка очереди несёт сами фото (pendingPhotos) — как GET /staff/listings?photos=pending
+      const queued: ListingListItem[] =
+        photos && queuePhotos.length > 0
+          ? [
+              {
+                ...PHOTO_QUEUE_ITEM,
+                photos: { ready: 5 + queuePhotos.length, approved: 5, pending: queuePhotos.length },
+                pendingPhotos: queuePhotos.slice(0, PENDING_PHOTOS_CAP),
+              },
+            ]
+          : [];
       const list: ListingList = {
-        total: photos ? 1 : 0,
-        items: photos ? [PHOTO_QUEUE_ITEM] : [],
+        total: queued.length,
+        items: queued,
         counts: { lead: 0, draft: listings.length, review: 0, active: 1, suspended: 0, rejected: 0 },
       };
       return json(route, 200, list);
@@ -1168,6 +1245,20 @@ export async function mockStaffApi(
     }
     // Решение по фото: отказ — только с причиной (1–500 знаков), как на сервере; ответ — фото витрины
     const photoMatch = /^\/staff\/listings\/([0-9a-f-]{36})\/photos\/([0-9a-f-]{36})\/moderation$/.exec(path);
+    if (photoMatch?.[1] === PHOTO_QUEUE_LISTING_ID && photoMatch[2] && method === "POST") {
+      // Фото очереди «Новые фото»: у карточки очереди нет полной витрины — решение просто снимает его
+      const index = queuePhotos.findIndex((p) => p.id === photoMatch[2]);
+      if (index < 0) return fail(route, 404, "not_found");
+      const body = request.postDataJSON() as { decision?: unknown; reason?: unknown };
+      state.photoDecisions.push({ listingId: PHOTO_QUEUE_LISTING_ID, photoId: photoMatch[2], body });
+      if (body.decision !== "approved" && body.decision !== "declined")
+        return fail(route, 422, "invalid_input", ["decision"]);
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+      if (body.decision === "declined" && (reason === "" || reason.length > 500))
+        return fail(route, 422, "invalid_input", ["reason"]);
+      queuePhotos.splice(index, 1);
+      return json(route, 200, []);
+    }
     if (photoMatch?.[1] && photoMatch[2] && method === "POST") {
       const owner = listings.find((l) => l.id === photoMatch[1]);
       const current = owner?.photos.find((p) => p.id === photoMatch[2]);
@@ -1190,6 +1281,56 @@ export async function mockStaffApi(
       );
       replace({ ...owner, photos });
       return json(route, 200, photos);
+    }
+    // Смена контактов витрины партнёром: состояние (любой сотрудник), «Показать» и решение (revisions.moderate)
+    const contactMatch =
+      /^\/staff\/listings\/([0-9a-f-]{36})\/contact-change(?:\/(reveal|approve|decline))?$/.exec(path);
+    if (contactMatch?.[1]) {
+      const id = contactMatch[1];
+      if (!listings.some((l) => l.id === id)) return fail(route, 404, "not_found");
+      const step = contactMatch[2];
+      if (!step && method === "GET") return json(route, 200, { change: pendingChange(id) });
+      if (!PERMISSION_ROLES["revisions.moderate"].includes(role)) return fail(route, 403, "forbidden");
+      const body = request.postData() ? (request.postDataJSON() as Record<string, unknown>) : {};
+      state.contactChanges.push({ key, body });
+      if (proposed === null || proposed.listingId !== id)
+        return fail(route, 409, "contact_change_not_pending");
+      if (step === "reveal") {
+        const revealed: ContactChangeReveal = {
+          phone: proposed.phone,
+          telegram: proposed.telegram,
+          current: contactsOf(id),
+        };
+        return json(route, 200, revealed);
+      }
+      if (step === "decline" && (typeof body.reason !== "string" || body.reason.trim() === ""))
+        return fail(route, 422, "invalid_input", ["reason"]);
+      if (step === "approve") contacts.set(id, { phone: proposed.phone, telegram: proposed.telegram });
+      proposed = null;
+      return json(route, 200, { change: null });
+    }
+    if (key === "GET /staff/contact-changes") {
+      const listing = proposed && listings.find((l) => l.id === proposed?.listingId);
+      const change = proposed && pendingChange(proposed.listingId);
+      const list: ContactChangeList =
+        proposed && listing && change
+          ? {
+              total: 1,
+              items: [
+                {
+                  ...change,
+                  listing: {
+                    id: listing.id,
+                    name: listing.name,
+                    status: listing.status,
+                    categoryCode: listing.categoryCode,
+                  },
+                  vendor: { id: VENDOR_ID, code: "V101" },
+                },
+              ],
+            }
+          : { total: 0, items: [] };
+      return json(route, 200, list);
     }
     const listingMatch = /^\/staff\/listings\/([0-9a-f-]{36})(?:\/(\w+))?$/.exec(path);
     if (listingMatch?.[1]) {
@@ -1332,10 +1473,27 @@ export async function mockStaffApi(
       requestMatch && method === "GET" ? requests.find((r) => r.id === requestMatch[1]) : undefined;
     if (found) return json(route, 200, found);
     if (key === "GET /staff/revisions") {
-      const list: RevisionList = { total: 1, items: [REVISION] };
+      // Решённое из очереди уходит
+      const list: RevisionList =
+        revision.status === "pending" ? { total: 1, items: [revision] } : { total: 0, items: [] };
       return json(route, 200, list);
     }
-    if (key === `GET /staff/revisions/${REVISION_ID}`) return json(route, 200, REVISION);
+    if (key === `GET /staff/revisions/${REVISION_ID}`) return json(route, 200, revision);
+    const verdict = /^POST \/staff\/revisions\/([0-9a-f-]{36})\/(approve|decline)$/.exec(key);
+    if (verdict?.[1] === REVISION_ID) {
+      const decision = verdict[2] === "approve" ? "approve" : "decline";
+      const body = decision === "decline" ? request.postDataJSON() : null;
+      state.decisions.push({ id: REVISION_ID, decision, body });
+      if (revision.status !== "pending") return fail(route, 409, "illegal_transition");
+      revision = {
+        ...revision,
+        status: decision === "approve" ? "approved" : "declined",
+        decidedAt: iso,
+        decidedBy: STAFF.displayName,
+        decisionReason: decision === "decline" ? String((body as { reason?: unknown }).reason ?? "") : null,
+      };
+      return json(route, 200, revision);
+    }
     if (key === "GET /staff/clients") {
       state.queries.push(`clients?${url.searchParams}`);
       const items = [CLIENT_ITEM, ...OTHER_CLIENTS].filter(
@@ -1364,6 +1522,8 @@ export async function mockStaffApi(
     if (key === "GET /staff/settings") return json(route, 200, SETTINGS);
     if (key === "GET /staff/metrics")
       return json(route, 200, { ...METRICS, category: url.searchParams.get("category") });
+    // Только очереди — для счётчиков у разделов (те же числа, что в metrics.queues)
+    if (key === "GET /staff/queues") return json(route, 200, { queues: METRICS.queues });
     if (key === "GET /staff/metrics/categories") {
       const list: CategoryMetricsList = {
         days: 30,

@@ -1,3 +1,4 @@
+import type { ApiCacheOptions, EdgeCache } from "./api-cache";
 import { apiPath, type FetcherLike, proxyToApi } from "./api-proxy";
 import { cacheControlFor, isMissingAsset, missingAsset } from "./cache-headers";
 import { httpsRedirect } from "./https";
@@ -25,6 +26,25 @@ export interface SiteWorkerOptions extends SecurityOptions {
    * challenges.cloudflare.com): сам путь и всё под ним, как telegramLoginPaths
    */
   readonly turnstilePaths?: readonly string[];
+  /**
+   * Кэш края для анонимных GET к API (api-cache.ts). По умолчанию — caches.default воркера, если
+   * он есть (в разработке и в тестах его нет); false — не кэшировать вовсе
+   */
+  readonly apiCache?: EdgeCache | false;
+}
+
+/** Часть ExecutionContext, которая нужна воркеру */
+export interface SiteContext {
+  waitUntil(promise: Promise<unknown>): void;
+}
+
+/** Кэш края приложения: заданный явно, иначе caches.default; в разработке (Vite) — никакого */
+function edgeCacheOf(options: SiteWorkerOptions, ctx: SiteContext | undefined): ApiCacheOptions | undefined {
+  if (options.dev || options.apiCache === false) return undefined;
+  const cache =
+    options.apiCache ?? (globalThis as { caches?: { default?: EdgeCache } }).caches?.default ?? undefined;
+  if (!cache) return undefined;
+  return ctx ? { cache, waitUntil: (promise) => ctx.waitUntil(promise) } : { cache };
 }
 
 // Путь страницы виджета — «/auth» и всё под «/auth/»; «/authx» — нет
@@ -54,7 +74,7 @@ export function createSiteWorker(options: SiteWorkerOptions = {}) {
   // Неверный источник в параметрах — ошибка при загрузке модуля, а не на первом запросе
   contentSecurityPolicy(options);
   return {
-    async fetch(request: Request, env: SiteEnv): Promise<Response> {
+    async fetch(request: Request, env: SiteEnv, ctx?: SiteContext): Promise<Response> {
       const url = new URL(request.url);
 
       // По http — только редирект: ни страницы, ни API (на своём компьютере и в dev — можно)
@@ -65,7 +85,7 @@ export function createSiteWorker(options: SiteWorkerOptions = {}) {
       if (early) return early;
 
       const path = apiPath(url.pathname);
-      if (path !== null) return proxyToApi(request, path, env.API);
+      if (path !== null) return proxyToApi(request, path, env.API, edgeCacheOf(options, ctx));
 
       // Путь, которого нет среди файлов сборки, ASSETS отдаёт как index.html со статусом 200.
       // Заголовки ставим на всё из ASSETS: HTML они защищают, остальному не мешают

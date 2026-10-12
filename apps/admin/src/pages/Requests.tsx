@@ -1,9 +1,11 @@
-/* Заявки: без ответа — сверху, ближайший срок первым; «Требуют действия» — очередь
-   просроченных; фильтр по категории витрины; в списке — чья заявка (имя, которое вписал клиент;
-   удалено по сроку хранения — «—»). Заявка: данные, что нужно клиенту по форме
-   категории (часть дня, часы, машины, вес, выбранные услуги с добавками — как были при
-   подаче), срок ответа по шагам, работа с заявкой (напомнить вендору, «связались»), заметки
-   команды, история; телефоны — скрыты до «Показать» (в журнал). */
+/* Заявки: без ответа — сверху, ближайший срок первым. Быстрые «Требуют действия» (просроченные),
+   «Ждут ответа» и «Все»; остальные состояния срока (ответили, закрыта) — списком «Срок ответа».
+   В строке — чья заявка (имя, которое вписал клиент; удалено по сроку хранения — «—») и одна
+   плашка срока с временем («Просрочена 3 ч», «Ответ до 09:00»). Заявка: что и когда (данные и что
+   нужно клиенту по форме категории — часть дня, часы, машины, вес, выбранные услуги с добавками —
+   как были при подаче), клиент, телефоны вендора, ход заявки одним потоком (срок ответа,
+   напоминания, статусы, заметки команды); действия — напомнить вендору, «связались». Телефоны —
+   скрыты до «Показать» (в журнал). */
 
 import type {
   RequestStatus,
@@ -24,8 +26,8 @@ import {
   type DayPart,
   detailRows,
 } from "@bayramm/shared/categories";
-import { Dialog, RadioGroup, type RadioOption, SearchField, Select } from "@bayramm/ui/react";
-import { type FormEvent, Fragment, useCallback, useId, useRef, useState } from "react";
+import { Dialog, RadioGroup, type RadioOption, SearchField, Select, useToast } from "@bayramm/ui/react";
+import { type FormEvent, Fragment, type ReactNode, useCallback, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import {
   CategoryChip,
@@ -35,8 +37,17 @@ import {
   knownCategory,
   partWindow,
 } from "../categories";
-import { formatDay, formatMoment, formatSum, vendorLabel } from "../format";
+import {
+  formatDay,
+  formatDayShort,
+  formatMoment,
+  formatSince,
+  formatSum,
+  formatUntil,
+  vendorLabel,
+} from "../format";
 import { useLayout, usePhone } from "../layout";
+import { PhonesReveal } from "../phones";
 import { useQueryState } from "../router";
 import { t } from "../texts";
 import {
@@ -51,29 +62,23 @@ import {
   ListFooter,
   LoadedView,
   offsetOf,
-  PhoneReveal,
   PhoneSheet,
   Pill,
   ReasonPhoneReveal,
   toneOf,
-  useBreadcrumbs,
   useEntityTitle,
   useListSearch,
   usePagedList,
 } from "../ui";
 import { useUnsaved } from "../unsaved";
 
-const SLA_FILTERS: readonly (SlaFilter | null)[] = [
-  null,
-  "late",
-  "waiting",
-  "overdue",
-  "breached",
-  "answered_late",
-  "answered",
-  "ops_contacted",
-  "closed",
-];
+/** Быстрые фильтры в строке пилюль; остальные состояния срока — списком «Срок ответа» */
+type Quick = "late" | "waiting" | "all";
+
+/** Состояния срока в списке «Срок ответа»: ответили или заявка закрыта — история, не работа */
+const HISTORY_SLA: readonly SlaFilter[] = ["answered", "answered_late", "ops_contacted", "closed"];
+
+const SLA_FILTERS: readonly SlaFilter[] = ["late", "waiting", ...HISTORY_SLA];
 
 const STATUSES: readonly RequestStatus[] = [
   "new",
@@ -94,8 +99,22 @@ type Key = (typeof KEYS)[number];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-export function SlaPill({ sla }: { sla: SlaState }) {
-  return <Pill tone={toneOf("sla", sla)}>{t.sla[sla]}</Pill>;
+/** Ждёт первого ответа вендора: срок идёт или уже вышел */
+const AWAITING: ReadonlySet<SlaState> = new Set(["waiting", "overdue", "breached"]);
+
+/** Исход, который что-то добавляет к сроку; «связался» ответ в сроке уже говорит */
+const OUTCOMES: ReadonlySet<RequestStatus> = new Set(["deal", "declined", "withdrawn", "expired"]);
+
+/**
+ * Плашка срока: ждёт — «Ответ до 09:00», срок вышел (просрочена и нарушен срок — одно и то же для
+ * того, кто разбирает) — «Просрочена 3 ч». Без срока (dueAt) и у разобранных — состояние словами
+ */
+export function SlaPill({ sla, dueAt }: { sla: SlaState; dueAt?: string }) {
+  let text = t.sla[sla] ?? sla;
+  if (dueAt !== undefined && sla === "waiting") text = t.slaUntil(formatUntil(dueAt));
+  else if (dueAt !== undefined && (sla === "overdue" || sla === "breached"))
+    text = t.slaOverdue(formatSince(dueAt));
+  return <Pill tone={toneOf("sla", sla)}>{text}</Pill>;
 }
 
 /** Статус заявки плашкой: тот же цвет, что у статусов в других разделах */
@@ -103,26 +122,32 @@ export function RequestStatusPill({ status }: { status: RequestStatus }) {
   return <Pill tone={toneOf("request", status)}>{t.requestStatus[status]}</Pill>;
 }
 
+/** Статус словами — только если он что-то добавляет: пока ждём ответа, он не нужен */
+function statusNote(request: Pick<StaffRequestItem, "sla" | "status">): string | null {
+  if (AWAITING.has(request.sla) || !OUTCOMES.has(request.status)) return null;
+  return t.requestStatus[request.status] ?? null;
+}
+
 function occasionName(dictionaries: StaffDictionaries | null, code: string): string {
   return dictionaries?.occasions.find((o) => o.code === code)?.nameRu ?? code;
 }
 
-function filterLabel(filter: SlaFilter | null): string {
-  if (filter === null) return t.all;
-  return filter === "late" ? t.slaLate : (t.sla[filter] ?? filter);
-}
+/** «Ответ с опозданием» и так далее — подпись состояния срока в списке и под фильтром */
+const slaLabel = (filter: SlaFilter): string => (filter === "late" ? t.slaLate : (t.sla[filter] ?? filter));
 
-function filterCount(list: StaffRequestList, filter: SlaFilter): number {
-  return filter === "late" ? list.counts.overdue + list.counts.breached : list.counts[filter];
-}
+/** «Требуют действия · 3»; ноль — без числа */
+const withCount = (label: string, count: number): string => (count > 0 ? `${label} · ${count}` : label);
 
 /** «Утро» — часть дня заявки; у категории без частей дня — пусто */
 function partName(part: DayPart | null): string {
   return part === null ? "" : (t.dayParts[part] ?? part);
 }
 
-const slaOf = (value: string | undefined): SlaFilter | null =>
-  SLA_FILTERS.find((filter) => filter !== null && filter === value) ?? null;
+/** Просрочена и нарушен срок — одна очередь «Требуют действия»; старые ссылки на них ведут туда */
+const slaOf = (value: string | undefined): SlaFilter | null => {
+  if (value === "overdue" || value === "breached") return "late";
+  return SLA_FILTERS.find((filter) => filter === value) ?? null;
+};
 const statusOf = (value: string | undefined): RequestStatus | null =>
   STATUSES.find((status) => status === value) ?? null;
 
@@ -131,14 +156,18 @@ const STATUS_OPTIONS = [
   ...STATUSES.map((value) => ({ value, label: t.requestStatus[value] ?? value })),
 ];
 
+const HISTORY_OPTIONS = HISTORY_SLA.map((value) => ({ value, label: slaLabel(value) }));
+
 /**
- * Заявки: поиск (номер, витрина, вендор) — как только перестали печатать; фильтры срока,
- * статуса и категории, страница и одна витрина (?listingId= — ссылка «Заявки витрины») — в
- * адресе: «назад» из заявки возвращает тот же список, а ссылки ведут сразу на отфильтрованный
- * (/requests?sla=late — плитка метрик, ?q=V101 — «Заявки вендора»)
+ * Заявки: поиск (номер, витрина, вендор) — как только перестали печатать; срок, статус и категория,
+ * страница и одна витрина (?listingId= — ссылка «Заявки витрины») — в адресе: «назад» из заявки
+ * возвращает тот же список, а ссылки ведут сразу на отфильтрованный (/requests?sla=late — «Требуют
+ * действия», ?q=V101 — «Заявки вендора»)
  */
 export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries | null }) {
   const phone = usePhone();
+  // Таблица — только на компьютере: уже неё колонки обрезались бы справа
+  const cards = useLayout() !== "desktop";
   const [query, setQuery] = useQueryState(KEYS);
   const [q, setQ] = useListSearch(query.q ?? "", (search) => setQuery({ q: search, page: null }));
   const sla = slaOf(query.sla);
@@ -174,15 +203,15 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
   const listingName = listingId
     ? list.items.find((r) => r.listing.id === listingId)?.listing.name
     : undefined;
-  // Сколько заявок в каждом состоянии срока: на компьютере — в подписи пилюли, в шторке — второй строкой
-  const slaOptions = (inLabel: boolean): RadioOption<SlaFilter | "all">[] =>
-    SLA_FILTERS.map((filter) => {
-      const count = filter && data ? filterCount(data, filter) : null;
-      if (count === null) return { value: filter ?? "all", label: filterLabel(filter) };
-      return inLabel
-        ? { value: filter ?? "all", label: `${filterLabel(filter)} · ${count}` }
-        : { value: filter ?? "all", label: filterLabel(filter), hint: t.requestsCount(count) };
-    });
+  // «Срок ответа» из списка — только состояния после ответа; быстрые фильтры — пилюлями
+  const history = sla !== null && HISTORY_SLA.includes(sla) ? sla : null;
+  const quick: Quick | null = sla === null ? "all" : sla === "late" || sla === "waiting" ? sla : null;
+  const quickOptions: RadioOption<Quick>[] = [
+    { value: "late", label: withCount(t.slaLate, data ? data.counts.overdue + data.counts.breached : 0) },
+    { value: "waiting", label: withCount(t.slaWaitingFilter, data ? data.counts.waiting : 0) },
+    { value: "all", label: t.all },
+  ];
+  const onQuick = (value: Quick) => set({ sla: value === "all" ? null : value });
 
   return (
     <div className="stack">
@@ -197,12 +226,20 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
         />
         {phone ? (
           <FilterButton
-            count={(sla ? 1 : 0) + (status ? 1 : 0) + (category ? 1 : 0)}
+            count={(history ? 1 : 0) + (status ? 1 : 0) + (category ? 1 : 0)}
             open={filtersOpen}
             onOpen={() => setFiltersOpen(true)}
           />
         ) : (
           <>
+            <Select<SlaFilter>
+              size="compact"
+              label={t.colDue}
+              placeholder={t.colDue}
+              value={history}
+              onChange={(value) => set({ sla: value })}
+              options={HISTORY_OPTIONS}
+            />
             <Select
               size="compact"
               label={t.requestStatusFilter}
@@ -220,13 +257,23 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
           </>
         )}
       </div>
+      <RadioGroup<Quick>
+        variant="pill"
+        label={t.colDue}
+        name="requests-sla"
+        value={quick}
+        onChange={onQuick}
+        options={quickOptions}
+      />
       {listingId ? (
         <ActiveFilter
           label={listingName ? t.requestsOfListing(listingName) : t.requestsOfListingUnknown}
           onClear={() => set({ listingId: null })}
         />
       ) : null}
-      {phone && sla ? <ActiveFilter label={filterLabel(sla)} onClear={() => set({ sla: null })} /> : null}
+      {phone && history ? (
+        <ActiveFilter label={slaLabel(history)} onClear={() => set({ sla: null })} />
+      ) : null}
       {phone && status ? (
         <ActiveFilter label={t.requestStatus[status] ?? status} onClear={() => set({ status: null })} />
       ) : null}
@@ -256,12 +303,12 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
           <p className="sheet-group" id={`${filterId}-sla`}>
             {t.colDue}
           </p>
-          <RadioGroup<SlaFilter | "all">
+          <RadioGroup<SlaFilter>
             variant="row"
             aria-labelledby={`${filterId}-sla`}
-            value={sla ?? "all"}
-            onChange={(value) => set({ sla: value === "all" ? null : value })}
-            options={slaOptions(false)}
+            value={history}
+            onChange={(value) => set({ sla: value })}
+            options={HISTORY_OPTIONS}
           />
           <p className="sheet-group" id={`${filterId}-status`}>
             {t.requestStatusFilter}
@@ -284,16 +331,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
             options={[{ value: "all", label: t.allCategories }, ...categoryOptions()]}
           />
         </Dialog>
-      ) : (
-        <RadioGroup<SlaFilter | "all">
-          variant="pill"
-          label={t.colDue}
-          name="requests-sla"
-          value={sla ?? "all"}
-          onChange={(value) => set({ sla: value === "all" ? null : value })}
-          options={slaOptions(true)}
-        />
-      )}
+      ) : null}
       <LoadedView loaded={list.loaded} onRetry={list.reload}>
         {() =>
           list.items.length === 0 ? (
@@ -304,10 +342,10 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
             )
           ) : (
             <>
-              {phone ? (
-                <RequestCards items={list.items} dictionaries={dictionaries} />
+              {cards ? (
+                <RequestCards items={list.items} dictionaries={dictionaries} category={category} />
               ) : (
-                <RequestTable items={list.items} dictionaries={dictionaries} />
+                <RequestTable items={list.items} dictionaries={dictionaries} category={category} />
               )}
               <ListFooter list={list} offset={offset} size={PAGE} onPage={onPage} />
             </>
@@ -321,97 +359,97 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
 interface RowsProps {
   items: readonly StaffRequestItem[];
   dictionaries: StaffDictionaries | null;
+  /** Фильтр категории: выбрана одна — подпись категории в строке ни к чему */
+  category: string | null;
 }
 
-function RequestCards({ items, dictionaries }: RowsProps) {
+/** «24 окт. · Утро · Свадьба · 180 гостей» — когда и что за событие */
+function eventLine(request: StaffRequestItem, dictionaries: StaffDictionaries | null): string {
+  return [
+    formatDayShort(request.eventDate),
+    request.dayPart ? partName(request.dayPart) : "",
+    occasionName(dictionaries, request.occasionCode),
+    request.guests !== null ? t.guests(request.guests) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Карточка телефона — три строки: № и имя с плашкой срока, витрина, событие */
+function RequestCards({ items, dictionaries, category }: RowsProps) {
   return (
     <ul className="rcards">
-      {items.map((request) => (
-        <li key={request.id} className="rcard rcard-tap">
-          <div className="rcard-head">
-            <Link to={{ name: "request", id: request.id }} className="rcard-link">
-              {t.requestNo(request.publicNo)}
-            </Link>
-            <SlaPill sla={request.sla} />
-          </div>
-          <p className="rcard-meta">
-            {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
-          </p>
-          <dl className="rcard-facts">
-            <dt>{t.colClient}</dt>
-            <dd>{request.contactName ?? t.none}</dd>
-            <dt>{t.colListing}</dt>
-            <dd>
-              <CategoryChip code={request.listing.categoryCode} /> {request.listing.name} ·{" "}
-              {vendorLabel(request.vendor)}
-            </dd>
-            <dt>{t.colEvent}</dt>
-            <dd>
-              {formatDay(request.eventDate)}
-              {request.dayPart ? ` · ${partName(request.dayPart)}` : ""} ·{" "}
-              {occasionName(dictionaries, request.occasionCode)}
-              {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
-            </dd>
-            <dt>{t.colDue}</dt>
-            <dd>
-              {formatMoment(request.slaDueAt)}
-              {request.reminders > 0 ? ` · ${t.reminders(request.reminders)}` : ""}
-            </dd>
-          </dl>
-        </li>
-      ))}
+      {items.map((request) => {
+        const note = statusNote(request);
+        return (
+          <li key={request.id} className="rcard rcard-tap">
+            <div className="rcard-head">
+              <Link to={{ name: "request", id: request.id }} className="rcard-link">
+                {t.requestNo(request.publicNo)}
+                {request.contactName ? ` · ${request.contactName}` : ""}
+              </Link>
+              <SlaPill sla={request.sla} dueAt={request.slaDueAt} />
+            </div>
+            <p className="rcard-meta">
+              {request.listing.name}
+              {category === null ? ` · ${categoryName(request.listing.categoryCode)}` : ""}
+            </p>
+            <p className="rcard-meta">
+              {eventLine(request, dictionaries)}
+              {note ? ` · ${note}` : ""}
+            </p>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-function RequestTable({ items, dictionaries }: RowsProps) {
+function RequestTable({ items, dictionaries, category }: RowsProps) {
   return (
     <div className="table-wrap">
       <table className="table">
         <thead>
           <tr>
             <th scope="col">{t.colRequest}</th>
-            <th scope="col">{t.colClient}</th>
             <th scope="col">{t.colListing}</th>
             <th scope="col">{t.colEvent}</th>
             <th scope="col">{t.colDue}</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((request) => (
-            <tr key={request.id}>
-              <td>
-                <Link to={{ name: "request", id: request.id }} className="row-link">
-                  {t.requestNo(request.publicNo)}
-                </Link>
-                <span className="sub">
-                  {t.requestStatus[request.status]} · {t.createdAt(formatMoment(request.createdAt))}
-                </span>
-              </td>
-              <td>{request.contactName ?? t.none}</td>
-              <td>
-                <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
-                <span className="sub">
-                  <CategoryChip code={request.listing.categoryCode} /> {vendorLabel(request.vendor)}
-                </span>
-              </td>
-              <td>
-                {formatDay(request.eventDate)}
-                {request.dayPart ? ` · ${partName(request.dayPart)}` : ""}
-                <span className="sub">
-                  {occasionName(dictionaries, request.occasionCode)}
-                  {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
-                </span>
-              </td>
-              <td>
-                <SlaPill sla={request.sla} />
-                <span className="sub">
-                  {t.dueIn} {formatMoment(request.slaDueAt)}
-                  {request.reminders > 0 ? ` · ${t.reminders(request.reminders)}` : ""}
-                </span>
-              </td>
-            </tr>
-          ))}
+          {items.map((request) => {
+            const note = statusNote(request);
+            return (
+              <tr key={request.id}>
+                <td>
+                  <Link to={{ name: "request", id: request.id }} className="row-link">
+                    {t.requestNo(request.publicNo)}
+                  </Link>
+                  <span className="sub">{request.contactName ?? t.none}</span>
+                </td>
+                <td>
+                  <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
+                  <span className="sub">
+                    {category === null ? <CategoryChip code={request.listing.categoryCode} /> : null}{" "}
+                    {vendorLabel(request.vendor)}
+                  </span>
+                </td>
+                <td>
+                  {formatDay(request.eventDate)}
+                  {request.dayPart ? ` · ${partName(request.dayPart)}` : ""}
+                  <span className="sub">
+                    {occasionName(dictionaries, request.occasionCode)}
+                    {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
+                  </span>
+                </td>
+                <td>
+                  <SlaPill sla={request.sla} dueAt={request.slaDueAt} />
+                  {note ? <span className="sub">{note}</span> : null}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -436,25 +474,15 @@ function RequestView({
   dictionaries: StaffDictionaries | null;
   onChange: (request: StaffRequestDetail) => void;
 }) {
+  // Путь над заголовком — только «Заявки»: витрина и вендор — ссылками в «Что и когда»
   useEntityTitle(`${t.views.request} ${t.requestNo(request.publicNo)}`);
-  // Путь на компьютере: заявки → вендор → витрина
-  useBreadcrumbs([
-    { label: vendorLabel(request.vendor), to: { name: "vendor", id: request.vendor.id } },
-    { label: request.listing.name, to: { name: "listing", id: request.listing.id } },
-  ]);
   const { api } = useSession();
   const can = useCan();
-  const [vendorPhones, setVendorPhones] = useState<Promise<Result<RequestVendorPhones>> | null>(null);
-  const loadVendor = useCallback(() => {
-    const pending =
-      vendorPhones ?? api.post<RequestVendorPhones>(`/staff/requests/${request.id}/vendor-phone`, {});
-    setVendorPhones(pending);
-    return pending;
-  }, [api, request.id, vendorPhones]);
-  const pick = (key: keyof RequestVendorPhones) => async (): Promise<Result<string | null>> => {
-    const result = await loadVendor();
-    return result.ok ? { ok: true, data: result.data[key] } : result;
-  };
+  // Одно чтение открывает все номера вендора — в журнал одна запись
+  const loadVendorPhones = useCallback(
+    () => api.post<RequestVendorPhones>(`/staff/requests/${request.id}/vendor-phone`, {}),
+    [api, request.id],
+  );
   const loadClientPhone = useCallback(
     async (reason: string): Promise<Result<string | null>> => {
       const result = await api.post<RevealedPhone>(`/staff/requests/${request.id}/client-phone`, { reason });
@@ -466,11 +494,12 @@ function RequestView({
   const stacked = useLayout() !== "desktop";
   const category = categoryConfig(request.listing.categoryCode);
   const district = (code: string) => dictionaries?.districts.find((d) => d.code === code)?.nameRu;
-  const details = <RequestDetails category={category} request={request} district={district} />;
-  const budget = budgetText(request.budgetMinUzs, request.budgetMaxUzs);
+  const hasBudget = request.budgetMinUzs !== null || request.budgetMaxUzs !== null;
+  const note = statusNote(request);
 
   const facts = (
-    <section className="panel" aria-label={t.views.request}>
+    <section className="panel" aria-labelledby="facts-title">
+      <h2 id="facts-title">{t.requestWhatWhen}</h2>
       <dl className="dl">
         <dt>{t.colListing}</dt>
         <dd>
@@ -479,10 +508,6 @@ function RequestView({
         <dt>{t.colVendor}</dt>
         <dd>
           <Link to={{ name: "vendor", id: request.vendor.id }}>{vendorLabel(request.vendor)}</Link>
-        </dd>
-        <dt>{t.colCategory}</dt>
-        <dd>
-          <CategoryChip code={request.listing.categoryCode} />
         </dd>
         <dt>{t.colEvent}</dt>
         <dd>
@@ -497,17 +522,21 @@ function RequestView({
             </dd>
           </>
         ) : null}
-        <dt>{t.requestBudget}</dt>
-        <dd>{budget}</dd>
-        <dt>{t.colDue}</dt>
-        <dd>{formatMoment(request.slaDueAt)}</dd>
-        <dt>{t.firstViewed}</dt>
-        <dd>{formatMoment(request.firstViewedAt)}</dd>
-        <dt>{t.firstResponse}</dt>
-        <dd>
-          {formatMoment(request.firstResponseAt)}
-          {request.firstResponseBy ? ` · ${t.historyBy[request.firstResponseBy]}` : ""}
-        </dd>
+        {hasBudget ? (
+          <>
+            <dt>{t.requestBudget}</dt>
+            <dd>{budgetText(request.budgetMinUzs, request.budgetMaxUzs)}</dd>
+          </>
+        ) : null}
+        {request.firstResponseAt ? (
+          <>
+            <dt>{t.firstResponse}</dt>
+            <dd>
+              {formatMoment(request.firstResponseAt)}
+              {request.firstResponseBy ? ` · ${t.historyBy[request.firstResponseBy]}` : ""}
+            </dd>
+          </>
+        ) : null}
         {request.declineReason && (
           <>
             <dt>{t.requestStatus.declined}</dt>
@@ -517,45 +546,29 @@ function RequestView({
             </dd>
           </>
         )}
-        <dt>{t.source}</dt>
-        <dd>{t.sources[request.source] ?? request.source}</dd>
+        <RequestDetailRows category={category} request={request} district={district} />
       </dl>
-    </section>
-  );
-  const history = (
-    <section className="panel" aria-labelledby="history-title">
-      <h2 id="history-title">{t.history}</h2>
-      <ol className="history">
-        {request.history.map((entry) => (
-          <li key={`${entry.at}-${entry.to}`}>
-            <span className="sub">
-              {formatMoment(entry.at)} · {actorOf(entry)}
-            </span>
-            {entry.from ? `${t.requestStatus[entry.from]} → ` : ""}
-            <strong>{t.requestStatus[entry.to]}</strong>
-            {entry.reason && <p className="reason">{entry.reason}</p>}
-          </li>
-        ))}
-      </ol>
+      <ChosenServices category={category} request={request} />
     </section>
   );
   const client = (
     <section className="panel" aria-labelledby="client-title">
       <h2 id="client-title">{t.requestClient}</h2>
-      {/* Карточка клиента — по коду C-…: заявки, согласия, блокировка. Телефона в ссылке нет */}
-      {request.client && can("clients.read") ? (
-        <p>
-          <Link to={{ name: "client", id: request.client.id }}>
-            {t.requestClientOpen(request.client.ref)}
-          </Link>
-        </p>
-      ) : null}
       {request.contactPurged ? (
         <p className="muted">{t.contactPurged}</p>
       ) : (
         <>
           <p>
             <strong>{request.contactName ?? t.none}</strong>
+            {/* Карточка клиента — по коду C-…: заявки, согласия, блокировка. Телефона в ссылке нет */}
+            {request.client && can("clients.read") ? (
+              <>
+                {" · "}
+                <Link to={{ name: "client", id: request.client.id }}>
+                  {t.requestClientOpen(request.client.ref)}
+                </Link>
+              </>
+            ) : null}
           </p>
           {request.comment && (
             <p>
@@ -579,37 +592,40 @@ function RequestView({
   const phones = (
     <section className="panel" aria-labelledby="vendor-phones-title">
       <h2 id="vendor-phones-title">{t.vendorPhones}</h2>
-      <PhoneReveal label={t.listingPhone} load={pick("listingPhone")} />
-      <PhoneReveal label={t.phoneMain} load={pick("phone")} />
-      <PhoneReveal label={t.phoneAlternative} load={pick("phoneAlt")} />
+      <PhonesReveal
+        rows={[
+          { key: "listingPhone", label: t.listingPhone },
+          { key: "phone", label: t.phoneMain },
+          { key: "phoneAlt", label: t.phoneAlternative },
+        ]}
+        load={loadVendorPhones}
+      />
     </section>
   );
+  const course = <Course request={request} onChange={onChange} />;
 
   return (
     <div className="stack">
-      <p className="pills">
-        <SlaPill sla={request.sla} /> <RequestStatusPill status={request.status} />
-      </p>
-      {can("requests.write") && <RequestActions request={request} onChange={onChange} />}
+      <div className="request-head">
+        <p className="pills">
+          <SlaPill sla={request.sla} dueAt={request.slaDueAt} />
+          {note ? <RequestStatusPill status={request.status} /> : null}
+        </p>
+        {can("requests.write") && <RequestActions request={request} onChange={onChange} />}
+      </div>
       {stacked ? (
-        // Телефон и планшет: сначала главное — данные заявки, клиент, как дозвониться вендору
+        // Телефон и планшет: сначала главное — что и когда, клиент, как дозвониться вендору
         <>
           {facts}
-          {details}
           {client}
           {phones}
-          <Timeline events={request.timeline} />
-          <Notes request={request} onChange={onChange} />
-          {history}
+          {course}
         </>
       ) : (
         <div className="columns">
           <div className="stack">
             {facts}
-            {details}
-            <Timeline events={request.timeline} />
-            <Notes request={request} onChange={onChange} />
-            {history}
+            {course}
           </div>
           <div className="stack">
             {client}
@@ -638,6 +654,11 @@ function actorOf(entry: StaffRequestDetail["history"][number]): string {
 
 // ── работа с заявкой ───────────────────────────────────────────────────────
 
+/**
+ * Действия — в строке заголовка (компьютер) или в панели над нижней навигацией (телефон);
+ * пояснение — только когда действия нет (никто не привязал Telegram, пауза между напоминаниями,
+ * ответ уже есть)
+ */
 function RequestActions({
   request,
   onChange,
@@ -646,28 +667,21 @@ function RequestActions({
   onChange: (request: StaffRequestDetail) => void;
 }) {
   const { api } = useSession();
+  const toast = useToast();
   const contactButton = useRef<HTMLButtonElement>(null);
   const [contacting, setContacting] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
 
-  if (!request.awaiting)
-    return (
-      <section className="panel" aria-labelledby="actions-title">
-        <h2 id="actions-title">{t.requestActions}</h2>
-        <p className="muted">{t.notAwaiting}</p>
-      </section>
-    );
+  if (!request.awaiting) return <p className="muted small request-hint">{t.notAwaiting}</p>;
 
   const remind = async () => {
     setBusy(true);
-    setSent(false);
     const result = await api.post<StaffRequestDetail>(`/staff/requests/${request.id}/remind`);
     setBusy(false);
     setFailure(result.ok ? null : result);
     if (result.ok) {
-      setSent(true);
+      toast(t.remindSent, { tone: "success" });
       onChange(result.data);
     }
   };
@@ -686,8 +700,7 @@ function RequestActions({
   const unreachable = request.vendorReachable === 0;
   const paused = request.nextReminderAt !== null;
   return (
-    <section className="panel" aria-labelledby="actions-title">
-      <h2 id="actions-title">{t.requestActions}</h2>
+    <>
       <ActionBar label={t.requestActions}>
         <button
           type="button"
@@ -708,18 +721,11 @@ function RequestActions({
           {t.markContacted}
         </button>
       </ActionBar>
-      <p className="muted small">
-        {unreachable
-          ? t.remindUnreachable
-          : paused
-            ? t.remindAgainAt(formatMoment(request.nextReminderAt))
-            : t.remindHint}
-      </p>
-      {sent && (
-        <p className="saved" role="status">
-          {t.remindSent}
+      {unreachable || paused ? (
+        <p className="muted small request-hint">
+          {unreachable ? t.remindUnreachable : t.remindAgainAt(formatMoment(request.nextReminderAt))}
         </p>
-      )}
+      ) : null}
       {failure && <ErrorText failure={failure} />}
       <PhoneSheet
         open={contacting}
@@ -735,11 +741,11 @@ function RequestActions({
           onCancel={() => setContacting(false)}
         />
       </PhoneSheet>
-    </section>
+    </>
   );
 }
 
-// ── срок ответа по шагам ───────────────────────────────────────────────────
+// ── ход заявки ─────────────────────────────────────────────────────────────
 
 function eventText(event: SlaEvent): string {
   switch (event.kind) {
@@ -756,19 +762,118 @@ function eventText(event: SlaEvent): string {
   }
 }
 
-function Timeline({ events }: { events: readonly SlaEvent[] }) {
+/** Ответ вендора в журнале статусов: по нему шаг «Первый ответ» срока уже виден */
+const RESPONSES: ReadonlySet<RequestStatus> = new Set(["contacted", "deal", "declined"]);
+/** Время ответа в сроке и в журнале статусов — одно, но записаны они раздельно */
+const SAME_MOMENT_MS = 60_000;
+
+export interface Step {
+  readonly key: string;
+  readonly at: string;
+  readonly kind: "event" | "status" | "note";
+  readonly text: string;
+  /** Кто: исполнитель статуса, автор заметки */
+  readonly by?: string;
+  /** Подпись мелким: доставка напоминания */
+  readonly detail?: string;
+  /** Причина или текст заметки */
+  readonly body?: string;
+}
+
+/**
+ * Ход заявки одним потоком по времени: шаги срока (создана, открыта, напоминания, срок), смены
+ * статуса и заметки команды. То, что срок и журнал статусов говорят вдвоём — создание, просмотр,
+ * первый ответ, — показано один раз
+ */
+export function courseOf(request: StaffRequestDetail): Step[] {
+  const hasViewed = request.timeline.some((event) => event.kind === "viewed");
+  // Кто открыл заявку, знает только журнал статусов: имя — к шагу «Вендор открыл заявку»
+  const viewedBy = request.history.find((entry) => entry.to === "viewed" && entry.from !== null);
+  const answered = request.history.filter((entry) => RESPONSES.has(entry.to));
+  const steps: Step[] = [];
+  for (const event of request.timeline) {
+    if (
+      event.kind === "response" &&
+      answered.some((entry) => Math.abs(Date.parse(entry.at) - Date.parse(event.at)) < SAME_MOMENT_MS)
+    )
+      continue;
+    steps.push({
+      key: `${event.kind}-${event.at}`,
+      at: event.at,
+      kind: "event",
+      text: eventText(event),
+      ...(event.kind === "viewed" && viewedBy ? { by: actorOf(viewedBy) } : {}),
+      ...(event.kind === "reminder"
+        ? { detail: t.reminderDelivery(event.recipients, event.delivered, event.failed) }
+        : {}),
+    });
+  }
+  for (const entry of request.history) {
+    // Создание и первый просмотр — шаги срока выше
+    if (entry.from === null || (entry.to === "viewed" && hasViewed)) continue;
+    steps.push({
+      key: `status-${entry.at}-${entry.to}`,
+      at: entry.at,
+      kind: "status",
+      text: t.requestStatus[entry.to] ?? entry.to,
+      by: actorOf(entry),
+      ...(entry.reason ? { body: entry.reason } : {}),
+    });
+  }
+  for (const note of request.notes) {
+    steps.push({
+      key: `note-${note.id}`,
+      at: note.at,
+      kind: "note",
+      text: t.note,
+      ...(note.authorName ? { by: note.authorName } : {}),
+      body: note.text,
+    });
+  }
+  // Сортировка устойчивая: на одно время шаг срока идёт раньше смены статуса и заметки
+  return steps.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+function Course({
+  request,
+  onChange,
+}: {
+  request: StaffRequestDetail;
+  onChange: (request: StaffRequestDetail) => void;
+}) {
+  const can = useCan();
+  const [adding, setAdding] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
+  const steps = courseOf(request);
   return (
-    <section className="panel" aria-labelledby="timeline-title">
-      <h2 id="timeline-title">{t.timeline}</h2>
+    <section className="panel" aria-labelledby="course-title">
+      <div className="panel-head">
+        <h2 id="course-title">{t.requestCourse}</h2>
+        {can("requests.write") && !adding && (
+          <button
+            ref={addButton}
+            type="button"
+            className="btn btn-sm"
+            aria-expanded={adding}
+            onClick={() => setAdding(true)}
+          >
+            {t.noteAdd}
+          </button>
+        )}
+      </div>
+      <PhoneSheet open={adding} title={t.noteAdd} onClose={() => setAdding(false)} returnFocus={addButton}>
+        <NoteForm request={request} onChange={onChange} onClose={() => setAdding(false)} />
+      </PhoneSheet>
       <ol className="history timeline">
-        {events.map((event) => (
-          <li key={`${event.kind}-${event.at}`} className={`timeline-${event.kind}`}>
-            <span className="sub">{formatMoment(event.at)}</span> <strong>{eventText(event)}</strong>
-            {event.kind === "reminder" && (
-              <span className="sub">
-                {t.reminderDelivery(event.recipients, event.delivered, event.failed)}
-              </span>
-            )}
+        {steps.map((step) => (
+          <li key={step.key} className={`timeline-${step.kind}`}>
+            <span className="sub">
+              {formatMoment(step.at)}
+              {step.by ? ` · ${step.by}` : ""}
+            </span>
+            <strong>{step.text}</strong>
+            {step.detail ? <span className="sub">{step.detail}</span> : null}
+            {step.body ? <p className="reason">{step.body}</p> : null}
           </li>
         ))}
       </ol>
@@ -776,17 +881,17 @@ function Timeline({ events }: { events: readonly SlaEvent[] }) {
   );
 }
 
-// ── заметки ────────────────────────────────────────────────────────────────
-
-function Notes({
+/** Новая заметка: видна только команде; добавить можно, изменить и удалить — нет */
+function NoteForm({
   request,
   onChange,
+  onClose,
 }: {
   request: StaffRequestDetail;
   onChange: (request: StaffRequestDetail) => void;
+  onClose: () => void;
 }) {
   const { api } = useSession();
-  const can = useCan();
   const id = useId();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -802,109 +907,86 @@ function Notes({
     setFailure(result.ok ? null : result);
     if (result.ok) {
       setText("");
+      onClose();
       onChange(result.data);
     }
   };
 
   return (
-    <section className="panel" aria-labelledby="notes-title">
-      <h2 id="notes-title">{t.notes}</h2>
-      {request.notes.length === 0 ? (
-        <p className="muted">{t.notesEmpty}</p>
-      ) : (
-        <ol className="history notes">
-          {request.notes.map((note) => (
-            <li key={note.id}>
-              <span className="sub">
-                {formatMoment(note.at)}
-                {note.authorName ? ` · ${note.authorName}` : ""}
-              </span>
-              <p className="reason">{note.text}</p>
-            </li>
-          ))}
-        </ol>
-      )}
-      {can("requests.write") && (
-        <form className="note-form" onSubmit={add} noValidate>
-          <label htmlFor={id}>{t.noteText}</label>
-          <textarea
-            id={id}
-            className="input"
-            rows={2}
-            maxLength={1000}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-          />
-          <p className="field-hint">{t.notesHint}</p>
-          <div>
-            <button
-              type="submit"
-              className="btn"
-              aria-busy={busy || undefined}
-              disabled={busy || text.trim() === ""}
-            >
-              {busyLabel(t.addNote, busy)}
-            </button>
-          </div>
-          {failure && <ErrorText failure={failure} />}
-        </form>
-      )}
-    </section>
+    <form className="note-form" onSubmit={add} noValidate>
+      <label htmlFor={id}>{t.noteText}</label>
+      <textarea
+        id={id}
+        className="input"
+        rows={3}
+        maxLength={1000}
+        placeholder={t.noteHint}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+      />
+      <div className="acts">
+        <button
+          type="submit"
+          className="btn btn-primary"
+          aria-busy={busy || undefined}
+          disabled={busy || text.trim() === ""}
+        >
+          {busyLabel(t.addNote, busy)}
+        </button>
+        <button type="button" className="btn" onClick={onClose}>
+          {t.cancel}
+        </button>
+      </div>
+      {failure && <ErrorText failure={failure} />}
+    </form>
   );
 }
 
-/**
- * Что нужно клиенту — поля формы заявки категории (часы, машины, вес, цвета…) и выбранные
- * услуги с количеством и добавками: названия и цены — как были при подаче заявки
- */
-function RequestDetails({
+interface DetailProps {
+  category: CategoryConfig | undefined;
+  request: StaffRequestDetail;
+}
+
+/** Что нужно клиенту — поля формы заявки категории (часы, машины, вес, цвета…): строки «Что и когда» */
+function RequestDetailRows({
   category,
   request,
   district,
-}: {
-  category: CategoryConfig | undefined;
-  request: StaffRequestDetail;
-  district: (code: string) => string | undefined;
-}) {
+}: DetailProps & { district: (code: string) => string | undefined }): ReactNode {
   const rows = detailRows("ru", category, request.details, district);
+  return rows.map((row) => (
+    <Fragment key={row.key}>
+      <dt>{row.label}</dt>
+      <dd>{row.value ?? t.yes}</dd>
+    </Fragment>
+  ));
+}
+
+/** Выбранные услуги с количеством и добавками: названия и цены — как были при подаче заявки */
+function ChosenServices({ category, request }: DetailProps) {
   const services = chosenServices(category, request.details);
-  if (rows.length === 0 && services.length === 0) return null;
+  if (services.length === 0) return null;
   return (
-    <section className="panel" aria-labelledby="details-title">
-      <h2 id="details-title">{t.requestDetails}</h2>
-      {rows.length > 0 ? (
-        <dl className="dl">
-          {rows.map((row) => (
-            <Fragment key={row.key}>
-              <dt>{row.label}</dt>
-              <dd>{row.value ?? t.yes}</dd>
-            </Fragment>
-          ))}
-        </dl>
-      ) : null}
-      {services.length > 0 ? (
-        <>
-          <h3 className="sub-title">{t.requestServices}</h3>
-          <ul className="chosen">
-            {services.map((service) => (
-              <li key={service.id}>
-                <strong>{service.name.ru}</strong>
-                {service.qty !== null ? ` × ${service.qty}` : ""}
-                <span className="sub">{formatPrice(service.priceUzs, service.priceUnit)}</span>
-                {service.options.length > 0 ? (
-                  <ul className="plain">
-                    {service.options.map((option) => (
-                      <li key={option.id}>
-                        + {option.name.ru} — {formatPrice(option.priceUzs, option.priceUnit)}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-    </section>
+    <>
+      <h3 className="sub-title">{t.requestServices}</h3>
+      <ul className="chosen">
+        {services.map((service) => (
+          <li key={service.id}>
+            <strong>{service.name.ru}</strong>
+            {service.qty !== null ? ` × ${service.qty}` : ""}
+            <span className="sub">{formatPrice(service.priceUzs, service.priceUnit)}</span>
+            {service.options.length > 0 ? (
+              <ul className="plain">
+                {service.options.map((option) => (
+                  <li key={option.id}>
+                    + {option.name.ru} — {formatPrice(option.priceUzs, option.priceUnit)}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

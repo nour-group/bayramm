@@ -18,7 +18,7 @@ import type {
   PiiAccessList,
 } from "@bayramm/shared/api/staff";
 import { Hono } from "hono";
-import { sql } from "kysely";
+import { type RawBuilder, sql } from "kysely";
 import { staffOf } from "../auth/session";
 import { withActor } from "../db/actor";
 import type { AppEnv } from "../env";
@@ -26,6 +26,7 @@ import { addDays, isIsoDate } from "../vendor/dates";
 import { requirePermission } from "./access";
 import { invalidInput, isUuid, paging } from "./input";
 import { type Labels, loadLabels } from "./labels";
+import { allOf, pageTotal } from "./page-total";
 import { iso } from "./shared";
 
 export const audit = new Hono<AppEnv>();
@@ -111,14 +112,36 @@ function actorOf(
   return row.actor_id !== null ? { id: row.actor_id, name: labels.get(row.actor_kind, row.actor_id) } : null;
 }
 
-const total = sql<number>`(count(*) over ())::int`;
+/** Условия фильтров журнала — одни и те же у страницы и у числа записей (page-total.ts) */
+function auditConditions(
+  filters: AuditFilters,
+  // Колонки «вид объекта», «id объекта» и «действие» у журнала действий и журнала доступа к ПДн свои
+  columns: { readonly type: string; readonly object: string; readonly action: string },
+): RawBuilder<boolean> {
+  const column = (name: string) => sql.ref(`a.${name}`);
+  const conditions: RawBuilder<boolean>[] = [];
+  if (filters.actor) conditions.push(sql<boolean>`${column("actor_id")} = ${filters.actor}`);
+  if (filters.actorKind) conditions.push(sql<boolean>`${column("actor_kind")} = ${filters.actorKind}`);
+  if (filters.type) conditions.push(sql<boolean>`${column(columns.type)} = ${filters.type}`);
+  if (filters.object) conditions.push(sql<boolean>`${column(columns.object)} = ${filters.object}`);
+  if (filters.action) conditions.push(sql<boolean>`${column(columns.action)} like ${`${filters.action}%`}`);
+  if (filters.from) conditions.push(sql<boolean>`${column("at")} >= ${tashkentStart(filters.from)}`);
+  if (filters.until) conditions.push(sql<boolean>`${column("at")} < ${tashkentStart(filters.until)}`);
+  return allOf(conditions);
+}
+
+const ACTION_LOG_COLUMNS = { type: "object_type", object: "object_id", action: "action" } as const;
+const PII_LOG_COLUMNS = { type: "subject_kind", object: "subject_id", action: "purpose" } as const;
 
 audit.get("/", requirePermission("audit.read"), async (c) => {
   const filters = parseFilters((key) => c.req.query(key));
   const { limit, offset } = paging((key) => c.req.query(key));
 
   const body: AuditList = await withActor(c.var.db, staffOf(c), async (trx) => {
-    let query = trx
+    const where = auditConditions(filters, ACTION_LOG_COLUMNS);
+    // Без count(*) over (): оно заставляло пройти и отсортировать весь журнал ради числа
+    // (page-total.ts); страницу берёт индекс audit_log_at_id по (at desc, id desc)
+    const rows = await trx
       .selectFrom("app.audit_log as a")
       .select([
         "a.id",
@@ -130,27 +153,27 @@ audit.get("/", requirePermission("audit.read"), async (c) => {
         "a.object_id",
         "a.detail",
         "a.source",
-        total.as("total"),
-      ]);
-    if (filters.actor) query = query.where("a.actor_id", "=", filters.actor);
-    if (filters.actorKind) query = query.where("a.actor_kind", "=", filters.actorKind);
-    if (filters.type) query = query.where("a.object_type", "=", filters.type);
-    if (filters.object) query = query.where("a.object_id", "=", filters.object);
-    if (filters.action) query = query.where("a.action", "like", `${filters.action}%`);
-    if (filters.from) query = query.where("a.at", ">=", tashkentStart(filters.from));
-    if (filters.until) query = query.where("a.at", "<", tashkentStart(filters.until));
-    const rows = await query
+      ])
+      .where(where)
       .orderBy("a.at", "desc")
       .orderBy("a.id", "desc")
       .limit(limit)
       .offset(offset)
       .execute();
+    const total = await pageTotal(rows.length, limit, offset, async () => {
+      const row = await trx
+        .selectFrom("app.audit_log as a")
+        .select(sql<number>`count(*)::int`.as("n"))
+        .where(where)
+        .executeTakeFirstOrThrow();
+      return row.n;
+    });
     const labels = await loadLabels(trx, [
       ...rows.map((row) => ({ type: row.object_type, id: row.object_id })),
       ...rows.map((row) => ({ type: row.actor_kind, id: row.actor_id })),
     ]);
     return {
-      total: rows[0]?.total ?? 0,
+      total,
       items: rows.map(
         (row): AuditEntry => ({
           id: String(row.id),
@@ -180,7 +203,8 @@ audit.get("/pii", requirePermission("audit.read"), async (c) => {
   const { limit, offset } = paging((key) => c.req.query(key));
 
   const body: PiiAccessList = await withActor(c.var.db, staffOf(c), async (trx) => {
-    let query = trx
+    const where = auditConditions(filters, PII_LOG_COLUMNS);
+    const rows = await trx
       .selectFrom("app.pii_access_log as a")
       .select([
         "a.id",
@@ -192,27 +216,27 @@ audit.get("/pii", requirePermission("audit.read"), async (c) => {
         "a.field",
         "a.purpose",
         "a.reason",
-        total.as("total"),
-      ]);
-    if (filters.actor) query = query.where("a.actor_id", "=", filters.actor);
-    if (filters.actorKind) query = query.where("a.actor_kind", "=", filters.actorKind);
-    if (filters.type) query = query.where("a.subject_kind", "=", filters.type);
-    if (filters.object) query = query.where("a.subject_id", "=", filters.object);
-    if (filters.action) query = query.where("a.purpose", "like", `${filters.action}%`);
-    if (filters.from) query = query.where("a.at", ">=", tashkentStart(filters.from));
-    if (filters.until) query = query.where("a.at", "<", tashkentStart(filters.until));
-    const rows = await query
+      ])
+      .where(where)
       .orderBy("a.at", "desc")
       .orderBy("a.id", "desc")
       .limit(limit)
       .offset(offset)
       .execute();
+    const total = await pageTotal(rows.length, limit, offset, async () => {
+      const row = await trx
+        .selectFrom("app.pii_access_log as a")
+        .select(sql<number>`count(*)::int`.as("n"))
+        .where(where)
+        .executeTakeFirstOrThrow();
+      return row.n;
+    });
     const labels = await loadLabels(trx, [
       ...rows.map((row) => ({ type: row.subject_kind, id: row.subject_id })),
       ...rows.map((row) => ({ type: row.actor_kind, id: row.actor_id })),
     ]);
     return {
-      total: rows[0]?.total ?? 0,
+      total,
       items: rows.map(
         (row): PiiAccessEntry => ({
           id: String(row.id),

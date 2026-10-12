@@ -1,4 +1,5 @@
-/* Предложение изменений опубликованной витрины: «сейчас» и «предлагает» по каждому полю.
+/* Предложение изменений витрины, которая на проверке или на сайте: «сейчас» и «предлагает» по
+   каждому полю (название, описания, данные, видео, вместимость, район, адрес).
    Предлагает вендор из кабинета или менеджер из панели — кто именно, видно в шапке.
    Одобрить — значения сразу попадают на витрину; отклонить — только с причиной (её увидит
    вендор). Решает модератор или администратор; после решения — кнопка к следующему
@@ -6,7 +7,13 @@
    над заголовком (модерация → вендор → витрина), на телефоне — ссылки в шапке страницы. Видео —
    ссылками наружу: открыть и посмотреть, что предлагают. */
 
-import type { RevisionChange, RevisionDetail, RevisionValue } from "@bayramm/shared/api/staff";
+import type {
+  RevisionCapacity,
+  RevisionChange,
+  RevisionDetail,
+  RevisionValue,
+  StaffDictionaries,
+} from "@bayramm/shared/api/staff";
 import {
   type AttributeValue,
   attributeText,
@@ -33,14 +40,31 @@ import {
 } from "../ui";
 import { NextInQueue } from "./NextInQueue";
 
-export function RevisionPage({ id }: { id: string }) {
+export function RevisionPage({
+  id,
+  dictionaries = null,
+}: {
+  id: string;
+  /** Справочники: район в предложении показывается названием, не кодом */
+  dictionaries?: StaffDictionaries | null;
+}) {
   const { loaded, reload, set } = useLoad<RevisionDetail>(`/staff/revisions/${id}`);
   return (
     <LoadedView loaded={loaded} onRetry={reload} skeleton="detail">
-      {(revision) => <RevisionView revision={revision} onChange={set} />}
+      {(revision) => <RevisionView revision={revision} dictionaries={dictionaries} onChange={set} />}
     </LoadedView>
   );
 }
+
+const isCapacity = (value: RevisionValue): value is RevisionCapacity =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.keys(value).length === 2 &&
+  "min" in value &&
+  "max" in value &&
+  (value.min === null || typeof value.min === "number") &&
+  (value.max === null || typeof value.max === "number");
 
 const isRecord = (value: RevisionValue): value is Readonly<Record<string, AttributeValue | null>> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -73,11 +97,27 @@ function Value({
   field,
   value,
   category,
+  dictionaries,
 }: {
   field: RevisionChange["field"];
   value: RevisionValue;
   category: CategoryConfig | undefined;
+  dictionaries: StaffDictionaries | null;
 }) {
+  // Вместимость: «80–300 гостей» (чего правка не меняет, остаётся как в карточке)
+  if (field === "capacity" && isCapacity(value)) {
+    const text = t.revisionCapacity(value.min, value.max);
+    return text === "" ? <span className="muted">{t.none}</span> : <span className="reason">{text}</span>;
+  }
+  // Район — названием из справочника (код — если справочника нет)
+  if (field === "districtCode" && typeof value === "string") {
+    const name = dictionaries?.districts.find((d) => d.code === value)?.nameRu;
+    return <span className="reason">{name ?? value}</span>;
+  }
+  // Пустой адрес в правке — «убрать»
+  if ((field === "addressRu" || field === "addressUz") && value === "") {
+    return <span className="muted">{t.none}</span>;
+  }
   if (value === null) return <span className="muted">{t.none}</span>;
   if (field === "attributes" && isRecord(value) && category) {
     return <AttributesValue category={category} value={value} />;
@@ -111,9 +151,11 @@ function Value({
 
 function RevisionView({
   revision,
+  dictionaries,
   onChange,
 }: {
   revision: RevisionDetail;
+  dictionaries: StaffDictionaries | null;
   onChange: (r: RevisionDetail) => void;
 }) {
   useEntityTitle(`${t.views.revision}: ${revision.listing.name}`);
@@ -192,13 +234,23 @@ function RevisionView({
               <div className="change">
                 <p className="change-label">{t.revisionNow}</p>
                 <div className="change-value">
-                  <Value field={change.field} value={change.before} category={category} />
+                  <Value
+                    field={change.field}
+                    value={change.before}
+                    category={category}
+                    dictionaries={dictionaries}
+                  />
                 </div>
               </div>
               <div className="change change-new">
                 <p className="change-label">{t.revisionProposed[revision.proposedBy.kind]}</p>
                 <div className="change-value">
-                  <Value field={change.field} value={change.after} category={category} />
+                  <Value
+                    field={change.field}
+                    value={change.after}
+                    category={category}
+                    dictionaries={dictionaries}
+                  />
                 </div>
               </div>
             </li>
@@ -219,10 +271,20 @@ function RevisionView({
                 <tr key={change.field}>
                   <th scope="row">{t.revisionFields[change.field] ?? change.field}</th>
                   <td>
-                    <Value field={change.field} value={change.before} category={category} />
+                    <Value
+                      field={change.field}
+                      value={change.before}
+                      category={category}
+                      dictionaries={dictionaries}
+                    />
                   </td>
                   <td>
-                    <Value field={change.field} value={change.after} category={category} />
+                    <Value
+                      field={change.field}
+                      value={change.after}
+                      category={category}
+                      dictionaries={dictionaries}
+                    />
                   </td>
                 </tr>
               ))}

@@ -106,6 +106,9 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-12);
+  /* Высота та же с переключателем языка (до входа) и без него: полоса «нет связи» и колонка
+     планшета стоят под шапкой на 65px ниже верхних зон */
+  min-height: calc(var(--pad-t) + 65px);
   padding: calc(var(--pad-t) + 8px) calc(var(--sa-r) + 16px) 8px calc(var(--sa-l) + 16px);
   border-bottom: 1px solid var(--rule);
   background: var(--white);
@@ -660,6 +663,29 @@ body {
   gap: var(--gap-9);
 }
 
+/* Чип витрины под заголовком заявки (витрин несколько) */
+.detail-vitrina {
+  margin: 0;
+}
+
+/* Две строки о заявке: когда — крупнее, что — обычным */
+.req-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.req-when {
+  color: var(--ink);
+  font-size: var(--fs-16);
+  font-weight: 700;
+}
+
+.req-what {
+  color: var(--ink);
+}
+
 .facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -733,7 +759,39 @@ body {
 .request-actions {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-12);
+  gap: var(--gap-9);
+}
+
+/* Телефон: кнопки ответа прилипают к низу над нижней панелью — видны, сколько ни листай; в
+   конце страницы встают на своё место и ничего не закрывают. Белая лента во всю ширину */
+.app-phone .request-actions.is-bar .actions {
+  flex-wrap: nowrap;
+}
+
+/* Две кнопки в одну строку и на 320px: подпись при нужде переносится, кнопка не раздвигает экран.
+   Главная берёт, сколько ей нужно, вторая — по своей подписи */
+.app-phone .request-actions.is-bar .actions > button {
+  min-width: 0;
+  padding: 4px 12px;
+  line-height: 1.2;
+}
+
+.app-phone .request-actions.is-bar .actions > button:first-child {
+  flex: 1 1 auto;
+}
+
+.app-phone .request-actions.is-bar .actions > button:last-child {
+  flex: 0 1 auto;
+}
+
+.app-phone .request-actions.is-bar {
+  position: sticky;
+  bottom: calc(var(--tabbar-full) + var(--pad-b));
+  z-index: 1;
+  margin: 0 calc(-16px - var(--sa-r)) 0 calc(-16px - var(--sa-l));
+  padding: 8px calc(var(--sa-r) + 16px) 8px calc(var(--sa-l) + 16px);
+  border-top: 1px solid var(--rule);
+  background: var(--white);
 }
 
 .actions .btn {
@@ -769,6 +827,109 @@ body {
   resize: vertical;
 }
 
+/* Поле с префиксом: «+998» у номера, «@» у Telegram; рамку и кольцо фокуса держит .affix, поле внутри — без своих */
+.affix {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--hit-min);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-11);
+  background: var(--white);
+}
+
+.affix-bad {
+  border-color: var(--berry);
+}
+
+.affix.is-disabled {
+  background: var(--paper);
+}
+
+.affix-pre {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: var(--fs-15);
+  white-space: nowrap;
+}
+
+.affix-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--hit-min);
+  padding: 10px 12px 10px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.affix-input:focus-visible {
+  outline: none;
+}
+
+.affix:focus-within {
+  outline: 3px solid var(--coral);
+  outline-offset: 2px;
+}
+
+/* Карточка «Контакты» витрины: заголовок с «Изменить», телефон и Telegram, запрос на проверке */
+.contacts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.contact-rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-9) var(--gap-12);
+  margin: 0;
+}
+
+.contact-rows > div {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.contact-rows dt {
+  color: var(--muted-lt);
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+}
+
+.contact-rows dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.contact-pending {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7) var(--gap-9);
+}
+
+.contact-pending-value {
+  flex: 1 1 140px;
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.contacts-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
 /* История статусов */
 .history ol {
   display: flex;
@@ -795,6 +956,17 @@ body {
   color: var(--muted-lt);
 }
 
+/* Один-два перехода — строкой вместо списка */
+.history-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
+.history-line .history-status {
+  color: var(--ink);
+}
+
 /* История предложений: свёрнута, кнопка — как «ghost», стрелка поворачивается при открытии */
 .proposal-history {
   display: flex;
@@ -809,6 +981,13 @@ body {
 
 .disclosure .icon {
   transition: transform var(--t1) var(--ease-soft);
+}
+
+/* Кнопка-«раскрывашка» и то, что под ней (Disclosure.tsx) */
+.disclosure-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
 }
 
 .disclosure-open .icon {
@@ -1089,11 +1268,62 @@ body {
   left: 8px;
 }
 
-/* Удалить фото — под снимком во всю ширину плитки, а не поверх него. Рамка нейтральная, красным
-   — только слово: четыре красных контура подряд перебивали сами фото и главное действие экрана */
-.photo-delete {
+/* Плитка фото: у владельца кабинета — кнопка (шторка «обложка, порядок, удалить»), у сотрудника
+   площадки — просто снимок. Подпись-чип поверх снимка пропускает нажатие к плитке */
+.photo-tile {
+  display: block;
   width: 100%;
-  border-color: var(--rule);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-14);
+  background: transparent;
+  cursor: pointer;
+}
+
+.photo-tile:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.photo-chip {
+  pointer-events: none;
+}
+
+/* Удалить — маленький крестик в углу плитки: selInk на plum. Зона нажатия 44px — невидимым
+   слоем (::after), сам рисунок не растёт */
+.photo-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-999);
+  background: var(--plum);
+  color: var(--sel-ink);
+  cursor: pointer;
+}
+
+.photo-x::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+}
+
+.photo-x:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Шторка действий с фото: кнопки столбцом, удаление — последним */
+.photo-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
 }
 
 /* Отклонённое фото: причина модератора и что делать — под снимком, ink и muted на белом */
@@ -1107,10 +1337,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-.photo-decline-next {
-  color: var(--muted);
-}
-
 /* Лица на фото: предупреждение на виду всегда, акцент — полосой слева, текст — ink на lilac */
 .notice-warn {
   border-left: 4px solid var(--coral);
@@ -1121,6 +1347,17 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--gap-9);
+}
+
+/* Портфолио: «Что на фото» — подпись и сегменты «Лиц нет / Люди согласны» */
+.upload-kind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+.upload-kind .ui-radios-segmented {
+  align-self: flex-start;
 }
 
 .photo-problems ul {
@@ -1136,26 +1373,6 @@ body {
 .blockers {
   margin: 0;
   padding-left: 18px;
-}
-
-.packages {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-7);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.packages li {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--gap-5) var(--gap-12);
-}
-
-.package-price {
-  color: var(--plum);
 }
 
 .description {
@@ -1282,54 +1499,8 @@ body {
   gap: var(--gap-12);
 }
 
-.welcome-subtitle {
-  margin: 8px 0 0;
-  color: var(--plum);
-  font-size: var(--fs-15);
-}
-
 .welcome-signin .btn-ghost {
   align-self: flex-start;
-}
-
-.welcome-points {
-  display: grid;
-  gap: var(--gap-12);
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.welcome-points li {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--gap-12);
-}
-
-.welcome-icon {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-14);
-  background: var(--white);
-  color: var(--coral);
-}
-
-.welcome-point {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  color: var(--muted);
-  font-size: var(--fs-14);
-}
-
-.welcome-point-title {
-  color: var(--plum);
-  font-size: var(--fs-15);
 }
 
 /* ── разделы кабинета ─────────────────────────────────────────────────────── */
@@ -1356,9 +1527,15 @@ body {
   text-align: center;
 }
 
-/* Телефон: нижняя панель над безопасной зоной снизу */
+/* Телефон: нижняя панель над безопасной зоной снизу. Её высота без безопасной зоны задана —
+   прилипающая панель действий экрана (заявка) стоит ровно над ней */
+.app-phone {
+  --tabbar-full: 66px;
+}
+
 .tabbar {
   position: fixed;
+  min-height: calc(var(--tabbar-full) + var(--pad-b));
   right: 0;
   bottom: 0;
   left: 0;
@@ -1549,10 +1726,6 @@ body {
   font-size: var(--fs-13-5);
 }
 
-.side-foot .lang {
-  background: var(--lilac);
-}
-
 /* Заявки на компьютере: список слева (свой прокрут), карточка заявки справа */
 .inbox {
   display: grid;
@@ -1597,14 +1770,11 @@ body {
   gap: var(--gap-12);
 }
 
+/* Число заказов одновременно и «Обозначения»: строки на фоне страницы, без рамки */
 .cal-aside {
   display: flex;
   flex-direction: column;
   gap: var(--gap-9);
-  padding: 14px 16px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-18);
-  background: var(--white);
 }
 
 .dot-today {
@@ -1633,8 +1803,9 @@ body {
 
 /* ── витрины: переключатель, строка витрины, категория ─────────────────────── */
 
-/* Категория витрины — чип на белом: plum на white */
-.chip-cat {
+/* Категория витрины и подпись «обложка» у фото — чип на белом: plum на white */
+.chip-cat,
+.chip-cover {
   border: 1px solid var(--rule);
   background: var(--white);
   color: var(--plum);
@@ -1745,16 +1916,8 @@ body {
 /* ── заявка: категория, часть дня, что нужно клиенту ──────────────────────── */
 
 .rq-vitrina {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-5) var(--gap-7);
-  color: var(--ink);
+  color: var(--muted);
   font-size: var(--fs-13-5);
-  font-weight: 600;
-}
-
-.rq-vitrina-name {
   overflow-wrap: anywhere;
 }
 
@@ -1779,14 +1942,6 @@ body {
   display: block;
   margin-top: 2px;
   font-weight: 400;
-}
-
-.fact-vitrina {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--gap-5) var(--gap-9);
-  overflow-wrap: anywhere;
 }
 
 .request-details,
@@ -1909,6 +2064,7 @@ body {
 }
 
 .svc {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--gap-7);
@@ -1927,6 +2083,121 @@ body {
 
 .svc-title {
   min-width: 0;
+}
+
+/* Чип статуса и «⋯» — справа; «⋯» выступает за край, чтобы рисунок не раздувал карточку */
+.svc-side {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--gap-5);
+  margin: -4px -6px -4px 0;
+}
+
+/* Нажатие в любом месте карточки открывает правку: кнопка с названием растянута на всю
+   карточку (::after), а «⋯» и кнопка действия лежат поверх неё. Кольцо фокуса — вокруг карточки */
+.svc-open {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.svc-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-18);
+}
+
+.svc-open:focus-visible {
+  outline: none;
+}
+
+.svc-open:focus-visible::after {
+  outline: 3px solid var(--coral);
+  outline-offset: 2px;
+}
+
+.svc-open:disabled {
+  cursor: default;
+}
+
+.svc-more,
+.svc-actions {
+  position: relative;
+  z-index: 1;
+}
+
+/* «Условия» услуги: минимальный заказ, срок и «что входит» — под одной кнопкой */
+.svc-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+/* Цена в сумах: «сум» внутри поля справа, разряды — по мере набора */
+.money {
+  position: relative;
+  display: block;
+}
+
+.money-input {
+  padding-right: 56px;
+  font-variant-numeric: tabular-nums;
+}
+
+.money-post {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* Шторка «⋯»: действия строками (как «Ещё» в панели оператора) */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--r-14);
+  background: var(--white);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-15);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-danger {
+  color: var(--berry);
+}
+
+.sheet-done {
+  width: 100%;
 }
 
 .svc-name {
@@ -1999,10 +2270,9 @@ body {
   font-weight: 700;
 }
 
-/* Кнопка — по своей подписи («Снять с витрины» не ломается на две строки), лишнее место
-   делят поровну; не влезли — следующей строкой */
+/* Одно главное действие карточки — кнопка по своей подписи */
 .svc-actions .btn {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
 }
 
 .svc-type-fixed {
@@ -2140,9 +2410,55 @@ body {
   flex: none;
 }
 
-/* Цена «от» — с кнопкой к услугам под пояснением */
-.fact-link {
-  margin-top: 8px;
+/* Цена «от»: значение и кнопка к услугам справа от подписи; не помещаются — друг под другом */
+.detail-rows .price-row dd {
+  flex: 1 1 0;
+  min-width: 12ch;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-5) var(--gap-9);
+  text-align: right;
+}
+
+/* ── витрина: карточки-группы и окна «Изменить» ───────────────────────────── */
+
+/* Заголовок карточки: название, метка «на проверке», «Изменить» справа (узко — на новой строке) */
+.group-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5) var(--gap-9);
+}
+
+.group-head .panel-title {
+  margin-right: auto;
+}
+
+.group-edit {
+  flex: none;
+}
+
+/* Значение строки карточки — не жирным: описание длинное */
+.detail-rows .description-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  font-weight: 400;
+}
+
+.proposed-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+/* Гостей «от» и «до»: рядом, когда окно шире; на узком телефоне — друг под другом */
+.cap-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--gap-9);
 }
 
 /* Число рядом с заголовком: «Услуги витрины 3» */
@@ -2177,25 +2493,43 @@ body {
   margin: 0;
 }
 
-/* Две витрины — обе пилюли на всю ширину, без прокрутки вбок: обе видны сразу */
-.vitrina-pills-two .vitrina-pill {
-  flex: 1 1 0;
-  min-width: 0;
+/* До четырёх витрин — пилюли с переносом, без прокрутки вбок: все видны сразу, по одной строке
+   названия (44px), рядом сколько влезет. Категория — только диктору: она в имени кнопки, а на
+   экране её называет сам раздел */
+.vitrina-pills {
+  flex-wrap: wrap;
+  overflow: visible;
 }
 
-.vitrina-pills-two .vitrina-name,
-.vitrina-pills-two .vitrina-cat {
+.vitrina-pills .vitrina-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 4px 12px;
+}
+
+.vitrina-pills .vitrina-name {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Три витрины и больше — список выбора с подписью: о третьей витрине теперь видно сразу */
+.vitrina-pills .vitrina-cat {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Больше четырёх — список выбора без подписи на экране */
 .vitrina-select {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-5);
 }
 
 .side-vitrina .vitrina-cat:empty::before {
@@ -2380,9 +2714,26 @@ body {
 .capacity {
   display: flex;
   flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.capacity-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+}
+
+.capacity-text {
+  margin: 0;
+  color: var(--ink);
+}
+
+.capacity-edit {
+  display: flex;
+  flex-direction: column;
   gap: var(--gap-7);
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--rule);
 }
 
 .capacity-row {
@@ -2415,6 +2766,10 @@ body {
 .lead-days .icon {
   margin-top: 2px;
   color: var(--coral);
+}
+
+.lead-panel > .btn {
+  align-self: flex-start;
 }
 
 /* Наведение — только там, где есть курсор (ловушка №6) */
@@ -2518,10 +2873,6 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .welcome-points {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   /* Несколько вариантов (команда, начинки) — столбцами, а не длинной лентой */
   .attr-checks {
     display: grid;
@@ -2533,14 +2884,9 @@ body {
     min-height: 56px;
   }
 
-  /* Кнопка начала правок — по содержимому, а не на всю ширину раздела */
-  .proposal-start {
-    align-self: flex-start;
-  }
-
-  /* Действия услуги — по содержимому: две кнопки на пол-экрана каждая перебивали саму услугу */
-  .svc-actions .btn {
-    flex: 0 0 auto;
+  /* Окно «Изменить» шире обычного диалога: два описания, адреса, поля витрины */
+  .ui-dialog.sheet-wide {
+    width: 620px;
   }
 
   /* Поля витрины в правке — парами (число, список, да/нет); списки, группы и тексты — во всю
@@ -2611,11 +2957,8 @@ body {
 
   .welcome {
     display: grid;
-    grid-template-areas:
-      "intro signin"
-      "points signin";
+    grid-template-areas: "intro signin";
     grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr);
-    grid-template-rows: auto 1fr;
     align-items: start;
     gap: 24px 48px;
     max-width: 1040px;
@@ -2633,11 +2976,6 @@ body {
   .welcome-signin {
     grid-area: signin;
     padding: 24px;
-  }
-
-  .welcome-points {
-    grid-area: points;
-    gap: 20px 24px;
   }
 }
 

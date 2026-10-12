@@ -7,6 +7,9 @@
                отмечена или мест не осталось; день — когда занят целиком или все части;
      · slot  — как day (студия): время и часы съёмки приходят в заявке;
      · lead  — календаря нет (цветы, торты, подарки): срок заказа — LeadTime.
+   «Заказов одновременно» — справа в шапке блока (headerExtra: число с «−» и «+», его правка — до
+   «Сохранить» формы витрины); сохранили — месяц перечитывается. Объяснений над сеткой нет: нажатие
+   на день и «Несколько дней» говорят сами, подсказка — только тому, кто дни не меняет.
    Прошедшие дни не меняются. «Сегодня» — по Ташкенту. Календарь ведут и вендор, и команда:
    правка уходит с версией календаря из последнего ответа. Его успели изменить — сервер
    отвечает calendar_conflict: месяц перечитывается, сотрудник отмечает ещё раз. Правки идут
@@ -30,7 +33,7 @@ import type {
 } from "@bayramm/shared/api/staff";
 import { type CategoryConfig, DAY_PARTS, readAttributes } from "@bayramm/shared/categories";
 import { ConfirmSheet, Tooltip, UiIcon } from "@bayramm/ui/react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
 import { partWindow } from "../categories";
 import { usePhone } from "../layout";
@@ -153,7 +156,19 @@ export function freeCount(days: readonly string[], busy: readonly BusyDay[]): Fr
   };
 }
 
-export function Calendar({ listingId, category }: { listingId: string; category: CategoryConfig }) {
+export function Calendar({
+  listingId,
+  category,
+  capacity,
+  headerExtra,
+}: {
+  listingId: string;
+  category: CategoryConfig;
+  /** Заказов одновременно у витрины: сохранили новое — месяц перечитывается (части дня считаются по нему) */
+  capacity?: number;
+  /** Справа в шапке блока: «Заказов одновременно» */
+  headerExtra?: ReactNode;
+}) {
   const { api } = useSession();
   const can = useCan();
   const today = tashkentToday();
@@ -191,12 +206,13 @@ export function Calendar({ listingId, category }: { listingId: string; category:
   const editable = can("listings.write");
   const parts = category.availability === "parts";
   const selected = range ? rangeDays(range.start, range.end ?? range.start, today) : [];
-  const hint =
-    category.availability === "parts"
-      ? t.availabilityHints.parts
-      : category.availability === "slot"
-        ? t.availabilityHints.slot
-        : t.availabilityHints.day;
+  // Заказов одновременно сохранили — части дня и занятость считаются по новому числу
+  const lastCapacity = useRef(capacity);
+  useEffect(() => {
+    if (lastCapacity.current === capacity) return;
+    lastCapacity.current = capacity;
+    reload();
+  }, [capacity, reload]);
 
   // Сообщение об ошибке — про месяц, где отмечали: в другом месяце оно только путает
   const goMonth = (delta: number) => {
@@ -302,9 +318,12 @@ export function Calendar({ listingId, category }: { listingId: string; category:
 
   return (
     <section className="panel cal-panel" aria-labelledby="calendar-title">
-      <h2 id="calendar-title">{t.availability}</h2>
-      {/* Без права правки дни неактивны — и подсказка не зовёт на них нажимать */}
-      <p className="muted small">{editable ? hint : t.availabilityReadOnly}</p>
+      <div className="panel-head">
+        <h2 id="calendar-title">{t.availability}</h2>
+        {headerExtra}
+      </div>
+      {/* Без права правки дни неактивны — об этом, и только об этом, строка */}
+      {editable ? null : <p className="muted small">{t.availabilityReadOnly}</p>}
       <div className="cal-head">
         <button type="button" className="ui-icon-btn" onClick={() => goMonth(-1)} aria-label={t.prevMonth}>
           <UiIcon name="prev" size={17} />
@@ -346,7 +365,6 @@ export function Calendar({ listingId, category }: { listingId: string; category:
           const openedState = opened && !stale ? dayState(availability, opened) : null;
           return (
             <>
-              {parts ? <p className="cal-capacity">{t.capacityNow(availability.parallelCapacity)}</p> : null}
               {stale ? (
                 <p className="visually-hidden" role="status">
                   {t.calLoading}
@@ -535,7 +553,6 @@ export function LeadTime({ listing, category }: { listing: ListingDetail; catego
   return (
     <section className="panel" aria-labelledby="lead-title">
       <h2 id="lead-title">{t.leadTitle}</h2>
-      <p className="muted small">{t.leadHint}</p>
       <p className={days === null ? "notice notice-warn" : "lead-days"}>
         {days === null ? t.leadNotSet : t.leadDaysValue(days)}
       </p>

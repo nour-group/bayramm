@@ -5,6 +5,7 @@
    перезагрузку, но не закрытие вкладки. sessionStorage недоступен (старый вебвью,
    запрет) — токен только в памяти, до перезагрузки. */
 
+import type { Dictionaries } from "@bayramm/shared/api";
 import type { Me } from "@bayramm/shared/api/me";
 import type {
   DayPart,
@@ -15,9 +16,14 @@ import type {
   VendorCalendar,
   VendorCalendarChange,
   VendorCapacityChange,
+  VendorContactsInput,
+  VendorContactsSave,
   VendorListing,
+  VendorListingPatch,
+  VendorListingSaved,
   VendorMe,
   VendorPhoto,
+  VendorPhotoList,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPage,
@@ -211,6 +217,32 @@ export const api = {
     empty(`/vendor/listings/${encodeURIComponent(listingId)}/photos/${encodeURIComponent(photoId)}`, {
       method: "DELETE",
     }),
+  /** Порядок одобренных фото (все, обложка первой) — сразу, без проверки; владелец кабинета */
+  reorderPhotos: (listingId: string, ids: readonly string[]) =>
+    json<VendorPhotoList>(`${listingPath(listingId)}/photos/order`, {
+      method: "PUT",
+      body: JSON.stringify({ ids }),
+    }),
+  /** Обложка — одобренное фото: оно же первое в порядке */
+  setCoverPhoto: (listingId: string, photoId: string) =>
+    json<VendorPhotoList>(`${listingPath(listingId)}/photos/${encodeURIComponent(photoId)}/cover`, {
+      method: "POST",
+    }),
+  /** С проверки обратно в черновик: в ответе витрина уже черновик */
+  withdrawListing: (id: string) =>
+    json<VendorListing>(`/vendor/listings/${encodeURIComponent(id)}/withdraw`, { method: "POST" }),
+  /**
+   * Публичные телефон и Telegram: витрина вне сайта — сохраняются сразу, на проверке и на сайте —
+   * запросом команде (sentForModeration); те же значения — 422 no_changes
+   */
+  saveContacts: (listingId: string, contacts: VendorContactsInput) =>
+    json<VendorContactsSave>(`${listingPath(listingId)}/contacts`, {
+      method: "PUT",
+      body: JSON.stringify(contacts),
+    }),
+  /** Отозвать ждущий запрос на смену контактов */
+  withdrawContactChange: (listingId: string) =>
+    json<VendorListing>(`${listingPath(listingId)}/contact-change/withdraw`, { method: "POST" }),
 
   calendar: (listingId: string, month: string) =>
     json<VendorCalendar>(`/vendor/listings/${encodeURIComponent(listingId)}/calendar?month=${month}`),
@@ -254,6 +286,15 @@ export const api = {
     json<ListingService>(`${servicePath(listingId, serviceId)}/withdraw`, { method: "POST" }),
   deleteService: (listingId: string, serviceId: string) =>
     empty(servicePath(listingId, serviceId), { method: "DELETE" }),
+
+  /**
+   * Сохранить изменения витрины: сразу, пока её нет на сайте, иначе предложением команде
+   * (sentForModeration — какие поля ушли предложением). Только владелец кабинета
+   */
+  saveListing: (listingId: string, patch: VendorListingPatch) =>
+    json<VendorListingSaved>(listingPath(listingId), { method: "PATCH", body: JSON.stringify(patch) }),
+  /** Справочники (районы по городам): открытый адрес API, как у сайта */
+  dictionaries: () => json<Dictionaries>("/dictionaries"),
 
   revisions: (listingId: string) =>
     json<VendorRevisionList>(`/vendor/listings/${encodeURIComponent(listingId)}/revisions`),

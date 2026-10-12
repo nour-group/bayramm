@@ -2,23 +2,35 @@
    режиму категории, поля, история. Любая правка и действие несут version — если витрину
    успели изменить, сервер отвечает version_conflict, и форма просит обновить страницу.
    Предложение изменений, которое ждёт решения модератора (от вендора или менеджера), —
-   отметкой вверху со ссылкой на него. Новая витрина вендору — короткая форма: категория и
+   одной строкой со ссылкой на него. Новая витрина вендору — короткая форма: категория и
    название, остальное — на странице витрины. Что спрашивать, решает категория
    (@bayramm/shared/categories).
 
-   Удалить витрину можно, только пока по ней не было заявок и она не на проверке и не в
-   каталоге: блок «Удалить витрину» внизу — с причиной, если нельзя.
+   Порядок страницы — порядок работы, один на телефоне и компьютере:
+     1. строка «категория · статус · вендор» и «…» (на компьютере — и главное действие);
+     2. один блок «что дальше» — «Что осталось» (пункты с «Перейти», проверка вендора —
+        одной строкой «n/4» со ссылкой на вендора), «Ждёт решения» у витрины на проверке;
+     3. «Основное» с описаниями, 4. «Фото», 5. «Услуги», 6. «Занятость» («Заказов
+        одновременно» — в её шапке), 7. «Данные витрины» с видео, 8. «Контакты»;
+     9. «Служебное» (свёрнуто): история (три записи), категория (пока можно сменить), удалить
+        (пока можно).
+   На компьютере соседние блоки встают парами в ряд — читать их слева направо и сверху вниз
+   по-прежнему тот же порядок. Форма — одна на страницу (ListingForm.tsx: части по порядку, одно
+   «Сохранить»).
 
-   Каждое сказано один раз: категория — плашкой в шапке и блоком «Категория» (сменить),
-   телефон и Telegram для клиентов — блоком формы («Показать» и поля для новых значений вместе). У каждого пункта
-   «чего не хватает» — переход туда, где он заполняется: услуги, фото, поля формы; проверка
-   вендора (договор, СТИР…) — одной строкой со ссылкой на страницу вендора.
+   «…» в шапке: открыть на сайте (опубликованную), заявки витрины, второстепенные действия со
+   статусом (вернуть в черновик, отклонить, приостановить) и «Удалить витрину» — когда нельзя,
+   пункт недоступен и говорит почему. Главное действие — «Отправить на проверку» или
+   «Опубликовать»: пока чего-то не хватает, в подписи — сколько осталось, а нажатие ведёт к
+   блоку «Что осталось», а не открывает шторку; у опубликованной главного действия нет, и панели
+   внизу телефона тоже.
+
+   Удалить витрину можно, только пока по ней не было заявок и она не на проверке и не в
+   каталоге.
 
    Где витрина: на компьютере — путь над заголовком (вендоры → вендор), на телефоне — вендор
-   ссылкой в шапке страницы и оглавление блоков, прилипшее под шапкой. Опубликованную — открыть
-   на сайте; её заявки — списком заявок с фильтром витрины. ?focus=photos (из очереди фото) —
-   сразу к блоку. Опубликовать и отправить на проверку, пока чего-то не хватает, — шторка
-   перечисляет, чего, вместо отказа сервера. */
+   ссылкой в шапке страницы и оглавление блоков, прилипшее под шапкой. ?focus=photos (из очереди
+   фото) — сразу к блоку. */
 
 import type {
   ListingAction,
@@ -38,8 +50,16 @@ import {
   categoryConfig,
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
-import { ConfirmSheet, Select } from "@bayramm/ui/react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ConfirmSheet, Select, UiIcon } from "@bayramm/ui/react";
+import {
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { type Failure, useAuthMethods, useCan, useLoad, useSession } from "../api";
 import { CategoryChip, categoryName, categoryOptions } from "../categories";
 import { formatMoment, vendorLabel } from "../format";
@@ -49,7 +69,6 @@ import { readQuery } from "../router";
 import { t } from "../texts";
 import {
   ActionBar,
-  Blockers,
   busyLabel,
   deleteFailureText,
   ErrorText,
@@ -57,6 +76,7 @@ import {
   focusSection,
   Link,
   LoadedView,
+  type MenuAction,
   OverflowMenu,
   PhoneSheet,
   publishBlockers,
@@ -67,7 +87,16 @@ import {
 } from "../ui";
 import { useUnsaved } from "../unsaved";
 import { Calendar, LeadTime } from "./Calendar";
-import { ListingForm } from "./ListingForm";
+import { ContactChange } from "./ContactChange";
+import {
+  CapacityControl,
+  ContactsSection,
+  DataSection,
+  EditorBar,
+  hasDataSection,
+  ListingEditor,
+  MainSection,
+} from "./ListingForm";
 import { NextInQueue } from "./NextInQueue";
 import { Photos } from "./Photos";
 import { Services } from "./Services";
@@ -231,6 +260,66 @@ function ListingView({ listing, dictionaries, onChange, onReload }: ListingViewP
   );
 }
 
+// ── что осталось до проверки и публикации ──────────────────────────────────
+
+/** Пункты проверки вендора: их отмечают на странице вендора, а не витрины */
+const VENDOR_CHECKS: ReadonlySet<PublishBlocker> = new Set(["contract", "stir", "contacts", "pd_consent"]);
+
+/** Где на странице витрины заполняется пункт «чего не хватает»: заголовок блока */
+const BLOCKER_TARGET: Partial<Record<PublishBlocker, string>> = {
+  price: "services-title",
+  packages: "services-title",
+  photos: "photos-title",
+  descriptions: "form-texts-title",
+  attributes: "form-attrs-title",
+  capacity: "form-attrs-title",
+  district: "form-main-title",
+  phone: "form-phone-title",
+};
+
+/** Заголовок блока «что дальше»: сюда ведёт главное действие, пока чего-то не хватает */
+const NEXT_TITLE = "next-title";
+
+/** Главное действие — вперёд по пути к публикации; остальные — в «…» */
+const PRIMARY: readonly ListingAction[] = ["publish", "submit"];
+
+interface Remaining {
+  /** Пункты самой витрины (без проверки вендора), по порядку */
+  readonly own: readonly PublishBlocker[];
+  /** Пункты проверки вендора, что ещё не отмечены */
+  readonly vendor: readonly PublishBlocker[];
+  /** Сколько осталось до «Отправить на проверку» */
+  readonly submit: number;
+  /** Сколько осталось до «Опубликовать»: пункты витрины и вся проверка вендора — за один */
+  readonly publish: number;
+}
+
+/**
+ * Что осталось: у неопубликованной — для проверки и сверх неё для публикации, у витрины на
+ * проверке или приостановленной — для публикации (готовые фото, ждущие решения, не мешают: их
+ * одобряет сама публикация); у опубликованной — ничего
+ */
+function remainingOf(listing: ListingDetail, approvable: number, minPhotos: number): Remaining {
+  const none: Remaining = { own: [], vendor: [], submit: 0, publish: 0 };
+  if (listing.status === "active") return none;
+  const forPublish = publishBlockers(listing.blockers.active, approvable, minPhotos);
+  const ownPublish = forPublish.filter((code) => !VENDOR_CHECKS.has(code));
+  const vendor = forPublish.filter((code) => VENDOR_CHECKS.has(code));
+  const beforeReview =
+    listing.status === "lead" || listing.status === "draft" || listing.status === "rejected";
+  const own = beforeReview
+    ? [...listing.blockers.review, ...ownPublish.filter((code) => !listing.blockers.review.includes(code))]
+    : ownPublish;
+  return {
+    own,
+    vendor,
+    submit: listing.blockers.review.length,
+    publish: ownPublish.length + (vendor.length > 0 ? 1 : 0),
+  };
+}
+
+// ── страница ───────────────────────────────────────────────────────────────
+
 function CategoryListing({
   listing,
   category,
@@ -240,11 +329,15 @@ function CategoryListing({
 }: ListingViewProps & { category: CategoryConfig }) {
   const { api } = useSession();
   const can = useCan();
+  const navigate = useNavigate();
   // Правка формы не сохранена — на телефоне внизу «Сохранить», а не смена статуса
   const [dirty, setDirty] = useState(false);
   // Модератор решил по витрине на проверке — путь к следующей в очереди
   const [decided, setDecided] = useState(false);
-  const desktop = useLayout() === "desktop";
+  // Удалить — из «…» и из «Служебного»: подтверждение одно
+  const [deleting, setDeleting] = useState(false);
+  const layout = useLayout();
+  const desktop = layout === "desktop";
   const phone = usePhone();
   const methods = useAuthMethods();
   useEntityTitle(listing.name);
@@ -274,140 +367,162 @@ function CategoryListing({
     [api, listing.id],
   );
 
-  const showReview = listing.status === "lead" || listing.status === "draft" || listing.status === "rejected";
   // Минимум фото — у категории (не меньше трёх) и в настройках платформы: больший из двух
   const minPhotos = Math.max(dictionaries?.settings.minPhotos ?? 3, category.minPhotos);
   const approvable = listing.photos.filter((photo) => photo.moderation !== "declined").length;
-  const activeBlockers = publishBlockers(listing.blockers.active, approvable, minPhotos);
+  const left = remainingOf(listing, approvable, minPhotos);
   // Сотрудник без права решать по правкам меняет опубликованную карточку через модерацию
   const moderated = listing.status === "active" && !can("revisions.moderate");
-  // Блок «Данные витрины» есть у формы, если у категории есть поля или вместимость
-  const showAttributes = category.attributes.length > 0 || category.listingFields.includes("guest_capacity");
+  // Блок «Данные витрины» есть у формы, если у категории есть поля, вместимость или видео
+  const showAttributes = hasDataSection(category);
   // Опубликованная — открыть так, как её видит клиент (адрес сайта — из GET /auth/methods)
   const siteUrl =
     listing.status === "active" && methods
       ? `${methods.apps.web}/venue/${encodeURIComponent(listing.slug)}`
       : null;
 
+  const status = useStatusActions({
+    listing,
+    onChange,
+    onDecided: () => setDecided(true),
+    left,
+  });
+  const blocker = listing.deleteBlocker;
+  const menu: MenuAction[] = [
+    ...(siteUrl ? [{ key: "site", label: t.listingOnSite, href: siteUrl, run: () => {} }] : []),
+    ...(can("requests.read")
+      ? [
+          {
+            key: "requests",
+            label: t.listingRequests,
+            run: () => navigate({ name: "requests", query: { listingId: listing.id } }),
+          },
+        ]
+      : []),
+    ...status.menu,
+    ...(can("listings.delete")
+      ? [
+          {
+            key: "delete",
+            label: t.listingDelete,
+            danger: true,
+            disabled: blocker !== null,
+            ...(blocker ? { hint: t.listingDeleteBlocked[blocker] } : {}),
+            run: () => setDeleting(true),
+          },
+        ]
+      : []),
+  ];
+
+  // Телефон: главное действие — в панели внизу, пока форма не сохранена (там «Сохранить»);
+  // шире — кнопкой в шапке
+  const primary = status.primaryButton;
+
   return (
-    <div className="stack">
-      <div className="listing-head">
-        {/* На компьютере вендор — в пути над заголовком; на телефоне — здесь */}
-        {desktop ? null : (
-          <p className="sub">
+    <div className="stack listing-page">
+      <div className="listing-top">
+        <div className="listing-meta">
+          <CategoryChip code={listing.categoryCode} />
+          <StatusPill status={listing.status} />
+          {/* На компьютере вендор — в пути над заголовком; на телефоне и планшете — здесь */}
+          {desktop ? null : (
             <Link to={{ name: "vendor", id: listing.vendor.id }}>{vendorLabel(listing.vendor)}</Link>
-          </p>
-        )}
-        <p>
-          <CategoryChip code={listing.categoryCode} /> <StatusPill status={listing.status} />
-          {listing.statusReason && (
-            <span className="reason">
-              {" "}
-              {t.statusReason}: {listing.statusReason}
-            </span>
           )}
-        </p>
-        {t.statusHints[listing.status] ? (
-          <p className="muted small">{t.statusHints[listing.status]}</p>
-        ) : null}
-        {siteUrl || can("requests.read") ? (
-          <p className="head-links">
-            {siteUrl ? (
-              <a className="btn btn-sm" href={siteUrl} target="_blank" rel="noopener noreferrer">
-                {t.listingOnSite}
-                <span className="visually-hidden"> ({t.opensNewTab})</span>
-              </a>
-            ) : null}
-            {can("requests.read") ? (
-              <Link to={{ name: "requests", query: { listingId: listing.id } }} className="btn btn-sm">
-                {t.listingRequests}
-              </Link>
-            ) : null}
-          </p>
-        ) : null}
-      </div>
-
-      {listing.pendingRevision && <PendingRevisionNotice revision={listing.pendingRevision} />}
-
-      <StatusActions
-        listing={listing}
-        onChange={onChange}
-        hidden={dirty}
-        onDecided={() => setDecided(true)}
-        blockers={{ publish: activeBlockers, submit: listing.blockers.review }}
-      />
-      {decided && listing.status !== "review" ? <NextInQueue queue="review" currentId={listing.id} /> : null}
-
-      {showReview && (
-        <ListingBlockers
-          title={t.blockersReview}
-          codes={listing.blockers.review}
-          listing={listing}
-          category={category}
-          photos={{ count: approvable, min: minPhotos }}
-          showAttributes={showAttributes}
-        />
-      )}
-      {listing.status !== "active" && (
-        <ListingBlockers
-          listing={listing}
-          category={category}
-          photos={{ count: approvable, min: minPhotos }}
-          showAttributes={showAttributes}
-          title={t.blockersActive}
-          // До проверки — только то, чего не хватит сверх уже перечисленного
-          codes={
-            showReview
-              ? activeBlockers.filter((code) => !listing.blockers.review.includes(code))
-              : activeBlockers
-          }
-        />
-      )}
-      {(listing.status === "review" || listing.status === "suspended") && activeBlockers.length === 0 && (
-        <p className="notice notice-good">{t.readyToPublish}</p>
-      )}
-
-      {/* Оглавление — перед блоками, которые оно перечисляет: прилипает, когда до них дошли */}
-      {phone ? <SectionIndex category={category} showAttributes={showAttributes} /> : null}
-      <div className="columns">
-        <div className="stack">
-          <Photos
-            listingId={listing.id}
-            photoPolicy={category.photoPolicy}
-            photos={listing.photos}
-            minPhotos={minPhotos}
-            maxPhotos={dictionaries?.settings.maxPhotos ?? 10}
-            onChanged={onReload}
-          />
-          <Services listing={listing} category={category} onChanged={onReload} />
-          {category.availability === "lead" ? (
-            <LeadTime listing={listing} category={category} />
-          ) : (
-            <Calendar key={category.code} listingId={listing.id} category={category} />
-          )}
-          <CategoryPanel listing={listing} onChange={onChange} />
-          <History listing={listing} />
-          <DeleteListing listing={listing} onReload={onReload} />
         </div>
-        <ListingForm
-          key={`${listing.id}:${listing.categoryCode}`}
-          listing={listing}
-          category={category}
-          dictionaries={dictionaries}
-          onSubmit={save}
-          readOnly={!can("listings.write")}
-          moderated={moderated}
-          onDirtyChange={setDirty}
-          contacts={{ hasPhone: listing.hasPhone, hasTelegram: listing.hasTelegram, load: loadContacts }}
-        />
+        <div className="listing-top-actions">
+          {phone ? null : primary}
+          <OverflowMenu
+            title={t.actionsTitle}
+            context={t.listingActionsContext}
+            className="btn btn-icon"
+            buttonRef={status.moreRef}
+            actions={menu}
+          />
+        </div>
       </div>
+      {listing.statusReason ? (
+        <p className="reason">
+          {t.statusReason}: {listing.statusReason}
+        </p>
+      ) : null}
+      {status.sheet}
+      {status.failureText}
+
+      {listing.pendingRevision ? <PendingRevisionRow revision={listing.pendingRevision} /> : null}
+      <ListingEditor
+        key={`${listing.id}:${listing.categoryCode}`}
+        listing={listing}
+        category={category}
+        dictionaries={dictionaries}
+        onSubmit={save}
+        readOnly={!can("listings.write")}
+        moderated={moderated}
+        onDirtyChange={setDirty}
+        contacts={{ hasPhone: listing.hasPhone, hasTelegram: listing.hasTelegram, load: loadContacts }}
+      >
+        {/* Две колонки на компьютере читаются так же, как одна на телефоне: сначала левая, потом правая */}
+        <div className="listing-cols">
+          <div className="listing-col">
+            <NextStep
+              listing={listing}
+              category={category}
+              left={left}
+              photos={{ count: approvable, min: minPhotos }}
+              showAttributes={showAttributes}
+            />
+            {decided && listing.status !== "review" ? (
+              <NextInQueue queue="review" currentId={listing.id} />
+            ) : null}
+            {/* Оглавление — перед блоками, которые оно перечисляет: прилипает, когда до них дошли */}
+            {phone ? <SectionIndex category={category} showAttributes={showAttributes} /> : null}
+            <MainSection />
+            <Photos
+              listingId={listing.id}
+              photoPolicy={category.photoPolicy}
+              photos={listing.photos}
+              minPhotos={minPhotos}
+              maxPhotos={dictionaries?.settings.maxPhotos ?? 10}
+              onChanged={onReload}
+            />
+            <Services listing={listing} category={category} onChanged={onReload} />
+          </div>
+          <div className="listing-col">
+            {category.availability === "lead" ? (
+              <LeadTime listing={listing} category={category} />
+            ) : (
+              <Calendar
+                key={category.code}
+                listingId={listing.id}
+                category={category}
+                capacity={listing.parallelCapacity}
+                headerExtra={<CapacityControl />}
+              />
+            )}
+            <DataSection />
+            {/* Партнёр просит сменить контакты витрины на проверке или на сайте (блок сам прячется, если просьбы нет) */}
+            <ContactChange listingId={listing.id} onDecided={onReload} />
+            <ContactsSection />
+          </div>
+        </div>
+        <ServiceBlock listing={listing} onChange={onChange} onDelete={() => setDeleting(true)} />
+        <EditorBar />
+      </ListingEditor>
+      {phone && primary && !dirty ? (
+        <ActionBar label={t.listingFields.status ?? ""}>{primary}</ActionBar>
+      ) : null}
+      <DeleteListing
+        listing={listing}
+        open={deleting}
+        onClose={() => setDeleting(false)}
+        onReload={onReload}
+      />
     </div>
   );
 }
 
 // ── оглавление и переход к блоку ───────────────────────────────────────────
 
-/** Блоки страницы витрины и заголовки, к которым ведёт оглавление и ?focus= */
+/** Блоки страницы витрины и заголовки, к которым ведёт оглавление, ?focus= и «Перейти» */
 const SECTIONS = {
   photos: "photos-title",
   services: "services-title",
@@ -419,6 +534,9 @@ const SECTIONS = {
 } as const;
 
 type SectionKey = keyof typeof SECTIONS;
+
+/** Что в оглавлении на телефоне: основное — первый блок страницы, служебное — в конце, их нет */
+const INDEX: readonly SectionKey[] = ["photos", "services", "calendar", "attrs", "phone"];
 
 const isSection = (value: string | undefined): value is SectionKey =>
   value !== undefined && Object.hasOwn(SECTIONS, value);
@@ -442,7 +560,7 @@ function useFocusParam() {
  * заказа вместо календаря — «Занятость» ведёт к сроку)
  */
 function SectionIndex({ category, showAttributes }: { category: CategoryConfig; showAttributes: boolean }) {
-  const keys = (Object.keys(SECTIONS) as SectionKey[]).filter((key) => key !== "attrs" || showAttributes);
+  const keys = INDEX.filter((key) => key !== "attrs" || showAttributes);
   const target = (key: SectionKey) =>
     key === "calendar" && category.availability === "lead" ? "lead-title" : SECTIONS[key];
   return (
@@ -460,48 +578,42 @@ function SectionIndex({ category, showAttributes }: { category: CategoryConfig; 
   );
 }
 
-// ── чего не хватает ────────────────────────────────────────────────────────
-
-/** Где на странице витрины заполняется пункт «чего не хватает»: заголовок блока */
-const BLOCKER_TARGET: Partial<Record<PublishBlocker, string>> = {
-  price: "services-title",
-  packages: "services-title",
-  photos: "photos-title",
-  descriptions: "form-texts-title",
-  attributes: "form-attrs-title",
-  capacity: "form-attrs-title",
-  district: "form-main-title",
-  phone: "form-phone-title",
-};
-
-/** Пункты проверки вендора: их отмечают на странице вендора, а не витрины */
-const VENDOR_CHECKS: ReadonlySet<PublishBlocker> = new Set(["contract", "stir", "contacts", "pd_consent"]);
+// ── что дальше ─────────────────────────────────────────────────────────────
 
 /**
- * Чего не хватает для проверки или публикации — словами, с подробностями по категории: какие
- * данные витрины не заполнены, каких обязательных услуг нет. У каждого пункта — переход к
- * блоку, где он заполняется; проверка вендора — одной строкой со ссылкой на вендора
+ * Один блок «что дальше»: «Что осталось» — пункты с переходом к блоку, где каждый заполняется
+ * (с подробностями по категории: какие данные не заполнены, каких обязательных услуг нет), проверка
+ * вендора — одной строкой «n/4» со ссылкой на вендора; «Ждёт решения» — у витрины на проверке,
+ * когда осталось только решить. У опубликованной блока нет
  */
-function ListingBlockers({
-  title,
-  codes,
+function NextStep({
   listing,
   category,
+  left,
   photos,
   showAttributes,
 }: {
-  title: string;
-  codes: readonly PublishBlocker[];
   listing: ListingDetail;
   category: CategoryConfig;
+  left: Remaining;
   /** Фото, которые можно одобрить, и минимум категории */
   photos: { readonly count: number; readonly min: number };
-  /** У формы есть блок «Данные витрины» (поля категории или вместимость) */
+  /** У формы есть блок «Данные витрины» (поля категории, вместимость или видео) */
   showAttributes: boolean;
 }) {
-  if (codes.length === 0) return null;
-  const own = codes.filter((code) => !VENDOR_CHECKS.has(code));
-  const checks = codes.filter((code) => VENDOR_CHECKS.has(code));
+  if (left.own.length === 0 && left.vendor.length === 0) {
+    if (listing.status !== "review") return null;
+    return (
+      <section className="notice notice-warn next-step" aria-labelledby={NEXT_TITLE}>
+        <h2 id={NEXT_TITLE} className="notice-title" tabIndex={-1}>
+          {t.listingWaits}
+        </h2>
+        {listing.submittedAt ? (
+          <p className="sub">{t.listingSubmitted(formatMoment(listing.submittedAt))}</p>
+        ) : null}
+      </section>
+    );
+  }
   const present = new Set(
     listing.services.filter((s) => s.status === "active" || s.status === "review").map((s) => s.type),
   );
@@ -521,10 +633,12 @@ function ListingBlockers({
     return target === "form-attrs-title" && !showAttributes ? undefined : target;
   };
   return (
-    <div className="notice notice-warn">
-      <p className="notice-title">{title}</p>
+    <section className="notice notice-warn next-step" aria-labelledby={NEXT_TITLE}>
+      <h2 id={NEXT_TITLE} className="notice-title" tabIndex={-1}>
+        {t.listingLeft}
+      </h2>
       <ul className="blockers blockers-go">
-        {own.map((code) => {
+        {left.own.map((code) => {
           const more = detail(code);
           const label = t.blockers[code] ?? code;
           const target = targetOf(code);
@@ -543,19 +657,96 @@ function ListingBlockers({
             </li>
           );
         })}
-        {checks.length > 0 ? (
+        {left.vendor.length > 0 ? (
           <li>
-            <span className="blocker-text">
-              {t.checklist}
-              <span className="sub">{checks.map((code) => t.blockers[code] ?? code).join(", ")}</span>
-            </span>
+            <span className="blocker-text">{t.vendorChecksDone(4 - left.vendor.length, 4)}</span>
             <Link to={{ name: "vendor", id: listing.vendor.id }} className="btn btn-sm">
-              {t.toChecklist}
+              {t.toVendor}
             </Link>
           </li>
         ) : null}
       </ul>
-    </div>
+    </section>
+  );
+}
+
+// ── служебное: история, категория, удалить ─────────────────────────────────
+
+/** Сколько записей истории видно сразу */
+const HISTORY_SHOWN = 3;
+
+/**
+ * «Служебное» — свёрнуто: нужно редко. История статусов (последние записи, остальные — по
+ * кнопке), смена категории (пока услуг нет), удаление (пока можно). ?focus=history раскрывает
+ */
+function ServiceBlock({
+  listing,
+  onChange,
+  onDelete,
+}: {
+  listing: ListingDetail;
+  onChange: (l: ListingDetail) => void;
+  onDelete: () => void;
+}) {
+  const can = useCan();
+  const [open, setOpen] = useState(() => readQuery(["focus"] as const).focus === "history");
+  const [all, setAll] = useState(false);
+  const bodyId = "service-body";
+  const canDelete = can("listings.delete") && listing.deleteBlocker === null;
+  const entries = all ? listing.history : listing.history.slice(0, HISTORY_SHOWN);
+  return (
+    <section className="panel service-block" aria-labelledby="service-title">
+      <h2 id="service-title">
+        <button
+          type="button"
+          className="disclosure"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen(!open)}
+        >
+          <span>{t.listingService}</span>
+          <UiIcon name="caret" size={17} className="disclosure-caret" />
+        </button>
+      </h2>
+      {open ? (
+        <div id={bodyId} className="service-body">
+          <div>
+            <h3 id="history-title" className="sub-title" tabIndex={-1}>
+              {t.history}
+            </h3>
+            {listing.history.length === 0 ? (
+              <p className="muted">{t.historyEmpty}</p>
+            ) : (
+              <ol className="history">
+                {entries.map((entry) => (
+                  <li key={`${entry.at}-${entry.to}`}>
+                    <span className="sub">
+                      {formatMoment(entry.at)} · {entry.actorName ?? t.historyBy[entry.actorKind]}
+                    </span>
+                    {entry.from ? `${t.status[entry.from]} → ` : ""}
+                    <strong>{t.status[entry.to]}</strong>
+                    {entry.reason && <p className="reason">{entry.reason}</p>}
+                  </li>
+                ))}
+              </ol>
+            )}
+            {!all && listing.history.length > HISTORY_SHOWN ? (
+              <button type="button" className="btn btn-sm" onClick={() => setAll(true)}>
+                {t.historyAll(listing.history.length)}
+              </button>
+            ) : null}
+          </div>
+          <CategoryPanel listing={listing} onChange={onChange} />
+          {canDelete ? (
+            <div>
+              <button type="button" className="btn btn-sm btn-danger" onClick={onDelete}>
+                {t.listingDelete}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -563,7 +754,8 @@ function ListingBlockers({
 
 /**
  * Сменить категорию — только сотрудник и только пока у витрины нет заявок и услуг (иначе
- * сервер ответит category_locked: новая витрина). Данные витрины при смене очищаются
+ * сервер ответит category_locked: новая витрина); когда услуги есть — блока нет. Данные
+ * витрины при смене очищаются
  */
 function CategoryPanel({
   listing,
@@ -580,8 +772,7 @@ function CategoryPanel({
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   useUnsaved(open && code !== null);
-  if (!can("listings.write")) return null;
-  const locked = listing.services.length > 0;
+  if (!can("listings.write") || listing.services.length > 0) return null;
 
   const close = () => {
     setOpen(false);
@@ -605,26 +796,19 @@ function CategoryPanel({
   };
 
   return (
-    <section className="panel" aria-labelledby="category-title">
-      <h2 id="category-title">{t.category}</h2>
-      <p>
-        <CategoryChip code={listing.categoryCode} />
-      </p>
-      {/* Открыта форма — что будет, сказано в ней, у кнопки: здесь не повторяем */}
-      {locked || !open ? (
-        <p className="muted small">{locked ? t.categoryChangeLocked : t.categoryChangeHint}</p>
-      ) : null}
-      {locked ? null : (
-        <button
-          ref={button}
-          type="button"
-          className="btn btn-sm"
-          aria-expanded={open}
-          onClick={() => (open ? close() : setOpen(true))}
-        >
-          {t.categoryChange}
-        </button>
-      )}
+    <div className="category-line">
+      <span>
+        {t.category}: <CategoryChip code={listing.categoryCode} />
+      </span>
+      <button
+        ref={button}
+        type="button"
+        className="btn btn-sm"
+        aria-expanded={open}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        {t.categoryChange}
+      </button>
       <PhoneSheet open={open} title={t.categoryChange} onClose={close} returnFocus={button}>
         <form className="confirm" onSubmit={submit} noValidate>
           {/* Что будет — в самой форме, у кнопки: подсказка над блоком в шторке не видна */}
@@ -660,34 +844,32 @@ function CategoryPanel({
           {failure && <ErrorText failure={failure} />}
         </form>
       </PhoneSheet>
-    </section>
+    </div>
   );
 }
 
 // ── правка на модерации ────────────────────────────────────────────────────
 
-function PendingRevisionNotice({ revision }: { revision: PendingRevision }) {
+/** Предложение изменений ждёт решения: одна строка — что и кто, и ссылка на него */
+function PendingRevisionRow({ revision }: { revision: PendingRevision }) {
   return (
     <div className="notice notice-warn pending-revision">
-      <p className="notice-title">{t.pendingRevisionTitle}</p>
-      <p>{revision.fields.map((field) => t.revisionFields[field] ?? field).join(", ")}</p>
-      <p className="sub">
-        {t.proposedBy(revision.proposedBy.kind, revision.proposedBy.name)} ·{" "}
-        {formatMoment(revision.submittedAt)}
-      </p>
-      <p>
-        <Link to={{ name: "revision", id: revision.id }} className="btn btn-sm">
-          {t.pendingRevisionOpen}
-        </Link>
-      </p>
+      <div className="pending-text">
+        <p className="notice-title">{t.pendingRevisionTitle}</p>
+        <p className="sub">
+          {revision.fields.map((field) => t.revisionFields[field] ?? field).join(", ")} ·{" "}
+          {t.proposedBy(revision.proposedBy.kind, revision.proposedBy.name)} ·{" "}
+          {formatMoment(revision.submittedAt)}
+        </p>
+      </div>
+      <Link to={{ name: "revision", id: revision.id }} className="btn btn-sm">
+        {t.pendingRevisionOpen}
+      </Link>
     </div>
   );
 }
 
 // ── действия со статусом ───────────────────────────────────────────────────
-
-/** Главное действие для панели внизу телефона: вперёд по пути к публикации */
-const PRIMARY: readonly ListingAction[] = ["publish", "submit"];
 
 function actionClass(action: ListingAction): string {
   if (PRIMARY.includes(action)) return "btn btn-primary";
@@ -695,27 +877,41 @@ function actionClass(action: ListingAction): string {
   return "btn";
 }
 
-function StatusActions({
+interface StatusControls {
+  /** Главная кнопка (отправить на проверку, опубликовать); у опубликованной её нет */
+  readonly primaryButton: ReactNode;
+  /** Остальные действия со статусом — для «…» в шапке */
+  readonly menu: MenuAction[];
+  /** «…» шапки: туда возвращается фокус после шторки второстепенного действия */
+  readonly moreRef: RefObject<HTMLButtonElement | null>;
+  /** Причина или комментарий к выбранному действию: шторка на телефоне, форма на месте шире */
+  readonly sheet: ReactNode;
+  /** Ошибка сервера не в шторке (на компьютере форма на месте — ошибка в ней же) */
+  readonly failureText: ReactNode;
+}
+
+/**
+ * Смена статуса. Главное действие, пока чего-то не хватает, шторку не открывает — ведёт к блоку
+ * «Что осталось» (в подписи — сколько осталось); остальные действия — в «…» шапки. Причина
+ * отказа или приостановки — обязательна, с готовыми причинами; к остальным — комментарий в историю
+ */
+function useStatusActions({
   listing,
   onChange,
-  hidden,
   onDecided,
-  blockers,
+  left,
 }: {
   listing: ListingDetail;
   onChange: (l: ListingDetail) => void;
-  /** Форма витрины не сохранена: на телефоне панель внизу отдана «Сохранить» */
-  hidden: boolean;
   /** Решение по витрине на проверке (опубликовать, вернуть, отклонить) — дальше следующая */
   onDecided: () => void;
-  /** Чего не хватает для публикации и для проверки: шторка скажет это, а не сервер отказом */
-  blockers: { readonly publish: readonly PublishBlocker[]; readonly submit: readonly PublishBlocker[] };
-}) {
+  left: Remaining;
+}): StatusControls {
   const { api } = useSession();
   const can = useCan();
   const phone = usePhone();
-  const primaryButton = useRef<HTMLButtonElement>(null);
-  const moreButton = useRef<HTMLButtonElement>(null);
+  const primaryRef = useRef<HTMLButtonElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const [pending, setPending] = useState<ListingAction | null>(null);
   const [reason, setReason] = useState("");
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -723,7 +919,7 @@ function StatusActions({
   // Вписанная причина или комментарий к смене статуса — несохранённое
   useUnsaved(pending !== null && reason.trim() !== "");
   const actions = ACTIONS_FROM[listing.status].filter((action) => can(PERMISSION[action]));
-  if (actions.length === 0) return null;
+  const primary = actions.find((action) => PRIMARY.includes(action));
 
   const run = async (event: FormEvent) => {
     event.preventDefault();
@@ -751,148 +947,100 @@ function StatusActions({
     setPending(null);
     setReason("");
   };
-  // Опубликовать или отправить на проверку, когда чего-то не хватает, — сервер откажет
-  // (publish_blocked): шторка сразу перечисляет, чего, и кнопку не даёт
-  const blocked: readonly PublishBlocker[] =
-    pending === "publish" ? blockers.publish : pending === "submit" ? blockers.submit : [];
-  // Телефон: главное действие — кнопкой, остальные — в «Ещё»
-  const primary = phone ? (actions.find((action) => PRIMARY.includes(action)) ?? actions[0]) : undefined;
-  const rest = phone ? actions.filter((action) => action !== primary) : actions;
 
-  return (
-    <section className="panel actions-panel" aria-label={t.listingFields.status}>
-      {phone && hidden ? null : (
-        <ActionBar label={t.listingFields.status ?? ""}>
-          {primary ? (
-            <button
-              ref={primaryButton}
-              type="button"
-              className={actionClass(primary)}
-              aria-expanded={pending === primary}
-              onClick={() => choose(primary)}
-            >
-              {t.actions[primary]}
-            </button>
-          ) : null}
-          {phone ? (
-            <OverflowMenu
-              title={t.actionsTitle}
-              context={t.listingActionsContext}
-              buttonRef={moreButton}
-              actions={rest.map((action) => ({
-                key: action,
-                label: t.actions[action],
-                danger: action === "suspend" || action === "reject",
-                run: () => choose(action),
-              }))}
-            />
-          ) : (
-            rest.map((action) => (
-              <button
-                key={action}
-                type="button"
-                className={actionClass(action)}
-                aria-expanded={pending === action}
-                onClick={() => choose(action)}
-              >
-                {t.actions[action]}
-              </button>
-            ))
-          )}
-        </ActionBar>
-      )}
+  const remaining = primary === "publish" ? left.publish : primary === "submit" ? left.submit : 0;
+  const primaryButton = primary ? (
+    <button
+      ref={primaryRef}
+      type="button"
+      className={actionClass(primary)}
+      aria-expanded={pending === primary}
+      // Не хватает — к блоку «Что осталось»: шторка с подтверждением была бы отказом сервера
+      onClick={() => (remaining > 0 ? focusSection(NEXT_TITLE) : choose(primary))}
+    >
+      {remaining > 0 ? t.actionLeft(t.actions[primary], remaining) : t.actions[primary]}
+    </button>
+  ) : null;
+
+  const menu: MenuAction[] = actions
+    .filter((action) => action !== primary)
+    .map((action) => ({
+      key: action,
+      label: t.actions[action],
+      danger: DESTRUCTIVE.has(action),
+      run: () => choose(action),
+    }));
+
+  const form = pending ? (
+    <form className="confirm" onSubmit={run} noValidate>
+      <p className="muted small">{t.actionHints[pending]}</p>
+      <ReasonField
+        label={REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
+        value={reason}
+        onChange={setReason}
+        presets={REASON_PRESETS[pending]}
+        required={REASON_REQUIRED.has(pending)}
+      />
+      <div className="acts">
+        <button
+          type="submit"
+          className={`btn ${DESTRUCTIVE.has(pending) ? "btn-danger-fill" : "btn-primary"}`}
+          aria-busy={busy || undefined}
+          disabled={busy || (REASON_REQUIRED.has(pending) && reason.trim() === "")}
+        >
+          {busyLabel(t.actions[pending], busy)}
+        </button>
+        <button type="button" className="btn" onClick={cancel}>
+          {t.cancel}
+        </button>
+      </div>
+      {phone && failure && <ErrorText failure={failure} />}
+    </form>
+  ) : null;
+
+  return {
+    primaryButton,
+    menu,
+    moreRef,
+    sheet: pending ? (
       <PhoneSheet
-        open={pending !== null}
-        title={pending ? t.actions[pending] : ""}
+        open
+        title={t.actions[pending]}
         onClose={cancel}
-        returnFocus={pending === primary ? primaryButton : moreButton}
+        returnFocus={pending === primary ? primaryRef : moreRef}
       >
-        {pending && (
-          <form className="confirm" onSubmit={run} noValidate>
-            {blocked.length > 0 ? (
-              <Blockers title={t.actionBlocked[pending] ?? ""} codes={blocked} />
-            ) : (
-              <>
-                <p className="muted small">{t.actionHints[pending]}</p>
-                <ReasonField
-                  label={REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
-                  value={reason}
-                  onChange={setReason}
-                  presets={REASON_PRESETS[pending]}
-                  required={REASON_REQUIRED.has(pending)}
-                />
-              </>
-            )}
-            <div className="acts">
-              <button
-                type="submit"
-                className={`btn ${DESTRUCTIVE.has(pending) ? "btn-danger-fill" : "btn-primary"}`}
-                aria-busy={busy || undefined}
-                disabled={
-                  busy || blocked.length > 0 || (REASON_REQUIRED.has(pending) && reason.trim() === "")
-                }
-              >
-                {busyLabel(t.actions[pending], busy)}
-              </button>
-              <button type="button" className="btn" onClick={cancel}>
-                {t.cancel}
-              </button>
-            </div>
-            {phone && failure && <ErrorText failure={failure} />}
-          </form>
-        )}
+        {phone ? form : <section className="panel status-form">{form}</section>}
       </PhoneSheet>
-      {!(phone && pending) && failure && <ErrorText failure={failure} />}
-    </section>
-  );
-}
-
-// ── история статусов ───────────────────────────────────────────────────────
-
-function History({ listing }: { listing: ListingDetail }) {
-  return (
-    <section className="panel" aria-labelledby="history-title">
-      <h2 id="history-title" tabIndex={-1}>
-        {t.history}
-      </h2>
-      {listing.history.length === 0 ? (
-        <p className="muted">{t.historyEmpty}</p>
-      ) : (
-        <ol className="history">
-          {listing.history.map((entry) => (
-            <li key={`${entry.at}-${entry.to}`}>
-              <span className="sub">
-                {formatMoment(entry.at)} · {entry.actorName ?? t.historyBy[entry.actorKind]}
-              </span>
-              {entry.from ? `${t.status[entry.from]} → ` : ""}
-              <strong>{t.status[entry.to]}</strong>
-              {entry.reason && <p className="reason">{entry.reason}</p>}
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
-  );
+    ) : null,
+    failureText: !(phone && pending) && failure ? <ErrorText failure={failure} /> : null,
+  };
 }
 
 // ── удаление ───────────────────────────────────────────────────────────────
 
 /**
  * Удалить витрину — администратор и менеджер, и только пока по ней не было заявок и она не на
- * проверке и не в каталоге. Почему нельзя, сервер говорит заранее (deleteBlocker): кнопка
- * недоступна, рядом — что сделать вместо. Удалили — к вендору без вопроса о несохранённом и
- * без записи удалённой витрины в истории («назад» не приведёт к «не найдено»)
+ * проверке и не в каталоге. Почему нельзя, сервер говорит заранее (deleteBlocker): пункт «…»
+ * недоступен и объясняет, кнопки в «Служебном» тогда нет. Удалили — к вендору без вопроса о
+ * несохранённом и без записи удалённой витрины в истории («назад» не приведёт к «не найдено»)
  */
-function DeleteListing({ listing, onReload }: { listing: ListingDetail; onReload: () => void }) {
+function DeleteListing({
+  listing,
+  open,
+  onClose,
+  onReload,
+}: {
+  listing: ListingDetail;
+  open: boolean;
+  onClose: () => void;
+  onReload: () => void;
+}) {
   const { api } = useSession();
   const can = useCan();
   const navigate = useNavigate();
-  const button = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   if (!can("listings.delete")) return null;
-  const blocker = listing.deleteBlocker;
 
   const remove = async () => {
     setBusy(true);
@@ -900,45 +1048,31 @@ function DeleteListing({ listing, onReload }: { listing: ListingDetail; onReload
     setBusy(false);
     if (!result.ok) {
       setFailure(result);
-      // Пока смотрели, появилась заявка или витрину отправили на проверку — блок покажет почему
+      // Пока смотрели, появилась заявка или витрину отправили на проверку — «…» покажет почему
       if (result.code === "listing_in_use") onReload();
       return;
     }
-    setOpen(false);
+    onClose();
     navigate({ name: "vendor", id: listing.vendor.id }, { force: true, replace: true });
   };
   const close = () => {
-    setOpen(false);
+    onClose();
     setFailure(null);
   };
 
   return (
-    <section className="panel" aria-labelledby="delete-title">
-      <h2 id="delete-title">{t.listingDelete}</h2>
-      <p className="muted small">{blocker ? t.listingDeleteBlocked[blocker] : t.listingDeleteHint}</p>
-      <button
-        ref={button}
-        type="button"
-        className="btn btn-sm btn-danger"
-        disabled={blocker !== null}
-        onClick={() => setOpen(true)}
-      >
-        {t.listingDelete}
-      </button>
-      <ConfirmSheet
-        open={open}
-        title={t.listingDeleteTitle}
-        text={t.listingDeleteText(listing.name)}
-        confirmLabel={t.listingDelete}
-        cancelLabel={t.cancel}
-        tone="danger"
-        busy={busy}
-        confirmDisabled={failure?.code === "listing_in_use"}
-        error={failure ? deleteFailureText(failure, t.listingDeleteBlocked) : undefined}
-        returnFocus={button}
-        onConfirm={() => void remove()}
-        onCancel={close}
-      />
-    </section>
+    <ConfirmSheet
+      open={open}
+      title={t.listingDeleteTitle}
+      text={t.listingDeleteText(listing.name)}
+      confirmLabel={t.listingDelete}
+      cancelLabel={t.cancel}
+      tone="danger"
+      busy={busy}
+      confirmDisabled={failure?.code === "listing_in_use"}
+      error={failure ? deleteFailureText(failure, t.listingDeleteBlocked) : undefined}
+      onConfirm={() => void remove()}
+      onCancel={close}
+    />
   );
 }

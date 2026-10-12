@@ -8,6 +8,8 @@
 //   /staff/vendors        вендоры, чек-лист проверки, пользователи кабинета
 //   /staff/listings       карточки, статусы, фото, занятость
 //   /staff/revisions      правки опубликованных карточек: очередь и решение
+//   /staff/contact-changes и /staff/listings/:id/contact-change  запросы партнёров на смену
+//                         публичных контактов витрины: очередь, «Показать», решение
 //   /staff/services       услуги витрин (кроме отклонённых): очередь модерации и решение
 //   /staff/requests       заявки, срок ответа вендора, напоминания, заметки
 //   /staff/clients        клиенты (псевдонимы), блокировка
@@ -16,6 +18,7 @@
 //   /staff/settings       настройки платформы
 //   /staff/team           сотрудники: приглашение, роль, отключение
 //   /staff/metrics        метрики запуска: по неделям, по вендорам (только чтение)
+//   /staff/queues         очереди команды — только числа, для счётчиков у разделов
 //
 // Читается под актором сотрудника; роль и активность проверены в authenticate
 // на этот же запрос.
@@ -32,11 +35,13 @@ import { permissionsOf } from "../staff/access";
 import { audit } from "../staff/audit";
 import { availability } from "../staff/availability";
 import { clients } from "../staff/clients";
+import { contactChangeQueue, contactChanges } from "../staff/contact-changes";
 import { dictionaries } from "../staff/dictionaries";
 import { listings } from "../staff/listings";
 import { metrics } from "../staff/metrics";
 import { outbox } from "../staff/outbox";
 import { photos } from "../staff/photos";
+import { queues } from "../staff/queues";
 import { requests } from "../staff/requests";
 import { revisions } from "../staff/revisions";
 import { listingServices, serviceModeration, vendorListings } from "../staff/services";
@@ -54,6 +59,8 @@ sections.route("/listings", listings);
 sections.route("/listings", listingServices);
 sections.route("/listings", photos);
 sections.route("/listings", availability);
+sections.route("/listings", contactChanges);
+sections.route("/contact-changes", contactChangeQueue);
 sections.route("/revisions", revisions);
 sections.route("/services", serviceModeration);
 sections.route("/requests", requests);
@@ -63,6 +70,7 @@ sections.route("/audit", audit);
 sections.route("/settings", settings);
 sections.route("/team", team);
 sections.route("/metrics", metrics);
+sections.route("/queues", queues);
 
 export const staff = new Hono<AppEnv>();
 

@@ -1,5 +1,6 @@
-/* Раздел «Аккаунт»: кто вошёл и в какой кабинет (площадка, код для менеджера, роль),
-   язык кабинета, другие приложения того же аккаунта и выход.
+/* Раздел «Аккаунт»: кто вошёл и в какой кабинет (площадка, код для менеджера, роль — строкой
+   «Роль: владелец», у сотрудника площадки ещё одна строка о том, что он не меняет), язык
+   кабинета (после входа переключатель только здесь), другие приложения аккаунта и выход.
 
    Ссылки на другие роли: вне Telegram — обычные ссылки (без сессии приложение само уйдёт в
    хаб входа и вернётся по ?signin=1, второй раз входить не нужно); внутри Telegram — через
@@ -73,6 +74,7 @@ export function AccountPage({ t, lang, headingRef, me, onLang, onSwitch }: Accou
         <p className="note">{fill(t.vendorCode, { code: me.vendor.code })}</p>
         {me.user.fullName ? <p className="account-person">{me.user.fullName}</p> : null}
         <p className="account-role">{me.user.role === "owner" ? t.roleOwner : t.roleMember}</p>
+        {me.user.role === "owner" ? null : <p className="note">{t.roleMemberNote}</p>}
         {ready && ready.me.roles.vendors.length > 1 ? (
           <button type="button" className="btn btn-ghost account-switch" onClick={onSwitch}>
             {t.switchVendor}

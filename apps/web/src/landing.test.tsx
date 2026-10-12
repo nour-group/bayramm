@@ -151,7 +151,7 @@ describe("лендинг (/ в браузере)", () => {
     await mount({
       path: "/",
       identity: "guest",
-      mock: { failWith: (method) => (method === "catalog" ? new ApiError(500, "internal_error") : null) },
+      mock: { failWith: (method) => (method === "featured" ? new ApiError(500, "internal_error") : null) },
     });
     await waitFor(() => !document.querySelector(".ln-cards"), "блок залов скрыт");
     expect(document.querySelector(".landing .state-error")).toBeNull();

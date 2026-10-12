@@ -190,6 +190,22 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
     code: "vendor_user_exists",
     message: "This person already has access to this vendor's cabinet",
   },
+  // 20261012100000_vendor_photos_contacts.sql
+  BR036: {
+    status: 409,
+    code: "contacts_require_review",
+    message: "Contacts of a listing on review or on the site change through a reviewed request",
+  },
+  BR037: {
+    status: 409,
+    code: "contact_change_not_pending",
+    message: "There is no pending contact change for this listing",
+  },
+  BR038: {
+    status: 409,
+    code: "contacts_not_live",
+    message: "Contacts of a listing that is not on review or on the site are saved directly",
+  },
 };
 
 // У publish_blocked в DETAIL — коды недостающих пунктов через запятую

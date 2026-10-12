@@ -2,14 +2,15 @@
 //
 // Карточку партнёр меняет предложением правки (vendor/revisions.ts), услугами
 // (vendor/services.ts) и загрузкой фото (vendor/photos.ts): это модерируемые данные,
-// решает команда. Адрес, вместимость и телефон меняет менеджер. Кабинет показывает
-// карточку как есть в базе. У вендора бывают витрины в нескольких категориях: getMe
+// решает команда. Адрес и вместимость меняет менеджер; телефон и Telegram — владелец кабинета
+// (vendor/contacts.ts). Кабинет показывает карточку как есть в базе. У вендора бывают витрины в нескольких категориях: getMe
 // отдаёт их все с категорией — для переключателя витрин.
 
 import { type MediaEnv, mediaSrcSet, mediaUrl } from "@bayramm/media";
 import type {
   Locale,
   VendorAttention,
+  VendorContactChange,
   VendorListing,
   VendorMe,
   VendorPhoto,
@@ -18,7 +19,13 @@ import { categoryConfig, missingAttributes, readAttributes } from "@bayramm/shar
 import { sql } from "kysely";
 import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
-import { listingPhone, vendorContactsAs, vendorUserProfilesAs } from "../db/pii";
+import {
+  contactChangeState,
+  readContactChange,
+  readListingContacts,
+  vendorContactsAs,
+  vendorUserProfilesAs,
+} from "../db/pii";
 import { ApiError, notFound } from "../errors";
 import { listServices } from "../listing-services/store";
 
@@ -164,6 +171,50 @@ export function vendorPhoto(p: PhotoRow, media: MediaEnv): VendorPhoto | null {
   };
 }
 
+/**
+ * Фото витрины в порядке показа: обложка, затем по порядку. Только готовые и не удалённые;
+ * ждущие решения и отклонённые — с отметкой (клиентам их не показывают)
+ */
+export async function loadVendorPhotos(trx: Tx, listingId: string, media: MediaEnv): Promise<VendorPhoto[]> {
+  const rows = await trx
+    .selectFrom("app.photos")
+    .select(["id", "storage_key", "width", "height", "moderation", "moderation_reason", "is_cover"])
+    .where("listing_id", "=", listingId)
+    .where("deleted_at", "is", null)
+    .where("status", "=", "ready")
+    .orderBy("is_cover", "desc")
+    .orderBy("sort")
+    .orderBy("created_at")
+    .execute();
+  return rows.flatMap((p) => vendorPhoto(p, media) ?? []);
+}
+
+/**
+ * Запрос на смену контактов глазами партнёра: ждёт решения или отклонён (одобренный и отозванный
+ * не показываются — контакты уже те, что должны быть). Значения ждущего — владельцу кабинета
+ * (в журнал доступа к ПДн как «сам себе»); сотруднику площадки — только статус
+ */
+async function readContactChangeView(
+  trx: Tx,
+  actor: VendorActor,
+  listingId: string,
+): Promise<VendorContactChange | null> {
+  const state = await contactChangeState(trx, listingId);
+  if (state === null || (state.status !== "pending" && state.status !== "declined")) return null;
+  const values =
+    state.status === "pending" && actor.role === "owner"
+      ? await readContactChange(trx, listingId, null)
+      : null;
+  return {
+    status: state.status,
+    submittedAt: state.submittedAt.toISOString(),
+    decidedAt: state.decidedAt?.toISOString() ?? null,
+    reason: state.status === "declined" ? state.reason : null,
+    phone: values?.phone ?? null,
+    telegram: values?.telegram ?? null,
+  };
+}
+
 /** GET /vendor/listings/:id: своя площадка как есть в базе; чужая (даже опубликованная) — 404 */
 export function getListing(
   db: Db,
@@ -188,7 +239,6 @@ export async function readListing(
       sql<string[] | null>`app.listing_publish_blockers(id, 'active')`.as("blockers"),
       // Чего не хватает, чтобы отправить на проверку: услуги и фото на проверке засчитываются
       sql<string[] | null>`app.listing_publish_blockers(id, 'review')`.as("review_blockers"),
-      listingPhone("id").as("phone"),
       sql<number>`greatest(3, coalesce(app.setting_int('min_photos'), 3),
         (select c.min_photos from app.categories c where c.code = category_code))`.as("min_photos"),
       sql<number>`coalesce(app.setting_int('max_photos'), 10)`.as("max_photos"),
@@ -202,19 +252,14 @@ export async function readListing(
   const category = categoryConfig(listing.category_code);
   const attributes = category === undefined ? {} : readAttributes(category, listing.attributes);
 
-  const photos = await trx
-    .selectFrom("app.photos")
-    .select(["id", "storage_key", "width", "height", "moderation", "moderation_reason", "is_cover"])
-    .where("listing_id", "=", listingId)
-    .where("deleted_at", "is", null)
-    .where("status", "=", "ready")
-    .orderBy("is_cover", "desc")
-    .orderBy("sort")
-    .orderBy("created_at")
-    .execute();
+  const photos = await loadVendorPhotos(trx, listingId, media);
+  // Телефон и Telegram — функцией базы: у витрины не на сайте чтение владельцем пишется в журнал
+  const contacts = await readListingContacts(trx, listingId, null);
+  const contactChange = await readContactChangeView(trx, actor, listingId);
 
   return {
     id: listing.id,
+    version: listing.version,
     slug: listing.slug,
     name: listing.name,
     status: listing.status,
@@ -232,8 +277,10 @@ export async function readListing(
     videoLinks: listing.video_links,
     parallelCapacity: listing.parallel_capacity,
     services,
-    photos: photos.flatMap((p) => vendorPhoto(p, media) ?? []),
-    phone: listing.phone,
+    photos,
+    phone: contacts.phone,
+    telegram: contacts.telegram,
+    contactChange,
     blockers: listing.blockers ?? [],
     reviewBlockers: listing.review_blockers ?? [],
     photoLimits: { min: listing.min_photos, max: listing.max_photos },

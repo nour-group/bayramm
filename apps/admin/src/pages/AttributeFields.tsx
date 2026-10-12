@@ -1,7 +1,8 @@
 /* Данные витрины — поля категории из конфигурации (@bayramm/shared/categories): форма не
    пишется под каждую категорию, а строится по описанию полей. Число — с «−» и «+» и границами
    категории на виду, да/нет — галочкой, один из немногих вариантов (до четырёх) — сразу на
-   виду (короткие — сегментами, длинные — пилюлями), из многих — списком, несколько — чипами,
+   виду (короткие — сегментами, длинные — пилюлями; необязательное снимается повторным
+   нажатием на выбранное), из многих — списком, несколько — чипами,
    текст на двух языках — двумя полями, список (автопарк) — записями с «Добавить» и «Убрать».
    Ошибки — по путям ответа API и проверки формы: «attributes.fleet.0.class». */
 
@@ -186,16 +187,16 @@ function Scalar({ field, label, value, error, hint, readOnly, onChange }: Scalar
     );
   if (field.type === "enum") {
     const options = field.options.map((option) => ({ value: option.code, label: ru(option.label) }));
-    // Необязательное можно и снять: «Не указано» — последним вариантом
-    const choices = field.required ? options : [...options, { value: "", label: t.input.notChosen }];
-    const control = enumControl(choices.map((option) => option.label));
+    // Необязательное снимается повторным нажатием на выбранное: варианта «Не указано» нет
+    const control = enumControl(options.map((option) => option.label));
     if (control !== "select")
       return (
         <ChoiceField
           label={label}
-          value={value === "" && field.required ? null : value}
-          options={choices}
+          value={value === "" ? null : value}
+          options={options}
           onChange={onChange}
+          onClear={field.required ? undefined : () => onChange("")}
           variant={control}
           error={error}
           hint={hint}

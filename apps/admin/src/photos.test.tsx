@@ -110,6 +110,7 @@ function mockApi(maxPhotos: number) {
       json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 }),
     [`POST /api/staff/listings/${LISTING_ID}/photos`]: () => json(photo(9), 201),
     [`POST /api/staff/listings/${LISTING_ID}/photos/${photo(2).id}/cover`]: () => json(photo(2)),
+    [`PUT /api/staff/listings/${LISTING_ID}/photos/order`]: () => json({ ok: true }),
     [`POST /api/staff/listings/${LISTING_ID}/photos/${photo(2).id}/moderation`]: () => json(photo(2)),
   };
   vi.stubGlobal(
@@ -140,6 +141,15 @@ async function mount(path: string) {
 const button = (name: string) =>
   [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === name);
 const toasts = () => document.querySelector(".ui-toasts")?.textContent ?? "";
+/** Шторка фото: нажать плитку N и выбрать пункт */
+async function pickPhoto(n: number, action: string) {
+  await act(async () => container.querySelectorAll<HTMLButtonElement>(".photo-tile")[n - 1]?.click());
+  const item = [...document.querySelectorAll<HTMLElement>(".ui-dialog .menu-item")].find(
+    (el) => el.textContent?.trim() === action,
+  );
+  await act(async () => item?.click());
+  await settle();
+}
 
 beforeEach(() => {
   calls = [];
@@ -157,7 +167,10 @@ describe("фото витрины", () => {
   it("выбрали больше предела — загружены первые; строка: сколько из выбранных и какой предел", async () => {
     mockApi(4);
     await mount(`/listings/${LISTING_ID}`);
-    // Подтверждение «лиц нет» — без него файлы не выбрать
+    // Правило и подтверждение «лиц нет» — по «Добавить фото», без подтверждения файлы не выбрать
+    expect(container.querySelector(".upload")).toBeNull();
+    await act(async () => button(t.photosAdd)?.click());
+    expect(container.querySelector(".upload")?.textContent).toContain(t.noFacesWarning);
     await act(async () => container.querySelector<HTMLInputElement>(".upload input[type=checkbox]")?.click());
     const input = container.querySelector<HTMLInputElement>(".upload input[type=file]") as HTMLInputElement;
     const files = [1, 2, 3, 4, 5].map((n) => new File([`photo ${n}`], `${n}.jpg`, { type: "image/jpeg" }));
@@ -167,28 +180,49 @@ describe("фото витрины", () => {
     // Предел 4, на витрине 2: ушли два первых, три — нет
     expect(calls.filter((c) => c === `POST /api/staff/listings/${LISTING_ID}/photos`)).toHaveLength(2);
     expect(container.textContent).toContain(t.photosOverLimit(2, 5, 4));
+    // Файлы выбраны — панель загрузки закрылась
+    expect(container.querySelector(".upload")).toBeNull();
   });
 
   it("обложка и одобрение — всплывающей строкой: что сделали и с каким фото", async () => {
     mockApi(10);
     await mount(`/listings/${LISTING_ID}`);
-    await act(async () => button(t.makeCover)?.click());
-    await settle();
+    await pickPhoto(2, t.makeCover);
     expect(calls).toContain(`POST /api/staff/listings/${LISTING_ID}/photos/${photo(2).id}/cover`);
     expect(toasts()).toContain(t.toastCover(2));
-    await act(async () => button(t.approve)?.click());
-    await settle();
+    await pickPhoto(2, t.approve);
     expect(toasts()).toContain(t.toastPhotoApproved(2));
   });
 
-  it("стрелки порядка — значками и на компьютере, с подписью «Фото N: раньше / позже»", async () => {
+  it("порядок — «Переместить в начало» в шторке фото; стрелок и кнопок под плиткой нет", async () => {
     mockApi(10);
     await mount(`/listings/${LISTING_ID}`);
-    const earlier = container.querySelector(`button[aria-label="${t.moveEarlier(2)}"]`);
-    expect(earlier?.querySelector("svg")).not.toBeNull();
-    expect(earlier?.textContent).toBe("");
-    expect(container.querySelector(`button[aria-label="${t.moveLater(1)}"]`)?.className).toContain(
-      "btn-flip",
+    // Плитка — одна кнопка; у обложки «в начало» не нужно
+    expect(container.querySelectorAll(".photo-tile")).toHaveLength(2);
+    expect(container.querySelector(".photo-tile + button, .photo > button + button")).toBeNull();
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".photo-tile")[0]?.click());
+    expect(
+      [...document.querySelectorAll(".ui-dialog .menu-item")].some((el) => el.textContent === t.moveToStart),
+    ).toBe(false);
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>(".ui-dialog button")]
+        .find((b) => b.textContent === t.close)
+        ?.click(),
     );
+    await pickPhoto(2, t.moveToStart);
+    const put = calls.find((c) => c.startsWith("PUT") && c.endsWith("/photos/order"));
+    expect(put).toBeDefined();
+    expect(toasts()).toContain(t.toastPhotoFirst(2));
+  });
+
+  it("«Одобрить все» — по одному запросу на ждущее решения фото; в шапке — счёт против минимума и предела", async () => {
+    mockApi(10);
+    await mount(`/listings/${LISTING_ID}`);
+    expect(container.querySelector("#photos-title")?.textContent).toContain(t.photosOf(2, 10));
+    expect(container.querySelector(".photos-min")?.textContent).toBe(t.photosMin(3));
+    await act(async () => button(t.photosApproveAll(1))?.click());
+    await settle();
+    expect(calls.filter((c) => c.endsWith(`/photos/${photo(2).id}/moderation`))).toHaveLength(1);
+    expect(toasts()).toContain(t.toastPhotosApproved(1));
   });
 });

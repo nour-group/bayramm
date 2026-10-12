@@ -200,6 +200,150 @@ export async function readListingContacts(
   return { phone: rows[0]?.phone ?? null, telegram: rows[0]?.telegram ?? null };
 }
 
+// ── запросы партнёра на смену контактов витрины ─────────────────────────────
+// Витрина на проверке или на сайте: телефон и Telegram партнёр меняет запросом
+// (pii.listing_contact_changes, одна ждущая строка на витрину), решает администратор или
+// модератор. Значения читает только pii.read_listing_contact_change (в журнал доступа к ПДн);
+// таблицы API не видит — всё функциями базы
+
+/** Последний запрос на смену контактов — без значений: что меняется, причина отказа, время */
+export interface ContactChangeState {
+  readonly id: string;
+  readonly status: "pending" | "approved" | "declined" | "withdrawn";
+  readonly reason: string | null;
+  readonly submittedAt: Date;
+  readonly decidedAt: Date | null;
+  readonly phoneChanged: boolean;
+  readonly telegramChanged: boolean;
+}
+
+/**
+ * Состояние последнего запроса на смену контактов (ждущий — первым); null — запросов не было.
+ * Без значений, в журнал не пишется. Кабинет вендора, панель оператора, оповещения
+ */
+export async function contactChangeState(trx: Tx, listingId: string): Promise<ContactChangeState | null> {
+  const { rows } = await sql<{
+    change_id: string;
+    status: ContactChangeState["status"];
+    reason: string | null;
+    submitted_at: Date;
+    decided_at: Date | null;
+    phone_changed: boolean;
+    telegram_changed: boolean;
+  }>`select change_id, status, reason, submitted_at, decided_at, phone_changed, telegram_changed
+     from app.contact_change_state(${listingId}::uuid)`.execute(trx);
+  const row = rows[0];
+  if (row === undefined) return null;
+  return {
+    id: row.change_id,
+    status: row.status,
+    reason: row.reason,
+    submittedAt: row.submitted_at,
+    decidedAt: row.decided_at,
+    phoneChanged: row.phone_changed,
+    telegramChanged: row.telegram_changed,
+  };
+}
+
+/** Значения ждущего запроса (в журнал доступа к ПДн); null — ждущего нет. Кабинет вендора (свой), панель */
+export async function readContactChange(
+  trx: Tx,
+  listingId: string,
+  reason: string | null,
+): Promise<{ readonly phone: string; readonly telegram: string | null } | null> {
+  const { rows } = await sql<{ phone: string | null; telegram: string | null }>`
+    select phone, telegram from pii.read_listing_contact_change(${listingId}::uuid, ${reason}::text)`.execute(
+    trx,
+  );
+  const row = rows[0];
+  return row === undefined || row.phone === null ? null : { phone: row.phone, telegram: row.telegram };
+}
+
+/**
+ * Запрос на смену контактов витрины на проверке или на сайте: заменяет ждущий. null — значения
+ * те же, что сейчас (no_changes). Витрина вне сайта — BR038 (там контакты пишутся сразу).
+ * Команде — оповещение. Кабинет вендора (владелец)
+ */
+export async function submitContactChange(
+  trx: Tx,
+  listingId: string,
+  phone: string,
+  telegram: string | null,
+): Promise<string | null> {
+  const { rows } = await sql<{ id: string | null }>`
+    select app.vendor_submit_contact_change(${listingId}::uuid, ${phone}::text, ${telegram}::text) as id`.execute(
+    trx,
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** Отозвать ждущий запрос; ждущего нет — BR037. Кабинет вендора (владелец) */
+export async function withdrawContactChange(trx: Tx, listingId: string): Promise<void> {
+  await sql`select app.vendor_withdraw_contact_change(${listingId}::uuid)`.execute(trx);
+}
+
+/** Одобрить ждущий запрос: значения — в контакты витрины; ждущего нет — BR037. Панель оператора */
+export async function approveContactChange(trx: Tx, listingId: string): Promise<void> {
+  await sql`select app.staff_approve_contact_change(${listingId}::uuid)`.execute(trx);
+}
+
+/** Отклонить ждущий запрос — только с причиной (BR010); ждущего нет — BR037. Панель оператора */
+export async function declineContactChange(trx: Tx, listingId: string, reason: string): Promise<void> {
+  await sql`select app.staff_decline_contact_change(${listingId}::uuid, ${reason}::text)`.execute(trx);
+}
+
+/** Строка очереди запросов на смену контактов (без значений) */
+export interface ContactChangeRow {
+  readonly changeId: string;
+  readonly listingId: string;
+  readonly listingName: string;
+  readonly listingStatus: "lead" | "draft" | "review" | "active" | "suspended" | "rejected";
+  readonly categoryCode: string;
+  readonly vendorId: string;
+  readonly vendorCode: string;
+  readonly submittedAt: Date;
+  readonly phoneChanged: boolean;
+  readonly telegramChanged: boolean;
+}
+
+/** Очередь ждущих запросов, старые сверху: строки и сколько всего. Панель оператора */
+export async function listContactChanges(
+  trx: Tx,
+  limit: number,
+  offset: number,
+): Promise<{ readonly total: number; readonly items: readonly ContactChangeRow[] }> {
+  const { rows } = await sql<{
+    change_id: string;
+    listing_id: string;
+    listing_name: string;
+    listing_status: ContactChangeRow["listingStatus"];
+    category_code: string;
+    vendor_id: string;
+    vendor_code: string;
+    submitted_at: Date;
+    phone_changed: boolean;
+    telegram_changed: boolean;
+    total: string;
+  }>`select change_id, listing_id, listing_name, listing_status, category_code, vendor_id, vendor_code, submitted_at,
+            phone_changed, telegram_changed, total
+     from app.staff_contact_changes(${limit}::int, ${offset}::int)`.execute(trx);
+  return {
+    total: rows[0] === undefined ? 0 : Number(rows[0].total),
+    items: rows.map((row) => ({
+      changeId: row.change_id,
+      listingId: row.listing_id,
+      listingName: row.listing_name,
+      listingStatus: row.listing_status,
+      categoryCode: row.category_code,
+      vendorId: row.vendor_id,
+      vendorCode: row.vendor_code,
+      submittedAt: row.submitted_at,
+      phoneChanged: row.phone_changed,
+      telegramChanged: row.telegram_changed,
+    })),
+  };
+}
+
 /** Телефон входа пользователя вендора (в журнал). Панель оператора */
 export function readVendorUserPhone(
   trx: Tx,

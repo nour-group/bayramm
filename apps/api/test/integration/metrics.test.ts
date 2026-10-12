@@ -8,6 +8,7 @@ import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import type {
   CategoryMetricsList,
   MetricsOverview,
+  StaffQueues,
   StaffRequestDetail,
   StaffSettings,
   VendorMetricsList,
@@ -292,6 +293,10 @@ describe("метрики в панели", () => {
     expect(overview.weeks.slice(1).every((w) => !w.partial)).toBe(true);
     expect(overview.slaHours).toBeGreaterThan(0);
     expect(overview.queues.overdue).toBeGreaterThanOrEqual(1);
+
+    // Счётчики панели: те же очереди без недельных метрик (право то же — metrics.read)
+    const queues = await ok<StaffQueues>(api("moderator", "GET", "/staff/queues"));
+    expect(queues).toEqual({ queues: overview.queues });
 
     expect((await api("admin", "GET", "/staff/metrics?weeks=0")).status).toBe(422);
     expect((await api("admin", "GET", "/staff/metrics/vendors?days=0")).status).toBe(422);

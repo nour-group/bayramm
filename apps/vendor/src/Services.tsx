@@ -7,9 +7,12 @@
 
    Список — с состоянием каждой услуги (черновик, на проверке, на витрине, отклонена, снята;
    «изменения на проверке» — что было и что предложено) и причиной отказа. Менять — только
-   владельцу кабинета; сотрудник площадки видит то же без кнопок. Форма проверяет поля теми
-   же правилами, что сервер (serviceErrors), и подсвечивает те же пути, что назвал бы 422.
-   Удалить, снять с витрины и отозвать изменения — через подтверждение.
+   владельцу кабинета; сотрудник площадки видит то же без кнопок. Карточка — одно нажатие на
+   услугу открывает правку; на карточке остаётся одно главное действие («Отправить на проверку»
+   у черновика), остальное — в шторке «⋯»: вернуть в черновик, снять с витрины, отозвать
+   изменения, удалить. Снять, отозвать и удалить — через подтверждение. Форма проверяет поля
+   теми же правилами, что сервер (serviceErrors), и подсвечивает те же пути, что назвал бы
+   422. Цена — с разрядами и «сум»; минимальный заказ, срок и «что входит» — под «Условиями».
 
    Форма — на месте списка (на телефоне длинная форма в шторке неудобна): заголовок формы
    получает фокус, «Отмена» и кнопка «Назад» Telegram возвращают к списку и к услуге. */
@@ -46,11 +49,14 @@ import { ConfirmSheet, NumberStepper, RadioGroup, Select } from "@bayramm/ui/rea
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { priceText } from "./category";
+import { Disclosure } from "./Disclosure";
 import { errorText } from "./errors";
 import { formatMoney } from "./format";
 import { fill, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
+import { MoneyInput } from "./MoneyInput";
+import { type MenuAction, OverflowMenu } from "./OverflowMenu";
 import { useBackButton } from "./telegram";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useConfirmLeave, useUnsaved } from "./unsaved";
@@ -66,6 +72,12 @@ export function changesByProposal(listing: VendorListing, service: ListingServic
 
 /** Название услуги: у «другой» — вендора, у каталожной — из каталога */
 const nameOf = (service: ListingService, lang: Lang) => service.name[lang] || service.name.ru;
+
+/** Поля «Условий»: у них своя свёрнутая группа; ошибка в одном из них открывает её */
+const CONDITION_PATHS = ["minQty", "leadDays", "includes"];
+const inConditions = (paths: Iterable<string>) => [...paths].some((p) => CONDITION_PATHS.includes(p));
+const hasConditions = (draft: ServiceDraft) =>
+  draft.minQty !== "" || draft.leadDays !== "" || draft.includesRu !== "" || draft.includesUz !== "";
 
 const STATUS_TONE: Readonly<Record<ListingService["status"], string>> = {
   draft: "chip-off",
@@ -141,7 +153,7 @@ interface CardProps {
   readonly busy: boolean;
   readonly onEdit: (service: ListingService) => void;
   readonly onAct: (service: ListingService, action: "submit" | "withdraw") => void;
-  readonly onConfirm: (service: ListingService, what: Confirm, from: HTMLElement) => void;
+  readonly onConfirm: (service: ListingService, what: Confirm, from: HTMLElement | null) => void;
 }
 
 function ServiceCard({
@@ -166,19 +178,61 @@ function ServiceCard({
     service.leadDays === null ? null : fill(t.svcLead, { n: service.leadDays }),
   ].filter((part): part is string => part !== null);
   const includes = service.includes?.[lang] ?? service.includes?.ru ?? null;
+  const name = nameOf(service, lang);
+  // Одно главное действие на карточке — отправить на проверку; остальное — в шторке «⋯»
   const canSubmit = status === "draft" || status === "rejected" || status === "paused";
-  const canDelete = status !== "active";
+  const menu: MenuAction[] = [];
+  if (owner) {
+    if (status === "review")
+      menu.push({ key: "toDraft", label: t.svcToDraft, run: () => onAct(service, "withdraw") });
+    if (proposal && status !== "review")
+      menu.push({
+        key: "withdrawProposal",
+        label: t.svcWithdrawProposal,
+        run: (from) => onConfirm(service, "withdrawProposal", from),
+      });
+    if (status === "active" && !proposal && changesByProposal(listing, service))
+      menu.push({
+        key: "pause",
+        label: t.svcPause,
+        danger: true,
+        run: (from) => onConfirm(service, "pause", from),
+      });
+    if (status !== "active")
+      menu.push({
+        key: "delete",
+        label: t.svcDelete,
+        danger: true,
+        run: (from) => onConfirm(service, "delete", from),
+      });
+  }
 
   return (
-    <li className="svc" data-service={service.id}>
+    <li className={`svc${owner ? " svc-tap" : ""}`} data-service={service.id}>
       <div className="svc-top">
         <div className="svc-title">
           <h3 className="svc-name" id={`svc-${service.id}`} tabIndex={-1}>
-            {nameOf(service, lang)}
+            {owner ? (
+              // Нажатие в любом месте карточки — правка: кнопка растянута на всю карточку (styles.css)
+              <button
+                type="button"
+                className="svc-open"
+                disabled={busy}
+                aria-label={`${t.svcEdit}: ${name}`}
+                onClick={() => onEdit(service)}
+              >
+                {name}
+              </button>
+            ) : (
+              name
+            )}
           </h3>
           {service.customName ? <p className="svc-type">{typeLabel}</p> : null}
         </div>
-        <span className={`chip ${STATUS_TONE[status]}`}>{t[`svcSt_${status}`]}</span>
+        <div className="svc-side">
+          <span className={`chip ${STATUS_TONE[status]}`}>{t[`svcSt_${status}`]}</span>
+          <OverflowMenu title={name} label={fill(t.svcMore, { name })} actions={menu} t={t} />
+        </div>
       </div>
       <p className="svc-facts">{facts.join(" · ")}</p>
       {includes ? <p className="svc-includes">{includes}</p> : null}
@@ -207,62 +261,16 @@ function ServiceCard({
           {fill(status === "rejected" ? t.svcDeclined : t.svcProposalDeclined, { reason: declined })}
         </p>
       ) : null}
-      {owner ? (
+      {owner && canSubmit ? (
         <div className="actions svc-actions">
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => onEdit(service)}>
-            {t.svcEdit}
+          <button
+            type="button"
+            className="btn btn-dark"
+            disabled={busy}
+            onClick={() => onAct(service, "submit")}
+          >
+            {t.proposalSubmit}
           </button>
-          {canSubmit ? (
-            <button
-              type="button"
-              className="btn btn-dark"
-              disabled={busy}
-              onClick={() => onAct(service, "submit")}
-            >
-              {t.proposalSubmit}
-            </button>
-          ) : null}
-          {status === "review" ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy}
-              onClick={() => onAct(service, "withdraw")}
-            >
-              {t.svcToDraft}
-            </button>
-          ) : null}
-          {proposal && status !== "review" ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy}
-              onClick={(event) => onConfirm(service, "withdrawProposal", event.currentTarget)}
-            >
-              {t.svcWithdrawProposal}
-            </button>
-          ) : null}
-          {status === "active" && !proposal && changesByProposal(listing, service) ? (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={busy}
-              onClick={(event) => onConfirm(service, "pause", event.currentTarget)}
-            >
-              {t.svcPause}
-            </button>
-          ) : null}
-          {canDelete ? (
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={busy}
-              aria-label={fill(t.svcDeleteLabel, { name: nameOf(service, lang) })}
-              onClick={(event) => onConfirm(service, "delete", event.currentTarget)}
-            >
-              {t.svcDelete}
-            </button>
-          ) : null}
         </div>
       ) : null}
     </li>
@@ -301,6 +309,10 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
   const [notice, setNotice] = useState<FormNotice>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // «Условия» свёрнуты, пока в них ничего нет; есть значения или ошибка — сразу видны
+  const [conditions, setConditions] = useState(() =>
+    service ? hasConditions(serviceDraftOf(service)) : false,
+  );
   const title = useRef<HTMLHeadingElement>(null);
   const byProposal = service !== null && changesByProposal(listing, service);
   const type = draft ? serviceType(category, draft.type) : undefined;
@@ -339,6 +351,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
     const errors = serviceErrors(category, draft, { create });
     if (errors.length > 0) {
       setInvalid(new Set(errors));
+      if (inConditions(errors)) setConditions(true);
       setNotice("invalid");
       return;
     }
@@ -363,6 +376,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
       if (!(err instanceof ApiFailure)) setNotice("failed");
       else if (err.code === "invalid_input" || err.code === "service_invalid") {
         setInvalid(new Set(err.details));
+        if (inConditions(err.details)) setConditions(true);
         setNotice("invalid");
       } else if (err.code === "no_changes") setNotice("noChanges");
       else if (err.code === "too_many_services") setNotice("tooMany");
@@ -414,7 +428,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
           {label}
         </label>
         {multiline ? (
-          <textarea {...common} rows={3} maxLength={SERVICE_LIMITS.includesMax} />
+          <textarea {...common} rows={2} maxLength={SERVICE_LIMITS.includesMax} placeholder={t.optionalPh} />
         ) : (
           <input {...common} maxLength={SERVICE_LIMITS.nameMax} autoComplete="off" />
         )}
@@ -477,15 +491,16 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                 hint: option.units.map((unit) => priceUnitLabel(lang, unit)).join(", "),
               }))}
               onChange={(code) => {
+                const next = newServiceDraft(category, code) ?? null;
                 setInvalid(new Set());
                 setNotice(null);
-                setDraft(newServiceDraft(category, code) ?? null);
+                setDraft(next);
+                setConditions(next !== null && hasConditions(next));
               }}
               aria-invalid={bad("type") || undefined}
               aria-describedby={described("type")}
             />
             {errorOf("type", t.svcPickType)}
-            <p className="note">{t.serviceOtherHint}</p>
           </div>
         ) : (
           <p className="svc-type-fixed">
@@ -508,16 +523,14 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
               <label className="field-label" htmlFor={`${id}-price`}>
                 {t.packagePrice}
               </label>
-              <input
+              <MoneyInput
                 id={`${id}-price`}
-                className="field"
-                inputMode="numeric"
-                autoComplete="off"
-                maxLength={16}
                 value={draft.price}
+                max={SERVICE_LIMITS.maxPrice}
+                t={t}
                 aria-invalid={bad("priceUzs") || undefined}
                 aria-describedby={described("priceUzs")}
-                onChange={(event) => set({ price: event.target.value })}
+                onChange={(digits) => set({ price: digits })}
               />
               {errorOf("priceUzs", t.svcPriceInvalid)}
             </div>
@@ -527,55 +540,55 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
               {errorOf("priceUnit", t.fieldInvalid)}
             </fieldset>
 
-            <div className="form-grid">
-              <div className="form-row">
-                <label className="field-label" htmlFor={`${id}-min`}>
-                  {t.serviceMinQty}
-                </label>
-                <NumberStepper
-                  id={`${id}-min`}
-                  value={draft.minQty}
-                  min={1}
-                  max={SERVICE_LIMITS.maxMinQty}
-                  onChange={(value) => set({ minQty: value })}
-                  decrementLabel={`${t.serviceMinQty}: ${t.capacityLess}`}
-                  incrementLabel={`${t.serviceMinQty}: ${t.capacityMore}`}
-                  aria-invalid={bad("minQty") || undefined}
-                  aria-describedby={described("minQty") ?? `${id}-min-hint`}
-                />
-                <p className="note" id={`${id}-min-hint`}>
-                  {t.serviceMinQtyHint}
-                </p>
-                {errorOf("minQty", t.fieldInvalid)}
-              </div>
-              <div className="form-row">
-                <label className="field-label" htmlFor={`${id}-lead`}>
-                  {t.serviceLeadDays}
-                </label>
-                <NumberStepper
-                  id={`${id}-lead`}
-                  value={draft.leadDays}
-                  min={0}
-                  max={SERVICE_LIMITS.maxLeadDays}
-                  maxLength={3}
-                  onChange={(value) => set({ leadDays: value })}
-                  decrementLabel={`${t.serviceLeadDays}: ${t.capacityLess}`}
-                  incrementLabel={`${t.serviceLeadDays}: ${t.capacityMore}`}
-                  aria-invalid={bad("leadDays") || undefined}
-                  aria-describedby={described("leadDays") ?? `${id}-lead-hint`}
-                />
-                <p className="note" id={`${id}-lead-hint`}>
-                  {t.serviceLeadDaysHint}
-                </p>
-                {errorOf("leadDays", t.fieldInvalid)}
-              </div>
-            </div>
+            <Disclosure label={t.serviceConditions} open={conditions} onOpenChange={setConditions}>
+              <div className="svc-conditions">
+                <div className="form-grid">
+                  <div className="form-row">
+                    <label className="field-label" htmlFor={`${id}-min`}>
+                      {t.serviceMinQty}
+                    </label>
+                    <NumberStepper
+                      id={`${id}-min`}
+                      value={draft.minQty}
+                      min={1}
+                      max={SERVICE_LIMITS.maxMinQty}
+                      placeholder={t.optionalPh}
+                      onChange={(value) => set({ minQty: value })}
+                      decrementLabel={`${t.serviceMinQty}: ${t.capacityLess}`}
+                      incrementLabel={`${t.serviceMinQty}: ${t.capacityMore}`}
+                      aria-invalid={bad("minQty") || undefined}
+                      aria-describedby={described("minQty")}
+                    />
+                    {errorOf("minQty", t.fieldInvalid)}
+                  </div>
+                  <div className="form-row">
+                    <label className="field-label" htmlFor={`${id}-lead`}>
+                      {t.serviceLeadDays}
+                    </label>
+                    <NumberStepper
+                      id={`${id}-lead`}
+                      value={draft.leadDays}
+                      min={0}
+                      max={SERVICE_LIMITS.maxLeadDays}
+                      maxLength={3}
+                      placeholder={t.optionalPh}
+                      onChange={(value) => set({ leadDays: value })}
+                      decrementLabel={`${t.serviceLeadDays}: ${t.capacityLess}`}
+                      incrementLabel={`${t.serviceLeadDays}: ${t.capacityMore}`}
+                      aria-invalid={bad("leadDays") || undefined}
+                      aria-describedby={described("leadDays")}
+                    />
+                    {errorOf("leadDays", t.fieldInvalid)}
+                  </div>
+                </div>
 
-            <div className="form-grid">
-              {textField("includesRu", t.serviceIncludesRu, "includes", true)}
-              {textField("includesUz", t.serviceIncludesUz, "includes", true)}
-              {errorOf("includes", t.fieldInvalid)}
-            </div>
+                <div className="form-grid">
+                  {textField("includesRu", t.serviceIncludesRu, "includes", true)}
+                  {textField("includesUz", t.serviceIncludesUz, "includes", true)}
+                  {errorOf("includes", t.fieldInvalid)}
+                </div>
+              </div>
+            </Disclosure>
 
             <fieldset className="choices svc-option-list" aria-describedby={described("options")}>
               <legend className="panel-title">{t.serviceOptions}</legend>
@@ -620,14 +633,13 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                         <label className="field-label" htmlFor={`${rowId}-price`}>
                           {t.packagePrice}
                         </label>
-                        <input
+                        <MoneyInput
                           id={`${rowId}-price`}
-                          className="field"
-                          inputMode="numeric"
-                          maxLength={16}
                           value={option.price}
+                          max={SERVICE_LIMITS.maxPrice}
+                          t={t}
                           aria-invalid={bad(`options.${index}.priceUzs`) || undefined}
-                          onChange={(event) => setOption(option.key, { price: event.target.value })}
+                          onChange={(digits) => setOption(option.key, { price: digits })}
                         />
                       </div>
                       <div className="form-row">
@@ -759,9 +771,9 @@ export function Services({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const confirmFrom = useRef<HTMLElement | null>(null);
   const addButton = useRef<HTMLButtonElement>(null);
-  const listTitle = useRef<HTMLHeadingElement>(null);
-  // Куда перевести фокус после того, как список снова на экране: на услугу или кнопку
+  // Куда перевести фокус после того, как список снова на экране: на услугу, кнопку или заголовок экрана
   const focusNext = useRef<string | "add" | "list" | null>(null);
+  const pageTitle = () => document.getElementById("page-title");
 
   // Другая витрина — форма и сообщения прежней не переносятся
   // biome-ignore lint/correctness/useExhaustiveDependencies: сброс — по смене витрины
@@ -778,7 +790,7 @@ export function Services({
       target === "add"
         ? addButton.current
         : target === "list"
-          ? listTitle.current
+          ? pageTitle()
           : document.getElementById(`svc-${target}`);
     el?.focus({ preventScroll: true });
   });
@@ -843,7 +855,7 @@ export function Services({
           services: current.services.filter((s) => s.id !== service.id),
         }));
         focusNext.current = "list";
-        confirmFrom.current = listTitle.current;
+        confirmFrom.current = pageTitle();
       } else {
         replace(await api.withdrawService(listingId, service.id));
         focusNext.current = service.id;
@@ -894,10 +906,7 @@ export function Services({
         inSidebar={inSidebar}
         mark="services"
       />
-      <p className="promise">
-        <Icon name="info" size={17} />
-        <span>{owner ? t.servicesLead : `${t.servicesLead} ${t.servicesMember}`}</span>
-      </p>
+      <p className="lead">{owner ? t.servicesLead : t.servicesMember}</p>
 
       {listing.state === "loading" ? <Loading t={t} kind="list" /> : null}
       {listing.state === "error" ? <LoadError t={t} onRetry={reload} error={listing.error} /> : null}
@@ -933,11 +942,8 @@ export function Services({
               {message.text}
             </p>
           ) : null}
-          <div className="svc-head">
-            <h2 className="section-title" ref={listTitle} tabIndex={-1}>
-              {t.servicesSummary} <span className="count">{ready.services.length}</span>
-            </h2>
-            {owner && category ? (
+          {owner && category ? (
+            <div className="svc-head">
               <button
                 ref={addButton}
                 type="button"
@@ -951,8 +957,8 @@ export function Services({
                 <Icon name="plus" size={14} />
                 {t.serviceAdd}
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           {ready.services.length >= SERVICE_LIMITS.maxServices && owner ? (
             <p className="note">{t.svcTooMany}</p>
           ) : null}

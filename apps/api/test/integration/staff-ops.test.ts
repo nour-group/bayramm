@@ -725,6 +725,116 @@ describe("правки карточек (ревизии)", () => {
   });
 });
 
+describe("правки карточек: вместимость, район и адрес", () => {
+  const revise = async (payload: object, version = "version") => {
+    const { rows } = await admin.query<{ id: string }>(
+      `insert into app.listing_revisions (listing_id, payload, base_version)
+       select id, $2, ${version} from app.listings where id = $1 returning id`,
+      [A.listingId, JSON.stringify(payload)],
+    );
+    return rows[0]?.id ?? "";
+  };
+  const listing = () => ok<ListingDetail>(api("moderator", "GET", `/staff/listings/${A.listingId}`));
+
+  it("вместимость — одно поле «было → стало»; не устаревает от правок, которых оно не касается", async () => {
+    const id = await revise({
+      cap_min: 100,
+      cap_max: 350,
+      district_code: "chilonzor",
+      address_ru: "ул. Навои, 5",
+    });
+    const before = await listing();
+    const detail = await ok<RevisionDetail>(api("moderator", "GET", `/staff/revisions/${id}`));
+    expect(detail).toMatchObject({
+      valid: true,
+      stale: false,
+      fields: ["capacity", "districtCode", "addressRu"],
+    });
+    expect(detail.changes).toEqual([
+      {
+        field: "capacity",
+        before: { min: before.capMin, max: before.capMax },
+        after: { min: 100, max: 350 },
+      },
+      { field: "districtCode", before: before.districtCode, after: "chilonzor" },
+      { field: "addressRu", before: null, after: "ул. Навои, 5" },
+    ]);
+
+    // «Заказов одновременно» и телефон версию карточки растят, но к предложению не относятся
+    await admin.query("update app.listings set parallel_capacity = 2 where id = $1", [A.listingId]);
+    const quiet = await ok<RevisionDetail>(api("moderator", "GET", `/staff/revisions/${id}`));
+    expect(quiet.stale).toBe(false);
+    // Поле, которое предложение тоже меняет, — устарело: сравнивает человек
+    await admin.query("update app.listings set address_uz = 'Eski manzil' where id = $1", [A.listingId]);
+    expect((await ok<RevisionDetail>(api("moderator", "GET", `/staff/revisions/${id}`))).stale).toBe(false);
+    await admin.query("update app.listings set address_ru = 'Старый адрес' where id = $1", [A.listingId]);
+    expect((await ok<RevisionDetail>(api("moderator", "GET", `/staff/revisions/${id}`))).stale).toBe(true);
+
+    const approved = await ok<RevisionDetail>(api("moderator", "POST", `/staff/revisions/${id}/approve`));
+    expect(approved.status).toBe("approved");
+    expect(await listing()).toMatchObject({
+      capMin: 100,
+      capMax: 350,
+      districtCode: "chilonzor",
+      addressRu: "ул. Навои, 5",
+      addressUz: "Eski manzil",
+    });
+  });
+
+  it("«до» меньше «от» карточки, неизвестный район, пустой адрес", async () => {
+    // «От 500» к карточке «до 350»: применить нельзя
+    const order = await revise({ cap_min: 500 });
+    expect(await error(api("moderator", "POST", `/staff/revisions/${order}/approve`))).toMatchObject({
+      status: 422,
+      code: "revision_invalid",
+    });
+    expect((await listing()).capMin).toBe(100);
+    await ok(api("moderator", "POST", `/staff/revisions/${order}/decline`, { reason: "Больше «до»" }));
+
+    // Район вне справочника не доходит до карточки
+    const district = await revise({ district_code: "atlantida" });
+    expect(await error(api("moderator", "POST", `/staff/revisions/${district}/approve`))).toMatchObject({
+      status: 422,
+      code: "revision_invalid",
+    });
+    await ok(
+      api("moderator", "POST", `/staff/revisions/${district}/decline`, { reason: "Нет такого района" }),
+    );
+
+    // Пустая строка в правке — убрать адрес (NULL), а не записать пустой
+    const clear = await revise({ address_ru: "" });
+    const detail = await ok<RevisionDetail>(api("moderator", "GET", `/staff/revisions/${clear}`));
+    expect(detail.changes).toEqual([{ field: "addressRu", before: "ул. Навои, 5", after: "" }]);
+    await ok(api("moderator", "POST", `/staff/revisions/${clear}/approve`));
+    expect((await listing()).addressRu).toBeNull();
+  });
+
+  it("правка сотрудника, не касающаяся предложения, версию подтягивает и в журнал «решений» не попадает", async () => {
+    const id = await revise({ name: `Ops Hall A Facts ${tag}` });
+    const current = await listing();
+    const saved = await ok<ListingDetail>(
+      api("admin", "PATCH", `/staff/listings/${A.listingId}`, {
+        version: current.version,
+        parallelCapacity: 3,
+      }),
+    );
+    expect(saved.version).toBeGreaterThan(current.version);
+    const { rows } = await admin.query<{ fresh: boolean }>(
+      `select r.base_version = l.version as fresh from app.listing_revisions r
+         join app.listings l on l.id = r.listing_id where r.id = $1`,
+      [id],
+    );
+    expect(rows).toEqual([{ fresh: true }]);
+    const log = await admin.query<{ n: number }>(
+      `select count(*)::int as n from app.audit_log
+        where action = 'listing_revision.update' and object_id = $1 and detail -> 'fields' ? 'base_version'`,
+      [A.listingId],
+    );
+    expect(log.rows[0]?.n).toBe(0);
+    await ok(api("moderator", "POST", `/staff/revisions/${id}/decline`, { reason: "Тест" }));
+  });
+});
+
 describe("команда", () => {
   it("список — только администратору; себя видно как «вы»", async () => {
     const list = await ok<TeamList>(api("admin", "GET", "/staff/team"));

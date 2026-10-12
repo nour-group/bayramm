@@ -8,12 +8,7 @@
      · компьютер — шапка с разделами в строку, как раньше.
    В Telegram «назад» — кнопка Telegram (BackButton), своя в шапке не рисуется. */
 
-import type {
-  MetricsOverview,
-  OpsQueues,
-  StaffDictionaries,
-  StaffPermission,
-} from "@bayramm/shared/api/staff";
+import type { OpsQueues, StaffDictionaries, StaffPermission, StaffQueues } from "@bayramm/shared/api/staff";
 import { getWebApp } from "@bayramm/tg/webapp";
 import { Dialog, ToastProvider, useOnReconnect } from "@bayramm/ui/react";
 import {
@@ -199,7 +194,7 @@ function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, s
       content = <RequestPage key={view.id} id={view.id} dictionaries={dictionaries} />;
       break;
     case "metrics":
-      content = <MetricsPage />;
+      content = <MetricsPage slaHours={dictionaries?.settings.slaHours} />;
       break;
     case "clients":
       content = <ClientsPage />;
@@ -208,7 +203,7 @@ function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, s
       content = <ClientPage key={view.id} id={view.id} />;
       break;
     case "revision":
-      content = <RevisionPage key={view.id} id={view.id} />;
+      content = <RevisionPage key={view.id} id={view.id} dictionaries={dictionaries} />;
       break;
     case "notifications":
       content = <NotificationsPage />;
@@ -224,19 +219,11 @@ function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, s
       break;
   }
 
-  const section = sectionOf(view);
-  const nested = view.name !== section;
-  // Срок ответа — из настроек, а не числом в тексте: его меняет администратор
-  const lead = nested
-    ? null
-    : section === "requests" && dictionaries
-      ? t.requestsLeadSla(dictionaries.settings.slaHours)
-      : t[`${section}Lead`];
+  const nested = view.name !== sectionOf(view);
   return (
     <section className={`page${nested ? " page-wide" : ""}`} aria-labelledby="page-title">
       <Breadcrumbs crumbs={crumbs} />
       {heading}
-      {lead && <p className="lead">{lead}</p>}
       <ActionSlotContext.Provider value={slot}>
         {/* Кусок экрана ещё грузится (первый заход в раздел) — заготовка его формы. Каждый
             переход — экран заново: фильтры и страница списка читаются из адреса */}
@@ -295,25 +282,25 @@ function viaBot(url: string | null) {
   };
 }
 
-function OtherAppLinks({ apps, className }: { apps: OtherApps | null; className: string }) {
+function OtherAppLinks({ apps }: { apps: OtherApps | null }) {
   if (!apps) return null;
   return (
     <>
       <a
-        className={className}
+        className="menu-item"
         href={apps.web}
         onClick={viaBot(apps.bot ? `https://t.me/${apps.bot}?startapp` : null)}
       >
-        {className === "menu-item" ? <Icon name="external" size={20} /> : null}
+        <Icon name="external" size={20} />
         <span>{t.toClientApp}</span>
       </a>
       {apps.cabinet ? (
         <a
-          className={className}
+          className="menu-item"
           href={apps.cabinet}
           onClick={viaBot(apps.bot ? `https://t.me/${apps.bot}?start=cabinet` : null)}
         >
-          {className === "menu-item" ? <Icon name="external" size={20} /> : null}
+          <Icon name="external" size={20} />
           <span>{t.toCabinet}</span>
         </a>
       ) : null}
@@ -328,7 +315,7 @@ export type Badges = Partial<Record<Section, number>>;
 /**
  * Что ждёт команду — из очередей метрик: просроченные заявки, недоставленное и решения
  * модерации — только те очереди, по которым роль решает: витрины на проверке — кто публикует,
- * предложения и услуги — кто решает по правкам, фото — кто решает по фото. Менеджеру счётчик
+ * предложения, услуги и смена контактов — кто решает по правкам, фото — кто решает по фото. Менеджеру счётчик
  * модерации не горит: разобрать ему там нечего
  */
 export function badgesOf(queues: OpsQueues, permissions: readonly StaffPermission[]): Badges {
@@ -337,7 +324,9 @@ export function badgesOf(queues: OpsQueues, permissions: readonly StaffPermissio
     requests: queues.overdue,
     moderation:
       (may("listings.publish") ? queues.listingsReview : 0) +
-      (may("revisions.moderate") ? queues.revisionsPending + queues.servicesPending : 0) +
+      (may("revisions.moderate")
+        ? queues.revisionsPending + queues.servicesPending + queues.contactsPending
+        : 0) +
       (may("photos.moderate") ? queues.photosPending : 0),
     notifications: queues.deadTotal,
   };
@@ -360,7 +349,8 @@ function useBadges(permissions: readonly StaffPermission[], section: Section | n
       const now = Date.now();
       if (!force && fetched.current !== null && now - fetched.current < BADGES_TTL_MS) return;
       fetched.current = now;
-      void api.get<MetricsOverview>("/staff/metrics?weeks=1").then((result) => {
+      // Только очереди — без недельных метрик, которые тяжело считать
+      void api.get<StaffQueues>("/staff/queues").then((result) => {
         if (result.ok) setBadges(badgesOf(result.data.queues, permissions));
       });
     },
@@ -388,8 +378,9 @@ function bannerHidden(): boolean {
 
 /**
  * Сотрудник решает по модерации, а чата с ботом нет (не писал боту /start): оповещения команды
- * ему не приходят — то, что прислал партнёр, он увидит, только заглянув в «Модерацию». Ссылка —
- * на бота (в Telegram — через openTelegramLink); скрыть — до конца сессии вкладки
+ * ему не приходят — то, что прислал партнёр, он увидит, только заглянув в «Модерацию». Одна
+ * строка: ссылка на бота (в Telegram — через openTelegramLink) и крестик — скрыть до конца
+ * сессии вкладки
  */
 function BotBanner({ staff, bot }: { staff: Staff; bot: string | null }) {
   const [hidden, setHidden] = useState(bannerHidden);
@@ -406,17 +397,15 @@ function BotBanner({ staff, bot }: { staff: Staff; bot: string | null }) {
   const link = bot ? `https://t.me/${bot}?start=admin` : null;
   return (
     <div className="notice notice-warn bot-banner">
-      <p className="bot-banner-text">{t.botBanner}</p>
-      <div className="bot-banner-actions">
-        {link ? (
-          <a className="btn btn-sm" href={link} target="_blank" rel="noreferrer" onClick={viaBot(link)}>
-            {t.botBannerLink}
-          </a>
-        ) : null}
-        <button type="button" className="btn btn-sm" onClick={hide}>
-          {t.botBannerHide}
-        </button>
-      </div>
+      <p className="bot-banner-text">{link ? t.botBanner : t.botBannerWrite}</p>
+      {link ? (
+        <a className="bot-banner-link" href={link} target="_blank" rel="noreferrer" onClick={viaBot(link)}>
+          {t.botBannerLink}
+        </a>
+      ) : null}
+      <button type="button" className="bot-banner-close" aria-label={t.botBannerHide} onClick={hide}>
+        <Icon name="close" size={17} />
+      </button>
     </div>
   );
 }
@@ -804,17 +793,19 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
                   </Link>
                 ))}
               </nav>
-              <div className="who">
-                <p className="who-name">
-                  <span className="visually-hidden">{t.signedInAs} </span>
-                  {staff.displayName}
-                  <span className="who-role">{t.roles[staff.role]}</span>
-                </p>
-                <OtherAppLinks apps={apps} className="action" />
-                <button type="button" className="action" onClick={signOut}>
-                  {t.signOut}
-                </button>
-              </div>
+              <button
+                ref={accountButton}
+                type="button"
+                className="appbar-account"
+                aria-label={t.accountOf(staff.displayName, t.roles[staff.role])}
+                aria-haspopup="dialog"
+                aria-expanded={sheet === "account"}
+                onClick={() => setSheet("account")}
+              >
+                <span className="avatar" aria-hidden="true">
+                  {initialsOf(staff.displayName)}
+                </span>
+              </button>
             </header>
           )}
           {layout === "tablet" ? <Rail sections={sections} current={current} badges={badges} /> : null}
@@ -896,7 +887,7 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
             <ul className="menu">
               {apps ? (
                 <li className="menu-group">
-                  <OtherAppLinks apps={apps} className="menu-item" />
+                  <OtherAppLinks apps={apps} />
                 </li>
               ) : null}
               <li>

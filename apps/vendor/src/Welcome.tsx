@@ -1,23 +1,15 @@
-/* Кабинет открыли в браузере без сессии: коротко — что это за кабинет (заявки, 12 часов на
-   ответ, календарь, карточка) и как в него попасть, затем вход через хаб на сайте Bayramm.
-   Регистрации нет: площадки подключает команда, она же заводит номер партнёра. Если номер
-   уже у менеджера — бот привяжет Telegram (кнопка «Я партнёр»), и кабинет откроется в нём.
+/* Кабинет открыли в браузере без сессии: что это за кабинет — одной строкой — и вход через хаб
+   на сайте Bayramm. Регистрации нет: площадки подключает команда, она же заводит номер
+   партнёра; нет доступа — менеджер подключит (одна строка), а у кого номер уже у менеджера,
+   тому бот привяжет Telegram (кнопка «Я партнёр»), и кабинет откроется в нём. Остального
+   рассказа нет: приглашённый партнёр его знает.
 
    Тексты — без чисел о площадке и партнёрах: показывать нечего, придумывать нельзя.
    Вход по телефону упоминаем, только если он в окружении включён. На телефоне вход — сразу
    под заголовком (кто уже партнёр, не листает), на компьютере — карточкой справа. */
 
 import { BotLink, usePhoneSignIn } from "./Gate";
-import type { TextKey } from "./i18n";
-import { Icon, type IconName } from "./icons";
 import { Heading, type ScreenProps } from "./ui";
-
-const POINTS: readonly (readonly [IconName, TextKey, TextKey])[] = [
-  ["requests", "welcomeRequests", "welcomeRequestsText"],
-  ["clock", "welcome12h", "welcome12hText"],
-  ["calendar", "welcomeCalendar", "welcomeCalendarText"],
-  ["hall", "welcomeCard", "welcomeCardText"],
-];
 
 interface WelcomeProps extends Pick<ScreenProps, "t" | "headingRef"> {
   /** Войти через хаб входа на сайте */
@@ -41,25 +33,9 @@ export function Welcome({ t, headingRef, onSignIn }: WelcomeProps) {
         <button type="button" className="btn btn-primary btn-wide" onClick={onSignIn}>
           {t.signIn}
         </button>
-        <h3 className="welcome-subtitle">{t.welcomeAccess}</h3>
-        <p className="note">{t.welcomeAccessText}</p>
         <BotLink t={t} primary={false} />
-        <p className="note">{t.welcomeAccessNew}</p>
+        <p className="note">{t.welcomeNoAccess}</p>
       </section>
-
-      <ul className="welcome-points">
-        {POINTS.map(([icon, title, text]) => (
-          <li key={title}>
-            <span className="welcome-icon">
-              <Icon name={icon} size={20} />
-            </span>
-            <span className="welcome-point">
-              <strong className="welcome-point-title">{t[title]}</strong>
-              <span>{t[text]}</span>
-            </span>
-          </li>
-        ))}
-      </ul>
     </section>
   );
 }

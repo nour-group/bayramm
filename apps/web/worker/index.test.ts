@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import {
   CACHE_IMMUTABLE,
   CACHE_NONE,
@@ -135,6 +135,24 @@ describe("index.html клиента", () => {
       '<link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />',
     );
     for (const host of ["fonts.googleapis.com", "fonts.gstatic.com"]) expect(html).not.toContain(host);
+  });
+
+  it("шрифты языков: кириллица — русскому, латиница Unbounded — узбекскому, файлы на месте", () => {
+    const links = [...html.matchAll(/<link rel="preload"[^>]*href="([^"]+\.woff2)"([^>]*)>/g)].map((m) => ({
+      file: (m[1] ?? "").split("/").pop() ?? "",
+      lang: /data-font-lang="([a-z]+)"/.exec(m[2] ?? "")?.[1] ?? null,
+    }));
+    expect(links).toEqual([
+      { file: "manrope-latin.woff2", lang: null },
+      { file: "manrope-cyrillic.woff2", lang: "ru" },
+      { file: "unbounded-cyrillic.woff2", lang: "ru" },
+      { file: "unbounded-latin.woff2", lang: "uz" },
+    ]);
+    for (const { file } of links) {
+      expect(existsSync(new URL(`../../../packages/ui/fonts/${file}`, import.meta.url)), file).toBe(true);
+    }
+    // Все четыре — шрифты, которые fonts.css объявляет; каждый — с crossorigin (иначе браузер качает дважды)
+    expect(html.match(/<link rel="preload"[^>]*crossorigin/g)).toHaveLength(4);
   });
 
   it("встроенных скриптов и стилей нет (CSP их не пропустит)", () => {

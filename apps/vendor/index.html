@@ -5,8 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Bayramm — кабинет партнёра</title>
-    <!-- Основной шрифт текста (@bayramm/ui/fonts.css): грузится сразу, а не после стилей -->
+    <!-- Открыт из Telegram — заказывает SDK Mini App до бандла (public/boot.js, CSP: внешний файл) -->
+    <script src="/boot.js" async></script>
+    <!-- Шрифты первого экрана (@bayramm/ui/fonts.css) — сразу, а не после стилей: кабинет по умолчанию
+         по-русски (кириллица текста), цифры и знаки — латинский файл, «Bayramm» в шапке — латиница
+         Unbounded. Узбекскому кабинету кириллица не нужна, но тот же HTML отдаётся обоим языкам -->
     <link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="../../packages/ui/fonts/manrope-cyrillic.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="../../packages/ui/fonts/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>

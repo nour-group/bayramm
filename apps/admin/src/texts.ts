@@ -5,26 +5,14 @@ export const t = {
   skip: "К содержимому",
   sections: "Разделы панели",
   vendors: "Вендоры",
-  vendorsLead: "Вендоры и их витрины: заведение, проверка, вход в кабинет.",
   moderation: "Модерация",
-  moderationLead:
-    "Всё, что ждёт решения: витрины, предложения изменений, услуги и новые фото. Клиенты видят прежнее, пока здесь не решат.",
   requests: "Заявки",
-  requestsLead: "Заявки клиентов и ответы вендоров. Без ответа — вверху, ближайший срок первым.",
   clients: "Клиенты",
-  clientsLead:
-    "Имя из Telegram, чем входит и последняя заявка. Поиск — по номеру заявки или коду клиента (C-…). Выгрузки базы клиентов нет.",
   notifications: "Уведомления",
-  notificationsLead: "Очередь сообщений бота: сколько ждёт отправки и что не доставлено.",
   audit: "Журнал",
-  auditLead: "Кто, что и когда сделал в панели, и кто смотрел телефоны. Только чтение.",
   team: "Команда",
-  teamLead: "Сотрудники панели: приглашение по имени в Telegram или по номеру телефона, роли, отключение.",
   settings: "Настройки",
-  settingsLead: "Срок ответа, напоминания, фото, лимиты и сроки хранения. Каждое изменение — в журнале.",
   metrics: "Метрики",
-  metricsLead:
-    "Главное на запуске: клиент отправил заявку — вендор ответил в срок. Только числа: по неделям, категориям и вендорам.",
   noAccess: "У вашей роли нет доступа к этому разделу.",
   notFound: "Страница не найдена",
   notFoundLead: "Проверьте адрес или откройте главный раздел.",
@@ -107,7 +95,8 @@ export const t = {
   moreSections: "Ещё разделы",
   moreCurrent: (section: string) => `Ещё, открыт раздел «${section}»`,
   // Сотрудник решает по модерации, а бот ему не пишет: оповещения команды не доходят
-  botBanner: "Уведомления от бота не приходят: напишите боту /start",
+  botBanner: "Бот вам не пишет",
+  botBannerWrite: "Бот вам не пишет: напишите ему /start",
   botBannerLink: "Открыть бота",
   botBannerHide: "Скрыть",
   // Счётчики у разделов (из очередей метрик): что ждёт команду
@@ -195,11 +184,17 @@ export const t = {
     vendor_in_use:
       "Вендора нельзя удалить: у его витрин есть заявки или витрины на проверке или в каталоге. Обновите страницу.",
     staff_invite_accepted: "Приглашение уже принято — удалить его нельзя. Отключите сотрудника.",
+    contact_change_not_pending:
+      "Предложения по контактам уже нет: партнёр его отозвал или по нему решили. Обновите страницу.",
+    contacts_require_review:
+      "Витрина на проверке или на сайте: контакты меняются только предложением, решает модератор.",
+    contacts_not_live:
+      "Витрина не на проверке и не на сайте: её контакты сохраняются сразу. Обновите страницу.",
   } as Record<string, string>,
 
   // статусы витрины
   status: {
-    lead: "Лид",
+    lead: "Не заполнен",
     draft: "Черновик",
     review: "На проверке",
     active: "Опубликована",
@@ -226,7 +221,6 @@ export const t = {
   goTo: "Перейти",
   toChecklist: "К проверке вендора",
   blockersActive: "Не хватает для публикации",
-  readyToPublish: "Всё готово к публикации",
   legalForms: { ooo: "ООО", yatt: "ЯТТ (ИП)", self_employed: "Самозанятый" },
   sum: "сум",
 
@@ -236,23 +230,24 @@ export const t = {
   vendorsEmpty: "Вендоров не нашлось.",
   vendorsEmptyAll: "Вендоров пока нет. Начните с «Новый вендор».",
   colVendor: "Вендор",
-  colContact: "Контакт",
   colListings: "Витрины",
-  colChecklist: "Проверка",
-  colCabinet: "Кабинет",
-  cabinetUsers: (users: number, linked: number) =>
-    users === 0 ? "нет входа" : `${linked} из ${users} в Telegram`,
+  colAttention: "Что не так",
+  // что не так у вендора: показывается только в проблемных состояниях (Vendors.tsx)
+  checksShort: (done: number) => `Проверка ${done}/4`,
+  cabinetNone: "нет входа",
+  cabinetNoNotify: "уведомления не приходят",
   noListings: "нет витрин",
 
   // вендор
   vendorCode: "Код",
-  vendorSections: {
-    business: "Бизнес",
-    businessHint: "Название для панели и реквизиты. Скан документов не храним — только отметку о проверке.",
-    contact: "Контакт",
-    contactHint:
-      "Контактное лицо вендора. Телефоны видны только по кнопке «Показать» — просмотр пишется в журнал.",
-  },
+  // Страница вендора: «Контакт» — кто и как с ним связаться; «Реквизиты» — свёрнуты, правка на месте
+  contactTitle: "Контакт",
+  contactNone: "Контактное лицо не указано",
+  requisites: "Реквизиты",
+  requisitesEmpty: "Не заполнены",
+  requisitesStir: (stir: string) => `СТИР ${stir}`,
+  requisitesContract: (no: string) => `договор № ${no}`,
+  phonesShow: "Показать телефоны",
   fields: {
     name: "Название",
     legalForm: "Форма",
@@ -290,11 +285,9 @@ export const t = {
     published:
       "Удалить нельзя, пока витрины вендора на проверке или в каталоге: сначала верните их в черновик или приостановите.",
   } as Record<string, string>,
-  vendorReadOnly: "Только просмотр: данные вендора меняют менеджер и администратор.",
   noManager: "Не назначен",
 
   checklist: "Проверка вендора",
-  checklistHint: "Все четыре отметки нужны для публикации. Каждая отметка — в журнале действий.",
   checklistItems: {
     contract: "Договор подписан",
     stir: "СТИР сверен с реестром",
@@ -302,13 +295,10 @@ export const t = {
     pdConsent: "Согласие на обработку ПДн подписано",
   },
   checkedBy: (by: string | null, at: string) => (by ? `${by}, ${at}` : at),
-  phones: "Телефоны контакта",
   phoneMain: "Основной",
   phoneAlternative: "Второй",
 
   users: "Вход в кабинет",
-  usersHint:
-    "Пригласите партнёра по номеру телефона — он войдёт сам: в боте Bayramm поделится контактом с этого номера или на сайте введёт код. Номер уже подтверждён в аккаунте Bayramm — доступ откроется сразу.",
   usersEmpty: "Пока никого нет — пригласите владельца кабинета.",
   userPhone: "Телефон для входа",
   userName: "Имя",
@@ -317,6 +307,7 @@ export const t = {
   enable: "Включить",
   // пользователи кабинета: приглашение, статус и действия (pages/VendorUsers.tsx)
   vuInviteTitle: "Пригласить в кабинет",
+  vuInviteOpen: "+ Пригласить",
   vuRole: "Роль",
   vuRoles: { owner: "Владелец", member: "Сотрудник площадки" },
   vuRoleHints: {
@@ -327,13 +318,11 @@ export const t = {
   vuOwnerFirst: "Сначала пригласите владельца: сотрудник площадки работает в кабинете вместе с ним.",
   vuLocale: "Язык уведомлений",
   vuLocales: { ru: "Русский", uz: "Oʻzbekcha" },
-  vuLocaleHint: "На этом языке бот пишет партнёру; на нём же — текст приглашения",
   vuInvite: "Пригласить",
   vuInvited: "Приглашение создано — отправьте партнёру текст приглашения.",
   vuInvitedAccepted: "Номер уже подтверждён в аккаунте Bayramm — доступ открыт сразу.",
   vuStatus: { pending: "Ждёт входа", accepted: "Вошёл", disabled: "Отключён" },
   vuNoName: "Имя не указано",
-  vuNotifiable: "Telegram: уведомления приходят",
   vuNotNotifiable: "Telegram: уведомления не приходят",
   vuOpenBot: "пусть партнёр откроет бота Bayramm",
   vuLastLogin: (at: string) => `Последний вход: ${at}`,
@@ -359,11 +348,8 @@ export const t = {
   // витрина
   listingSections: {
     main: "Основное",
-    mainHint: "Название, район и адрес страницы витрины на сайте (латиница).",
     texts: "Описание и адрес",
-    textsHint: "На двух языках: клиент видит свой.",
-    phone: "Телефон и Telegram для клиентов",
-    phoneHint: "Клиент видит их сразу, до заявки. Telegram — по желанию.",
+    phone: "Контакты для клиентов",
   },
   listingFields: {
     name: "Название",
@@ -392,11 +378,8 @@ export const t = {
   telegramLabel: "Telegram",
   telegramMissing: "Telegram не указан",
   telegramChange: "Telegram для клиентов",
-  telegramHintNew: "@имя, имя или ссылка t.me/имя. Можно не указывать",
   telegramRemove: "Убрать Telegram",
   phoneRemove: "Убрать телефон",
-  phoneRemoveHint:
-    "Клиенты не увидят ни телефона, ни Telegram витрины: Telegram уберётся вместе с телефоном.",
   contactsShow: "Показать",
   history: "История статусов",
   historyEmpty: "Пока без изменений.",
@@ -414,7 +397,7 @@ export const t = {
   moderatedHint: "Через модерацию",
   sentForModeration: (fields: string, rest: boolean) =>
     `Отправлено на модерацию: ${fields}. На витрине появится после решения модератора.${rest ? " Остальное сохранено." : ""}`,
-  pendingRevisionTitle: "Предложение изменений ждёт решения модератора",
+  pendingRevisionTitle: "Есть предложение изменений",
   pendingRevisionOpen: "Открыть предложение",
 
   actions: {
@@ -437,8 +420,6 @@ export const t = {
   // удаление витрины
   listingDelete: "Удалить витрину",
   listingDeleteTitle: "Удалить витрину?",
-  listingDeleteHint:
-    "Витрина удалится насовсем — вместе с фото, услугами, занятостью, контактами и предложениями изменений. Отменить нельзя.",
   listingDeleteText: (name: string) =>
     `«${name}» удалится насовсем: фото, услуги, занятость, контакты и предложения изменений. Отменить нельзя.`,
   // Почему витрину нельзя удалить — DeleteBlocker
@@ -451,14 +432,12 @@ export const t = {
 
   // фото
   photos: "Фото",
-  photosHint: (min: number, max: number) =>
-    `Минимум ${min}, максимум ${max}. Первое — обложка. Фото сжимаются в браузере, метаданные (в том числе геопозиция) удаляются.`,
   noFacesWarning:
-    "На фото не должно быть людей и лиц — только то, что предлагает витрина: зал, машины, цветы, торты, подарки, оформление. Фото с людьми не загружайте.",
+    "Без людей и лиц — только то, что предлагает витрина: зал, машины, цветы, торты, подарки, оформление.",
   noFacesAck: "Подтверждаю: на выбранных фото нет лиц",
   // Портфолио (фото и видео, студия): люди на фото — только с их согласия
   portfolioWarning:
-    "Портфолио: люди на фото допустимы, только если они согласны на публикацию. Нет согласия — загружайте только фото без лиц.",
+    "Люди на фото — только с их согласия на публикацию. Нет согласия — загружайте фото без лиц.",
   photoAckLabel: "Что на выбранных фото",
   photoAckConsent: "Люди на фото согласны на публикацию",
   photoAckNoFaces: "На фото нет лиц",
@@ -468,8 +447,6 @@ export const t = {
   uploading: (done: number, total: number) => `Загружаем ${done} из ${total}…`,
   cover: "Обложка",
   makeCover: "Сделать обложкой",
-  moveEarlier: (n: number) => `Фото ${n}: раньше`,
-  moveLater: (n: number) => `Фото ${n}: позже`,
   photoN: (n: number) => `Фото ${n}`,
   addPhotosPhone: "Снять или выбрать фото",
   photosPick: "Камера или галерея: JPEG, PNG, WebP, HEIC",
@@ -525,21 +502,45 @@ export const t = {
   weekdays: ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
 
   // модерация
-  moderationEmpty: "Витрин на проверке нет.",
+  moderationAllDone: "Всё разобрано",
+  // Сегменты очередей: коротко, число — рядом (пустые очереди не показываются)
+  queueTabs: {
+    review: "Витрины",
+    revisions: "Предложения",
+    services: "Услуги",
+    contacts: "Контакты",
+    photos: "Фото",
+  },
+  contactQueue: "Смена контактов",
+  // «Не хватает: 2» — вместо списка пунктов: что именно, видно на странице витрины
+  missingN: (n: number) => `Не хватает: ${n}`,
+  // Кто предложил — одним словом в карточке очереди (на странице предложения — полной фразой)
+  queueProposer: (kind: "partner" | "staff", name: string | null) =>
+    kind === "partner" ? "партнёр" : `сотрудник${name ? ` · ${name}` : ""}`,
   submittedAt: "Отправлена",
   photosCount: (ready: number, approved: number) => `фото: ${ready}, одобрено: ${approved}`,
   listingsInReview: "Витрины на проверке",
   revisions: "Предложения изменений",
-  revisionsHint:
-    "Название, описания, данные и видео опубликованных витрин — от партнёра из кабинета или от менеджера.",
-  revisionsEmpty: "Предложений, ждущих решения, нет.",
   revisionFields: {
     name: "Название",
     descriptionRu: "Описание (RU)",
     descriptionUz: "Tavsif (UZ)",
     attributes: "Данные витрины",
     videoLinks: "Видео",
+    capacity: "Вместимость",
+    districtCode: "Район",
+    addressRu: "Адрес (RU)",
+    addressUz: "Manzil (UZ)",
   } as Record<string, string>,
+  // Вместимость в правке: «80–300 гостей», «до 300 гостей», «от 80 гостей»
+  revisionCapacity: (min: number | null, max: number | null) =>
+    min !== null && max !== null
+      ? `${min}–${max} гостей`
+      : max !== null
+        ? `до ${max} гостей`
+        : min !== null
+          ? `от ${min} гостей`
+          : "",
   revisionStatus: {
     pending: "На проверке",
     approved: "Одобрено",
@@ -562,27 +563,54 @@ export const t = {
   revisionWhoDecides: "Предложение ждёт решения: одобряет или отклоняет модератор или администратор.",
   revisionDecided: (status: string, by: string | null, at: string) =>
     `${status}${by ? ` · ${by}` : ""} · ${at}`,
+  // Партнёр просит сменить телефон и Telegram витрины на проверке или на сайте (блок на странице витрины)
+  contactChange: {
+    title: "Партнёр предлагает новые контакты",
+    what: (phone: boolean, telegram: boolean, at: string) =>
+      `Меняет: ${[phone ? "телефон" : null, telegram ? "Telegram" : null].filter(Boolean).join(" и ")} · подано ${at}`,
+    keep: "Клиенты видят прежние контакты, пока предложение не решено.",
+    who: "Решает модератор или администратор.",
+    now: "Сейчас",
+    proposed: "Предлагает партнёр",
+    removeTelegram: "убрать Telegram",
+    approve: "Одобрить",
+    approveHint:
+      "Новые контакты сразу появятся у клиентов по кнопке «Связаться», партнёру придёт уведомление.",
+    decline: "Отклонить",
+    declineHint: "Витрина останется с прежними контактами. Причину увидит партнёр в кабинете.",
+    approved: "Контакты витрины обновлены.",
+    declined: "Предложение отклонено, партнёр увидит причину.",
+  },
   openListing: "К витрине",
   photoQueue: "Новые фото",
-  photoQueueHint:
-    "Новые фото — от партнёра или менеджера, и у черновиков тоже. Одобрить или отклонить — на странице витрины; что не решите, одобрит публикация.",
-  photoQueueEmpty: "Новых фото, ждущих решения, нет.",
   pendingPhotos: (n: number) => `ждут решения: ${n}`,
+  // Очередь фото: решение — по плитке (✓ и ✕), «Одобрить все» — по карточке
+  photoApproveOne: (n: number, listing: string) => `Одобрить фото ${n}: ${listing}`,
+  photoDeclineOne: (n: number, listing: string) => `Отклонить фото ${n}: ${listing}`,
+  photoApproveAll: (n: number) => `Одобрить все (${n})`,
+  photoApprovedSaid: (listing: string) => `Одобрено: фото, ${listing}. Дальше — следующее.`,
+  photoApprovedAllSaid: (n: number, listing: string) =>
+    `Одобрено фото: ${n}, ${listing}. Дальше — следующее.`,
+  photoDeclinedSaid: (listing: string) => `Отклонено: фото, ${listing}. Дальше — следующее.`,
+  photosMoreOnPage: (n: number) => `Ещё ${n} — на странице витрины`,
 
   // заявки
   requestsEmpty: "Заявок нет.",
   requestNo: (n: number) => `№ ${n}`,
-  requestsCount: (n: number) => `заявок: ${n}`,
   sla: {
     waiting: "Ждёт ответа",
     overdue: "Просрочена",
-    breached: "Нарушен срок",
+    breached: "Просрочена",
     answered: "Ответ в срок",
     answered_late: "Ответ с опозданием",
     ops_contacted: "Связались мы",
     closed: "Закрыта",
   } as Record<string, string>,
   slaLate: "Требуют действия",
+  slaWaitingFilter: "Ждут ответа",
+  // Плашка срока в строке заявки: когда ответ ждут и сколько уже просрочена
+  slaUntil: (time: string) => `Ответ до ${time}`,
+  slaOverdue: (span: string) => `Просрочена ${span}`,
   requestStatus: {
     new: "Новая",
     viewed: "Просмотрена",
@@ -598,14 +626,12 @@ export const t = {
     price: "Не сошлись в цене",
     other: "Другое",
   } as Record<string, string>,
-  requestsSearch: "Номер, витрина, вендор",
+  requestsSearch: "Номер или витрина",
   colRequest: "Заявка",
   colListing: "Витрина",
-  createdAt: (at: string) => `создана ${at}`,
   colEvent: "Событие",
   colDue: "Срок ответа",
   guests: (n: number | null) => (n === null ? "гости не указаны" : `${n} гостей`),
-  dueIn: "до",
   requestClient: "Клиент",
   requestComment: "Комментарий",
   requestBudget: "Бюджет",
@@ -613,11 +639,10 @@ export const t = {
   clientPhone: "Телефон клиента",
   clientPhoneHint: "Только администратор и только с причиной. Просмотр пишется в журнал.",
   clientPhoneReason: "Зачем нужен номер",
-  vendorPhones: "Кому звонить у вендора",
+  vendorPhones: "Телефоны вендора",
+  showPhones: "Показать телефоны",
   listingPhone: "Телефон для клиентов",
   firstResponse: "Первый ответ",
-  firstViewed: "Просмотрена вендором",
-  source: "Откуда заявка",
   // Откуда пришла запись (app.source): словами, а не кодом базы
   sources: {
     tma: "Mini App",
@@ -628,13 +653,10 @@ export const t = {
     offline: "Не из приложения",
     system: "Система",
   } as Record<string, string>,
-  reminders: (n: number) => `напоминаний: ${n}`,
 
   // работа с заявкой
   requestActions: "Работа с заявкой",
   remindVendor: "Напомнить вендору",
-  remindHint:
-    "Сообщение в Telegram всем, кто вошёл в кабинет вендора. Между напоминаниями — пауза из настроек.",
   remindUnreachable: "У вендора никто не привязал Telegram — напоминание не дойдёт. Позвоните.",
   remindAgainAt: (at: string) => `Следующее напоминание — после ${at}`,
   remindSent: "Напоминание отправлено",
@@ -642,7 +664,8 @@ export const t = {
   markContactedHint:
     "Отметка оператора: связь с клиентом состоялась. В ответы вендора она не засчитывается; клиенту уйдёт то же сообщение, что при ответе вендора.",
   notAwaiting: "Заявка уже не ждёт первого ответа вендора.",
-  timeline: "Срок ответа по шагам",
+  requestWhatWhen: "Что и когда",
+  requestCourse: "Ход заявки",
   timelineEvents: {
     created: "Заявка создана",
     viewed: "Вендор открыл заявку",
@@ -655,15 +678,14 @@ export const t = {
   reminderOps: (by: string | null) => `Напоминание от команды${by ? ` · ${by}` : ""}`,
   reminderDelivery: (recipients: number, delivered: number, failed: number) =>
     `получателей: ${recipients}, доставлено: ${delivered}${failed ? `, не доставлено: ${failed}` : ""}`,
-  notes: "Заметки команды",
-  notesHint: "Видны только сотрудникам. Добавить можно, изменить и удалить — нет. Без телефонов клиента.",
-  notesEmpty: "Заметок нет.",
+  note: "Заметка",
+  noteAdd: "+ Заметка",
+  noteHint: "Видно только команде",
   noteText: "Новая заметка",
   addNote: "Добавить заметку",
 
   // клиенты
   clientsSearch: "Номер заявки или код клиента (C-…)",
-  clientsSearchHint: "По имени и телефону не ищем.",
   clientsEmpty: "Клиентов не нашлось.",
   onlyBlocked: "Только заблокированные",
   colClient: "Клиент",
@@ -672,21 +694,20 @@ export const t = {
   clientNoNameTitle: "Клиент без имени",
   clientDeletedTitle: "Клиент удалил аккаунт",
   colSignIn: "Вход и язык",
-  clientSignIn: "Вход",
+  clientSignInLocale: "Вход · язык",
   signInKinds: { telegram: "Telegram", phone: "телефон" } as Record<string, string>,
   signInNone: "нет способа входа",
   clientNoRequests: "заявок нет",
-  colSince: "С нами с",
-  colLastSeen: "Был в приложении",
+  colSeen: "Был",
+  seenAgo: (span: string) => `был ${span} назад`,
+  seenNever: "не заходил",
+  requestsOf: (n: number) => `заявок: ${n}`,
   colRequests: "Заявки",
-  colState: "Состояние",
   clientBlocked: "Заблокирован",
   clientDeleted: "Удалил аккаунт",
   clientActive: "Активен",
   clientProfile: "Профиль",
-  clientName: "Имя в Telegram",
   clientUsername: "Имя пользователя",
-  clientLocale: "Язык",
   clientCanMessage: "Бот может писать",
   clientDeletedNote: "Клиент удалил аккаунт: имени и телефона больше нет, заявки и журналы остались.",
   yes: "да",
@@ -705,7 +726,6 @@ export const t = {
   } as Record<string, string>,
   consentActions: { grant: "дал", withdraw: "отозвал" } as Record<string, string>,
   consentVersion: (v: number) => `версия текста ${v}`,
-  blockTitle: "Блокировка",
   blockHint:
     "Заблокированный клиент не входит в приложение и не создаёт заявок. Причина обязательна; блокировка — в журнале.",
   block: "Заблокировать",
@@ -722,11 +742,9 @@ export const t = {
     dead: "Не доставлены",
     sent: "Отправлено за сутки",
   } as Record<string, string>,
-  outboxOldest: (at: string) => `Самое давнее ожидающее — с ${at}. Если давно, отправитель не работает.`,
+  outboxOldest: (at: string) => `Самое давнее ожидающее — с ${at}`,
+  outboxHealthy: (sent: number) => `Всё доставлено · за сутки ${sent}`,
   outboxDead: "Не доставлены",
-  outboxDeadHint:
-    "Бот не смог отправить сообщение: получатель заблокировал бота, не привязан или Telegram не ответил. Повтор ставит сообщение в очередь заново.",
-  outboxDeadEmpty: "Всё доставлено.",
   retryNotice: (kind: string) => `Повторить: ${kind}`,
   outboxShown: (shown: number, total: number) => `Показаны последние ${shown} из ${total}.`,
   colKind: "Вид",
@@ -753,6 +771,8 @@ export const t = {
     "ops.weekly_report": "Команде: отчёт за неделю",
     "ops.api_error": "Команде: ошибки сервера",
     "vendor.access_granted": "Вендору: добавлен в кабинет",
+    "ops.contact_change_submitted": "Команде: партнёр просит сменить контакты витрины",
+    "vendor.contact_change_decided": "Вендору: решение по новым контактам витрины",
   } as Record<string, string>,
 
   // журнал
@@ -770,6 +790,7 @@ export const t = {
     "listing.": "Витрины",
     "listing_service.": "Услуги",
     "listing_contact.": "Контакты витрин",
+    "listing_contact_change.": "Смена контактов витрин партнёром",
     "listing_revision.": "Предложения изменений",
     "photo.": "Фото",
     "availability.": "Занятость",
@@ -874,12 +895,20 @@ export const t = {
   auditActions: {
     "listing.create": "Витрина создана",
     "listing.update": "Витрина изменена",
+    "listing.vendor_update": "Витрина изменена партнёром",
     "listing_package.create": "Пакет добавлен",
     "listing_package.update": "Пакет изменён",
     "listing_package.delete": "Пакет удалён",
     "listing_contact.create": "Контакты витрины вписаны",
     "listing_contact.update": "Контакты витрины изменены",
     "listing_contact.delete": "Контакты витрины убраны",
+    "listing_contact_change.submit": "Партнёр просит сменить контакты витрины",
+    "listing_contact_change.withdraw": "Партнёр отозвал просьбу о контактах",
+    "listing_contact_change.approve": "Новые контакты витрины одобрены",
+    "listing_contact_change.decline": "Новые контакты витрины отклонены",
+    "listing.withdraw": "Витрина отозвана с проверки партнёром",
+    "photo.order": "Порядок фото изменил партнёр",
+    "photo.cover": "Обложку выбрал партнёр",
     "listing.category_change": "Категория витрины изменена",
     "listing.delete": "Витрина удалена",
     "listing_service.create": "Услуга добавлена",
@@ -928,17 +957,18 @@ export const t = {
     staff_listing: "телефон витрины",
     request_inbox: "вендор в кабинете",
     self: "сам себе",
+    staff_contact_change: "новые контакты витрины",
+    self_contact_change: "своя просьба о контактах",
     system_notification: "уведомление",
   } as Record<string, string>,
 
   // команда
   inviteTitle: "Пригласить сотрудника",
-  inviteHint:
-    "Сотрудник войдёт через Telegram: имя пользователя должно совпадать с его именем в Telegram. При первом входе приглашение привяжется к его аккаунту.",
-  inviteHintPhone:
-    "Сотрудник войдёт на сайте Bayramm по коду на этот номер — при первом входе приглашение привяжется к его аккаунту. Если номер уже подтверждён в аккаунте Bayramm, приглашение примется сразу. Номер не хранится: только его отпечаток.",
-  inviteHintPhoneOff:
-    "Вход по коду на телефон в этом окружении пока выключен: приглашение примется, когда сотрудник подтвердит номер в аккаунте Bayramm. Номер не хранится: только его отпечаток.",
+  inviteOpen: "+ Пригласить",
+  // Одна строка под полем: как сотрудник войдёт
+  inviteHint: "Имя должно совпадать с его именем пользователя в Telegram.",
+  inviteHintPhone: "Войдёт по коду на этот номер. Номер не хранится: только его отпечаток.",
+  inviteHintPhoneOff: "Вход по телефону выключен: приглашение примется, когда номер подтвердят в аккаунте.",
   inviteBy: "Как войдёт",
   inviteByTelegram: "По имени в Telegram",
   inviteByPhone: "По номеру телефона",
@@ -977,32 +1007,31 @@ export const t = {
   } as Record<string, string>,
 
   // настройки
+  settingGroups: { vendor: "Ответ вендора", photos: "Фото", data: "Данные" } as Record<string, string>,
   settingsLabels: {
-    sla_hours: "Срок ответа вендора, часов",
-    sla_reminder_hours: "Напоминания вендору через, часов",
+    sla_hours: "Срок ответа вендора",
+    sla_reminder_hours: "Напоминания вендору через",
     quiet_hours: "Тихие часы (по Ташкенту)",
-    ops_reminder_pause_minutes: "Пауза между напоминаниями от команды, минут",
+    ops_reminder_pause_minutes: "Пауза между напоминаниями от команды",
     min_photos: "Минимум фото для публикации",
     max_photos: "Максимум фото на витрине",
     client_requests_per_day: "Заявок клиента за сутки",
-    request_contact_retention_days: "Хранить контакты из заявки, дней после события",
-    session_retention_days: "Хранить истёкшие сессии, дней",
-    otp_retention_hours: "Хранить коды входа, часов",
+    request_contact_retention_days: "Хранить контакты из заявки после события",
+    session_retention_days: "Хранить истёкшие сессии",
+    otp_retention_hours: "Хранить коды входа",
   } as Record<string, string>,
+  // Границы значения — вместо абзацев: новое значение сервер проверит ещё раз
   settingsHints: {
-    sla_hours:
-      "1–72. Действует на новые заявки: у созданной срок уже зафиксирован. Напоминания — раньше срока.",
-    sla_reminder_hours:
-      "До двух, по возрастанию, каждое 1–72 и раньше срока ответа. Пусто — без напоминаний.",
-    quiet_hours: "Ночью напоминания ждут утра. Начало и конец — ЧЧ:ММ.",
-    ops_reminder_pause_minutes:
-      "5–1440. Кнопка «Напомнить» на заявке снова доступна через столько минут после прошлого напоминания.",
-    min_photos: "3–10: меньше трёх нельзя — правило продукта. Не больше максимума.",
-    max_photos: "3–30, не меньше минимума.",
-    client_requests_per_day: "1–100: защита вендоров от спама.",
-    request_contact_retention_days: "1–3650. Потом имя, телефон и комментарий стираются.",
-    session_retention_days: "1–365.",
-    otp_retention_hours: "1–720.",
+    sla_hours: "1–72 ч · для новых заявок",
+    sla_reminder_hours: "1–72 ч, по возрастанию, раньше срока ответа",
+    quiet_hours: "ночью напоминания ждут утра",
+    ops_reminder_pause_minutes: "5–1440 мин",
+    min_photos: "3–10, не больше максимума",
+    max_photos: "3–30, не меньше минимума",
+    client_requests_per_day: "1–100",
+    request_contact_retention_days: "1–3650 дн.",
+    session_retention_days: "1–365 дн.",
+    otp_retention_hours: "1–720 ч",
   } as Record<string, string>,
   settingInvalid: "Значение не подходит: проверьте границы и согласованность с другими настройками.",
   settingValue: "Значение",
@@ -1010,31 +1039,38 @@ export const t = {
   reminderSecond: "Второе",
   quietFrom: "С",
   quietTo: "До",
-  updatedBy: (at: string, by: string | null) => `Изменено ${at}${by ? ` · ${by}` : ""}`,
 
   // метрики запуска
-  metricsNow: "Сейчас",
-  metricsQueues: {
-    awaiting: "Ждут ответа вендора",
-    overdue: "Из них срок вышел",
-    deadTotal: "Не доставлено уведомлений",
-    listingsReview: "Витрин на проверке",
-    revisionsPending: "Предложений ждут решения",
-    photosPending: "Новых фото ждут решения",
-    servicesPending: "Услуг ждут решения",
-  } as Record<string, string>,
   metricsWeekly: "По неделям",
-  metricsWeeklyHint: (hours: number) =>
-    `Неделя — с понедельника, по Ташкенту; заявка — в неделе, когда её отправили. «В срок» — вендор сам ответил за ${hours} ч: связались, договорились или отказ. Просмотр, звонок и «связались» от команды — не ответ вендора. Доля — от заявок, исход которых известен: вендор ответил в срок или срок уже прошёл; отозванные клиентом до срока без ответа — не в расчёте. Время ответа — по заявкам с ответом вендора.`,
+  metricsTabs: { weeks: "Недели", vendors: "Вендоры", categories: "Категории", contacts: "Контакты" },
+  metricsPeriod: "За 30 дней",
+  // Определения одним листом: чьи заявки и что считаем ответом — не абзацами над таблицами
+  metricsHow: "Как считаем",
+  metricsHowItems: (hours: number | undefined) => [
+    {
+      term: "В срок",
+      text: `Вендор сам ответил${hours ? ` за ${hours} ч` : " в срок"}: связался, договорился или отказал. Просмотр, звонок и «связались» от команды ответом вендора не считаются.`,
+    },
+    {
+      term: "Доля",
+      text: "От заявок, исход которых известен: вендор ответил в срок или срок уже прошёл. Отозванные клиентом до срока без ответа в расчёт не входят.",
+    },
+    { term: "Медиана", text: "Время ответа по заявкам, на которые вендор ответил." },
+    { term: "Срок сорван", text: "Срок вышел, ответа нет." },
+    { term: "Неделя", text: "С понедельника, по Ташкенту; заявка — в неделе, когда её отправили." },
+    {
+      term: "Категория",
+      text: "Категория заявки — категория витрины. Витрины и вендоры — сейчас, заявки и ответы — за 30 дней. Фильтр категории сужает недели, вендоров и контакты.",
+    },
+    {
+      term: "Контакты",
+      text: "Сколько раз открыли окно контактов витрины и нажали «Позвонить» или «Написать в Telegram». Только числа, без клиентов. Под числом открытий — на сколько их больше или меньше, чем в предыдущие 30 дней.",
+    },
+  ],
+  inTimeShort: (percent: string) => `в срок ${percent}`,
+  breachesShort: (n: number) => `срок сорван: ${n}`,
   metricsCategories: "По категориям за 30 дней",
-  metricsCategoriesHint:
-    "Категория заявки — категория витрины. Опубликованные витрины и их вендоры — сейчас; заявки, ответы и договорённости — за 30 дней.",
-  metricsCategoryFilter: (name: string) =>
-    `Недели, вендоры и контакты — только «${name}». Очереди и сводка выше — по всем категориям.`,
-  metricsFilterScope: "Категория — для недель, вендоров и контактов ниже.",
   metricsContacts: "Контакты витрин за 30 дней",
-  metricsContactsHint:
-    "Как часто клиенты открывали окно контактов витрины и нажимали «Позвонить» или «Написать в Telegram». Только числа, без клиентов. Сверху — чаще открывают; под числом открытий — на сколько их больше или меньше, чем в предыдущие 30 дней.",
   // Изменение числа открытий к предыдущему такому же периоду: знак — не только цветом
   opensChange: (now: number, prev: number) =>
     now === prev
@@ -1051,22 +1087,14 @@ export const t = {
   colContactTelegram: "Telegram",
   weekNumber: (n: number) => `неделя ${n}`,
   metricsVendors: "Вендоры за 30 дней",
-  metricsVendorsHint:
-    "Вендоры с заявками за 30 дней или с опубликованной витриной. По умолчанию худшие по доле ответов в срок — сверху: им стоит позвонить.",
   metricsVendorsEmpty: "Пока нет ни заявок, ни опубликованных витрин.",
   colWeek: "Неделя",
   colAnswered: "Ответ в срок",
-  colResponseTime: "Время ответа",
   colMedian: "Медиана ответа",
-  colAgreed: "Договорились",
   colBreaches: "Срок сорван",
-  colDead: "Не доставлено",
-  colLastRequest: "Последняя заявка",
   weekNow: "идёт",
-  clientsCount: (n: number) => `клиентов: ${n}`,
   answeredOf: (answered: number, measurable: number) => `${answered} из ${measurable}`,
   medianTime: (median: string) => `медиана ${median}`,
-  p90Time: (p90: string) => `у 90% — до ${p90}`,
   sortAsc: "по возрастанию",
   sortDesc: "по убыванию",
   // Сортировка вендоров на телефоне: столбец и направление одним выбором
@@ -1075,22 +1103,16 @@ export const t = {
   sortRequestsDesc: "Больше заявок — сверху",
   sortMedianDesc: "Дольше отвечают — сверху",
   vendorResponse: "Ответы на заявки",
-  vendorResponseHint:
-    "За 30 дней. «В срок» — вендор сам ответил за срок заявки; «связались» от команды не считается.",
   vendorResponseEmpty: "За 30 дней заявок не было.",
   activeListings: (n: number) => `опубликовано витрин: ${n}`,
   activeVendors: (n: number) => `вендоров: ${n}`,
-  vendorCategories: "Категории",
 
   // ── категории, витрины, услуги (v0.2) ──
   colCategory: "Категория",
   allCategories: "Все категории",
   categoryFirst: "Категория витрины",
-  categoryFirstHint: "С ней заведётся первая витрина. Другие — потом, на странице вендора.",
   categoryRequired: "Выберите категорию",
-  vitrinasHint:
-    "Витрина — страница вендора в одной категории: свои данные, услуги, фото, занятость и заявки. Вход в кабинет, контакты и проверка — общие у вендора.",
-  addVitrina: "Добавить витрину в другой категории",
+  addVitrina: "+ Витрина",
   addVitrinaLead:
     "Новая витрина появится черновиком: дальше — данные витрины, услуги и фото на её странице. Категорию партнёр не меняет.",
   vitrinaHas: (names: string) => `Уже есть: ${names}`,
@@ -1098,24 +1120,14 @@ export const t = {
   vitrinaNameHint: "Пусто — название вендора",
   createVitrina: "Создать витрину",
   categoryChange: "Сменить категорию",
-  categoryChangeHint:
-    "Только пока у витрины нет заявок и услуг: данные витрины очистятся. Если категория другая по сути — лучше новая витрина.",
-  categoryChangeLocked:
-    "У витрины есть услуги — категорию не сменить. Заведите вендору новую витрину в нужной категории.",
   categoryNew: "Новая категория",
   required: "обязательно",
-  priceFromAuto: "Цена «от» в каталоге — из одобренных услуг",
+  priceFromAuto: "Цена «от»",
   priceFromNone: "появится с первой услугой с ценой",
   listingDataSections: {
     attributes: "Данные витрины",
-    attributesHint: (category: string) =>
-      `Поля категории «${category}»: по ним клиент фильтрует каталог. Обязательные нужны для публикации.`,
     occupancy: "Заказов одновременно",
-    occupancyHint:
-      "Сколько машин, экипажей или команд работают в одно время. Часть дня занята, когда договорённостей на неё столько же.",
     videos: "Видео",
-    videosHint: (n: number) =>
-      `До ${n} ссылок на ролики YouTube или посты Instagram. Файлы видео не загружаются.`,
   },
   attributeError: "Проверьте значение",
   attributeIntError: (min: number, max: number) => `Целое число от ${min} до ${max}`,
@@ -1136,11 +1148,7 @@ export const t = {
   // услуги витрины
   services: "Услуги",
   // Цена «от» объяснена один раз — строкой «Цена «от» в каталоге — из одобренных услуг: …» ниже
-  servicesHint: "Цены витрины — только в услугах: «по запросу» не бывает.",
   servicesEmpty: "Услуг пока нет.",
-  servicesDecides: "Вы решаете по модерации: ваши услуги и их изменения сразу на витрине.",
-  servicesManager:
-    "Новые услуги и изменения услуг опубликованной витрины уходят модератору; у неопубликованной их одобрит модератор или публикация.",
   // услуга ждёт решения прямо на странице витрины (как в очереди «Модерации»)
   serviceWaits: "Ждёт решения",
   serviceStatus: {
@@ -1203,9 +1211,6 @@ export const t = {
 
   // очередь услуг в модерации
   serviceQueue: "Услуги",
-  serviceQueueHint:
-    "Новые услуги и изменения услуг — от партнёра или менеджера, и у черновиков тоже: партнёр видит «на проверке». Что не решите до публикации, одобрит публикация витрины.",
-  serviceQueueEmpty: "Услуг, ждущих решения, нет.",
   serviceQueueKinds: { review: "Новая услуга", proposal: "Изменения услуги" } as Record<string, string>,
   serviceNow: "Сейчас",
   serviceProposed: "Предлагают",
@@ -1226,12 +1231,6 @@ export const t = {
   toModeration: "К модерации",
 
   // занятость по режимам категорий
-  availabilityHints: {
-    day: "Отметьте дни, когда витрина занята. Нажмите на день, чтобы отметить или снять.",
-    parts:
-      "День делится на утро, день и вечер. Нажмите на день, чтобы отметить его целиком или по частям. Часть занята, когда отмечена или договорённостей на неё столько же, сколько заказов одновременно.",
-    slot: "Студия: отмечайте дни целиком. Время начала и часы съёмки приходят в заявке.",
-  },
   dayParts: { morning: "Утро", day: "День", evening: "Вечер" } as Record<string, string>,
   wholeDay: "Весь день",
   markBusy: "Занять",
@@ -1239,17 +1238,14 @@ export const t = {
   partBookings: (count: number, capacity: number) => `договорённостей: ${count} из ${capacity}`,
   dayLoad: { free: "свободно", partial: "занято частично", busy: "занято" } as Record<string, string>,
   legendPartial: "занято частично",
-  capacityNow: (n: number) => `Заказов одновременно: ${n} — меняется в одноимённом блоке формы витрины.`,
   pickedDay: (day: string) => `День: ${day}`,
   leadTitle: "Срок заказа",
-  leadHint: "Календаря у этой категории нет: витрина принимает заказы не позже чем за указанный срок.",
   leadDaysValue: (n: number) => `Заказ не позже чем за ${n} дн.`,
   leadNotSet: "Срок не указан — заполните «Заказ не позже чем за, дней» в данных витрины.",
   leadServices: (list: string) => `Свой срок у услуг: ${list}`,
 
   // заявки по категориям
   dayPart: "Часть дня",
-  requestDetails: "Что нужно клиенту",
   requestServices: "Выбранные услуги",
 
   // ── поля форм и подтверждения (fields.tsx, reason.tsx) ───────────────────
@@ -1277,7 +1273,6 @@ export const t = {
     range: (min: number, max: number) => `от ${min} до ${max}`,
     less: "меньше",
     more: "больше",
-    notChosen: "Не указано",
     stir: "Ровно 9 цифр — как в реестре",
     capacity: "Вместимость, гостей",
     capacityHint: "Сколько гостей принимает зал: от и до",
@@ -1320,6 +1315,12 @@ export const t = {
       "Контакты или реклама в тексте",
       "Ошибки в тексте",
       "Нет текста на узбекском",
+    ],
+    contactChangeDecline: [
+      "Номер не принадлежит витрине",
+      "Номер не отвечает",
+      "Telegram не относится к витрине",
+      "Не удалось проверить",
     ],
     clientBlock: ["Спам заявками", "Ложные заявки", "Оскорбления вендоров", "По просьбе клиента"],
     clientPhone: ["Вендор не может дозвониться", "Жалоба вендора", "Проверка заявки"],
@@ -1389,8 +1390,6 @@ export const t = {
   statusHints: {
     lead: "Вендор в работе у команды: витрина ещё не заполнена, клиенты её не видят",
   } as Record<string, string>,
-  requestsLeadSla: (hours: number) =>
-    `Заявки клиентов и ответы вендоров. Без ответа — вверху, ближайший срок первым; срок ответа — ${hours} ч.`,
   requestStatusFilter: "Статус заявки",
   allStatuses: "Все статусы",
   // заявки одной витрины (?listingId=) — снятый фильтр возвращает все
@@ -1414,15 +1413,8 @@ export const t = {
     photos: "Фото",
     services: "Услуги",
     calendar: "Занятость",
-    main: "Основное",
     attrs: "Данные",
     phone: "Контакты",
-    history: "История",
-  } as Record<string, string>,
-  // опубликовать или отправить на проверку нельзя: чего не хватает — в той же шторке
-  actionBlocked: {
-    publish: "Опубликовать пока нельзя — не хватает:",
-    submit: "Отправить на проверку пока нельзя — не хватает:",
   } as Record<string, string>,
 
   // ── заявка: бюджет одной границей ──
@@ -1442,13 +1434,6 @@ export const t = {
   photosOverLimit: (uploaded: number, picked: number, max: number) =>
     `Загружено ${uploaded} из ${picked}, предел — ${max} фото на витрине. Остальные не загружены.`,
 
-  // ── новый вендор: что дальше ──
-  vendorCreated: "Вендор заведён. Что дальше:",
-  vendorNextChecklist: "Проверка вендора: договор, СТИР, звонок, согласие на ПДн",
-  vendorNextUsers: "Вход в кабинет: пригласите владельца по номеру телефона",
-  vendorNextListing: "Первая витрина: фото, услуги и данные",
-  vendorNextDone: "Понятно",
-
   // ── журнал: объект — поиском, сотрудник — и отключённые ──
   auditObjectAny: "Любой",
   auditObjectSearch: "Найти",
@@ -1466,6 +1451,32 @@ export const t = {
   auditObjectPickType: "Сначала выберите вид объекта",
   auditStaffInactive: (name: string) => `${name} (отключён)`,
   auditActorStaffOnly: "Только когда «Кто» — сотрудник",
+
+  // ── страница витрины: что дальше, фото, контакты, служебное ──
+  listingLeft: "Что осталось",
+  toVendor: "К вендору",
+  listingWaits: "Ждёт решения",
+  listingSubmitted: (at: string) => `Отправлена ${at}`,
+  vendorChecksDone: (done: number, all: number) => `Проверка вендора ${done}/${all}`,
+  actionLeft: (action: string, left: number) => `${action} (осталось ${left})`,
+  listingService: "Служебное",
+  historyAll: (n: number) => `Показать все (${n})`,
+  slugEdit: "Изменить",
+  slugEditContext: "адрес страницы",
+  contactEdit: "Изменить",
+  contactAdd: "Добавить",
+  contactKeep: "Не менять",
+  contactUndo: "Вернуть",
+  contactPhoneRemoving: "Уберётся при сохранении, Telegram — вместе с ним",
+  contactTelegramRemoving: "Уберётся при сохранении",
+  photosOf: (n: number, max: number) => `${n}/${max}`,
+  photosMin: (min: number) => `минимум ${min}`,
+  photosAdd: "Добавить фото",
+  photosApproveAll: (n: number) => `Одобрить все (${n})`,
+  moveToStart: "Переместить в начало",
+  toastPhotoFirst: (n: number) => `Фото ${n} — теперь первое`,
+  toastPhotosApproved: (n: number) => `Одобрено фото: ${n}`,
+  serviceOptionsN: (n: number) => `добавок: ${n}`,
 } as const;
 
 /** Текст ошибки API по коду */

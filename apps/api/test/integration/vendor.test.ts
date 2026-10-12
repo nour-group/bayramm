@@ -7,11 +7,19 @@
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import { webpFixture } from "@bayramm/media/testing";
 import type {
+  ContactChangeList,
+  ContactChangeResponse,
+  ContactChangeReveal,
+} from "@bayramm/shared/api/staff";
+import type {
   VendorCalendar,
   VendorCalendarChange,
+  VendorContactsSave,
   VendorListing,
+  VendorListingSaved,
   VendorMe,
   VendorPhoto,
+  VendorPhotoList,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPage,
@@ -29,8 +37,12 @@ import {
   bearer,
   call,
   cleanup,
+  cleanupStaff,
+  inviteStaff,
   loginToken,
+  newStaffUsername,
   newTelegramUser,
+  staffLoginToken,
   tgIdHash,
 } from "./helpers";
 
@@ -254,6 +266,7 @@ afterAll(async () => {
   vi.unstubAllGlobals();
   if (!admin) return;
   await cleanup(admin);
+  await cleanupStaff(admin);
   // Журналы (статусы, согласия, чтения ПДн) — только на добавление; тестовые строки
   // убираем в режиме реплики, где пользовательские триггеры не срабатывают
   try {
@@ -280,8 +293,16 @@ afterAll(async () => {
       [listings],
     );
     await admin.query(
-      "delete from app.outbox where kind = 'vendor.service_decided' and recipient_id = any($1::uuid[])",
+      "delete from app.outbox where kind in ('vendor.service_decided', 'vendor.contact_change_decided') and recipient_id = any($1::uuid[])",
       [vendors.map((v) => v.userId)],
+    );
+    // Запросы на смену контактов и оповещения о них (в режиме реплики каскад не срабатывает)
+    await admin.query("delete from pii.listing_contact_changes where listing_id = any($1::uuid[])", [
+      listings,
+    ]);
+    await admin.query(
+      "delete from app.outbox where kind = 'ops.contact_change_submitted' and payload ->> 'listing_id' = any($1::text[])",
+      [listings],
     );
     await admin.query("delete from app.audit_log where object_id = any($1::text[])", [listings]);
     await admin.query("delete from app.listing_status_log where listing_id = any($1::uuid[])", [listings]);
@@ -849,11 +870,11 @@ describe("правки карточки из кабинета", () => {
   it("ничего не изменилось — 422 no_changes; неверные поля и чужие ключи — 422 со списком", async () => {
     const same = await call(revisionsUrl(A.listingId), post(A.token, { name: "Test Hall A" }));
     expect(await errorOf(same)).toMatchObject({ status: 422, code: "no_changes" });
-    const bad = await call(revisionsUrl(A.listingId), post(A.token, { name: "x", address_ru: "x" }));
+    const bad = await call(revisionsUrl(A.listingId), post(A.token, { name: "x", slug: "x" }));
     expect(await errorOf(bad)).toMatchObject({
       status: 422,
       code: "invalid_input",
-      details: expect.arrayContaining(["name", "address_ru"]),
+      details: expect.arrayContaining(["name", "slug"]),
     });
     // Цены и пакеты v0.1 правкой карточки больше не меняются — они в услугах
     const legacy = await call(
@@ -950,6 +971,224 @@ describe("правки карточки из кабинета", () => {
       payload: { name: "Test Hall A Grand" },
     });
     expect(list.items[0]?.decidedAt).not.toBeNull();
+  });
+});
+
+// ── партнёр сам настраивает витрину ─────────────────────────────────────────
+
+describe("партнёр сам настраивает витрину: сразу, пока её нет на сайте, иначе предложением", () => {
+  let C: TestVendor;
+  let member: string;
+  const save = (token: string, listingId: string, body: unknown) =>
+    call(`/vendor/listings/${listingId}`, patch(token, body));
+  const readListing = async (token: string, listingId: string) =>
+    (await (await call(`/vendor/listings/${listingId}`, bearer(token))).json()) as VendorListing;
+  const errorOf = async (res: Response) => {
+    const body = (await res.json()) as { error: { code: string; details?: string[] } };
+    return { status: res.status, code: body.error.code, details: body.error.details };
+  };
+
+  beforeAll(async () => {
+    C = await createVendor("C");
+    C.token = await vendorToken(C.telegram);
+    const userId = randomUUID();
+    const telegram = vendorTelegramUser();
+    await admin.query(
+      `insert into app.vendor_users (id, vendor_id, phone_hash, tg_user_hash, tg_linked_at, role)
+       values ($1, $2, $3, $4, now(), 'member')`,
+      [userId, C.accountId, randomBytes(32), tgIdHash(telegram.id)],
+    );
+    await admin.query(
+      "insert into pii.vendor_user_profiles (vendor_user_id, phone, full_name) values ($1, '+998000000113', 'Staff C')",
+      [userId],
+    );
+    member = await vendorToken(telegram);
+  });
+
+  it("черновик: вместимость, район, адрес, название, описания и поля витрины — сразу, без предложения", async () => {
+    const before = await readListing(C.token, C.draftId);
+    expect(before.blockers).toEqual(expect.arrayContaining(["capacity", "district"]));
+    const res = await save(C.token, C.draftId, {
+      version: before.version,
+      name: "Зал Лола",
+      descriptionRu: "Просторный зал",
+      descriptionUz: "Keng zal",
+      capMin: 80,
+      capMax: 300,
+      districtCode: "sergeli",
+      addressRu: "ул. Навои, 1",
+      addressUz: "Navoiy k., 1",
+      attributes: { stage: true, halls_count: 2 },
+    });
+    expect(res.status).toBe(200);
+    const saved = (await res.json()) as VendorListingSaved;
+    expect(saved.sentForModeration).toEqual([]);
+    expect(saved.listing).toMatchObject({
+      name: "Зал Лола",
+      capMin: 80,
+      capMax: 300,
+      districtCode: "sergeli",
+      address: { ru: "ул. Навои, 1", uz: "Navoiy k., 1" },
+      description: { ru: "Просторный зал", uz: "Keng zal" },
+      attributes: { stage: true, halls_count: 2 },
+    });
+    expect(saved.listing.version).toBeGreaterThan(before.version);
+    // Чек-лист: вместимость, район и описания больше не мешают
+    for (const code of ["capacity", "district", "descriptions"])
+      expect(saved.listing.blockers).not.toContain(code);
+    const { rows } = await admin.query("select 1 from app.listing_revisions where listing_id = $1", [
+      C.draftId,
+    ]);
+    expect(rows).toHaveLength(0);
+    // Журнал: только имена полей
+    const log = await admin.query<{ detail: { fields: string[] }; actor_kind: string; source: string }>(
+      "select detail, actor_kind, source from app.audit_log where action = 'listing.vendor_update' and object_id = $1",
+      [C.draftId],
+    );
+    expect(log.rows).toHaveLength(1);
+    expect(log.rows[0]?.detail.fields).toEqual(
+      expect.arrayContaining(["cap_max", "cap_min", "district_code", "address_ru", "name"]),
+    );
+    expect(JSON.stringify(log.rows[0]?.detail)).not.toMatch(/Навои|Зал Лола|Просторный/);
+    expect(log.rows[0]).toMatchObject({ actor_kind: "vendor_user", source: "vendor_cabinet" });
+  });
+
+  it("версия устарела — 409 version_conflict, карточка прежняя; ничего не изменилось — 422 no_changes", async () => {
+    const current = await readListing(C.token, C.draftId);
+    const stale = await save(C.token, C.draftId, { version: current.version - 1, capMax: 310 });
+    expect(await errorOf(stale)).toMatchObject({ status: 409, code: "version_conflict" });
+    expect((await readListing(C.token, C.draftId)).capMax).toBe(300);
+    const same = await save(C.token, C.draftId, { version: current.version, capMax: 300, name: "Зал Лола" });
+    expect(await errorOf(same)).toMatchObject({ status: 422, code: "no_changes" });
+  });
+
+  it("проверки: «до» меньше «от», неизвестный район, лишние ключи, неверное поле витрины", async () => {
+    const { version } = await readListing(C.token, C.draftId);
+    const order = await save(C.token, C.draftId, { version, capMin: 400, capMax: 100 });
+    expect(await errorOf(order)).toMatchObject({ status: 422, code: "invalid_input", details: ["capMax"] });
+    const merged = await save(C.token, C.draftId, { version, capMax: 70 });
+    expect(await errorOf(merged)).toMatchObject({ status: 422, details: ["capMax"] });
+    const district = await save(C.token, C.draftId, { version, districtCode: "atlantida" });
+    expect(await errorOf(district)).toMatchObject({ status: 422, details: ["districtCode"] });
+    const keys = await save(C.token, C.draftId, {
+      version,
+      slug: "moy-zal",
+      categoryCode: "car",
+      priceFromUzs: 1,
+    });
+    expect(await errorOf(keys)).toMatchObject({
+      status: 422,
+      code: "invalid_input",
+      details: ["slug", "categoryCode", "priceFromUzs"],
+    });
+    const attr = await save(C.token, C.draftId, { version, attributes: { nonsense: 1 } });
+    expect((await errorOf(attr)).code).toBe("invalid_input");
+    // Ни одна из ошибок ничего не записала
+    expect((await readListing(C.token, C.draftId)).version).toBe(version);
+  });
+
+  it("витрина на сайте: те же поля уходят предложением, карточка прежняя", async () => {
+    const before = await readListing(C.token, C.listingId);
+    const res = await save(C.token, C.listingId, {
+      version: before.version,
+      capMin: 100,
+      capMax: 350,
+      districtCode: "chilonzor",
+      addressRu: "ул. Навои, 5",
+    });
+    expect(res.status).toBe(200);
+    const saved = (await res.json()) as VendorListingSaved;
+    expect(saved.sentForModeration).toEqual(["capacity", "districtCode", "addressRu"]);
+    // Клиент видит прежнее
+    expect(saved.listing).toMatchObject({
+      capMin: 50,
+      capMax: 300,
+      districtCode: "yunusobod",
+      version: before.version,
+    });
+    const list = (await (
+      await call(`/vendor/listings/${C.listingId}/revisions`, bearer(C.token))
+    ).json()) as VendorRevisionList;
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0]).toMatchObject({
+      status: "pending",
+      payload: { cap_min: 100, cap_max: 350, district_code: "chilonzor", address_ru: "ул. Навои, 5" },
+    });
+    const { rows } = await admin.query<{ base_version: number; submitted_by: string }>(
+      "select base_version, submitted_by from app.listing_revisions where id = $1",
+      [list.items[0]?.id],
+    );
+    expect(rows).toEqual([{ base_version: before.version, submitted_by: C.userId }]);
+    // В журнал «сразу» ничего не попало: правка ждёт решения
+    const log = await admin.query(
+      "select 1 from app.audit_log where action = 'listing.vendor_update' and object_id = $1",
+      [C.listingId],
+    );
+    expect(log.rows).toHaveLength(0);
+  });
+
+  it("предложение уже открыто — 409 revision_pending; «заказов одновременно» его не «устаревляет»", async () => {
+    const { version } = await readListing(C.token, C.listingId);
+    const second = await save(C.token, C.listingId, { version, capMax: 360 });
+    expect(await errorOf(second)).toMatchObject({ status: 409, code: "revision_pending" });
+
+    const calendar = await calendarVersion(C.token, C.listingId);
+    const capacity = await call(`/vendor/listings/${C.listingId}/calendar/capacity`, {
+      method: "PUT",
+      headers: { ...json, Authorization: `Bearer ${C.token}`, "If-Match": String(calendar) },
+      body: JSON.stringify({ parallelCapacity: 2 }),
+    });
+    expect(capacity.status).toBe(200);
+    const fresh = `select r.base_version = l.version as fresh from app.listing_revisions r
+         join app.listings l on l.id = r.listing_id where r.listing_id = $1 and r.status = 'pending'`;
+    expect((await admin.query<{ fresh: boolean }>(fresh, [C.listingId])).rows).toEqual([{ fresh: true }]);
+    // Поле, которое предложение тоже меняет, — устаревшее: решает человек
+    await admin.query("update app.listings set cap_max = 320 where id = $1", [C.listingId]);
+    expect((await admin.query<{ fresh: boolean }>(fresh, [C.listingId])).rows).toEqual([{ fresh: false }]);
+  });
+
+  it("сотрудник площадки — 403 vendor_owner_required; чужая витрина — 404; без версии — 422", async () => {
+    const { version } = await readListing(C.token, C.draftId);
+    const asMember = await save(member, C.draftId, { version, capMax: 310 });
+    expect(await errorOf(asMember)).toMatchObject({ status: 403, code: "vendor_owner_required" });
+    expect((await save(B.token, C.draftId, { version, capMax: 310 })).status).toBe(404);
+    expect(await errorOf(await save(C.token, C.draftId, { capMax: 310 }))).toMatchObject({
+      status: 422,
+      details: ["version"],
+    });
+    expect((await readListing(C.token, C.draftId)).capMax).toBe(300);
+  });
+
+  it("база тоже не даёт партнёру адрес страницы и поля витрины на сайте в обход API", async () => {
+    const client = new PgClient({ connectionString: apiDatabaseUrl });
+    await client.connect();
+    try {
+      const asOwner = async (sql: string, params: unknown[]) => {
+        await client.query("begin");
+        try {
+          await client.query(
+            "select set_config('app.actor_kind', 'vendor_user', true), set_config('app.actor_id', $1, true), set_config('app.vendor_id', $2, true)",
+            [C.userId, C.accountId],
+          );
+          return await client.query(sql, params);
+        } finally {
+          await client.query("rollback").catch(() => {});
+        }
+      };
+      await expect(
+        asOwner("update app.listings set slug = 'moy-zal' where id = $1", [C.draftId]),
+      ).rejects.toMatchObject({ code: "BR006" });
+      await expect(
+        asOwner("update app.listings set cap_max = 400 where id = $1", [C.listingId]),
+      ).rejects.toMatchObject({ code: "BR005" });
+      await expect(
+        asOwner("update app.listings set address_ru = 'x' where id = $1", [C.listingId]),
+      ).rejects.toMatchObject({ code: "BR005" });
+      const draft = await asOwner("update app.listings set cap_max = 400 where id = $1", [C.draftId]);
+      expect(draft.rowCount).toBe(1);
+    } finally {
+      await client.end();
+    }
   });
 });
 
@@ -1442,6 +1681,347 @@ describe("партнёр отправляет витрину на проверк
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ status: "draft", priceUzs: 120_000, decision: null });
+  });
+});
+
+// ── порядок и обложка фото, отзыв с проверки, контакты витрины ───────────────
+
+describe("партнёр сам ведёт фото, отзывает витрину с проверки и меняет контакты", () => {
+  const putJson = (token: string, body: unknown): RequestInit => ({
+    method: "PUT",
+    headers: { ...json, Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const postJson = (token: string, body: unknown): RequestInit => ({
+    method: "POST",
+    headers: { ...json, Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const errorOf = async (res: Response) => {
+    const body = (await res.json()) as { error: { code: string; details?: string[] } };
+    return { status: res.status, code: body.error.code, details: body.error.details };
+  };
+  const listingOf = async (id: string, token = A.token) =>
+    (await (await call(`/vendor/listings/${id}`, bearer(token))).json()) as VendorListing;
+  const idsOf = (list: { photos: readonly VendorPhoto[] }) => list.photos.map((p) => p.id);
+
+  /** Сотрудник площадки вендора A: календарь и заявки, но не карточка */
+  let memberToken: string;
+  /** Витрина вендора A на проверке: отзывается в черновик */
+  let reviewId: string;
+
+  beforeAll(async () => {
+    const memberUser = vendorTelegramUser();
+    const memberId = randomUUID();
+    await admin.query(
+      `insert into app.vendor_users (id, vendor_id, phone_hash, tg_user_hash, tg_linked_at, role)
+       values ($1, $2, $3, $4, now(), 'member')`,
+      [memberId, A.accountId, randomBytes(32), tgIdHash(memberUser.id)],
+    );
+    await admin.query(
+      "insert into pii.vendor_user_profiles (vendor_user_id, phone, full_name) values ($1, '+998000000115', 'Staff A4')",
+      [memberId],
+    );
+    memberToken = await vendorToken(memberUser);
+
+    reviewId = randomUUID();
+    extraListings.push(reviewId);
+    await admin.query(
+      `insert into app.listings (id, vendor_id, slug, category_code, name, district_code, description_ru,
+                                 description_uz, price_from_uzs, price_unit, cap_min, cap_max)
+       values ($1, $2, $3, 'hall', 'Review Hall A', 'yunusobod', 'Описание', 'Tavsif', 150000, 'per_guest', 50, 300)`,
+      [reviewId, A.accountId, `test-review-${run}`],
+    );
+    await admin.query(
+      "insert into pii.listing_contacts (listing_id, public_phone) values ($1, '+998000000997')",
+      [reviewId],
+    );
+    await addHallBanquets(admin, reviewId, 150_000, 180_000);
+    for (let n = 0; n < 3; n++) {
+      await admin.query(
+        `insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
+                                 sort, no_faces_ack)
+         values ($1, 'ready', 'approved', $2, 'image/webp', 1000, 1600, 1200, $3, $4, true)`,
+        [reviewId, `listings/${reviewId}/${randomUUID()}.webp`, randomBytes(32), n],
+      );
+    }
+    await admin.query("update app.listings set status = 'review' where id = $1", [reviewId]);
+  });
+
+  it("порядок: одобренные фото переставляются сразу, обложка остаётся первой; в журнал — id и число", async () => {
+    const before = idsOf(await listingOf(A.listingId));
+    expect(before).toHaveLength(3);
+    const [cover, second, third] = before as [string, string, string];
+    const order = `/vendor/listings/${A.listingId}/photos/order`;
+    const res = await call(order, putJson(A.token, { ids: [cover, third, second] }));
+    expect(res.status).toBe(200);
+    expect(idsOf((await res.json()) as VendorPhotoList)).toEqual([cover, third, second]);
+    expect(idsOf(await listingOf(A.listingId))).toEqual([cover, third, second]);
+    // Не тот набор — 422 ids, порядок прежний
+    const bad = await call(order, putJson(A.token, { ids: [cover, third] }));
+    expect(await errorOf(bad)).toMatchObject({ status: 422, code: "invalid_input", details: ["ids"] });
+    const { rows } = await admin.query<{ detail: { count: number } }>(
+      "select detail from app.audit_log where action = 'photo.order' and object_id = $1",
+      [A.listingId],
+    );
+    expect(rows).toEqual([{ detail: { count: 3 } }]);
+  });
+
+  it("обложка: одобренное фото — первое и обложка; ждущее решения — 422", async () => {
+    const [cover, second, third] = idsOf(await listingOf(A.listingId)) as [string, string, string];
+    const res = await call(`/vendor/listings/${A.listingId}/photos/${third}/cover`, as(A.token, "POST"));
+    expect(res.status).toBe(200);
+    const list = (await res.json()) as VendorPhotoList;
+    expect(idsOf(list)).toEqual([third, cover, second]);
+    expect(list.photos.map((p) => p.isCover)).toEqual([true, false, false]);
+
+    const pending = await admin.query<{ id: string }>(
+      `insert into app.photos (listing_id, status, moderation, storage_key, mime, bytes, width, height, sha256,
+                               sort, no_faces_ack)
+       values ($1, 'ready', 'pending', $2, 'image/webp', 1000, 1600, 1200, $3, 9, true) returning id`,
+      [A.listingId, `listings/${A.listingId}/${randomUUID()}.webp`, randomBytes(32)],
+    );
+    const pendingId = pending.rows[0]?.id ?? "";
+    const asCover = await call(
+      `/vendor/listings/${A.listingId}/photos/${pendingId}/cover`,
+      as(A.token, "POST"),
+    );
+    expect(await errorOf(asCover)).toMatchObject({
+      status: 422,
+      code: "invalid_input",
+      details: ["photoId"],
+    });
+    // Ждущее фото в порядок не входит: набор — только одобренные
+    const withPending = await call(
+      `/vendor/listings/${A.listingId}/photos/order`,
+      putJson(A.token, { ids: [third, cover, second, pendingId] }),
+    );
+    expect(await errorOf(withPending)).toMatchObject({
+      status: 422,
+      code: "invalid_input",
+      details: ["ids"],
+    });
+    await admin.query("delete from app.photos where id = $1", [pendingId]);
+  });
+
+  it("порядок и обложка: сотрудник площадки — 403, чужая витрина — 404", async () => {
+    const [first] = idsOf(await listingOf(A.listingId));
+    const cover = `/vendor/listings/${A.listingId}/photos/${first}/cover`;
+    const order = `/vendor/listings/${A.listingId}/photos/order`;
+    expect(await errorOf(await call(cover, as(memberToken, "POST")))).toMatchObject({
+      status: 403,
+      code: "vendor_owner_required",
+    });
+    expect((await call(order, putJson(memberToken, { ids: [first] }))).status).toBe(403);
+    expect((await call(cover, as(B.token, "POST"))).status).toBe(404);
+    expect((await call(order, putJson(B.token, { ids: [] }))).status).toBe(404);
+  });
+
+  it("отозвать с проверки: review → draft, запись в журнал; не на проверке — 409; сотрудник — 403; чужая — 404", async () => {
+    const withdraw = (id: string, token = A.token) =>
+      call(`/vendor/listings/${id}/withdraw`, as(token, "POST"));
+    expect(await errorOf(await withdraw(reviewId, memberToken))).toMatchObject({
+      status: 403,
+      code: "vendor_owner_required",
+    });
+    expect((await withdraw(reviewId, B.token)).status).toBe(404);
+    const res = await withdraw(reviewId);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id: reviewId, status: "draft" });
+    const { rows } = await admin.query<{ status: string }>(
+      `select status::text from app.listings where id = $1::uuid
+       union all select detail ->> 'to' from app.audit_log where action = 'listing.withdraw' and object_id = $1::text`,
+      [reviewId],
+    );
+    expect(rows.map((r) => r.status)).toEqual(["draft", "draft"]);
+    // Второй раз — уже черновик; опубликованную отозвать нельзя
+    expect(await errorOf(await withdraw(reviewId))).toMatchObject({
+      status: 409,
+      code: "illegal_transition",
+    });
+    expect(await errorOf(await withdraw(A.listingId))).toMatchObject({
+      status: 409,
+      code: "illegal_transition",
+    });
+  });
+
+  it("контакты витрины вне сайта — сразу: телефон и Telegram; те же значения — 422 no_changes; неверные — 422", async () => {
+    const put = (body: unknown, token = A.token, id = A.draftId) =>
+      call(`/vendor/listings/${id}/contacts`, putJson(token, body));
+    expect(await errorOf(await put({ phone: "+998000000321" }, memberToken))).toMatchObject({
+      status: 403,
+      code: "vendor_owner_required",
+    });
+    const res = await put({ phone: "+998 00 000 03 21", telegram: "@Draft_Hall" });
+    expect(res.status).toBe(200);
+    const saved = (await res.json()) as VendorContactsSave;
+    expect(saved.sentForModeration).toBe(false);
+    expect(saved.listing).toMatchObject({
+      phone: "+998000000321",
+      telegram: "Draft_Hall",
+      contactChange: null,
+    });
+    const same = await put({ phone: "+998000000321", telegram: "Draft_Hall" });
+    expect(await errorOf(same)).toMatchObject({ status: 422, code: "no_changes" });
+    const badPhone = await put({ phone: "123" });
+    expect(await errorOf(badPhone)).toMatchObject({ status: 422, code: "invalid_input", details: ["phone"] });
+    const badTelegram = await put({ phone: "+998000000321", telegram: "x" });
+    expect(await errorOf(badTelegram)).toMatchObject({ status: 422, details: ["telegram"] });
+    // Telegram можно убрать, телефон остаётся
+    const cleared = (await (
+      await put({ phone: "+998000000321", telegram: null })
+    ).json()) as VendorContactsSave;
+    expect(cleared.listing).toMatchObject({ phone: "+998000000321", telegram: null });
+    // В журнале — поля, без значений
+    const { rows } = await admin.query<{ detail: unknown }>(
+      "select detail from app.audit_log where actor_kind = 'vendor_user' and action like 'listing_contact.%' and object_id = $1",
+      [A.draftId],
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    expect(JSON.stringify(rows)).not.toMatch(/\+998|Draft_Hall/);
+    expect((await put({ phone: "+998000000321" }, B.token)).status).toBe(404);
+  });
+
+  it("контакты опубликованной витрины — запросом: клиентам прежние, партнёр видит «на проверке», новый заменяет прежний, отзыв", async () => {
+    const put = (body: unknown) => call(`/vendor/listings/${A.listingId}/contacts`, putJson(A.token, body));
+    const res = await put({ phone: "+998000000555", telegram: "lola_zali" });
+    expect(res.status).toBe(200);
+    const saved = (await res.json()) as VendorContactsSave;
+    expect(saved.sentForModeration).toBe(true);
+    expect(saved.listing.phone).toBe("+998000000999");
+    expect(saved.listing.contactChange).toMatchObject({
+      status: "pending",
+      phone: "+998000000555",
+      telegram: "lola_zali",
+    });
+    // Прежние контакты у клиентов: публичный телефон не менялся
+    const { rows: live } = await admin.query<{ public_phone: string }>(
+      "select public_phone from pii.listing_contacts where listing_id = $1",
+      [A.listingId],
+    );
+    expect(live).toEqual([{ public_phone: "+998000000999" }]);
+    // Новая отправка заменяет ждущий запрос
+    const replaced = (await (await put({ phone: "+998000000556" })).json()) as VendorContactsSave;
+    expect(replaced.listing.contactChange).toMatchObject({
+      status: "pending",
+      phone: "+998000000556",
+      telegram: null,
+    });
+    const { rows: count } = await admin.query<{ n: string }>(
+      "select count(*) as n from pii.listing_contact_changes where listing_id = $1 and status = 'pending'",
+      [A.listingId],
+    );
+    expect(count[0]?.n).toBe("1");
+    // Сотрудник площадки видит, что запрос ждёт, но не его номера
+    expect((await listingOf(A.listingId, memberToken)).contactChange).toMatchObject({
+      status: "pending",
+      phone: null,
+      telegram: null,
+    });
+    // Отозвать; второй раз — ждущего нет
+    const withdrawUrl = `/vendor/listings/${A.listingId}/contact-change/withdraw`;
+    const withdrawn = await call(withdrawUrl, as(A.token, "POST"));
+    expect(withdrawn.status).toBe(200);
+    expect(((await withdrawn.json()) as VendorListing).contactChange).toBeNull();
+    expect(await errorOf(await call(withdrawUrl, as(A.token, "POST")))).toMatchObject({
+      status: 409,
+      code: "contact_change_not_pending",
+    });
+  });
+
+  it("решение команды: очередь, «Показать» в журнал, одобрить — контакты новые, отказ — с причиной", async () => {
+    const staffAs = async (role: "admin" | "manager" | "moderator") => {
+      const username = newStaffUsername();
+      const id = await inviteStaff(admin, { username, role });
+      return { id, token: await staffLoginToken(username) };
+    };
+    const { id: moderatorId, token: moderator } = await staffAs("moderator");
+    const { token: manager } = await staffAs("manager");
+    // Оповещения: у модератора есть чат с ботом, у владельца кабинета A — тоже (решение — ему)
+    await admin.query("update pii.staff_profiles set telegram_chat_id = 9100000001 where staff_id = $1", [
+      moderatorId,
+    ]);
+    await admin.query(
+      "update pii.vendor_user_profiles set telegram_chat_id = 9100000002 where vendor_user_id = $1",
+      [A.userId],
+    );
+    const put = (body: unknown) => call(`/vendor/listings/${A.listingId}/contacts`, putJson(A.token, body));
+    const base = `/staff/listings/${A.listingId}/contact-change`;
+
+    expect((await put({ phone: "+998000000600", telegram: "zal_lola" })).status).toBe(200);
+    // Команде — оповещение: в payload только id витрины, ни номера, ни Telegram
+    const { rows: alerts } = await admin.query<{ payload: unknown }>(
+      "select payload from app.outbox where kind = 'ops.contact_change_submitted' and payload ->> 'listing_id' = $1",
+      [A.listingId],
+    );
+    expect(alerts.length).toBeGreaterThan(0);
+    for (const alert of alerts) expect(alert.payload).toEqual({ listing_id: A.listingId });
+    // Очередь без номеров; менеджеру — нельзя
+    const queue = (await (
+      await call("/staff/contact-changes", bearer(moderator))
+    ).json()) as ContactChangeList;
+    const mine = queue.items.find((item) => item.listing.id === A.listingId);
+    expect(mine).toMatchObject({ phoneChanged: true, telegramChanged: true });
+    expect(JSON.stringify(queue)).not.toMatch(/\+998|zal_lola/);
+    expect((await call("/staff/contact-changes", bearer(manager))).status).toBe(403);
+    const state = (await (await call(base, bearer(manager))).json()) as ContactChangeResponse;
+    expect(state.change).toMatchObject({ phoneChanged: true });
+    expect(JSON.stringify(state)).not.toMatch(/\+998/);
+
+    // «Показать»: значения и нынешние контакты — в журнал доступа к ПДн
+    expect((await call(`${base}/reveal`, postJson(manager, {}))).status).toBe(403);
+    const revealed = await call(`${base}/reveal`, postJson(moderator, { reason: "проверка" }));
+    expect((await revealed.json()) as ContactChangeReveal).toMatchObject({
+      phone: "+998000000600",
+      telegram: "zal_lola",
+      current: { phone: "+998000000999", telegram: null },
+    });
+    const { rows: log } = await admin.query<{ purpose: string; reason: string | null }>(
+      "select purpose, reason from app.pii_access_log where subject_id = $1 and purpose = 'staff_contact_change'",
+      [A.listingId],
+    );
+    expect(log).toEqual([{ purpose: "staff_contact_change", reason: "проверка" }]);
+
+    // Менеджер не решает; модератор одобряет — контакты новые, партнёру — уведомление
+    expect((await call(`${base}/approve`, as(manager, "POST"))).status).toBe(403);
+    expect(await (await call(`${base}/approve`, as(moderator, "POST"))).json()).toEqual({ change: null });
+    expect(await errorOf(await call(`${base}/approve`, as(moderator, "POST")))).toMatchObject({
+      status: 409,
+      code: "contact_change_not_pending",
+    });
+    expect(await listingOf(A.listingId)).toMatchObject({
+      phone: "+998000000600",
+      telegram: "zal_lola",
+      contactChange: null,
+    });
+    const { rows: notice } = await admin.query<{ payload: unknown }>(
+      "select payload from app.outbox where kind = 'vendor.contact_change_decided' and recipient_id = $1",
+      [A.userId],
+    );
+    expect(notice).toEqual([{ payload: { listing_id: A.listingId, decision: "approved" } }]);
+
+    // Отказ — только с причиной; партнёр видит её, контакты прежние (уже одобренные)
+    expect((await put({ phone: "+998000000700" })).status).toBe(200);
+    const noReason = await errorOf(await call(`${base}/decline`, postJson(moderator, {})));
+    expect(noReason.details).toEqual(["reason"]);
+    const declineRes = await call(`${base}/decline`, postJson(moderator, { reason: "Номер не зала" }));
+    expect(await declineRes.json()).toEqual({ change: null });
+    const declined = await listingOf(A.listingId);
+    expect(declined.phone).toBe("+998000000600");
+    expect(declined.contactChange).toMatchObject({
+      status: "declined",
+      reason: "Номер не зала",
+      phone: null,
+    });
+    // Вернуть исходное: остальные тесты ждут прежний телефон и вендора без чата
+    await admin.query(
+      "update pii.vendor_user_profiles set telegram_chat_id = null where vendor_user_id = $1",
+      [A.userId],
+    );
+    await admin.query(
+      "update pii.listing_contacts set public_phone = '+998000000999', public_telegram = null where listing_id = $1",
+      [A.listingId],
+    );
   });
 });
 

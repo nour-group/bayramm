@@ -345,13 +345,31 @@ export interface ListingListItem extends ListingBrief {
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
   /** Готовые фото, из них одобренные и ждущие решения модератора */
   readonly photos: { readonly ready: number; readonly approved: number; readonly pending: number };
+  /**
+   * Сами фото, ждущие решения, — старые первыми, не больше PENDING_PHOTOS_CAP; только в ответе
+   * ?photos=pending (очередь «Новые фото»: карточка показывает их плитками, решение — по ним же).
+   * photos.pending — сколько их всего, и оно может быть больше показанных
+   */
+  readonly pendingPhotos?: readonly PendingPhoto[];
 }
+
+/** Фото в очереди «Новые фото»: адреса вариантов — mediaUrl / mediaSrcSet из @bayramm/media по key */
+export interface PendingPhoto {
+  readonly id: string;
+  readonly key: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Сколько ждущих фото одной карточки отдаёт очередь «Новые фото» (больше — на странице витрины) */
+export const PENDING_PHOTOS_CAP = 12;
 
 /**
  * GET /staff/listings?status=&q=&vendorId=&category=&photos=pending&limit=&offset=
  * photos=pending — карточки (любые, кроме отклонённых: фото черновика тоже можно одобрить до
  * публикации) с фото, которые ждут решения (очередь «Новые фото» в модерации: их загрузил
- * партнёр или менеджер), старые загрузки первыми.
+ * партнёр или менеджер), старые загрузки первыми; у каждой — pendingPhotos, сами фото одним
+ * запросом (не больше PENDING_PHOTOS_CAP), без запроса на каждую карточку.
  * category — только витрины этой категории
  */
 export interface ListingList {
@@ -1134,14 +1152,34 @@ export type TeamInviteInput = {
 // RevisionStatus и ListingRevisionPayload — в контракте кабинета (@bayramm/shared/api/vendor):
 // правку подаёт партнёр
 
-export type RevisionField = "name" | "descriptionRu" | "descriptionUz" | "attributes" | "videoLinks";
+/** capacity — cap_min и cap_max одной строкой; districtCode, addressRu, addressUz — как в карточке */
+export type RevisionField =
+  | "name"
+  | "descriptionRu"
+  | "descriptionUz"
+  | "attributes"
+  | "videoLinks"
+  | "capacity"
+  | "districtCode"
+  | "addressRu"
+  | "addressUz";
 
-/** attributes — изменённые поля витрины { ключ: значение | null }, videoLinks — ссылки целиком */
+/** Вместимость в правке: сейчас и после неё (то, чего правка не меняет, — как в карточке) */
+export interface RevisionCapacity {
+  readonly min: number | null;
+  readonly max: number | null;
+}
+
+/**
+ * attributes — изменённые поля витрины { ключ: значение | null }, videoLinks — ссылки целиком,
+ * capacity — вместимость { min, max }; districtCode — код района (подпись — из справочника)
+ */
 export type RevisionValue =
   | string
   | number
   | null
   | readonly string[]
+  | RevisionCapacity
   | Readonly<Record<string, AttributeValue | null>>;
 
 export interface RevisionChange {
@@ -1270,6 +1308,17 @@ export interface OpsQueues {
   readonly photosPending: number;
   /** Новые услуги и предложения правок услуг ждут решения — как очередь GET /staff/services */
   readonly servicesPending: number;
+  /** Партнёры просят сменить контакты витрины — как очередь GET /staff/contact-changes */
+  readonly contactsPending: number;
+}
+
+/**
+ * GET /staff/queues → 200: только очереди — те же числа, что в `queues` у /staff/metrics (оттуда
+ * панель берёт счётчики у разделов), но без недельных метрик, которые тяжело считать. Право
+ * metrics.read, как у метрик; какие очереди показать роли — решает панель (badgesOf)
+ */
+export interface StaffQueues {
+  readonly queues: OpsQueues;
 }
 
 /**
@@ -1382,4 +1431,64 @@ export interface VendorResponseStats {
   readonly days: number;
   readonly vendor: VendorMetrics;
   readonly listings: readonly ListingMetrics[];
+}
+
+// ── смена публичных контактов витрины ──────────────────────────────────────
+
+/**
+ * Запрос партнёра на смену публичных телефона и Telegram витрины, которая на проверке или на
+ * сайте (pii.listing_contact_changes): одна ждущая строка на витрину. Значений здесь нет —
+ * только что меняется; значения — ContactChangeReveal, по «Показать», в журнал доступа к ПДн.
+ */
+export interface ContactChange {
+  readonly id: string;
+  readonly submittedAt: string;
+  readonly phoneChanged: boolean;
+  /** Telegram меняется или убирается */
+  readonly telegramChanged: boolean;
+}
+
+/**
+ * GET /staff/listings/:id/contact-change → 200 { change } — ждущий запрос или null (право
+ * catalog.read; значений нет, в журнал не пишется). Решает администратор и модератор
+ * (revisions.moderate):
+ *   POST /staff/listings/:id/contact-change/reveal { reason? } → ContactChangeReveal — значения
+ *        запроса и нынешние контакты; чтение — в журнал доступа к ПДн
+ *   POST /staff/listings/:id/contact-change/approve         → 200 { change: null } — значения
+ *        применены к витрине, партнёру — уведомление
+ *   POST /staff/listings/:id/contact-change/decline { reason } → 200 { change: null } — причину
+ *        увидит партнёр; прежние контакты остаются
+ * 409 contact_change_not_pending — решать нечего (уже решён или отозван).
+ */
+export interface ContactChangeResponse {
+  readonly change: ContactChange | null;
+}
+
+export interface ContactChangeReveal {
+  /** Что просит партнёр: телефон обязателен, Telegram — имя без @ или null (убрать) */
+  readonly phone: string;
+  readonly telegram: string | null;
+  /** Что у витрины сейчас */
+  readonly current: RevealedListingContacts;
+}
+
+export interface ContactChangeDeclineInput {
+  readonly reason: string;
+}
+
+/** Строка очереди запросов на смену контактов */
+export interface ContactChangeListItem extends ContactChange {
+  readonly listing: {
+    readonly id: string;
+    readonly name: string;
+    readonly status: ListingStatus;
+    readonly categoryCode: string;
+  };
+  readonly vendor: { readonly id: string; readonly code: string };
+}
+
+/** GET /staff/contact-changes?limit=&offset= (право revisions.moderate) — ждущие запросы, старые сверху */
+export interface ContactChangeList {
+  readonly total: number;
+  readonly items: readonly ContactChangeListItem[];
 }

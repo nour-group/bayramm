@@ -118,6 +118,15 @@ const link = (name: string) =>
   [...container.querySelectorAll("a")].find((a) => a.textContent?.trim() === name) as HTMLAnchorElement;
 const button = (name: string) =>
   [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === name) as HTMLButtonElement;
+/** Кнопка аккаунта в шапке открывает лист: другие приложения и «Выйти» — в нём, а не в шапке */
+const openAccount = async () => {
+  await act(async () => container.querySelector<HTMLButtonElement>("button.appbar-account")?.click());
+  await settle();
+};
+const inAccount = (selector: string, name: string) =>
+  [...document.querySelectorAll<HTMLElement>(`[role=dialog] ${selector}`)].find(
+    (el) => el.textContent?.trim() === name,
+  );
 
 beforeEach(() => {
   calls = [];
@@ -286,8 +295,11 @@ describe("сессия сотрудника", () => {
     expect(
       calls.filter((c) => c.url !== "/api/auth/methods").every((c) => c.authorization === `Bearer ${TOKEN}`),
     ).toBe(true);
-    expect(link(t.toClientApp).getAttribute("href")).toBe("https://bayramm.example");
-    expect([...container.querySelectorAll("a")].some((a) => a.textContent === t.toCabinet)).toBe(false);
+    // Шапка компьютера — одна строка: ссылки на другие приложения лежат в листе аккаунта
+    expect(link(t.toClientApp)).toBeUndefined();
+    await openAccount();
+    expect(inAccount("a", t.toClientApp)?.getAttribute("href")).toBe("https://bayramm.example");
+    expect(inAccount("a", t.toCabinet)).toBeUndefined();
   });
 
   it("нет связи — полоса над панелью; вернулась — упавший раздел загружается сам", async () => {
@@ -356,7 +368,8 @@ describe("сессия сотрудника", () => {
   it("выход: сессия отзывается на сервере, токен стирается", async () => {
     signedIn();
     await mount("/vendors");
-    await act(async () => button(t.signOut).click());
+    await openAccount();
+    await act(async () => inAccount("button", t.signOut)?.click());
     await settle();
 
     expect(calls.find((c) => c.url === "/api/auth/logout")).toMatchObject({

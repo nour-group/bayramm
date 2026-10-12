@@ -19,7 +19,11 @@ import { createServer, type IndexHtmlTransformContext, type Plugin, type Rollup 
    public/boot.css тогда прячет пререндер: лучше пусто до первой отрисовки, чем чужой экран
    или чужой язык на миг. Его правила — копия getWebApp/launchedFromTelegram
    (@bayramm/tg/webapp) и takeLangParam/initialLang (src/context.tsx): их сверяет
-   src/boot.test.ts. Упадёт boot.js — пререндер просто виден до приложения. */
+   src/boot.test.ts. Упадёт boot.js — пререндер просто виден до приложения.
+   Открыто из Telegram — boot.js сразу ставит в <head> и SDK Mini App (loadTelegramWebApp
+   ждёт этот тег), не дожидаясь бандла.
+   Шрифты первого экрана предзагружаются тегами в index.html; теги с data-font-lang воркер
+   оставляет только языку страницы (worker/meta.ts, keepFontsOf). */
 
 type PrerenderModule = typeof import("./src/prerender");
 

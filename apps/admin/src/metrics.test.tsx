@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// Метрики запуска в панели: раздел (очереди, сводка по категориям, недели и вендоры с фильтром
-// категории и сортировкой по доле ответов в срок), ответы вендора по витринам с категориями на
-// его странице, пауза напоминаний в настройках. API — подменённый fetch
+// Метрики запуска в панели: раздел (одна таблица за раз — недели, вендоры, категории, контакты;
+// фильтр категории и сортировка по доле ответов в срок; определения — в листе «Как считаем»),
+// ответы вендора одной строкой на его странице, пауза напоминаний в настройках. API — подменённый fetch
 import type {
   CategoryMetricsList,
   ContactMetrics,
@@ -20,7 +20,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { categoryName } from "./categories";
-import { barClass, sortVendors } from "./pages/Metrics";
+import { barClass, sortVendors, statLine } from "./pages/Metrics";
 import { tokenStore } from "./session";
 import { t } from "./texts";
 
@@ -100,6 +100,7 @@ const OVERVIEW: MetricsOverview = {
     revisionsPending: 1,
     photosPending: 0,
     servicesPending: 4,
+    contactsPending: 0,
   },
 };
 
@@ -245,6 +246,13 @@ const vendorOrder = () =>
   );
 const sortButton = (label: string) =>
   [...container.querySelectorAll("button.sort")].find((b) => b.textContent?.startsWith(label));
+const button = (name: string) =>
+  [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === name);
+/** Вариант группы (RadioGroup, вкладки) по подписи: под рисунком — настоящая радиокнопка */
+const radio = (name: string) =>
+  [...container.querySelectorAll("label.ui-radio")]
+    .find((label) => label.textContent?.trim() === name)
+    ?.querySelector<HTMLInputElement>("input[type=radio]") ?? undefined;
 
 beforeEach(() => {
   calls = [];
@@ -262,7 +270,7 @@ afterEach(() => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe("раздел «Метрики»", () => {
-  it("модератор видит очереди, недели и вендоров; худшие по доле ответов — сверху, пустые — внизу", async () => {
+  it("модератор видит недели; вендоры — вкладкой: худшие по доле ответов — сверху, пустые — внизу", async () => {
     mockApi(MODERATOR, {
       "GET /api/staff/metrics": json(OVERVIEW),
       "GET /api/staff/metrics/vendors": json(VENDORS),
@@ -273,35 +281,35 @@ describe("раздел «Метрики»", () => {
     expect(nav).toContain(t.metrics);
     expect(container.querySelector("h1")?.textContent).toBe(t.metrics);
 
-    // очереди: просрочка выделена, пустое недоставленное — нет
-    const stats = [...container.querySelectorAll(".stat")];
-    expect(stats).toHaveLength(7);
-    expect(stats[1]?.className).toContain("stat-warn");
-    expect(stats[2]?.className).not.toContain("stat-warn");
-    // Плитка — ссылка туда, где очередь разбирают; заявок и уведомлений у модератора нет — без ссылки
-    // Плитка ведёт сразу к своей очереди модерации (?queue=)
-    expect(stats.map((el) => el.getAttribute("href"))).toEqual([
-      null,
-      null,
-      null,
-      "/moderation?queue=review",
-      "/moderation?queue=revisions",
-      "/moderation?queue=services",
-      "/moderation?queue=photos",
-    ]);
-    expect(stats[5]?.textContent).toBe(`4${t.metricsQueues.servicesPending}`);
+    // «Сейчас» с плитками очередей больше нет: очереди — счётчики у разделов
+    expect(container.querySelector(".stat")).toBeNull();
+    // Таблица одна: грузится и показывается только открытая вкладка
+    expect(calls.some((c) => c.url.startsWith("/api/staff/metrics/vendors"))).toBe(false);
+    expect(container.querySelectorAll("table")).toHaveLength(1);
 
-    // недели: текущая — «идёт», пустая доля — прочерк; прошлая — 50 % (3 из 6), медиана и 90%
+    // недели: текущая — «идёт», пустая доля — прочерк; прошлая — 50 % (3 из 6) и медиана; без 90%
+    expect(
+      [...container.querySelectorAll("section[aria-labelledby='weekly-title'] thead th")].map(
+        (th) => th.textContent,
+      ),
+    ).toEqual([t.colWeek, t.colRequests, t.colAnswered, t.colMedian, t.colBreaches]);
     const weeks = [...container.querySelectorAll("section[aria-labelledby='weekly-title'] tbody tr")];
     expect(weeks[0]?.textContent).toContain(t.weekNow);
     expect(weeks[0]?.textContent).toContain(t.none);
     expect(weeks[1]?.textContent).toContain("50 %");
     expect(weeks[1]?.textContent).toContain(t.answeredOf(3, 6));
-    expect(weeks[1]?.textContent).toContain(t.medianTime("5 ч 30 мин"));
-    expect(weeks[1]?.textContent).toContain(t.p90Time("11 ч 36 мин"));
+    expect(weeks[1]?.textContent).toContain("5 ч 30 мин");
+    expect(weeks[1]?.textContent).not.toContain("90");
     expect(weeks[1]?.querySelector(".bar-fill")?.className).toContain("bar-w5");
-    expect(text()).toContain(t.metricsWeeklyHint(12));
+    // Определения — в листе, а не абзацами над таблицей
+    expect(container.querySelector("p.muted")).toBeNull();
+    await click(button(t.metricsHow));
+    expect(document.querySelector("[role=dialog]")?.textContent).toContain(t.metricsHowItems(12)[0]?.text);
+    await click(document.querySelector<HTMLElement>("[role=dialog] .sheet-done") ?? undefined);
 
+    await click(radio(t.metricsTabs.vendors));
+    expect(window.location.search).toBe("?tab=vendors");
+    expect(container.querySelectorAll("table")).toHaveLength(1);
     expect(vendorOrder()).toEqual(["V103", "V101", "V102"]);
     // сортировка — в заголовке столбца
     const rateHeader = sortButton(t.colAnswered)?.closest("th");
@@ -318,13 +326,13 @@ describe("раздел «Метрики»", () => {
     );
   });
 
-  it("сводка по категориям; фильтр категории — у недель и вендоров, очереди — все", async () => {
+  it("сводка по категориям — вкладка без фильтра категории; у недель, вендоров и контактов он есть и в адресе", async () => {
     mockApi(MODERATOR, {
       "GET /api/staff/metrics": json(OVERVIEW),
       "GET /api/staff/metrics/vendors": json(VENDORS),
       "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
     });
-    await mount("/metrics");
+    await mount("/metrics?tab=categories");
     const rows = [
       ...container.querySelectorAll("section[aria-labelledby='categories-metrics-title'] tbody tr"),
     ];
@@ -335,25 +343,24 @@ describe("раздел «Метрики»", () => {
     expect(rows[0]?.textContent).toContain(t.activeVendors(3));
     expect(rows[0]?.textContent).toContain("70 %");
     expect(rows[1]?.textContent).toContain(t.none);
-    // У вендора — категории его витрин
-    expect(
-      container.querySelector("section[aria-labelledby='vendors-metrics-title']")?.textContent,
-    ).toContain(categoryName("hall"));
+    // Фильтр сужает не её, а недели, вендоров и контакты — здесь его нет
+    expect(container.querySelector("button[aria-haspopup=listbox]")).toBeNull();
 
+    await click(radio(t.metricsTabs.weeks));
     await click(container.querySelector("button[aria-haspopup=listbox]"));
     await click(
       [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === categoryName("car")),
     );
     expect(calls.some((c) => c.url === "/api/staff/metrics?category=car")).toBe(true);
+    // Вендоры подгружаются с выбранной категорией; сводка по категориям — одна и без неё
+    await click(radio(t.metricsTabs.vendors));
     expect(calls.some((c) => c.url === "/api/staff/metrics/vendors?category=car")).toBe(true);
-    // Сводка по категориям от фильтра не зависит
     expect(calls.filter((c) => c.url.startsWith("/api/staff/metrics/categories"))).toHaveLength(1);
-    expect(text()).toContain(t.metricsCategoryFilter(categoryName("car")));
-    // Фильтр — в адресе: «назад» с вендора вернёт те же цифры, ссылку можно переслать
-    expect(window.location.search).toBe("?category=car");
+    // Фильтр и вкладка — в адресе: «назад» с вендора вернёт те же цифры, ссылку можно переслать
+    expect(window.location.search).toBe("?category=car&tab=vendors");
   });
 
-  it("фильтр категории из адреса; плитка просрочки у администратора — заявки «Требуют действия»", async () => {
+  it("фильтр категории из адреса уходит в недели", async () => {
     mockApi(
       { ...ADMIN, permissions: [...ADMIN.permissions, "requests.read", "outbox.read"] },
       {
@@ -363,10 +370,17 @@ describe("раздел «Метрики»", () => {
       },
     );
     await mount("/metrics?category=car");
-    expect(text()).toContain(t.metricsCategoryFilter(categoryName("car")));
-    const stats = [...container.querySelectorAll(".stat")];
-    expect(stats[1]?.getAttribute("href")).toBe("/requests?sla=late");
-    expect(stats[2]?.getAttribute("href")).toBe("/notifications");
+    expect(calls.some((c) => c.url === "/api/staff/metrics?category=car")).toBe(true);
+    expect(container.querySelector("section[aria-labelledby='weekly-title'] table")).not.toBeNull();
+  });
+
+  it("строка главных чисел: заявок · в срок · медиана; «срок сорван» — когда он был", () => {
+    expect(statLine(WEEK)).toBe(
+      `${t.requestsOf(7)} · ${t.inTimeShort("50 %")} · ${t.medianTime("5 ч 30 мин")} · ${t.breachesShort(2)}`,
+    );
+    expect(statLine({ ...WEEK, slaBreaches: 0, answeredRate: null, medianResponseMinutes: null })).toBe(
+      `${t.requestsOf(7)} · ${t.inTimeShort(t.none)} · ${t.medianTime(t.none)}`,
+    );
   });
 
   it("«Контакты витрин»: за 30 дней, витрина — ссылкой; открыли, позвонить, Telegram — числами", async () => {
@@ -376,7 +390,7 @@ describe("раздел «Метрики»", () => {
       "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
       "GET /api/staff/metrics/contacts": json(CONTACTS),
     });
-    await mount("/metrics");
+    await mount("/metrics?tab=contacts");
     expect(calls.some((c) => c.url === "/api/staff/metrics/contacts?days=30")).toBe(true);
     const section = container.querySelector("section[aria-labelledby='contacts-metrics-title']");
     expect(section?.querySelector("h2")?.textContent).toBe(t.metricsContacts);
@@ -426,9 +440,7 @@ describe("раздел «Метрики»", () => {
           ? json({ ...CONTACTS, category: "car", items: [] })(body)
           : json(CONTACTS)(body),
     });
-    await mount("/metrics");
-    // До выбора — подпись говорит, что фильтр сужает и контакты
-    expect(text()).toContain(t.metricsFilterScope);
+    await mount("/metrics?tab=contacts");
     await click(container.querySelector("button[aria-haspopup=listbox]"));
     await click(
       [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent === categoryName("car")),
@@ -447,15 +459,16 @@ describe("раздел «Метрики»", () => {
     expect(container.querySelector("section[aria-labelledby='contacts-metrics-title'] table")).not.toBeNull();
   });
 
-  it("не ответили контакты — остальные блоки на месте, у блока своя ошибка с «Повторить»", async () => {
+  it("не ответили контакты — вкладки на месте, у блока своя ошибка с «Повторить»", async () => {
     mockApi(MODERATOR, {
       "GET /api/staff/metrics": json(OVERVIEW),
       "GET /api/staff/metrics/vendors": json(VENDORS),
       "GET /api/staff/metrics/categories": json(CATEGORY_METRICS),
       "GET /api/staff/metrics/contacts": json({ error: { code: "internal_error" } }, 500),
     });
-    await mount("/metrics");
-    expect(vendorOrder()).toEqual(["V103", "V101", "V102"]);
+    await mount("/metrics?tab=contacts");
+    // Вкладки на месте, у блока своя ошибка
+    expect(radio(t.metricsTabs.vendors)).toBeDefined();
     const section = container.querySelector("section[aria-labelledby='contacts-metrics-title']");
     expect(section?.querySelector("[role=alert]")).not.toBeNull();
     expect([...(section?.querySelectorAll("button") ?? [])].some((b) => b.textContent === t.retry)).toBe(
@@ -541,7 +554,7 @@ describe("страница вендора: ответы на заявки", () =
     deleteBlocker: null,
   };
 
-  it("за 30 дней: заявки, доля в срок, медиана; витрины с категориями — если их несколько", async () => {
+  it("за 30 дней: одна строка — заявок, доля в срок, медиана — и ссылка на метрики вендоров", async () => {
     const stats: VendorResponseStats = {
       days: 30,
       vendor: vendorRow(VENDOR_A, "V101", 60, 5),
@@ -568,15 +581,13 @@ describe("страница вендора: ответы на заявки", () =
     await mount(`/vendors/${VENDOR_A}`);
     const panel = container.querySelector("section[aria-labelledby='response-title']");
     expect(panel?.textContent).toContain(t.vendorResponse);
+    expect(panel?.querySelector("p")?.textContent).toBe(statLine(stats.vendor));
     expect(panel?.textContent).toContain("60 %");
     expect(panel?.textContent).toContain("1 ч");
-    expect(panel?.querySelectorAll("tbody tr")).toHaveLength(2);
-    expect(panel?.textContent).toContain("Kortej");
-    expect([...(panel?.querySelectorAll("tbody .cat-chip") ?? [])].map((c) => c.textContent)).toEqual([
-      categoryName("hall"),
-      categoryName("car"),
-    ]);
-    expect(panel?.textContent).toContain(t.vendorCategories);
+    // Ни таблицы витрин, ни абзаца с пояснением
+    expect(panel?.querySelector("table")).toBeNull();
+    expect(panel?.querySelectorAll("p")).toHaveLength(1);
+    expect(panel?.querySelector("a")?.getAttribute("href")).toBe("/metrics?tab=vendors");
   });
 
   it("заявок не было — так и написано", async () => {
@@ -612,7 +623,7 @@ describe("настройки: пауза между напоминаниями",
       }),
     });
     await mount("/settings");
-    const form = container.querySelector("form.setting");
+    const form = container.querySelector("form.setting-row");
     expect(form?.textContent).toContain(t.settingsLabels.ops_reminder_pause_minutes);
     expect(form?.textContent).toContain(t.settingsHints.ops_reminder_pause_minutes);
     const input = form?.querySelector("input") as HTMLInputElement;

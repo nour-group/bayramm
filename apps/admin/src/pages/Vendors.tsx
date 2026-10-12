@@ -1,7 +1,12 @@
 /* Вендоры: поиск, фильтры по статусу и категории витрин, таблица. Строка ведёт на страницу
    вендора; у каждой витрины — её категория. Поиск, фильтры и страница — в адресе (?q=&status=
    &category=&page=): «назад» из вендора возвращает тот же список. Список — страницами: на
-   компьютере листается, на телефоне «Показать ещё» дописывает следующую. */
+   компьютере листается, на телефоне «Показать ещё» дописывает следующую.
+
+   В строке — только то, что нужно, чтобы найти вендора и понять, куда идти: название, под ним код,
+   контактное лицо и юрназвание; витрины — статус только у тех, что не на сайте. «Что не так» —
+   плашки только в проблемных состояниях: проверка ниже 4/4, нет входа в кабинет или уведомления
+   никому не приходят (ни у кого не привязан Telegram). У всего в порядке — пусто. */
 
 import type { ListingStatus, VendorList, VendorListItem } from "@bayramm/shared/api/staff";
 import { Dialog, RadioGroup, type RadioOption, SearchField, Select } from "@bayramm/ui/react";
@@ -20,6 +25,7 @@ import {
   ListFooter,
   LoadedView,
   offsetOf,
+  Pill,
   StatusPill,
   useListSearch,
   usePagedList,
@@ -35,13 +41,10 @@ const KEYS = ["q", "status", "category", "page"] as const;
 const statusOf = (value: string | undefined): ListingStatus | null =>
   STATUSES.find((status) => status === value) ?? null;
 
-/** Варианты статуса витрины; в шторке у «Лида» — подсказка, что это значит */
-const statusOptions = (hints: boolean): RadioOption<ListingStatus | "all">[] => [
+/** Варианты статуса витрины для шторки на телефоне */
+const statusOptions = (): RadioOption<ListingStatus | "all">[] => [
   { value: "all", label: t.all },
-  ...STATUSES.map((status) => {
-    const hint = hints ? t.statusHints[status] : undefined;
-    return { value: status, label: t.status[status], ...(hint ? { hint } : {}) };
-  }),
+  ...STATUSES.map((status) => ({ value: status, label: t.status[status] })),
 ];
 
 export function VendorsPage() {
@@ -93,13 +96,25 @@ export function VendorsPage() {
             onOpen={() => setFiltersOpen(true)}
           />
         ) : (
-          <Select
-            size="compact"
-            label={t.colCategory}
-            value={category ?? ""}
-            onChange={(code) => setCategory(code === "" ? null : code)}
-            options={[{ value: "", label: t.allCategories }, ...categoryOptions()]}
-          />
+          <>
+            <Select
+              size="compact"
+              label={t.vendorsListingStatus}
+              value={status ?? ""}
+              onChange={(value) => setStatus(statusOf(value))}
+              options={[
+                { value: "", label: t.allStatuses },
+                ...STATUSES.map((s) => ({ value: s, label: t.status[s] })),
+              ]}
+            />
+            <Select
+              size="compact"
+              label={t.colCategory}
+              value={category ?? ""}
+              onChange={(code) => setCategory(code === "" ? null : code)}
+              options={[{ value: "", label: t.allCategories }, ...categoryOptions()]}
+            />
+          </>
         )}
         {can("vendors.write") && !phone && (
           <Link to={{ name: "vendorNew" }} className="btn btn-primary">
@@ -136,7 +151,7 @@ export function VendorsPage() {
             label={t.vendorsListingStatus}
             value={status ?? "all"}
             onChange={(value) => setStatus(value === "all" ? null : value)}
-            options={statusOptions(true)}
+            options={statusOptions()}
           />
           <RadioGroup<string>
             variant="row"
@@ -146,19 +161,7 @@ export function VendorsPage() {
             options={[{ value: "all", label: t.allCategories }, ...categoryOptions()]}
           />
         </Dialog>
-      ) : (
-        <div className="filter-row">
-          <RadioGroup<ListingStatus | "all">
-            variant="pill"
-            label={t.vendorsListingStatus}
-            name="vendors-status"
-            value={status ?? "all"}
-            onChange={(value) => setStatus(value === "all" ? null : value)}
-            options={statusOptions(false)}
-          />
-          {status === "lead" ? <p className="muted small">{t.statusHints.lead}</p> : null}
-        </div>
-      )}
+      ) : null}
       {/* Телефон: «Новый вендор» — в панели действий внизу, под большим пальцем */}
       {can("vendors.write") && phone ? (
         <ActionBar label={t.vendors}>
@@ -189,43 +192,64 @@ export function VendorsPage() {
 
 const checksDone = (vendor: VendorListItem) => Object.values(vendor.checklist).filter(Boolean).length;
 
+const nameOf = (vendor: VendorListItem) => vendor.name ?? vendor.legalName ?? vendor.code;
+
+/** «Шахло Каримова · ООО «Лола Холл»» — кого и с кем искать; пусто — строки нет */
+const whoOf = (vendor: VendorListItem) =>
+  [vendor.contactPerson, vendor.legalName].filter((part): part is string => Boolean(part)).join(" · ");
+
+/** Что не так у вендора — только проблемные состояния; всё в порядке — ничего */
+function Attention({ vendor }: { vendor: VendorListItem }) {
+  const done = checksDone(vendor);
+  // Уведомления не приходят, когда Telegram не привязан ни у кого из действующих пользователей
+  const cabinet = vendor.users === 0 ? t.cabinetNone : vendor.linkedUsers === 0 ? t.cabinetNoNotify : null;
+  if (done === 4 && cabinet === null) return null;
+  return (
+    <span className="attention">
+      {done < 4 ? <Pill tone="outline">{t.checksShort(done)}</Pill> : null}
+      {cabinet !== null ? <Pill tone="warn">{cabinet}</Pill> : null}
+    </span>
+  );
+}
+
+/** Витрина в строке вендора: статус — только у тех, что не на сайте */
+function ListingTag({ listing }: { listing: VendorListItem["listings"][number] }) {
+  return (
+    <>
+      {listing.name} <CategoryChip code={listing.categoryCode} />
+      {listing.status === "active" ? null : (
+        <>
+          {" "}
+          <StatusPill status={listing.status} />
+        </>
+      )}
+    </>
+  );
+}
+
 function VendorCards({ items }: { items: readonly VendorListItem[] }) {
   return (
     <ul className="rcards">
       {items.map((vendor) => {
-        const done = checksDone(vendor);
+        const who = whoOf(vendor);
         return (
           <li key={vendor.id} className="rcard rcard-tap">
-            <div className="rcard-head">
-              <Link to={{ name: "vendor", id: vendor.id }} className="rcard-link">
-                {vendor.name ?? vendor.legalName ?? vendor.code}
-              </Link>
-              {/* Что значит «0/4» — словами и на виду: на телефоне заголовка столбца нет */}
-              <span className={`ring${done === 4 ? " ring-done" : ""}`}>
-                {t.colChecklist} {done}/4
-              </span>
-            </div>
+            <Link to={{ name: "vendor", id: vendor.id }} className="rcard-link">
+              {nameOf(vendor)}
+            </Link>
             <p className="rcard-meta">
               {vendor.code}
               {vendor.managerName ? ` · ${vendor.managerName}` : ""}
             </p>
-            <dl className="rcard-facts">
-              <dt>{t.colContact}</dt>
-              <dd>
-                {vendor.contactPerson ?? t.none}
-                {vendor.legalName ? ` · ${vendor.legalName}` : ""}
-              </dd>
-              <dt>{t.colCabinet}</dt>
-              <dd>{t.cabinetUsers(vendor.users, vendor.linkedUsers)}</dd>
-            </dl>
+            {who ? <p className="rcard-meta">{who}</p> : null}
+            <Attention vendor={vendor} />
             {vendor.listings.length === 0 ? (
               <p className="rcard-meta">{t.noListings}</p>
             ) : (
               <ul className="rcard-tags" aria-label={t.colListings}>
                 {vendor.listings.map((listing) => (
                   <li key={listing.id}>
-                    {listing.name} <CategoryChip code={listing.categoryCode} />{" "}
-                    <StatusPill status={listing.status} />
+                    <ListingTag listing={listing} />
                   </li>
                 ))}
               </ul>
@@ -244,29 +268,24 @@ function VendorTable({ items }: { items: readonly VendorListItem[] }) {
         <thead>
           <tr>
             <th scope="col">{t.colVendor}</th>
-            <th scope="col">{t.colContact}</th>
             <th scope="col">{t.colListings}</th>
-            <th scope="col">{t.colChecklist}</th>
-            <th scope="col">{t.colCabinet}</th>
+            <th scope="col">{t.colAttention}</th>
           </tr>
         </thead>
         <tbody>
           {items.map((vendor) => {
-            const done = checksDone(vendor);
+            const who = whoOf(vendor);
             return (
               <tr key={vendor.id}>
                 <td>
                   <Link to={{ name: "vendor", id: vendor.id }} className="row-link">
-                    {vendor.name ?? vendor.legalName ?? vendor.code}
+                    {nameOf(vendor)}
                   </Link>
                   <span className="sub">
                     {vendor.code}
                     {vendor.managerName ? ` · ${vendor.managerName}` : ""}
                   </span>
-                </td>
-                <td>
-                  {vendor.contactPerson ?? t.none}
-                  {vendor.legalName && <span className="sub">{vendor.legalName}</span>}
+                  {who ? <span className="sub">{who}</span> : null}
                 </td>
                 <td>
                   {vendor.listings.length === 0 ? (
@@ -276,16 +295,21 @@ function VendorTable({ items }: { items: readonly VendorListItem[] }) {
                       {vendor.listings.map((listing) => (
                         <li key={listing.id}>
                           <Link to={{ name: "listing", id: listing.id }}>{listing.name}</Link>{" "}
-                          <CategoryChip code={listing.categoryCode} /> <StatusPill status={listing.status} />
+                          <CategoryChip code={listing.categoryCode} />
+                          {listing.status === "active" ? null : (
+                            <>
+                              {" "}
+                              <StatusPill status={listing.status} />
+                            </>
+                          )}
                         </li>
                       ))}
                     </ul>
                   )}
                 </td>
                 <td>
-                  <span className={`ring${done === 4 ? " ring-done" : ""}`}>{done}/4</span>
+                  <Attention vendor={vendor} />
                 </td>
-                <td>{t.cabinetUsers(vendor.users, vendor.linkedUsers)}</td>
               </tr>
             );
           })}

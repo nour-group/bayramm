@@ -168,18 +168,16 @@ test.describe("витрина на телефоне: оглавление бло
         t.listingIndexItems.photos ?? "",
         t.listingIndexItems.services ?? "",
         t.listingIndexItems.calendar ?? "",
-        t.listingIndexItems.main ?? "",
         t.listingIndexItems.attrs ?? "",
         t.listingIndexItems.phone ?? "",
-        t.listingIndexItems.history ?? "",
       ]);
-      await index.getByRole("button", { name: t.listingIndexItems.history }).click();
-      const history = page.locator("#history-title");
-      await expect(history).toBeFocused();
+      await index.getByRole("button", { name: t.listingIndexItems.phone }).click();
+      const contacts = page.locator("#form-phone-title");
+      await expect(contacts).toBeFocused();
       // Оглавление прилипло под шапкой, заголовок блока — ниже него, а не под ним
       const boxes = await page.evaluate(() => {
         const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect();
-        return { bar: box(".appbar"), index: box(".section-index"), title: box("#history-title") };
+        return { bar: box(".appbar"), index: box(".section-index"), title: box("#form-phone-title") };
       });
       expect(Math.round(boxes.index?.top ?? -1)).toBe(Math.round(boxes.bar?.bottom ?? 0));
       expect(boxes.title?.top ?? 0).toBeGreaterThanOrEqual(boxes.index?.bottom ?? 0);
@@ -294,10 +292,12 @@ test.describe("навигация на телефоне", () => {
     await page.goto("/requests");
     await page.getByRole("button", { name: t.filters, exact: true }).click();
     const sheet = page.getByRole("dialog", { name: t.filters });
-    await sheet.getByRole("radio", { name: t.slaLate }).check();
+    // «Требуют действия» и «Ждут ответа» — пилюлями на виду; в шторке — остальные состояния срока
+    await expect(sheet.getByRole("radio", { name: t.slaLate })).toHaveCount(0);
+    await sheet.getByRole("radio", { name: t.sla.answered, exact: true }).check();
     await sheet.getByRole("button", { name: t.done }).click();
     await expect(page.getByRole("button", { name: `${t.filters} (1)` })).toBeVisible();
-    await expect(page.getByRole("button", { name: `${t.reset}: ${t.slaLate}` })).toBeVisible();
+    await expect(page.getByRole("button", { name: `${t.reset}: ${t.sla.answered}` })).toBeVisible();
   });
 });
 

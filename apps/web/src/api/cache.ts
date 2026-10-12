@@ -4,10 +4,12 @@ import type {
   CatalogQuery,
   ConsentTexts,
   Dictionaries,
+  FeaturedListings,
   ListingDetail,
 } from "@bayramm/shared/api";
 import type { AuthMethods } from "@bayramm/shared/api/account";
-import type { ApiPeek, BotInfo, ClientApi } from "./types";
+import { botInfoOf } from "./bot";
+import type { ApiPeek, ClientApi } from "./types";
 
 /* Кэш публичных GET во вкладке, поверх любого ClientApi (bootstrap: настоящий и демо).
 
@@ -31,7 +33,7 @@ const MINUTE = 60_000;
 export const CACHE_TTL = {
   dictionaries: 30 * MINUTE,
   catalogCategories: 5 * MINUTE,
-  bot: 60 * MINUTE,
+  featured: MINUTE,
   authMethods: 10 * MINUTE,
   listing: MINUTE,
   catalog: MINUTE,
@@ -131,6 +133,9 @@ export function withCache(api: ClientApi, now: () => number = Date.now): ClientA
     },
   };
 
+  const authMethods = (signal?: AbortSignal) =>
+    cached<AuthMethods>("auth-methods", CACHE_TTL.authMethods, () => api.authMethods(), signal);
+
   return {
     ...api,
     peek,
@@ -143,9 +148,11 @@ export function withCache(api: ClientApi, now: () => number = Date.now): ClientA
         () => api.catalogCategories(),
         signal,
       ),
-    bot: (signal) => cached<BotInfo>("bot", CACHE_TTL.bot, () => api.bot(), signal),
-    authMethods: (signal) =>
-      cached<AuthMethods>("auth-methods", CACHE_TTL.authMethods, () => api.authMethods(), signal),
+    featured: (signal) =>
+      cached<FeaturedListings>("featured", CACHE_TTL.featured, () => api.featured(), signal),
+    authMethods,
+    // Имя бота — из способов входа: меню, подвал и блок партнёров делят один запрос
+    bot: (signal) => authMethods(signal).then(botInfoOf),
     listing: (slug, signal) =>
       cached<ListingDetail>(`listing:${slug}`, CACHE_TTL.listing, () => api.listing(slug), signal),
     catalog: (query, signal) =>

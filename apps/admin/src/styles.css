@@ -318,6 +318,11 @@ html.in-telegram body {
   cursor: pointer;
 }
 
+/* В шапке компьютера кнопка аккаунта — в своей колонке сетки, после разделов */
+.top .appbar-account {
+  grid-area: who;
+}
+
 /* Кружок аккаунта: инициалы на сливовом */
 .avatar {
   display: inline-flex;
@@ -613,7 +618,8 @@ html.in-telegram body {
   min-width: 0;
 }
 
-.crumbs li::after {
+/* Стрелка — только между звеньями: после последнего ей вести некуда (под путём — заголовок) */
+.crumbs li:not(:last-child)::after {
   content: "›";
   color: var(--muted);
 }
@@ -855,6 +861,14 @@ textarea.input {
   max-width: 420px;
 }
 
+/* Поиск со второй строкой рядом (переключатель): на телефоне — во всю строку, чтобы подсказка читалась */
+@media (max-width: 719px) {
+  .search.search-full {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
 /* Фильтры-чипы */
 .chips {
   display: flex;
@@ -971,18 +985,6 @@ textarea.input {
   scroll-margin-top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)) + 64px);
 }
 
-/* Модерация: сводка очередей вверху — кнопками к ним; где есть что решать — выделена */
-.queue-jump {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-7);
-}
-
-.queue-jump .chip.is-active {
-  border-color: var(--plum);
-  font-weight: 700;
-}
-
 /* После решения — к следующему в очереди */
 .next-in-queue {
   display: flex;
@@ -1060,26 +1062,6 @@ textarea.input {
   list-style: none;
 }
 
-/* Готовность вендора N/4 */
-.ring {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  padding: 2px 8px;
-  border: 2px solid var(--rule);
-  border-radius: var(--r-999);
-  color: var(--ink);
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.ring-done {
-  border-color: var(--teal);
-  color: var(--teal);
-}
-
 /* Плашки статусов: нейтральные, проблемные — коралловые */
 .pill {
   display: inline-block;
@@ -1155,37 +1137,63 @@ textarea.input {
   font-weight: 700;
 }
 
-/* Бот не пишет сотруднику: просьба написать ему /start — над экраном, пока не скрыли */
+/* Бот не пишет сотруднику: одна строка над экраном — ссылка на бота и крестик, пока не скрыли */
 .bot-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-7);
+  margin-bottom: 16px;
+  padding-block: 0;
+  padding-inline-end: 0;
+}
+
+.bot-banner-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-weight: 600;
+}
+
+.bot-banner-link {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  min-height: var(--hit-min);
+  color: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.bot-banner-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--hit-min);
+  min-height: var(--hit-min);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-999);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Правка карточки ждёт решения: одна строка — что, кто и когда слева, ссылка на неё справа */
+.pending-revision {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--gap-7) var(--gap-12);
-  margin-bottom: 16px;
 }
 
-.bot-banner-text {
+.pending-text {
   flex: 1 1 220px;
-  margin: 0;
-  font-weight: 600;
+  min-width: 0;
 }
 
-.bot-banner-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-7);
-}
-
-/* Правка карточки ждёт решения: поля, кто и когда, ссылка на неё */
-.pending-revision {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--gap-5);
-}
-
-.pending-revision > p {
+.pending-text > p {
   margin: 0;
 }
 
@@ -1215,11 +1223,6 @@ textarea.input {
   flex: 1 1 200px;
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-/* Только что заведённый вендор: что дальше — после общего правила списка (ловушка №7) */
-.next-steps .blockers {
-  margin: 8px 0;
 }
 
 /* Панели и формы */
@@ -1263,6 +1266,32 @@ textarea.input {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
   align-items: start;
   gap: var(--gap-12);
+}
+
+/* Страница вендора: слева витрины и кабинет (им нужна ширина), справа проверка и контакт; на узком —
+   одна колонка (то же правило ниже, в @media) */
+.columns-vendor {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+/* Заголовок без содержимого под ним (проверка 4/4 одной строкой) — без отступа вниз */
+.panel-head:last-child {
+  margin-bottom: 0;
+}
+
+/* Реквизиты в карточке контакта: заголовок поменьше, отступ сверху */
+.requisites-head {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.requisites-head h3 {
+  margin: 0;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-15);
+  line-height: 1.3;
 }
 
 .form {
@@ -1442,6 +1471,15 @@ textarea.input {
   text-align: center;
 }
 
+/* Четыре вкладки метрик в одну дорожку: на узком телефоне — теснее отступы и кегль 13,5, чтобы
+   «Категории» и «Контакты» не выталкивали страницу вбок на 320px */
+@media (max-width: 400px) {
+  .choice-segmented.metrics-tabs .ui-radio {
+    padding: 4px 4px;
+    font-size: var(--fs-13-5);
+  }
+}
+
 /* Строки с пояснением (роль) — не шире чтения: на компьютере строка во весь экран теряет глаз */
 .choice-row {
   width: 100%;
@@ -1559,7 +1597,7 @@ textarea.input {
 
 /* Настройка-число: «−», поле, «+» и единица — по своей ширине, а не в колонку поля времени;
    два напоминания на узком телефоне встают друг под другом */
-.setting-inputs .field.setting-num {
+.setting-controls .field.setting-num {
   flex: 0 1 auto;
   width: auto;
 }
@@ -1669,6 +1707,25 @@ textarea.input {
   font-variant-numeric: tabular-nums;
 }
 
+/* Несколько телефонов под одной кнопкой «Показать телефоны»: подпись слева, номер справа, без
+   лишних отступов между строками */
+.phones-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+}
+
+.phones-reveal .phone-row {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  margin-top: 0;
+}
+
+.phones-reveal .phone-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* Списки карточек и пользователей */
 .cards {
   display: flex;
@@ -1707,7 +1764,29 @@ textarea.input {
   grid-column: 1 / -1;
 }
 
-/* Пользователи кабинета: имя и плашки роли и статуса в строку; приглашение — под списком */
+/* Пользователи кабинета: имя и плашки роли и статуса слева, «Изменить» и «Ещё» справа; приглашение — в шторке */
+.vuser-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-5) var(--gap-9);
+}
+
+.vuser-id {
+  display: flex;
+  flex: 1 1 200px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5) var(--gap-9);
+  min-width: 0;
+}
+
+.vuser-acts {
+  display: flex;
+  gap: var(--gap-5);
+}
+
 .vuser-name {
   min-width: 0;
   color: var(--plum);
@@ -1723,15 +1802,6 @@ textarea.input {
   display: flex;
   flex-direction: column;
   gap: var(--gap-12);
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--rule);
-}
-
-.vuser-invite-title {
-  margin: 0;
-  color: var(--plum);
-  font-size: var(--fs-15);
 }
 
 .vuser-invited {
@@ -1744,7 +1814,7 @@ textarea.input {
   margin: 0;
 }
 
-/* Правка пользователя: на телефоне — в шторке, шире — под его карточкой */
+/* Правка пользователя — в шторке (на компьютере карточкой по центру) */
 .vuser-edit {
   display: flex;
   flex-direction: column;
@@ -1762,17 +1832,26 @@ textarea.input {
 /* Фото */
 .photos {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--gap-12);
-  margin: 12px 0;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--gap-9);
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .photo {
-  display: flex;
-  flex-direction: column;
-  gap: var(--gap-7);
+  position: relative;
+}
+
+/* Плитка — одна кнопка: фото и плашки состояния; нажатие открывает шторку действий */
+.photo-tile {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-8);
+  background: none;
+  cursor: pointer;
 }
 
 .photo img {
@@ -1786,22 +1865,58 @@ textarea.input {
   object-fit: cover;
 }
 
-.photo-tags,
-.photo-actions,
+/* Плашки лежат на фото, внизу слева: плитка остаётся одним нажатием */
+.photo-tags {
+  position: absolute;
+  bottom: 5px;
+  left: 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-3);
+  max-width: calc(100% - 10px);
+  pointer-events: none;
+}
+
+/* На плитке плашки мельче: «Ждёт решения» должна влезть в треть ширины телефона */
+.photo-tags .pill {
+  padding: 2px 8px;
+  font-size: var(--fs-11);
+}
+
 .acts {
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-5);
 }
 
-/* Причина отказа под отклонённым фото: текст партнёра длинный и в узкой клетке переносится целиком */
+/* Причина отказа в шторке фото: текст партнёра длинный и переносится целиком */
 .photo-reason {
   margin: 0;
   overflow-wrap: anywhere;
   white-space: pre-line;
 }
 
-/* Загрузка: галочка «нет лиц» и FileDrop во всю ширину панели */
+/* Сколько минимум: в шапке блока рядом со счётом; меньше минимума — цветом отказа */
+.photos-min {
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.photos-min.is-short {
+  color: var(--berry);
+  font-weight: 700;
+}
+
+/* Действия в шапке блока: «Одобрить все», «Добавить фото» — справа */
+.head-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+  margin-left: auto;
+}
+
+/* Загрузка — по «Добавить фото»: правило, подтверждение и FileDrop; на компьютере — на месте */
 .upload {
   display: flex;
   flex-direction: column;
@@ -1814,30 +1929,17 @@ textarea.input {
   margin: 0;
 }
 
-/* Шапка вендора: код и менеджер слева, «Удалить вендора» (на телефоне — «Ещё») справа */
+/* Шапка вендора: код и менеджер слева, «Ещё» (заявки, журнал, удалить) справа — на любой ширине */
 .vendor-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--gap-9);
 }
 
 .vendor-head > p {
   margin: 0;
-}
-
-.vendor-delete {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--gap-5);
-  max-width: 100%;
-}
-
-.vendor-delete p {
-  margin: 0;
-  text-align: end;
 }
 
 .reason {
@@ -2043,17 +2145,53 @@ textarea.input {
   margin-top: 12px;
 }
 
+/* Фильтры журнала в листе: поля друг под другом, даты «с» и «по» — в одной строке */
+.filters-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.filters-dates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-9);
+}
+
 /* Приглашение: «Как войдёт» — над полями, не шире нужного */
 .invite-by {
   align-items: flex-start;
   margin-bottom: 12px;
 }
 
-/* Настройка: подпись, поля, «Сохранить» в одну строку */
-.setting {
+/* Настройки: группа — панель, строка — название с границами слева, число с единицей справа;
+   «Сохранить» — в конце строки, только когда значение изменили. Узко — название над числом */
+.settings-list {
   display: flex;
   flex-direction: column;
-  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setting-item + .setting-item {
+  border-top: 1px solid var(--rule);
+}
+
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--gap-7) var(--gap-12);
+  padding: 12px 0;
+}
+
+.setting-row > .notice {
+  grid-column: 1 / -1;
+}
+
+.setting-text {
+  min-width: 0;
 }
 
 .setting-title {
@@ -2064,19 +2202,16 @@ textarea.input {
   font-weight: 700;
 }
 
-.setting-inputs {
+.setting-text p {
+  margin: 0;
+}
+
+.setting-controls {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--gap-9);
-}
-
-.setting-inputs .field {
-  width: 160px;
-}
-
-.setting p {
-  margin: 0;
 }
 
 /* Роль сотрудника: список и «Сменить роль» рядом */
@@ -2208,19 +2343,15 @@ textarea.input {
   }
 }
 
-/* Компьютер, но не широкий: все разделы не влезают в строку с именем и ссылками — разделы
-   второй строкой шапки, а не обрезаны прокруткой */
-@media (max-width: 1439px) {
+/* Компьютер, но не широкий: девять разделов в одну строку с названием и кружком аккаунта —
+   плотнее отступы у пунктов (строка остаётся одной, прокрутка вбок — запасной случай) */
+@media (max-width: 1199px) {
   .top {
-    grid-template-columns: auto minmax(0, 1fr);
-    grid-template-areas:
-      "brand who"
-      "nav nav";
-    row-gap: var(--gap-5);
+    gap: var(--gap-7);
   }
 
-  .who {
-    justify-self: end;
+  .nav a {
+    padding: 0 10px;
   }
 }
 
@@ -2325,6 +2456,13 @@ textarea.input {
   list-style: none;
 }
 
+/* «Что не так» у вендора в списке: плашки только проблемных состояний */
+.attention {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5);
+}
+
 .rcard-error {
   margin: 0;
   color: var(--berry);
@@ -2348,6 +2486,73 @@ textarea.input {
 
 .rcard-actions.role-edit > .ui-select {
   flex: 1 1 160px;
+}
+
+/* Решение по услуге: на телефоне две кнопки делят ширину, шире — по размеру подписи, справа */
+@media (min-width: 720px) {
+  .rcard-actions-decide {
+    justify-content: flex-end;
+  }
+
+  .rcard-actions-decide > .btn {
+    flex: 0 0 auto;
+  }
+}
+
+/* Заголовок карточки без слоя-ссылки на всю карточку (в ней свои кнопки) */
+a.rcard-title {
+  text-decoration: none;
+}
+
+/* «Не хватает: N» в карточке очереди — главным цветом, но не крупнее строки */
+.rcard-missing {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* Очередь фото: плитки ждущих фото, под каждой — ✓ и ✕ (кнопки по 44px, поровну) */
+.queue-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--gap-9);
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.queue-photo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  min-width: 0;
+}
+
+.queue-photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--paper);
+  object-fit: cover;
+}
+
+/* Решённая плитка тускнеет, пока очередь перечитывается: порядок и фокус остаются на месте */
+.queue-photo.is-decided img {
+  opacity: 0.45;
+}
+
+.queue-photo-acts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-5);
+}
+
+@media (max-width: 719px) {
+  .queue-photos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* Подпись списка роли в карточке сотрудника — строкой над ним */
@@ -2394,6 +2599,66 @@ textarea.input {
   margin: 0;
 }
 
+/* Заявка: плашка срока слева, действия справа — одна строка под заголовком (на телефоне действия
+   в панели внизу, остаётся плашка); пояснение и ошибка — отдельной строкой ниже */
+.request-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--gap-9) var(--gap-12);
+}
+
+.request-head > :not(.pills):not(.acts) {
+  grid-column: 1 / -1;
+}
+
+.request-head > .request-hint {
+  margin: 0;
+}
+
+/* Ход заявки: шаги срока, смены статуса и заметки — одним потоком; заметка выделена слева */
+.timeline li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.timeline-note {
+  padding-left: 10px;
+  border-left: 3px solid var(--lilac);
+}
+
+/* Страница клиента: плашки состояния слева, «Ещё» справа; заявки — первая и самая широкая колонка */
+.entity-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.columns.columns-wide-first {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+/* «Как считаем» в метриках: определения в листе, термин жирным, пояснение под ним */
+.how-we-count {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  margin: 0;
+  font-size: var(--fs-14);
+}
+
+.how-we-count dt {
+  color: var(--plum);
+  font-weight: 700;
+}
+
+.how-we-count dd {
+  margin: 0;
+}
+
 /* ── фильтры и сортировка в шторке (телефон) ─────────────────────────────── */
 
 .btn-filter,
@@ -2429,11 +2694,6 @@ textarea.input {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-/* «Позже» — та же стрелка, развёрнутая вправо */
-.btn-flip .icon {
-  transform: scaleX(-1);
 }
 
 /* ── календарь: несколько дней, обозначения ──────────────────────────────── */
@@ -2626,8 +2886,7 @@ textarea.input {
 }
 
 /* Панель действий унесла кнопки вниз — пустая рамка на месте не нужна */
-.panel-actions:empty,
-.actions-panel:empty {
+.panel-actions:empty {
   display: none;
 }
 
@@ -2845,12 +3104,6 @@ textarea.input {
   box-shadow: inset 0 0 0 2px var(--plum);
 }
 
-.cal-capacity {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: var(--fs-13-5);
-}
-
 .day-parts {
   display: flex;
   flex-direction: column;
@@ -2977,14 +3230,10 @@ textarea.input {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  /* Фото — две колонки; кнопки у фото — иконками, чтобы три влезли в ширину */
+  /* Фото — три колонки: плитка одна кнопка, без кнопок под ней */
   .photos {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--gap-9);
-  }
-
-  .photo-actions {
-    gap: var(--gap-3);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--gap-7);
   }
 
   /* Календарь — без рамки панели: семь клеток по 44px влезают в ширину телефона */
@@ -3005,15 +3254,12 @@ textarea.input {
     min-width: 0;
   }
 
-  .setting-inputs .field {
-    flex: 1 1 140px;
-    width: auto;
+  .setting-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .setting-save,
-  .setting-save .btn {
-    flex: 1 1 100%;
-    width: 100%;
+  .setting-controls {
+    justify-content: flex-start;
   }
 
   /* Ссылки в тексте: зона нажатия 44px невидимым слоем, рисунок тот же */
@@ -3134,17 +3380,11 @@ textarea.input {
   font-variant-numeric: tabular-nums;
 }
 
-/* Контакты витрины: строки телефона и Telegram, одна кнопка «Показать» под ними */
+/* Контакты витрины: строка на канал — значение, «Показать», «Изменить», «…» */
 .contacts-reveal {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--gap-12);
-  margin-bottom: 12px;
-}
-
-.contacts-reveal .phone-row + .phone-row {
-  margin-top: 0;
+  gap: var(--gap-9);
 }
 
 /* Заголовок группы переключателей в шторке фильтров: без него две группы подряд сливаются */
@@ -3157,4 +3397,287 @@ textarea.input {
 
 .sheet-group:first-child {
   margin-top: 0;
+}
+
+/* ── страница витрины: строка «что это», блоки парами, служебное ─────────── */
+
+/* Шапка: категория, статус и вендор — одной строкой; справа главное действие (шире телефона) и «…».
+   Не .listing-head: у страницы предложения изменений он свой — столбец строк */
+.listing-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
+.listing-meta {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7) var(--gap-9);
+  min-width: 0;
+}
+
+.listing-top-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+/* Блоки страницы идут по порядку работы. Две колонки на компьютере — левая, потом правая: так же
+   читаются и подряд на телефоне, где обёртки «растворяются» (display: contents — оглавление
+   липнет по всей странице, а не по своей колонке) */
+.listing-cols,
+.listing-col {
+  display: contents;
+}
+
+@media (min-width: 1024px) {
+  .listing-cols {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-12);
+    align-items: start;
+  }
+
+  .listing-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-12);
+    min-width: 0;
+  }
+}
+
+/* «Что осталось» и «Ждёт решения»: заголовок — как у блоков, не крупнее */
+.next-step .notice-title {
+  margin: 0 0 8px;
+  font-size: var(--fs-15);
+  line-height: 1.3;
+}
+
+.next-step .blockers-go li {
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.next-step .blockers-go li:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* Заголовки частей формы витрины: у блока одна подпись, без пояснений под ней */
+.listing-page .fs-head {
+  margin-bottom: 12px;
+}
+
+.listing-page .fs-head h2 {
+  margin: 0;
+}
+
+.listing-page .fs-sub {
+  margin: 16px 0 8px;
+}
+
+.listing-page .fs-sub h3 {
+  margin: 0;
+  color: var(--plum);
+  font-size: var(--fs-14);
+  font-weight: 800;
+}
+
+.listing-page .fs > .notice {
+  margin-bottom: 12px;
+}
+
+/* Адрес страницы — строкой «…/venue/имя» с «Изменить» */
+.slug-line {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+}
+
+.slug-url {
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+  overflow-wrap: anywhere;
+}
+
+.slug-url strong {
+  color: var(--ink);
+}
+
+/* «Заказов одновременно» — в шапке календаря: подпись и число с «−» и «+» */
+.cap-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7) var(--gap-9);
+}
+
+.cap-inline label {
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+/* Поле числа уже, чем в формах: «−», число и «+» — 170px, а не 226 */
+.cap-inline .ui-number-input {
+  flex-basis: 64px;
+}
+
+/* Контакты: строка на канал; подпись — над значением, шире телефона — слева от него */
+.contact-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-3) var(--gap-9);
+  min-height: var(--hit-min);
+}
+
+.contact-label {
+  flex: 0 0 100%;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+}
+
+.contact-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.contact-note {
+  flex: 1 1 160px;
+  min-width: 0;
+  color: var(--coral-deep);
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+.contact-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7);
+  margin-left: auto;
+}
+
+/* Поле на месте строки: само поле и «Не менять» рядом, во всю ширину */
+.contact-edit {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gap-9);
+}
+
+.contact-edit > .field {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+@media (min-width: 720px) {
+  .contact-label {
+    flex: 0 0 84px;
+  }
+}
+
+/* «Служебное»: свёрнуто — одна строка; внутри история, категория, удалить */
+.listing-page .service-block h2 {
+  margin: 0;
+}
+
+.disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: var(--hit-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--plum);
+  font-family: inherit;
+  font-size: var(--fs-15);
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.disclosure[aria-expanded="true"] .disclosure-caret {
+  transform: rotate(180deg);
+}
+
+.service-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+  margin-top: 8px;
+}
+
+.service-body .sub-title {
+  margin: 0 0 8px;
+}
+
+.category-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+}
+
+/* Шторка «…»: название и под ним пояснение, почему пункт недоступен */
+.menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-width: 0;
+}
+
+.menu-hint {
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+/* Услуга: название, цена и состояние — одна строка с «…»; ждущая решения — рамка под ней */
+.service-main {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.service-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.service-main > .btn,
+.service-main > .pill {
+  flex: none;
+}
+
+.service-decision {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+}
+
+.service-decision > p,
+.service-decision > .diff {
+  margin: 0;
+}
+
+/* Форма смены статуса на компьютере — на месте, под шапкой */
+.status-form {
+  max-width: 560px;
 }

@@ -1,14 +1,13 @@
-import type { ListingCard as Card, CatalogCategory } from "@bayramm/shared/api";
-import type { CategoryConfig } from "@bayramm/shared/categories";
+import { FEATURED_LISTINGS } from "@bayramm/shared/api";
 import { DateField, NumberStepper, Select } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
 import { CLIENT_CATEGORIES, categoryName, clientCategory, hasCapacity } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
-import { CategoryGrid, listingsIn, useCatalogCategories } from "../components/Categories";
+import { CategoryGrid } from "../components/Categories";
 import { ListingCard } from "../components/ListingCard";
 import { useLang, useServices } from "../context";
 import { addDays, formatDayMonth, tashkentToday } from "../format";
-import { type AsyncResult, useAsync, useDocumentTitle } from "../hooks";
+import { useAsync, useDocumentTitle } from "../hooks";
 import { Icon, type IconName } from "../icons";
 import { DEFAULT_CATEGORY, hrefFor, useNav } from "../router";
 import { DATE_HORIZON_DAYS, filtersQuery, MAX_GUESTS, NO_FILTERS, parseGuests } from "./catalog-feed";
@@ -21,42 +20,11 @@ import { DATE_HORIZON_DAYS, filtersQuery, MAX_GUESTS, NO_FILTERS, parseGuests } 
    продукта), партнёрам, вопросы — только о том, чего выше нет. Рейтингов, отзывов и
    выдуманных цифр нет. */
 
-/** Сколько витрин показать на лендинге: ряд на компьютере, лента — на телефоне */
-const FEATURED = 4;
-
 /**
  * Ширина фото витрин лендинга: на телефоне карточка — 84% ленты, с 640px — две колонки,
  * с 1024px — четыре (styles.css, .ln-cards)
  */
 const FEATURED_SIZES = "(min-width: 1280px) 300px, (min-width: 1024px) 23vw, (min-width: 640px) 50vw, 80vw";
-
-/**
- * Из каких разделов брать витрины: первые FEATURED разделов с витринами (по порядку показа),
- * и сколько из каждого — чтобы вместе набралось FEATURED. Пока категории не пришли — null;
- * не пришли вовсе (ошибка) — залы, как каталог по умолчанию
- */
-export function featuredPlan(
-  categories: AsyncResult<{ readonly items: readonly CatalogCategory[] }>,
-): { readonly codes: readonly string[]; readonly per: number } | null {
-  if (categories.status === "loading") return null;
-  const live: readonly CategoryConfig[] =
-    categories.status === "error"
-      ? [clientCategory(DEFAULT_CATEGORY)]
-      : CLIENT_CATEGORIES.filter((c) => listingsIn(categories, c.code));
-  const codes = live.slice(0, FEATURED).map((c) => c.code);
-  return { codes, per: codes.length === 0 ? 0 : Math.ceil(FEATURED / codes.length) };
-}
-
-/** По очереди из каждого раздела: первый каждого, потом вторые… — не больше FEATURED */
-export function interleave(lists: readonly (readonly Card[])[]): Card[] {
-  const out: Card[] = [];
-  for (let i = 0; out.length < FEATURED && lists.some((list) => i < list.length); i++)
-    for (const list of lists) {
-      const card = list[i];
-      if (card && out.length < FEATURED) out.push(card);
-    }
-  return out;
-}
 
 /** Обещания — по порядку lnPromT/lnPromP; иконки — смысловые (duotone) */
 const PROMISE_ICONS: readonly IconName[] = ["shieldD", "checkFill", "phone", "clockD"];
@@ -148,33 +116,20 @@ function QuickSearch() {
 /**
  * Исполнители из каталога — по одному из разных разделов, у каждого подписан раздел. В
  * разделе — первые по цене (как каталог по умолчанию; оплата на порядок не влияет). Разделы
- * здесь не перечисляются второй раз: выбор раздела — сетка выше
+ * здесь не перечисляются второй раз: выбор раздела — сетка выше. Выбор делает сервер и
+ * отдаёт одним ответом (GET /catalog/featured): раньше это были категории и по запросу выдачи
+ * на каждый раздел, друг за другом
  */
 function Featured() {
   const { api } = useServices();
   const { t } = useLang();
-  const categories = useCatalogCategories();
-  const plan = featuredPlan(categories);
-  const venues = useAsync(
-    `landing:featured:${plan ? `${plan.codes.join(",")}/${plan.per}` : "?"}`,
-    (signal) =>
-      plan
-        ? Promise.all(
-            plan.codes.map((code) =>
-              api.catalog(
-                { category: code === DEFAULT_CATEGORY ? undefined : code, limit: plan.per },
-                signal,
-              ),
-            ),
-          ).then((pages) => interleave(pages.map((page) => page.items)))
-        : // Категории ещё в пути: ждём их, место под карточки уже держим
-          new Promise<Card[]>(() => {}),
-  );
+  const venues = useAsync("landing:featured", (signal) => api.featured(signal).then((page) => page.items));
 
-  // Витрин нет ни в одном разделе, выдача не загрузилась или пуста — блока нет
-  if (plan && plan.codes.length === 0) return null;
+  // Выдача не загрузилась или витрин нет ни в одном разделе — блока нет
   if (venues.status === "error") return null;
   if (venues.status === "ready" && venues.data.length === 0) return null;
+  // Раздел подписан, когда они разные (один раздел — подпись лишняя)
+  const showCategory = venues.status === "ready" && new Set(venues.data.map((c) => c.categoryCode)).size > 1;
 
   return (
     <section
@@ -198,15 +153,14 @@ function Featured() {
                 guests={null}
                 headingLevel={3}
                 sizes={FEATURED_SIZES}
-                // Раздел подписан, когда они разные (один раздел — подпись лишняя)
-                showCategory={(plan?.codes.length ?? 0) > 1}
+                showCategory={showCategory}
               />
             </li>
           ))}
         </ul>
       ) : (
         <ul className="cards ln-cards" aria-hidden="true">
-          {Array.from({ length: FEATURED }, (_, i) => (
+          {Array.from({ length: FEATURED_LISTINGS }, (_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: заготовки одинаковые, порядок постоянный
             <li key={i} className="card-skeleton">
               <span className="card-skeleton-photo" />

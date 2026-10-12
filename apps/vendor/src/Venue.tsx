@@ -1,295 +1,65 @@
-/* Витрина — выбранная витрина как есть в базе (то, что видит клиент). Название, описания,
-   данные витрины категории и ссылки на видео владелец кабинета меняет предложением
-   (Proposal.tsx), фото — загрузкой здесь: и то, и другое проверяет команда, до одобрения
-   клиенты видят прежнее (сказано один раз — вверху экрана). Цена «от» — из услуг: здесь
-   только она и ссылка на «Услуги», списка услуг второй раз нет. Адрес, район, вместимость и
-   телефон меняет менеджер — под ними код вендора для разговора с ним. Сотрудник площадки
-   (роль member) витрину только смотрит. Рейтинга нет: его на первом запуске не показываем.
+/* Витрина — выбранная витрина как есть в базе (то, что видит клиент). Название, описания, данные
+   витрины категории, ссылки на видео, вместимость, район и адрес владелец кабинета меняет в окнах
+   «Изменить» у карточек-групп (VenueGroups.tsx, ListingEdit.tsx): пока витрины нет на сайте —
+   сохраняется сразу, на проверке и позже — уходит предложением, клиенты до решения команды видят
+   прежнее (Proposal.tsx: предложение на проверке, отзыв, отказ с причиной, история). Цена «от» —
+   из услуг: здесь только она и ссылка на «Услуги», списка услуг второй раз нет. Телефон и
+   Telegram — карточка «Контакты» (VenueContacts.tsx). Сотрудник площадки (роль member) витрину
+   только смотрит. Рейтинга нет: его на первом запуске не показываем.
 
    Витрина не на сайте — сверху чек-лист «что осталось до публикации» (Readiness): почему она
-   не опубликована, пункты партнёра — каждый с кнопкой туда, где он делается (услуги, фото,
-   предложение изменений), и одной строкой — что сделает команда (район, договор, СТИР…).
+   не опубликована, пункты партнёра — каждый с кнопкой туда, где он делается (услуги, фото, окно
+   «Изменить» нужной карточки), и одной строкой — что сделает команда (договор, СТИР…).
    Пока витрина не опубликована, пункты партнёра — то, что мешает отправить её на проверку:
    услуги и фото, которые ждут решения команды, уже не его забота. Всё сделал — владелец
    кабинета сам отправляет черновик (и отклонённую) на проверку кнопкой «Отправить на
-   проверку»: команде приходит оповещение, витрина — «на проверке». Новый партнёр попадает
-   сюда из входящих (строка «что дальше»).
+   проверку»: команде приходит оповещение, витрина — «на проверке»; отозвать её с проверки —
+   там же (VenueWithdraw.tsx). Новый партнёр попадает сюда из входящих (строка «что дальше»).
 
-   Фото — по правилу категории (photoPolicy). no_people: на фото не должно быть лиц —
-   предупреждение всегда на виду, без галочки «лиц нет» (не отмеченной заранее) файлы не
-   выбрать (X-No-Faces). portfolio (фото и видео, студия): люди на снимках бывают — вторая
-   галочка «люди согласны на публикацию» (X-Photo-Consent) вместо «лиц нет»; нужна хоть одна.
-   Каждый файл перекодирует браузер (compressForUpload: без EXIF и геопозиции) и отправляет
-   по одному; новое фото ждёт модератора. Удаление — через подтверждение. Порядок и обложку
-   выбирает команда.
+   Фото — свой блок, VenuePhotos.tsx (загрузка по правилу категории, порядок, обложка, удаление).
 
-   Порядок: чек-лист (если витрина не на сайте), изменения (предложение на проверке, отказ с
-   причиной и кнопка «Предложить» — до фото, а не после двух экранов сведений), затем фото и
-   сведения. На компьютере — две колонки: фото слева, сведения справа; изменения над ними во
-   всю ширину, поля формы парами (RU рядом с UZ). */
+   Порядок: чек-лист (если витрина не на сайте), состояние предложения (на проверке, отказ с
+   причиной), затем фото и карточки-группы. На компьютере — две колонки: фото слева, карточки
+   справа; предложение над ними во всю ширину. */
 
-import { isImageError } from "@bayramm/media";
-import { compressForUpload } from "@bayramm/media/browser";
-import type { VendorListing, VendorListingRef, VendorPhoto, VendorRole } from "@bayramm/shared/api/vendor";
+import type {
+  ListingRevisionPayload,
+  VendorListing,
+  VendorListingRef,
+  VendorListingSaved,
+  VendorRevisionList,
+  VendorRole,
+} from "@bayramm/shared/api/vendor";
 import {
   attributeLabel,
   type CategoryConfig,
   categoryConfig,
-  priceUnitLabel,
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
-import { Checkbox, ConfirmSheet, FileDrop } from "@bayramm/ui/react";
-import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import { AttributeFacts } from "./Attributes";
+import { useEffect, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { categoryName } from "./category";
 import { errorText } from "./errors";
-import { formatMoney, formatPhone } from "./format";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
-import { Icon } from "./icons";
+import { EditSheet } from "./ListingEdit";
 import { ListingPicker } from "./ListingPicker";
-import { Proposal } from "./Proposal";
-import { type Location, type Navigate, pathOf } from "./router";
+import type { EditGroup } from "./listing-edit";
+import { RevisionNotice } from "./Proposal";
+import type { Navigate } from "./router";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
-
-/** Что можно выбрать: HEIC с iPhone браузер перекодирует сам, где умеет */
-const PHOTO_ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
-
-/** Почему файл не загрузился: код проверки файла (в браузере или на сервере) или ответ API */
-export function uploadErrorText(err: unknown, t: VendorDict): string {
-  const known = (key: string) => {
-    const text = textOf(t, key);
-    return text === key ? t.up_failed : text;
-  };
-  if (isImageError(err)) return known(`img_${err.code}`);
-  if (err instanceof ApiFailure) {
-    if (err.code === "invalid_image") return known(`img_${err.details[0] ?? ""}`);
-    return known(`up_${err.code}`);
-  }
-  return t.up_failed;
-}
-
-function Capacity({ listing, t }: { listing: VendorListing; t: VendorDict }) {
-  if (listing.capMax === null) return <>{t.notSet}</>;
-  return (
-    <>
-      {listing.capMin !== null
-        ? fill(t.capRange, { min: listing.capMin, max: listing.capMax })
-        : fill(t.capUpTo, { max: listing.capMax })}
-    </>
-  );
-}
-
-interface PhotosProps {
-  readonly listing: VendorListing;
-  /** Правило фото категории: portfolio — люди на фото с их согласия */
-  readonly portfolio: boolean;
-  readonly t: VendorDict;
-  /** Владелец кабинета: загружает и удаляет; сотрудник площадки только смотрит */
-  readonly owner: boolean;
-  /** После загрузки и удаления — перечитать карточку: меняются фото и блокеры */
-  readonly onChanged: () => Promise<void>;
-}
-
-interface Problem {
-  readonly key: string;
-  readonly text: string;
-}
-
-function Photos({ listing, portfolio, t, owner, onChanged }: PhotosProps) {
-  const { photos, photoLimits } = listing;
-  const [ack, setAck] = useState(false);
-  const [consent, setConsent] = useState(false);
-  const acknowledged = ack || (portfolio && consent);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [problems, setProblems] = useState<readonly Problem[]>([]);
-  const [removing, setRemoving] = useState<VendorPhoto | null>(null);
-  const [removeBusy, setRemoveBusy] = useState(false);
-  const [removeError, setRemoveError] = useState<string | null>(null);
-  const title = useRef<HTMLHeadingElement>(null);
-  // Куда вернуть фокус после подтверждения: на кнопку, а если фото удалено — на заголовок
-  const focusBack = useRef<HTMLElement | null>(null);
-  const room = Math.max(0, photoLimits.max - photos.length);
-  const uploading = progress !== null;
-
-  const upload = async (picked: readonly File[]) => {
-    const files = picked.slice(0, room);
-    if (files.length === 0) return;
-    setProblems([]);
-    const found: Problem[] = [];
-    for (const [index, file] of files.entries()) {
-      setProgress({ done: index, total: files.length });
-      try {
-        // Перекодирование всегда: EXIF и геопозиция не уходят дальше телефона
-        const photo = await compressForUpload(file);
-        await api.uploadPhoto(listing.id, photo.blob, { noFaces: ack, consent: portfolio && consent });
-      } catch (err) {
-        found.push({
-          key: `${index}:${file.name}`,
-          text: fill(t.photoFailed, { name: file.name, why: uploadErrorText(err, t) }),
-        });
-      }
-    }
-    if (picked.length > files.length) {
-      found.push({
-        key: "skipped",
-        text: fill(t.photosSkipped, { n: picked.length - files.length, max: photoLimits.max }),
-      });
-    }
-    await onChanged();
-    setProgress(null);
-    setProblems(found);
-    // Подтверждение — про выбранные фото: следующие — снова с галочкой
-    setAck(false);
-    setConsent(false);
-  };
-
-  const remove = async () => {
-    if (!removing) return;
-    setRemoveBusy(true);
-    setRemoveError(null);
-    try {
-      await api.deletePhoto(listing.id, removing.id);
-    } catch (err) {
-      // Фото уже нет (удалили с другого устройства) — как удалено
-      if (!(err instanceof ApiFailure && err.code === "not_found")) {
-        setRemoveError(
-          err instanceof ApiFailure && err.code === "publish_blocked"
-            ? fill(t.photoDeleteBlocked, { min: photoLimits.min })
-            : errorText(err, t),
-        );
-        setRemoveBusy(false);
-        return;
-      }
-    }
-    await onChanged();
-    // Кнопки удалённого фото больше нет — фокус на заголовок раздела
-    focusBack.current = title.current;
-    setRemoveBusy(false);
-    setRemoving(null);
-  };
-
-  return (
-    <section className="panel" aria-labelledby="photos-title">
-      <h2 className="section-title" id="photos-title" ref={title} tabIndex={-1}>
-        {t.photos}
-      </h2>
-      <p className="note">{fill(t.photosLimits, { min: photoLimits.min, max: photoLimits.max })}</p>
-      {photos.length === 0 ? (
-        <p className="note">{t.noPhotos}</p>
-      ) : (
-        <ul className="photos">
-          {photos.map((photo, index) => (
-            <li key={photo.id}>
-              <img
-                src={photo.src}
-                srcSet={photo.srcSet}
-                sizes="(min-width: 1024px) 220px, (min-width: 720px) 30vw, 50vw"
-                width={photo.width}
-                height={photo.height}
-                alt={`${listing.name} — ${t.photos} ${index + 1}`}
-                loading={index < 2 ? "eager" : "lazy"}
-                decoding="async"
-              />
-              {photo.moderation !== "approved" ? (
-                <span className={`chip photo-chip chip-${photo.moderation === "declined" ? "off" : "wait"}`}>
-                  {photo.moderation === "declined" ? t.photoDeclined : t.photoPending}
-                </span>
-              ) : null}
-              {photo.moderation === "declined" ? (
-                // Причина модератора — прямо под снимком; что делать дальше — только владельцу
-                <p className="photo-decline">
-                  {photo.declineReason
-                    ? fill(t.photoDeclinedReason, { reason: photo.declineReason })
-                    : t.photoDeclinedNoReason}
-                  {owner ? <span className="photo-decline-next">{t.photoDeclinedNext}</span> : null}
-                </p>
-              ) : null}
-              {owner ? (
-                <button
-                  type="button"
-                  className="btn btn-danger photo-delete"
-                  aria-label={fill(t.photoDeleteLabel, { n: index + 1 })}
-                  disabled={uploading}
-                  onClick={(event) => {
-                    focusBack.current = event.currentTarget;
-                    setRemoveError(null);
-                    setRemoving(photo);
-                  }}
-                >
-                  {t.photoDelete}
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {owner ? (
-        <>
-          <p className="notice notice-warn">{portfolio ? t.portfolioWarning : t.noFacesWarning}</p>
-          {room > 0 ? (
-            <div className="upload">
-              {portfolio ? (
-                <Checkbox checked={consent} onChange={setConsent} disabled={uploading}>
-                  {t.consentAck}
-                </Checkbox>
-              ) : null}
-              <Checkbox checked={ack} onChange={setAck} disabled={uploading}>
-                {t.noFacesAck}
-              </Checkbox>
-              <FileDrop
-                title={t.addPhotos}
-                hint={t.photosDrop}
-                accept={PHOTO_ACCEPT}
-                multiple={room > 1}
-                disabled={!acknowledged || uploading}
-                onFiles={(files) => void upload(files)}
-              />
-            </div>
-          ) : (
-            <p className="note">{fill(t.photosFull, { max: photoLimits.max })}</p>
-          )}
-          {progress ? (
-            <p className="status-line" role="status">
-              {fill(t.uploading, { n: progress.done + 1, total: progress.total })}
-            </p>
-          ) : null}
-          {problems.length > 0 ? (
-            <div className="notice notice-error photo-problems" role="alert">
-              <ul>
-                {problems.map((problem) => (
-                  <li key={problem.key}>{problem.text}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          <ConfirmSheet
-            open={removing !== null}
-            title={t.photoDeleteQ}
-            text={t.photoDeleteText}
-            confirmLabel={t.photoDelete}
-            cancelLabel={t.cancel}
-            tone="danger"
-            busy={removeBusy}
-            error={removeError ?? undefined}
-            onConfirm={() => void remove()}
-            onCancel={() => setRemoving(null)}
-            returnFocus={focusBack}
-          />
-        </>
-      ) : null}
-    </section>
-  );
-}
+import { VenueContacts } from "./VenueContacts";
+import { VenueGroups } from "./VenueGroups";
+import { VenuePhotos } from "./VenuePhotos";
+import { WithdrawAction } from "./VenueWithdraw";
 
 /** Пункт чек-листа готовности: что сделать и кнопка туда, где это делается */
 export interface Todo {
   readonly key: string;
   /** Что сделать: пункты с одной и той же кнопкой — строками одного пункта */
   readonly lines: readonly string[];
-  readonly action?: { readonly label: string; readonly run: () => void };
+  /** target — куда ведёт кнопка: пункты с одним местом сливаются в один */
+  readonly action?: { readonly label: string; readonly target: string; readonly run: () => void };
 }
 
 /** Пункты партнёра — их он делает сам; остальные коды готовности делает команда Bayramm */
@@ -299,6 +69,8 @@ const VENDOR_BLOCKERS: ReadonlySet<string> = new Set([
   "photos",
   "descriptions",
   "attributes",
+  "capacity",
+  "district",
 ]);
 
 /** Что сказано о витрине не на сайте — по статусу: пункты ещё есть / своё партнёр сделал */
@@ -331,22 +103,26 @@ const partnerCodes = (listing: VendorListing) =>
 interface TodoRoutes {
   readonly services: () => void;
   readonly photos: () => void;
-  readonly propose: () => void;
+  /** Открыть окно «Изменить» нужной карточки */
+  readonly edit: (group: EditGroup) => void;
 }
 
-/** Пункты партнёра: что сделать самому и где (коды готовности базы и пустые данные витрины) */
+/**
+ * Пункты партнёра: что сделать самому и где (коды готовности базы и пустые данные витрины).
+ * pending — открытое предложение: что в нём уже есть, ждёт проверки и второй раз не просится
+ */
 export function vendorTodos(
   listing: VendorListing,
   category: CategoryConfig | undefined,
   t: VendorDict,
   lang: "ru" | "uz",
   go: TodoRoutes,
+  pending: ListingRevisionPayload = {},
 ): Todo[] {
   const blockers = new Set(partnerCodes(listing));
   const todos: Todo[] = [];
-  const toServices = { label: t.toServices, run: go.services };
-  // Форма изменений — блок прямо под чек-листом со своей «Предложить изменения»: тут другая подпись
-  const propose = { label: t.toFill, run: go.propose };
+  const toServices = { label: t.toServices, target: "services", run: go.services };
+  const fillIn = (group: EditGroup) => ({ label: t.toFill, target: group, run: () => go.edit(group) });
   if (blockers.has("price")) todos.push({ key: "price", lines: [t.todoPrice], action: toServices });
   if (blockers.has("packages")) {
     const list =
@@ -361,24 +137,37 @@ export function vendorTodos(
     todos.push({
       key: "photos",
       lines: [fill(t.todoPhotos, { n: ready, min: listing.photoLimits.min })],
-      action: { label: t.toPhotos, run: go.photos },
+      action: { label: t.toPhotos, target: "photos", run: go.photos },
     });
   }
-  if (blockers.has("descriptions"))
-    todos.push({ key: "descriptions", lines: [t.todoDescriptions], action: propose });
-  if (blockers.has("attributes") || listing.missingAttributes.length > 0) {
+  // Описание на каждом языке: пустое и ещё не предложенное
+  const noRu = listing.description.ru.trim() === "" && pending.description_ru === undefined;
+  const noUz = listing.description.uz.trim() === "" && pending.description_uz === undefined;
+  if (blockers.has("descriptions") && (noRu || noUz))
+    todos.push({ key: "descriptions", lines: [t.todoDescriptions], action: fillIn("basics") });
+  if (blockers.has("capacity") && pending.cap_max === undefined)
+    todos.push({ key: "capacity", lines: [t.todoCapacity], action: fillIn("place") });
+  if (blockers.has("district") && pending.district_code === undefined)
+    todos.push({ key: "district", lines: [t.todoDistrict], action: fillIn("place") });
+  // Поля витрины, которых нет ни в карточке, ни в предложении
+  const missing = listing.missingAttributes.filter((key) => pending.attributes?.[key] === undefined);
+  if ((blockers.has("attributes") && pending.attributes === undefined) || missing.length > 0) {
     const list =
-      category && listing.missingAttributes.length > 0
+      category && missing.length > 0
         ? // «;»: у подписи бывает единица через запятую («Готовый материал через, дней»)
-          listing.missingAttributes.map((key) => attributeLabel(lang, category, key)).join("; ")
+          missing.map((key) => attributeLabel(lang, category, key)).join("; ")
         : t.blocker_attributes;
-    todos.push({ key: "attributes", lines: [fill(t.todoAttributes, { list })], action: propose });
+    todos.push({
+      key: "attributes",
+      lines: [fill(t.todoAttributes, { list })],
+      action: fillIn("attributes"),
+    });
   }
-  // Одна кнопка — один пункт: «описание» и «данные витрины» делаются одним предложением, цена и
-  // обязательные услуги — в «Услугах»; две одинаковые кнопки подряд только путали бы
+  // Одна кнопка — один пункт: вместимость и район — в одном окне «Место», цена и обязательные
+  // услуги — в «Услугах»; две одинаковые кнопки подряд только путали бы
   const merged: Todo[] = [];
   for (const todo of todos) {
-    const same = merged.findIndex((m) => m.action?.label === todo.action?.label);
+    const same = merged.findIndex((m) => m.action?.target === todo.action?.target);
     const into = merged[same];
     if (into && todo.action) merged[same] = { ...into, lines: [...into.lines, ...todo.lines] };
     else merged.push(todo);
@@ -393,6 +182,8 @@ interface ReadinessProps {
   readonly lang: "ru" | "uz";
   readonly owner: boolean;
   readonly go: TodoRoutes;
+  /** Открытое предложение: что в нём уже есть, ждёт проверки и в чек-листе не просится */
+  readonly pending?: ListingRevisionPayload;
   /** Витрину отправили на проверку (или она устарела): перечитать её и значки разделов */
   readonly onSubmitted: () => Promise<void>;
 }
@@ -459,8 +250,8 @@ function SubmitAction({
  * «Отправить на проверку» (черновик и отклонённая); отправили — «на проверке у команды».
  * Опубликованная витрина, где делать нечего, — блока нет
  */
-function Readiness({ listing, category, t, lang, owner, go, onSubmitted }: ReadinessProps) {
-  const todos = vendorTodos(listing, category, t, lang, go);
+function Readiness({ listing, category, t, lang, owner, go, pending, onSubmitted }: ReadinessProps) {
+  const todos = vendorTodos(listing, category, t, lang, go, pending);
   const team = listing.blockers.filter((code) => !VENDOR_BLOCKERS.has(code));
   // Своё партнёр сделал, а отправить мешает то, что заполняет команда (район, телефон…)
   const teamFirst = listing.reviewBlockers.filter((code) => !VENDOR_BLOCKERS.has(code));
@@ -491,6 +282,8 @@ function Readiness({ listing, category, t, lang, owner, go, onSubmitted }: Readi
       onSubmitted={onSubmitted}
       onDone={() => setSent(true)}
     />
+  ) : listing.status === "review" ? (
+    <WithdrawAction listing={listing} t={t} owner={owner} onWithdrawn={onSubmitted} />
   ) : null;
   const done =
     sent && listing.status === "review" ? (
@@ -547,31 +340,6 @@ function Readiness({ listing, category, t, lang, owner, go, onSubmitted }: Readi
   );
 }
 
-/** Ссылка на раздел без перезагрузки (новая вкладка, окно — как решит браузер) */
-function SectionLink({
-  to,
-  navigate,
-  className,
-  children,
-}: {
-  to: Location;
-  navigate: Navigate;
-  className: string;
-  children: ReactNode;
-}) {
-  const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.defaultPrevented || event.button !== 0) return;
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    navigate(to);
-  };
-  return (
-    <a className={className} href={pathOf(to)} onClick={onClick}>
-      {children}
-    </a>
-  );
-}
-
 interface VenueProps extends ScreenProps {
   readonly listings: readonly VendorListingRef[];
   readonly listingId: string | null;
@@ -599,11 +367,16 @@ export function Venue({
   navigate,
   onChanged,
 }: VenueProps) {
-  const [listing, reload, , refresh] = useLoad<VendorListing>(listingId, (id) => api.listing(id));
+  const [listing, reload, set, refresh] = useLoad<VendorListing>(listingId, (id) => api.listing(id));
   const owner = role === "owner";
   // Тихо, чтобы список ошибок загрузки и фокус остались; не вышло — обычная загрузка с повтором
   const refreshListing = async () => {
     if (!(await refresh())) reload();
+    onChanged?.();
+  };
+  // Сохранили изменения: ответ API — витрина как она теперь (перечитывать не нужно)
+  const saved = (result: VendorListingSaved) => {
+    set(() => result.listing);
     onChanged?.();
   };
 
@@ -632,10 +405,8 @@ export function Venue({
         line={false}
         mark="card"
       />
-      <p className="promise">
-        <Icon name="info" size={17} />
-        <span>{owner ? t.venueNote : t.venueNoteMember}</span>
-      </p>
+      {/* Владельцу пояснения не нужны: что и как проверяется, сказано в окне «Изменить» */}
+      {owner ? null : <p className="note">{t.venueNoteMember}</p>}
 
       {listing.state === "loading" ? <Loading t={t} kind="card" /> : null}
       {listing.state === "error" ? <LoadError t={t} onRetry={reload} error={listing.error} /> : null}
@@ -646,9 +417,9 @@ export function Venue({
           lang={lang}
           owner={owner}
           showName={!pickerShown}
-          vendorCode={vendorCode}
           navigate={navigate}
           onChanged={refreshListing}
+          onSaved={saved}
           onProposal={onChanged}
         />
       ) : null}
@@ -663,10 +434,11 @@ interface VenueCardProps {
   readonly owner: boolean;
   /** Имя витрины заголовком: выбора витрины на экране нет */
   readonly showName: boolean;
-  readonly vendorCode: string;
   readonly navigate: Navigate;
   readonly onChanged: () => Promise<void>;
-  /** Предложение изменений отправлено или отозвано */
+  /** Изменения сохранены сразу или ушли предложением: витрина как она теперь */
+  readonly onSaved: (result: VendorListingSaved) => void;
+  /** Предложение отозвано: значки «требует внимания» в разделах — заново */
   readonly onProposal?: () => void;
 }
 
@@ -676,20 +448,47 @@ function VenueCard({
   lang,
   owner,
   showName,
-  vendorCode,
   navigate,
   onChanged,
+  onSaved,
   onProposal,
 }: VenueCardProps) {
   const category = categoryConfig(listing.categoryCode);
-  const fields = category?.listingFields ?? ["guest_capacity", "district"];
-  // Кнопка чек-листа «Предложить изменения»: растёт — форма предложения открывается
-  const [propose, setPropose] = useState(0);
+  const [revisions, reloadRevisions, setRevisions, refreshRevisions] = useLoad<VendorRevisionList>(
+    listing.id,
+    (id) => api.revisions(id),
+  );
+  const pending =
+    revisions.state === "ready" ? revisions.data.items.find((r) => r.status === "pending") : undefined;
+  // Окно «Изменить» какой-то карточки и что сказано после сохранения
+  const [editing, setEditing] = useState<EditGroup | null>(null);
+  const [said, setSaid] = useState<"saved" | "sent" | null>(null);
+  const status = useRef<HTMLParagraphElement>(null);
+  // Пока предложение открыто, новое отправить нельзя (одно на витрину): «Изменить» скрыто
+  const canEdit = owner && pending === undefined;
+  const open = (group: EditGroup) => {
+    if (!canEdit) return;
+    setSaid(null);
+    setEditing(group);
+  };
   const go: TodoRoutes = {
     services: () => navigate({ route: "services" }),
     // Фото — на этом же экране: фокус на заголовок блока, браузер прокрутит к нему
     photos: () => document.getElementById("photos-title")?.focus(),
-    propose: () => setPropose((n) => n + 1),
+    edit: open,
+  };
+  const saved = (result: VendorListingSaved) => {
+    const sent = result.sentForModeration.length > 0;
+    setEditing(null);
+    setSaid(sent ? "sent" : "saved");
+    onSaved(result);
+    // Предложение появилось: карточки отметят «на проверке», «Изменить» скроется
+    if (sent) void refreshRevisions();
+  };
+  // Витрину успели изменить или предложение уже открыто — показать, как сейчас
+  const stale = () => {
+    void onChanged();
+    void refreshRevisions();
   };
   return (
     <article className="venue">
@@ -715,26 +514,32 @@ function VenueCard({
         lang={lang}
         owner={owner}
         go={go}
+        pending={pending?.payload}
         onSubmitted={onChanged}
       />
 
-      {/* Изменения — сразу под чек-листом: предложение на проверке, отказ с причиной и сама
-        кнопка «Предложить» не прячутся под фото и сведениями (на телефоне — через два экрана).
-        Ключ — витрина: при смене витрины форма и предложения — заново */}
-      <Proposal
+      {/* Предложение на проверке и отказ с причиной — сразу под чек-листом, а не под фото и
+        карточками (на телефоне это два экрана). Ключ — витрина: при смене витрины — заново */}
+      <RevisionNotice
         key={listing.id}
-        listing={listing}
+        listingId={listing.id}
+        revisions={revisions}
+        reload={reloadRevisions}
+        setRevisions={setRevisions}
         t={t}
-        lang={lang}
         owner={owner}
-        openSignal={propose}
         onChanged={onProposal}
       />
+      {said ? (
+        <p className="note" role="status" tabIndex={-1} ref={status}>
+          {said === "sent" ? t.proposalSent : t.editSaved}
+        </p>
+      ) : null}
 
       <div className="venue-grid">
         {/* Ключ — витрина: галочка и ошибки загрузки другой витрины не переносятся.
-          Не тот же, что у Proposal: ключи соседей в одном родителе обязаны различаться */}
-        <Photos
+          Не тот же, что у RevisionNotice: ключи соседей в одном родителе обязаны различаться */}
+        <VenuePhotos
           key={`photos-${listing.id}`}
           listing={listing}
           portfolio={category?.photoPolicy === "portfolio"}
@@ -744,87 +549,32 @@ function VenueCard({
         />
 
         <div className="venue-side">
-          {/* Цена и телефон — во всю ширину: «от 25 млн сум за мероприятие» и номер в
-            половине строки телефона переносились посреди числа */}
-          <dl className="facts">
-            <div className="facts-wide">
-              <dt>{t.priceLabel}</dt>
-              <dd>
-                {listing.priceFromUzs !== null
-                  ? `${fill(t.priceFrom, { price: formatMoney(listing.priceFromUzs, t, lang) })} ${priceUnitLabel(
-                      lang,
-                      listing.priceUnit,
-                    )}`
-                  : t.notSet}
-                <span className="fact-sub fact-note">
-                  {listing.priceFromUzs !== null ? t.priceFromServices : t.priceFromNone}
-                </span>
-                <SectionLink
-                  to={{ route: "services" }}
-                  navigate={navigate}
-                  className="btn btn-ghost fact-link"
-                >
-                  {t.toServices}
-                </SectionLink>
-              </dd>
-            </div>
-            {fields.includes("guest_capacity") ? (
-              <div>
-                <dt>{t.capacity}</dt>
-                <dd>
-                  <Capacity listing={listing} t={t} />
-                </dd>
-              </div>
-            ) : null}
-            {fields.includes("district") || listing.districtCode ? (
-              <div>
-                <dt>{t.district}</dt>
-                <dd>{listing.districtCode ? textOf(t, `dist_${listing.districtCode}`) : t.notSet}</dd>
-              </div>
-            ) : null}
-            <div className="facts-wide">
-              <dt>{t.phoneLabel}</dt>
-              <dd className="fact-phone">{listing.phone ? formatPhone(listing.phone) : t.notSet}</dd>
-            </div>
-            <div className="facts-wide">
-              <dt>{t.address}</dt>
-              <dd>{listing.address[lang] || t.notSet}</dd>
-            </div>
-          </dl>
-          <p className="note">{fill(t.managerFacts, { code: vendorCode })}</p>
-
-          {category && category.attributes.length > 0 ? (
-            <section className="panel" aria-labelledby="venue-attrs-title">
-              <h3 className="panel-title" id="venue-attrs-title">
-                {t.attributesTitle}
-              </h3>
-              {Object.keys(listing.attributes).length === 0 ? (
-                <p className="note">{t.notSet}</p>
-              ) : (
-                <AttributeFacts category={category} attributes={listing.attributes} t={t} lang={lang} />
-              )}
-            </section>
-          ) : null}
-
-          {listing.videoLinks.length > 0 ? (
-            <section className="panel" aria-labelledby="venue-video-title">
-              <h3 className="panel-title" id="venue-video-title">
-                {t.videoTitle}
-              </h3>
-              <ul className="video-list">
-                {listing.videoLinks.map((link) => (
-                  <li key={link}>{link}</li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-
-          <div className="panel">
-            <p className="panel-title">{t.description}</p>
-            <p className="description">{listing.description[lang] || t.notSet}</p>
-          </div>
+          <VenueGroups
+            listing={listing}
+            category={category}
+            t={t}
+            lang={lang}
+            navigate={navigate}
+            pending={pending}
+            onEdit={canEdit ? open : undefined}
+          />
+          <VenueContacts listing={listing} t={t} owner={owner} onChanged={onChanged} />
         </div>
       </div>
+
+      {editing !== null ? (
+        <EditSheet
+          key={editing}
+          group={editing}
+          listing={listing}
+          t={t}
+          lang={lang}
+          returnFocus={status}
+          onClose={() => setEditing(null)}
+          onSaved={saved}
+          onStale={stale}
+        />
+      ) : null}
     </article>
   );
 }

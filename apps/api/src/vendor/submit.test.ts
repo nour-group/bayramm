@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { VendorActor } from "../db/actor";
 import { ApiError } from "../errors";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
-import { submitListing } from "./submit";
+import { submitListing, withdrawListing } from "./submit";
 
 const OWNER: VendorActor = {
   kind: "vendor_user",
@@ -101,6 +101,54 @@ describe("POST /vendor/listings/:id/submit", () => {
     const fake = db("draft");
     const member = await rejection(() =>
       submitListing(fake.db, { ...OWNER, role: "member" }, LISTING_ID, "staging"),
+    );
+    expect([member.status, member.code]).toEqual([403, "vendor_owner_required"]);
+    expect(fake.queries).toEqual([]);
+  });
+});
+
+describe("POST /vendor/listings/:id/withdraw", () => {
+  const audits = (fake: ReturnType<typeof db>) =>
+    fake.queries.filter((q) => q.sql.startsWith('insert into "app"."audit_log"'));
+
+  it("на проверке — обратно в черновик под актором партнёра, запись в журнал без ПДн; ответ — витрина как GET", async () => {
+    const fake = db("review");
+    const listing = await withdrawListing(fake.db, OWNER, LISTING_ID, "staging");
+    expect(updates(fake)).toEqual(["draft"]);
+    expect(listing).toMatchObject({ id: LISTING_ID, status: "draft" });
+    // Своя витрина под блокировкой строки, одной транзакцией
+    const lock = fake.queries.find((q) => q.sql.includes("for update"));
+    expect(lock?.parameters).toEqual([LISTING_ID, OWNER.vendorId]);
+    expect(fake.log[0]).toBe("begin");
+    expect(fake.log.at(-1)).toBe("commit");
+    expect(fake.queries[0]?.parameters).toEqual(["vendor_user", OWNER.id, OWNER.vendorId]);
+    const [audit] = audits(fake);
+    expect(audits(fake)).toHaveLength(1);
+    expect(audit?.parameters).toEqual([
+      "listing.withdraw",
+      "listing",
+      LISTING_ID,
+      JSON.stringify({ from: "review", to: "draft" }),
+      "vendor_cabinet",
+    ]);
+  });
+
+  it("не на проверке — 409 illegal_transition, ничего не меняется и не пишется", async () => {
+    for (const status of ["draft", "active", "suspended", "rejected", "lead"]) {
+      const fake = db(status);
+      const err = await rejection(() => withdrawListing(fake.db, OWNER, LISTING_ID, "staging"));
+      expect([err.status, err.code], status).toEqual([409, "illegal_transition"]);
+      expect(updates(fake)).toEqual([]);
+      expect(audits(fake)).toEqual([]);
+    }
+  });
+
+  it("чужая — 404; сотрудник площадки — 403 vendor_owner_required до базы", async () => {
+    const missing = await rejection(() => withdrawListing(db(null).db, OWNER, LISTING_ID, "staging"));
+    expect(missing.status).toBe(404);
+    const fake = db("review");
+    const member = await rejection(() =>
+      withdrawListing(fake.db, { ...OWNER, role: "member" }, LISTING_ID, "staging"),
     );
     expect([member.status, member.code]).toEqual([403, "vendor_owner_required"]);
     expect(fake.queries).toEqual([]);

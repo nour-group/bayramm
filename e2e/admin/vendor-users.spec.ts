@@ -6,9 +6,10 @@ import { expect, test } from "../support/offline";
 import { CABINET_OWNER, mockStaffApi, NOW, VENDOR_ID } from "../support/staff-api";
 import { horizontalOverflow } from "../support/web";
 
-/* Вход в кабинет вендора в панели: пригласить сотрудника площадки с ролью и языком, отправить
-   ему текст приглашения (бот с «Я партнёр» и кабинет со входом), убрать из кабинета.
-   Последнего владельца сервер не убирает — панель говорит это словами. Телефон и компьютер. */
+/* Вход в кабинет вендора в панели: «+ Пригласить» открывает шторку — сотрудник площадки с ролью и
+   языком, текст приглашения (бот с «Я партнёр» и кабинет со входом) — там же; у пользователя две
+   кнопки, «Изменить» (шторка с телефоном) и «Ещё», — на любой ширине; убрать из кабинета. Последнего
+   владельца сервер не убирает — панель говорит это словами. Телефон и компьютер. */
 
 const CONTROLS = [".btn", "input:not([type=hidden])", ".ui-radio", "textarea"].join(", ");
 
@@ -19,19 +20,14 @@ const MEMBER = {
   role: "member" as const,
 };
 
-const isPhone = (page: Page) => (page.viewportSize()?.width ?? 0) < 720;
 const usersPanel = (page: Page) =>
   page.locator("section.panel").filter({ has: page.locator("#users-title") });
 const card = (page: Page, name: string) => usersPanel(page).locator(".vuser").filter({ hasText: name });
 
-/** Действие с пользователем: на телефоне — в «Ещё», шире — кнопкой в карточке */
-async function userAction(page: Page, user: Locator, label: string) {
-  if (isPhone(page)) {
-    await user.locator(".btn-more").click();
-    await page.getByRole("dialog").getByRole("button", { name: label }).click();
-  } else {
-    await user.getByRole("button", { name: label, exact: true }).click();
-  }
+/** Действие из «Ещё» у пользователя: на любой ширине — кнопка «Ещё» и пункт в шторке */
+async function menuAction(page: Page, user: Locator, label: string) {
+  await user.locator(".btn-more").click();
+  await page.getByRole("dialog").getByRole("button", { name: label }).click();
 }
 
 async function start(page: Page, users = [CABINET_OWNER]) {
@@ -50,14 +46,21 @@ async function start(page: Page, users = [CABINET_OWNER]) {
   return mockStaffApi(page, { cabinetUsers: users });
 }
 
-test("пригласить сотрудника площадки, отправить ему приглашение и убрать из кабинета", async ({ page }) => {
+test("пригласить сотрудника площадки в шторке, отправить ему приглашение и убрать из кабинета", async ({
+  page,
+}) => {
   const api = await start(page);
   await page.goto(`/vendors/${VENDOR_ID}`);
-  const panel = usersPanel(page);
-  await expect(card(page, CABINET_OWNER.fullName ?? "")).toContainText(t.vuStatus.accepted);
-  await expect(card(page, CABINET_OWNER.fullName ?? "")).toContainText(t.vuNotifiable);
+  const owner = card(page, CABINET_OWNER.fullName ?? "");
+  await expect(owner).toContainText(t.vuStatus.accepted);
+  // Уведомления приходят — строки про Telegram нет; у карточки две кнопки: «Изменить» и «Ещё»
+  await expect(owner).not.toContainText("Telegram");
+  await expect(owner.getByRole("button")).toHaveCount(2);
+  await expect(page.locator(".vuser-invite")).toHaveCount(0);
 
-  const form = panel.locator(".vuser-invite");
+  await usersPanel(page).getByRole("button", { name: t.vuInviteOpen }).click();
+  const sheet = page.getByRole("dialog", { name: t.vuInviteTitle });
+  const form = sheet.locator(".vuser-invite");
   await form.getByLabel(t.userName, { exact: true }).fill("Дильшод");
   await form.getByLabel(t.userPhone).fill("90 111 22 33");
   // Роль — явно: без неё приглашения нет
@@ -65,35 +68,43 @@ test("пригласить сотрудника площадки, отправи
   await expect(form).toContainText(t.vuRoleRequired);
   expect(api.cabinet).toEqual([]);
 
+  // Подсказка — только к выбранной роли
   await form.getByRole("radio", { name: t.vuRoles.member }).check();
   await expect(form).toContainText(t.vuRoleHints.member);
+  await expect(form).not.toContainText(t.vuRoleHints.owner);
   await form.getByRole("radio", { name: t.vuLocales.ru }).check();
+  await expectNoAxeViolations(page, "приглашение в кабинет");
+  await expectHitAreas(page, "приглашение в кабинет", CONTROLS);
   await form.getByRole("button", { name: t.vuInvite }).click();
-  await expect(form.getByRole("status").first()).toHaveText(t.vuInvited);
+  await expect(sheet.getByRole("status").first()).toHaveText(t.vuInvited);
   expect(api.cabinet[0]).toEqual({
     key: `POST /staff/vendors/${VENDOR_ID}/users`,
     body: { phone: "+998901112233", role: "member", locale: "ru", fullName: "Дильшод" },
   });
-  const invited = card(page, "Дильшод");
-  await expect(invited).toContainText(t.vuRoles.member);
-  await expect(invited).toContainText(t.vuStatus.pending);
-  await expect(invited).toContainText(t.vuNotNotifiable);
 
   // Текст приглашения — на языке партнёра: бот с «Я партнёр» и кабинет со входом
-  await form.getByRole("button", { name: t.vuCopy }).click();
-  await expect(form).toContainText(t.vuCopied);
+  await sheet.getByRole("button", { name: t.vuCopy }).click();
+  await expect(sheet).toContainText(t.vuCopied);
   const copied = await page.evaluate(() => (window as unknown as { copied?: string }).copied ?? "");
   expect(copied).toContain("Здравствуйте, Дильшод!");
   expect(copied).toContain("«Lola»");
   expect(copied).toContain(`https://t.me/${BOT}?start=partner`);
   expect(copied).toContain(`${APPS.vendor}/?signin=1&lang=ru`);
+  await sheet.getByRole("button", { name: t.done }).click();
+  await expect(sheet).toHaveCount(0);
+
+  const invited = card(page, "Дильшод");
+  await expect(invited).toContainText(t.vuRoles.member);
+  await expect(invited).toContainText(t.vuStatus.pending);
+  // Ждёт входа — «уведомления не приходят» не пишем: это не поломка
+  await expect(invited).not.toContainText(t.vuNotNotifiable);
 
   const width = page.viewportSize()?.width ?? 0;
   expect((await horizontalOverflow(page)).scrollWidth).toBeLessThanOrEqual(width);
   await expectNoAxeViolations(page, "вход в кабинет");
   await expectHitAreas(page, "вход в кабинет", CONTROLS);
 
-  await userAction(page, invited, t.vuRemove);
+  await menuAction(page, invited, t.vuRemove);
   const confirm = page.getByRole("alertdialog");
   await expect(confirm).toContainText(t.vuRemoveHintPending);
   await confirm.getByRole("button", { name: t.vuRemove }).click();
@@ -109,7 +120,7 @@ test("последнего владельца при сотрудниках не
   const api = await start(page, [CABINET_OWNER, MEMBER]);
   await page.goto(`/vendors/${VENDOR_ID}`);
   const owner = card(page, CABINET_OWNER.fullName ?? "");
-  await userAction(page, owner, t.vuRemove);
+  await menuAction(page, owner, t.vuRemove);
   const confirm = page.getByRole("alertdialog");
   await expect(confirm).toContainText(t.vuRemoveHint);
   await confirm.getByRole("button", { name: t.vuRemove }).click();
@@ -120,16 +131,23 @@ test("последнего владельца при сотрудниках не
   expect(api.unexpected).toEqual([]);
 });
 
-test("сменить роль и язык: сотрудник площадки становится владельцем", async ({ page }) => {
+test("сменить роль и язык: сотрудник площадки становится владельцем; телефон — в шторке «Изменить»", async ({
+  page,
+}) => {
   const api = await start(page, [CABINET_OWNER, MEMBER]);
   await page.goto(`/vendors/${VENDOR_ID}`);
   const member = card(page, MEMBER.fullName);
-  await userAction(page, member, t.vuEdit);
-  // На телефоне форма — в шторке, шире — под карточкой
-  const form = isPhone(page) ? page.getByRole("dialog") : member.locator(".vuser-edit");
-  await form.getByRole("radio", { name: t.vuRoles.owner }).check();
-  await form.getByRole("radio", { name: t.vuLocales.ru }).check();
-  await form.getByRole("button", { name: t.save }).click();
+  await member.getByRole("button", { name: t.vuEdit }).click();
+  const sheet = page.getByRole("dialog", { name: new RegExp(`^${t.vuEdit}`) });
+  // Номер скрыт, пока не нажали «Показать»: на карточке его нет
+  await expect(member).not.toContainText(t.input.phoneMasked);
+  await expect(sheet).toContainText(t.input.phoneMasked);
+  await expectNoAxeViolations(page, "изменить пользователя кабинета");
+  await expectHitAreas(page, "изменить пользователя кабинета", CONTROLS);
+  await sheet.getByRole("radio", { name: t.vuRoles.owner }).check();
+  await sheet.getByRole("radio", { name: t.vuLocales.ru }).check();
+  await sheet.getByRole("button", { name: t.save }).click();
+  await expect(sheet).toHaveCount(0);
   await expect(member).toContainText(t.vuRoles.owner);
   await expect(member).toContainText(t.vuLocaleLine(t.vuLocales.ru));
   expect(api.cabinet.at(-1)).toEqual({

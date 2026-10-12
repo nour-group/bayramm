@@ -224,6 +224,34 @@ export interface CatalogPage {
   readonly nextCursor: string | null;
 }
 
+/** Сколько витрин на лендинге: ответ GET /catalog/featured и заготовки ждущего блока */
+export const FEATURED_LISTINGS = 4;
+
+/**
+ * Витрины лендинга из выдач разделов. lists — по списку на раздел, в порядке показа разделов; в
+ * каждом — карточки по цене (как каталог по умолчанию), нужны первые `count`. Берутся первые
+ * `count` разделов с витринами; из каждого — столько, чтобы вместе набралось `count` (разделов
+ * мало — по несколько из каждого); выкладываются по очереди: первые каждого раздела, потом
+ * вторые… Оплата, премиум и продвижение на выбор не влияют — правило продукта
+ */
+export function pickFeatured(
+  lists: readonly (readonly ListingCard[])[],
+  count: number = FEATURED_LISTINGS,
+): ListingCard[] {
+  const live = lists.filter((list) => list.length > 0).slice(0, count);
+  if (live.length === 0) return [];
+  const per = Math.ceil(count / live.length);
+  const picked = live.map((list) => list.slice(0, per));
+  const out: ListingCard[] = [];
+  for (let i = 0; out.length < count && picked.some((list) => i < list.length); i++) {
+    for (const list of picked) {
+      const card = list[i];
+      if (card && out.length < count) out.push(card);
+    }
+  }
+  return out;
+}
+
 /** Сколько площадок помещается в избранное — и у гостя в браузере, и в аккаунте */
 export const FAVORITES_MAX = 100;
 
@@ -235,6 +263,14 @@ export const FAVORITES_MAX = 100;
 export interface ListingCards {
   readonly items: readonly ListingCard[];
 }
+
+/**
+ * GET /catalog/featured → 200: витрины лендинга одним ответом (pickFeatured) — по одной из
+ * первых разделов с витринами, а если разделов мало, то по несколько; не больше
+ * FEATURED_LISTINGS. Заменяет категории и четыре запроса выдачи. Разделов с витринами нет —
+ * пустой список. Кэшируется, как каталог
+ */
+export type FeaturedListings = ListingCards;
 
 /** Опция услуги: клиент отмечает её в заявке (id — в details.services[].options) */
 export interface ServiceOption {

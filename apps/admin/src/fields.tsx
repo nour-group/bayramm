@@ -9,7 +9,11 @@
    категорий модуль не импортирует: границы и подписи приходят пропсами. */
 
 import {
+  caretAfterDigits,
   finishSlug,
+  groupDigits,
+  groupedLength,
+  moneyDigits,
   normalizeTelegram,
   normalizeUzPhone,
   SLUG_RE,
@@ -78,9 +82,7 @@ function useDigitCaret(input: RefObject<HTMLInputElement | null>, display: strin
     const digits = want.current;
     want.current = null;
     if (!el || digits === null || el.ownerDocument.activeElement !== el) return;
-    let pos = 0;
-    for (let seen = 0; pos < display.length && seen < digits; pos++)
-      if (/\d/.test(display[pos] ?? "")) seen++;
+    const pos = caretAfterDigits(display, digits);
     try {
       el.setSelectionRange(pos, pos);
     } catch {
@@ -309,21 +311,10 @@ export function TelegramField({
 
 // ── деньги ─────────────────────────────────────────────────────────────────
 
-/** Узкий неразрывный пробел между разрядами: сумма не переносится и не путается с двумя числами */
-const THIN = " ";
-
-/** Только цифры, без ведущих нулей и не длиннее предела */
-export function moneyDigits(raw: string, maxDigits: number): string {
-  return raw
-    .replace(/\D+/g, "")
-    .replace(/^0+(?=\d)/, "")
-    .slice(0, maxDigits);
-}
+export { moneyDigits };
 
 /** «1500000» → «1 500 000» (разряды — узким неразрывным пробелом) */
-export function formatMoney(digits: string): string {
-  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, THIN);
-}
+export const formatMoney = groupDigits;
 
 export interface MoneyFieldProps {
   readonly label: string;
@@ -358,7 +349,7 @@ export function MoneyField({ label, value, onChange, max, error, hint, full, dis
             autoComplete="off"
             enterKeyHint="done"
             // Разрядов на треть больше цифр: пробелы не съедают место под цифры
-            maxLength={maxDigits + Math.floor((maxDigits - 1) / 3)}
+            maxLength={groupedLength(maxDigits)}
             value={display}
             disabled={disabled}
             onChange={(event) => {
@@ -531,6 +522,8 @@ export interface ChoiceFieldProps<V extends string> {
   readonly error?: string | undefined;
   readonly full?: boolean;
   readonly disabled?: boolean;
+  /** Нажатие на выбранный вариант снимает выбор (необязательное поле): «Не указано» вариантом не нужен */
+  readonly onClear?: () => void;
 }
 
 /** Один из вариантов — сразу на виду, без списка: подпись, варианты, подсказка или ошибка */
@@ -544,6 +537,7 @@ export function ChoiceField<V extends string>({
   error,
   full = true,
   disabled,
+  onClear,
 }: ChoiceFieldProps<V>) {
   const id = useId();
   const note = error ?? hint;
@@ -565,6 +559,7 @@ export function ChoiceField<V extends string>({
         value={value}
         options={options}
         onChange={onChange}
+        onClear={onClear}
         disabled={disabled}
       />
       {note ? (

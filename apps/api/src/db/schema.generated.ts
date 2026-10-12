@@ -675,6 +675,25 @@ export interface PiiClientProfiles {
   username: string | null;
 }
 
+export interface PiiListingContactChanges {
+  created_at: Generated<Timestamp>;
+  decided_at: Timestamp | null;
+  decided_by: string | null;
+  id: Generated<string>;
+  listing_id: string;
+  /**
+   * Новый телефон витрины (только у ждущего запроса); читать — pii.read_listing_contact_change
+   */
+  public_phone: string | null;
+  /**
+   * Новый Telegram витрины, имя без @ (только у ждущего запроса); null — убрать; читать — pii.read_listing_contact_change
+   */
+  public_telegram: string | null;
+  reason: string | null;
+  status: Generated<string>;
+  submitted_by: string | null;
+}
+
 export interface PiiListingContacts {
   listing_id: string;
   public_phone: string;
@@ -768,6 +787,7 @@ export interface DB {
   "app.vendor_users": AppVendorUsers;
   "pii.account_profiles": PiiAccountProfiles;
   "pii.client_profiles": PiiClientProfiles;
+  "pii.listing_contact_changes": PiiListingContactChanges;
   "pii.listing_contacts": PiiListingContacts;
   "pii.request_contacts": PiiRequestContacts;
   "pii.staff_profiles": PiiStaffProfiles;

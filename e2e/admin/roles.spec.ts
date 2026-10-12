@@ -2,7 +2,7 @@ import type { StaffRole } from "@bayramm/shared/api/staff";
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { createVitrina } from "../support/admin-ui";
+import { createVitrina, moreButton } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import { CLIENT_ID, mockStaffApi, NOW, REQUEST_ID, REVISION_ID, staffOf } from "../support/staff-api";
 
@@ -129,12 +129,11 @@ test("модератор на карточке: «Отклонить» есть,
   // Номер только пишется: без права правки поля «Сменить номер» нет
   await expect(page.getByLabel(t.phoneChange)).toHaveCount(0);
   await expect(page.getByRole("button", { name: t.actions.submit })).toHaveCount(0);
-  const reject = isPhone(page)
-    ? page
-        .getByRole("group", { name: t.listingFields.status ?? "" })
-        .getByRole("button", { name: t.actions.reject })
-    : page.getByRole("button", { name: t.actions.reject });
-  await expect(reject).toBeVisible();
+  // «Отклонить» — в «…» шапки: главного действия у модератора здесь нет (отправляет менеджер)
+  await moreButton(page.locator("body"), t.listingActionsContext).click();
+  const menu = page.locator(".ui-dialog");
+  await expect(menu.getByRole("button", { name: t.actions.reject, exact: true })).toBeVisible();
+  await menu.getByRole("button", { name: t.close }).click();
   await expect(page.locator(".cal-day:not([disabled])")).toHaveCount(0);
   await expect(page.getByRole("button", { name: t.save })).toHaveCount(0);
   await expectNoAxeViolations(page, "карточка глазами модератора");
@@ -157,7 +156,9 @@ test("менеджер: повтора уведомлений и телефон�
   await expect(page.getByRole("heading", { name: t.requestClient })).toBeVisible();
   await expect(page.getByLabel(t.clientPhoneReason)).toHaveCount(0);
   await page.goto(`/clients/${CLIENT_ID}`);
-  await expect(page.getByRole("button", { name: t.block })).toBeVisible();
+  // Блокировка — пункт «Ещё» в заголовке страницы клиента
+  await page.getByRole("button", { name: t.more, exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("button", { name: t.block })).toBeVisible();
 });
 
 test.describe("оповещения команды: бот должен знать чат", () => {
@@ -173,7 +174,9 @@ test.describe("оповещения команды: бот должен знат
       "https://t.me/bayramm_demo_bot?start=admin",
     );
     await expectNoAxeViolations(page, "просьба написать боту");
-    await expectHitAreas(page, "просьба написать боту", ".bot-banner .btn");
+    await expectHitAreas(page, "просьба написать боту", ".bot-banner a, .bot-banner button");
+    // Одна строка: текст, ссылка и крестик
+    expect(await banner.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThan(80);
     const width = page.viewportSize()?.width ?? 0;
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await banner.getByRole("button", { name: t.botBannerHide }).click();
@@ -199,20 +202,20 @@ test.describe("оповещения команды: бот должен знат
     await expect(page.locator(".no-bot")).toContainText(t.memberNoBot);
   });
 
-  test("«Сейчас» в метриках: плитка очереди ведёт туда, где её разбирают", async ({ page }) => {
-    const api = await start(page, "moderator");
+  test("метрики без «Сейчас»: очереди — счётчики у разделов; ссылка в очередь модерации открывает её", async ({
+    page,
+  }) => {
+    // С услугами на проверке: пустую очередь панель не открывает
+    const api = await start(page, "moderator", { seeded: true });
     await page.goto("/metrics");
-    const services = page.getByRole("link", { name: new RegExp(t.metricsQueues.servicesPending ?? "") });
-    await expect(services).toContainText("2");
-    // У модератора заявок нет: «Ждут ответа вендора» — без ссылки
-    await expect(page.getByRole("link", { name: new RegExp(t.metricsQueues.awaiting ?? "") })).toHaveCount(0);
-    await services.click();
-    // Сразу к своей очереди: заголовок очереди услуг — в фокусе
-    await expect(page).toHaveURL("/moderation?queue=services");
+    await expect(heading(page)).toHaveText(t.metrics);
+    // Плиток очередей в метриках больше нет: каждое число жило ещё и в счётчике раздела
+    await expect(page.locator(".stat")).toHaveCount(0);
+    // Адрес с ?queue= по-прежнему ведёт сразу к своей очереди: её сегмент выбран
+    await page.goto("/moderation?queue=services");
     await expect(heading(page)).toHaveText(t.moderation);
-    await expect(
-      page.getByRole("heading", { level: 2, name: new RegExp(`^${t.serviceQueue}`) }),
-    ).toBeFocused();
+    await expect(page.getByRole("region", { name: t.serviceQueue })).toBeVisible();
+    await expect(page.getByRole("radio", { name: new RegExp(`^${t.queueTabs.services}`) })).toBeChecked();
     expect(api.unexpected).toEqual([]);
   });
 });
@@ -230,17 +233,19 @@ test.describe("ошибки API — словами", () => {
   test("приглашение: 409 username_taken — объяснение, а не «что-то пошло не так»", async ({ page }) => {
     await start(page, "admin", { fail: { "POST /staff/team": [409, "username_taken"] } });
     await page.goto("/team");
+    await page.getByRole("button", { name: t.inviteOpen }).click();
     await page.getByLabel(t.inviteName).fill("Новый менеджер");
     await page.getByLabel(t.inviteUsername).fill("bakhtiyor_ops");
-    await page.getByRole("button", { name: t.invite }).click();
+    await page.getByRole("button", { name: t.invite, exact: true }).click();
     await expect(page.getByRole("alert")).toHaveText(t.api.username_taken ?? "");
   });
 
   test("настройка: 422 — подсказка у поля становится ошибкой", async ({ page }) => {
     await start(page, "admin", { fail: { "PUT /staff/settings/sla_hours": [422, "invalid_input"] } });
     await page.goto("/settings");
-    const setting = page.locator("form.setting").first();
-    await expect(setting.getByRole("button", { name: t.save })).toBeDisabled();
+    const setting = page.locator("form.setting-row").first();
+    // Без изменений «Сохранить» в строке нет
+    await expect(setting.getByRole("button", { name: t.save })).toHaveCount(0);
     // В границах (до 72): ответ 422 — от сервера, а не проверка формы
     await setting.locator("input").first().fill("48");
     await setting.getByRole("button", { name: t.save }).click();

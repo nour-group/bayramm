@@ -1,6 +1,8 @@
-// Правки карточек (app.listing_revisions): партнёр меняет название, описания, поля
-// витрины и ссылки на видео только так — клиент видит одобренную версию, пока правка
-// ждёт решения. Цен в правке нет: они в услугах, цену «от» считает база.
+// Правки карточек (app.listing_revisions): когда витрина уже на проверке, в каталоге или
+// приостановлена, партнёр меняет название, описания, поля витрины, ссылки на видео,
+// вместимость, район и адрес только так — клиент видит одобренную версию, пока правка
+// ждёт решения (пока витрины нет на сайте, партнёр сохраняет это сразу, vendor/listing.ts).
+// Цен в правке нет: они в услугах, цену «от» считает база.
 // Подаёт правку кабинет (vendor/revisions.ts) или менеджер, правя опубликованную
 // карточку (staff/listings.ts); здесь — сторона того, кто решает: очередь, сравнение
 // «сейчас / предлагают», решение.
@@ -42,9 +44,10 @@ import { type Tx, withActor } from "../db/actor";
 import type { Json } from "../db/schema.generated";
 import type { AppEnv } from "../env";
 import { ApiError, notFound } from "../errors";
+import { CAPACITY_LIMITS } from "../listing-fields";
 import { requirePermission } from "./access";
 import { type Body, Input, invalidInput, limitJson, paging, readBody } from "./input";
-import { REVISION_FIELDS } from "./revision-diff";
+import { REVISION_FIELDS, revisionFields } from "./revision-diff";
 import { iso, pathId, staffName } from "./shared";
 
 export const revisions = new Hono<AppEnv>();
@@ -68,6 +71,12 @@ export interface RevisionValues {
     name?: string;
     description_ru?: string;
     description_uz?: string;
+    /** Пустая строка — убрать адрес */
+    address_ru?: string;
+    address_uz?: string;
+    district_code?: string;
+    cap_min?: number;
+    cap_max?: number;
   };
   /** Поля витрины: { ключ: значение | null } (проверены по категории — checkCategoryFields) */
   attributes?: Readonly<Record<string, AttributeValue | null>>;
@@ -79,8 +88,11 @@ interface ParsedRevision extends RevisionValues {
   valid: boolean;
 }
 
-/** Значения правки; ошибки полей копятся в input (ключи — как в payload) */
-function readRevision(input: Input, body: Body): RevisionValues {
+/**
+ * Значения правки; ошибки полей копятся в input (ключи — как в payload). Вместимость и район —
+ * только у категорий, где они есть (listingFields): иначе правка не проходит проверку
+ */
+function readRevision(input: Input, body: Body, category: CategoryConfig | undefined): RevisionValues {
   const required = (key: string) => Object.hasOwn(body, key);
   const name = input.text("name", { min: 2, max: 80, required: required("name") });
   const descriptionRu = input.text("description_ru", {
@@ -93,11 +105,26 @@ function readRevision(input: Input, body: Body): RevisionValues {
     multiline: true,
     required: required("description_uz"),
   });
+  // Адрес можно убрать (пустая строка), район и вместимость — только заменить
+  const addressRu = input.text("address_ru", { max: 300 });
+  const addressUz = input.text("address_uz", { max: 300 });
+  const district = input.pattern("district_code", /^[a-z_]{2,30}$/, required("district_code"));
+  const capMin = input.int("cap_min", { ...CAPACITY_LIMITS, required: required("cap_min") });
+  const capMax = input.int("cap_max", { ...CAPACITY_LIMITS, required: required("cap_max") });
+  if (typeof capMin === "number" && typeof capMax === "number" && capMax < capMin) input.fail("cap_max");
+  const has = (field: "guest_capacity" | "district") => category?.listingFields.includes(field) === true;
+  if (!has("guest_capacity")) for (const key of ["cap_min", "cap_max"]) if (required(key)) input.fail(key);
+  if (!has("district") && required("district_code")) input.fail("district_code");
 
   const fields: RevisionValues["fields"] = {};
   if (typeof name === "string") fields.name = name;
   if (typeof descriptionRu === "string") fields.description_ru = descriptionRu;
   if (typeof descriptionUz === "string") fields.description_uz = descriptionUz;
+  if (addressRu !== undefined) fields.address_ru = addressRu ?? "";
+  if (addressUz !== undefined) fields.address_uz = addressUz ?? "";
+  if (typeof district === "string") fields.district_code = district;
+  if (typeof capMin === "number") fields.cap_min = capMin;
+  if (typeof capMax === "number") fields.cap_max = capMax;
   return { fields };
 }
 
@@ -129,9 +156,10 @@ export function parseRevision(payload: Json, categoryCode: string): ParsedRevisi
     return { fields: {}, valid: false };
   }
   const input = new Input(payload as Body);
+  const category = categoryConfig(categoryCode);
   const values = {
-    ...readRevision(input, payload as Body),
-    ...omitBase(readCategoryFields(input, payload as Body, categoryConfig(categoryCode))),
+    ...readRevision(input, payload as Body, category),
+    ...omitBase(readCategoryFields(input, payload as Body, category)),
   };
   let valid = true;
   try {
@@ -158,9 +186,10 @@ function omitBase(values: RevisionValues): Pick<RevisionValues, "attributes" | "
 export function revisionFromBody(body: Body, categoryCode: string): RevisionValues {
   const input = new Input(body);
   for (const key of Object.keys(body)) if (!KEYS.includes(key)) input.fail(key);
+  const category = categoryConfig(categoryCode);
   const values = {
-    ...readRevision(input, body),
-    ...omitBase(readCategoryFields(input, body, categoryConfig(categoryCode))),
+    ...readRevision(input, body, category),
+    ...omitBase(readCategoryFields(input, body, category)),
   };
   input.done();
   return values;
@@ -196,6 +225,11 @@ const selectRevisions = (trx: Tx) =>
       "l.description_uz",
       "l.attributes",
       "l.video_links",
+      "l.cap_min",
+      "l.cap_max",
+      "l.district_code",
+      "l.address_ru",
+      "l.address_uz",
       "v.id as vendor_id",
       "v.public_code",
       "v.name as vendor_name",
@@ -228,8 +262,10 @@ function itemView(row: RevisionRow): RevisionListItem {
     proposedBy: row.by_staff
       ? { kind: "staff", name: row.submitted_by_name }
       : { kind: "partner", name: null },
-    fields: FIELDS.filter(([key]) => keys.includes(key)).map(([, field]) => field),
-    // Карточку меняли после версии, от которой вендор считал правку
+    fields: revisionFields(keys),
+    // Карточку меняли после версии, от которой вендор считал правку. Правки, которых
+    // предложение не касается (услуги, календарь, телефон), версию основы подтягивают —
+    // триггер listings_rebase_revisions
     stale: row.base_version !== row.listing_version,
   };
 }
@@ -268,17 +304,44 @@ async function loadRevision(trx: Tx, id: string): Promise<RevisionDetail> {
     descriptionUz: row.description_uz,
     attributes: Object.fromEntries(changedKeys.map((key) => [key, attributes[key] ?? null])),
     videoLinks: row.video_links,
+    capacity: { min: row.cap_min, max: row.cap_max },
+    districtCode: row.district_code,
+    addressRu: row.address_ru,
+    addressUz: row.address_uz,
   };
-  const proposed = (key: (typeof FIELDS)[number][0]): RevisionValue => {
-    if (key === "attributes") return parsed.attributes ?? rawValue(payload.attributes);
-    if (key === "video_links") return parsed.videoLinks ?? rawValue(payload.video_links);
-    return parsed.fields[key] ?? rawValue(payload[key]);
+  // Вместимость одной строкой: чего правка не меняет, остаётся как в карточке
+  const capacityPart = (key: "cap_min" | "cap_max", now: number | null): number | null => {
+    if (!Object.hasOwn(payload, key)) return now;
+    const value = parsed.fields[key] ?? payload[key];
+    return typeof value === "number" ? value : null;
+  };
+  const proposed = (field: RevisionField): RevisionValue => {
+    switch (field) {
+      case "name":
+        return parsed.fields.name ?? rawValue(payload.name);
+      case "descriptionRu":
+        return parsed.fields.description_ru ?? rawValue(payload.description_ru);
+      case "descriptionUz":
+        return parsed.fields.description_uz ?? rawValue(payload.description_uz);
+      case "attributes":
+        return parsed.attributes ?? rawValue(payload.attributes);
+      case "videoLinks":
+        return parsed.videoLinks ?? rawValue(payload.video_links);
+      case "capacity":
+        return { min: capacityPart("cap_min", row.cap_min), max: capacityPart("cap_max", row.cap_max) };
+      case "districtCode":
+        return parsed.fields.district_code ?? rawValue(payload.district_code);
+      case "addressRu":
+        return parsed.fields.address_ru ?? rawValue(payload.address_ru);
+      case "addressUz":
+        return parsed.fields.address_uz ?? rawValue(payload.address_uz);
+    }
   };
   const keys = payloadKeys(row.payload);
-  const changes: RevisionChange[] = FIELDS.filter(([key]) => keys.includes(key)).map(([key, field]) => ({
+  const changes: RevisionChange[] = revisionFields(keys).map((field) => ({
     field,
     before: current[field],
-    after: proposed(key),
+    after: proposed(field),
   }));
 
   return {
@@ -309,9 +372,11 @@ async function pendingRevision(trx: Tx, id: string) {
   return row;
 }
 
-// Одобрить = применить к карточке (название, описания, поля витрины, ссылки) и отметить
-// решение — одной транзакцией. Правила публикации проверяет база: правка, после которой
-// опубликованная карточка перестала бы быть готовой, не проходит (422)
+// Одобрить = применить к карточке (название, описания, поля витрины, ссылки, вместимость,
+// район, адрес) и отметить решение — одной транзакцией. Правила публикации проверяет база:
+// правка, после которой опубликованная карточка перестала бы быть готовой, не проходит (422).
+// Вместимость «до» не меньше «от» сверяется с карточкой на момент решения: предложение
+// «от 400» к карточке «до 300» применить нельзя — 422 revision_invalid
 revisions.post("/:id/approve", requirePermission("revisions.moderate"), async (c) => {
   const id = pathId(c.req.param("id"));
   const body = await withActor(c.var.db, staffOf(c), async (trx) => {
@@ -319,13 +384,26 @@ revisions.post("/:id/approve", requirePermission("revisions.moderate"), async (c
     const parsed = parseRevision(revision.payload, revision.category_code);
     if (!parsed.valid) throw new ApiError(422, "revision_invalid", "Revision does not pass field checks");
     const { fields } = parsed;
+    const current = await trx
+      .selectFrom("app.listings")
+      .select(["attributes", "cap_min", "cap_max"])
+      .where("id", "=", revision.listing_id)
+      .executeTakeFirstOrThrow();
+    const min = fields.cap_min ?? current.cap_min;
+    const max = fields.cap_max ?? current.cap_max;
+    if (min !== null && max !== null && max < min) {
+      throw new ApiError(422, "revision_invalid", "Capacity: the upper bound is below the lower one");
+    }
+    if (fields.district_code !== undefined) {
+      const district = await trx
+        .selectFrom("app.districts")
+        .select("code")
+        .where("code", "=", fields.district_code)
+        .executeTakeFirst();
+      if (!district) throw new ApiError(422, "revision_invalid", "District does not exist");
+    }
     let attributes: string | undefined;
     if (parsed.attributes !== undefined) {
-      const current = await trx
-        .selectFrom("app.listings")
-        .select("attributes")
-        .where("id", "=", revision.listing_id)
-        .executeTakeFirstOrThrow();
       const base =
         typeof current.attributes === "object" &&
         current.attributes !== null &&
@@ -334,8 +412,12 @@ revisions.post("/:id/approve", requirePermission("revisions.moderate"), async (c
           : {};
       attributes = JSON.stringify(mergeAttributes(base, parsed.attributes));
     }
+    const { address_ru: addressRu, address_uz: addressUz, ...rest } = fields;
     const set = {
-      ...fields,
+      ...rest,
+      // Пустая строка в правке — убрать адрес
+      ...(addressRu === undefined ? {} : { address_ru: addressRu === "" ? null : addressRu }),
+      ...(addressUz === undefined ? {} : { address_uz: addressUz === "" ? null : addressUz }),
       ...(attributes === undefined ? {} : { attributes }),
       ...(parsed.videoLinks === undefined ? {} : { video_links: [...parsed.videoLinks] }),
     };

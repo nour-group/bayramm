@@ -10,6 +10,7 @@ import {
   type ContactEventInput,
   type CreateRequest,
   type Dictionaries,
+  type FeaturedListings,
   type ListingCards,
   type ListingContacts,
   type ListingDetail,
@@ -31,9 +32,10 @@ import type {
   Me,
   WithdrawConsent,
 } from "@bayramm/shared/api/me";
+import { botInfoOf } from "./bot";
 import { ApiError, errorFromResponse, isAbort } from "./errors";
 import type { Auth } from "./session";
-import type { BotInfo, ClientApi, SessionToken } from "./types";
+import type { ClientApi, SessionToken } from "./types";
 
 /* Настоящий API. Сайт ходит в свой /api: воркер web отдаёт его API по сервисной привязке,
    отрезав префикс (packages/edge). Куки не нужны и не шлются — сессия в заголовке Bearer. */
@@ -145,6 +147,7 @@ export function createHttpApi({
     mode: "live",
     dictionaries: (signal) => get<Dictionaries>("/dictionaries", signal),
     catalogCategories: (signal) => get<CatalogCategories>("/catalog/categories", signal),
+    featured: (signal) => get<FeaturedListings>("/catalog/featured", signal),
     catalog: (query: CatalogQuery, signal) =>
       get<CatalogPage>("/catalog/listings", signal, {
         // Фильтры по полям витрины — как есть (a.<поле>=…); имена и значения проверил экран
@@ -174,7 +177,8 @@ export function createHttpApi({
       }).catch(() => {});
     },
     consentTexts: (locale: Locale, signal) => get<ConsentTexts>("/consent-texts", signal, { locale }),
-    bot: (signal) => get<BotInfo>("/telegram/bot", signal),
+    // Из способов входа: отдельный GET /telegram/bot не нужен (он остаётся для старых сборок)
+    bot: async (signal) => botInfoOf(await get<AuthMethods>("/auth/methods", signal)),
     listingCards: (ids, signal) =>
       ids.length === 0
         ? Promise.resolve({ items: [] })

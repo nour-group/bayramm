@@ -8,7 +8,7 @@ import { type CatalogLinkFilters, clientCatalogPath, clientRequestPath } from "@
 import { categoryConfig, detailsSummary, type RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
 import type { Tx } from "../db/actor";
-import { clientProfilesAs, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
+import { clientProfilesAs, contactChangeState, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
 import type { AppActorKind, AppStaffRole, Json } from "../db/schema.generated";
 import { type ServiceRow, selectServices, serviceName } from "../listing-services/store";
 import { can } from "../staff/access";
@@ -16,10 +16,12 @@ import type { ReplyMarkup, SendMessageParams } from "../telegram/client";
 import { isDay, loadDigest, loadWeekReport, REPORT_TEXTS, staffLocale } from "./reports";
 import {
   ACCESS_TEXTS,
+  CONTACT_TEXTS,
   formatDate,
   NOTICE_TEXTS,
   OPS_BUTTON,
   type OpsSlaFacts,
+  opsContactChangeSubmitted,
   opsListingSubmitted,
   opsOutboxDead,
   opsPhotosSubmitted,
@@ -43,7 +45,10 @@ import {
  * 20261011090000_moderation_flow.sql);
  * ops.listing_submitted — витрину отправили на проверку (20261011090000_moderation_flow.sql);
  * vendor.access_granted — партнёру: его добавили в кабинет, приглашение принято
- * (20261011110000_vendor_user_invites.sql)
+ * (20261011110000_vendor_user_invites.sql);
+ * ops.contact_change_submitted — партнёр просит сменить публичные контакты витрины, команде;
+ * vendor.contact_change_decided — решение по этому запросу владельцам кабинета
+ * (20261012100000_vendor_photos_contacts.sql; номеров в оповещениях нет, только id витрины)
  */
 export const NOTICE_KINDS = [
   "vendor.request_new",
@@ -62,13 +67,16 @@ export const NOTICE_KINDS = [
   "ops.service_submitted",
   "ops.listing_submitted",
   "vendor.access_granted",
+  "ops.contact_change_submitted",
+  "vendor.contact_change_decided",
 ] as const;
 export type NoticeKind = (typeof NOTICE_KINDS)[number];
 
 /**
  * Может ли сотрудник этой роли получить оповещение: о правке карточки и услугах — тот, кто
  * решает по правкам (revisions.moderate), о новых фото — тот, кто решает по фото
- * (photos.moderate), о витрине на проверке — тот, кто публикует (listings.publish),
+ * (photos.moderate), о смене контактов витрины — тот, кто решает по правкам, о витрине на
+ * проверке — тот, кто публикует (listings.publish),
  * остальные оповещения команды — администратору
  */
 function staffMayReceive(kind: string, role: AppStaffRole): boolean {
@@ -76,6 +84,7 @@ function staffMayReceive(kind: string, role: AppStaffRole): boolean {
   if (kind === "ops.photos_submitted") return can(role, "photos.moderate");
   if (kind === "ops.service_submitted") return can(role, "revisions.moderate");
   if (kind === "ops.listing_submitted") return can(role, "listings.publish");
+  if (kind === "ops.contact_change_submitted") return can(role, "revisions.moderate");
   return role === "admin";
 }
 
@@ -439,6 +448,57 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
         category: listing.category,
       }),
       button(OPS_BUTTON, adminUrl(urls, `/listings/${listingId}`)),
+    );
+  }
+
+  if (kind === "ops.contact_change_submitted") {
+    const listingId = field(row.payload, "listing_id");
+    if (listingId === null) return skip("bad_payload");
+    const listing = await trx
+      .selectFrom("app.listings as l")
+      .innerJoin("app.vendor_accounts as v", "v.id", "l.vendor_id")
+      .select(["l.name", "l.status", "v.public_code"])
+      .where("l.id", "=", listingId)
+      .executeTakeFirst();
+    if (listing === undefined) return skip("not_found");
+    // Запрос уже решили или отозвали — оповещать не о чем
+    const change = await contactChangeState(trx, listingId);
+    if (change === null || change.status !== "pending") return skip("contact_change_decided");
+    return message(
+      opsContactChangeSubmitted({
+        listing: listing.name,
+        vendorCode: listing.public_code,
+        status: listing.status,
+        phoneChanged: change.phoneChanged,
+        telegramChanged: change.telegramChanged,
+      }),
+      // Страница витрины, блок «Контакты»: там «Показать» и решение
+      button(OPS_BUTTON, adminUrl(urls, `/listings/${listingId}?focus=contacts`)),
+    );
+  }
+
+  if (kind === "vendor.contact_change_decided") {
+    const listingId = field(row.payload, "listing_id");
+    const decision = field(row.payload, "decision");
+    if (listingId === null || (decision !== "approved" && decision !== "declined"))
+      return skip("bad_payload");
+    const listing = await trx
+      .selectFrom("app.listings as l")
+      .select(["l.name", "l.vendor_id"])
+      .where("l.id", "=", listingId)
+      .executeTakeFirst();
+    if (listing === undefined) return skip("not_found");
+    // Владельцу кабинета — только о своих витринах
+    if (recipient.vendorId !== listing.vendor_id) return skip("recipient_mismatch");
+    const change = decision === "declined" ? await contactChangeState(trx, listingId) : null;
+    const t = CONTACT_TEXTS[recipient.lang];
+    return message(
+      t.decided({
+        listing: listing.name,
+        outcome: decision,
+        reason: change?.status === "declined" ? change.reason : null,
+      }),
+      button(t.button, `${trimTrailingSlashes(urls.vendorAppUrl)}/card`),
     );
   }
 

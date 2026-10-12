@@ -126,13 +126,24 @@ test("заметка к заявке, причина отказа по прав�
 }) => {
   await start(page);
   await page.goto(`/requests/${REQUEST_ID}`);
+  // Формы заметки на странице нет: «+ Заметка» открывает её (на телефоне — шторкой)
+  await page.getByRole("button", { name: t.noteAdd }).click();
   await page.getByLabel(t.noteText).fill("Перезвонить завтра");
   // Клавиатура на телефоне прячет нижнюю панель: сначала убрать её, как пальцем мимо поля
   await page.getByLabel(t.noteText).blur();
-  await section(page, t.vendors).click();
-  await expect(question(page)).toBeVisible();
-  await question(page).getByRole("button", { name: t.unsavedStay }).click();
-  await expect(page).toHaveURL(`/requests/${REQUEST_ID}`);
+  const noteSheet = page.getByRole("dialog", { name: t.noteAdd });
+  if (await noteSheet.isVisible()) {
+    // Телефон: страница под шторкой недоступна; закрыли её — черновик пропал, уход без вопроса
+    await noteSheet.getByRole("button", { name: t.cancel }).click();
+    await section(page, t.vendors).click();
+    await expect(page).toHaveURL("/vendors");
+    await expect(question(page)).toHaveCount(0);
+  } else {
+    await section(page, t.vendors).click();
+    await expect(question(page)).toBeVisible();
+    await question(page).getByRole("button", { name: t.unsavedStay }).click();
+    await expect(page).toHaveURL(`/requests/${REQUEST_ID}`);
+  }
 
   await page.goto(`/revisions/${REVISION_ID}`);
   await page.getByRole("button", { name: t.revisionDecline }).click();
@@ -155,11 +166,15 @@ test("заметка к заявке, причина отказа по прав�
   }
 
   await page.goto("/team");
+  await page.getByRole("button", { name: t.inviteOpen }).click();
   await page.getByLabel(t.inviteName).fill("Новый модератор");
   await page.getByLabel(t.inviteName).blur();
+  // Лист приглашения модальный: страница под ним недоступна, уйти можно, закрыв его — черновик
+  // пропадает, вопроса нет
+  await page.getByRole("dialog", { name: t.inviteTitle }).getByRole("button", { name: t.cancel }).click();
   await page
     .getByRole("link", { name: /Bayramm/ })
     .first()
     .click();
-  await expect(question(page)).toBeVisible();
+  await expect(question(page)).toHaveCount(0);
 });

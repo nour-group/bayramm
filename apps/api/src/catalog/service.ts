@@ -34,12 +34,14 @@ import type {
   DateLoad,
   DayPart,
   Dictionaries,
+  FeaturedListings,
   ListingCard,
   ListingDetail,
   Locale,
   Photo,
   PublicService,
 } from "@bayramm/shared/api";
+import { FEATURED_LISTINGS, pickFeatured } from "@bayramm/shared/api";
 import { type AttributeFilter, categoryConfig, readAttributes } from "@bayramm/shared/categories";
 import { type RawBuilder, sql } from "kysely";
 import { GUEST, type Tx, withActor } from "../db/actor";
@@ -452,6 +454,46 @@ export async function listCatalogCategories(db: Db): Promise<CatalogCategories> 
       })),
     } satisfies CatalogCategories;
   });
+}
+
+/**
+ * GET /catalog/featured: витрины лендинга одним запросом. Первые по цене в каждом разделе
+ * (как выдача по умолчанию: цена «на гостя», затем id; занятости нет) — оконной функцией по
+ * всем разделам сразу, не больше FEATURED_LISTINGS на раздел; порядок разделов — как в
+ * категориях; выбор и порядок показа — pickFeatured (общий с демо-API клиента). Одна
+ * транзакция и один запрос вместо категорий и выдачи на каждый раздел
+ */
+export async function listFeatured(db: Db): Promise<FeaturedListings> {
+  const key = sortKey("price_asc", null);
+  const rows = await withActor(db, GUEST, (trx) =>
+    trx
+      .selectFrom(
+        publicListings(trx, NO_DATE)
+          .select([
+            "cat.sort as category_sort",
+            sql<number>`(row_number() over (partition by l.category_code order by ${key}, l.id))::int`.as(
+              "rank",
+            ),
+          ])
+          .as("f"),
+      )
+      .selectAll("f")
+      .where("f.rank", "<=", FEATURED_LISTINGS)
+      .orderBy("f.category_sort")
+      .orderBy("f.category_code")
+      .orderBy("f.rank")
+      .execute(),
+  );
+  const lists: ListingCard[][] = [];
+  let current: string | null = null;
+  for (const row of rows) {
+    if (row.category_code !== current) {
+      lists.push([]);
+      current = row.category_code;
+    }
+    lists.at(-1)?.push(toCard(row, null));
+  }
+  return { items: pickFeatured(lists) } satisfies FeaturedListings;
 }
 
 // ── карточка площадки ──────────────────────────────────────────────────────
