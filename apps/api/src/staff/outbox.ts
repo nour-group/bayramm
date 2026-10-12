@@ -16,6 +16,7 @@ import { notFound } from "../errors";
 import { outboxKick } from "../notify/kick";
 import { requirePermission } from "./access";
 import { loadLabels } from "./labels";
+import { pageTotal } from "./page-total";
 import { iso, num, pathId } from "./shared";
 
 export const outbox = new Hono<AppEnv>();
@@ -54,13 +55,21 @@ async function loadHealth(trx: Tx): Promise<OutboxHealth> {
       "o.enqueued_at",
       "r.id as request_id",
       "r.public_no",
-      sql<number>`(count(*) over ())::int`.as("total"),
     ])
     .where("o.status", "=", "dead")
     .orderBy("o.created_at", "desc")
     .orderBy("o.id")
     .limit(DEAD_LIMIT)
     .execute();
+  // Без count(*) over (): список короче лимита — число видно по нему, иначе считаем отдельно
+  const deadTotal = await pageTotal(dead.length, DEAD_LIMIT, 0, async () => {
+    const row = await trx
+      .selectFrom("app.outbox")
+      .select(sql<number>`count(*)::int`.as("n"))
+      .where("status", "=", "dead")
+      .executeTakeFirstOrThrow();
+    return row.n;
+  });
 
   const labels = await loadLabels(
     trx,
@@ -71,7 +80,7 @@ async function loadHealth(trx: Tx): Promise<OutboxHealth> {
   return {
     counts: byStatus,
     oldestPendingAt: iso(oldest?.at ?? null),
-    deadTotal: dead[0]?.total ?? 0,
+    deadTotal,
     dead: dead.map(
       (row): OutboxDeadItem => ({
         id: row.id,

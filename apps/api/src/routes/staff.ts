@@ -18,6 +18,7 @@
 //   /staff/settings       настройки платформы
 //   /staff/team           сотрудники: приглашение, роль, отключение
 //   /staff/metrics        метрики запуска: по неделям, по вендорам (только чтение)
+//   /staff/queues         очереди команды — только числа, для счётчиков у разделов
 //
 // Читается под актором сотрудника; роль и активность проверены в authenticate
 // на этот же запрос.
@@ -40,6 +41,7 @@ import { listings } from "../staff/listings";
 import { metrics } from "../staff/metrics";
 import { outbox } from "../staff/outbox";
 import { photos } from "../staff/photos";
+import { queues } from "../staff/queues";
 import { requests } from "../staff/requests";
 import { revisions } from "../staff/revisions";
 import { listingServices, serviceModeration, vendorListings } from "../staff/services";
@@ -68,6 +70,7 @@ sections.route("/audit", audit);
 sections.route("/settings", settings);
 sections.route("/team", team);
 sections.route("/metrics", metrics);
+sections.route("/queues", queues);
 
 export const staff = new Hono<AppEnv>();
 

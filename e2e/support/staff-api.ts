@@ -1521,6 +1521,8 @@ export async function mockStaffApi(
     if (key === "GET /staff/settings") return json(route, 200, SETTINGS);
     if (key === "GET /staff/metrics")
       return json(route, 200, { ...METRICS, category: url.searchParams.get("category") });
+    // Только очереди — для счётчиков у разделов (те же числа, что в metrics.queues)
+    if (key === "GET /staff/queues") return json(route, 200, { queues: METRICS.queues });
     if (key === "GET /staff/metrics/categories") {
       const list: CategoryMetricsList = {
         days: 30,

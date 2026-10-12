@@ -15,8 +15,9 @@ const site = createSiteWorker({
   imageOrigins: mediaImageOrigins(dev),
   // Mini App в Telegram Web открывается во фрейме web.telegram.org — встраивать разрешено только ему
   frameAncestors: ["https://web.telegram.org"],
-  // SDK Mini App: telegram-web-app.js в script-src. Грузит его код приложения и только
-  // внутри Telegram (loadTelegramWebApp в @bayramm/tg/webapp); в index.html его нет
+  // SDK Mini App: telegram-web-app.js в script-src. Тег ставит скрипт, а не index.html, и только
+  // внутри Telegram: public/boot.js — сразу, до бандла, loadTelegramWebApp в @bayramm/tg/webapp —
+  // если boot.js не отработал или тег упал
   telegramWebApp: true,
   // Хаб входа (/auth): виджет входа Telegram — только на его страницах. У бота в @BotFather
   // /setdomain — домен сайта окружения; остальные страницы сайта виджета не пускают
@@ -67,7 +68,7 @@ async function page(request: Request, env: Env, url: URL): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     // По http — только редирект на https, и для robots.txt и карты сайта тоже (packages/edge, https.ts)
     const insecure = dev ? null : httpsRedirect(request);
     if (insecure) return insecure;
@@ -93,6 +94,7 @@ export default {
         { dev },
       );
     if (read && isPagePath(url.pathname) && !taklifnomaRedirect(url)) return page(request, env, url);
-    return site.fetch(request, env);
+    // /api/* — в API; анонимные публичные GET кэширует край (packages/edge, api-cache.ts)
+    return site.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;

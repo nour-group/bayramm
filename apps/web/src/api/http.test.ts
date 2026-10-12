@@ -107,19 +107,37 @@ describe("HTTP-клиент API", () => {
     });
   });
 
+  it("витрины лендинга — один запрос GET /catalog/featured", async () => {
+    const { api, seen } = setup({ "GET /api/catalog/featured": [json(200, { items: [] })] });
+    expect(await api.featured()).toEqual({ items: [] });
+    expect(seen.map((s) => s.url)).toEqual(["/api/catalog/featured"]);
+  });
+
   it("площадка и согласия: адреса по контракту", async () => {
     const { api, seen } = setup({
       "GET /api/catalog/listings/lola-zali": [json(200, { slug: "lola-zali" })],
       "GET /api/consent-texts": [json(200, { items: [] })],
-      "GET /api/telegram/bot": [json(200, { username: "bayramm_bot", miniAppUrl: "https://bayramm.uz" })],
+      "GET /api/auth/methods": [
+        json(200, {
+          telegram: { bot: "bayramm_bot", loginDomain: null },
+          phone: false,
+          turnstileSiteKey: null,
+          apps: {
+            web: "https://bayramm.uz",
+            vendor: "https://vendor.bayramm.uz",
+            admin: "https://admin.bayramm.uz",
+          },
+        }),
+      ],
     });
     await api.listing("lola-zali");
     await api.consentTexts("uz");
-    await api.bot();
+    // Имя бота и адрес Mini App — из способов входа; старый /telegram/bot клиент не зовёт
+    expect(await api.bot()).toEqual({ username: "bayramm_bot", miniAppUrl: "https://bayramm.uz" });
     expect(seen.map((s) => s.url)).toEqual([
       "/api/catalog/listings/lola-zali",
       "/api/consent-texts?locale=uz",
-      "/api/telegram/bot",
+      "/api/auth/methods",
     ]);
   });
 

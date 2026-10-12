@@ -5,7 +5,7 @@ import type { CatalogSort } from "@bayramm/shared/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
 import { decodeCursor, encodeCursor, parseCatalogQuery } from "./query";
-import { getConsentTexts, getDictionaries, getListingDetail, listCatalog } from "./service";
+import { getConsentTexts, getDictionaries, getListingDetail, listCatalog, listFeatured } from "./service";
 
 const ID = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
@@ -419,5 +419,54 @@ describe("справочники и тексты согласий", () => {
       expect.arrayContaining(["client_service", "request_transfer", "bot_notifications", "uz"]),
     );
     expect(query?.parameters).not.toContain("vendor_contact");
+  });
+});
+
+describe("listFeatured", () => {
+  it("один запрос под гостем: окно по разделам, порядок разделов, не больше четырёх на раздел", async () => {
+    const fake = fakeDb();
+    await listFeatured(fake.db);
+    expect(fake.log[0]).toBe("begin");
+    expect(fake.queries[0]?.parameters).toEqual(["", "", ""]);
+    const featured = fake.queries.filter(isCatalog);
+    expect(featured).toHaveLength(1);
+    const sql = featured[0]?.sql ?? "";
+    expect(sql).toContain("row_number() over (partition by l.category_code order by ");
+    expect(sql).toMatch(
+      /where "f"\."rank" <= \$\d+ order by "f"\."category_sort", "f"\."category_code", "f"\."rank"/,
+    );
+    expect(featured[0]?.parameters).toContain(4);
+    // Цена как у выдачи по умолчанию (на гостя), затем id; даты нет — занятость не считается
+    expect(sql).toContain("(l.price_from_uzs + l.cap_max - 1) / l.cap_max");
+    expect(sql).not.toContain("day_load");
+    expect(fake.log.at(-1)).toBe("commit");
+  });
+
+  it("раздел за разделом: по одной из первых четырёх, а если разделов два — по две", async () => {
+    const rows = (category: string, sort: number, count: number) =>
+      Array.from({ length: count }, (_, i) =>
+        cardRow(sort * 10 + i + 1, { category_code: category, category_sort: sort, rank: i + 1 }),
+      );
+    const four = fakeDb(() => [
+      ...rows("hall", 1, 4),
+      ...rows("car", 2, 4),
+      ...rows("photo", 3, 4),
+      ...rows("cake", 4, 4),
+      ...rows("decor", 5, 4),
+    ]);
+    const first = await listFeatured(four.db);
+    expect(first.items.map((c) => c.categoryCode)).toEqual(["hall", "car", "photo", "cake"]);
+
+    const two = fakeDb(() => [...rows("hall", 1, 4), ...rows("cake", 4, 4)]);
+    const second = await listFeatured(two.db);
+    expect(second.items.map((c) => `${c.categoryCode}:${c.slug}`)).toEqual([
+      "hall:hall-11",
+      "cake:hall-41",
+      "hall:hall-12",
+      "cake:hall-42",
+    ]);
+    expect(second.items.every((c) => c.busyOnDate === null && c.dateLoad === null)).toBe(true);
+
+    expect((await listFeatured(fakeDb().db)).items).toEqual([]);
   });
 });

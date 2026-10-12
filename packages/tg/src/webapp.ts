@@ -6,7 +6,9 @@
    Данные initDataUnsafe не проверены — для прав только initData, которую сверяет сервер.
 
    SDK грузит loadTelegramWebApp — из кода, а не тегом в index.html, и только если страницу
-   открыл Telegram: в обычном браузере чужой скрипт не нужен вовсе. */
+   открыл Telegram: в обычном браузере чужой скрипт не нужен вовсе. Раньше, не дожидаясь
+   основного бандла, его заказывает public/boot.js приложения (тем же правилом «открыл
+   Telegram»): тег уже в <head>, и loadTelegramWebApp ждёт именно его, второго не добавляя. */
 
 /**
  * Адрес SDK Mini App. Путь точный — CSP (@bayramm/edge) пускает ровно его. Без integrity:
@@ -131,6 +133,8 @@ export function getWebApp(scope: unknown = globalThis): TelegramWebApp | null {
 interface ScriptLike {
   src: string;
   addEventListener(type: "load" | "error", listener: () => void, options?: { once?: boolean }): void;
+  getAttribute?(name: string): string | null;
+  remove?(): void;
 }
 
 interface BrowserScope {
@@ -138,9 +142,17 @@ interface BrowserScope {
   readonly sessionStorage?: { getItem(key: string): string | null };
   readonly document?: {
     createElement(tag: "script"): ScriptLike;
+    querySelector?(selector: string): ScriptLike | null;
     readonly head: { append(node: ScriptLike): void };
   };
 }
+
+/**
+ * Состояние тега SDK, который поставил public/boot.js: атрибут data-state="loaded" | "failed"
+ * (выставляет сам boot.js по событиям load и error). Нет атрибута — скрипт ещё в пути
+ */
+export const SDK_STATE_ATTR = "data-state";
+const SDK_TAG_SELECTOR = `script[src="${TELEGRAM_WEB_APP_SCRIPT}"]`;
 
 // Telegram передаёт параметры запуска в адресе (#tgWebAppData=…&tgWebAppVersion=…),
 // а SDK при загрузке сохраняет их в sessionStorage — на случай перезагрузки без них
@@ -166,7 +178,8 @@ const loading = new WeakMap<object, Promise<TelegramWebApp | null>>();
 /**
  * SDK Mini App: уже есть — сразу; страница открыта не из Telegram — null без загрузки
  * (обычный браузер не тянет чужой скрипт); иначе — скрипт TELEGRAM_WEB_APP_SCRIPT, ждём
- * не дольше timeoutMs. Не загрузился — null, следующий вызов пробует снова.
+ * не дольше timeoutMs. Тег, который уже поставил boot.js, переиспользуется: второго не будет.
+ * Не загрузился — null, следующий вызов пробует снова.
  * scope — для тестов, по умолчанию globalThis.
  */
 export function loadTelegramWebApp(
@@ -181,8 +194,19 @@ export function loadTelegramWebApp(
 
   const pending = loading.get(scope);
   if (pending) return pending;
+  // Тег SDK уже в документе (boot.js заказал его до бандла) — ждём его, а не добавляем второй
+  let existing = doc.querySelector?.(SDK_TAG_SELECTOR) ?? null;
+  const state = existing?.getAttribute?.(SDK_STATE_ATTR) ?? null;
+  if (state === "failed") {
+    // Не загрузился ещё до нас: убираем и пробуем заново новым тегом
+    existing?.remove?.();
+    existing = null;
+  } else if (state === "loaded") {
+    // Выполнился, а Telegram.WebApp без initData — открыто не из Telegram
+    return Promise.resolve(getWebApp(scope));
+  }
   const attempt = new Promise<TelegramWebApp | null>((resolve) => {
-    const script = doc.createElement("script");
+    const script = existing ?? doc.createElement("script");
     let settled = false;
     // Первое из трёх: загрузка, ошибка, время вышло. Опоздавший load старой попытки
     // не трогает следующую
@@ -193,11 +217,20 @@ export function loadTelegramWebApp(
       if (loading.get(scope) === attempt) loading.delete(scope);
       resolve(getWebApp(scope));
     };
+    // Упавший тег не оставляем в документе: следующий вызов добавит свежий, а не станет
+    // ждать событие, которого уже не будет. Не ответивший (время вышло) остаётся — он ещё
+    // может загрузиться, и следующий вызов дождётся именно его
+    const failed = () => {
+      script.remove?.();
+      done();
+    };
     const timer = setTimeout(done, timeoutMs);
     script.addEventListener("load", done, { once: true });
-    script.addEventListener("error", done, { once: true });
-    script.src = TELEGRAM_WEB_APP_SCRIPT;
-    doc.head.append(script);
+    script.addEventListener("error", failed, { once: true });
+    if (!existing) {
+      script.src = TELEGRAM_WEB_APP_SCRIPT;
+      doc.head.append(script);
+    }
   });
   loading.set(scope, attempt);
   return attempt;

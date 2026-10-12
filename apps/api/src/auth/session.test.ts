@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { withActor } from "../db/actor";
 import type { AppEnv } from "../env";
 import { handleError } from "../errors";
 import { type FakeDb, fakeDb, type RecordedQuery } from "../testing/fake-db";
@@ -368,5 +369,150 @@ describe("chooseMembership", () => {
       role: "member",
     });
     expect(() => chooseMembership(list, VENDOR_ID)).toThrow(expect.objectContaining({ status: 403 }));
+  });
+});
+
+/* Одна транзакция на запрос: сессия, членства вендора и первый withActor обработчика идут в
+   одной транзакции (db/actor.ts, inPreamble). Каждый оператор — под нужным актором */
+describe("одна транзакция на запрос", () => {
+  const isSet = (q: RecordedQuery) => q.sql.includes("set_config");
+  const count = (log: string[], what: string) => log.filter((entry) => entry === what).length;
+
+  function appForTx(fake: FakeDb) {
+    const app = new Hono<AppEnv>();
+    app.use(async (c, next) => {
+      c.set("db", fake.db);
+      await next();
+    });
+    app.use(authenticate);
+    const listings = (db: FakeDb["db"], actor: Parameters<typeof withActor>[1]) =>
+      withActor(db, actor, (trx) => trx.selectFrom("app.listings").select("id").execute());
+    app.get("/vendor/data", requireVendor, async (c) => c.json(await listings(c.var.db, vendorOf(c))));
+    app.get("/vendor/two", requireVendor, async (c) => {
+      await listings(c.var.db, vendorOf(c));
+      return c.json(await listings(c.var.db, vendorOf(c)));
+    });
+    app.get("/vendor/fail", requireVendor, async (c) => {
+      await withActor(c.var.db, vendorOf(c), async () => {
+        throw new Error("boom");
+      });
+      return c.json({});
+    });
+    app.get("/staff/data", requireStaff(), async (c) => c.json(await listings(c.var.db, staffOf(c))));
+    app.get("/idle", (c) => c.json({ ok: true }));
+    app.onError(handleError);
+    return app;
+  }
+
+  const vendorFake = () =>
+    fakeDb((q) => {
+      if (q.sql.includes('from "app"."sessions"')) return [accountSession({ app: "vendor" })];
+      if (q.sql.includes('from "app"."vendor_users"')) return [membership(VENDOR_USER_ID, VENDOR_ID)];
+      return [];
+    });
+
+  it("кабинет: begin → system → сессия → членства → вендор → запрос обработчика → commit, одна транзакция", async () => {
+    const fake = vendorFake();
+    const res = await appForTx(fake).request("/vendor/data", bearer(generateToken()));
+    expect(res.status).toBe(200);
+
+    expect(fake.log[0]).toBe("begin");
+    expect(fake.log.at(-1)).toBe("commit");
+    expect(count(fake.log, "begin")).toBe(1);
+    expect(count(fake.log, "commit")).toBe(1);
+    expect(count(fake.log, "rollback")).toBe(0);
+
+    // Порядок и актор каждого оператора: system — сессия и членства (set_config один раз),
+    // вендор — только запрос обработчика
+    const steps = fake.queries.map((q) =>
+      isSet(q)
+        ? `set ${(q.parameters as string[]).join("/")}`
+        : (/from "app"\."(\w+)"/.exec(q.sql)?.[1] ?? q.sql),
+    );
+    expect(steps).toEqual([
+      "set system//",
+      "sessions",
+      "vendor_users",
+      `set vendor_user/${VENDOR_USER_ID}/${VENDOR_ID}`,
+      "listings",
+    ]);
+  });
+
+  it("сотрудник: system для сессии, затем staff — для запроса обработчика", async () => {
+    const fake = fakeDb((q) => (q.sql.includes('from "app"."sessions"') ? [staffSession()] : []));
+    const res = await appForTx(fake).request("/staff/data", bearer(generateToken()));
+    expect(res.status).toBe(200);
+    expect(count(fake.log, "begin")).toBe(1);
+    expect(count(fake.log, "commit")).toBe(1);
+    expect(fake.queries.filter(isSet).map((q) => q.parameters)).toEqual([
+      ["system", "", ""],
+      ["staff", STAFF_ID, ""],
+    ]);
+    // Запрос обработчика — сразу после set_config сотрудника, а не system
+    expect(fake.queries.at(-1)?.sql).toContain('from "app"."listings"');
+    expect(fake.queries.at(-2)?.parameters).toEqual(["staff", STAFF_ID, ""]);
+  });
+
+  it("вторая транзакция обработчика — отдельная и фиксируется сама", async () => {
+    const fake = vendorFake();
+    const res = await appForTx(fake).request("/vendor/two", bearer(generateToken()));
+    expect(res.status).toBe(200);
+    expect(count(fake.log, "begin")).toBe(2);
+    expect(count(fake.log, "commit")).toBe(2);
+    // Во второй — свой set_config вендора: GUC первой транзакции на неё не переходят
+    expect(fake.queries.filter(isSet).map((q) => q.parameters[0])).toEqual([
+      "system",
+      "vendor_user",
+      "vendor_user",
+    ]);
+  });
+
+  it("ошибка в обработчике откатывает ту же транзакцию, не фиксируя", async () => {
+    const fake = vendorFake();
+    const res = await appForTx(fake).request("/vendor/fail", bearer(generateToken()));
+    expect(res.status).toBe(500);
+    expect(count(fake.log, "begin")).toBe(1);
+    expect(count(fake.log, "rollback")).toBe(1);
+    expect(count(fake.log, "commit")).toBe(0);
+  });
+
+  it("база обработчику не понадобилась — транзакцию закрывает authenticate: одна, зафиксирована", async () => {
+    const fake = vendorFake();
+    const res = await appForTx(fake).request("/idle", bearer(generateToken()));
+    expect(res.status).toBe(200);
+    expect(count(fake.log, "begin")).toBe(1);
+    expect(count(fake.log, "commit")).toBe(1);
+  });
+
+  it("запрос отклонён после чтения сессии (401, 403) — транзакция не остаётся открытой", async () => {
+    const none = fakeDb();
+    expect((await appForTx(none).request("/vendor/data", bearer(generateToken()))).status).toBe(401);
+    const unlinked = fakeDb((q) =>
+      q.sql.includes('from "app"."sessions"') ? [accountSession({ app: "vendor" })] : [],
+    );
+    const res = await appForTx(unlinked).request("/vendor/data", bearer(generateToken()));
+    expect(res.status).toBe(403);
+    for (const fake of [none, unlinked]) {
+      expect(count(fake.log, "begin")).toBe(1);
+      expect(count(fake.log, "begin")).toBe(count(fake.log, "commit") + count(fake.log, "rollback"));
+    }
+  });
+
+  it("сбой запроса к базе в преамбуле — откат и 500, фиксации нет", async () => {
+    const fake = fakeDb((q) => {
+      if (q.sql.includes('from "app"."sessions"')) throw new Error("connection lost");
+      return [];
+    });
+    const res = await appForTx(fake).request("/vendor/data", bearer(generateToken()));
+    expect(res.status).toBe(500);
+    expect(count(fake.log, "rollback")).toBe(1);
+    expect(count(fake.log, "commit")).toBe(0);
+  });
+
+  it("гость — без транзакции вовсе", async () => {
+    const fake = fakeDb();
+    const res = await appForTx(fake).request("/idle");
+    expect(res.status).toBe(200);
+    expect(fake.log).toEqual([]);
   });
 });

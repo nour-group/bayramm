@@ -10,7 +10,7 @@ const BOT_USERNAME_RE = /^[A-Za-z0-9_]{2,29}bot$/i;
 
 /**
  * Ссылка, открывающая Mini App в Telegram: t.me/<бот>?startapp=vendor_<slug> ведёт сразу
- * к площадке. Имени бота в сборке нет — у каждого окружения свой (GET /api/telegram/bot)
+ * к площадке. Имени бота в сборке нет — у каждого окружения свой (GET /api/auth/methods)
  */
 export function telegramLink(username: string, slug?: string): string | null {
   if (!BOT_USERNAME_RE.test(username)) return null;

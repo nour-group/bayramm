@@ -4,6 +4,7 @@
 import type {
   CategoryMetricsList,
   MetricsOverview,
+  StaffQueues,
   VendorMetricsList,
   VendorResponseStats,
 } from "@bayramm/shared/api/staff";
@@ -215,6 +216,39 @@ describe("GET /metrics", () => {
     expect((await get(app, "/metrics?weeks=100")).status).toBe(422);
     expect((await get(app, "/metrics?category=nope")).status).toBe(422);
     expect(fake.queries.some((q) => q.sql.includes("app.metrics_"))).toBe(false);
+  });
+});
+
+describe("GET /queues", () => {
+  it("те же очереди, что в /metrics, но без недельных метрик: один вызов функции очередей", async () => {
+    const { app, fake } = appAs("moderator");
+    const queues = (await (await get(app, "/queues")).json()) as StaffQueues;
+    const overview = (await (await get(app, "/metrics?weeks=1")).json()) as MetricsOverview;
+    expect(queues).toEqual({ queues: overview.queues });
+    expect(queues.queues).toEqual({
+      awaiting: 3,
+      overdue: 1,
+      deadTotal: 3,
+      listingsReview: 0,
+      revisionsPending: 0,
+      photosPending: 1,
+      servicesPending: 2,
+    });
+
+    const { app: only, fake: onlyFake } = appAs("manager");
+    expect((await get(only, "/queues")).status).toBe(200);
+    const sql = onlyFake.queries.map((q) => q.sql).join("\n");
+    expect(sql).toContain("app.metrics_ops_now");
+    expect(sql).not.toContain("app.metrics_weekly");
+    expect(sql).not.toContain("setting_int");
+    // под актором сотрудника
+    expect(fake.queries.some((q) => q.parameters[0] === "staff")).toBe(true);
+  });
+
+  it("гостю — 401: без сессии сотрудника очередей нет", async () => {
+    const { app } = appAs("admin");
+    const res = await app.request("/queues", {}, makeEnv());
+    expect(res.status).toBe(401);
   });
 });
 
