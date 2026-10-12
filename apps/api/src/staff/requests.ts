@@ -49,6 +49,7 @@ import { outboxKick } from "../notify/kick";
 import { requirePermission } from "./access";
 import { Input, invalidInput, isUuid, likePattern, limitJson, paging, readBody } from "./input";
 import { loadLabels } from "./labels";
+import { allOf, pageTotal } from "./page-total";
 import { clientRef, iso, num, pathId } from "./shared";
 import { readReason, readVendorPhones } from "./vendors";
 
@@ -166,24 +167,24 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
   const { limit, offset } = paging((key) => c.req.query(key));
 
   const result = await withActor(c.var.db, staffOf(c), async (trx) => {
-    let query = selectRequests(trx).select(sql<number>`(count(*) over ())::int`.as("total"));
-    if (status) query = query.where("r.status", "=", status);
-    if (sla.length > 0) query = query.where(sql<boolean>`${slaState} in (${sql.join(sla)})`);
-    if (category) query = query.where("l.category_code", "=", category);
-    if (listingId) query = query.where("l.id", "=", listingId);
+    // Одни и те же условия у страницы и у числа записей
+    const conditions: RawBuilder<boolean>[] = [];
+    if (status) conditions.push(sql<boolean>`r.status = ${status}`);
+    if (sla.length > 0) conditions.push(sql<boolean>`${slaState} in (${sql.join(sla)})`);
+    if (category) conditions.push(sql<boolean>`l.category_code = ${category}`);
+    if (listingId) conditions.push(sql<boolean>`r.listing_id = ${listingId}`);
     if (q !== "") {
       const pattern = likePattern(q);
       const number = /^\d{1,12}$/.test(q) ? q : null;
-      query = query.where((eb) =>
-        eb.or([
-          eb("l.name", "ilike", pattern),
-          eb("v.name", "ilike", pattern),
-          eb("v.public_code", "ilike", pattern),
-          ...(number ? [eb("r.public_no", "=", number)] : []),
-        ]),
+      conditions.push(
+        sql<boolean>`(l.name ilike ${pattern} or v.name ilike ${pattern} or v.public_code ilike ${pattern}${
+          number ? sql` or r.public_no = ${number}` : sql``
+        })`,
       );
     }
-    const rows = await query
+    const where = allOf(conditions);
+    const rows = await selectRequests(trx)
+      .where(where)
       .orderBy(awaitingFirst)
       .orderBy(
         sql`case when r.first_response_at is null and r.status in ('new', 'viewed') then r.sla_due_at end`,
@@ -192,18 +193,34 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
       .limit(limit)
       .offset(offset)
       .execute();
+    // Без count(*) over (): оно проходит все строки выборки (page-total.ts)
+    const total = await pageTotal(rows.length, limit, offset, async () => {
+      // Витрина и вендор заявки есть всегда (внешние ключи) — соединять их ради числа нужно,
+      // только когда по ним ищут (раздел, строка поиска); иначе это сотни миллисекунд впустую
+      const base = trx.selectFrom("app.requests as r");
+      const row = await (category || q !== ""
+        ? base
+            .innerJoin("app.listings as l", "l.id", "r.listing_id")
+            .innerJoin("app.vendor_accounts as v", "v.id", "r.vendor_id")
+            .select(sql<number>`count(*)::int`.as("n"))
+        : base.select(sql<number>`count(*)::int`.as("n"))
+      )
+        .where(where)
+        .executeTakeFirstOrThrow();
+      return row.n;
+    });
     const counts = await trx
       .selectFrom("app.requests as r")
       .select([slaState.as("sla"), sql<number>`count(*)::int`.as("n")])
       .groupBy(sql`1`)
       .execute();
-    return { rows, counts };
+    return { rows, counts, total };
   });
 
   const counts = Object.fromEntries(SLA_STATES.map((s) => [s, 0])) as Record<SlaState, number>;
   for (const row of result.counts) counts[row.sla] = row.n;
   const body: StaffRequestList = {
-    total: result.rows[0]?.total ?? 0,
+    total: result.total,
     counts,
     items: result.rows.map(itemView),
   };

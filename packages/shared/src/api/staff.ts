@@ -1273,6 +1273,15 @@ export interface OpsQueues {
 }
 
 /**
+ * GET /staff/queues → 200: только очереди — те же числа, что в `queues` у /staff/metrics (оттуда
+ * панель берёт счётчики у разделов), но без недельных метрик, которые тяжело считать. Право
+ * metrics.read, как у метрик; какие очереди показать роли — решает панель (badgesOf)
+ */
+export interface StaffQueues {
+  readonly queues: OpsQueues;
+}
+
+/**
  * GET /staff/metrics?weeks=8&category= (1–52): по неделям, текущая — первой; category — только
  * заявки витрин этой категории (и недоставленные уведомления по ним). Очереди — всегда все.
  * 422 invalid_input ["weeks"] | ["category"]

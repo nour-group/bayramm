@@ -467,6 +467,30 @@ describe("клиент: категории, фильтры, карточка, з
     expect(body.items.find((c) => c.code === "car")?.listings).toBeGreaterThanOrEqual(1);
   });
 
+  it("витрины лендинга: один запрос даёт то же, что категории и выдача по разделам", async () => {
+    const featured = await ok<{ items: { id: string; categoryCode: string }[] }>(call("/catalog/featured"));
+    // Как было на клиенте: первые четыре раздела с витринами, из каждого — по цене, по очереди
+    const categories = await ok<CatalogCategories>(call("/catalog/categories"));
+    const live = categories.items.filter((c) => c.listings > 0).slice(0, 4);
+    const per = Math.ceil(4 / live.length);
+    const pages = await Promise.all(
+      live.map((c) => ok<CatalogPage>(call(`/catalog/listings?category=${c.code}&limit=${per}`))),
+    );
+    const expected: string[] = [];
+    for (let i = 0; expected.length < 4 && pages.some((page) => i < page.items.length); i++) {
+      for (const page of pages) {
+        const card = page.items[i];
+        if (card && expected.length < 4) expected.push(card.id);
+      }
+    }
+    expect(expected.length).toBeGreaterThanOrEqual(1);
+    expect(featured.items.map((i) => i.id)).toEqual(expected);
+    // Кортеж и фото уже опубликованы: их витрины в разделах-кандидатах
+    expect(new Set(featured.items.map((i) => i.categoryCode))).toEqual(new Set(live.map((c) => c.code)));
+    const res = await call("/catalog/featured");
+    expect(res.headers.get("cache-control")).toMatch(/^public, max-age=30, s-maxage=30/);
+  });
+
   it("фильтры по полям витрины: класс и места машин, да/нет, команда", async () => {
     const ids = async (query: string) =>
       (await ok<CatalogPage>(call(`/catalog/listings?${query}&limit=50`))).items.map((i) => i.id);

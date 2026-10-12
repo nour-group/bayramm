@@ -7,7 +7,7 @@
 // X-Bayramm-Vendor, одно членство выбирается само. Отключённый пользователь вендора
 // теряет доступ на следующем же запросе.
 
-import { SYSTEM, type Tx, type VendorActor, type VendorRole, withActor } from "../db/actor";
+import { inPreamble, type Tx, type VendorActor, type VendorRole } from "../db/actor";
 import type { Db } from "../db/client";
 import { ApiError, forbidden } from "../errors";
 
@@ -84,6 +84,7 @@ export async function vendorActorFor(
   accountId: string,
   header: string | undefined,
 ): Promise<VendorActor> {
-  const memberships = await withActor(db, SYSTEM, (trx) => membershipsIn(trx, accountId));
+  // В транзакции преамбулы запроса (db/actor.ts): её продолжит первый withActor обработчика
+  const memberships = await inPreamble(db, (trx) => membershipsIn(trx, accountId));
   return chooseMembership(memberships, header);
 }

@@ -1,6 +1,7 @@
 // Каталог — публичный, без входа:
 //
 //   GET /catalog/categories                                            → 200 CatalogCategories
+//   GET /catalog/featured                                              → 200 ListingCards (витрины лендинга)
 //   GET /catalog/listings?category&district&date&guests&sort&cursor&limit&a.* → 200 CatalogPage
 //   GET /catalog/listings/:slug[?date]                                 → 200 ListingDetail | 404
 //   GET /catalog/cards?ids=<uuid>,…                                    → 200 ListingCards (избранное гостя)
@@ -29,6 +30,7 @@ import {
   getListingDetail,
   listCatalog,
   listCatalogCategories,
+  listFeatured,
   openListingContacts,
   recordContactChoice,
 } from "../catalog/service";
@@ -57,6 +59,14 @@ catalog.use(database);
 
 catalog.get("/categories", async (c) => {
   const body = await listCatalogCategories(c.var.db);
+  c.header("Cache-Control", CATALOG_CACHE_CONTROL);
+  return c.json(body);
+});
+
+// Витрины лендинга: по одной из первых разделов — одним ответом вместо категорий и выдачи на
+// каждый раздел. Кэшируется, как выдача
+catalog.get("/featured", async (c) => {
+  const body = await listFeatured(c.var.db);
   c.header("Cache-Control", CATALOG_CACHE_CONTROL);
   return c.json(body);
 });

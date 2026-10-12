@@ -20,7 +20,7 @@ import type {
   RevealedPhone,
 } from "@bayramm/shared/api/staff";
 import { Hono } from "hono";
-import { sql } from "kysely";
+import { type RawBuilder, sql } from "kysely";
 import { staffOf } from "../auth/session";
 import { type Tx, withActor } from "../db/actor";
 import { clientProfilesAs, readClientPhone } from "../db/pii";
@@ -28,6 +28,7 @@ import type { AppEnv } from "../env";
 import { notFound } from "../errors";
 import { requirePermission } from "./access";
 import { Input, invalidInput, limitJson, paging, readBody } from "./input";
+import { allOf, pageTotal } from "./page-total";
 import { slaState } from "./requests";
 import { clientRef, iso, num, pathId, staffName } from "./shared";
 import { readReason } from "./vendors";
@@ -128,27 +129,33 @@ clients.get("/", requirePermission("clients.read"), async (c) => {
 
   const body: ClientList = await withActor(c.var.db, staffOf(c), async (trx) => {
     if (search?.kind === "none") return { total: 0, items: [] };
-    let query = selectClients(trx).select(sql<number>`(count(*) over ())::int`.as("total"));
-    if (blocked) query = query.where("c.blocked_at", "is not", null);
-    if (search?.kind === "id") query = query.where(sql<boolean>`c.id::text like ${`${search.prefix}%`}`);
+    // Одни и те же условия у страницы и у числа записей
+    const conditions: RawBuilder<boolean>[] = [];
+    if (blocked) conditions.push(sql<boolean>`c.blocked_at is not null`);
+    if (search?.kind === "id") conditions.push(sql<boolean>`c.id::text like ${`${search.prefix}%`}`);
     if (search?.kind === "request") {
-      query = query.where((eb) =>
-        eb.exists(
-          eb
-            .selectFrom("app.requests as r")
-            .select("r.id")
-            .whereRef("r.client_id", "=", "c.id")
-            .where("r.public_no", "=", search.no),
-        ),
+      conditions.push(
+        sql<boolean>`exists (select 1 from app.requests r where r.client_id = c.id and r.public_no = ${search.no})`,
       );
     }
-    const rows = await query
+    const where = allOf(conditions);
+    const rows = await selectClients(trx)
+      .where(where)
       .orderBy("c.created_at", "desc")
       .orderBy("c.id")
       .limit(limit)
       .offset(offset)
       .execute();
-    return { total: rows[0]?.total ?? 0, items: rows.map(itemView) };
+    // Без count(*) over (): оно считало все строки выборки вместе с профилем и последней заявкой
+    const total = await pageTotal(rows.length, limit, offset, async () => {
+      const row = await trx
+        .selectFrom("app.clients as c")
+        .select(sql<number>`count(*)::int`.as("n"))
+        .where(where)
+        .executeTakeFirstOrThrow();
+      return row.n;
+    });
+    return { total, items: rows.map(itemView) };
   });
   return c.json(body);
 });
