@@ -223,7 +223,12 @@ describe("вход в кабинет", () => {
     expect(welcome).toContain("Нет доступа? Менеджер Bayramm подключит вас.");
     // Рассказа о возможностях кабинета нет: приглашённый партнёр его знает
     expect(container.querySelector(".welcome-points")).toBeNull();
-    for (const gone of ["Заявки клиентов", "12 часов на ответ", "Календарь занятости", "Регистрации здесь нет"])
+    for (const gone of [
+      "Заявки клиентов",
+      "12 часов на ответ",
+      "Календарь занятости",
+      "Регистрации здесь нет",
+    ])
       expect(welcome).not.toContain(gone);
     // Чисел о площадке и партнёрах нет
     expect(welcome.match(/\d+/g)).toBeNull();

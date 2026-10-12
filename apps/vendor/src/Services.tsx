@@ -428,7 +428,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
           {label}
         </label>
         {multiline ? (
-          <textarea {...common} rows={3} maxLength={SERVICE_LIMITS.includesMax} placeholder={t.optionalPh} />
+          <textarea {...common} rows={2} maxLength={SERVICE_LIMITS.includesMax} placeholder={t.optionalPh} />
         ) : (
           <input {...common} maxLength={SERVICE_LIMITS.nameMax} autoComplete="off" />
         )}

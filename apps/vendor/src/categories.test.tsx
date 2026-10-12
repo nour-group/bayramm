@@ -454,7 +454,11 @@ describe("входящие по витринам", () => {
 
     // Выбранная во входящих витрина — выбранная и в других разделах
     await click(byText("nav.tabbar a", "Витрина"));
-    expect(byText<HTMLButtonElement>(".vitrina-pills button", "Kortej Premium", container)?.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      byText<HTMLButtonElement>(".vitrina-pills button", "Kortej Premium", container)?.getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
     expect(container.querySelector(".venue .chip-cat")).toBeNull();
   });
 
@@ -485,7 +489,9 @@ describe("входящие по витринам", () => {
     await click(byText(".not-live button", "Что осталось"));
     expect(heading()).toBe("Витрина");
     expect(
-      byText<HTMLButtonElement>(".vitrina-pills button", "Kadr Studio", container)?.getAttribute("aria-pressed"),
+      byText<HTMLButtonElement>(".vitrina-pills button", "Kadr Studio", container)?.getAttribute(
+        "aria-pressed",
+      ),
     ).toBe("true");
     expect(container.querySelector(".readiness h2")?.textContent).toBe("Что осталось до публикации");
   });

@@ -764,6 +764,26 @@ body {
 
 /* Телефон: кнопки ответа прилипают к низу над нижней панелью — видны, сколько ни листай; в
    конце страницы встают на своё место и ничего не закрывают. Белая лента во всю ширину */
+.app-phone .request-actions.is-bar .actions {
+  flex-wrap: nowrap;
+}
+
+/* Две кнопки в одну строку и на 320px: подпись при нужде переносится, кнопка не раздвигает экран.
+   Главная берёт, сколько ей нужно, вторая — по своей подписи */
+.app-phone .request-actions.is-bar .actions > button {
+  min-width: 0;
+  padding: 4px 12px;
+  line-height: 1.2;
+}
+
+.app-phone .request-actions.is-bar .actions > button:first-child {
+  flex: 1 1 auto;
+}
+
+.app-phone .request-actions.is-bar .actions > button:last-child {
+  flex: 0 1 auto;
+}
+
 .app-phone .request-actions.is-bar {
   position: sticky;
   bottom: calc(var(--tabbar-full) + var(--pad-b));
@@ -2265,24 +2285,37 @@ body {
   margin: 0;
 }
 
-/* До четырёх витрин — пилюли с переносом, без прокрутки вбок: все видны сразу. Телефон — по две
-   в ряд (нечётная последняя — на всю ширину), шире — по содержимому */
+/* До четырёх витрин — пилюли с переносом, без прокрутки вбок: все видны сразу, по одной строке
+   названия (44px), рядом сколько влезет. Категория — только диктору: она в имени кнопки, а на
+   экране её называет сам раздел */
 .vitrina-pills {
   flex-wrap: wrap;
   overflow: visible;
 }
 
 .vitrina-pills .vitrina-pill {
-  flex: 1 1 calc(50% - var(--gap-7));
+  flex: 0 1 auto;
   min-width: 0;
+  padding: 4px 12px;
 }
 
-.vitrina-pills .vitrina-name,
-.vitrina-pills .vitrina-cat {
+.vitrina-pills .vitrina-name {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.vitrina-pills .vitrina-cat {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Больше четырёх — список выбора без подписи на экране */
@@ -2623,10 +2656,6 @@ body {
 
 /* Шире телефона: поля формы парами, фото в три колонки, дни календаря выше */
 @media (min-width: 720px) {
-  .vitrina-pills .vitrina-pill {
-    flex: 0 1 auto;
-  }
-
   .photos {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
