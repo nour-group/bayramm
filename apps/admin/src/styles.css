@@ -971,18 +971,6 @@ textarea.input {
   scroll-margin-top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)) + 64px);
 }
 
-/* Модерация: сводка очередей вверху — кнопками к ним; где есть что решать — выделена */
-.queue-jump {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap-7);
-}
-
-.queue-jump .chip.is-active {
-  border-color: var(--plum);
-  font-weight: 700;
-}
-
 /* После решения — к следующему в очереди */
 .next-in-queue {
   display: flex;
@@ -1058,26 +1046,6 @@ textarea.input {
   margin: 0;
   padding: 0;
   list-style: none;
-}
-
-/* Готовность вендора N/4 */
-.ring {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  padding: 2px 8px;
-  border: 2px solid var(--rule);
-  border-radius: var(--r-999);
-  color: var(--ink);
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.ring-done {
-  border-color: var(--teal);
-  color: var(--teal);
 }
 
 /* Плашки статусов: нейтральные, проблемные — коралловые */
@@ -1217,11 +1185,6 @@ textarea.input {
   overflow-wrap: anywhere;
 }
 
-/* Только что заведённый вендор: что дальше — после общего правила списка (ловушка №7) */
-.next-steps .blockers {
-  margin: 8px 0;
-}
-
 /* Панели и формы */
 .panel {
   min-width: 0;
@@ -1263,6 +1226,32 @@ textarea.input {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
   align-items: start;
   gap: var(--gap-12);
+}
+
+/* Страница вендора: слева витрины и кабинет (им нужна ширина), справа проверка и контакт; на узком —
+   одна колонка (то же правило ниже, в @media) */
+.columns-vendor {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+}
+
+/* Заголовок без содержимого под ним (проверка 4/4 одной строкой) — без отступа вниз */
+.panel-head:last-child {
+  margin-bottom: 0;
+}
+
+/* Реквизиты в карточке контакта: заголовок поменьше, отступ сверху */
+.requisites-head {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.requisites-head h3 {
+  margin: 0;
+  color: var(--plum);
+  font-family: var(--font-display);
+  font-size: var(--fs-15);
+  line-height: 1.3;
 }
 
 .form {
@@ -1707,7 +1696,29 @@ textarea.input {
   grid-column: 1 / -1;
 }
 
-/* Пользователи кабинета: имя и плашки роли и статуса в строку; приглашение — под списком */
+/* Пользователи кабинета: имя и плашки роли и статуса слева, «Изменить» и «Ещё» справа; приглашение — в шторке */
+.vuser-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-5) var(--gap-9);
+}
+
+.vuser-id {
+  display: flex;
+  flex: 1 1 200px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-5) var(--gap-9);
+  min-width: 0;
+}
+
+.vuser-acts {
+  display: flex;
+  gap: var(--gap-5);
+}
+
 .vuser-name {
   min-width: 0;
   color: var(--plum);
@@ -1723,15 +1734,6 @@ textarea.input {
   display: flex;
   flex-direction: column;
   gap: var(--gap-12);
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--rule);
-}
-
-.vuser-invite-title {
-  margin: 0;
-  color: var(--plum);
-  font-size: var(--fs-15);
 }
 
 .vuser-invited {
@@ -1744,7 +1746,7 @@ textarea.input {
   margin: 0;
 }
 
-/* Правка пользователя: на телефоне — в шторке, шире — под его карточкой */
+/* Правка пользователя — в шторке (на компьютере карточкой по центру) */
 .vuser-edit {
   display: flex;
   flex-direction: column;
@@ -1814,30 +1816,17 @@ textarea.input {
   margin: 0;
 }
 
-/* Шапка вендора: код и менеджер слева, «Удалить вендора» (на телефоне — «Ещё») справа */
+/* Шапка вендора: код и менеджер слева, «Ещё» (заявки, журнал, удалить) справа — на любой ширине */
 .vendor-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--gap-9);
 }
 
 .vendor-head > p {
   margin: 0;
-}
-
-.vendor-delete {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--gap-5);
-  max-width: 100%;
-}
-
-.vendor-delete p {
-  margin: 0;
-  text-align: end;
 }
 
 .reason {
@@ -2325,6 +2314,13 @@ textarea.input {
   list-style: none;
 }
 
+/* «Что не так» у вендора в списке: плашки только проблемных состояний */
+.attention {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5);
+}
+
 .rcard-error {
   margin: 0;
   color: var(--berry);
@@ -2348,6 +2344,73 @@ textarea.input {
 
 .rcard-actions.role-edit > .ui-select {
   flex: 1 1 160px;
+}
+
+/* Решение по услуге: на телефоне две кнопки делят ширину, шире — по размеру подписи, справа */
+@media (min-width: 720px) {
+  .rcard-actions-decide {
+    justify-content: flex-end;
+  }
+
+  .rcard-actions-decide > .btn {
+    flex: 0 0 auto;
+  }
+}
+
+/* Заголовок карточки без слоя-ссылки на всю карточку (в ней свои кнопки) */
+a.rcard-title {
+  text-decoration: none;
+}
+
+/* «Не хватает: N» в карточке очереди — главным цветом, но не крупнее строки */
+.rcard-missing {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* Очередь фото: плитки ждущих фото, под каждой — ✓ и ✕ (кнопки по 44px, поровну) */
+.photo-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--gap-9);
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-5);
+  min-width: 0;
+}
+
+.photo-tile img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--paper);
+  object-fit: cover;
+}
+
+/* Решённая плитка тускнеет, пока очередь перечитывается: порядок и фокус остаются на месте */
+.photo-tile.is-decided img {
+  opacity: 0.45;
+}
+
+.photo-tile-acts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--gap-5);
+}
+
+@media (max-width: 719px) {
+  .photo-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* Подпись списка роли в карточке сотрудника — строкой над ним */

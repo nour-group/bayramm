@@ -184,9 +184,22 @@ test.describe("работа сотрудника", () => {
     });
   }
 
-  test("модерация: новые фото опубликованных карточек и кто предложил правку", async ({ page }) => {
+  test("модерация: одна очередь за раз — предложения (кто прислал), потом новые фото", async ({ page }) => {
     const api = await start(page);
     await page.goto("/moderation");
+    // Открыта первая непустая очередь; пустых в сегментах нет, пояснений над списком нет
+    const tabs = page.getByRole("radiogroup", { name: t.moderation });
+    await expect(tabs.locator(".ui-radio")).toHaveText([
+      `${t.queueTabs.revisions} 1`,
+      `${t.queueTabs.photos} 1`,
+    ]);
+    await expect(page.getByRole("region", { name: t.revisions })).toContainText(
+      t.queueProposer("partner", null),
+    );
+    await expect(page.getByRole("region", { name: t.photoQueue })).toHaveCount(0);
+
+    await tabs.getByRole("radio", { name: `${t.queueTabs.photos} 1` }).check();
+    await expect(page).toHaveURL("/moderation?queue=photos");
     const photos = page.getByRole("region", { name: t.photoQueue });
     // Витрина — сразу на блоке фото
     await expect(photos.getByRole("link", { name: "Bogʻ zali" })).toHaveAttribute(
@@ -194,9 +207,7 @@ test.describe("работа сотрудника", () => {
       `/listings/${PHOTO_QUEUE_LISTING_ID}?focus=photos`,
     );
     await expect(photos).toContainText(t.pendingPhotos(2));
-    await expect(page.getByRole("region", { name: t.revisions })).toContainText(
-      t.proposedBy("partner", null),
-    );
+    await expect(photos.locator(".photo-tile")).toHaveCount(2);
     expect(api.unexpected).toEqual([]);
   });
 

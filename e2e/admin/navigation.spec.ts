@@ -112,12 +112,20 @@ test.describe("путь к странице и переходы", () => {
     await expect(page).toHaveURL(`/clients/${CLIENT_ID}`);
     await expect(heading(page)).toHaveText("Азиза Каримова");
 
+    // Заявки и журнал вендора — в «Ещё» шапки, на любой ширине
+    const vendorMenu = async (item: string) => {
+      await page
+        .locator(".vendor-head")
+        .getByRole("button", { name: new RegExp(t.more) })
+        .click();
+      await page.getByRole("dialog", { name: t.actionsTitle }).getByRole("button", { name: item }).click();
+    };
     await page.goto(`/vendors/${VENDOR_ID}`);
-    await expect(page.getByRole("link", { name: t.vendorJournal })).toHaveAttribute(
-      "href",
-      `/audit?type=vendor&object=${VENDOR_ID}`,
-    );
-    await page.getByRole("link", { name: t.vendorRequests }).click();
+    await vendorMenu(t.vendorJournal);
+    await expect(page).toHaveURL(`/audit?type=vendor&object=${VENDOR_ID}`);
+    await page.goBack();
+    await expect(page).toHaveURL(`/vendors/${VENDOR_ID}`);
+    await vendorMenu(t.vendorRequests);
     await expect(page).toHaveURL("/requests?q=V101");
     await expect(page.getByRole("searchbox", { name: t.search })).toHaveValue("V101");
     expect(api.queries.at(-1)).toContain("q=V101");
@@ -193,7 +201,10 @@ test.describe("фильтры в адресе", () => {
     await page.goto("/vendors?status=active");
     if (isPhone(page))
       await expect(page.getByRole("button", { name: `${t.reset}: ${t.status.active}` })).toBeVisible();
-    else await expect(page.getByRole("radio", { name: t.status.active })).toBeChecked();
+    else
+      await expect(
+        page.locator("button[aria-haspopup=listbox]").filter({ hasText: t.status.active }),
+      ).toBeVisible();
     await expect.poll(() => api.queries.at(-1)).toContain("listingStatus=active");
     await page.getByRole("searchbox", { name: t.search }).fill("Lola");
     await expect(page).toHaveURL("/vendors?status=active&q=Lola");

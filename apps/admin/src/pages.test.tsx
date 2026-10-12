@@ -3,11 +3,13 @@
 // уходит на сервер и что видит сотрудник его роли.
 import type {
   ListingDetail,
+  PublishBlocker,
   StaffDictionaries,
   StaffMe,
   StaffRequestDetail,
   VendorDetail,
   VendorList,
+  VendorListItem,
 } from "@bayramm/shared/api/staff";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -241,8 +243,60 @@ describe("вендоры", () => {
     expect(text()).toContain("Oqsaroy");
     expect(text()).toContain("Oqsaroy Hall");
     expect(text()).toContain(t.status.review);
-    expect(container.querySelector(".ring")?.textContent).toBe("2/4");
+    // Под названием — код, контактное лицо и юрназвание; отдельного столбца контакта нет
+    expect(container.querySelector("tbody td")?.textContent).toContain("Test Person · OOO Oqsaroy");
+    expect([...container.querySelectorAll("th")].map((th) => th.textContent)).toEqual([
+      t.colVendor,
+      t.colListings,
+      t.colAttention,
+    ]);
+    // «Что не так» — только проблемы: проверка ниже 4/4 и уведомления никому не приходят
+    expect(container.querySelector(".attention")?.textContent).toBe(
+      `${t.checksShort(2)}${t.cabinetNoNotify}`,
+    );
     expect(text()).toContain(t.newVendor);
+  });
+
+  it("всё в порядке — плашек «что не так» нет, а у опубликованной витрины нет и статуса", async () => {
+    const item = LIST.items[0] as VendorListItem;
+    const fine: VendorListItem = {
+      ...item,
+      checklist: { contract: true, stir: true, contacts: true, pdConsent: true },
+      listings: [{ id: LISTING_ID, name: "Oqsaroy Hall", status: "active", categoryCode: "hall" }],
+      users: 2,
+      linkedUsers: 1,
+    };
+    mockApi(staff("manager", ["catalog.read", "vendors.write"]), {
+      "GET /api/staff/vendors": json({ total: 1, items: [fine] } satisfies VendorList),
+    });
+    await mount("/vendors");
+    expect(container.querySelector(".attention")).toBeNull();
+    expect(text()).not.toContain(t.checksShort(4));
+    // Статус — только у витрин не на сайте: у опубликованной «Опубликована» не пишем
+    expect(container.querySelector("tbody .pill")).toBeNull();
+    expect(text()).not.toContain(t.status.active);
+  });
+
+  it("нет входа в кабинет — плашка; «Проверка» не показывается при 4/4", async () => {
+    const item = LIST.items[0] as VendorListItem;
+    mockApi(staff("manager", ["catalog.read", "vendors.write"]), {
+      "GET /api/staff/vendors": json({
+        total: 1,
+        items: [
+          { ...item, checklist: { contract: true, stir: true, contacts: true, pdConsent: true }, users: 0 },
+        ],
+      } satisfies VendorList),
+    });
+    await mount("/vendors");
+    expect(container.querySelector(".attention")?.textContent).toBe(t.cabinetNone);
+  });
+
+  it("статус витрины — выбор, а не ряд пилюль; статус «Не заполнен» вместо «Лид»", async () => {
+    mockApi(staff("manager", ["catalog.read", "vendors.write"]), { "GET /api/staff/vendors": json(LIST) });
+    await mount("/vendors");
+    expect(container.querySelector(".filter-row")).toBeNull();
+    expect(t.status.lead).toBe("Не заполнен");
+    expect(JSON.stringify(t)).not.toContain("Лид");
   });
 
   it("модератор вендоров не заводит — кнопки нет", async () => {
@@ -303,6 +357,56 @@ describe("вендоры", () => {
     expect(window.location.pathname).toBe(`/vendors/${VENDOR_ID}`);
   });
 
+  it("новый вендор — четыре поля: категория, название, контактное лицо, телефон; реквизиты — потом, на странице вендора", async () => {
+    mockApi(staff("manager", ["catalog.read", "vendors.write", "listings.write"]), {
+      "POST /api/staff/vendors": json({ ...VENDOR, listings: [] }, 201),
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+    });
+    await mount("/vendors/new");
+    const form = container.querySelector<HTMLFormElement>("form.form") as HTMLFormElement;
+    const labels = [...form.querySelectorAll("label")].map((label) => label.textContent?.trim());
+    for (const field of [t.fields.name, t.fields.contactPerson, t.fields.phone]) {
+      expect(labels).toContain(field);
+    }
+    // Остального — формы, юрназвания, СТИР, договора, менеджера, должности, второго телефона, Telegram — нет
+    for (const key of [
+      "legalForm",
+      "legalName",
+      "stir",
+      "legalAddress",
+      "contractNo",
+      "managerId",
+      "contactRole",
+      "phoneAlt",
+      "telegramUsername",
+    ]) {
+      expect(labels).not.toContain(t.fields[key]);
+    }
+    expect(form.querySelectorAll(".choice-segmented")).toHaveLength(0);
+    expect(form.querySelectorAll("p.muted, .fs-head")).toHaveLength(0);
+
+    const input = (label: string) =>
+      [...form.querySelectorAll<HTMLInputElement>("input")].find((i) => i.labels?.[0]?.textContent === label);
+    await type(input(t.fields.name ?? "") as HTMLInputElement, "Navruz");
+    await type(input(t.fields.contactPerson ?? "") as HTMLInputElement, "Шахло Каримова");
+    await type(input(t.fields.phone ?? "") as HTMLInputElement, "90 111 22 33");
+    await act(async () => container.querySelector<HTMLElement>("button[aria-haspopup=listbox]")?.click());
+    await settle();
+    const hall = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (o) => o.textContent === "Тойхона",
+    );
+    await act(async () => hall?.click());
+    await settle();
+    await act(async () => button(t.createVendor)?.click());
+    await settle();
+    expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+      name: "Navruz",
+      contactPerson: "Шахло Каримова",
+      phone: "+998901112233",
+      categoryCode: "hall",
+    });
+  });
+
   it("витрины вендора — с категорией; новую добавляет тот, кто ведёт карточки", async () => {
     mockApi(staff("manager", ["catalog.read", "vendors.write", "listings.write"]), {
       [`GET /api/staff/vendors/${VENDOR_ID}`]: json({
@@ -344,19 +448,66 @@ describe("вендоры", () => {
     ]);
     expect(text()).toMatch(/300\s000\sсум за час/);
     expect([...container.querySelectorAll("a")].some((a) => a.textContent === t.addVitrina)).toBe(true);
+    // Подсказки о том, что такое витрина, над списком нет
+    expect(container.querySelector("#listings-title")?.parentElement?.querySelector("p.muted")).toBeNull();
   });
 
-  it("телефон контакта скрыт, пока не нажали «Показать»", async () => {
+  it("телефоны контакта скрыты, пока не нажали «Показать телефоны»: одна кнопка, одно чтение", async () => {
     mockApi(staff("moderator", ["catalog.read", "vendor_phones.read"]), {
       [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
-      [`POST /api/staff/vendors/${VENDOR_ID}/phones`]: json({ phone: "+998001234567", phoneAlt: null }),
+      [`POST /api/staff/vendors/${VENDOR_ID}/phones`]: json({
+        phone: "+998001234567",
+        phoneAlt: "+998901112233",
+      }),
     });
     await mount(`/vendors/${VENDOR_ID}`);
     expect(text()).not.toContain("123 45 67");
     expect(calls.some((c) => c.url.endsWith("/phones"))).toBe(false);
-    await act(async () => button(t.show)?.click());
+    // Кнопка одна на оба номера (было по кнопке на номер)
+    expect(
+      [...container.querySelectorAll("button")].filter((b) => b.textContent === t.phonesShow),
+    ).toHaveLength(1);
+    expect(button(t.show)).toBeUndefined();
+    await act(async () => button(t.phonesShow)?.click());
     await settle();
     expect(text()).toContain("+998 00 123 45 67");
+    expect(text()).toContain("+998 90 111 22 33");
+    expect(calls.filter((c) => c.url.endsWith("/phones"))).toHaveLength(1);
+    expect(button(t.phonesShow)).toBeUndefined();
+  });
+
+  it("у витрины не на сайте — «Не хватает: N» (без пунктов проверки вендора); у опубликованной — нет", async () => {
+    const listing = (id: string, status: "draft" | "active", blockers: PublishBlocker[]) => ({
+      id,
+      name: `Hall ${status}`,
+      status,
+      categoryCode: "hall",
+      slug: `hall-${status}`,
+      districtCode: null,
+      priceFromUzs: null,
+      priceUnit: "per_guest" as const,
+      capMax: null,
+      updatedAt: "2026-09-29T06:00:00.000Z",
+      blockers,
+    });
+    mockApi(staff("manager", ["catalog.read", "vendors.write", "listings.write"]), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json({
+        ...VENDOR,
+        listings: [
+          listing(LISTING_ID, "draft", ["price", "descriptions", "stir", "contract"]),
+          listing("bbbbbbbb-0000-0000-0000-000000000003", "active", ["price"]),
+        ],
+      }),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    const rows = [...container.querySelectorAll(".card-row")];
+    // Проверка вендора (СТИР, договор) в числе не считается: она — в «Проверке вендора»
+    expect(rows[0]?.textContent).toContain(t.missingN(2));
+    expect(rows[1]?.textContent).not.toContain("Не хватает");
+    expect(container.querySelector(".blockers")).toBeNull();
+    expect(
+      [...container.querySelectorAll("a")].find((a) => a.textContent === t.addVitrina)?.textContent,
+    ).toBe("+ Витрина");
   });
 });
 
@@ -971,6 +1122,15 @@ describe("удаление витрины и вендора", () => {
   const day = json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 });
   const DRAFT: ListingDetail = { ...LISTING, status: "draft" };
   const sheet = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
+  /** «Ещё» в шапке вендора: открыть и выбрать пункт (запускается после закрытия шторки) */
+  const openVendorMenu = async (item: string) => {
+    await act(async () => container.querySelector<HTMLButtonElement>(".vendor-head .btn-more")?.click());
+    const found = [...document.querySelectorAll<HTMLButtonElement>(".menu-item")].find(
+      (b) => b.textContent === item,
+    );
+    await act(async () => found?.click());
+    await settle();
+  };
   const sheetButton = (name: string) =>
     [...(sheet()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) => b.textContent === name);
   const panel = () => document.getElementById("delete-title")?.closest("section") ?? null;
@@ -1045,7 +1205,7 @@ describe("удаление витрины и вендора", () => {
       "GET /api/staff/vendors": json({ total: 0, items: [] }),
     });
     await mount(`/vendors/${VENDOR_ID}`);
-    await act(async () => button(t.vendorDelete)?.click());
+    await openVendorMenu(t.vendorDelete);
     expect(sheet()?.textContent).toContain(t.vendorDeleteText("V101"));
     expect(sheetButton(t.vendorDelete)?.disabled).toBe(true);
     const code = sheet()?.querySelector<HTMLInputElement>("input");
@@ -1063,13 +1223,18 @@ describe("удаление витрины и вендора", () => {
     expect(window.location.pathname).toBe("/vendors");
   });
 
-  it("вендора с опубликованной витриной не удалить — недоступно и сказано почему; менеджеру кнопки нет", async () => {
+  it("вендора с опубликованной витриной не удалить — причина только в шторке, не на странице; менеджеру пункта нет", async () => {
     mockApi(staff("admin", ALL_PERMISSIONS), {
       [`GET /api/staff/vendors/${VENDOR_ID}`]: json({ ...VENDOR, deleteBlocker: "published" }),
     });
     await mount(`/vendors/${VENDOR_ID}`);
-    expect(button(t.vendorDelete)?.disabled).toBe(true);
-    expect(text()).toContain(t.vendorDeleteBlocked.published);
+    // На странице причины нет — ни в шапке, ни под ней
+    expect(text()).not.toContain(t.vendorDeleteBlocked.published);
+    await openVendorMenu(t.vendorDelete);
+    expect(sheet()?.textContent).toContain(t.vendorDeleteBlocked.published);
+    // Подтвердить нечем: поля кода нет, кнопка недоступна
+    expect(sheet()?.querySelector("input")).toBeNull();
+    expect(sheetButton(t.vendorDelete)?.disabled).toBe(true);
     act(() => root.unmount());
     container.remove();
 
@@ -1077,7 +1242,8 @@ describe("удаление витрины и вендора", () => {
       [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
     });
     await mount(`/vendors/${VENDOR_ID}`);
-    expect(button(t.vendorDelete)).toBeUndefined();
+    // Менеджеру «Ещё» пуст — заявок и журнала у него нет, удалять нельзя: кнопки нет совсем
+    expect(container.querySelector(".vendor-head .btn-more")).toBeNull();
   });
 });
 
@@ -1710,6 +1876,8 @@ describe("формы: поля и подтверждения", () => {
       [`PATCH /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
     });
     await mount(`/vendors/${VENDOR_ID}`);
+    await act(async () => button(t.vuEdit)?.click());
+    await settle();
     const form = container.querySelector<HTMLFormElement>("form.form") as HTMLFormElement;
     const stir = labelled(t.fields.stir ?? "", form) as HTMLInputElement;
     await type(stir, "30 12-34 567x");
@@ -1936,30 +2104,84 @@ describe("переходы между объектами", () => {
     expect(text()).toContain(t.budgetRange(formatSum(1_000_000), formatSum(2_000_000)));
   });
 
-  it("вендор: заявки и журнал вендора — ссылками; только что заведённый — «что дальше»", async () => {
+  /** Пункты шторки «Ещё» в шапке вендора */
+  const vendorMenu = async () => {
+    await act(async () => container.querySelector<HTMLButtonElement>(".vendor-head .btn-more")?.click());
+    return [...document.querySelectorAll<HTMLButtonElement>(".menu-item")];
+  };
+
+  it("вендор: «Ещё» — заявки вендора, журнал и удалить; заявки ведут к поиску по коду", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+      "GET /api/staff/requests": json({ total: 0, items: [], counts: {} }),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    expect(crumbs()).toEqual([t.vendors]);
+    // Ссылок в шапке нет: всё в «Ещё», на любой ширине
+    expect(container.querySelector(".vendor-head a")).toBeNull();
+    const items = await vendorMenu();
+    expect(items.map((b) => b.textContent)).toEqual([t.vendorRequests, t.vendorJournal, t.vendorDelete]);
+    await act(async () => items[0]?.click());
+    await settle();
+    expect(window.location.pathname).toBe("/requests");
+    expect(window.location.search).toBe("?q=V101");
+  });
+
+  it("вендор: журнал вендора из «Ещё» — журнал с фильтром по этому вендору", async () => {
     mockApi(staff("admin", ALL_PERMISSIONS), {
       [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
     });
-    await mount(`/vendors/${VENDOR_ID}?created=1`);
-    expect(crumbs()).toEqual([t.vendors]);
-    expect(link(t.vendorRequests)?.getAttribute("href")).toBe("/requests?q=V101");
-    expect(link(t.vendorJournal)?.getAttribute("href")).toBe(`/audit?type=vendor&object=${VENDOR_ID}`);
-    expect(text()).toContain(t.vendorCreated);
-    expect(text()).toContain(t.vendorNextChecklist);
-    // Метка из адреса убрана: обновление страницы подсказку не повторит
-    expect(window.location.search).toBe("");
-    await act(async () => button(t.vendorNextDone)?.click());
-    expect(text()).not.toContain(t.vendorCreated);
+    await mount(`/vendors/${VENDOR_ID}`);
+    const items = await vendorMenu();
+    await act(async () => items[1]?.click());
+    await settle();
+    expect(window.location.pathname).toBe("/audit");
+    expect(window.location.search).toBe(`?type=vendor&object=${VENDOR_ID}`);
   });
 
-  it("менеджеру журнала нет — и ссылки «Журнал вендора» нет", async () => {
+  it("менеджеру журнала и удаления нет — в «Ещё» одни заявки; «Реквизиты» свёрнуты", async () => {
     mockApi(staff("manager", ["catalog.read", "vendors.write", "requests.read"]), {
       [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
     });
     await mount(`/vendors/${VENDOR_ID}`);
-    expect(link(t.vendorRequests)).toBeDefined();
-    expect(link(t.vendorJournal)).toBeUndefined();
-    expect(text()).not.toContain(t.vendorCreated);
+    expect((await vendorMenu()).map((b) => b.textContent)).toEqual([t.vendorRequests]);
+    // Реквизиты — одной строкой, форма раскрывается по «Изменить»
+    expect(container.querySelector("form.form")).toBeNull();
+    expect(button(t.vuEdit)).toBeDefined();
+  });
+
+  it("только что заведённый вендор — «Реквизиты» раскрыты, «что дальше» нет; метка из адреса убрана", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+    });
+    await mount(`/vendors/${VENDOR_ID}?created=1`);
+    expect(container.querySelector("form.form")).not.toBeNull();
+    expect(container.querySelector("#requisites-title")).not.toBeNull();
+    expect(button(t.close)).toBeDefined();
+    expect(JSON.stringify(t)).not.toContain("Что дальше");
+    // Обновление страницы форму снова не раскроет
+    expect(window.location.search).toBe("");
+  });
+
+  it("«Реквизиты»: «Изменить» раскрывает форму на месте, сохранили — снова строка", async () => {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
+      [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
+      [`PATCH /api/staff/vendors/${VENDOR_ID}`]: json({ ...VENDOR, contractNo: "17" }),
+    });
+    await mount(`/vendors/${VENDOR_ID}`);
+    expect(text()).toContain(t.legalForms.ooo);
+    await act(async () => button(t.vuEdit)?.click());
+    await settle();
+    const contract = [...container.querySelectorAll<HTMLInputElement>("form.form input")].find(
+      (i) => i.labels?.[0]?.textContent === t.fields.contractNo,
+    );
+    if (!contract) throw new Error("нет поля договора");
+    await type(contract, "17");
+    await act(async () => button(t.save)?.click());
+    await settle();
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ contractNo: "17" });
+    expect(container.querySelector("form.form")).toBeNull();
+    expect(text()).toContain(t.requisitesContract("17"));
   });
 
   it("отметка чек-листа — всплывающей строкой: что отмечено", async () => {

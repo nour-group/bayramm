@@ -147,10 +147,11 @@ export function ServiceDecision({
 
   return (
     <>
-      <div className="rcard-actions">
+      {/* Кнопки по размеру подписи: на телефоне делят ширину, шире — справа, а не во всю карточку */}
+      <div className="rcard-actions rcard-actions-decide">
         <button
           type="button"
-          className={`btn btn-primary${approveClass ? ` ${approveClass}` : ""}`}
+          className={`btn btn-sm btn-primary${approveClass ? ` ${approveClass}` : ""}`}
           aria-busy={busy || undefined}
           disabled={busy}
           onClick={() => void approve()}
@@ -161,7 +162,7 @@ export function ServiceDecision({
         <button
           ref={declineButton}
           type="button"
-          className="btn btn-danger"
+          className="btn btn-sm btn-danger"
           aria-expanded={declining}
           disabled={busy}
           onClick={() => setDeclining(!declining)}

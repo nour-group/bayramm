@@ -1,14 +1,17 @@
 /* Вход в кабинет вендора: кто в нём и что с ним делает команда.
-   Приглашение — имя, телефон (+998, проверяется здесь и ещё раз сервером), роль (владелец
-   меняет витрину, фото и услуги, сотрудник площадки — заявки и календарь:
-   apps/api/src/vendor/access.ts) и язык уведомлений. Номер, уже подтверждённый в аккаунте
-   Bayramm, принимается сразу; иначе партнёру отправляют текст приглашения: бот с «Я партнёр»
-   и кабинет на сайте. У каждого — роль, статус (ждёт входа, вошёл, отключён), доходят ли
-   уведомления в Telegram, последний вход и язык; действия — на телефоне в «Ещё», шире —
-   кнопками. Владелец у кабинета есть всегда: последнего не понизить, не отключить и не
-   убрать — это проверяет база (vendor_last_owner).
-   Телефон — полем с +998 и маской (fields.tsx); в правке номер скрыт маской, сменить его —
-   «Изменить номер», пока партнёр по нему не вошёл (вошедшему сервер ответит user_linked). */
+   Приглашение — «+ Пригласить» открывает шторку: имя, телефон (+998, проверяется здесь и ещё раз
+   сервером), роль (владелец меняет витрину, фото и услуги, сотрудник площадки — заявки и календарь:
+   apps/api/src/vendor/access.ts) и язык уведомлений; подсказка — только к выбранной роли. Номер, уже
+   подтверждённый в аккаунте Bayramm, принимается сразу; иначе партнёру отправляют текст приглашения:
+   бот с «Я партнёр» и кабинет на сайте.
+   У каждого — имя, роль и статус (ждёт входа, вошёл, отключён), одна строка «последний вход · язык»,
+   а строка про Telegram — только когда уведомления не приходят. Действий два: «Изменить» (шторка:
+   имя, роль, язык, телефон — он скрыт маской, «Показать» открывает его с записью в журнал) и «Ещё»
+   (скопировать приглашение, отключить, отвязать вход, убрать из кабинета) — на любой ширине.
+   Владелец у кабинета есть всегда: последнего не понизить, не отключить и не убрать — это
+   проверяет база (vendor_last_owner).
+   Телефон — полем с +998 и маской (fields.tsx); сменить его — «Изменить номер», пока партнёр по
+   нему не вошёл (вошедшему сервер ответит user_linked). */
 
 import { normalizeUzPhone } from "@bayramm/shared";
 import type {
@@ -19,21 +22,18 @@ import type {
   VendorUserPatch,
 } from "@bayramm/shared/api/staff";
 import { ConfirmSheet, Dialog, type RadioOption } from "@bayramm/ui/react";
-import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
-import { type Failure, useAuthMethods, useCan, useSession } from "../api";
+import { type FormEvent, type ReactNode, type RefObject, useRef, useState } from "react";
+import { type Api, type Failure, type Result, useAuthMethods, useCan, useSession } from "../api";
 import { ChoiceField, PhoneField } from "../fields";
 import { formatMoment } from "../format";
-import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
 import {
   busyLabel,
   ErrorText,
   Field,
   fieldErrors,
-  type MenuAction,
   OverflowMenu,
   PhoneReveal,
-  PhoneSheet,
   Pill,
   SheetClose,
   toneOf,
@@ -62,10 +62,21 @@ const phoneFailure: Failure = { ok: false, status: 422, code: "invalid_input", d
 /** Действующий владелец — и тот, чьё приглашение ещё ждёт входа: база считает так же */
 const isActiveOwner = (user: VendorUser) => user.role === "owner" && user.status !== "disabled";
 
-/** Доходят ли уведомления; вошёл, а не доходят — бот не знает его чат: пусть откроет бота */
-function notifyLine(user: VendorUser): string {
-  if (user.notifiable) return t.vuNotifiable;
-  return user.status === "accepted" ? `${t.vuNotNotifiable} — ${t.vuOpenBot}` : t.vuNotNotifiable;
+/**
+ * Уведомления не приходят, хотя человек уже вошёл: бот не знает его чат — пусть откроет бота.
+ * Пока приглашение ждёт входа или человек отключён, строки нет: это не поломка
+ */
+function notifyProblem(user: VendorUser): string | null {
+  if (user.status !== "accepted" || user.notifiable) return null;
+  return `${t.vuNotNotifiable} — ${t.vuOpenBot}`;
+}
+
+/** Номер для входа одним чтением: каждое пишется в журнал доступа к ПДн (кнопка «Показать») */
+function userPhoneLoader(api: Api, vendorId: string, userId: string) {
+  return async (): Promise<Result<string | null>> => {
+    const result = await api.post<RevealedPhone>(`/staff/vendors/${vendorId}/users/${userId}/phone`, {});
+    return result.ok ? { ok: true, data: result.data.phone } : result;
+  };
 }
 
 type ConfirmAction = "disable" | "unlink" | "remove";
@@ -93,6 +104,8 @@ export function VendorUsers({
   const can = useCan();
   const write = can("vendor_users.write");
   const copier = useInviteCopy(vendor);
+  const [inviting, setInviting] = useState(false);
+  const inviteButton = useRef<HTMLButtonElement>(null);
   const [confirm, setConfirm] = useState<{ user: VendorUser; action: ConfirmAction } | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmFailure, setConfirmFailure] = useState<Failure | null>(null);
@@ -135,10 +148,23 @@ export function VendorUsers({
 
   return (
     <section className="panel" aria-labelledby="users-title">
-      <h2 id="users-title" tabIndex={-1}>
-        {t.users} <span className="count">{vendor.users.length}</span>
-      </h2>
-      <p className="muted small">{t.usersHint}</p>
+      <div className="panel-head">
+        <h2 id="users-title" tabIndex={-1}>
+          {t.users} <span className="count">{vendor.users.length}</span>
+        </h2>
+        {write ? (
+          <button
+            ref={inviteButton}
+            type="button"
+            className="btn btn-sm"
+            aria-haspopup="dialog"
+            aria-expanded={inviting}
+            onClick={() => setInviting(true)}
+          >
+            {t.vuInviteOpen}
+          </button>
+        ) : null}
+      </div>
       {vendor.users.length === 0 ? (
         <p className="muted">{t.usersEmpty}</p>
       ) : (
@@ -178,7 +204,16 @@ export function VendorUsers({
         }}
       />
       {copier.dialog}
-      {write && <InviteForm vendor={vendor} copier={copier} onInvited={replace} />}
+      {write ? (
+        <InviteSheet
+          open={inviting}
+          vendor={vendor}
+          copier={copier}
+          returnFocus={inviteButton}
+          onClose={() => setInviting(false)}
+          onInvited={replace}
+        />
+      ) : null}
     </section>
   );
 }
@@ -198,12 +233,13 @@ interface UserCardProps {
 
 function UserCard({ user, vendorId, write, copier, failure, onSaved, onEnable, onConfirm }: UserCardProps) {
   const { api } = useSession();
-  const phone = usePhone();
-  const more = useRef<HTMLButtonElement>(null);
+  const can = useCan();
   const [editing, setEditing] = useState(false);
+  const edit = useRef<HTMLButtonElement>(null);
   const name = user.fullName ?? t.vuNoName;
-  const actions: MenuAction[] = [
-    { key: "edit", label: t.vuEdit, run: () => setEditing(true) },
+  const problem = notifyProblem(user);
+  // «Изменить» — отдельной кнопкой; остальное — в «Ещё»
+  const actions = [
     { key: "copy", label: t.vuCopy, disabled: !copier.ready, run: () => void copier.copy(user, "card") },
     user.status === "disabled"
       ? { key: "enable", label: t.enable, run: onEnable }
@@ -217,63 +253,53 @@ function UserCard({ user, vendorId, write, copier, failure, onSaved, onEnable, o
 
   return (
     <li className="card-row vuser">
-      <div className="rcard-head">
-        <strong className="vuser-name">{name}</strong>
-        <span className="vuser-pills">
-          {/* Роль — не статус: нейтральной плашкой; статус — общим цветом статусов */}
-          <Pill tone="muted">{t.vuRoles[user.role]}</Pill>
-          <Pill tone={toneOf("vendorUser", user.status)}>{t.vuStatus[user.status]}</Pill>
-        </span>
+      <div className="vuser-head">
+        <div className="vuser-id">
+          <strong className="vuser-name">{name}</strong>
+          <span className="vuser-pills">
+            {/* Роль — не статус: нейтральной плашкой; статус — общим цветом статусов */}
+            <Pill tone="muted">{t.vuRoles[user.role]}</Pill>
+            <Pill tone={toneOf("vendorUser", user.status)}>{t.vuStatus[user.status]}</Pill>
+          </span>
+        </div>
+        {write ? (
+          <div className="vuser-acts">
+            <button
+              ref={edit}
+              type="button"
+              className="btn btn-sm"
+              aria-haspopup="dialog"
+              aria-expanded={editing}
+              onClick={() => setEditing(true)}
+            >
+              {t.vuEdit}
+              <span className="visually-hidden">: {name}</span>
+            </button>
+            <OverflowMenu title={name} context={name} className="btn btn-sm" actions={actions} />
+          </div>
+        ) : null}
       </div>
-      <p className="rcard-meta">{notifyLine(user)}</p>
       <p className="rcard-meta">
         {user.lastLoginAt ? t.vuLastLogin(formatMoment(user.lastLoginAt)) : t.vuNeverLoggedIn}
         {` · ${t.vuLocaleLine(t.vuLocales[user.locale])}`}
       </p>
-      <PhoneReveal
-        label={t.userPhone}
-        load={async () => {
-          const result = await api.post<RevealedPhone>(
-            `/staff/vendors/${vendorId}/users/${user.id}/phone`,
-            {},
-          );
-          return result.ok ? { ok: true, data: result.data.phone } : result;
-        }}
-      />
-      {write &&
-        (phone ? (
-          <div className="acts">
-            <OverflowMenu title={name} context={name} actions={actions} buttonRef={more} />
-          </div>
-        ) : (
-          // biome-ignore lint/a11y/useSemanticElements: группа кнопок, а не полей формы
-          <div className="acts" role="group" aria-label={`${t.vuActions}: ${name}`}>
-            {actions.map((action) => (
-              <button
-                key={action.key}
-                type="button"
-                className={`btn btn-sm${action.danger ? " btn-danger" : ""}`}
-                disabled={action.disabled}
-                aria-expanded={action.key === "edit" ? editing : undefined}
-                onClick={action.run}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        ))}
+      {problem ? <p className="rcard-meta">{problem}</p> : null}
+      {/* Правящему номер — в шторке «Изменить»; тому, кто только смотрит (модератор), — здесь */}
+      {!write && can("vendor_phones.read") ? (
+        <PhoneReveal label={t.userPhone} load={userPhoneLoader(api, vendorId, user.id)} />
+      ) : null}
       {copier.copiedKey === `card:${user.id}` && (
         <span className="saved" role="status">
           {t.vuCopied}
         </span>
       )}
       {failure && <ErrorText failure={failure} />}
-      {write && (
-        <PhoneSheet
+      {write ? (
+        <Dialog
           open={editing}
           title={`${t.vuEdit}: ${name}`}
           onClose={() => setEditing(false)}
-          returnFocus={phone ? more : undefined}
+          returnFocus={edit}
         >
           <EditUserForm
             user={user}
@@ -284,15 +310,16 @@ function UserCard({ user, vendorId, write, copier, failure, onSaved, onEnable, o
               onSaved(saved);
             }}
           />
-        </PhoneSheet>
-      )}
+        </Dialog>
+      ) : null}
     </li>
   );
 }
 
 /**
  * Имя, роль, язык и номер. Последнего владельца сервер не понизит — ответ словами под формой.
- * Номер скрыт маской; сменить — «Изменить номер», пока по нему не вошли
+ * Номер скрыт маской: «Показать» открывает его (запись в журнал), «Изменить номер» — меняет, пока по
+ * нему не вошли
  */
 function EditUserForm({
   user,
@@ -369,22 +396,14 @@ function EditUserForm({
         onChange={setRole}
         hint={t.vuRoleHints[role]}
       />
-      <ChoiceField
-        label={t.vuLocale}
-        value={locale}
-        options={LANG_OPTIONS}
-        onChange={setLocale}
-        hint={t.vuLocaleHint}
-      />
+      <ChoiceField label={t.vuLocale} value={locale} options={LANG_OPTIONS} onChange={setLocale} />
       {phone === null ? (
         <div className="field">
-          <span>{t.userPhone}</span>
-          <div className="phone-change">
-            <span className="phone-mask">
-              <span aria-hidden="true">{t.input.phoneMasked}</span>
-              <span className="visually-hidden">{t.input.phoneHidden}</span>
-            </span>
-            {phoneLocked ? null : (
+          <PhoneReveal label={t.userPhone} load={userPhoneLoader(api, vendorId, user.id)} />
+          {phoneLocked ? (
+            <span className="field-hint">{t.input.phoneLinked}</span>
+          ) : (
+            <div>
               <button
                 type="button"
                 className="btn btn-sm"
@@ -397,9 +416,8 @@ function EditUserForm({
               >
                 {t.input.phoneChange}
               </button>
-            )}
-          </div>
-          {phoneLocked ? <span className="field-hint">{t.input.phoneLinked}</span> : null}
+            </div>
+          )}
         </div>
       ) : (
         <div className="field">
@@ -432,17 +450,27 @@ function EditUserForm({
 
 // ── приглашение ────────────────────────────────────────────────────────────
 
-function InviteForm({
+/**
+ * Приглашение в шторке. Вписанное остаётся, пока шторку закрыли не отправив (случайное нажатие на
+ * подложку не стирает номер); отправили — шторка говорит, что приглашение создано, и даёт скопировать
+ * его текст
+ */
+function InviteSheet({
+  open,
   vendor,
   copier,
+  returnFocus,
+  onClose,
   onInvited,
 }: {
+  open: boolean;
   vendor: VendorDetail;
   copier: InviteCopier;
+  returnFocus: RefObject<HTMLElement | null>;
+  onClose: () => void;
   onInvited: (user: VendorUser) => void;
 }) {
   const { api } = useSession();
-  const titleId = useId();
   const hasOwner = vendor.users.some(isActiveOwner);
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -459,6 +487,11 @@ function InviteForm({
   const form = useRevealErrors(failure);
   // Вписанное и не отправленное приглашение — несохранённое
   useUnsaved(phone.trim() !== "" || fullName.trim() !== "");
+
+  const close = () => {
+    setInvited(null);
+    onClose();
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -494,62 +527,8 @@ function InviteForm({
   };
 
   return (
-    <form ref={form} className="vuser-invite" aria-labelledby={titleId} onSubmit={submit} noValidate>
-      <h3 id={titleId} className="vuser-invite-title">
-        {t.vuInviteTitle}
-      </h3>
-      <div className="fields">
-        <Field label={t.userName} hint={t.optional} error={errors.fullName}>
-          {(props) => (
-            <input
-              {...props}
-              className="input"
-              value={fullName}
-              maxLength={120}
-              autoComplete="off"
-              enterKeyHint="next"
-              onChange={(event) => setFullName(event.target.value)}
-            />
-          )}
-        </Field>
-        <PhoneField
-          label={t.userPhone}
-          value={phone}
-          onChange={setPhone}
-          error={errors.phone}
-          enterKeyHint="next"
-        />
-        <ChoiceField
-          label={t.vuRole}
-          value={chosen}
-          options={roleOptions(hasOwner)}
-          onChange={(next) => {
-            setRole(next);
-            setRoleMissing(false);
-          }}
-          hint={!hasOwner ? t.vuOwnerFirst : chosen ? t.vuRoleHints[chosen] : undefined}
-          error={roleMissing ? t.vuRoleRequired : undefined}
-        />
-        <ChoiceField
-          label={t.vuLocale}
-          value={locale}
-          options={LANG_OPTIONS}
-          onChange={setLocale}
-          hint={t.vuLocaleHint}
-        />
-      </div>
-      <div className="acts">
-        {/* Одно главное действие на экране — у формы вендора; приглашение — обычной кнопкой */}
-        <button
-          type="submit"
-          className="btn"
-          aria-busy={busy || undefined}
-          disabled={busy || phone.trim() === ""}
-        >
-          {busyLabel(t.vuInvite, busy)}
-        </button>
-      </div>
-      {invited && (
+    <Dialog open={open} title={t.vuInviteTitle} onClose={close} returnFocus={returnFocus}>
+      {invited ? (
         <div className="vuser-invited">
           <p className="saved" role="status">
             {invited.status === "accepted" ? t.vuInvitedAccepted : t.vuInvited}
@@ -557,22 +536,75 @@ function InviteForm({
           <div className="acts">
             <button
               type="button"
-              className="btn btn-sm"
+              className="btn btn-primary"
               disabled={!copier.ready}
               onClick={() => void copier.copy(invited, "invite")}
             >
               {t.vuCopy}
             </button>
-            {copier.copiedKey === `invite:${invited.id}` && (
-              <span className="saved" role="status">
-                {t.vuCopied}
-              </span>
-            )}
+            <button type="button" className="btn" onClick={close}>
+              {t.done}
+            </button>
           </div>
+          {copier.copiedKey === `invite:${invited.id}` && (
+            <span className="saved" role="status">
+              {t.vuCopied}
+            </span>
+          )}
         </div>
+      ) : (
+        <form ref={form} className="vuser-invite" onSubmit={submit} noValidate>
+          <div className="fields">
+            <Field label={t.userName} hint={t.optional} error={errors.fullName}>
+              {(props) => (
+                <input
+                  {...props}
+                  className="input"
+                  value={fullName}
+                  maxLength={120}
+                  autoComplete="off"
+                  enterKeyHint="next"
+                  onChange={(event) => setFullName(event.target.value)}
+                />
+              )}
+            </Field>
+            <PhoneField
+              label={t.userPhone}
+              value={phone}
+              onChange={setPhone}
+              error={errors.phone}
+              enterKeyHint="next"
+            />
+            <ChoiceField
+              label={t.vuRole}
+              value={chosen}
+              options={roleOptions(hasOwner)}
+              onChange={(next) => {
+                setRole(next);
+                setRoleMissing(false);
+              }}
+              hint={!hasOwner ? t.vuOwnerFirst : chosen ? t.vuRoleHints[chosen] : undefined}
+              error={roleMissing ? t.vuRoleRequired : undefined}
+            />
+            <ChoiceField label={t.vuLocale} value={locale} options={LANG_OPTIONS} onChange={setLocale} />
+          </div>
+          <div className="acts">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              aria-busy={busy || undefined}
+              disabled={busy || phone.trim() === ""}
+            >
+              {busyLabel(t.vuInvite, busy)}
+            </button>
+            <button type="button" className="btn" onClick={close}>
+              {t.cancel}
+            </button>
+          </div>
+          {failure && failure.code !== "invalid_input" && <ErrorText failure={failure} />}
+        </form>
       )}
-      {failure && failure.code !== "invalid_input" && <ErrorText failure={failure} />}
-    </form>
+    </Dialog>
   );
 }
 

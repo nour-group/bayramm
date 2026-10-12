@@ -196,6 +196,38 @@ describe("вендор → карточка → проверка → публи�
     ).toEqual({ status: 422, code: "invalid_input", details: ["name", "stir", "phone"] });
   });
 
+  it("новый вендор — четыре поля формы: категория, название, контактное лицо и телефон; реквизиты — потом", async () => {
+    const created = await ok<VendorDetail>(
+      api("manager", "POST", "/staff/vendors", {
+        name: `Short ${tag}`,
+        categoryCode: "hall",
+        contactPerson: "Шахло Каримова",
+        phone: phone(),
+      }),
+      201,
+    );
+    expect(created.listings).toMatchObject([{ categoryCode: "hall", status: "draft", name: `Short ${tag}` }]);
+    expect(created).toMatchObject({ legalForm: null, contractNo: null, manager: null });
+    expect(created.contacts).toMatchObject({
+      contactPerson: "Шахло Каримова",
+      legalName: null,
+      stir: null,
+      legalAddress: null,
+      contactRole: null,
+      telegramUsername: null,
+    });
+    // Реквизиты дописывают на странице вендора той же правкой
+    const filled = await ok<VendorDetail>(
+      api("manager", "PATCH", `/staff/vendors/${created.id}`, {
+        legalForm: "yatt",
+        legalName: `YaTT Short ${tag}`,
+        stir: digits(9),
+      }),
+    );
+    expect(filled).toMatchObject({ legalForm: "yatt", contacts: { legalName: `YaTT Short ${tag}` } });
+    expect(filled.contacts.contactPerson).toBe("Шахло Каримова");
+  });
+
   it("Telegram вендора — как у витрины: ссылка t.me тоже, хранится имя", async () => {
     const changed = await ok<VendorDetail>(
       api("manager", "PATCH", `/staff/vendors/${vendor.id}`, {
@@ -600,14 +632,20 @@ describe("вендор → карточка → проверка → публи�
 
   it("новые фото опубликованной карточки — в очереди «Новые фото», пока модератор не решит", async () => {
     const photoId = randomUUID();
+    const photoKey = `listings/${listing.id}/${randomUUID()}.webp`;
     await admin.query(
       `insert into app.photos (id, listing_id, status, storage_key, mime, bytes, width, height, sha256, sort, no_faces_ack)
        values ($1, $2, 'ready', $3, 'image/webp', 1000, 1600, 1200, $4, 9, true)`,
-      [photoId, listing.id, `listings/${listing.id}/${randomUUID()}.webp`, randomBytes(32)],
+      [photoId, listing.id, photoKey, randomBytes(32)],
     );
     const queue = await ok<ListingList>(api("moderator", "GET", "/staff/listings?photos=pending&limit=100"));
     const item = queue.items.find((l) => l.id === listing.id);
     expect(item?.photos.pending).toBe(1);
+    // Сами фото — в том же ответе: карточка очереди решает по ним без запроса на каждую
+    expect(item?.pendingPhotos).toEqual([{ id: photoId, key: photoKey, width: 1600, height: 1200 }]);
+    // Обычный список (не очередь фото) их не несёт
+    const plain = await ok<ListingList>(api("moderator", "GET", "/staff/listings?limit=100"));
+    expect(plain.items.every((l) => l.pendingPhotos === undefined)).toBe(true);
     // Любые витрины, кроме отклонённых: фото черновика тоже можно одобрить до публикации
     expect(queue.items.every((l) => l.status !== "rejected" && l.photos.pending > 0)).toBe(true);
 

@@ -67,6 +67,7 @@ import { removePhotoObjects } from "../photos/service";
 import { listingPhotoStorage } from "../storage/supabase";
 import { can, requirePermission } from "./access";
 import { Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
+import { loadPendingPhotos } from "./pending-photos";
 import { changedOnly, revisionFields } from "./revision-diff";
 import { blockers, iso, LISTING_STATUSES, num, pathId } from "./shared";
 import { pickSlug, SLUG_RE } from "./slug";
@@ -333,13 +334,20 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
         ? query.orderBy("l.submitted_at", "asc").orderBy("l.id")
         : query.orderBy("l.updated_at", "desc").orderBy("l.id");
     const rows = await query.limit(limit).offset(offset).execute();
+    // Сами фото на решении — одним запросом на страницу очереди, а не по запросу на карточку
+    const pending = pendingPhotos
+      ? await loadPendingPhotos(
+          trx,
+          rows.map((row) => row.id),
+        )
+      : null;
 
     const counts = await trx
       .selectFrom("app.listings")
       .select(["status", sql<number>`count(*)::int`.as("n")])
       .groupBy("status")
       .execute();
-    return { rows, counts };
+    return { rows, counts, pending };
   });
 
   const counts = Object.fromEntries(LISTING_STATUSES.map((s) => [s, 0])) as Record<ListingStatus, number>;
@@ -365,6 +373,7 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
       blockers: row.blockers,
       vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
       photos: { ready: row.photos_ready, approved: row.photos_approved, pending: row.photos_pending },
+      ...(result.pending ? { pendingPhotos: result.pending.get(row.id) ?? [] } : {}),
     })),
   };
   return c.json(body);

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-// Вход в кабинет вендора (pages/VendorUsers.tsx): приглашение с ролью и языком, статус и
-// уведомления словами, правка, текст приглашения для партнёра, «убрать из кабинета». API —
-// подменённый fetch; проверяем, что уходит на сервер и что видит сотрудник.
+// Вход в кабинет вендора (pages/VendorUsers.tsx): приглашение в шторке с ролью и языком, статус и
+// уведомления словами (строка про Telegram — только когда они не приходят), правка в шторке (там и
+// телефон), текст приглашения для партнёра, «убрать из кабинета». API — подменённый fetch;
+// проверяем, что уходит на сервер и что видит сотрудник.
 import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { StaffDictionaries, StaffMe, VendorDetail, VendorUser } from "@bayramm/shared/api/staff";
 import { act } from "react";
@@ -143,14 +144,27 @@ async function mount() {
 
 const panel = () => document.getElementById("users-title")?.closest("section") as HTMLElement;
 const text = () => panel().textContent ?? "";
+// У «Изменить» подпись дополнена скрытым «: имя» — имя кнопки начинается с её слова
 const buttons = (scope: ParentNode, name: string) =>
-  [...scope.querySelectorAll("button")].filter((b) => b.textContent?.trim() === name);
+  [...scope.querySelectorAll("button")].filter((b) => {
+    const label = b.textContent?.trim() ?? "";
+    return label === name || label.startsWith(`${name}:`);
+  });
 const button = (scope: ParentNode, name: string) => buttons(scope, name)[0];
+const dialog = () => document.querySelector<HTMLElement>("[role=dialog]") as HTMLElement;
 const radio = (scope: ParentNode, label: string) =>
   [...scope.querySelectorAll<HTMLLabelElement>("label.ui-radio")]
     .find((l) => l.textContent?.startsWith(label))
     ?.querySelector("input") as HTMLInputElement | undefined;
-const invite = () => panel().querySelector<HTMLFormElement>(".vuser-invite") as HTMLFormElement;
+// Приглашение — форма в шторке: её открывает «+ Пригласить»
+const invite = () => document.querySelector<HTMLFormElement>(".vuser-invite") as HTMLFormElement;
+const openInvite = () => click(button(panel(), t.vuInviteOpen));
+/** «Ещё» у карточки: пункт меню по названию */
+async function menuAction(card: Element, label: string) {
+  await click(card.querySelector(".btn-more"));
+  const item = [...document.querySelectorAll<HTMLElement>(".menu-item")].find((b) => b.textContent === label);
+  await click(item);
+}
 const inputLabelled = (scope: ParentNode, label: string) =>
   [...scope.querySelectorAll<HTMLInputElement>("input")].find((i) => i.labels?.[0]?.textContent === label);
 
@@ -199,6 +213,9 @@ describe("приглашение в кабинет", () => {
       [`POST /api/staff/vendors/${VENDOR_ID}/users`]: json(invited, 201),
     });
     await mount();
+    // Шторка закрыта, пока не позвали: формы приглашения на странице нет
+    expect(document.querySelector(".vuser-invite")).toBeNull();
+    await openInvite();
 
     await type(inputLabelled(invite(), t.userName), "  Dilshod ");
     await type(inputLabelled(invite(), t.userPhone), "90 111-22-33");
@@ -216,17 +233,48 @@ describe("приглашение в кабинет", () => {
       locale: "ru",
       fullName: "Dilshod",
     });
-    expect(invite().textContent).toContain(t.vuInvited);
+    // Шторка говорит, что приглашение создано, и даёт скопировать его текст
+    expect(dialog().textContent).toContain(t.vuInvited);
+    expect(button(dialog(), t.vuCopy)).toBeDefined();
     expect(text()).toContain("Dilshod");
     expect(text()).toContain(t.vuStatus.pending);
     expect(text()).toContain(t.vuRoles.member);
     // Форма очищена: следующего снова выбирают с ролью явно
+    await click(button(dialog(), t.done));
+    expect(document.querySelector("[role=dialog]")).toBeNull();
+    await openInvite();
     expect(radio(invite(), t.vuRoles.member)?.checked).toBe(false);
+  });
+
+  it("подсказка роли — только к выбранной; у языка подсказки нет", async () => {
+    mockApi(MANAGER, vendor([user()]));
+    await mount();
+    await openInvite();
+    expect(invite().textContent).not.toContain(t.vuRoleHints.owner);
+    expect(invite().textContent).not.toContain(t.vuRoleHints.member);
+    await click(radio(invite(), t.vuRoles.owner));
+    expect(invite().textContent).toContain(t.vuRoleHints.owner);
+    expect(invite().textContent).not.toContain(t.vuRoleHints.member);
+    await click(radio(invite(), t.vuRoles.member));
+    expect(invite().textContent).toContain(t.vuRoleHints.member);
+    expect(invite().textContent).not.toContain(t.vuRoleHints.owner);
+  });
+
+  it("закрыли шторку, не отправив, — вписанное остаётся до следующего открытия", async () => {
+    mockApi(MANAGER, vendor([user()]));
+    await mount();
+    await openInvite();
+    await type(inputLabelled(invite(), t.userPhone), "90 111 22 33");
+    await click(button(dialog(), t.cancel));
+    expect(document.querySelector("[role=dialog]")).toBeNull();
+    await openInvite();
+    expect(inputLabelled(invite(), t.userPhone)?.value).toBe("90 111 22 33");
   });
 
   it("номер не узбекский — ошибка у поля сразу, номер не попадает в поле, запроса нет", async () => {
     mockApi(MANAGER, vendor([user()]));
     await mount();
+    await openInvite();
     const phone = inputLabelled(invite(), t.userPhone);
     await type(phone, "+7 912 000 00 00");
     expect(phone?.value).toBe("");
@@ -239,6 +287,7 @@ describe("приглашение в кабинет", () => {
   it("неполный номер — «9 цифр после +998» до отправки", async () => {
     mockApi(MANAGER, vendor([user()]));
     await mount();
+    await openInvite();
     const phone = inputLabelled(invite(), t.userPhone);
     await type(phone, "90 111");
     await click(radio(invite(), t.vuRoles.owner));
@@ -253,6 +302,7 @@ describe("приглашение в кабинет", () => {
     });
     await mount();
     expect(text()).toContain(t.usersEmpty);
+    await openInvite();
     expect(radio(invite(), t.vuRoles.member)?.disabled).toBe(true);
     expect(radio(invite(), t.vuRoles.owner)?.checked).toBe(true);
     expect(invite().textContent).toContain(t.vuOwnerFirst);
@@ -270,6 +320,7 @@ describe("приглашение в кабинет", () => {
       [`POST /api/staff/vendors/${VENDOR_ID}/users`]: json({ error: { code: "vendor_user_exists" } }, 409),
     });
     await mount();
+    await openInvite();
     await type(inputLabelled(invite(), t.userPhone), "901112233");
     await click(radio(invite(), t.vuRoles.owner));
     await click(button(invite(), t.vuInvite));
@@ -282,18 +333,21 @@ describe("приглашение в кабинет", () => {
       [`POST /api/staff/vendors/${VENDOR_ID}/users`]: json(user({ id: MEMBER_ID, role: "member" }), 201),
     });
     await mount();
+    await openInvite();
     await type(inputLabelled(invite(), t.userPhone), "901112233");
     await click(radio(invite(), t.vuRoles.member));
     await click(button(invite(), t.vuInvite));
-    expect(invite().textContent).toContain(t.vuInvitedAccepted);
+    expect(dialog().textContent).toContain(t.vuInvitedAccepted);
   });
 
   it("без права на пользователей кабинета — ни приглашения, ни действий", async () => {
     mockApi(staff(["catalog.read", "vendor_phones.read"]), vendor([user()]));
     await mount();
     expect(text()).toContain("Kamola");
-    expect(panel().querySelector(".vuser-invite")).toBeNull();
-    expect(button(panel(), t.vuRemove)).toBeUndefined();
+    expect(button(panel(), t.vuInviteOpen)).toBeUndefined();
+    expect(button(panel(), t.vuEdit)).toBeUndefined();
+    expect(panel().querySelector(".btn-more")).toBeNull();
+    // Номер — тому, кто только смотрит, здесь же; правящему — в шторке «Изменить»
     expect(button(panel(), t.show)).toBeDefined();
   });
 });
@@ -311,14 +365,59 @@ describe("пользователь кабинета", () => {
     const [owner, member] = [...panel().querySelectorAll(".vuser")];
     expect(owner?.textContent).toContain(t.vuRoles.owner);
     expect(owner?.textContent).toContain(t.vuStatus.accepted);
-    expect(owner?.textContent).toContain(t.vuNotifiable);
+    // Уведомления приходят — строки про Telegram нет; не приходят — она есть, с тем, что делать
+    expect(owner?.textContent).not.toContain("Telegram");
     expect(owner?.textContent).toContain("Последний вход:");
     expect(owner?.textContent).toContain(t.vuLocaleLine(t.vuLocales.uz));
     expect(member?.textContent).toContain(t.vuNoName);
     expect(member?.textContent).toContain(`${t.vuNotNotifiable} — ${t.vuOpenBot}`);
     expect(member?.textContent).toContain(t.vuNeverLoggedIn);
-    // Вход есть — его можно отвязать; у ждущего входа — нечего
-    expect(buttons(panel(), t.vuUnlink)).toHaveLength(2);
+    // Номера на карточке нет: он — в шторке «Изменить»
+    expect(owner?.textContent).not.toContain(t.show);
+  });
+
+  it("ждёт входа — строки про Telegram нет: пока он не вошёл, «не приходят» — не поломка", async () => {
+    mockApi(
+      MANAGER,
+      vendor([user({ status: "pending", notifiable: false, telegramLinked: false, accountLinked: false })]),
+    );
+    await mount();
+    const card = panel().querySelector(".vuser") as HTMLElement;
+    expect(card.textContent).toContain(t.vuStatus.pending);
+    expect(card.textContent).not.toContain(t.vuNotNotifiable);
+  });
+
+  it("действия — «Изменить» и «Ещё»; в «Ещё» вход можно отвязать, у ждущего входа — нечего", async () => {
+    mockApi(
+      MANAGER,
+      vendor([
+        user(),
+        user({ id: MEMBER_ID, status: "pending", accountLinked: false, telegramLinked: false }),
+      ]),
+    );
+    await mount();
+    const [owner, pending] = [...panel().querySelectorAll<HTMLElement>(".vuser")] as [
+      HTMLElement,
+      HTMLElement,
+    ];
+    for (const card of [owner, pending]) {
+      expect(button(card, t.vuEdit)).toBeDefined();
+      expect(card.querySelectorAll("button")).toHaveLength(2);
+    }
+    await click(owner.querySelector(".btn-more"));
+    expect([...document.querySelectorAll<HTMLElement>(".menu-item")].map((b) => b.textContent)).toEqual([
+      t.vuCopy,
+      t.disable,
+      t.vuUnlink,
+      t.vuRemove,
+    ]);
+    await click(button(dialog(), t.close));
+    await click(pending.querySelector(".btn-more"));
+    expect([...document.querySelectorAll<HTMLElement>(".menu-item")].map((b) => b.textContent)).toEqual([
+      t.vuCopy,
+      t.disable,
+      t.vuRemove,
+    ]);
   });
 
   it("изменить: на сервер — только изменённое; последнего владельца сервер не понизит — ответ словами", async () => {
@@ -331,7 +430,7 @@ describe("пользователь кабинета", () => {
     await mount();
     const owner = panel().querySelector(".vuser") as HTMLElement;
     await click(button(owner, t.vuEdit));
-    const form = owner.querySelector(".vuser-edit") as HTMLElement;
+    const form = document.querySelector(".vuser-edit") as HTMLElement;
     await click(radio(form, t.vuRoles.member));
     await click(radio(form, t.vuLocales.ru));
     await click(button(form, t.save));
@@ -340,6 +439,20 @@ describe("пользователь кабинета", () => {
     // Вошёл по номеру — номер скрыт маской, сменить нельзя: кнопки нет, сказано почему
     expect(button(form, t.input.phoneChange)).toBeUndefined();
     expect(form.textContent).toContain(t.input.phoneLinked);
+  });
+
+  it("телефон — в шторке «Изменить»: «Показать» открывает его с записью в журнал", async () => {
+    mockApi(MANAGER, vendor([user()]), {
+      [`POST /api/staff/vendors/${VENDOR_ID}/users/${OWNER_ID}/phone`]: json({ phone: "+998901112233" }),
+    });
+    await mount();
+    await click(button(panel().querySelector(".vuser") as HTMLElement, t.vuEdit));
+    const form = document.querySelector(".vuser-edit") as HTMLElement;
+    expect(form.textContent).toContain(t.input.phoneMasked);
+    expect(calls.some((c) => c.url.endsWith("/phone"))).toBe(false);
+    await click(button(form, t.show));
+    expect(calls.filter((c) => c.url.endsWith("/phone"))).toHaveLength(1);
+    expect(form.querySelector("a.phone-value")?.textContent).toBe("+998 90 111 22 33");
   });
 
   it("изменить номер ещё не вошедшего: «Изменить номер» — поле с маской, на сервер — +998…", async () => {
@@ -355,7 +468,7 @@ describe("пользователь кабинета", () => {
     await mount();
     const card = panel().querySelector(".vuser") as HTMLElement;
     await click(button(card, t.vuEdit));
-    const form = card.querySelector(".vuser-edit") as HTMLElement;
+    const form = document.querySelector(".vuser-edit") as HTMLElement;
     expect(form.textContent).toContain(t.input.phoneMasked);
     expect(inputLabelled(form, t.phoneNew)).toBeUndefined();
     await click(button(form, t.input.phoneChange));
@@ -372,11 +485,11 @@ describe("пользователь кабинета", () => {
     });
     await mount();
     const member = panel().querySelectorAll(".vuser")[1] as HTMLElement;
-    await click(button(member, t.vuRemove));
-    const dialog = document.querySelector<HTMLElement>("[role=alertdialog]");
-    expect(dialog?.textContent).toContain(t.vuRemoveHint);
+    await menuAction(member, t.vuRemove);
+    const confirm = document.querySelector<HTMLElement>("[role=alertdialog]");
+    expect(confirm?.textContent).toContain(t.vuRemoveHint);
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-    await click(button(dialog as HTMLElement, t.vuRemove));
+    await click(button(confirm as HTMLElement, t.vuRemove));
     expect(calls.find((c) => c.method === "DELETE")?.url).toBe(
       `/api/staff/vendors/${VENDOR_ID}/users/${MEMBER_ID}`,
     );
@@ -389,7 +502,7 @@ describe("пользователь кабинета", () => {
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
     mockApi(MANAGER, vendor([user({ status: "pending", accountLinked: false })]));
     await mount();
-    await click(button(panel(), t.vuCopy));
+    await menuAction(panel().querySelector(".vuser") as HTMLElement, t.vuCopy);
     const copied = String((writeText.mock.calls[0] as unknown[] | undefined)?.[0] ?? "");
     expect(copied).toContain("Assalomu alaykum, Kamola!");
     expect(copied).toContain("«Lola»");
@@ -402,7 +515,7 @@ describe("пользователь кабинета", () => {
     vi.stubGlobal("navigator", { ...navigator, clipboard: undefined });
     mockApi(MANAGER, vendor([user({ locale: "ru" })]));
     await mount();
-    await click(button(panel(), t.vuCopy));
+    await menuAction(panel().querySelector(".vuser") as HTMLElement, t.vuCopy);
     const area = document.querySelector<HTMLTextAreaElement>(".vuser-copy-text");
     expect(area?.value).toContain("Здравствуйте, Kamola!");
     expect(area?.value).toContain("https://vendor.example/?signin=1&lang=ru");
@@ -411,7 +524,7 @@ describe("пользователь кабинета", () => {
 });
 
 describe("на телефоне", () => {
-  it("действия с пользователем — в «Ещё»", async () => {
+  it("те же действия: «Изменить» и «Ещё» — не одна кнопка «Ещё» со всем", async () => {
     vi.stubGlobal("matchMedia", (query: string) => {
       const max = /max-width:\s*(\d+)px/.exec(query);
       return {
@@ -424,9 +537,10 @@ describe("на телефоне", () => {
     mockApi(MANAGER, vendor([user()]));
     await mount();
     const card = panel().querySelector(".vuser") as HTMLElement;
+    expect(button(card, t.vuEdit)).toBeDefined();
     expect(button(card, t.vuRemove)).toBeUndefined();
     await click(card.querySelector(".btn-more"));
     const menu = [...document.querySelectorAll<HTMLElement>(".menu-item")].map((b) => b.textContent);
-    expect(menu).toEqual([t.vuEdit, t.vuCopy, t.disable, t.vuUnlink, t.vuRemove]);
+    expect(menu).toEqual([t.vuCopy, t.disable, t.vuUnlink, t.vuRemove]);
   });
 });

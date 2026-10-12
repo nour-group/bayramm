@@ -11,7 +11,6 @@ import { horizontalOverflow } from "../support/web";
 
 const CONTROLS = [".btn", "input:not([type=hidden])", ".ui-btn", ".menu-item"].join(", ");
 
-const isPhone = (page: Page) => (page.viewportSize()?.width ?? 0) < 720;
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
 
 async function start(page: Page, options: Parameters<typeof mockStaffApi>[1] = { seeded: true }) {
@@ -22,11 +21,12 @@ async function start(page: Page, options: Parameters<typeof mockStaffApi>[1] = {
 /** Блок «Удалить витрину» внизу страницы витрины */
 const deleteBlock = (page: Page) => page.getByRole("region", { name: t.listingDelete });
 
-/** «Удалить вендора»: на телефоне — пункт «Ещё» в шапке вендора, шире — кнопка */
+/** «Удалить вендора»: пункт «Ещё» в шапке вендора — на любой ширине */
 async function vendorDeleteAction(page: Page) {
-  const head = page.locator(".vendor-head");
-  if (!isPhone(page)) return head.getByRole("button", { name: t.vendorDelete });
-  await head.getByRole("button", { name: new RegExp(t.more) }).click();
+  await page
+    .locator(".vendor-head")
+    .getByRole("button", { name: new RegExp(t.more) })
+    .click();
   return page.getByRole("dialog", { name: t.actionsTitle }).getByRole("button", { name: t.vendorDelete });
 }
 
@@ -104,12 +104,21 @@ test.describe("вендор", () => {
     expect(api.unexpected).toEqual([]);
   });
 
-  test("по витрине были заявки: удалить нельзя — недоступно и сказано почему", async ({ page }) => {
+  test("по витрине были заявки: удалить нельзя — причина только в подтверждении, не на странице", async ({
+    page,
+  }) => {
     const api = await start(page);
     await page.goto(`/vendors/${VENDOR_ID}`);
     await expect(heading(page)).toHaveText("Lola");
-    await expect(page.locator(".vendor-head")).toContainText(t.vendorDeleteBlocked.requests ?? "");
-    await expect(await vendorDeleteAction(page)).toBeDisabled();
+    // На странице причины нет: она — в шторке, куда ведёт пункт «Ещё»
+    await expect(page.getByText(t.vendorDeleteBlocked.requests ?? "")).toHaveCount(0);
+    await (await vendorDeleteAction(page)).click();
+    const sheet = page.getByRole("alertdialog", { name: t.vendorDeleteTitle });
+    await expect(sheet).toContainText(t.vendorDeleteBlocked.requests ?? "");
+    await expect(sheet.getByRole("button", { name: t.vendorDelete })).toBeDisabled();
+    await expect(sheet.getByLabel(t.vendorDeleteCode("V101"))).toHaveCount(0);
+    await expectNoAxeViolations(page, "вендор: удалить нельзя");
+    await sheet.getByRole("button", { name: t.cancel }).click();
     expect(api.deletes).toEqual([]);
     expect(api.unexpected).toEqual([]);
   });

@@ -207,12 +207,11 @@ test.describe("оповещения команды: бот должен знат
     // У модератора заявок нет: «Ждут ответа вендора» — без ссылки
     await expect(page.getByRole("link", { name: new RegExp(t.metricsQueues.awaiting ?? "") })).toHaveCount(0);
     await services.click();
-    // Сразу к своей очереди: заголовок очереди услуг — в фокусе
+    // Сразу к своей очереди: открыта очередь услуг, её сегмент выбран
     await expect(page).toHaveURL("/moderation?queue=services");
     await expect(heading(page)).toHaveText(t.moderation);
-    await expect(
-      page.getByRole("heading", { level: 2, name: new RegExp(`^${t.serviceQueue}`) }),
-    ).toBeFocused();
+    await expect(page.getByRole("region", { name: t.serviceQueue })).toBeVisible();
+    await expect(page.getByRole("radio", { name: new RegExp(`^${t.queueTabs.services}`) })).toBeChecked();
     expect(api.unexpected).toEqual([]);
   });
 });

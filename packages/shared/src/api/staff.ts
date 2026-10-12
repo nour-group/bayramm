@@ -345,13 +345,31 @@ export interface ListingListItem extends ListingBrief {
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
   /** Готовые фото, из них одобренные и ждущие решения модератора */
   readonly photos: { readonly ready: number; readonly approved: number; readonly pending: number };
+  /**
+   * Сами фото, ждущие решения, — старые первыми, не больше PENDING_PHOTOS_CAP; только в ответе
+   * ?photos=pending (очередь «Новые фото»: карточка показывает их плитками, решение — по ним же).
+   * photos.pending — сколько их всего, и оно может быть больше показанных
+   */
+  readonly pendingPhotos?: readonly PendingPhoto[];
 }
+
+/** Фото в очереди «Новые фото»: адреса вариантов — mediaUrl / mediaSrcSet из @bayramm/media по key */
+export interface PendingPhoto {
+  readonly id: string;
+  readonly key: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Сколько ждущих фото одной карточки отдаёт очередь «Новые фото» (больше — на странице витрины) */
+export const PENDING_PHOTOS_CAP = 12;
 
 /**
  * GET /staff/listings?status=&q=&vendorId=&category=&photos=pending&limit=&offset=
  * photos=pending — карточки (любые, кроме отклонённых: фото черновика тоже можно одобрить до
  * публикации) с фото, которые ждут решения (очередь «Новые фото» в модерации: их загрузил
- * партнёр или менеджер), старые загрузки первыми.
+ * партнёр или менеджер), старые загрузки первыми; у каждой — pendingPhotos, сами фото одним
+ * запросом (не больше PENDING_PHOTOS_CAP), без запроса на каждую карточку.
  * category — только витрины этой категории
  */
 export interface ListingList {
