@@ -203,8 +203,10 @@ select results_eq(
   $$values ('00000000-0000-0000-0000-00000000a001'::uuid, '{"listing_id": "aaaaaaaa-0000-0000-0000-000000000101"}'::jsonb),
            ('00000000-0000-0000-0000-00000000a003'::uuid, '{"listing_id": "aaaaaaaa-0000-0000-0000-000000000101"}'::jsonb)$$,
   'команде — администратору и модератору, в payload только id витрины (второе ждущее не дублируется)');
+-- change_id — случайный uuid: в его последней части бывает девять цифр подряд, номер это не он
 select is((select count(*)::int from app.audit_log
-           where action = 'listing_contact_change.submit' and detail::text ~ '[0-9]{9}|lola_zali'), 0,
+           where action = 'listing_contact_change.submit'
+             and (detail - 'change_id')::text ~ '[0-9]{9}|lola_zali'), 0,
   'в журнале подачи — ни номеров, ни имени Telegram');
 select results_eq(
   $$select detail ->> 'fields' from app.audit_log where action = 'listing_contact_change.submit' order by id limit 1$$,
@@ -295,7 +297,8 @@ select results_eq(
             '{"listing_id": "aaaaaaaa-0000-0000-0000-000000000101", "decision": "approved"}'::jsonb)$$,
   'владельцу кабинета — решение (id витрины и решение)');
 select is((select count(*)::int from app.audit_log
-           where action like 'listing_contact_change.%' and detail::text ~ '[0-9]{9}|zal_lola|lola_zali'), 0,
+           where action like 'listing_contact_change.%'
+             and (detail - 'change_id')::text ~ '[0-9]{9}|zal_lola|lola_zali'), 0,
   'в журнале решений номеров нет');
 
 -- Отклонить — только с причиной
