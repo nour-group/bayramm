@@ -651,16 +651,12 @@ describe("телефон: длинные списки, оглавление ви
       t.listingIndexItems.photos,
       t.listingIndexItems.services,
       t.listingIndexItems.calendar,
-      t.listingIndexItems.main,
       t.listingIndexItems.attrs,
       t.listingIndexItems.phone,
-      t.listingIndexItems.history,
     ]);
     await click(
-      [...(index?.querySelectorAll("button") ?? [])].find(
-        (b) => b.textContent === t.listingIndexItems.history,
-      ),
+      [...(index?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.listingIndexItems.phone),
     );
-    expect(document.activeElement?.id).toBe("history-title");
+    expect(document.activeElement?.id).toBe("form-phone-title");
   });
 });

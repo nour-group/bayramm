@@ -2,7 +2,7 @@ import type { StaffRole } from "@bayramm/shared/api/staff";
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { createVitrina } from "../support/admin-ui";
+import { createVitrina, moreButton } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import { CLIENT_ID, mockStaffApi, NOW, REQUEST_ID, REVISION_ID, staffOf } from "../support/staff-api";
 
@@ -129,12 +129,11 @@ test("модератор на карточке: «Отклонить» есть,
   // Номер только пишется: без права правки поля «Сменить номер» нет
   await expect(page.getByLabel(t.phoneChange)).toHaveCount(0);
   await expect(page.getByRole("button", { name: t.actions.submit })).toHaveCount(0);
-  const reject = isPhone(page)
-    ? page
-        .getByRole("group", { name: t.listingFields.status ?? "" })
-        .getByRole("button", { name: t.actions.reject })
-    : page.getByRole("button", { name: t.actions.reject });
-  await expect(reject).toBeVisible();
+  // «Отклонить» — в «…» шапки: главного действия у модератора здесь нет (отправляет менеджер)
+  await moreButton(page.locator("body"), t.listingActionsContext).click();
+  const menu = page.locator(".ui-dialog");
+  await expect(menu.getByRole("button", { name: t.actions.reject, exact: true })).toBeVisible();
+  await menu.getByRole("button", { name: t.close }).click();
   await expect(page.locator(".cal-day:not([disabled])")).toHaveCount(0);
   await expect(page.getByRole("button", { name: t.save })).toHaveCount(0);
   await expectNoAxeViolations(page, "карточка глазами модератора");

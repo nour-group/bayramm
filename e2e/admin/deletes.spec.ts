@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
+import { moreButton } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import { CAKE_LISTING_ID, CAR_LISTING_ID, mockStaffApi, NOW, VENDOR_ID } from "../support/staff-api";
 import { horizontalOverflow } from "../support/web";
@@ -19,8 +20,14 @@ async function start(page: Page, options: Parameters<typeof mockStaffApi>[1] = {
   return mockStaffApi(page, options);
 }
 
-/** Блок «Удалить витрину» внизу страницы витрины */
-const deleteBlock = (page: Page) => page.getByRole("region", { name: t.listingDelete });
+/** «Служебное» внизу страницы витрины (свёрнуто): история, категория, «Удалить витрину» */
+const serviceBlock = (page: Page) => page.getByRole("region", { name: t.listingService });
+
+/** «…» в шапке витрины: открыть шторку; пункт «Удалить витрину» в ней — если он есть */
+async function openListingMenu(page: Page) {
+  await moreButton(page.locator("body"), t.listingActionsContext).click();
+  return page.locator(".ui-dialog");
+}
 
 /** «Удалить вендора»: на телефоне — пункт «Ещё» в шапке вендора, шире — кнопка */
 async function vendorDeleteAction(page: Page) {
@@ -35,9 +42,11 @@ test.describe("витрина", () => {
     const api = await start(page);
     await page.goto(`/listings/${CAKE_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Shirin");
-    const block = deleteBlock(page);
-    await expect(block).toContainText(t.listingDeleteHint);
-    await expectHitAreas(page, "витрина: блок удаления", CONTROLS);
+    const block = serviceBlock(page);
+    // Свёрнуто: кнопки нет, пока не раскрыли
+    await expect(block.getByRole("button", { name: t.listingDelete })).toHaveCount(0);
+    await block.getByRole("button", { name: t.listingService }).click();
+    await expectHitAreas(page, "витрина: служебное", CONTROLS);
 
     await block.getByRole("button", { name: t.listingDelete }).click();
     const sheet = page.getByRole("alertdialog", { name: t.listingDeleteTitle });
@@ -55,23 +64,33 @@ test.describe("витрина", () => {
     expect(api.unexpected).toEqual([]);
   });
 
-  test("с заявкой: удалить нельзя — кнопка недоступна, рядом — приостановить вместо", async ({ page }) => {
+  test("с заявкой: удалить нельзя — пункт «…» недоступен и говорит почему, в «Служебном» кнопки нет", async ({
+    page,
+  }) => {
     const api = await start(page);
     await page.goto(`/listings/${CAR_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Oq kortej");
-    const block = deleteBlock(page);
-    await expect(block).toContainText(t.listingDeleteBlocked.requests ?? "");
-    await expect(block.getByRole("button", { name: t.listingDelete })).toBeDisabled();
-    await expectNoAxeViolations(page, "витрина с заявкой: блок удаления");
+    const menu = await openListingMenu(page);
+    const item = menu.getByRole("button", { name: t.listingDelete });
+    await expect(item).toBeDisabled();
+    await expect(item).toContainText(t.listingDeleteBlocked.requests ?? "");
+    await expectNoAxeViolations(page, "витрина с заявкой: пункт удаления в «…»");
+    await menu.getByRole("button", { name: t.close }).click();
+    await serviceBlock(page).getByRole("button", { name: t.listingService }).click();
+    await expect(serviceBlock(page).getByRole("button", { name: t.listingDelete })).toHaveCount(0);
     expect(api.deletes).toEqual([]);
     expect(api.unexpected).toEqual([]);
   });
 
-  test("модератор витрин не удаляет — блока нет", async ({ page }) => {
+  test("модератор витрин не удаляет — пункта и кнопки нет", async ({ page }) => {
     const api = await start(page, { seeded: true, role: "moderator" });
     await page.goto(`/listings/${CAKE_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Shirin");
-    await expect(deleteBlock(page)).toHaveCount(0);
+    const menu = await openListingMenu(page);
+    await expect(menu.getByRole("button", { name: t.listingDelete })).toHaveCount(0);
+    await menu.getByRole("button", { name: t.close }).click();
+    await serviceBlock(page).getByRole("button", { name: t.listingService }).click();
+    await expect(serviceBlock(page).getByRole("button", { name: t.listingDelete })).toHaveCount(0);
     expect(api.unexpected).toEqual([]);
   });
 });

@@ -125,22 +125,29 @@ test("заявки: в списке видно, чья заявка", async ({ p
 test.describe("фото: отказ с причиной", () => {
   const photos = (page: Page) => page.locator("section[aria-labelledby=photos-title]");
 
-  /** Начать отказ по n-му фото: на телефоне — «Ещё» → «Отклонить» → шторка; на компьютере — кнопка и форма под рядом */
-  async function startDecline(page: Page, n: number) {
-    const photo = photos(page)
-      .locator(".photo")
+  const tile = (page: Page, n: number) =>
+    photos(page)
+      .locator(".photo-tile")
       .nth(n - 1);
-    if (isPhone(page)) {
-      // Имя кнопки — «Ещё» и скрытое для глаз «: Фото n»; у кнопок порядка в имени «Ещё» нет
-      await photo.getByRole("button", { name: t.more }).click();
-      await page
-        .getByRole("dialog", { name: t.photoN(n) })
-        .getByRole("button", { name: t.decline, exact: true })
-        .click();
-      return page.getByRole("dialog", { name: t.declinePhotoTitle(n) });
-    }
-    await photo.getByRole("button", { name: t.decline, exact: true }).click();
-    return photos(page).locator(".decline-photo");
+
+  /** Причина отказа n-го фото — в шторке его плитки (шторка закрывается) */
+  async function sheetReason(page: Page, n: number) {
+    await tile(page, n).click();
+    const reason = await page.locator(".ui-dialog .photo-reason").textContent();
+    await page.locator(".ui-dialog").getByRole("button", { name: t.close }).click();
+    return reason;
+  }
+
+  /** Начать отказ по n-му фото: плитка → «Отклонить» → на телефоне шторка, на компьютере форма под рядом */
+  async function startDecline(page: Page, n: number) {
+    await tile(page, n).click();
+    await page
+      .getByRole("dialog", { name: t.photoN(n) })
+      .getByRole("button", { name: t.decline, exact: true })
+      .click();
+    return isPhone(page)
+      ? page.getByRole("dialog", { name: t.declinePhotoTitle(n) })
+      : photos(page).locator(".decline-photo");
   }
 
   test("причина обязательна; уходит с отказом и видна под фото; длинная не ломает ширину", async ({
@@ -149,11 +156,16 @@ test.describe("фото: отказ с причиной", () => {
     const api = await start(page);
     await page.goto(`/listings/${PHOTO_LISTING_ID}`);
     await expect(photos(page).locator(".photo")).toHaveCount(3);
-    // Прежний отказ — причина под фото, целиком
-    await expect(photos(page).locator(".photo-reason")).toHaveText(
+    // Прежний отказ — причина в шторке отклонённого фото, целиком; у остальных её нет
+    await tile(page, 3).click();
+    await expect(page.locator(".ui-dialog .photo-reason")).toHaveText(
       t.photoDeclineReason(PHOTO_DECLINE_REASON),
     );
     await expectFits(page, "фото: отклонённое с причиной");
+    await page.locator(".ui-dialog").getByRole("button", { name: t.close }).click();
+    await tile(page, 1).click();
+    await expect(page.locator(".ui-dialog .photo-reason")).toHaveCount(0);
+    await page.locator(".ui-dialog").getByRole("button", { name: t.close }).click();
 
     const form = await startDecline(page, 1);
     await expect(form).toContainText(t.declinePhotoHint(1));
@@ -176,12 +188,10 @@ test.describe("фото: отказ с причиной", () => {
         body: { decision: "declined", reason: "Нужен кадр без людей" },
       },
     ]);
-    // Фото отклонено, причина — под ним; у отклонённого раньше она осталась
+    // Фото отклонено, причина — в его шторке; у отклонённого раньше она осталась
     await expect(photos(page).locator(".photo").nth(0)).toContainText(t.moderationStates.declined);
-    await expect(photos(page).locator(".photo-reason")).toHaveText([
-      t.photoDeclineReason("Нужен кадр без людей"),
-      t.photoDeclineReason(PHOTO_DECLINE_REASON),
-    ]);
+    expect(await sheetReason(page, 1)).toBe(t.photoDeclineReason("Нужен кадр без людей"));
+    expect(await sheetReason(page, 3)).toBe(t.photoDeclineReason(PHOTO_DECLINE_REASON));
     expect(api.photoDecisions.some((d) => d.photoId === PHOTO_DECLINED_ID)).toBe(false);
     // Фокус на заголовке блока прокрутил страницу: под липкой панелью «Сохранить» поля axe считает
     // перекрытыми. Проверка — с начала страницы, как её открывают

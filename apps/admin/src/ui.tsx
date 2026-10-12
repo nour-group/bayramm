@@ -1003,6 +1003,10 @@ export interface MenuAction {
   readonly icon?: IconName;
   readonly danger?: boolean;
   readonly disabled?: boolean;
+  /** Пояснение под названием: почему действие недоступно */
+  readonly hint?: string;
+  /** Ссылка наружу (новая вкладка) вместо действия: «Открыть на сайте» */
+  readonly href?: string;
   readonly run: () => void;
 }
 
@@ -1061,15 +1065,34 @@ export function OverflowMenu({
         <ul className="menu">
           {actions.map((action) => (
             <li key={action.key}>
-              <button
-                type="button"
-                className={`menu-item${action.danger ? " menu-danger" : ""}`}
-                disabled={action.disabled}
-                onClick={() => pick(action)}
-              >
-                {action.icon ? <Icon name={action.icon} size={20} /> : null}
-                <span>{action.label}</span>
-              </button>
+              {action.href ? (
+                <a
+                  className="menu-item"
+                  href={action.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setOpen(false)}
+                >
+                  {action.icon ? <Icon name={action.icon} size={20} /> : null}
+                  <span>
+                    {action.label}
+                    <span className="visually-hidden"> ({t.opensNewTab})</span>
+                  </span>
+                </a>
+              ) : (
+                <button
+                  type="button"
+                  className={`menu-item${action.danger ? " menu-danger" : ""}`}
+                  disabled={action.disabled}
+                  onClick={() => pick(action)}
+                >
+                  {action.icon ? <Icon name={action.icon} size={20} /> : null}
+                  <span className="menu-text">
+                    {action.label}
+                    {action.hint ? <small className="menu-hint">{action.hint}</small> : null}
+                  </span>
+                </button>
+              )}
             </li>
           ))}
         </ul>

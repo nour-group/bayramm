@@ -5,20 +5,29 @@
    только где она нужна (площадка), видео — где их можно (фото и видео, студия), заказы
    одновременно — у занятости по частям дня (кортеж, фото и видео, декор).
 
+   Форма — не один блок, а состояние на всю страницу (ListingEditor) и её части, которые страница
+   расставляет по порядку работы: «Основное» и описания (MainSection), «Данные витрины» с видео
+   (DataSection), «Контакты» (ContactsSection), «Заказов одновременно» — в шапке календаря
+   (CapacityControl), «Сохранить» — одна на всё (EditorBar). У каждой части свой <form> с тем же
+   обработчиком: между ними — фото, услуги и занятость, у которых свои формы, а форма в форме
+   нельзя. Отправка одна: уходит только изменённое во всех частях сразу.
+
    Цены — в услугах витрины (Services.tsx): цена «от» считается из них, руками не задаётся.
    Опубликованную витрину менеджер (без права решать по правкам) меняет как партнёр из
    кабинета: название и описания уходят правкой на модерацию, а витрина остаётся прежней —
    форма говорит «отправлено на модерацию» и показывает то, что в витрине сейчас. Остальное
-   (адрес, данные витрины, видео, телефон…) сохраняется сразу. Телефон и Telegram только
-   пишутся: текущие — по «Показать» (одним чтением). Telegram — по желанию: пустое поле не
-   меняет, «Убрать Telegram» снимает; имя, @имя и ссылку t.me/имя сервер понимает сам.
-   «Убрать телефон» — только пока витрина не на проверке и не в каталоге (без телефона её не
-   опубликовать — так же решает база); Telegram уходит вместе с ним: он хранится рядом.
-   Поля — под свои данные (fields.tsx): адрес страницы — латиницей с «Из названия», район —
-   списком по городам, вместимость — парой чисел «от» и «до», телефон — +998 и маской (номер
-   есть — поле открывает «Изменить номер»), Telegram — с «@». */
+   (адрес, данные витрины, видео, телефон…) сохраняется сразу.
+   Контакты — строка на канал: скрытое значение, «Показать» (одним чтением оба — одна запись в
+   журнале доступа к ПДн), «Изменить» (строка становится полем), «…» — убрать. Убрать телефон
+   можно, только пока витрина не на проверке и не в каталоге (без телефона её не опубликовать —
+   так же решает база); Telegram уходит вместе с ним: он хранится рядом. Убранное — отметка
+   до «Сохранить», «Вернуть» её снимает. Telegram — по желанию: пустое поле не меняет; имя,
+   @имя и ссылку t.me/имя сервер понимает сам.
+   Поля — под свои данные (fields.tsx): адрес страницы — строкой «…/venue/имя» с «Изменить»
+   (поле открывается там, где его правят), район — списком по городам, вместимость — парой чисел
+   «от» и «до», телефон — +998 и маской, Telegram — с «@». */
 
-import { normalizeTelegram, normalizeUzPhone, SLUG_RE } from "@bayramm/shared";
+import { formatUzPhone, normalizeTelegram, normalizeUzPhone, SLUG_RE } from "@bayramm/shared";
 import type {
   ListingDetail,
   ListingInput,
@@ -40,13 +49,23 @@ import {
   videoLinkErrors,
   videoLinksValue,
 } from "@bayramm/shared/categories";
-import { Checkbox, NumberStepper, Select, type SelectOption } from "@bayramm/ui/react";
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { NumberStepper, Select, type SelectOption } from "@bayramm/ui/react";
+import {
+  createContext,
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import type { Failure, Result } from "../api";
-import { categoryName } from "../categories";
 import { NumberField, PhoneField, SlugField, TelegramField } from "../fields";
-import { t } from "../texts";
-import { ContactsReveal, ErrorText, Field, FormBar, fieldErrors, useRevealErrors } from "../ui";
+import { usePhone } from "../layout";
+import { apiErrorText, t } from "../texts";
+import { ErrorText, Field, FormBar, fieldErrors, OverflowMenu, revealFirstError } from "../ui";
 import { useUnsaved } from "../unsaved";
 import { AttributeFields } from "./AttributeFields";
 
@@ -208,7 +227,13 @@ export function formErrors(category: CategoryConfig, now: FormState): string[] {
   return errors;
 }
 
-interface ListingFormProps {
+interface ContactsProps {
+  readonly hasPhone: boolean;
+  readonly hasTelegram: boolean;
+  readonly load: () => Promise<Result<RevealedListingContacts>>;
+}
+
+export interface ListingEditorProps {
   listing: ListingDetail;
   category: CategoryConfig;
   dictionaries: StaffDictionaries | null;
@@ -220,11 +245,8 @@ interface ListingFormProps {
   /** Есть несохранённые правки (true) или форма как в витрине (false) */
   onDirtyChange?: (dirty: boolean) => void;
   /** Контакты для клиентов: что вписано и как показать (чтение пишется в журнал доступа к ПДн) */
-  contacts?: {
-    readonly hasPhone: boolean;
-    readonly hasTelegram: boolean;
-    readonly load: () => Promise<Result<RevealedListingContacts>>;
-  };
+  contacts?: ContactsProps;
+  children: ReactNode;
 }
 
 /** Что ушло на модерацию и было ли в правке что-то ещё (оно сохранено сразу) */
@@ -267,18 +289,55 @@ export function districtChoices(dictionaries: StaffDictionaries | null): SelectO
   ];
 }
 
-export function ListingForm({
+// ── состояние формы на всю страницу ────────────────────────────────────────
+
+interface Editor {
+  readonly category: CategoryConfig;
+  readonly dictionaries: StaffDictionaries | null;
+  readonly readOnly: boolean;
+  readonly moderatedHint: string | undefined;
+  readonly contacts: ContactsProps | undefined;
+  readonly now: FormState;
+  readonly setNow: (update: (prev: FormState) => FormState) => void;
+  readonly parts: ReturnType<typeof formParts>;
+  readonly errors: Record<string, string>;
+  readonly details: readonly string[];
+  readonly failure: Failure | null;
+  readonly formId: string;
+  readonly saves: number;
+  readonly dirty: boolean;
+  readonly busy: boolean;
+  readonly saved: boolean;
+  readonly sent: Sent | null;
+  readonly missing: readonly string[];
+  readonly phoneRemovable: boolean;
+  readonly put: (key: keyof Values) => (value: string) => void;
+  readonly set: (key: keyof Values) => (event: { target: { value: string } }) => void;
+  readonly submit: (event: FormEvent) => Promise<void>;
+}
+
+const EditorContext = createContext<Editor | null>(null);
+
+function useEditor(): Editor {
+  const editor = useContext(EditorContext);
+  if (editor === null) throw new Error("ListingEditor: часть формы вне ListingEditor");
+  return editor;
+}
+
+/** Состояние формы витрины и сохранение; части формы — ниже, их расставляет страница */
+export function ListingEditor({
   listing,
   category,
   dictionaries,
   onSubmit,
-  readOnly,
+  readOnly = false,
   moderated = false,
   onDirtyChange,
   contacts,
-}: ListingFormProps) {
+  children,
+}: ListingEditorProps) {
   const [before, setBefore] = useState(() => formState(listing, category));
-  const [now, setNow] = useState(before);
+  const [now, setNowState] = useState(before);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -289,18 +348,17 @@ export function ListingForm({
   const errors = fieldErrors(failure, t.listingFieldErrors);
   const details = failure?.code === "invalid_input" ? failure.details : [];
   const moderatedHint = moderated && !readOnly ? t.moderatedHint : undefined;
-  const form = useRevealErrors(failure);
   const formId = useId();
-  const phoneRemoveHintId = useId();
-  // Номер есть: поле нового — по «Изменить номер» (пустое поле «не менять» больше не нужно)
-  const [changingPhone, setChangingPhone] = useState(false);
-  const phoneInput = useRef<HTMLInputElement>(null);
   const dirty = !readOnly && Object.keys(listingBody(category, now, before)).length > 0;
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   // Вписанное и не сохранённое — уход переспросит
   useUnsaved(dirty);
+  // Первое поле с ошибкой — в видимую часть: частей формы несколько, ищем по всей странице
+  useEffect(() => {
+    if (failure?.code === "invalid_input") revealFirstError(document.querySelector(".listing-page"));
+  }, [failure]);
   // Чего не хватает для публикации — по тому, что сейчас в форме
   const missing = missingAttributes(category, attributesOf(category, now.attributes));
   // Телефон снимается, только пока витрина не на проверке и не в каталоге (иначе её не опубликовать)
@@ -308,23 +366,14 @@ export function ListingForm({
     Boolean(contacts?.hasPhone) && listing.status !== "review" && listing.status !== "active";
 
   // Любая новая правка — старое «Сохранено» или «Отправлено» уже не про неё
-  const touch = () => {
+  const setNow = useCallback((update: (prev: FormState) => FormState) => {
     setSaved(false);
     setSent(null);
-  };
-  const put = (key: keyof Values) => (value: string) => {
-    touch();
+    setNowState(update);
+  }, []);
+  const put = (key: keyof Values) => (value: string) =>
     setNow((prev) => ({ ...prev, values: { ...prev.values, [key]: value } }));
-  };
   const set = (key: keyof Values) => (event: { target: { value: string } }) => put(key)(event.target.value);
-  const putAttribute = (key: string, draft: AttributeDraft) => {
-    touch();
-    setNow((prev) => ({ ...prev, attributes: { ...prev.attributes, [key]: draft } }));
-  };
-  const putVideo = (index: number, value: string) => {
-    touch();
-    setNow((prev) => ({ ...prev, videos: prev.videos.map((link, i) => (i === index ? value : link)) }));
-  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -343,11 +392,10 @@ export function ListingForm({
     }
     setFailure(null);
     setSaves((n) => n + 1);
-    setChangingPhone(false);
     // Форма — как в витрине после правки: значения уже в том виде, как их хранит сервер
     const next = formState(result, category);
     setBefore(next);
-    setNow(next);
+    setNowState(next);
     if (result.sentForModeration.length > 0) {
       setSaved(false);
       setSent({
@@ -360,27 +408,84 @@ export function ListingForm({
     setSaved(true);
   };
 
-  const input = (
-    key: keyof Values,
-    label: string,
-    extra: { maxLength: number; required?: boolean; hint?: string | undefined },
-  ) => (
-    <Field label={label} error={errors[key]} hint={extra.hint}>
-      {(props) => (
-        <input
-          {...props}
-          className="input"
-          value={now.values[key]}
-          onChange={set(key)}
-          maxLength={extra.maxLength}
-          autoComplete="off"
-          enterKeyHint="done"
+  const editor: Editor = {
+    category,
+    dictionaries,
+    readOnly,
+    moderatedHint,
+    contacts,
+    now,
+    setNow,
+    parts,
+    errors,
+    details,
+    failure,
+    formId,
+    saves,
+    dirty,
+    busy,
+    saved,
+    sent,
+    missing,
+    phoneRemovable,
+    put,
+    set,
+    submit,
+  };
+  return <EditorContext.Provider value={editor}>{children}</EditorContext.Provider>;
+}
+
+// ── основное и описания ────────────────────────────────────────────────────
+
+/** Адрес страницы — строкой «…/venue/имя» с «Изменить»; ошибка или правка — поле на месте строки */
+function SlugLine() {
+  const { now, put, errors, readOnly } = useEditor();
+  const [editing, setEditing] = useState(false);
+  const field = useRef<HTMLDivElement>(null);
+  if (editing || errors.slug)
+    return (
+      <div ref={field} className="field-full">
+        <SlugField
+          label={t.listingFields.slug ?? ""}
+          value={now.values.slug}
+          onChange={put("slug")}
+          source={now.values.name}
+          error={errors.slug}
           readOnly={readOnly}
-          required={extra.required}
         />
+      </div>
+    );
+  return (
+    <div className="field field-full slug-line">
+      <span className="slug-url">
+        {t.input.slugPrefix}
+        <strong>{now.values.slug}</strong>
+      </span>
+      {readOnly ? null : (
+        <button
+          type="button"
+          className="btn btn-sm"
+          aria-expanded={false}
+          onClick={() => {
+            setEditing(true);
+            // Поле появится после этой отрисовки — фокус в него, без прокрутки (ловушка №3)
+            setTimeout(
+              () => field.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true }),
+              0,
+            );
+          }}
+        >
+          {t.slugEdit}
+          <span className="visually-hidden">: {t.slugEditContext}</span>
+        </button>
       )}
-    </Field>
+    </div>
   );
+}
+
+/** «Основное» и «Описание и адрес» — одна карточка: название, район, адрес страницы, адреса и описания */
+export function MainSection() {
+  const { now, put, set, errors, readOnly, moderatedHint, dictionaries, submit, formId } = useEditor();
 
   const textarea = (key: "descriptionRu" | "descriptionUz", lang: "ru" | "uz") => (
     <Field label={t.listingFields[key] ?? key} error={errors[key]} hint={moderatedHint} full>
@@ -389,7 +494,7 @@ export function ListingForm({
           {...props}
           className="input"
           lang={lang}
-          rows={5}
+          rows={4}
           value={now.values[key]}
           onChange={set(key)}
           maxLength={4000}
@@ -418,27 +523,32 @@ export function ListingForm({
     </Field>
   );
 
-  // Районы — под своим городом: город — заголовок группы (выбрать можно только район)
-  const districtOptions = districtChoices(dictionaries);
-
-  // Видео: номер поля формы ↔ номер в отправленном списке (пустые не отправляются)
-  const filledVideos = now.videos.flatMap((link, index) => (link.trim() === "" ? [] : [index]));
-  const videoError = (index: number) =>
-    details.includes(`videoLinks.${filledVideos.indexOf(index)}`) || details.includes("videoLinks");
-
   return (
-    <form id={formId} ref={form} className="form" onSubmit={submit} noValidate>
-      {readOnly ? <p className="notice">{t.listingReadOnly}</p> : null}
-      {moderatedHint && <p className="notice notice-warn">{t.moderatedNotice}</p>}
+    <form id={formId} className="form" onSubmit={submit} noValidate>
       <section className="fs">
+        {readOnly ? <p className="notice">{t.listingReadOnly}</p> : null}
+        {moderatedHint ? <p className="notice notice-warn">{t.moderatedNotice}</p> : null}
         <div className="fs-head">
           <h2 id="form-main-title" tabIndex={-1}>
             {t.listingSections.main}
           </h2>
-          <p>{t.listingSections.mainHint}</p>
         </div>
         <div className="fields">
-          {input("name", t.listingFields.name ?? "", { maxLength: 80, required: true, hint: moderatedHint })}
+          <Field label={t.listingFields.name ?? ""} error={errors.name} hint={moderatedHint}>
+            {(props) => (
+              <input
+                {...props}
+                className="input"
+                value={now.values.name}
+                onChange={set("name")}
+                maxLength={80}
+                autoComplete="off"
+                enterKeyHint="done"
+                readOnly={readOnly}
+                required
+              />
+            )}
+          </Field>
           <Field label={t.listingFields.districtCode ?? ""} error={errors.districtCode}>
             {(props) => (
               <Select
@@ -448,27 +558,16 @@ export function ListingForm({
                 value={now.values.districtCode}
                 onChange={put("districtCode")}
                 disabled={readOnly}
-                options={districtOptions}
+                options={districtChoices(dictionaries)}
               />
             )}
           </Field>
-          <SlugField
-            label={t.listingFields.slug ?? ""}
-            value={now.values.slug}
-            onChange={put("slug")}
-            source={now.values.name}
-            error={errors.slug}
-            readOnly={readOnly}
-          />
+          <SlugLine />
         </div>
-      </section>
-
-      <section className="fs">
-        <div className="fs-head">
-          <h2 id="form-texts-title" tabIndex={-1}>
+        <div className="fs-head fs-sub">
+          <h3 id="form-texts-title" tabIndex={-1}>
             {t.listingSections.texts}
-          </h2>
-          <p>{t.listingSections.textsHint}</p>
+          </h3>
         </div>
         <div className="fields">
           {address("addressRu", "ru")}
@@ -477,261 +576,476 @@ export function ListingForm({
           {textarea("descriptionUz", "uz")}
         </div>
       </section>
+    </form>
+  );
+}
 
-      {category.attributes.length > 0 || parts.capacity ? (
-        <section className="fs">
-          <div className="fs-head">
-            <h2 id="form-attrs-title" tabIndex={-1}>
-              {t.listingDataSections.attributes}
-            </h2>
-            <p>{t.listingDataSections.attributesHint(categoryName(category.code))}</p>
-          </div>
-          {parts.capacity ? (
-            <fieldset className="cap-pair">
-              <legend>{t.input.capacity}</legend>
-              {(["capMin", "capMax"] as const).map((key) => (
-                <NumberField
-                  key={key}
-                  label={key === "capMin" ? t.input.capFrom : t.input.capTo}
-                  value={now.values[key]}
-                  onChange={put(key)}
-                  min={CAPACITY.min}
-                  max={CAPACITY.max}
-                  step={10}
-                  disabled={readOnly}
-                  error={
-                    errors[key]
-                      ? key === "capMax" && capOrderBroken(now)
-                        ? t.input.capacityOrder
-                        : t.attributeIntError(CAPACITY.min, CAPACITY.max)
-                      : undefined
-                  }
-                />
-              ))}
-            </fieldset>
-          ) : null}
-          <AttributeFields
-            category={category}
-            drafts={now.attributes}
-            onChange={putAttribute}
-            errors={details}
-            missing={missing}
-            readOnly={readOnly}
-          />
-        </section>
-      ) : null}
+// ── данные витрины и видео ─────────────────────────────────────────────────
 
-      {parts.videos ? (
-        <section className="fs">
-          <div className="fs-head">
-            <h2>{t.listingDataSections.videos}</h2>
-            <p>{t.listingDataSections.videosHint(category.maxVideoLinks)}</p>
-          </div>
-          <div className="fields">
-            {now.videos.map((link, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: поле ссылки — место в списке, своего id нет
-              <div key={index} className="video-row field-full">
-                <Field
-                  label={t.videoLink(index + 1)}
-                  error={videoError(index) ? t.videoLinkError : undefined}
-                  full
-                >
-                  {(props) => (
-                    <input
-                      {...props}
-                      className="input"
-                      type="url"
-                      inputMode="url"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      placeholder="https://youtu.be/…"
-                      value={link}
-                      maxLength={200}
-                      readOnly={readOnly}
-                      onChange={(event) => putVideo(index, event.target.value)}
-                    />
-                  )}
-                </Field>
-                {readOnly || link.trim() === "" ? null : (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      touch();
-                      setNow((prev) => ({ ...prev, videos: prev.videos.filter((_, i) => i !== index) }));
-                    }}
-                  >
-                    {t.videoRemove}
-                    <span className="visually-hidden"> {index + 1}</span>
-                  </button>
-                )}
-              </div>
+/** Есть ли у категории что спрашивать в «Данных витрины»: поля, вместимость или видео */
+export function hasDataSection(category: CategoryConfig): boolean {
+  const parts = formParts(category);
+  return category.attributes.length > 0 || parts.capacity || parts.videos;
+}
+
+export function DataSection() {
+  const { now, put, setNow, errors, details, readOnly, category, parts, missing, submit } = useEditor();
+  if (!hasDataSection(category)) return null;
+  const hasAttributes = category.attributes.length > 0 || parts.capacity;
+
+  // Видео: номер поля формы ↔ номер в отправленном списке (пустые не отправляются)
+  const filledVideos = now.videos.flatMap((link, index) => (link.trim() === "" ? [] : [index]));
+  const videoError = (index: number) =>
+    details.includes(`videoLinks.${filledVideos.indexOf(index)}`) || details.includes("videoLinks");
+  const putVideo = (index: number, value: string) =>
+    setNow((prev) => ({ ...prev, videos: prev.videos.map((link, i) => (i === index ? value : link)) }));
+  const putAttribute = (key: string, draft: AttributeDraft) =>
+    setNow((prev) => ({ ...prev, attributes: { ...prev.attributes, [key]: draft } }));
+
+  return (
+    <form className="form" onSubmit={submit} noValidate>
+      <section className="fs">
+        <div className="fs-head">
+          <h2 id="form-attrs-title" tabIndex={-1}>
+            {hasAttributes ? t.listingDataSections.attributes : t.listingDataSections.videos}
+          </h2>
+        </div>
+        {parts.capacity ? (
+          <fieldset className="cap-pair">
+            <legend>{t.input.capacity}</legend>
+            {(["capMin", "capMax"] as const).map((key) => (
+              <NumberField
+                key={key}
+                label={key === "capMin" ? t.input.capFrom : t.input.capTo}
+                value={now.values[key]}
+                onChange={put(key)}
+                min={CAPACITY.min}
+                max={CAPACITY.max}
+                step={10}
+                disabled={readOnly}
+                error={
+                  errors[key]
+                    ? key === "capMax" && capOrderBroken(now)
+                      ? t.input.capacityOrder
+                      : t.attributeIntError(CAPACITY.min, CAPACITY.max)
+                    : undefined
+                }
+              />
             ))}
-          </div>
-          {readOnly ||
-          now.videos.length >= category.maxVideoLinks ||
-          now.videos.some((l) => l.trim() === "") ? null : (
+          </fieldset>
+        ) : null}
+        <AttributeFields
+          category={category}
+          drafts={now.attributes}
+          onChange={putAttribute}
+          errors={details}
+          missing={missing}
+          readOnly={readOnly}
+        />
+        {parts.videos ? (
+          <>
+            {hasAttributes ? (
+              <div className="fs-head fs-sub">
+                <h3 id="form-videos-title">{t.listingDataSections.videos}</h3>
+              </div>
+            ) : null}
+            <div className="fields">
+              {now.videos.map((link, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: поле ссылки — место в списке, своего id нет
+                <div key={index} className="video-row field-full">
+                  <Field
+                    label={t.videoLink(index + 1)}
+                    error={videoError(index) ? t.videoLinkError : undefined}
+                    full
+                  >
+                    {(props) => (
+                      <input
+                        {...props}
+                        className="input"
+                        type="url"
+                        inputMode="url"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        placeholder="https://youtu.be/…"
+                        value={link}
+                        maxLength={200}
+                        readOnly={readOnly}
+                        onChange={(event) => putVideo(index, event.target.value)}
+                      />
+                    )}
+                  </Field>
+                  {readOnly || link.trim() === "" ? null : (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() =>
+                        setNow((prev) => ({ ...prev, videos: prev.videos.filter((_, i) => i !== index) }))
+                      }
+                    >
+                      {t.videoRemove}
+                      <span className="visually-hidden"> {index + 1}</span>
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {readOnly ||
+            now.videos.length >= category.maxVideoLinks ||
+            now.videos.some((l) => l.trim() === "") ? null : (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setNow((prev) => ({ ...prev, videos: [...prev.videos, ""] }))}
+              >
+                {t.videoAdd}
+              </button>
+            )}
+          </>
+        ) : null}
+      </section>
+    </form>
+  );
+}
+
+// ── заказов одновременно: в шапке календаря ────────────────────────────────
+
+/** «Заказов одновременно» — у занятости по частям дня; правка — до «Сохранить», как вся форма */
+export function CapacityControl() {
+  const { now, put, errors, readOnly, parts } = useEditor();
+  const id = useId();
+  if (!parts.parallel) return null;
+  const error = errors.parallelCapacity ? t.parallelCapacityError : undefined;
+  return (
+    <div className={`cap-inline${error ? " field-bad" : ""}`}>
+      <label htmlFor={id}>{t.listingDataSections.occupancy}</label>
+      <NumberStepper
+        id={id}
+        value={now.values.parallelCapacity}
+        onChange={put("parallelCapacity")}
+        min={1}
+        max={MAX_PARALLEL}
+        maxLength={2}
+        disabled={readOnly}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : undefined}
+        decrementLabel={`${t.listingDataSections.occupancy} −1`}
+        incrementLabel={`${t.listingDataSections.occupancy} +1`}
+      />
+      {error ? (
+        <span id={`${id}-error`} className="field-error">
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// ── контакты для клиентов ──────────────────────────────────────────────────
+
+type Reveal =
+  | { state: "hidden" }
+  | { state: "loading" }
+  | { state: "shown"; contacts: RevealedListingContacts }
+  | { state: "error"; code: string };
+
+const PHONE_MASK = "+998 •• ••• •• ••";
+const TELEGRAM_MASK = "@••••••••";
+
+/** Строка канала: подпись, значение и действия справа; у поля на месте строки подпись своя */
+function ContactRow({ label, children }: { label?: string; children: ReactNode }) {
+  return (
+    <div className="contact-row">
+      {label ? <span className="contact-label">{label}</span> : null}
+      {children}
+    </div>
+  );
+}
+
+/** Скрытое значение: маска и «скрыт» для диктора */
+function Masked({ mask }: { mask: string }) {
+  return (
+    <span className="phone-mask contact-value">
+      <span aria-hidden="true">{mask}</span>
+      <span className="visually-hidden">{t.hidden}</span>
+    </span>
+  );
+}
+
+function ContactRows() {
+  const { now, setNow, put, errors, readOnly, contacts, phoneRemovable } = useEditor();
+  const [reveal, setReveal] = useState<Reveal>({ state: "hidden" });
+  // Номер есть — поле нового по «Изменить»; номера нет — сразу поле (он нужен для публикации)
+  const [changingPhone, setChangingPhone] = useState(false);
+  // Telegram по желанию: «Изменить» или «Добавить»
+  const [changingTelegram, setChangingTelegram] = useState(false);
+  const phoneInput = useRef<HTMLInputElement>(null);
+  const telegramEdit = useRef<HTMLSpanElement>(null);
+  const hasPhone = Boolean(contacts?.hasPhone);
+  const hasTelegram = Boolean(contacts?.hasTelegram);
+  const load = contacts?.load;
+
+  // Одно чтение открывает оба значения: в журнал доступа к ПДн — одна запись
+  const show = useCallback(async () => {
+    if (!load) return;
+    setReveal({ state: "loading" });
+    const result = await load();
+    setReveal(result.ok ? { state: "shown", contacts: result.data } : { state: "error", code: result.code });
+  }, [load]);
+  const shown = reveal.state === "shown" ? reveal.contacts : null;
+  const showButton =
+    shown === null && (hasPhone || hasTelegram) ? (
+      <button type="button" className="btn btn-sm" onClick={show} disabled={reveal.state === "loading"}>
+        {t.contactsShow}
+      </button>
+    ) : null;
+
+  const phoneEditing = !hasPhone || changingPhone || Boolean(errors.phone);
+  const telegramEditing = changingTelegram || Boolean(errors.telegram);
+  // Поле появится после отрисовки — фокус в него, без прокрутки (ловушка №3)
+  const focusLater = (field: { current: HTMLElement | null }) =>
+    setTimeout(() => {
+      const target =
+        field.current instanceof HTMLInputElement ? field.current : field.current?.querySelector("input");
+      target?.focus({ preventScroll: true });
+    }, 0);
+
+  const removeMenu = (title: string, label: string, run: () => void) => (
+    <OverflowMenu
+      title={title}
+      context={title}
+      className="btn btn-icon"
+      actions={[{ key: "remove", label, icon: "trash", danger: true, run }]}
+    />
+  );
+  const undo = (what: "clearPhone" | "clearTelegram") => (
+    <span className="contact-actions">
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => setNow((prev) => ({ ...prev, [what]: false }))}
+      >
+        {t.contactUndo}
+      </button>
+    </span>
+  );
+  const editButton = (what: string, run: () => void) => (
+    <button type="button" className="btn btn-sm" aria-expanded={false} onClick={run}>
+      {t.contactEdit}
+      <span className="visually-hidden">: {what}</span>
+    </button>
+  );
+
+  const phoneRow = (() => {
+    const label = t.listingFields.phone ?? "";
+    if (now.clearPhone)
+      return (
+        <ContactRow label={label}>
+          <span className="contact-note">{t.contactPhoneRemoving}</span>
+          {undo("clearPhone")}
+        </ContactRow>
+      );
+    if (readOnly && !hasPhone)
+      return (
+        <ContactRow>
+          <span className="muted contact-value">{t.phoneMissing}</span>
+        </ContactRow>
+      );
+    if (readOnly || !phoneEditing)
+      return (
+        <ContactRow label={label}>
+          {shown ? (
+            shown.phone ? (
+              <a className="phone-value contact-value" href={`tel:${shown.phone}`}>
+                {formatUzPhone(shown.phone)}
+              </a>
+            ) : (
+              <span className="muted contact-value">{t.notSet}</span>
+            )
+          ) : (
+            <Masked mask={PHONE_MASK} />
+          )}
+          <span className="contact-actions">
+            {showButton}
+            {readOnly
+              ? null
+              : editButton(label, () => {
+                  setChangingPhone(true);
+                  focusLater(phoneInput);
+                })}
+            {readOnly || !phoneRemovable
+              ? null
+              : removeMenu(label, t.phoneRemove, () =>
+                  setNow((prev) => ({
+                    ...prev,
+                    clearPhone: true,
+                    clearTelegram: false,
+                    values: { ...prev.values, phone: "", telegram: "" },
+                  })),
+                )}
+          </span>
+        </ContactRow>
+      );
+    return (
+      <ContactRow>
+        <span className="contact-edit">
+          <PhoneField
+            label={hasPhone ? t.phoneChange : label}
+            value={now.values.phone}
+            onChange={put("phone")}
+            error={errors.phone}
+            inputRef={phoneInput}
+          />
+          {hasPhone ? (
             <button
               type="button"
               className="btn btn-sm"
               onClick={() => {
-                touch();
-                setNow((prev) => ({ ...prev, videos: [...prev.videos, ""] }));
+                put("phone")("");
+                setChangingPhone(false);
               }}
             >
-              {t.videoAdd}
+              {t.input.phoneChangeCancel}
             </button>
+          ) : null}
+        </span>
+      </ContactRow>
+    );
+  })();
+
+  const telegramRow = (() => {
+    // Телефон убирают — Telegram уходит вместе с ним: отдельной строки не нужно
+    if (now.clearPhone) return null;
+    if (now.clearTelegram)
+      return (
+        <ContactRow label={t.telegramLabel}>
+          <span className="contact-note">{t.contactTelegramRemoving}</span>
+          {undo("clearTelegram")}
+        </ContactRow>
+      );
+    if (!telegramEditing) {
+      const start = () => {
+        setChangingTelegram(true);
+        focusLater(telegramEdit);
+      };
+      return (
+        <ContactRow {...(hasTelegram ? { label: t.telegramLabel } : {})}>
+          {hasTelegram ? (
+            shown ? (
+              shown.telegram ? (
+                <a
+                  className="phone-value contact-value"
+                  href={`https://t.me/${shown.telegram}`}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  @{shown.telegram}
+                </a>
+              ) : (
+                <span className="muted contact-value">{t.notSet}</span>
+              )
+            ) : (
+              <Masked mask={TELEGRAM_MASK} />
+            )
+          ) : (
+            <span className="muted contact-value">{t.telegramMissing}</span>
           )}
-        </section>
-      ) : null}
+          <span className="contact-actions">
+            {showButton}
+            {readOnly ? null : hasTelegram ? (
+              <>
+                {editButton(t.telegramLabel, start)}
+                {removeMenu(t.telegramLabel, t.telegramRemove, () =>
+                  setNow((prev) => ({
+                    ...prev,
+                    clearTelegram: true,
+                    values: { ...prev.values, telegram: "" },
+                  })),
+                )}
+              </>
+            ) : (
+              <button type="button" className="btn btn-sm" aria-expanded={false} onClick={start}>
+                {t.contactAdd}
+                <span className="visually-hidden">: {t.telegramLabel}</span>
+              </button>
+            )}
+          </span>
+        </ContactRow>
+      );
+    }
+    return (
+      <ContactRow>
+        <span ref={telegramEdit} className="contact-edit">
+          <TelegramField
+            label={t.telegramChange}
+            value={now.values.telegram}
+            onChange={put("telegram")}
+            error={errors.telegram}
+          />
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => {
+              put("telegram")("");
+              setChangingTelegram(false);
+            }}
+          >
+            {hasTelegram ? t.contactKeep : t.cancel}
+          </button>
+        </span>
+      </ContactRow>
+    );
+  })();
 
-      {parts.parallel ? (
-        <section className="fs">
-          <div className="fs-head">
-            <h2>{t.listingDataSections.occupancy}</h2>
-            <p>{t.listingDataSections.occupancyHint}</p>
-          </div>
-          <div className="fields">
-            <Field
-              label={t.listingDataSections.occupancy}
-              error={errors.parallelCapacity ? t.parallelCapacityError : undefined}
-            >
-              {(props) => (
-                <NumberStepper
-                  {...props}
-                  value={now.values.parallelCapacity}
-                  onChange={put("parallelCapacity")}
-                  min={1}
-                  max={MAX_PARALLEL}
-                  maxLength={2}
-                  disabled={readOnly}
-                  decrementLabel={`${t.listingDataSections.occupancy} −1`}
-                  incrementLabel={`${t.listingDataSections.occupancy} +1`}
-                />
-              )}
-            </Field>
-          </div>
-        </section>
+  return (
+    <div className="contacts-reveal">
+      {phoneRow}
+      {telegramRow}
+      {reveal.state === "error" ? (
+        <span className="field-error" role="alert">
+          {apiErrorText(reveal.code)}
+        </span>
       ) : null}
+    </div>
+  );
+}
 
-      {/* Контакты для клиентов — один блок: нынешние по «Показать» (чтение — в журнал), новые —
-        полями; без права правки — только показать */}
+export function ContactsSection() {
+  const { submit, saves } = useEditor();
+  return (
+    <form className="form" onSubmit={submit} noValidate>
       <section className="fs">
         <div className="fs-head">
           <h2 id="form-phone-title" tabIndex={-1}>
             {t.listingSections.phone}
           </h2>
-          <p>{t.listingSections.phoneHint}</p>
         </div>
-        {contacts ? (
-          <ContactsReveal
-            key={saves}
-            hasPhone={contacts.hasPhone}
-            hasTelegram={contacts.hasTelegram}
-            load={contacts.load}
-          />
-        ) : null}
-        {readOnly ? null : (
-          <div className="fields">
-            {/* Номер есть — он скрыт выше; новый — по «Изменить номер». Номера нет — сразу поле */}
-            {contacts?.hasPhone && !changingPhone ? (
-              <div className="field">
-                <span>{t.listingFields.phone}</span>
-                <div className="phone-change">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    aria-expanded={false}
-                    disabled={now.clearPhone}
-                    onClick={() => {
-                      setChangingPhone(true);
-                      // Поле появится после этой отрисовки — фокус в него, без прокрутки (ловушка №3)
-                      setTimeout(() => phoneInput.current?.focus({ preventScroll: true }), 0);
-                    }}
-                  >
-                    {t.input.phoneChange}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="field">
-                <PhoneField
-                  label={contacts?.hasPhone ? t.phoneChange : (t.listingFields.phone ?? "")}
-                  value={now.values.phone}
-                  onChange={put("phone")}
-                  error={errors.phone}
-                  disabled={now.clearPhone}
-                  inputRef={phoneInput}
-                />
-                {contacts?.hasPhone ? (
-                  <div>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => {
-                        put("phone")("");
-                        setChangingPhone(false);
-                      }}
-                    >
-                      {t.input.phoneChangeCancel}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            )}
-            <TelegramField
-              label={t.telegramChange}
-              value={now.values.telegram}
-              onChange={put("telegram")}
-              error={errors.telegram}
-              hint={contacts?.hasTelegram ? t.phoneKeep : t.telegramHintNew}
-              disabled={now.clearTelegram || now.clearPhone}
-            />
-            {phoneRemovable ? (
-              <div className="field-full">
-                <Checkbox
-                  checked={now.clearPhone}
-                  aria-describedby={phoneRemoveHintId}
-                  onChange={(checked) => {
-                    touch();
-                    setNow((prev) => ({
-                      ...prev,
-                      clearPhone: checked,
-                      clearTelegram: false,
-                      values: checked ? { ...prev.values, phone: "", telegram: "" } : prev.values,
-                    }));
-                  }}
-                >
-                  {t.phoneRemove}
-                </Checkbox>
-                <span id={phoneRemoveHintId} className="field-hint">
-                  {t.phoneRemoveHint}
-                </span>
-              </div>
-            ) : null}
-            {contacts?.hasTelegram && !now.clearPhone ? (
-              <div className="field-full">
-                <Checkbox
-                  checked={now.clearTelegram}
-                  onChange={(checked) => {
-                    touch();
-                    setNow((prev) => ({
-                      ...prev,
-                      clearTelegram: checked,
-                      values: checked ? { ...prev.values, telegram: "" } : prev.values,
-                    }));
-                  }}
-                >
-                  {t.telegramRemove}
-                </Checkbox>
-              </div>
-            ) : null}
-          </div>
-        )}
+        {/* Сохранили — открытые контакты закрываются: новое чтение, новая запись в журнале */}
+        <ContactRows key={saves} />
       </section>
+    </form>
+  );
+}
 
-      {failure && <ErrorText failure={failure} />}
-      {!readOnly && (
+// ── «Сохранить» ────────────────────────────────────────────────────────────
+
+/** «Сохранить» одна на все части формы: на телефоне — в панели действий, шире — полоса снизу */
+export function EditorBar() {
+  const { readOnly, failure, formId, dirty, busy, saved, sent } = useEditor();
+  const phone = usePhone();
+  const problem = useRef<HTMLDivElement>(null);
+  // Не ошибка поля (версия устарела, нет связи) — сообщение в конце страницы: показать
+  useEffect(() => {
+    if (failure && failure.code !== "invalid_input") problem.current?.scrollIntoView?.({ block: "center" });
+  }, [failure]);
+  if (readOnly) return null;
+  // Шире телефона полоса — только когда есть что сохранять или что сказать о сохранённом
+  const quiet = !phone && !dirty && !busy && !saved && !sent;
+  return (
+    <>
+      <div ref={problem} hidden={!failure}>
+        {failure ? <ErrorText failure={failure} /> : null}
+      </div>
+      {quiet ? null : (
         <FormBar
           formId={formId}
           show={dirty}
@@ -753,6 +1067,6 @@ export function ListingForm({
           }
         />
       )}
-    </form>
+    </>
   );
 }
