@@ -1,12 +1,14 @@
 /* Входящие: вкладки «Новые · В работе · Закрытые» со счётчиками. В открытых вкладках
    сверху те, где время ответа истекает (просроченные — первыми), в закрытой — новые;
-   порядок задаёт API. У ждущих ответа — счётчик 12 часов. Телефона в списке нет: он в
-   карточке заявки, где его чтение записывается в журнал.
+   порядок задаёт API. У ждущих ответа — счётчик 12 часов; плашка про 12 часов над списком
+   есть, только когда какая-то заявка уже просрочена (в остальное время счётчик — в самой
+   заявке). Телефона в списке нет: он в карточке заявки, где его чтение записывается в журнал,
+   там же — текст о согласии клиента.
 
    Витрин несколько — над вкладками выбор: все витрины или одна (запрос с listingId,
    счётчики вкладок — тоже по ней); на компьютере этот выбор — в боковой панели. У каждой
-   заявки — категория, часть дня (модель parts) и коротко поля заявки категории: часы,
-   машины, кг.
+   заявки — одна приглушённая строка «Категория · Витрина», часть дня (модель parts) и не
+   больше одного поля заявки категории (часы, машины, кг): остальное — в карточке.
 
    Витрина ещё не на сайте (новый партнёр, первый вход) — под списком строка «что дальше» со
    ссылкой на витрину, где чек-лист готовности: заявок не будет, пока витрину не опубликуют.
@@ -79,14 +81,16 @@ export function SlaTimer({ item, t, now }: { item: VendorRequestItem; t: VendorD
   );
 }
 
-/** Поля заявки категории одной строкой для списка: «Часы: 5 · Машин: 3 · Услуг: 2» */
+/**
+ * Главное поле заявки категории для списка — первое по порядку формы: «Начало: 18:00». Нет
+ * полей — первая выбранная услуга; остальное (и часть дня, она в строке даты) — в карточке
+ */
 export function detailsLine(item: VendorRequestItem, t: VendorDict, lang: "ru" | "uz"): string {
   const category = categoryConfig(item.listing.categoryCode);
-  const rows = detailRows(lang, category, item.details, (code) => textOf(t, `dist_${code}`));
-  const parts = rows.map((row) => (row.value === null ? row.label : `${row.label}: ${row.value}`));
-  const services = chosenServices(category, item.details);
-  if (services.length > 0) parts.push(`${t.chosenServices}: ${services.map((s) => s.name[lang]).join(", ")}`);
-  return parts.join(" · ");
+  const [row] = detailRows(lang, category, item.details, (code) => textOf(t, `dist_${code}`));
+  if (row) return row.value === null ? row.label : `${row.label}: ${row.value}`;
+  const [service] = chosenServices(category, item.details);
+  return service ? service.name[lang] : "";
 }
 
 interface CardProps {
@@ -129,8 +133,7 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
         </span>
         {showListing ? (
           <span className="rq-vitrina">
-            <span className="chip chip-cat">{categoryName(lang, item.listing.categoryCode)}</span>
-            <span className="rq-vitrina-name">{item.listing.name}</span>
+            {categoryName(lang, item.listing.categoryCode)} · {item.listing.name}
           </span>
         ) : null}
         <span className="rq-facts">
@@ -275,10 +278,12 @@ export function Requests({
   return (
     <section className="page inbox-list" aria-labelledby="page-title">
       <Heading headingRef={headingRef}>{t.requests}</Heading>
-      <p className={`promise${hasLate ? " promise-late" : ""}`}>
-        <Icon name={hasLate ? "warning" : "clock"} size={17} />
-        <span>{t.inboxPromise}</span>
-      </p>
+      {hasLate ? (
+        <p className="promise promise-late">
+          <Icon name="warning" size={17} />
+          <span>{t.inboxLate}</span>
+        </p>
+      ) : null}
 
       <ListingPicker
         listings={listings}
@@ -349,8 +354,6 @@ export function Requests({
       {/* Под списком: заявки — главное на экране; у нового партнёра список пуст, и строка
         «что дальше» всё равно на первом экране */}
       <NotLive listings={listings} t={t} onOpen={onOpenListing} />
-      {/* Рядом с карточкой заявки (компьютер) то же сказано в ней */}
-      {selectedId === undefined ? <p className="note">{t.consentNote}</p> : null}
     </section>
   );
 }

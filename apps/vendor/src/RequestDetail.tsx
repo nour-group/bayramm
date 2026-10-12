@@ -1,12 +1,16 @@
 /* Карточка заявки. Открытие новой отмечает её просмотренной (это делает API).
    Телефон клиента — сразу, без «разблокировки»; нажатие на него пишется в журнал.
-   Действия — ровно те переходы, что разрешает база:
+   Первым — клиент: имя, телефон и две строки о заявке (когда; сколько гостей, бюджет, повод) —
+   ответить за 12 часов можно, не листая. Действия — ровно те переходы, что разрешает база:
      new/viewed → «Я связался» | «Отказать»;  contacted → «Договорились» | «Не подошло»;
-     deal/declined → «Вернуть в активные». Отказ — с причиной; «занято» занимает дату.
+     deal/declined → «Вернуть в активные». Отказ — причина чипами, комментарий — только у
+   «Другой причины»; «занято» занимает дату. На телефоне кнопки действий прилипают к низу над
+   нижней панелью: видны, сколько ни листай.
 
    Что нужно клиенту — по форме заявки категории: часть дня (модель parts), поля категории
    (detailRows: часы, машины, кг…) и выбранные услуги с количеством и дополнениями — названия
-   и цены как были при подаче заявки (chosenServices).
+   и цены как были при подаче заявки (chosenServices). История переходов — строкой, когда их
+   не больше двух.
 
    На компьютере карточка стоит рядом со списком (split): заголовок — h2 под h1 «Заявки»,
    ссылки «Назад» нет (список и так на экране), а после открытия и каждого действия список
@@ -47,19 +51,20 @@ function DeclineForm({ t, busy, onSubmit, onCancel }: DeclineFormProps) {
   const [reason, setReason] = useState<DeclineReason | null>(null);
   const [note, setNote] = useState("");
   const noteId = useId();
+  // Комментарий — только у «Другой причины»: у остальных причина говорит сама за себя
+  const comment = reason === "other" ? note : "";
   // Выбранная причина или вписанный комментарий — несохранённое
-  useUnsaved(reason !== null || note.trim() !== "");
+  useUnsaved(reason !== null || comment.trim() !== "");
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (reason) onSubmit(reason, note);
+    if (reason) onSubmit(reason, comment);
   };
   return (
     <form className="panel decline" onSubmit={submit}>
       <fieldset className="choices">
         <legend className="panel-title">{t.declineTitle}</legend>
-        <p className="note">{t.declineSub}</p>
         <RadioGroup
-          variant="row"
+          variant="pill"
           name="decline-reason"
           value={reason}
           options={DECLINE_REASONS.map((code) => ({ value: code, label: textOf(t, `reason_${code}`) }))}
@@ -67,17 +72,21 @@ function DeclineForm({ t, busy, onSubmit, onCancel }: DeclineFormProps) {
         />
       </fieldset>
       {reason === "busy" ? <p className="note">{t.declineBusyNote}</p> : null}
-      <label className="field-label" htmlFor={noteId}>
-        {t.declineNoteLabel}
-      </label>
-      <textarea
-        id={noteId}
-        className="field"
-        rows={2}
-        maxLength={DECLINE_NOTE_MAX}
-        value={note}
-        onChange={(event) => setNote(event.target.value)}
-      />
+      {reason === "other" ? (
+        <div className="form-row">
+          <label className="field-label" htmlFor={noteId}>
+            {t.declineNoteLabel}
+          </label>
+          <textarea
+            id={noteId}
+            className="field"
+            rows={2}
+            maxLength={DECLINE_NOTE_MAX}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </div>
+      ) : null}
       <div className="actions">
         <button type="submit" className="btn btn-danger" disabled={reason === null || busy}>
           {t.declineConfirm}
@@ -235,6 +244,27 @@ export function RequestDetail({
   const category = categoryConfig(request.listing.categoryCode);
   const rows = detailRows(lang, category, request.details, (code) => textOf(t, `dist_${code}`));
   const services = chosenServices(category, request.details);
+  // Две строки о заявке: когда (дата и часть дня), что (гости, бюджет, повод)
+  const when = [
+    formatDate(request.eventDate, t, true),
+    request.dayPart
+      ? `${partName(t, request.dayPart).toLowerCase()} ${partWindow(category, request.dayPart)}`
+      : null,
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
+  const what = [
+    request.guests === null ? null : formatGuests(request.guests, t),
+    budget ?? t.budgetNone,
+    textOf(t, `occ_${request.occasionCode}`),
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
+  // Прилипает к низу (телефон) панель с двумя действиями: открытая заявка, не форма отказа
+  const sticky = (status === "new" || status === "viewed" || status === "contacted") && !declining;
+  const stepName = (entry: (typeof request.history)[number]) =>
+    entry.status === "viewed" ? t.histViewed : textOf(t, `st_${entry.status}`);
+  const lastStep = request.history.at(-1);
 
   return (
     <section className="page request" aria-labelledby={titleId}>
@@ -245,6 +275,13 @@ export function RequestDetail({
         </Heading>
         <StatusChip status={status} late={late} t={t} />
       </div>
+      {showListing ? (
+        <p className="detail-vitrina">
+          <span className="chip chip-cat">
+            {categoryName(lang, request.listing.categoryCode)} · {request.listing.name}
+          </span>
+        </p>
+      ) : null}
       {awaitsAnswer(request) ? <SlaTimer item={request} t={t} now={now} /> : null}
       {request.firstResponseBy === "staff" ? (
         // Кто ответил первым — факт, без оценок; все переходы — в истории ниже
@@ -258,72 +295,38 @@ export function RequestDetail({
         </p>
       ) : null}
 
-      <dl className="facts">
-        <div>
-          <dt>{t.eventDate}</dt>
-          <dd>{formatDate(request.eventDate, t, true)}</dd>
-        </div>
-        {request.dayPart ? (
-          <div>
-            <dt>{t.dayPartLabel}</dt>
-            <dd>
-              {partName(t, request.dayPart)}{" "}
-              <span className="fact-sub">{partWindow(category, request.dayPart)}</span>
-            </dd>
-          </div>
-        ) : null}
-        {request.guests === null ? null : (
-          <div>
-            <dt>{t.guestsLabel}</dt>
-            <dd>{formatGuests(request.guests, t)}</dd>
-          </div>
-        )}
-        <div>
-          <dt>{t.budgetLabel}</dt>
-          <dd>{budget ?? t.budgetNone}</dd>
-        </div>
-        <div>
-          <dt>{t.occasionLabel}</dt>
-          <dd>{textOf(t, `occ_${request.occasionCode}`)}</dd>
-        </div>
-        {showListing ? (
-          <div className="facts-wide">
-            <dt>{t.listingPicker}</dt>
-            <dd className="fact-vitrina">
-              <span>{request.listing.name}</span>
-              <span className="chip chip-cat">{categoryName(lang, request.listing.categoryCode)}</span>
-            </dd>
-          </div>
-        ) : null}
-      </dl>
-
-      {request.contact ? (
-        <div className="panel client">
-          <p className="panel-title">{t.clientLabel}</p>
-          <p className="client-name">{request.contact.name}</p>
-          {request.contact.phone ? (
-            <a
-              className="btn btn-primary btn-wide btn-phone"
-              href={`tel:${request.contact.phone}`}
-              aria-label={`${t.call} ${formatPhone(request.contact.phone)}`}
-              onClick={() => void api.callAttempt(id).catch(() => {})}
-            >
-              <Icon name="phone" size={20} />
-              {formatPhone(request.contact.phone)}
-            </a>
-          ) : null}
-          {request.contact.comment ? (
-            <div className="comment">
-              <p className="field-label">{t.commentLabel}</p>
-              <p>{request.contact.comment}</p>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <p className="notice">{t.contactHidden}</p>
-      )}
-
       {/* Сначала клиент и звонок — ответить за 12 часов; что нужно клиенту — следом */}
+      <div className="panel client">
+        {request.contact ? (
+          <>
+            <p className="client-name">{request.contact.name}</p>
+            {request.contact.phone ? (
+              <a
+                className="btn btn-primary btn-wide btn-phone"
+                href={`tel:${request.contact.phone}`}
+                aria-label={`${t.call} ${formatPhone(request.contact.phone)}`}
+                onClick={() => void api.callAttempt(id).catch(() => {})}
+              >
+                <Icon name="phone" size={20} />
+                {formatPhone(request.contact.phone)}
+              </a>
+            ) : null}
+          </>
+        ) : (
+          <p className="notice">{t.contactHidden}</p>
+        )}
+        <p className="req-summary">
+          <span className="req-when">{when}</span>
+          <span className="req-what">{what}</span>
+        </p>
+        {request.contact?.comment ? (
+          <div className="comment">
+            <p className="field-label">{t.commentLabel}</p>
+            <p>{request.contact.comment}</p>
+          </div>
+        ) : null}
+      </div>
+
       {rows.length > 0 || services.length > 0 ? (
         <section className="panel request-details" aria-labelledby={`${titleId}-details`}>
           <Sub className="panel-title" id={`${titleId}-details`}>
@@ -384,13 +387,44 @@ export function RequestDetail({
         </section>
       ) : null}
 
-      {notice ? (
-        <p className="form-error" role="alert">
-          {notice.kind === "stale" ? t.staleStatus : notice.text}
+      <p className="note">{t.consentNote}</p>
+
+      {request.history.length > 0 && request.history.length <= 2 ? (
+        // Один-два перехода — строкой, без заголовка и списка
+        <p className="history history-line">
+          <span className="history-title">{t.history}:</span>
+          {request.history.map((entry, index) => (
+            <span key={`${entry.at}-${entry.status}`}>
+              {index > 0 ? <span aria-hidden="true"> → </span> : " "}
+              <span className="history-status">{stepName(entry)}</span>
+            </span>
+          ))}
+          {lastStep ? <span className="history-meta"> · {formatMoment(lastStep.at, t, now)}</span> : null}
         </p>
       ) : null}
+      {request.history.length > 2 ? (
+        <div className="history">
+          <Sub className="section-title">{t.history}</Sub>
+          <ol>
+            {request.history.map((entry) => (
+              <li key={`${entry.at}-${entry.status}`}>
+                <span className="history-status">{stepName(entry)}</span>
+                <span className="history-meta">
+                  {formatMoment(entry.at, t, now)} · {textOf(t, `by_${entry.by}`)}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
 
-      <div className="request-actions" ref={actionsRef}>
+      {/* Действия — последними: на телефоне панель прилипает к низу над нижней панелью */}
+      <div className={`request-actions${sticky ? " is-bar" : ""}`} ref={actionsRef}>
+        {notice ? (
+          <p className="form-error" role="alert">
+            {notice.kind === "stale" ? t.staleStatus : notice.text}
+          </p>
+        ) : null}
         {declining ? (
           <DeclineForm
             t={t}
@@ -404,100 +438,61 @@ export function RequestDetail({
               })
             }
           />
-        ) : (
-          <div className="panel">
-            {status === "new" || status === "viewed" ? (
-              <>
-                <p className="note">{t.callFirst}</p>
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="btn btn-dark"
-                    disabled={pending}
-                    onClick={() => void act({ status: "contacted" })}
-                  >
-                    <Icon name="check" size={17} />
-                    {t.actContacted}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    disabled={pending}
-                    onClick={() => decline(true)}
-                  >
-                    {t.actDecline}
-                  </button>
-                </div>
-              </>
-            ) : null}
-            {status === "contacted" ? (
-              <>
-                <p className="panel-title">{t.askOutcome}</p>
-                <div className="actions">
-                  <button
-                    type="button"
-                    className="btn btn-dark"
-                    disabled={pending}
-                    onClick={() => void act({ status: "deal" })}
-                  >
-                    <Icon name="check" size={17} />
-                    {t.actDeal}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    disabled={pending}
-                    onClick={() => decline(true)}
-                  >
-                    {t.actNoDeal}
-                  </button>
-                </div>
-              </>
-            ) : null}
-            {status === "deal" || status === "declined" ? (
-              <>
-                {status === "declined" && request.declineReason ? (
-                  <p className="note">
-                    {fill(t.reasonLine, { reason: textOf(t, `reason_${request.declineReason}`) })}
-                    {request.declineNote ? ` — ${request.declineNote}` : ""}
-                  </p>
-                ) : null}
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={pending}
-                  onClick={() => void act({ status: "contacted" })}
-                >
-                  {t.actReopen}
-                </button>
-              </>
-            ) : null}
-            {status === "withdrawn" || status === "expired" ? (
-              <p className="note">{status === "withdrawn" ? t.doneWithdrawn : t.doneExpired}</p>
-            ) : null}
+        ) : null}
+        {!declining && (status === "new" || status === "viewed") ? (
+          <div className="actions">
+            <button
+              type="button"
+              className="btn btn-dark"
+              disabled={pending}
+              onClick={() => void act({ status: "contacted" })}
+            >
+              <Icon name="check" size={17} />
+              {t.actContacted}
+            </button>
+            <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => decline(true)}>
+              {t.actDecline}
+            </button>
           </div>
-        )}
+        ) : null}
+        {!declining && status === "contacted" ? (
+          <div className="actions">
+            <button
+              type="button"
+              className="btn btn-dark"
+              disabled={pending}
+              onClick={() => void act({ status: "deal" })}
+            >
+              <Icon name="check" size={17} />
+              {t.actDeal}
+            </button>
+            <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => decline(true)}>
+              {t.actNoDeal}
+            </button>
+          </div>
+        ) : null}
+        {!declining && (status === "deal" || status === "declined") ? (
+          <>
+            {status === "declined" && request.declineReason ? (
+              <p className="note">
+                {fill(t.reasonLine, { reason: textOf(t, `reason_${request.declineReason}`) })}
+                {request.declineNote ? ` — ${request.declineNote}` : ""}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={pending}
+              onClick={() => void act({ status: "contacted" })}
+            >
+              {t.actReopen}
+            </button>
+          </>
+        ) : null}
+        {status === "withdrawn" || status === "expired" ? (
+          <p className="note">{status === "withdrawn" ? t.doneWithdrawn : t.doneExpired}</p>
+        ) : null}
       </div>
-
-      <p className="note">{t.consentNote}</p>
-
-      {request.history.length > 0 ? (
-        <div className="history">
-          <Sub className="section-title">{t.history}</Sub>
-          <ol>
-            {request.history.map((entry) => (
-              <li key={`${entry.at}-${entry.status}`}>
-                <span className="history-status">
-                  {entry.status === "viewed" ? t.histViewed : textOf(t, `st_${entry.status}`)}
-                </span>
-                <span className="history-meta">
-                  {formatMoment(entry.at, t, now)} · {textOf(t, `by_${entry.by}`)}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : null}
     </section>
   );
 }

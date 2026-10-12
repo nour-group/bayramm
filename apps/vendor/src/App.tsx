@@ -37,9 +37,11 @@ import { UnsavedContext, useUnsavedGuard } from "./unsaved";
 import { Welcome } from "./Welcome";
 
 /* Оболочка кабинета: вход, раскладка и разделы.
-     · телефон (Mini App) — шапка с языком, нижняя панель из пяти разделов;
+     · телефон (Mini App) — шапка с названием, нижняя панель из пяти разделов;
      · планшет — шапка и узкая колонка разделов слева;
-     · компьютер — боковая панель: название, разделы, витрины, кабинет (код), язык.
+     · компьютер — боковая панель: название, разделы, витрины, кабинет (код).
+   Язык после входа — только в «Аккаунте» (он же пишется в профиль и меняет язык бота): в
+   шапке и боковой панели его нет. До входа (приветствие, отказы входа) переключатель — в шапке.
    Раскладку выбирает layout.ts; те же границы — в @media styles.css. Заявки на компьютере —
    списком и карточкой рядом (Inbox.tsx). Все разделы, и заявки тоже, — свои части сборки
    (screens.tsx): заявки грузятся параллельно со входом, остальное — после него.
@@ -470,6 +472,7 @@ function Cabinet() {
             onListing={chooseListing}
             inSidebar={layout === "desktop"}
             navigate={navigate}
+            role={auth.me.user.role}
           />
         )}
       </Lazy>
@@ -578,13 +581,12 @@ function Cabinet() {
                     {fill(t.vendorCode, { code: ready.me.vendor.code })}
                   </span>
                 </p>
-                <LangSwitch lang={lang} t={t} onChange={chooseLang} />
               </div>
             </aside>
           ) : (
             <header className="top">
               <Brand t={t} />
-              <LangSwitch lang={lang} t={t} onChange={chooseLang} />
+              {ready ? null : <LangSwitch lang={lang} t={t} onChange={chooseLang} />}
             </header>
           )}
           {shell === "tablet" ? (

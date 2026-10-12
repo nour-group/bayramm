@@ -65,34 +65,22 @@ const ru = {
   signOut: "Выйти",
   // аккаунт: кто вошёл и в какой кабинет
   cabinetLabel: "Кабинет",
-  roleOwner: "Вы — владелец кабинета: отвечаете на заявки, ведёте календарь, меняете витрину и услуги.",
-  roleMember:
-    "Вы — сотрудник площадки: отвечаете на заявки и ведёте календарь. Витрину и услуги меняет владелец кабинета.",
+  roleOwner: "Роль: владелец",
+  roleMember: "Роль: сотрудник площадки",
+  roleMemberNote: "Витрину и услуги меняет владелец кабинета.",
   languageNote: "На этом языке — кабинет и сообщения бота о заявках.",
   otherApps: "Другие приложения Bayramm",
 
   // вход из браузера: что это за кабинет и как получить доступ
   welcomeTitle: "Кабинет партнёров Bayramm",
   welcomeLead: "Здесь партнёры Bayramm отвечают на заявки клиентов, ведут календарь занятости и витрину.",
-  welcomeRequests: "Заявки клиентов",
-  welcomeRequestsText: "Дата, гости, бюджет и телефон клиента. О новой заявке сообщит наш бот в Telegram.",
-  welcome12h: "12 часов на ответ",
-  welcome12hText:
-    "Мы обещаем клиенту ответ за 12 часов. Счётчик в каждой заявке показывает, сколько осталось.",
-  welcomeCalendar: "Календарь занятости",
-  welcomeCalendarText: "Отмечайте занятые дни одним нажатием — клиенты видят их до заявки.",
-  welcomeCard: "Витрина и услуги",
-  welcomeCardText: "Фото, описание и услуги с ценами. Изменения проверяет команда Bayramm.",
-  welcomeAccess: "Как получить доступ",
-  welcomeAccessText:
-    "Кабинет открывает команда Bayramm: менеджер заводит вашу витрину и номер телефона партнёра. Номер уже у менеджера — откройте бота, нажмите «Я партнёр» и поделитесь номером: кабинет откроется прямо в Telegram.",
-  welcomeAccessNew: "Регистрации здесь нет: новых партнёров подключает команда Bayramm.",
+  welcomeNoAccess: "Нет доступа? Менеджер Bayramm подключит вас.",
 
   // входящие
   tabNew: "Новые",
   tabActive: "В работе",
   tabClosed: "Закрытые",
-  inboxPromise: "Мы обещаем клиенту ответ за 12 часов. Не ответите — он увидит похожие витрины.",
+  inboxLate: "Есть заявки без ответа больше 12 часов — клиент уже видит похожие витрины.",
   emptyNew: "Новых заявок нет",
   emptyNewText: "Когда клиент отправит заявку, она появится здесь и придёт вам в Telegram.",
   emptyActive: "Нет заявок в работе",
@@ -145,23 +133,15 @@ const ru = {
   // карточка заявки
   requestNotFound: "Заявка не найдена",
   requestNotFoundText: "Возможно, ссылка устарела. Откройте список заявок.",
-  eventDate: "Дата",
-  guestsLabel: "Гости",
-  budgetLabel: "Бюджет",
-  occasionLabel: "Повод",
   commentLabel: "Комментарий клиента",
-  clientLabel: "Клиент",
   call: "Позвонить",
   consentNote: "Клиент дал согласие ровно на это: имя, телефон, дата, гости, бюджет, комментарий.",
-  callFirst: "Позвоните клиенту и отметьте, что получилось.",
   actContacted: "Я связался с клиентом",
   actDecline: "Отказать",
-  askOutcome: "Что получилось?",
   actDeal: "Договорились",
   actNoDeal: "Не подошло",
   actReopen: "Вернуть в активные",
   declineTitle: "Почему отказываете?",
-  declineSub: "Клиент увидит, что вы отказали, — так он быстрее найдёт другого исполнителя.",
   reason_busy: "Занято на эту дату",
   reason_format: "Не наш формат",
   reason_price: "Не сходимся по цене",
@@ -216,8 +196,6 @@ const ru = {
   doneExpired: "Дата праздника прошла — заявка закрыта.",
 
   // календарь
-  calendarNote: "Календарь ведёте вы: клиенты видят занятые дни, но дату подтверждают звонком.",
-  calendarHint: "Нажмите на день, чтобы отметить его занятым или свободным.",
   legendBusy: "занято",
   legendDecline: "занято отказом",
   legendStaff: "закрыл менеджер",
@@ -234,8 +212,6 @@ const ru = {
   calendarSaveFailed: "Не удалось сохранить день. Попробуйте ещё раз.",
   // правку отклонили: календарь с тех пор изменил кто-то другой (коллега, менеджер, отказ «занято»)
   calendarConflict: "Календарь изменили — обновили. Проверьте и отметьте ещё раз.",
-  tz: "Время ташкентское.",
-  listingPicker: "Витрина",
   // подпись выбора витрины: на экране «Витрина» слово «Витрина» над выбором повторило бы заголовок
   pickListing: "Выберите витрину",
   noListings: "Витрины ещё нет",
@@ -408,7 +384,7 @@ const ru = {
   descriptionUzLabel: "Описание на узбекском",
   packageNameRu: "Название на русском",
   packageNameUz: "Название на узбекском",
-  packagePrice: "Цена, сум",
+  packagePrice: "Цена",
   fieldInvalid: "Проверьте это поле",
 
   // поводы и районы (коды — из справочников базы)
@@ -437,7 +413,6 @@ const ru = {
   category: "Категория",
 
   // заявка: часть дня и поля категории
-  dayPartLabel: "Часть дня",
   part_morning: "Утро",
   part_day: "День",
   part_evening: "Вечер",
@@ -447,7 +422,7 @@ const ru = {
 
   // услуги витрины
   servicesLead:
-    "Клиенты видят услугу после одобрения командой Bayramm. Цена «от» на витрине — самая низкая из одобренных.",
+    "Клиенты видят услугу после одобрения командой Bayramm; цена «от» на витрине — самая низкая из одобренных.",
   servicesMember: "Услуги меняет владелец кабинета — здесь их можно только смотреть.",
   servicesEmpty: "Услуг пока нет",
   servicesEmptyText:
@@ -458,11 +433,11 @@ const ru = {
   serviceEditTitle: "Изменить услугу",
   serviceType: "Услуга из каталога",
   serviceTypePick: "Выберите услугу",
-  serviceOtherHint: "Нет в каталоге — выберите «Другая услуга» и напишите название сами, на двух языках.",
   serviceMinQty: "Минимальный заказ",
-  serviceMinQtyHint: "Сколько единиц цены минимум: часов, штук, килограммов. Необязательно.",
   serviceLeadDays: "Заказ не позже чем за, дней",
-  serviceLeadDaysHint: "Сколько дней нужно на подготовку. Необязательно.",
+  optionalPh: "по желанию",
+  serviceConditions: "Условия",
+  sumSuffix: "сум",
   serviceIncludesRu: "Что входит — на русском",
   serviceIncludesUz: "Что входит — на узбекском",
   serviceOptions: "Дополнения",
@@ -495,13 +470,13 @@ const ru = {
   svcMin: "минимум {n}",
   svcLead: "заказ за {n} дн.",
   svcEdit: "Изменить",
+  svcMore: "Действия: {name}",
   svcToDraft: "Вернуть в черновик",
   svcWithdrawProposal: "Отозвать изменения",
   svcPause: "Снять с витрины",
   svcPauseQ: "Снять услугу с витрины?",
   svcPauseText: "Клиенты перестанут её видеть. Вернуть — снова отправить на проверку.",
   svcDelete: "Удалить",
-  svcDeleteLabel: "Удалить услугу «{name}»",
   svcDeleteQ: "Удалить услугу?",
   svcDeleteText: "Услуга пропадёт из списка. Вернуть её можно, только добавив заново.",
   svcSaved: "Сохранено.",
@@ -532,7 +507,6 @@ const ru = {
   videoRemove: "Убрать ссылку {n}",
   priceFromServices: "Самая низкая цена среди одобренных услуг.",
   priceFromNone: "Появится с первой одобренной услугой с ценой.",
-  servicesSummary: "Услуги витрины",
   toServices: "К услугам",
 
   // фото: люди на снимках (фото и видео, студия)
@@ -541,16 +515,12 @@ const ru = {
   consentAck: "Подтверждаю: люди на выбранных фото согласны на публикацию",
 
   // календарь по модели занятости
-  calendarNoteParts:
-    "День делится на утро, день и вечер. Отмечайте занятой часть или весь день; договорённости по заявкам занимают места сами.",
+  calendarNoteParts: "Нажмите на день — отметьте утро, день или вечер.",
   calendarNoteSlot: "Время и часы клиент указывает в заявке; календарь показывает, свободен ли день.",
-  leadTitle: "Срок заказа",
   leadText: "Календаря у этой витрины нет: клиенты заказывают не позже чем за {n} дн.",
   leadUnset: "Календаря у этой витрины нет. Срок заказа пока не указан.",
-  leadServices: "У услуг свои сроки",
-  leadChange:
-    "Срок витрины меняется предложением изменений в разделе «Витрина», сроки услуг — в разделе «Услуги».",
-  toCard: "К витрине",
+  leadEdit: "Изменить срок",
+  leadSet: "Указать срок",
   wholeDay: "Весь день",
   partFree: "свободно",
   partBusy: "занято",
@@ -558,8 +528,8 @@ const ru = {
   partFull: "все места заняты договорённостями",
   partCovered: "весь день занят",
   partState: "{part} — {state}",
-  pickDay: "Выберите день в календаре — здесь появятся утро, день и вечер.",
   capacityTitle: "Заказов одновременно",
+  capacityEdit: "Изменить",
   capacityLead:
     "Сколько машин, экипажей или команд работают в одну часть дня. Часть занята, когда договорённостей на неё столько же.",
   capacityLess: "Меньше",
@@ -629,36 +599,21 @@ const uz: VendorDict = {
   toAdmin: "Boshqaruv paneli",
   signOut: "Chiqish",
   cabinetLabel: "Kabinet",
-  roleOwner:
-    "Siz kabinet egasisiz: soʻrovlarga javob berasiz, taqvimni yuritasiz, vitrina va xizmatlarni oʻzgartirasiz.",
-  roleMember:
-    "Siz maydon xodimisiz: soʻrovlarga javob berasiz va taqvimni yuritasiz. Vitrina va xizmatlarni kabinet egasi oʻzgartiradi.",
+  roleOwner: "Rol: kabinet egasi",
+  roleMember: "Rol: maydon xodimi",
+  roleMemberNote: "Vitrina va xizmatlarni kabinet egasi oʻzgartiradi.",
   languageNote: "Kabinet va bot soʻrovlar haqidagi xabarlari shu tilda.",
   otherApps: "Boshqa Bayramm ilovalari",
 
   welcomeTitle: "Bayramm hamkorlari kabineti",
   welcomeLead:
     "Bu yerda Bayramm hamkorlari mijozlar soʻrovlariga javob beradi, bandlik taqvimi va vitrinani yuritadi.",
-  welcomeRequests: "Mijozlar soʻrovlari",
-  welcomeRequestsText:
-    "Sana, mehmonlar, byudjet va mijoz telefoni. Yangi soʻrov haqida botimiz Telegramda xabar beradi.",
-  welcome12h: "Javob uchun 12 soat",
-  welcome12hText:
-    "Mijozga 12 soatda javob berishni vaʼda qilamiz. Har bir soʻrovdagi hisoblagich qancha vaqt qolganini koʻrsatadi.",
-  welcomeCalendar: "Bandlik taqvimi",
-  welcomeCalendarText: "Band kunlarni bir bosishda belgilang — mijozlar ularni soʻrovdan oldin koʻradi.",
-  welcomeCard: "Vitrina va xizmatlar",
-  welcomeCardText: "Fotolar, tavsif va narxli xizmatlar. Oʻzgarishlarni Bayramm jamoasi tekshiradi.",
-  welcomeAccess: "Qanday kirish mumkin",
-  welcomeAccessText:
-    "Kabinetni Bayramm jamoasi ochadi: menejer vitrinangizni va hamkor telefon raqamini qoʻshadi. Raqam menejerda boʻlsa — botni oching, «Men hamkorman» tugmasini bosing va raqamingizni ulashing: kabinet toʻgʻridan-toʻgʻri Telegramda ochiladi.",
-  welcomeAccessNew: "Bu yerda roʻyxatdan oʻtish yoʻq: yangi hamkorlarni Bayramm jamoasi ulaydi.",
+  welcomeNoAccess: "Kirish yoʻqmi? Bayramm menejeri sizni ulaydi.",
 
   tabNew: "Yangi",
   tabActive: "Jarayonda",
   tabClosed: "Yopilgan",
-  inboxPromise:
-    "Mijozga 12 soatda javob berishni vaʼda qilamiz. Javob bermasangiz, u oʻxshash vitrinalarni koʻradi.",
+  inboxLate: "12 soatdan ortiq javobsiz soʻrovlar bor — mijoz allaqachon oʻxshash vitrinalarni koʻrmoqda.",
   emptyNew: "Yangi soʻrov yoʻq",
   emptyNewText: "Mijoz soʻrov yuborganda u shu yerda paydo boʻladi va sizga Telegramda keladi.",
   emptyActive: "Jarayondagi soʻrov yoʻq",
@@ -706,23 +661,15 @@ const uz: VendorDict = {
 
   requestNotFound: "Soʻrov topilmadi",
   requestNotFoundText: "Havola eskirgan boʻlishi mumkin. Soʻrovlar roʻyxatini oching.",
-  eventDate: "Sana",
-  guestsLabel: "Mehmonlar",
-  budgetLabel: "Byudjet",
-  occasionLabel: "Tadbir",
   commentLabel: "Mijoz izohi",
-  clientLabel: "Mijoz",
   call: "Qoʻngʻiroq qilish",
   consentNote: "Mijoz roziligi aynan shunga: ism, telefon, sana, mehmonlar, byudjet, izoh.",
-  callFirst: "Mijozga qoʻngʻiroq qiling va nima boʻlganini belgilang.",
   actContacted: "Mijoz bilan bogʻlandim",
   actDecline: "Rad etish",
-  askOutcome: "Nima boʻldi?",
   actDeal: "Kelishdik",
   actNoDeal: "Toʻgʻri kelmadi",
   actReopen: "Faollarga qaytarish",
   declineTitle: "Nega rad etyapsiz?",
-  declineSub: "Mijoz rad etganingizni koʻradi — boshqa ijrochini tezroq topadi.",
   reason_busy: "Bu sanada band",
   reason_format: "Bizning format emas",
   reason_price: "Narxda kelishmadik",
@@ -775,9 +722,6 @@ const uz: VendorDict = {
   doneWithdrawn: "Mijoz soʻrovni qaytarib oldi — javob berish shart emas.",
   doneExpired: "Bayram sanasi oʻtdi — soʻrov yopildi.",
 
-  calendarNote:
-    "Taqvimni siz yuritasiz: mijozlar band kunlarni koʻradi, lekin sanani qoʻngʻiroq bilan tasdiqlaydi.",
-  calendarHint: "Kunni band yoki boʻsh deb belgilash uchun ustiga bosing.",
   legendBusy: "band",
   legendDecline: "rad etish bilan band",
   legendStaff: "menejer yopgan",
@@ -793,8 +737,6 @@ const uz: VendorDict = {
   staffLocked: "Bu kunni menejer yopgan. Boʻshatish uchun u bilan bogʻlaning.",
   calendarSaveFailed: "Kunni saqlab boʻlmadi. Qayta urinib koʻring.",
   calendarConflict: "Taqvim oʻzgartirildi — yangiladik. Tekshiring va qayta belgilang.",
-  tz: "Vaqt Toshkent boʻyicha.",
-  listingPicker: "Vitrina",
   pickListing: "Vitrinani tanlang",
   noListings: "Hali vitrina yoʻq",
   noListingsText:
@@ -963,7 +905,7 @@ const uz: VendorDict = {
   descriptionUzLabel: "Oʻzbekcha tavsif",
   packageNameRu: "Ruscha nomi",
   packageNameUz: "Oʻzbekcha nomi",
-  packagePrice: "Narx, soʻm",
+  packagePrice: "Narx",
   fieldInvalid: "Bu maydonni tekshiring",
 
   occ_toy: "Toʻy",
@@ -989,7 +931,6 @@ const uz: VendorDict = {
   inboxFilter: "Qaysi vitrina soʻrovlari",
   category: "Kategoriya",
 
-  dayPartLabel: "Kun qismi",
   part_morning: "Ertalab",
   part_day: "Kunduzi",
   part_evening: "Kechqurun",
@@ -998,7 +939,7 @@ const uz: VendorDict = {
   qtyLine: "× {n}",
 
   servicesLead:
-    "Mijozlar xizmatni Bayramm jamoasi tasdiqlagandan keyin koʻradi. Vitrinadagi «...dan» narxi — tasdiqlanganlarning eng arzoni.",
+    "Mijozlar xizmatni Bayramm jamoasi tasdiqlagandan keyin koʻradi; vitrinadagi «...dan» narxi — tasdiqlanganlarning eng arzoni.",
   servicesMember: "Xizmatlarni kabinet egasi oʻzgartiradi — bu yerda ularni faqat koʻrish mumkin.",
   servicesEmpty: "Hozircha xizmat yoʻq",
   servicesEmptyText:
@@ -1009,11 +950,11 @@ const uz: VendorDict = {
   serviceEditTitle: "Xizmatni oʻzgartirish",
   serviceType: "Katalogdagi xizmat",
   serviceTypePick: "Xizmatni tanlang",
-  serviceOtherHint: "Katalogda yoʻq boʻlsa — «Boshqa xizmat»ni tanlang va nomini oʻzingiz ikki tilda yozing.",
   serviceMinQty: "Eng kam buyurtma",
-  serviceMinQtyHint: "Narx birligidan eng kami: soat, dona, kilogramm. Ixtiyoriy.",
   serviceLeadDays: "Buyurtma kamida necha kun oldin",
-  serviceLeadDaysHint: "Tayyorlash uchun necha kun kerak. Ixtiyoriy.",
+  optionalPh: "ixtiyoriy",
+  serviceConditions: "Shartlar",
+  sumSuffix: "soʻm",
   serviceIncludesRu: "Nimalar kiradi — ruscha",
   serviceIncludesUz: "Nimalar kiradi — oʻzbekcha",
   serviceOptions: "Qoʻshimchalar",
@@ -1046,13 +987,13 @@ const uz: VendorDict = {
   svcMin: "kamida {n}",
   svcLead: "buyurtma {n} kun oldin",
   svcEdit: "Oʻzgartirish",
+  svcMore: "Amallar: {name}",
   svcToDraft: "Qoralamaga qaytarish",
   svcWithdrawProposal: "Oʻzgarishlarni qaytarib olish",
   svcPause: "Vitrinadan olish",
   svcPauseQ: "Xizmat vitrinadan olinsinmi?",
   svcPauseText: "Mijozlar uni koʻrmay qoʻyadi. Qaytarish uchun yana tekshiruvga yuboring.",
   svcDelete: "Oʻchirish",
-  svcDeleteLabel: "«{name}» xizmatini oʻchirish",
   svcDeleteQ: "Xizmat oʻchirilsinmi?",
   svcDeleteText: "Xizmat roʻyxatdan yoʻqoladi. Uni faqat qaytadan qoʻshib tiklash mumkin.",
   svcSaved: "Saqlandi.",
@@ -1082,23 +1023,18 @@ const uz: VendorDict = {
   videoRemove: "{n}-havolani olib tashlash",
   priceFromServices: "Tasdiqlangan xizmatlarning eng arzon narxi.",
   priceFromNone: "Narxli birinchi tasdiqlangan xizmat bilan paydo boʻladi.",
-  servicesSummary: "Vitrina xizmatlari",
   toServices: "Xizmatlarga",
 
   portfolioWarning:
     "Odamlarni fotoda faqat ular eʼlon qilinishiga rozi boʻlsa koʻrsatish mumkin. Ikkisidan birini belgilang.",
   consentAck: "Tasdiqlayman: tanlangan fotolardagi odamlar eʼlon qilinishiga rozi",
 
-  calendarNoteParts:
-    "Kun ertalab, kunduzi va kechqurunga boʻlinadi. Bir qismni yoki butun kunni band deb belgilang; soʻrovlar boʻyicha kelishuvlar joylarni oʻzi egallaydi.",
+  calendarNoteParts: "Kunni bosing — ertalab, kunduz yoki kechqurunni belgilang.",
   calendarNoteSlot: "Vaqt va soatlarni mijoz soʻrovda koʻrsatadi; taqvim kun boʻshligini koʻrsatadi.",
-  leadTitle: "Buyurtma muddati",
   leadText: "Bu vitrinada taqvim yoʻq: mijozlar kamida {n} kun oldin buyurtma beradi.",
   leadUnset: "Bu vitrinada taqvim yoʻq. Buyurtma muddati hali koʻrsatilmagan.",
-  leadServices: "Xizmatlarning oʻz muddatlari",
-  leadChange:
-    "Vitrina muddati «Vitrina» boʻlimida oʻzgarish taklifi orqali, xizmatlar muddati esa «Xizmatlar» boʻlimida oʻzgartiriladi.",
-  toCard: "Vitrinaga",
+  leadEdit: "Muddatni oʻzgartirish",
+  leadSet: "Muddatni koʻrsatish",
   wholeDay: "Butun kun",
   partFree: "boʻsh",
   partBusy: "band",
@@ -1106,8 +1042,8 @@ const uz: VendorDict = {
   partFull: "barcha joylar kelishuvlar bilan band",
   partCovered: "butun kun band",
   partState: "{part} — {state}",
-  pickDay: "Taqvimda kunni tanlang — bu yerda ertalab, kunduzi va kechqurun chiqadi.",
   capacityTitle: "Bir vaqtdagi buyurtmalar",
+  capacityEdit: "Oʻzgartirish",
   capacityLead:
     "Kunning bir qismida nechta mashina, ekipaj yoki jamoa ishlaydi. Kelishuvlar shuncha boʻlganda qism band boʻladi.",
   capacityLess: "Kamroq",

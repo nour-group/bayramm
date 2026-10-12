@@ -3,10 +3,12 @@
    данные и услуги. Выбранная витрина — одна на весь кабинет (App.tsx): её показывают
    календарь, витрина и услуги; во входящих есть ещё «Все витрины».
 
-   Два варианта — две пилюли на всю ширину, оба видны сразу. Больше — список выбора
-   (Select набора: на телефоне — шторка): пилюли уходили за край экрана, и о третьей витрине
-   никто не догадывался. Витрина одна или выбор — в боковой панели (компьютер, SideVitrinas.tsx) —
-   вместо выбора строка «какая это витрина». */
+   До четырёх витрин — пилюли в строку с переносом (PILLS_MAX): выбор — одно нажатие, без
+   шторки, и все витрины видны сразу. Больше — список выбора (Select набора: на телефоне —
+   шторка): столько пилюль заняло бы пол-экрана. Подписи у выбора нет — экран уже называет
+   себя заголовком; имя («Выберите витрину», «Заявки какой витрины») — только для диктора.
+   Витрина одна или выбор — в боковой панели (компьютер, SideVitrinas.tsx) — вместо выбора
+   строка «какая это витрина». */
 
 import type { VendorListingRef } from "@bayramm/shared/api/vendor";
 import { Select } from "@bayramm/ui/react";
@@ -19,6 +21,9 @@ import { Icon } from "./icons";
 
 /** Значение «все витрины» во входящих (у Select значение — строка) */
 const ALL = "all";
+
+/** Витрин не больше стольких — пилюли, больше — список выбора */
+export const PILLS_MAX = 4;
 
 interface ListingPickerProps {
   readonly listings: readonly VendorListingRef[];
@@ -33,7 +38,7 @@ interface ListingPickerProps {
   readonly line?: boolean;
   /** Подпись варианта «все витрины» (входящие); нет — выбрать можно только одну */
   readonly allLabel?: string;
-  /** Подпись выбора и имя группы для диктора: «Выберите витрину», «Заявки какой витрины» */
+  /** Имя выбора для диктора: «Выберите витрину», «Заявки какой витрины» (на экране подписи нет) */
   readonly label?: string;
   /** Раздел со значком: у витрин, где партнёра ждут отказы команды, — «требует внимания: N» */
   readonly mark?: AttentionMark;
@@ -75,10 +80,10 @@ export function ListingPicker({
   ];
   const selected = value ?? (allLabel ? ALL : null);
 
-  if (options.length === 2) {
+  if (listings.length <= PILLS_MAX) {
     return (
       // biome-ignore lint/a11y/useSemanticElements: переключатель витрин — группа кнопок, не форма
-      <div className="pills vitrina-pills vitrina-pills-two" role="group" aria-label={label}>
+      <div className="pills vitrina-pills" role="group" aria-label={label}>
         {options.map((option) => (
           <button
             key={option.value}
@@ -98,9 +103,6 @@ export function ListingPicker({
 
   return (
     <div className="vitrina-select">
-      <label className="field-label" htmlFor={id}>
-        {label}
-      </label>
       <Select
         id={id}
         label={label}
