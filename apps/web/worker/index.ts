@@ -67,7 +67,7 @@ async function page(request: Request, env: Env, url: URL): Promise<Response> {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     // По http — только редирект на https, и для robots.txt и карты сайта тоже (packages/edge, https.ts)
     const insecure = dev ? null : httpsRedirect(request);
     if (insecure) return insecure;
@@ -93,6 +93,7 @@ export default {
         { dev },
       );
     if (read && isPagePath(url.pathname) && !taklifnomaRedirect(url)) return page(request, env, url);
-    return site.fetch(request, env);
+    // /api/* — в API; анонимные публичные GET кэширует край (packages/edge, api-cache.ts)
+    return site.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;

@@ -13,10 +13,12 @@ import {
   type DayPart,
   type Dictionaries,
   FAVORITES_MAX,
+  type FeaturedListings,
   type ListingCard,
   type ListingContacts,
   type ListingDetail,
   type Locale,
+  pickFeatured,
   type RequestDetails,
   type RequestStatus,
 } from "@bayramm/shared/api";
@@ -633,6 +635,23 @@ export function createMockApi(options: MockOptions = {}): MockApi {
             })),
         }),
       ),
+
+    featured: (signal) =>
+      respond("featured", signal, (): FeaturedListings => {
+        // Как сервер: по разделам в порядке показа, в каждом — по цене; выбор — pickFeatured
+        const lists = CATEGORIES.filter((c) => c.enabled)
+          .sort((a, b) => a.sort - b.sort)
+          .map((c) =>
+            listings
+              .filter((l) => l.categoryCode === c.code)
+              .map((l) => toCard(l, undefined))
+              .sort(
+                (a, b) =>
+                  comparablePriceUzs(a, null) - comparablePriceUzs(b, null) || a.id.localeCompare(b.id),
+              ),
+          );
+        return { items: pickFeatured(lists) };
+      }),
 
     catalog: (query: CatalogQuery, signal) =>
       respond("catalog", signal, (): CatalogPage => {

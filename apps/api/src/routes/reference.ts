@@ -16,8 +16,11 @@ import { getConsentTexts, getDictionaries } from "../catalog/service";
 import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 
-export const DICTIONARIES_CACHE_CONTROL = "public, max-age=600, stale-while-revalidate=86400";
-export const CONSENT_TEXTS_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=3600";
+// max-age — браузеру, s-maxage — краю (воркер приложения кэширует публичные GET, packages/edge).
+// Справочники — десять минут и там, и там: меняются миграцией. Тексты согласий на краю не живут
+// (s-maxage=0): новую версию клиент должен увидеть сразу, а не по истечении срока в общем кэше
+export const DICTIONARIES_CACHE_CONTROL = "public, max-age=600, s-maxage=600, stale-while-revalidate=86400";
+export const CONSENT_TEXTS_CACHE_CONTROL = "public, max-age=300, s-maxage=0, stale-while-revalidate=3600";
 
 const LOCALES: readonly Locale[] = ["ru", "uz"];
 

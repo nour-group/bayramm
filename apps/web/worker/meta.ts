@@ -1,4 +1,4 @@
-import { isListingPhotoKey, mediaUrl } from "@bayramm/media";
+import { isListingPhotoKey, MEDIA_ORIGINS, mediaUrl } from "@bayramm/media";
 import { type Dict, dictionaries, LANGS, type Lang } from "@bayramm/shared";
 import type { ListingDetail } from "@bayramm/shared/api";
 import { categoryDesc, categoryName } from "../src/category-names";
@@ -29,6 +29,12 @@ const OG_LOCALE: Readonly<Record<Lang, string>> = { ru: "ru_RU", uz: "uz_UZ" };
 const DESCRIPTION_MAX = 200;
 
 const isLang = (value: string | null): value is Lang => LANGS.includes(value as Lang);
+
+/** Страницы с фото площадок: лендинг, каталог, витрина, заявка (в шапке — обложка), сохранённое */
+const SHOWS_PHOTOS: ReadonlySet<string> = new Set(["home", "catalog", "venue", "request", "favorites"]);
+
+/** Где воркер media того же окружения, что и сайт (как в mediaUrl) */
+const mediaOriginFor = (hostname: string): string => MEDIA_ORIGINS[mediaEnvFor(hostname)];
 
 /** Язык страницы из адреса */
 export function pageLang(
@@ -80,6 +86,11 @@ export interface PageMeta {
   /** Языковые версии (hreflang): ru, uz и x-default */
   readonly alternates: readonly { readonly hreflang: string; readonly href: string }[];
   readonly image: { readonly url: string; readonly width: number; readonly height: number };
+  /**
+   * Origin воркера media этого окружения (тот же, что в адресах фото): страницы с фото просят
+   * к нему соединение заранее (preconnect); у остальных страниц — null
+   */
+  readonly mediaOrigin: string | null;
 }
 
 function clip(text: string, max = DESCRIPTION_MAX): string {
@@ -191,6 +202,8 @@ export function pageMeta(
       width: OG_IMAGE.width,
       height: OG_IMAGE.height,
     },
+    mediaOrigin:
+      status === 200 && match && SHOWS_PHOTOS.has(match.name) ? mediaOriginFor(url.hostname) : null,
   };
 }
 
@@ -209,6 +222,9 @@ export function headTags(meta: PageMeta): string {
   const e = escapeHtml;
   const tags = [
     `<title>${e(meta.title)}</title>`,
+    // Первое фото иначе ждёт DNS и TLS уже после ответа API. Без crossorigin: <img> ходит с
+    // учётными данными, соединение для CORS-запроса ему не подошло бы
+    meta.mediaOrigin ? `<link rel="preconnect" href="${e(meta.mediaOrigin)}" />` : "",
     `<meta name="description" content="${e(meta.description)}" />`,
     `<meta name="robots" content="${meta.index ? "index, follow" : "noindex, nofollow"}" />`,
     meta.canonical ? `<link rel="canonical" href="${e(meta.canonical)}" />` : "",
@@ -235,17 +251,28 @@ function noscript(meta: PageMeta): string {
 }
 
 const TITLE_RE = /<title>[^<]*<\/title>/;
+/** <link> предзагрузки шрифта языка (index.html: data-font-lang="ru|uz") */
+const FONT_LINK_RE = /\s*<link\b[^>]*\sdata-font-lang="([a-z]+)"[^>]*>/g;
 const ROBOTS_RE = /\s*<meta name="robots"[^>]*>/;
 const DESCRIPTION_RE = /\s*<meta name="description"[^>]*>/;
 
 /**
+ * Предзагрузка шрифтов только языка страницы: в index.html они помечены data-font-lang, чужого
+ * языка воркер убирает (как шаблоны пререндера) — иначе браузер качал бы кириллицу узбекской
+ * странице и наоборот
+ */
+export function keepFontsOf(html: string, lang: Lang): string {
+  return html.replace(FONT_LINK_RE, (tag, code: string) => (code === lang ? tag : ""));
+}
+
+/**
  * HTML приложения с разметкой страницы: <html lang>, теги вместо <title> из index.html,
- * текст для тех, кто без JS, — после #root (у страницы с пререндером он уже в #root, там
- * не нужен). Чего нет в шаблоне — HTML как есть
+ * шрифты языка страницы, текст для тех, кто без JS, — после #root (у страницы с пререндером он
+ * уже в #root, там не нужен). Чего нет в шаблоне — HTML как есть
  */
 export function injectMeta(html: string, meta: PageMeta, { prerendered = false } = {}): string {
   if (!TITLE_RE.test(html)) return html;
-  const page = html
+  const page = keepFontsOf(html, meta.lang)
     .replace(/<html lang="[a-z]+"/, `<html lang="${meta.lang}"`)
     .replace(ROBOTS_RE, "")
     .replace(DESCRIPTION_RE, "")

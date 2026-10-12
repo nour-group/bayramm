@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { recordingFetcher, spaAssets } from "@bayramm/edge/testing";
+import { listingPhotoKey, mediaImageOrigins, mediaUrl } from "@bayramm/media";
 import type { ListingDetail } from "@bayramm/shared/api";
 import { describe, expect, it, vi } from "vitest";
 import { allDemoListings, demoListings } from "../src/api/mock";
-import { browserLang, escapeHtml, injectMeta, pageMeta } from "./meta";
+import { browserLang, escapeHtml, injectMeta, keepFontsOf, pageMeta } from "./meta";
 import { robotsTxt } from "./seo";
 
 // Под Vitest import.meta.env.DEV = true; проверяем воркер таким, каким он будет в сборке
@@ -236,6 +237,85 @@ describe("разметка страниц", () => {
     const meta = pageMeta(new URL(`${PROD}/venue/${LOLA.slug}`), long);
     expect(meta.description.length).toBeLessThanOrEqual(200);
     expect(meta.description.endsWith("…")).toBe(true);
+  });
+});
+
+describe("шрифты и соединение с media", () => {
+  const preloads = (body: string) =>
+    [...body.matchAll(/<link rel="preload"[^>]*href="[^"]*\/([a-z-]+)\.woff2"/g)].map((m) => m[1]);
+
+  it("в HTML остаются шрифты языка страницы: русской — кириллица, узбекской — латиница Unbounded", async () => {
+    const { html } = setup();
+    expect(preloads((await html(`${PROD}/?lang=ru`)).body)).toEqual([
+      "manrope-latin",
+      "manrope-cyrillic",
+      "unbounded-cyrillic",
+    ]);
+    expect(preloads((await html(`${PROD}/?lang=uz`)).body)).toEqual(["manrope-latin", "unbounded-latin"]);
+    // Без ?lang — язык по Accept-Language, как у пререндера и <html lang>
+    const ru = await setup().get(`${PROD}/catalog`, { headers: { "Accept-Language": "ru-RU,ru;q=0.9" } });
+    const body = await ru.text();
+    expect(body).toContain('<html lang="ru"');
+    expect(preloads(body)).toEqual(["manrope-latin", "manrope-cyrillic", "unbounded-cyrillic"]);
+    // Служебная пометка языка из index.html — только у тех, кого оставили
+    expect(body.match(/data-font-lang="ru"/g)).toHaveLength(2);
+    expect(body).not.toContain('data-font-lang="uz"');
+  });
+
+  it("то же у страниц-заглушек и 404: язык определён всегда", async () => {
+    const { html } = setup();
+    const missing = await html(`${PROD}/nope?lang=ru`);
+    expect(missing.res.status).toBe(404);
+    expect(preloads(missing.body)).toEqual(["manrope-latin", "manrope-cyrillic", "unbounded-cyrillic"]);
+  });
+
+  it("keepFontsOf: свой язык и теги без языка остаются, чужой уходит; HTML без пометок — как был", () => {
+    const html = [
+      '<link rel="preload" href="/a.woff2" />',
+      '<link rel="preload" href="/b.woff2" crossorigin data-font-lang="ru" />',
+      '<link rel="preload" data-font-lang="uz" href="/c.woff2" />',
+      "<p>x</p>",
+    ].join("\n    ");
+    expect(keepFontsOf(html, "ru")).toBe(
+      [
+        '<link rel="preload" href="/a.woff2" />',
+        '<link rel="preload" href="/b.woff2" crossorigin data-font-lang="ru" />',
+        "<p>x</p>",
+      ].join("\n    "),
+    );
+    expect(keepFontsOf("<p>x</p>", "uz")).toBe("<p>x</p>");
+  });
+
+  it("страницы с фото просят соединение с media своего окружения заранее; без фото — нет", async () => {
+    const preconnect = (body: string) => body.match(/<link rel="preconnect" href="([^"]+)"/g);
+    for (const [origin, media] of [
+      [PROD, "https://media.bayramm.uz"],
+      [STAGING, "https://media-staging.bayramm.uz"],
+      ["http://localhost:5173", "http://localhost:8790"],
+    ] as const) {
+      for (const path of ["/", "/catalog", "/favorites", `/venue/${LOLA.slug}`]) {
+        const { body } = await setup().html(`${origin}${path}`);
+        expect(preconnect(body), `${origin}${path}`).toEqual([`<link rel="preconnect" href="${media}"`]);
+      }
+    }
+    for (const path of ["/docs", "/profile", "/auth", "/nope"]) {
+      expect(preconnect((await setup().html(`${PROD}${path}`)).body), path).toBeNull();
+    }
+    // Снятая с публикации площадка: 404 — фото не будет
+    expect(preconnect((await setup().html(`${PROD}/venue/no-such-hall`)).body)).toBeNull();
+  });
+
+  it("адрес preconnect — тот же origin, что в адресах фото и в CSP", async () => {
+    const meta = pageMeta(new URL(`${PROD}/catalog`));
+    expect(meta.mediaOrigin).toBe("https://media.bayramm.uz");
+    const key = listingPhotoKey(
+      "11111111-1111-4111-8111-111111111111",
+      "22222222-2222-4222-8222-222222222222",
+      "webp",
+    );
+    expect(mediaUrl(key, 640, "production").startsWith(`${meta.mediaOrigin}/`)).toBe(true);
+    expect(mediaImageOrigins()).toContain(meta.mediaOrigin);
+    expect(pageMeta(new URL(`${PROD}/docs`)).mediaOrigin).toBeNull();
   });
 });
 

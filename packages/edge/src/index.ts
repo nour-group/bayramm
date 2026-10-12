@@ -1,3 +1,12 @@
+export {
+  type ApiCacheOptions,
+  CACHE_STATUS_HEADER,
+  EDGE_MAX_TTL_SECONDS,
+  type EdgeCache,
+  edgeTtl,
+  isAnonymousGet,
+  throughEdgeCache,
+} from "./api-cache";
 export { API_PREFIX, apiPath, type FetcherLike, proxyToApi } from "./api-proxy";
 export { CACHE_IMMUTABLE, CACHE_NONE, CACHE_REVALIDATE, CACHE_STATIC } from "./cache-headers";
 export { HSTS, httpsRedirect, isLoopback } from "./https";
@@ -13,4 +22,4 @@ export {
   TURNSTILE_ORIGIN,
   withSecurityHeaders,
 } from "./security-headers";
-export { createSiteWorker, type SiteEnv, type SiteWorkerOptions } from "./site-worker";
+export { createSiteWorker, type SiteContext, type SiteEnv, type SiteWorkerOptions } from "./site-worker";

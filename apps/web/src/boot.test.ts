@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { runInNewContext } from "node:vm";
+import { contentSecurityPolicy } from "@bayramm/edge";
 import type { Lang } from "@bayramm/shared";
-import { getWebApp, launchedFromTelegram, type TelegramWebApp } from "@bayramm/tg/webapp";
+import {
+  getWebApp,
+  launchedFromTelegram,
+  loadTelegramWebApp,
+  SDK_STATE_ATTR,
+  TELEGRAM_WEB_APP_SCRIPT,
+  type TelegramWebApp,
+} from "@bayramm/tg/webapp";
 import { afterEach, describe, expect, it } from "vitest";
 import BOOT from "../public/boot.js?raw";
 import { initialLang, takeLangParam } from "./context";
@@ -169,6 +177,7 @@ function runBoot(c: Case): readonly string[] {
     head: document.head,
     currentScript: tag,
     createElement: (name: string) => document.createElement(name),
+    querySelector: (selector: string) => document.querySelector(selector),
   };
   const scope = {
     document: doc,
@@ -184,6 +193,12 @@ function runBoot(c: Case): readonly string[] {
     link.getAttribute("href"),
   ) as string[];
 }
+
+/** Теги SDK Mini App в <head>: boot.js ставит его сам, если открыто из Telegram */
+const sdkTags = () =>
+  [...document.head.querySelectorAll<HTMLScriptElement>("script")].filter(
+    (script) => script.getAttribute("src") === TELEGRAM_WEB_APP_SCRIPT,
+  );
 
 /** Что решит приложение: Telegram (bootstrap) и язык первого показа (normalizeStartUrl + AppProviders) */
 function appDecision(sdk: TelegramWebApp | null, sdkLanguage: string | undefined) {
@@ -230,8 +245,70 @@ describe("public/boot.js", () => {
 
       // Те же решения у приложения
       expect(appDecision(sdk, c.sdkLanguage)).toEqual({ telegram: expected.telegram, lang: expected.lang });
+
+      // SDK Mini App заказан до бандла — только когда открыто из Telegram и его ещё нет в окне
+      expect(sdkTags(), "тег SDK").toHaveLength(expected.telegram && sdk === null ? 1 : 0);
     });
   }
+
+  describe("SDK Mini App", () => {
+    const launch = CASES.find((c) => c.name.startsWith("Mini App: параметры запуска")) as Case;
+
+    it("тег: адрес из CSP и загрузчика, async, без integrity; в обычном браузере его нет", () => {
+      setUp(launch);
+      runBoot(launch);
+      const [tag] = sdkTags();
+      expect(tag?.async).toBe(true);
+      expect(tag?.hasAttribute("integrity")).toBe(false);
+      expect(BOOT).toContain(`"${TELEGRAM_WEB_APP_SCRIPT}"`);
+      expect(contentSecurityPolicy({ telegramWebApp: true })).toContain(TELEGRAM_WEB_APP_SCRIPT);
+      // Тег в <head> до остальных скриптов страницы: boot.js сам ставится первым
+      expect(tag?.parentElement).toBe(document.head);
+    });
+
+    it("повторный запуск и уже стоящий тег — второго не добавляют", () => {
+      setUp(launch);
+      runBoot(launch);
+      runBoot(launch);
+      expect(sdkTags()).toHaveLength(1);
+    });
+
+    it("loadTelegramWebApp ждёт тег boot.js, второго не добавляет", async () => {
+      setUp(launch);
+      runBoot(launch);
+      const attempt = loadTelegramWebApp(window);
+      expect(sdkTags()).toHaveLength(1);
+      Object.defineProperty(window, "Telegram", {
+        value: { WebApp: { initData: initData("uz"), initDataUnsafe: {} } },
+        configurable: true,
+        writable: true,
+      });
+      sdkTags()[0]?.dispatchEvent(new Event("load"));
+      expect(await attempt).not.toBeNull();
+      expect(sdkTags()).toHaveLength(1);
+    });
+
+    it("SDK не загрузился: boot.js помечает тег и убирает его, приложение пробует заново своим", async () => {
+      setUp(launch);
+      runBoot(launch);
+      const first = sdkTags()[0];
+      first?.dispatchEvent(new Event("error"));
+      expect(first?.getAttribute(SDK_STATE_ATTR)).toBe("failed");
+      expect(sdkTags()).toHaveLength(0);
+      const attempt = loadTelegramWebApp(window);
+      expect(sdkTags()).toHaveLength(1);
+      sdkTags()[0]?.dispatchEvent(new Event("error"));
+      expect(await attempt).toBeNull();
+    });
+
+    it("SDK загрузился, а initData нет (открыто не из Telegram): приложение не ждёт срока", async () => {
+      setUp(launch);
+      runBoot(launch);
+      sdkTags()[0]?.dispatchEvent(new Event("load"));
+      expect(sdkTags()[0]?.getAttribute(SDK_STATE_ATTR)).toBe("loaded");
+      expect(await loadTelegramWebApp(window)).toBeNull();
+    });
+  });
 
   it("хранилище запрещено (старый вебвью) — без ошибок, по языку браузера", () => {
     const c = CASES[0] as Case;

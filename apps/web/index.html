@@ -6,13 +6,19 @@
     <meta name="theme-color" content="#FAF7F4" />
     <meta name="color-scheme" content="light" />
     <meta name="robots" content="noindex" />
+    <!-- Шрифты первого экрана (@bayramm/ui/fonts.css): браузер находит их по стилям только после
+         разбора CSS, а так просит сразу — на лендинге это и заголовок, и первый абзац. Латиница
+         Manrope (цифры, знаки) нужна обоим языкам; остальное — по языку страницы: воркер
+         оставляет теги своего data-font-lang и убирает чужие (worker/meta.ts, injectMeta) -->
+    <link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="../../packages/ui/fonts/manrope-cyrillic.woff2" as="font" type="font/woff2" crossorigin data-font-lang="ru" />
+    <link rel="preload" href="../../packages/ui/fonts/unbounded-cyrillic.woff2" as="font" type="font/woff2" crossorigin data-font-lang="ru" />
+    <link rel="preload" href="../../packages/ui/fonts/unbounded-latin.woff2" as="font" type="font/woff2" crossorigin data-font-lang="uz" />
     <title>Bayramm</title>
     <!-- До первой отрисовки: прятать ли лендинг из HTML и какие куски сборки просить заранее
          (public/boot.js, boot.css). Внешние файлы: встроенные скрипты и стили CSP не пускает -->
     <script src="/boot.js"></script>
     <link rel="stylesheet" href="/boot.css" />
-    <!-- Основной шрифт текста (@bayramm/ui/fonts.css): грузится сразу, а не после стилей -->
-    <link rel="preload" href="../../packages/ui/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>

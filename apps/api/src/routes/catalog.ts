@@ -39,9 +39,14 @@ import { parseIdsQuery } from "../favorites/service";
 import { tashkentToday } from "../time";
 import { clientSource } from "./requests";
 
-// Выдача одинакова для всех (читается под гостем) — браузер может недолго
-// держать её у себя. Занятость меняется редко; полминуты устаревания допустимо
-export const CATALOG_CACHE_CONTROL = "public, max-age=30, stale-while-revalidate=60";
+// Выдача одинакова для всех (читается под гостем, от языка и заголовков не зависит) — браузер
+// и край (воркер приложения, packages/edge api-cache.ts) могут недолго держать её у себя.
+// Занятость меняется редко; полминуты устаревания допустимо, а на краю — ещё столько же:
+// max-age — браузеру, s-maxage — краю (итого не больше минуты)
+export const CATALOG_CACHE_CONTROL = "public, max-age=30, s-maxage=30, stale-while-revalidate=60";
+// Избранное гостя: набор id в адресе — его собственный, у каждого свой. В общий кэш не кладём
+// (hit-ов не будет, а ключей — по числу людей); браузеру — как каталог
+export const CARDS_CACHE_CONTROL = "private, max-age=30, stale-while-revalidate=60";
 
 // Как ограничение app.listings.slug
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
@@ -70,7 +75,7 @@ catalog.get("/cards", async (c) => {
   const ids = parseIdsQuery(single(c.req.queries(), "ids", bad) ?? undefined);
   if (bad.length > 0) throw invalidRequest(bad, "Invalid query parameters");
   const items = await getListingCards(c.var.db, ids);
-  c.header("Cache-Control", CATALOG_CACHE_CONTROL);
+  c.header("Cache-Control", CARDS_CACHE_CONTROL);
   return c.json({ items } satisfies ListingCards);
 });
 

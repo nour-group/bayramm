@@ -7,6 +7,8 @@
   const LANG_KEY = "bayramm.web.lang";
   const LAUNCH_RE = /[#&?]tgWebApp[A-Za-z]+=/;
   const SDK_KEY = "__telegram__initParams";
+  // TELEGRAM_WEB_APP_SCRIPT из @bayramm/tg/webapp (CSP его пускает, boot.test.ts сверяет)
+  const SDK_URL = "https://telegram.org/js/telegram-web-app.js";
   const CATALOG_PARAMS = ["category", "date", "guests", "district", "sort"];
   const loc = w.location;
 
@@ -39,6 +41,20 @@
     LAUNCH_RE.test(loc.hash) ||
     LAUNCH_RE.test(loc.search) ||
     stored("sessionStorage", SDK_KEY) !== null;
+
+  // Mini App: SDK заказываем до бандла. loadTelegramWebApp ждёт этот же тег (не добавляет
+  // второй): о состоянии ему говорит data-state = loaded | failed
+  if (telegram && sdk() === null && !d.querySelector(`script[src="${SDK_URL}"]`)) {
+    const script = d.createElement("script");
+    script.async = true;
+    script.src = SDK_URL;
+    script.addEventListener("load", () => script.setAttribute("data-state", "loaded"));
+    script.addEventListener("error", () => {
+      script.setAttribute("data-state", "failed");
+      script.remove();
+    });
+    d.head.appendChild(script);
+  }
 
   const telegramLang = () => {
     if (!telegram) return null;

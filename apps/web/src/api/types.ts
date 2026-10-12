@@ -8,6 +8,7 @@ import type {
   ContactChannel,
   CreateRequest,
   Dictionaries,
+  FeaturedListings,
   ListingCards,
   ListingContacts,
   ListingDetail,
@@ -39,7 +40,11 @@ export interface PhoneProof {
   readonly initData?: string;
 }
 
-/** GET /telegram/bot */
+/**
+ * Имя бота и адрес Mini App. Берутся из GET /auth/methods (telegram.bot, apps.web — botInfoOf):
+ * тот же ответ уже нужен хабу входа и подвалу. Старый GET /telegram/bot остаётся в API для
+ * старых сборок, клиент его не зовёт
+ */
 export interface BotInfo {
   readonly username: string;
   readonly miniAppUrl: string;
@@ -68,6 +73,8 @@ export interface ClientApi {
   dictionaries(signal?: AbortSignal): Promise<Dictionaries>;
   /** Категории каталога с числом витрин (GET /catalog/categories); пустые клиент не показывает */
   catalogCategories(signal?: AbortSignal): Promise<CatalogCategories>;
+  /** Витрины лендинга одним запросом (GET /catalog/featured): по одной из первых разделов с витринами */
+  featured(signal?: AbortSignal): Promise<FeaturedListings>;
   /** Выдача категории (без category у API — залы, весь каталог — category=all); фильтры по полям витрины — query.filters (a.*) */
   catalog(query: CatalogQuery, signal?: AbortSignal): Promise<CatalogPage>;
   listing(slug: string, signal?: AbortSignal): Promise<ListingDetail>;
@@ -79,6 +86,7 @@ export interface ClientApi {
   /** Выбрал «Позвонить» или «Написать в Telegram» — только счётчик; ошибки не важны */
   contactChoice(slug: string, channel: ContactChannel, signedIn: boolean): void;
   consentTexts(locale: Locale, signal?: AbortSignal): Promise<ConsentTexts>;
+  /** Имя бота и адрес Mini App — из способов входа (authMethods), отдельного запроса нет */
   bot(signal?: AbortSignal): Promise<BotInfo>;
   /** Карточки опубликованных площадок по id (избранное гостя); остальных в ответе нет */
   listingCards(ids: readonly string[], signal?: AbortSignal): Promise<ListingCards>;
