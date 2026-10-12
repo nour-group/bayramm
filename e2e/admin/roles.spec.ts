@@ -200,7 +200,8 @@ test.describe("оповещения команды: бот должен знат
   });
 
   test("«Сейчас» в метриках: плитка очереди ведёт туда, где её разбирают", async ({ page }) => {
-    const api = await start(page, "moderator");
+    // С услугами на проверке: пустую очередь панель не открывает, а метрики её здесь не обманывают
+    const api = await start(page, "moderator", { seeded: true });
     await page.goto("/metrics");
     const services = page.getByRole("link", { name: new RegExp(t.metricsQueues.servicesPending ?? "") });
     await expect(services).toContainText("2");

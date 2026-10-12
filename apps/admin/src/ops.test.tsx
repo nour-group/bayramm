@@ -1662,7 +1662,7 @@ describe("правки карточек", () => {
     await mount("/moderation");
     const approveFirst = container.querySelector<HTMLButtonElement>(".photo-tile .photo-approve");
     expect(approveFirst?.textContent).toBe(t.photoApproveOne(1, "Lola zali"));
-    await click(approveFirst);
+    await click(approveFirst ?? undefined);
     expect(lastCall("/moderation")?.body).toEqual({ decision: "approved" });
     // Очередь перечитана, на карточке осталось две плитки, фокус на ✓ той, что встала на место
     expect(container.querySelectorAll(".photo-tile")).toHaveLength(2);
@@ -1694,7 +1694,7 @@ describe("правки карточек", () => {
     expect(calls.some((c) => c.url.endsWith("/moderation"))).toBe(false);
     // Готовая причина вписывается в поле
     const preset = sheet.querySelector<HTMLButtonElement>(".reason-chip");
-    await click(preset);
+    await click(preset ?? undefined);
     expect(sheet.querySelector("textarea")?.value).toBe(t.reasons.photoDecline[0]);
     await click(submit);
     expect(lastCall("/moderation")?.body).toEqual({
@@ -1726,7 +1726,7 @@ describe("правки карточек", () => {
       ...decide(3),
     });
     await mount("/moderation");
-    await click(container.querySelector(".photo-approve-all"));
+    await click(container.querySelector(".photo-approve-all") ?? undefined);
     expect(approved).toEqual([photoId(1), photoId(2), photoId(3)]);
     expect(
       calls
