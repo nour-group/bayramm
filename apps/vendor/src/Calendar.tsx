@@ -1,13 +1,18 @@
 /* Календарь занятости витрины — по модели занятости её категории:
-     · day (залы) — месяц, одно нажатие — день занят или свободен;
-     · slot (студия) — то же; время и часы клиент указывает в заявке;
+     · day (залы) — месяц, одно нажатие — день занят или свободен; пояснения над месяцем нет;
+     · slot (студия) — то же; время и часы клиент указывает в заявке — об этом одна строка;
      · parts (фото и видео, кортеж, декор) — день делится на утро, день и вечер. Нажатие на
        день открывает его части — строки с переключателем «занято»: весь день или одна часть
-       (?part=). Часть занята, когда её отметили или договорённостей (заявки deal) на неё не
-       меньше, чем витрина берёт заказов одновременно (parallelCapacity) — это число правится
-       здесь же. На телефоне выбранный день прокручивается к его частям;
-     · lead (цветы, торты, подарки) — календаря нет: срок «заказ не позже чем за N дней» из
-       поля витрины и сроки услуг, со ссылками туда, где они меняются.
+       (?part=); пока день не выбран, частей на экране нет. Часть занята, когда её отметили
+       или договорённостей (заявки deal) на неё не меньше, чем витрина берёт заказов
+       одновременно (parallelCapacity) — это число правится здесь же, но реже всего остального:
+       строка «Заказов одновременно: N · Изменить» под месяцем. На телефоне выбранный день
+       прокручивается к его частям;
+     · lead (цветы, торты, подарки) — календаря нет: одно предложение про срок «заказ не позже
+       чем за N дней» из поля витрины и одна ссылка туда, где он меняется (владельцу).
+
+   Под месяцем — свёрнутые «Обозначения»: только то, что есть в показанном месяце; в самих днях
+   отметки (точки частей дня) есть, только когда что-то занято.
 
    Отметка сразу видна на экране и уходит в API; не сохранилось — возвращается как было. Дни,
    занятые отказом «занято», вендор может освободить; закрытые менеджером — нет. Прошедшие дни
@@ -21,7 +26,7 @@
 
    Подпись дня для диктора называет всё, что видно глазами: занят ли (и какие части), кем
    (отказ «занято», менеджер), есть ли заявка, сегодня ли. На компьютере месяц крупнее,
-   легенда — сбоку. */
+   обозначения и число заказов — сбоку. */
 
 import type {
   BusyDay,
@@ -30,6 +35,7 @@ import type {
   VendorCalendar,
   VendorListing,
   VendorListingRef,
+  VendorRole,
 } from "@bayramm/shared/api/vendor";
 import {
   type AvailabilityMode,
@@ -41,6 +47,7 @@ import { NumberStepper, Switch } from "@bayramm/ui/react";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { availabilityOf, partName, partWindow } from "./category";
+import { Disclosure } from "./Disclosure";
 import { errorText } from "./errors";
 import { formatDate, tashkentToday, weekdayIndex } from "./format";
 import { fill, type VendorDict } from "./i18n";
@@ -207,7 +214,7 @@ function MonthGrid({ calendar, t, pending, selected, onDay }: MonthProps) {
           >
             <span className="cal-num">{Number(day.slice(8))}</span>
             {locked ? <Icon name="lock" size={12} /> : null}
-            {parts && !entry ? (
+            {parts && !entry && someParts ? (
               <span className="cal-parts" aria-hidden="true">
                 {info.map((p) => (
                   <i key={p.part} className={p.busy ? "is-busy" : p.booked > 0 ? "is-booked" : undefined} />
@@ -226,20 +233,13 @@ function MonthGrid({ calendar, t, pending, selected, onDay }: MonthProps) {
 interface DayPanelProps {
   readonly calendar: VendorCalendar;
   readonly category: CategoryConfig | undefined;
-  readonly day: string | null;
+  readonly day: string;
   readonly t: VendorDict;
   readonly pending: ReadonlySet<string>;
   readonly onToggle: (day: string, part: DayPart | null, entry: BusyDay | BusyPart | undefined) => void;
 }
 
 function DayPanel({ calendar, category, day, t, pending, onToggle }: DayPanelProps) {
-  if (day === null || !day.startsWith(calendar.month)) {
-    return (
-      <section className="panel day-panel" aria-label={t.wholeDay}>
-        <p className="note">{t.pickDay}</p>
-      </section>
-    );
-  }
   const entry = calendar.busy.find((b) => b.day === day);
   const locked = day < calendar.today || day > calendar.maxDay;
 
@@ -338,54 +338,33 @@ function RouteButton({ to, navigate, children }: { to: Location; navigate: Navig
 
 function LeadTime({
   listingId,
+  owner,
   t,
-  lang,
   navigate,
 }: {
   listingId: string;
+  owner: boolean;
   t: VendorDict;
-  lang: "ru" | "uz";
   navigate: Navigate;
 }) {
   const [listing, reload] = useLoad<VendorListing>(listingId, (id) => api.listing(id));
   if (listing.state === "loading") return <Loading t={t} kind="card" />;
   if (listing.state === "error") return <LoadError t={t} onRetry={reload} error={listing.error} />;
   const leadDays = listing.data.attributes.lead_days;
-  const services = listing.data.services.filter(
-    (s) => s.leadDays !== null && (s.status === "active" || s.status === "review"),
-  );
+  const known = typeof leadDays === "number";
   return (
-    <section className="panel lead-panel" aria-labelledby="lead-title">
-      <h2 className="section-title" id="lead-title">
-        {t.leadTitle}
-      </h2>
+    <div className="panel lead-panel">
       <p className="lead-days">
         <Icon name="clock" size={20} />
-        <span>{typeof leadDays === "number" ? fill(t.leadText, { n: leadDays }) : t.leadUnset}</span>
+        <span>{known ? fill(t.leadText, { n: leadDays }) : t.leadUnset}</span>
       </p>
-      {services.length > 0 ? (
-        <>
-          <p className="field-label">{t.leadServices}</p>
-          <ul className="packages">
-            {services.map((service) => (
-              <li key={service.id}>
-                <span>{service.name[lang] || service.name.ru}</span>
-                <strong className="package-price">{fill(t.svcLead, { n: service.leadDays ?? 0 })}</strong>
-              </li>
-            ))}
-          </ul>
-        </>
-      ) : null}
-      <p className="note">{t.leadChange}</p>
-      <div className="actions">
+      {/* Срок — поле витрины: меняет владелец кабинета; сотруднику площадки ссылка вела бы в тупик */}
+      {owner ? (
         <RouteButton to={{ route: "card" }} navigate={navigate}>
-          {t.toCard}
+          {known ? t.leadEdit : t.leadSet}
         </RouteButton>
-        <RouteButton to={{ route: "services" }} navigate={navigate}>
-          {t.toServices}
-        </RouteButton>
-      </div>
-    </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -407,6 +386,8 @@ interface CalendarProps extends ScreenProps {
   /** Выбор витрины — в боковой панели (компьютер) */
   readonly inSidebar?: boolean;
   readonly navigate: Navigate;
+  /** Срок заказа (категории без календаря) меняет владелец кабинета */
+  readonly role?: VendorRole;
 }
 
 /** Отметка дня целиком в загруженном месяце: busy — занят (как ответил сервер), null — свободен */
@@ -437,6 +418,7 @@ function withMark(
     : withPart(calendar, day, part, busy as BusyPart | null);
 }
 
+/** Одна строка над месяцем по модели занятости; у day пояснять нечего */
 const NOTE: Readonly<Record<AvailabilityMode, "calendarNoteSlot" | "calendarNoteParts" | null>> = {
   day: null,
   slot: "calendarNoteSlot",
@@ -453,6 +435,7 @@ export function Calendar({
   onListing,
   inSidebar = false,
   navigate,
+  role = "owner",
 }: CalendarProps) {
   const listing = listings.find((l) => l.id === listingId);
   const header = (
@@ -484,7 +467,7 @@ export function Calendar({
     return (
       <section className="page" aria-labelledby="page-title">
         {header}
-        <LeadTime key={listingId} listingId={listingId} t={t} lang={lang} navigate={navigate} />
+        <LeadTime key={listingId} listingId={listingId} owner={role === "owner"} t={t} navigate={navigate} />
       </section>
     );
   }
@@ -495,6 +478,44 @@ export function Calendar({
       <CalendarMonth t={t} listing={listing} />
     </section>
   );
+}
+
+/** Что из обозначений есть в показанном месяце: тем же правилам, что и раскраска дней */
+type LegendKey = "busy" | "part" | "decline" | "staff" | "request" | "today";
+
+const LEGEND: Readonly<
+  Record<
+    LegendKey,
+    {
+      dot: string;
+      text: "legendBusy" | "legendPart" | "legendDecline" | "legendStaff" | "legendRequest" | "legendToday";
+    }
+  >
+> = {
+  busy: { dot: "dot-busy", text: "legendBusy" },
+  part: { dot: "dot-part", text: "legendPart" },
+  decline: { dot: "dot-decline", text: "legendDecline" },
+  staff: { dot: "dot-staff", text: "legendStaff" },
+  request: { dot: "dot-req", text: "legendRequest" },
+  today: { dot: "dot-today", text: "legendToday" },
+};
+
+export function legendOf(calendar: VendorCalendar): LegendKey[] {
+  const found = new Set<LegendKey>();
+  const busy = new Map(calendar.busy.map((entry) => [entry.day, entry]));
+  for (const day of daysOf(calendar.month)) {
+    const entry = busy.get(day);
+    if (entry)
+      found.add(entry.source === "request_decline" ? "decline" : entry.source === "staff" ? "staff" : "busy");
+    else if (calendar.mode === "parts") {
+      const info = partsOf(calendar, day);
+      if (info.every((p) => p.busy)) found.add("busy");
+      else if (info.some((p) => p.busy || p.booked > 0)) found.add("part");
+    }
+  }
+  if (calendar.requestDays.some((day) => day.startsWith(calendar.month))) found.add("request");
+  if (calendar.today.startsWith(calendar.month)) found.add("today");
+  return (Object.keys(LEGEND) as LegendKey[]).filter((key) => found.has(key));
 }
 
 function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRef }) {
@@ -512,7 +533,10 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
   const [failure, setFailure] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const dayPanel = useRef<HTMLDivElement>(null);
+  // Число заказов одновременно: null — строка «… · Изменить», строка — открытая правка с этим значением
   const [capacity, setCapacity] = useState<string | null>(null);
+  const capacityEdit = useRef<HTMLButtonElement>(null);
+  const refocusEdit = useRef(false);
   // Правки уходят по одной, каждая — от последней известной версии календаря площадки:
   // две правки от одной версии вторая не прошла бы (409), хотя чужих изменений не было
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -529,7 +553,7 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
   useEffect(() => {
     if (calendar.state === "ready") remember(calendar.data.listingId, calendar.data.version);
   }, [calendar, remember]);
-  // Другая витрина — выбранный день и черновик числа заказов не переносятся
+  // Другая витрина — выбранный день и правка числа заказов не переносятся
   // biome-ignore lint/correctness/useExhaustiveDependencies: сброс — по смене витрины
   useEffect(() => {
     setSelected(null);
@@ -633,6 +657,7 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
         if (round.current !== asked) return;
         const change = await api.setCapacity(listingId, value, versionOf(listingId));
         remember(listingId, change.version);
+        refocusEdit.current = true;
         setCapacity(null);
         setCalendar((current) =>
           current.listingId === listingId
@@ -645,8 +670,10 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
         );
       } catch (err) {
         // Календарь изменили — на экране число из базы: человек проверит и поправит заново
-        if (await conflicted(err)) setCapacity(null);
-        else {
+        if (await conflicted(err)) {
+          refocusEdit.current = true;
+          setCapacity(null);
+        } else {
           setFailure(errorText(err, t));
           setMessage("failed");
         }
@@ -672,17 +699,29 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
       requestAnimationFrame(() => dayPanel.current?.scrollIntoView?.({ block: "nearest" }));
     }
   };
+  const editing = capacity !== null;
   const capacityValue = capacity ?? String(ready?.parallelCapacity ?? 1);
-  const capacityChanged = ready !== null && capacityValue !== String(ready.parallelCapacity);
+  const capacityChanged = ready !== null && editing && capacityValue !== String(ready.parallelCapacity);
   // Новое число заказов одновременно не сохранено — уход переспросит
   useUnsaved(capacityChanged);
+  // Правка закрылась (сохранили, отменили, календарь изменили) — фокус на «Изменить», а не в никуда
+  useEffect(() => {
+    if (editing || !refocusEdit.current) return;
+    refocusEdit.current = false;
+    capacityEdit.current?.focus({ preventScroll: true });
+  }, [editing]);
+  const closeCapacity = () => {
+    refocusEdit.current = true;
+    setCapacity(null);
+    setMessage((current) => (current === "capacity" ? null : current));
+  };
+  const legend = ready ? legendOf(ready) : [];
+  const showCapacity = ready !== null && parts;
+  const selectedDay = ready && parts && selected?.startsWith(ready.month) ? selected : null;
 
   return (
     <>
-      <p className="lead">
-        {t.calendarNote}
-        {note ? ` ${t[note]}` : ""}
-      </p>
+      {note ? <p className="lead">{t[note]}</p> : null}
       <div className="cal-layout">
         <div className="cal-main">
           <div className="cal">
@@ -722,19 +761,19 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
                 onDay={(day, entry) => (parts ? pickDay(day) : toggle(day, null, entry))}
               />
             ) : null}
-            {/* Сообщение — у самого месяца: на компьютере легенда сбоку, низ страницы далеко */}
+            {/* Сообщение — у самого месяца: на компьютере обозначения сбоку, низ страницы далеко */}
             {message ? (
               <p className={message === "failed" ? "form-error" : "notice"} role="alert">
                 {message === "failed" && failure ? failure : t[MESSAGE_TEXT[message]]}
               </p>
             ) : null}
           </div>
-          {ready && parts ? (
+          {ready && selectedDay ? (
             <div ref={dayPanel} className="day-panel-slot">
               <DayPanel
                 calendar={ready}
                 category={category}
-                day={selected}
+                day={selectedDay}
                 t={t}
                 pending={pending}
                 onToggle={toggle}
@@ -742,72 +781,74 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
             </div>
           ) : null}
         </div>
-        <aside className="cal-aside" aria-labelledby="legend-title">
-          {ready && parts ? (
-            <div className="capacity">
-              <label className="panel-title" htmlFor="capacity-input">
-                {t.capacityTitle}
-              </label>
-              <p className="note" id="capacity-hint">
-                {t.capacityLead}
-              </p>
-              <div className="capacity-row">
-                <NumberStepper
-                  id="capacity-input"
-                  value={capacityValue}
-                  min={1}
-                  max={50}
-                  maxLength={2}
-                  onChange={setCapacity}
-                  decrementLabel={`${t.capacityTitle}: ${t.capacityLess}`}
-                  incrementLabel={`${t.capacityTitle}: ${t.capacityMore}`}
-                  aria-describedby="capacity-hint"
-                />
-                <button
-                  type="button"
-                  className="btn btn-dark"
-                  disabled={!capacityChanged || pending.has("capacity")}
-                  onClick={() => saveCapacity(Number(capacityValue))}
-                >
-                  {t.serviceSave}
-                </button>
+        {showCapacity || legend.length > 0 ? (
+          <div className="cal-aside">
+            {ready && showCapacity ? (
+              <div className="capacity">
+                <div className="capacity-line">
+                  <p className="capacity-text">
+                    {t.capacityTitle}: <strong>{ready.parallelCapacity}</strong>
+                  </p>
+                  <button
+                    ref={capacityEdit}
+                    type="button"
+                    className="btn btn-ghost"
+                    aria-expanded={editing}
+                    aria-controls={editing ? "capacity-edit" : undefined}
+                    aria-label={`${t.capacityEdit}: ${t.capacityTitle}`}
+                    onClick={() => (editing ? closeCapacity() : setCapacity(String(ready.parallelCapacity)))}
+                  >
+                    {t.capacityEdit}
+                  </button>
+                </div>
+                {editing ? (
+                  <div className="capacity-edit" id="capacity-edit">
+                    <p className="note" id="capacity-hint">
+                      {t.capacityLead}
+                    </p>
+                    <div className="capacity-row">
+                      <NumberStepper
+                        id="capacity-input"
+                        value={capacityValue}
+                        min={1}
+                        max={50}
+                        maxLength={2}
+                        onChange={setCapacity}
+                        aria-label={t.capacityTitle}
+                        decrementLabel={`${t.capacityTitle}: ${t.capacityLess}`}
+                        incrementLabel={`${t.capacityTitle}: ${t.capacityMore}`}
+                        aria-describedby="capacity-hint"
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-dark"
+                        disabled={!capacityChanged || pending.has("capacity")}
+                        onClick={() => saveCapacity(Number(capacityValue))}
+                      >
+                        {t.serviceSave}
+                      </button>
+                      <button type="button" className="btn btn-ghost" onClick={closeCapacity}>
+                        {t.cancel}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          ) : null}
-          <h2 className="panel-title" id="legend-title">
-            {t.legendTitle}
-          </h2>
-          <ul className="cal-legend">
-            <li>
-              <span className="dot dot-busy" />
-              {t.legendBusy}
-            </li>
-            {parts ? (
-              <li>
-                <span className="dot dot-part" />
-                {t.legendPart}
-              </li>
             ) : null}
-            <li>
-              <span className="dot dot-decline" />
-              {t.legendDecline}
-            </li>
-            <li>
-              <span className="dot dot-staff" />
-              {t.legendStaff}
-            </li>
-            <li>
-              <span className="dot dot-req" />
-              {t.legendRequest}
-            </li>
-            <li>
-              <span className="dot dot-today" />
-              {t.legendToday}
-            </li>
-          </ul>
-          {/* У частей дня «нажмите на день» уже сказано под месяцем (пока день не выбран) */}
-          <p className="note">{parts ? t.tz : `${t.calendarHint} ${t.tz}`}</p>
-        </aside>
+            {legend.length > 0 ? (
+              <Disclosure label={t.legendTitle}>
+                <ul className="cal-legend">
+                  {legend.map((key) => (
+                    <li key={key}>
+                      <span className={`dot ${LEGEND[key].dot}`} />
+                      {t[LEGEND[key].text]}
+                    </li>
+                  ))}
+                </ul>
+              </Disclosure>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </>
   );

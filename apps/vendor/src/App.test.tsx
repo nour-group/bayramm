@@ -216,16 +216,19 @@ afterEach(() => {
 });
 
 describe("вход в кабинет", () => {
-  it("вне Telegram — что это за кабинет, как получить доступ, «Войти» (хаб) и бот; без попытки входа", async () => {
+  it("вне Telegram — что это за кабинет, «Войти» (хаб), бот и «Нет доступа?»; без рассказа и попытки входа", async () => {
     await mount("/requests");
     expect(heading()).toBe("Кабинет партнёров Bayramm");
     const welcome = container.querySelector(".welcome")?.textContent ?? "";
-    for (const point of ["Заявки клиентов", "12 часов на ответ", "Календарь занятости", "Витрина и услуги"])
-      expect(welcome).toContain(point);
-    expect(welcome).toContain("Кабинет открывает команда Bayramm");
-    expect(welcome).toContain("Регистрации здесь нет");
-    // Чисел о площадке и партнёрах нет — только обещание 12 часов
-    expect(welcome.match(/\d+/g)).toEqual(["12", "12"]);
+    expect(welcome).toContain("Нет доступа? Менеджер Bayramm подключит вас.");
+    // Рассказа о возможностях кабинета нет: приглашённый партнёр его знает
+    expect(container.querySelector(".welcome-points")).toBeNull();
+    for (const gone of ["Заявки клиентов", "12 часов на ответ", "Календарь занятости", "Регистрации здесь нет"])
+      expect(welcome).not.toContain(gone);
+    // Чисел о площадке и партнёрах нет
+    expect(welcome.match(/\d+/g)).toBeNull();
+    // До входа переключатель языка — в шапке
+    expect(container.querySelector(".top .lang")).not.toBeNull();
     expect(byText("button", "Войти")).toBeDefined();
     const link = byText<HTMLAnchorElement>("a", "Открыть бота");
     expect(link?.getAttribute("href")).toBe("https://t.me/bayramm_test_bot?start=partner");
@@ -332,14 +335,16 @@ describe("вход в кабинет", () => {
     expect(container.querySelector(".ui-net")?.textContent).toBe("Связь вернулась.");
   });
 
-  it("язык после входа — из профиля вендора; переключение сохраняется в профиле", async () => {
+  it("язык после входа — из профиля вендора; в шапке переключателя нет, он в «Аккаунте» и сохраняется в профиле", async () => {
     insideTelegram();
     routes = defaultRoutes("uz");
     await mount("/requests");
     expect(heading()).toBe("Soʻrovlar");
     expect(document.documentElement.lang).toBe("uz");
-    await click(container.querySelector('button[lang="ru"]') ?? undefined);
-    expect(heading()).toBe("Заявки");
+    expect(container.querySelector(".lang")).toBeNull();
+    await click(byText("nav a", "Hisob"));
+    await click(byText("label", "Русский")?.querySelector("input") ?? undefined);
+    expect(heading()).toBe("Аккаунт");
     expect(calls.find((c) => c.method === "PATCH" && c.path === "/api/vendor/me")?.body).toEqual({
       locale: "ru",
     });
@@ -363,7 +368,9 @@ describe("заявки", () => {
     expect(card?.textContent).toContain("40–60 млн сум");
     expect(card?.textContent).toMatch(/Осталось 1[01] ч/);
     expect(container.textContent).not.toContain("+998");
-    expect(container.textContent).toContain("Мы обещаем клиенту ответ за 12 часов");
+    // Плашки про 12 часов нет, пока ничего не просрочено: счётчик — в самой заявке; про согласие — в карточке
+    expect(container.querySelector(".promise")).toBeNull();
+    expect(container.textContent).not.toContain("Клиент дал согласие");
   });
 
   it("витрина одна — список и карточка заявки её не называют: ни категории, ни имени", async () => {
@@ -372,8 +379,8 @@ describe("заявки", () => {
     expect(container.querySelector(".rq-vitrina, .rq .chip-cat")).toBeNull();
     await click(container.querySelector(".rq") ?? undefined);
     expect(heading()).toBe("Заявка № 1001");
-    expect(container.querySelector(".fact-vitrina, .request .chip-cat")).toBeNull();
-    expect(container.querySelector(".facts")?.textContent).not.toContain("Test Hall");
+    expect(container.querySelector(".detail-vitrina, .request .chip-cat")).toBeNull();
+    expect(container.querySelector(".req-summary")?.textContent).not.toContain("Test Hall");
   });
 
   it("история: открытие заявки — «Просмотрена», а не «Ждёт ответа» (так назван статус)", async () => {
@@ -384,6 +391,28 @@ describe("заявки", () => {
     ]);
     // Статус рядом с заголовком — прежний
     expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Ждёт ответа");
+  });
+
+  it("история: два перехода и меньше — строкой, больше — списком", async () => {
+    await mount(`/requests/${REQUEST_ID}`);
+    expect(container.querySelector(".history-line")?.textContent).toMatch(/^История: Новая → Просмотрена · /);
+    expect(container.querySelector(".history li")).toBeNull();
+
+    const at = new Date().toISOString();
+    routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({
+      body: detail({
+        history: [
+          { status: "new", at, by: "system" },
+          { status: "viewed", at, by: "vendor_user" },
+          { status: "contacted", at, by: "vendor_user" },
+        ],
+      }),
+    });
+    await act(async () => root.unmount());
+    container.remove();
+    await mount(`/requests/${REQUEST_ID}`);
+    expect(container.querySelector(".history-line")).toBeNull();
+    expect(container.querySelectorAll(".history li")).toHaveLength(3);
   });
 
   it("просроченная — пометка «Просрочено» и сколько сверх срока", async () => {
@@ -399,6 +428,10 @@ describe("заявки", () => {
     await mount("/requests");
     expect(container.querySelector(".rq-late .chip-late")?.textContent).toBe("Просрочено");
     expect(container.textContent).toMatch(/Просрочено на 2 ч/);
+    // Плашка про 12 часов — только когда что-то уже просрочено
+    expect(container.querySelector(".promise-late")?.textContent).toBe(
+      "Есть заявки без ответа больше 12 часов — клиент уже видит похожие витрины.",
+    );
   });
 
   it("вкладка — запрос с tab; пусто — пустое состояние", async () => {
@@ -428,6 +461,14 @@ describe("заявки", () => {
     // Кнопка «Назад» — у Telegram, своя ссылка не дублирует её
     expect(byText("a", "Назад")).toBeUndefined();
     expect(container.textContent).toContain("Вечер, живая музыка");
+    // Первым — клиент (имя и телефон), под ним две строки о заявке вместо четырёх плиток
+    expect(container.querySelector(".client .client-name")?.textContent).toBe("Dilnoza");
+    expect(container.querySelector(".client .btn-phone")).toBe(phone);
+    expect(container.querySelector(".req-when")?.textContent).toBe("14 ноября, сб");
+    expect(container.querySelector(".req-what")?.textContent).toBe("200 гостей · 40–60 млн сум · Свадьба");
+    expect(container.querySelector(".facts")).toBeNull();
+    // Про согласие клиента — только здесь, не в списке
+    expect(container.querySelector(".request > .note")?.textContent).toContain("Клиент дал согласие");
     await click(phone);
     expect(
       calls.some((c) => c.method === "POST" && c.path === `/api/vendor/requests/${REQUEST_ID}/call`),
@@ -467,6 +508,31 @@ describe("заявки", () => {
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
       status: "declined",
       declineReason: "busy",
+    });
+  });
+
+  it("отказ: причины — чипами, поле комментария только у «Другой причины»", async () => {
+    await mount(`/requests/${REQUEST_ID}`);
+    // Подсказки «позвоните клиенту…» над кнопками нет — кнопки говорят сами
+    expect(container.textContent).not.toContain("Позвоните клиенту");
+    await click(byText("button", "Отказать"));
+    expect(container.querySelector("form.decline .ui-radios-pill")).not.toBeNull();
+    expect(container.querySelector("form.decline textarea")).toBeNull();
+    await click(byText("label", "Не наш формат")?.querySelector("input") ?? undefined);
+    expect(container.querySelector("form.decline textarea")).toBeNull();
+    await click(byText("label", "Другая причина")?.querySelector("input") ?? undefined);
+    const note = container.querySelector<HTMLTextAreaElement>("form.decline textarea");
+    expect(note).not.toBeNull();
+    await act(async () => {
+      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      set?.call(note, "Выезжаем только по Ташкенту");
+      note?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(container.querySelector('form.decline button[type="submit"]') ?? undefined);
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+      status: "declined",
+      declineReason: "other",
+      declineNote: "Выезжаем только по Ташкенту",
     });
   });
 
@@ -1219,7 +1285,9 @@ describe("аккаунт", () => {
     const text = container.textContent ?? "";
     expect(text).toContain("Test LLC");
     expect(text).toContain("Ваш код для менеджера: V101");
-    expect(text).toContain("Вы — владелец кабинета");
+    // Роль — одной строкой; пояснение «что можно» — только у сотрудника площадки
+    expect(container.querySelector(".account-role")?.textContent).toBe("Роль: владелец");
+    expect(text).not.toContain("меняет владелец кабинета");
     expect(byText("button", "Выйти")).toBeUndefined();
     await click(byText("label", "Oʻzbekcha")?.querySelector("input") ?? undefined);
     expect(calls.find((c) => c.method === "PATCH" && c.path === "/api/vendor/me")?.body).toEqual({
@@ -1232,7 +1300,8 @@ describe("аккаунт", () => {
     insideTelegram();
     routes["GET /api/vendor/me"] = () => ({ body: me("ru", "member") });
     await mount("/account");
-    expect(container.textContent).toContain("Вы — сотрудник площадки");
+    expect(container.querySelector(".account-role")?.textContent).toBe("Роль: сотрудник площадки");
+    expect(container.textContent).toContain("Витрину и услуги меняет владелец кабинета.");
   });
 });
 
@@ -1461,8 +1530,8 @@ describe("что ждёт партнёра", () => {
     expect(container.querySelector(".staff-reply")?.textContent).toMatch(
       /^Первым ответил менеджер Bayramm · \d\d:\d\d$/,
     );
-    // История переходов — прежняя
-    expect(container.querySelectorAll(".history li").length).toBeGreaterThan(0);
+    // История переходов — прежняя (два перехода — строкой)
+    expect(container.querySelector(".history-line")?.textContent).toContain("Новая");
   });
 
   it("ответил сам партнёр или ответа ещё нет — строки про менеджера нет", async () => {

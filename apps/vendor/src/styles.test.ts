@@ -29,9 +29,10 @@ describe("styles.css кабинета вендора", () => {
     expect(depth).toBe(0);
   });
 
-  it("все переменные — из токенов @bayramm/ui", () => {
+  it("все переменные — из токенов @bayramm/ui (или объявлены здесь, как --tabbar-full)", () => {
     const used = new Set([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map(([, name]) => name));
-    const missing = [...used].filter((name) => !tokens.includes(`${name}:`));
+    const own = new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/g)].map(([, name]) => name));
+    const missing = [...used].filter((name) => !tokens.includes(`${name}:`) && !own.has(name));
     expect(missing).toEqual([]);
     expect(used.size).toBeGreaterThan(10);
   });

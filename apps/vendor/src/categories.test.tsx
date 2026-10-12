@@ -304,6 +304,18 @@ const pick = async (trigger: Element | null | undefined, option: string) => {
   await click(trigger);
   await click(byText('[role="option"]', option));
 };
+/** Действие из шторки «⋯» запускается, когда шторка закрылась (макрозадача): ждём её */
+const settle = async () => {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  });
+  await flush();
+};
+const menuAction = async (card: Element | undefined, label: string) => {
+  await click(card?.querySelector(".svc-more"));
+  await click(byText('[role="dialog"] .menu-item', label));
+  await settle();
+};
 const resize = (width: number) =>
   Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
 const sent = (method: string, path: string) => calls.filter((c) => c.method === method && c.path === path);
@@ -351,15 +363,42 @@ describe("витрины", () => {
     expect(byText(".svc-name", "Машина для молодожёнов")).toBeDefined();
   });
 
-  it("телефон, витрин больше двух: список выбора с подписью — третья витрина не уходит за край", async () => {
+  it("телефон, до четырёх витрин: пилюли с переносом — все видны, выбор в одно нажатие, подписи на экране нет", async () => {
     routes[`GET /api/vendor/listings/${CAR}/calendar`] = () => ({ body: calendar(CAR, { mode: "parts" }) });
     await mount("/calendar");
     expect(container.querySelector(".side")).toBeNull();
-    // Пилюль, уходящих за край экрана, больше нет: выбор — список с названием и категорией
+    expect(container.querySelector(".vitrina-select")).toBeNull();
+    const group = container.querySelector(".vitrina-pills");
+    // Имя группы — только для диктора: «Выберите витрину» над пилюлями на экране нет
+    expect(group?.getAttribute("aria-label")).toBe("Выберите витрину");
+    expect(container.querySelector("label.field-label")).toBeNull();
+    const pills = [...(group?.querySelectorAll("button") ?? [])];
+    expect(pills.map((p) => p.textContent)).toEqual([
+      "Lola zaliТойхона",
+      "Kortej PremiumКортеж",
+      "Kadr StudioФото и видео",
+      "Shirin TortТорты и сладости",
+    ]);
+    expect(pills[0]?.getAttribute("aria-pressed")).toBe("true");
+    await click(pills[1]);
+    expect(sent("GET", `/api/vendor/listings/${CAR}/calendar?month=${month}`)).toHaveLength(1);
+    expect(pills[1]?.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("телефон, больше четырёх витрин: список выбора — тоже без подписи на экране", async () => {
+    const extra: VendorListingRef = {
+      id: "aaaaaaaa-0000-0000-0000-000000000105",
+      name: "Gul Dekor",
+      status: "active",
+      categoryCode: "hall",
+      attention: NONE,
+    };
+    routes["GET /api/vendor/me"] = () => ({ body: { ...me(), listings: [...REFS, extra] } });
+    routes[`GET /api/vendor/listings/${CAR}/calendar`] = () => ({ body: calendar(CAR, { mode: "parts" }) });
+    await mount("/calendar");
     expect(container.querySelector(".vitrina-pills")).toBeNull();
     const trigger = container.querySelector(".vitrina-select button");
-    // Подпись — действие, а не слово «Витрина»: на экране «Витрина» оно повторило бы заголовок
-    expect(container.querySelector(".vitrina-select label")?.textContent).toBe("Выберите витрину");
+    expect(container.querySelector(".vitrina-select label")).toBeNull();
     expect(trigger?.textContent).toContain("Lola zali · Тойхона");
     await click(trigger);
     expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
@@ -367,16 +406,17 @@ describe("витрины", () => {
       "Kortej Premium · Кортеж",
       "Kadr Studio · Фото и видео",
       "Shirin Tort · Торты и сладости",
+      "Gul Dekor · Тойхона",
     ]);
     await click(byText('[role="option"]', "Kortej Premium"));
     expect(sent("GET", `/api/vendor/listings/${CAR}/calendar?month=${month}`)).toHaveLength(1);
     expect(container.querySelector(".vitrina-select button")?.textContent).toContain("Kortej Premium");
   });
 
-  it("телефон, две витрины: две пилюли на всю ширину, обе видны", async () => {
+  it("телефон, две витрины: две пилюли в ряд, обе видны", async () => {
     routes["GET /api/vendor/me"] = () => ({ body: { ...me("owner"), listings: REFS.slice(0, 2) } });
     await mount("/card");
-    const pills = [...container.querySelectorAll(".vitrina-pills-two button")];
+    const pills = [...container.querySelectorAll(".vitrina-pills button")];
     expect(pills.map((p) => p.textContent)).toEqual(["Lola zaliТойхона", "Kortej PremiumКортеж"]);
     expect(container.querySelector(".vitrina-select")).toBeNull();
     // Выбор называет витрину — заголовка с её именем второй раз нет
@@ -392,28 +432,29 @@ describe("витрины", () => {
 describe("входящие по витринам", () => {
   it("все витрины или одна (listingId); значок у раздела — по всем витринам", async () => {
     await mount("/requests");
-    const trigger = () => container.querySelector(".vitrina-select button");
-    expect(container.querySelector(".vitrina-select label")?.textContent).toBe("Заявки какой витрины");
-    expect(trigger()?.textContent).toContain("Все витрины");
+    // Витрин четыре — пилюли («Все витрины» первой), подписи на экране нет
+    const group = () => container.querySelector(".vitrina-pills");
+    const pill = (name: string) => byText<HTMLButtonElement>(".vitrina-pills button", name, container);
+    expect(group()?.getAttribute("aria-label")).toBe("Заявки какой витрины");
+    expect(container.querySelector(".vitrina-select")).toBeNull();
+    expect(pill("Все витрины")?.getAttribute("aria-pressed")).toBe("true");
     expect(calls.find((c) => c.path.startsWith("/api/vendor/requests?"))?.path).toBe(
       "/api/vendor/requests?tab=new",
     );
     expect(container.querySelector(".nav-count")?.textContent).toBe("1");
 
     // Витрина без заявок: список пуст, а значок у раздела — по-прежнему по всем витринам
-    await pick(trigger(), "Lola zali");
+    await click(pill("Lola zali"));
     expect(calls.at(-1)?.path).toBe(`/api/vendor/requests?tab=new&listingId=${HALL}`);
     expect(container.querySelectorAll(".rq-list .rq")).toHaveLength(0);
     expect(container.querySelector(".nav-count")?.textContent).toBe("1");
-    await pick(trigger(), "Kortej Premium");
+    await click(pill("Kortej Premium"));
     expect(calls.at(-1)?.path).toBe(`/api/vendor/requests?tab=new&listingId=${CAR}`);
     expect(container.querySelectorAll(".rq-list .rq")).toHaveLength(1);
 
     // Выбранная во входящих витрина — выбранная и в других разделах
     await click(byText("nav.tabbar a", "Витрина"));
-    expect(container.querySelector(".vitrina-select button")?.textContent).toContain(
-      "Kortej Premium · Кортеж",
-    );
+    expect(byText<HTMLButtonElement>(".vitrina-pills button", "Kortej Premium", container)?.getAttribute("aria-pressed")).toBe("true");
     expect(container.querySelector(".venue .chip-cat")).toBeNull();
   });
 
@@ -443,27 +484,28 @@ describe("входящие по витринам", () => {
     expect(notice?.textContent).not.toContain("Lola zali");
     await click(byText(".not-live button", "Что осталось"));
     expect(heading()).toBe("Витрина");
-    expect(container.querySelector(".vitrina-select button")?.textContent).toContain("Kadr Studio");
+    expect(
+      byText<HTMLButtonElement>(".vitrina-pills button", "Kadr Studio", container)?.getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(container.querySelector(".readiness h2")?.textContent).toBe("Что осталось до публикации");
   });
 
-  it("в списке — категория, витрина, часть дня и коротко поля заявки", async () => {
+  it("в списке — «Категория · Витрина» одной строкой, часть дня и одно поле заявки", async () => {
     await mount("/requests");
     const card = container.querySelector(".rq-list .rq");
-    expect(card?.querySelector(".chip-cat")?.textContent).toBe("Кортеж");
-    expect(card?.querySelector(".rq-vitrina-name")?.textContent).toBe("Kortej Premium");
+    expect(card?.querySelector(".rq-vitrina")?.textContent).toBe("Кортеж · Kortej Premium");
+    expect(card?.querySelector(".chip-cat")).toBeNull();
     expect(card?.querySelector(".rq-meta")?.textContent).toContain("вечер");
-    expect(card?.querySelector(".rq-details")?.textContent).toBe(
-      "Начало: 18:00 · Сколько часов: 5 · Сколько машин: 3 · Класс машины: Премиум · Выбранные услуги: Машина для молодожёнов",
-    );
+    // Не весь «Начало · Часы · Машины · Класс · Услуги»: остальное — в карточке заявки
+    expect(card?.querySelector(".rq-details")?.textContent).toBe("Начало: 18:00");
+    expect(container.textContent).not.toContain("Клиент дал согласие");
   });
 
   it("карточка заявки: часть дня с окном, поля категории, услуги с количеством и дополнениями", async () => {
     await mount(`/requests/${REQUEST}`);
-    const facts = container.querySelector(".facts")?.textContent ?? "";
-    expect(facts).toContain("Часть дня");
-    expect(facts).toContain("Вечер 17:00–24:00");
-    expect(container.querySelector(".fact-vitrina")?.textContent).toBe("Kortej PremiumКортеж");
+    expect(container.querySelector(".req-when")?.textContent).toContain("вечер 17:00–24:00");
+    // Витрин несколько — заявка называет свою чипом рядом с заголовком
+    expect(container.querySelector(".detail-vitrina .chip-cat")?.textContent).toBe("Кортеж · Kortej Premium");
     const rows = [...container.querySelectorAll(".request-details .detail-rows > div")].map(
       (r) => r.textContent,
     );
@@ -522,7 +564,11 @@ describe("услуги", () => {
     expect(cards[0]?.querySelector(".changes")?.textContent).toBe(
       "ЦенаСейчас: 300\u202f000 сумПредложено: 350\u202f000 сум",
     );
-    expect(byText("button", "Отозвать изменения", cards[0])).toBeDefined();
+    // «Отозвать изменения» — в шторке «⋯», на карточке её нет
+    expect(byText("button", "Отозвать изменения", cards[0])).toBeUndefined();
+    expect(cards[0]?.querySelector(".svc-more")?.getAttribute("aria-label")).toBe(
+      "Действия: Машина для молодожёнов",
+    );
     expect(cards[1]?.querySelector(".chip-bad")?.textContent).toBe("Отклонена");
     expect(cards[1]?.textContent).toContain("Отклонена. Причина: Нет фото лимузина");
     expect(byText("button", "Отправить на проверку", cards[1])).toBeDefined();
@@ -558,9 +604,12 @@ describe("услуги", () => {
     // Цена обязательна: пусто — ошибка у поля, без запроса
     await click(byText(".svc-editor button", "Отправить на проверку"));
     expect(sent("POST", servicesPath)).toEqual([]);
-    expect(field("Цена, сум")?.getAttribute("aria-invalid")).toBe("true");
+    expect(field("Цена")?.getAttribute("aria-invalid")).toBe("true");
 
-    await type(field("Цена, сум"), "1 200 000");
+    // Разряды — по мере набора, «сум» — у поля; в запрос уходит число
+    await type(field("Цена"), "1200000");
+    expect(field("Цена")?.value).toBe("1\u202f200\u202f000");
+    expect(container.querySelector(".money-post")?.textContent).toBe("сум");
     // У лимузина одна единица цены — выбирать нечего
     expect(container.querySelector(".svc-unit-fixed")?.textContent).toBe("за час");
     await click(container.querySelector('button[aria-label="Добавить: Остановки для фотосессии"]'));
@@ -595,7 +644,7 @@ describe("услуги", () => {
     await click(byText("button", "Добавить услугу"));
     await pick(field("Услуга из каталога"), "Другая услуга");
     await type(field("Название на русском"), "Фото у машины");
-    await type(field("Цена, сум"), "100000");
+    await type(field("Цена"), "100000");
     await click(byText(".svc-editor button", "Отправить на проверку"));
     expect(sent("POST", servicesPath)).toEqual([]);
     expect(container.textContent).toContain("Название — на двух языках, от 2 букв.");
@@ -604,21 +653,21 @@ describe("услуги", () => {
 
   it("несохранённое: вписали в форму услуги — уход по разделу и смена витрины спрашивают", async () => {
     await openCarServices();
-    await click(byText(".svc button", "Изменить"));
+    await click(container.querySelector(".svc-open"));
     // Ничего не меняли — уйти можно без вопроса
     const dialog = () => document.querySelector('[role="alertdialog"]');
-    await type(field("Цена, сум"), "350000");
+    await type(field("Цена"), "350000");
     await click(byText("nav.side-nav a", "Заявки"));
     expect(dialog()?.textContent).toContain("Уйти без сохранения?");
     // «Остаться» — форма и вписанное на месте
     await click(byText('[role="alertdialog"] button', "Остаться"));
     expect(heading()).toBe("Услуги");
-    expect(field("Цена, сум")?.value).toBe("350000");
+    expect(field("Цена")?.value).toBe("350\u202f000");
     // Другая витрина — тоже уход из формы: сначала вопрос
     await click(byText(".side-vitrinas button", "Lola zali"));
     expect(dialog()?.textContent).toContain("Уйти без сохранения?");
     await click(byText('[role="alertdialog"] button', "Остаться"));
-    expect(field("Цена, сум")?.value).toBe("350000");
+    expect(field("Цена")?.value).toBe("350\u202f000");
     // «Уйти» — раздел, без вопроса в следующий раз
     await click(byText("nav.side-nav a", "Заявки"));
     await click(byText('[role="alertdialog"] button', "Уйти"));
@@ -635,14 +684,14 @@ describe("услуги", () => {
       body: { error: { code: "invalid_input", message: "x", details: ["options.0.priceUzs"] } },
     });
     await openCarServices();
-    await click(byText(".svc button", "Изменить"));
+    await click(container.querySelector(".svc-open"));
     expect(container.textContent).toContain("Услуга уже на витрине: изменения уйдут на проверку");
     // Ничего не изменили — без запроса
     await click(byText(".svc-editor button", "Предложить изменения"));
     expect(sent("PATCH", `${servicesPath}/${SVC}`)).toEqual([]);
     expect(container.textContent).toContain("Вы ничего не изменили.");
 
-    await type(field("Цена, сум"), "350000");
+    await type(field("Цена"), "350000");
     await click(byText(".svc-editor button", "Предложить изменения"));
     expect(sent("PATCH", `${servicesPath}/${SVC}`)[0]?.body).toMatchObject({
       priceUzs: 350_000,
@@ -674,15 +723,19 @@ describe("услуги", () => {
     const confirm = (text: string) =>
       [...(dialog()?.querySelectorAll("button") ?? [])].find((b) => b.textContent === text);
 
-    // Активную не удалить — только снять
-    expect(byText(".svc button", "Удалить")).toBeUndefined();
-    await click(byText(".svc button", "Снять с витрины"));
+    // На карточке — только «⋯»; активную не удалить — только снять
+    expect(byText(".svc > button, .svc .actions button", "Снять с витрины")).toBeUndefined();
+    await click(container.querySelector(".svc-more"));
+    expect(document.querySelector('[role="dialog"] .menu')?.textContent).toBe("Снять с витрины");
+    await click(byText('[role="dialog"] .menu-item', "Снять с витрины"));
+    await settle();
     expect(dialog()?.textContent).toContain("Снять услугу с витрины?");
     await click(confirm("Снять с витрины"));
     expect(sent("POST", `${servicesPath}/${SVC}/withdraw`)).toHaveLength(1);
     expect(container.querySelector(".svc .chip")?.textContent).toBe("Снята с витрины");
 
-    await click(container.querySelector('button[aria-label="Удалить услугу «Машина для молодожёнов»"]'));
+    // Снятую можно удалить: «Удалить» — в той же шторке
+    await menuAction(container.querySelector(".svc") ?? undefined, "Удалить");
     expect(dialog()?.textContent).toContain("Удалить услугу?");
     await click(confirm("Удалить"));
     expect(sent("DELETE", `${servicesPath}/${SVC}`)).toHaveLength(1);
@@ -696,7 +749,8 @@ describe("услуги", () => {
     expect(container.textContent).toContain("Услуги меняет владелец кабинета");
     expect(byText(".svc-name", "Машина для молодожёнов")).toBeDefined();
     expect(byText("button", "Добавить услугу")).toBeUndefined();
-    expect(container.querySelector(".svc-actions")).toBeNull();
+    // Ни нажатия на карточку, ни «⋯», ни кнопок
+    expect(container.querySelector(".svc-open, .svc-more, .svc-actions")).toBeNull();
   });
 });
 
@@ -1010,10 +1064,14 @@ describe("календарь по модели занятости", () => {
     });
     await mount("/calendar");
     await click(byText(".side-vitrinas button", "Kortej Premium"));
-    expect(container.textContent).toContain("День делится на утро, день и вечер");
-    // «Нажмите на день» сказано один раз — под месяцем, пока день не выбран
-    expect(container.textContent?.match(/Выберите день в календаре/g)).toHaveLength(1);
-    expect(container.querySelector(".cal-aside")?.textContent).not.toContain("Нажмите на день");
+    // Одна строка над месяцем; пока день не выбран, частей на экране нет (заглушки «выберите день» нет)
+    expect(container.querySelector(".page-calendar > .lead")?.textContent).toBe(
+      "Нажмите на день — отметьте утро, день или вечер.",
+    );
+    expect(container.querySelector(".day-panel")).toBeNull();
+    expect(container.textContent).not.toContain("Выберите день в календаре");
+    // Точки частей дня — только у дней, где что-то занято (есть утро 28-го)
+    expect(container.querySelectorAll(".cal-day .cal-parts")).toHaveLength(1);
     const cell = container.querySelector<HTMLButtonElement>(`.cal-day[aria-label^="${target} "]`);
     expect(cell?.getAttribute("aria-label")).toContain("Утро — занято, День — свободно, Вечер — занято");
     await click(cell);
@@ -1045,7 +1103,12 @@ describe("календарь по модели занятости", () => {
         : { body: { parallelCapacity: 3, version: 6 } };
     await mount("/calendar");
     await click(byText(".side-vitrinas button", "Kortej Premium"));
+    // Редко меняемое — свёрнуто в строку «Заказов одновременно: 2 · Изменить»
+    expect(container.querySelector(".capacity-line")?.textContent).toBe("Заказов одновременно: 2Изменить");
+    expect(container.querySelector("#capacity-input")).toBeNull();
+    const edit = () => container.querySelector<HTMLButtonElement>(".capacity-line button");
     const save = () => byText<HTMLButtonElement>(".capacity button", "Сохранить");
+    await click(edit());
     expect(save()?.disabled).toBe(true);
     await click(container.querySelector('button[aria-label="Заказов одновременно: Больше"]'));
     expect(save()?.disabled).toBe(false);
@@ -1053,13 +1116,43 @@ describe("календарь по модели занятости", () => {
     expect(container.textContent).toContain("Календарь изменили — обновили");
     const reads = calls.filter((c) => c.method === "GET" && c.path.startsWith(base));
     expect(reads.length).toBeGreaterThan(1);
+    // Календарь изменили — правка закрыта, на экране число из базы; фокус вернулся на «Изменить»
+    expect(container.querySelector("#capacity-input")).toBeNull();
+    expect(document.activeElement).toBe(edit());
 
+    await click(edit());
     await click(container.querySelector('button[aria-label="Заказов одновременно: Больше"]'));
     await click(save());
     const puts = calls.filter((c) => c.method === "PUT" && c.path === `${base}/capacity`);
     expect(puts.map((c) => c.body)).toEqual([{ parallelCapacity: 3 }, { parallelCapacity: 3 }]);
     expect(puts[1]?.headers.get("If-Match")).toBe("4");
-    expect(container.querySelector<HTMLInputElement>("#capacity-input")?.value).toBe("3");
+    // Сохранили — правка закрыта, в строке новое число
+    expect(container.querySelector("#capacity-input")).toBeNull();
+    expect(container.querySelector(".capacity-text")?.textContent).toBe("Заказов одновременно: 3");
+  });
+
+  it("обозначения — свёрнуты и только те, что есть в показанном месяце", async () => {
+    routes[`GET ${base}`] = () => ({
+      body: calendar(CAR, {
+        mode: "parts",
+        busy: [
+          { day: day(target), source: "staff", requestId: null },
+          { day: day(Math.max(1, target - 1)), source: "request_decline", requestId: REQUEST },
+        ],
+        requestDays: [day(target)],
+      }),
+    });
+    await mount("/calendar");
+    await click(byText(".side-vitrinas button", "Kortej Premium"));
+    const toggle = () => byText<HTMLButtonElement>(".cal-aside .disclosure", "Обозначения", container);
+    expect(toggle()?.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector(".cal-legend")).toBeNull();
+    await click(toggle());
+    expect(toggle()?.getAttribute("aria-expanded")).toBe("true");
+    const items = [...container.querySelectorAll(".cal-legend li")].map((li) => li.textContent);
+    // «занято» и «занята часть дня» в этом месяце нет; «Время ташкентское» и «нажмите на день» — тоже
+    expect(items).toEqual(["занято отказом", "закрыл менеджер", "есть заявка", "сегодня"]);
+    expect(container.querySelector(".cal-aside")?.textContent).not.toContain("Время ташкентское");
   });
 
   it("торты: календаря нет — срок заказа витрины и сроки услуг, ссылки туда, где они меняются", async () => {
@@ -1068,12 +1161,22 @@ describe("календарь по модели занятости", () => {
     expect(container.querySelector(".lead-days")?.textContent).toBe(
       "Календаря у этой витрины нет: клиенты заказывают не позже чем за 3 дн.",
     );
-    expect(container.querySelector(".lead-panel .packages")?.textContent).toBe(
-      "Свадебный тортзаказ за 5 дн.",
+    // Одно предложение и одна ссылка: списка сроков услуг и пояснений нет
+    expect(container.querySelector(".lead-panel .packages")).toBeNull();
+    expect(container.querySelector(".lead-panel")?.textContent).toBe(
+      "Календаря у этой витрины нет: клиенты заказывают не позже чем за 3 дн.Изменить срок",
     );
     expect(calls.some((c) => c.path.startsWith(`/api/vendor/listings/${CAKE}/calendar`))).toBe(false);
-    await click(byText(".lead-panel a", "К услугам"));
-    expect(heading()).toBe("Услуги");
+    await click(byText(".lead-panel a", "Изменить срок"));
+    expect(heading()).toBe("Витрина");
+  });
+
+  it("торты: сотруднику площадки срок только показан — ссылки на витрину нет", async () => {
+    routes = defaultRoutes("member");
+    await mount("/calendar");
+    await click(byText(".side-vitrinas button", "Shirin Tort"));
+    expect(container.querySelector(".lead-days")).not.toBeNull();
+    expect(container.querySelector(".lead-panel a")).toBeNull();
   });
 });
 
@@ -1114,7 +1217,17 @@ describe("«требует внимания» у витрин", () => {
     expect(marks()).toEqual(["", "", "", ""]);
   });
 
-  it("телефон: в списке выбора витрины — слова «требует внимания» только у тех, где они есть", async () => {
+  it("телефон, больше четырёх витрин: в списке выбора — слова «требует внимания» только у тех, где они есть", async () => {
+    const extra: VendorListingRef = {
+      id: "aaaaaaaa-0000-0000-0000-000000000105",
+      name: "Gul Dekor",
+      status: "active",
+      categoryCode: "hall",
+      attention: NONE,
+    };
+    routes["GET /api/vendor/me"] = () => ({
+      body: { ...me("owner"), listings: [...withAttention(), extra] },
+    });
     await mount("/services");
     await click(container.querySelector(".vitrina-select button"));
     expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
@@ -1122,6 +1235,7 @@ describe("«требует внимания» у витрин", () => {
       expect.stringMatching(/^Kortej Premium · [^·]+ · требует внимания: 2$/),
       expect.stringMatching(/^Kadr Studio · [^·]+$/),
       expect.stringMatching(/^Shirin Tort · [^·]+$/),
+      expect.stringMatching(/^Gul Dekor · [^·]+$/),
     ]);
   });
 
@@ -1130,7 +1244,7 @@ describe("«требует внимания» у витрин", () => {
       body: { ...me("owner"), listings: withAttention().filter((l) => l.id !== PHOTO && l.id !== CAKE) },
     });
     await mount("/services");
-    const pills = [...container.querySelectorAll(".vitrina-pills-two button")];
+    const pills = [...container.querySelectorAll(".vitrina-pills button")];
     expect(pills.map((p) => p.querySelector(".vitrina-attn")?.textContent ?? "")).toEqual([
       "",
       "требует внимания: 2",
