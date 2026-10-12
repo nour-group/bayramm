@@ -1794,8 +1794,9 @@ body {
 
 /* ── витрины: переключатель, строка витрины, категория ─────────────────────── */
 
-/* Категория витрины — чип на белом: plum на white */
-.chip-cat {
+/* Категория витрины и подпись «обложка» у фото — чип на белом: plum на white */
+.chip-cat,
+.chip-cover {
   border: 1px solid var(--rule);
   background: var(--white);
   color: var(--plum);

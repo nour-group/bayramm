@@ -257,7 +257,7 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
                         ? "off"
                         : photo.moderation === "pending"
                           ? "wait"
-                          : "cat"
+                          : "cover"
                     }`}
                   >
                     {photo.moderation === "declined"
