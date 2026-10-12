@@ -714,7 +714,7 @@ describe("карточка по категории", () => {
     await mount("/card");
     await click(byText(".side-vitrinas button", "Kortej Premium"));
     expect(container.querySelector(".venue-side")?.textContent).toContain("Chevrolet Malibu · Седан");
-    await click(byText("button", "Изменить: Данные витрины"));
+    await click(document.querySelector('button[aria-label="Изменить: Данные витрины"]'));
     await click(byText("button", "Добавить ещё: Автопарк"));
     const rows = document.querySelectorAll(".attr-list .package-row");
     expect(rows).toHaveLength(2);
@@ -813,7 +813,7 @@ describe("карточка по категории", () => {
     expect(upload?.headers.get("X-Photo-Consent")).toBe("1");
     expect(upload?.headers.get("X-No-Faces")).toBeNull();
 
-    await click(byText("button", "Изменить: Видео"));
+    await click(document.querySelector('button[aria-label="Изменить: Видео"]'));
     // Ссылка не на YouTube или Instagram — ошибка до запроса
     await type(field("Ссылка на видео 1"), "https://vimeo.com/123");
     await click(byText("button", "Сохранить", document.querySelector('[role="dialog"]') ?? document));

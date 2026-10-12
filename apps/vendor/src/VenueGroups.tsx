@@ -99,9 +99,13 @@ function Group({
         </h3>
         {review ? <span className="chip chip-wait">{t.chipReview}</span> : null}
         {onEdit ? (
-          <button type="button" className="btn btn-ghost group-edit" onClick={() => onEdit(group)}>
+          <button
+            type="button"
+            className="btn btn-ghost group-edit"
+            aria-label={`${t.edit}: ${title}`}
+            onClick={() => onEdit(group)}
+          >
             {t.edit}
-            <span className="sr-only">: {title}</span>
           </button>
         ) : null}
       </div>

@@ -731,7 +731,11 @@ describe("изменения витрины", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
   };
-  const edit = (group: string) => byText("button", `Изменить: ${group}`);
+  // Имя кнопки для диктора — «Изменить: Основное» (aria-label), на экране — «Изменить»
+  const edit = (group: string) =>
+    [...container.querySelectorAll("button")].find(
+      (b) => b.getAttribute("aria-label") === `Изменить: ${group}`,
+    );
   const submit = (label = "Отправить изменения") => inDialog<HTMLButtonElement>("button", label);
   const confirm = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
   const confirmButton = (text: string) =>
@@ -802,7 +806,7 @@ describe("изменения витрины", () => {
     expect(group?.textContent).toContain("Предложено: New Hall");
     expect(container.querySelector('[data-group="place"] .chip')).toBeNull();
     expect(container.textContent).toContain("Предложение на проверке");
-    expect(byText("button", "Изменить:")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 
   it("вместимость и район: окно «Место», список районов по городам из справочника", async () => {
@@ -894,7 +898,7 @@ describe("изменения витрины", () => {
     expect(container.querySelector('[data-group="place"] .chip')).toBeNull();
     // Пункт выполнен — его больше нет; предложения не было
     expect(container.querySelector(".readiness")?.textContent).not.toContain("Укажите вместимость");
-    expect(byText("button", "Изменить: Место")).toBeDefined();
+    expect(edit("Место")).toBeDefined();
     // Фокус — на строку «Сохранено»: кнопка чек-листа исчезла
     expect(document.activeElement?.getAttribute("role")).toBe("status");
   });
@@ -982,7 +986,7 @@ describe("изменения витрины", () => {
     expect(dialog()?.textContent).toContain("Предложение уже на проверке");
     // Открытое предложение подтянулось: «Изменить» на карточках скрыто
     expect(byText("button", "Отозвать предложение")).toBeDefined();
-    expect(byText("button", "Изменить:")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 
   it("вписанное и не сохранённое: закрыть окно — спросят «Уйти без сохранения?»", async () => {
@@ -1006,7 +1010,7 @@ describe("изменения витрины", () => {
     expect(dialog()).toBeNull();
     expect(patched()).toEqual([]);
     // Фокус вернулся на «Изменить»
-    expect(document.activeElement?.textContent).toBe("Изменить: Основное");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Изменить: Основное");
   });
 
   it("открытое предложение: что предложено видно у карточек; отозвать — через подтверждение", async () => {
@@ -1022,7 +1026,7 @@ describe("изменения витрины", () => {
     expect(place?.textContent).toContain("Предложено: 50–350 гостей");
     expect(place?.textContent).toContain("Предложено: Yangi manzil");
     expect(container.querySelector('[data-group="basics"] .chip')).toBeNull();
-    expect(byText("button", "Изменить:")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
 
     await click(byText("button", "Отозвать предложение"));
     expect(confirm()?.textContent).toContain("Отозвать предложение?");
@@ -1030,7 +1034,7 @@ describe("изменения витрины", () => {
     expect(
       calls.some((c) => c.method === "POST" && c.path === `${revisionsPath}/${REVISION_ID}/withdraw`),
     ).toBe(true);
-    expect(byText("button", "Изменить: Место")).toBeDefined();
+    expect(edit("Место")).toBeDefined();
     expect(container.querySelector(".chip-wait")?.textContent).not.toBe("на проверке");
   });
 
@@ -1046,7 +1050,7 @@ describe("изменения витрины", () => {
     expect(container.textContent).toContain(
       "Прошлое предложение отклонено. Причина: Цена ниже, чем в договоре",
     );
-    expect(byText("button", "Изменить: Основное")).toBeDefined();
+    expect(edit("Основное")).toBeDefined();
   });
 
   it("предложение команды Bayramm: отозвать нельзя, менять — после решения", async () => {
@@ -1059,7 +1063,7 @@ describe("изменения витрины", () => {
       "Предложено: Большой зал на 300 гостей",
     );
     expect(byText("button", "Отозвать предложение")).toBeUndefined();
-    expect(byText("button", "Изменить:")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 
   it("сотрудник площадки видит открытое предложение, но не отзывает его и не меняет витрину", async () => {
@@ -1068,14 +1072,14 @@ describe("изменения витрины", () => {
     await mount("/card");
     expect(container.textContent).toContain("Предложение на проверке");
     expect(byText("button", "Отозвать предложение")).toBeUndefined();
-    expect(byText("button", "Изменить:")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 
   it("сотрудник площадки: кнопок «Изменить» нет, кто меняет витрину — сказано один раз, вверху", async () => {
     routes["GET /api/vendor/me"] = () => ({ body: me("ru", "member") });
     await mount("/card");
     expect(container.querySelectorAll(".group").length).toBeGreaterThan(0);
-    expect(byText("button", "Изменить:")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
     const text = container.textContent ?? "";
     expect(text).toContain("Менять её и услуги может только владелец кабинета.");
     expect(text.match(/владелец кабинета/g)).toHaveLength(1);
@@ -1170,7 +1174,9 @@ describe("площадка", () => {
     ).toBeNull();
     expect(container.querySelectorAll(".group-edit")).toHaveLength(3);
     // Для диктора кнопка называет карточку; зона нажатия — как у всех кнопок
-    expect(byText("button", "Изменить: Место")?.className).toContain("btn");
+    const placeEdit = container.querySelector('button[aria-label="Изменить: Место"]');
+    expect(placeEdit?.textContent).toBe("Изменить");
+    expect(placeEdit?.className).toContain("btn");
   });
 
   it("предложение на проверке — выше фото и карточек, а не двумя экранами ниже", async () => {
@@ -1289,7 +1295,7 @@ describe("площадка", () => {
     expect(container.textContent).not.toContain("На фото не должно быть людей");
     expect(container.querySelector("input, textarea, select")).toBeNull();
     expect(container.querySelector(".photo-delete")).toBeNull();
-    expect(byText("button", "Изменить:")).toBeUndefined();
+    expect(container.querySelectorAll(".group-edit")).toHaveLength(0);
   });
 });
 

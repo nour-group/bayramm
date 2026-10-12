@@ -183,7 +183,7 @@ export function RevisionNotice({
       <div className="proposal">
         <div className="notice proposal-pending">
           <p>{fill(pending.byTeam ? t.proposalByTeam : t.proposalPending, { date })}</p>
-          {owner ? <p className="note">{t.proposalPendingLocked}</p> : null}
+          {owner ? <p>{t.proposalPendingLocked}</p> : null}
           {withdrawable ? (
             <>
               <button

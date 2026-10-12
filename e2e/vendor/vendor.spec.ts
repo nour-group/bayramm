@@ -790,7 +790,11 @@ test.describe("витрины в разных категориях", () => {
     await expectHitAreas(page, "витрина: чек-лист готовности", CONTROLS);
     await expectNoOverflow(page, "витрина: чек-лист готовности");
     // «Данные витрины» — открывается окно этой карточки (витрина не на сайте — «Сохранить»)
-    await ready.getByRole("button", { name: t.toFill }).first().click();
+    await ready
+      .locator(".todo-item")
+      .filter({ hasText: /Заполните данные витрины/ })
+      .getByRole("button", { name: t.toFill })
+      .click();
     const attributes = sheet(page, t.attributesTitle);
     await expect(attributes).toBeVisible();
     await expect(attributes.getByRole("button", { name: t.editSave })).toBeVisible();

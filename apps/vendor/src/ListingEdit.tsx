@@ -244,8 +244,10 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
   // Вписанное и не сохранённое: уход с экрана и закрытие окна переспросят
   useUnsaved(dirty);
 
+  // «Уйти» закрывает вопрос и окно разом: два слоя, закрытых в одном обновлении, возвращают
+  // странице inert друг другу по очереди и оставляют её недоступной. Окно — следующим тактом
   const requestClose = () => {
-    if (!busy) confirmLeave(onClose);
+    if (!busy) confirmLeave(() => queueMicrotask(onClose));
   };
 
   /** Те же проверки, что на сервере; true — можно отправлять */
