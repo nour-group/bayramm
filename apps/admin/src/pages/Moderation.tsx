@@ -11,7 +11,9 @@
    числом ждущих; пустые очереди в них не показываются, открыта первая непустая, а все пусты —
    одна строка «Всё разобрано». Какая очередь открыта — в адресе (?queue=photos): «назад» из
    витрины и ссылка из метрик ведут к ней; пустую очередь из адреса не открываем. Пояснений у
-   очередей нет — кто и что прислал, видно по самой карточке.
+   очередей нет — кто и что прислал, видно по самой карточке. Смена контактов витрины (партнёр
+   просит новый телефон или Telegram) — своя очередь «Контакты»: решение — на странице витрины
+   (блок «Партнёр предлагает новые контакты»), номеров в очереди нет.
 
    После решения очередь перечитывается тихо (без заготовки), фокус — на следующую услугу или
    фото (в той же карточке, а кончилась она — в следующей), а когда очередь опустела, — на
@@ -22,6 +24,8 @@
    очереди приходят в самом списке (pendingPhotos): запроса на каждую карточку нет. */
 
 import type {
+  ContactChangeList,
+  ContactChangeListItem,
   ListingList,
   ListingListItem,
   ListingStatus,
@@ -56,9 +60,9 @@ import {
 } from "../ui";
 import { ServiceChanges, ServiceDecision } from "./Services";
 
-type Queue = "review" | "revisions" | "services" | "photos";
+type Queue = "review" | "revisions" | "services" | "contacts" | "photos";
 
-const QUEUES: readonly Queue[] = ["review", "revisions", "services", "photos"];
+const QUEUES: readonly Queue[] = ["review", "revisions", "services", "contacts", "photos"];
 
 /** Карточек очереди на странице */
 const PAGE = 20;
@@ -71,6 +75,7 @@ const QUEUE_TITLE: Readonly<Record<Queue, string>> = {
   review: t.listingsInReview,
   revisions: t.revisions,
   services: t.serviceQueue,
+  contacts: t.contactQueue,
   photos: t.photoQueue,
 };
 
@@ -140,20 +145,26 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
   const services = useQueue<ServiceQueueItem, ServiceQueue>(
     decidesServices ? "/staff/services?status=pending" : null,
   );
+  // Смену контактов решают те же, кто решает по правкам (revisions.moderate)
+  const contacts = useQueue<ContactChangeListItem, ContactChangeList>(
+    decidesServices ? "/staff/contact-changes" : null,
+  );
   const photos = useQueue<ListingListItem, ListingList>("/staff/listings?photos=pending");
   const counts: Readonly<Record<Queue, number | null>> = {
     review: review.count,
     revisions: revisions.count,
     services: services.count,
+    contacts: contacts.count,
     photos: photos.count,
   };
   const loaded = {
     review: review.list.loaded,
     revisions: revisions.list.loaded,
     services: services.list.loaded,
+    contacts: contacts.list.loaded,
     photos: photos.list.loaded,
   };
-  const queues = QUEUES.filter((queue) => queue !== "services" || decidesServices);
+  const queues = QUEUES.filter((queue) => (queue !== "services" && queue !== "contacts") || decidesServices);
   const settled = queues.every((queue) => loaded[queue].state !== "loading");
   // Пустые очереди не показываем; не прочитавшаяся — показываем: у неё «Повторить»
   const open = queues.filter((queue) => counts[queue] === null || counts[queue] !== 0);
@@ -232,6 +243,14 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
         {active === "services" ? (
           <ServiceQueueList state={services} onDecided={onDecided} onFocused={settledFocus} />
         ) : null}
+        {active === "contacts" ? (
+          <>
+            <LoadedView loaded={contacts.list.loaded} onRetry={contacts.list.reload} skeleton="block">
+              {() => <ContactQueue items={contacts.list.items} />}
+            </LoadedView>
+            <QueueFooter queue="contacts" state={contacts} />
+          </>
+        ) : null}
         {active === "photos" ? (
           <PhotoQueueList
             state={photos}
@@ -298,6 +317,36 @@ function RevisionQueue({ items }: { items: readonly RevisionListItem[] }) {
             {revision.fields.map((field) => t.revisionFields[field] ?? field).join(", ")}
           </p>
           {revision.stale && <p className="notice notice-warn">{t.revisionStale}</p>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Смена контактов: что меняют и когда подано — без номеров; решение — на странице витрины */
+function ContactQueue({ items }: { items: readonly ContactChangeListItem[] }) {
+  return (
+    <ul className="rcards">
+      {items.map((change) => (
+        <li key={change.id} className="rcard rcard-tap">
+          <div className="rcard-head">
+            <Link
+              to={{ name: "listing", id: change.listing.id, query: { focus: "contacts" } }}
+              className="rcard-link"
+            >
+              {change.listing.name}
+            </Link>
+            <CategoryChip code={change.listing.categoryCode} />
+            <NotLiveStatus status={change.listing.status} />
+          </div>
+          <p className="rcard-meta">
+            {change.vendor.code} ·{" "}
+            {t.contactChange.what(
+              change.phoneChanged,
+              change.telegramChanged,
+              formatMoment(change.submittedAt),
+            )}
+          </p>
         </li>
       ))}
     </ul>

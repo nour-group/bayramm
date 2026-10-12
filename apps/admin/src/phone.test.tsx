@@ -132,6 +132,8 @@ function mockApi(me: StaffMe, handlers: Record<string, Handler> = {}) {
   const all: Record<string, Handler> = {
     "GET /api/staff/me": json(me),
     "GET /api/staff/dictionaries": json(DICT),
+    // Очередь смены контактов в «Модерации» — пустая, если тест не задал свою
+    "GET /api/staff/contact-changes": json({ total: 0, items: [] }),
     "GET /api/staff/metrics": json(METRICS),
     "GET /api/staff/requests": json(LIST),
     [`GET /api/staff/requests/${REQUEST_ID}`]: json(REQUEST),

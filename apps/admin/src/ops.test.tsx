@@ -7,6 +7,7 @@ import type {
   ClientDetail,
   ClientList,
   ClientListItem,
+  ContactChangeList,
   ListingList,
   ListingListItem,
   OutboxHealth,
@@ -160,6 +161,8 @@ function mockApi(me: StaffMe, handlers: Record<string, Handler>) {
   const all: Record<string, Handler> = {
     "GET /api/staff/me": json(me),
     "GET /api/staff/dictionaries": json(DICT),
+    // Очередь смены контактов в «Модерации» — пустая, если тест не задал свою
+    "GET /api/staff/contact-changes": json({ total: 0, items: [] }),
     ...handlers,
   };
   vi.stubGlobal(
@@ -1680,6 +1683,36 @@ describe("правки карточек", () => {
     expect(queueTabs()).toEqual([]);
     expect(container.querySelector(".queue-empty")?.textContent).toBe(t.moderationAllDone);
     expect(container.querySelectorAll("section.queue")).toHaveLength(0);
+  });
+
+  it("смена контактов — своя очередь: что меняют, без номеров; карточка ведёт к блоку на странице витрины", async () => {
+    const changes: ContactChangeList = {
+      total: 1,
+      items: [
+        {
+          id: "cccccccc-0000-4000-8000-000000000001",
+          submittedAt: "2026-09-29T06:00:00.000Z",
+          phoneChanged: true,
+          telegramChanged: false,
+          listing: { id: PHOTO_LISTING_ID, name: "Lola zali", status: "active", categoryCode: "hall" },
+          vendor: { id: "dddddddd-0000-4000-8000-000000000001", code: "V102" },
+        },
+      ],
+    };
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] } satisfies ServiceQueue),
+      "GET /api/staff/contact-changes": json(changes),
+    });
+    await mount("/moderation");
+    expect(queueTabs()).toEqual([`${t.queueTabs.contacts} 1`]);
+    const section = container.querySelector("section[aria-labelledby=queue-contacts-title]");
+    expect(
+      section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}?focus=contacts"]`)?.textContent,
+    ).toBe("Lola zali");
+    expect(section?.textContent).toContain("V102 · Меняет: телефон");
+    expect(section?.textContent).not.toMatch(/\+998/);
   });
 
   it("открыта первая непустая очередь; ?queue= из адреса важнее, но пустую не открывает", async () => {
