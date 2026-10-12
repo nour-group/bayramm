@@ -212,6 +212,7 @@ const ru = {
   err_conflict: "Такая запись уже есть. Обновите страницу.",
   err_rule_violation: "Действие не прошло проверку. Обновите страницу и попробуйте ещё раз.",
   err_photo_ack_required: "Отметка на фото не подходит категории витрины.",
+  err_version_conflict: "Витрину уже изменили — показали, как сейчас. Проверьте поля и сохраните ещё раз.",
   doneWithdrawn: "Клиент отозвал заявку — отвечать не нужно.",
   doneExpired: "Дата праздника прошла — заявка закрыта.",
 
@@ -273,7 +274,6 @@ const ru = {
   dateFormat: "{d} {m}",
 
   // витрина
-  venueNote: "Так витрину видят клиенты. Всё, что вы меняете, сначала проверяет команда Bayramm.",
   // сотрудник площадки (роль member): заявки и календарь — да, витрина — нет
   venueNoteMember: "Так витрину видят клиенты. Менять её и услуги может только владелец кабинета.",
   vendorCode: "Ваш код для менеджера: {code}",
@@ -361,6 +361,8 @@ const ru = {
   todoPhotos: "Загрузите фото: есть {n} из {min}",
   todoDescriptions: "Напишите описание на русском и узбекском",
   todoAttributes: "Заполните данные витрины: {list}",
+  todoCapacity: "Укажите вместимость: от скольки и до скольки гостей",
+  todoDistrict: "Выберите район",
   todoTeam: "Сделает команда Bayramm: {list}",
   todoOwner: "Пункты выполняет владелец кабинета.",
   toPhotos: "К фото",
@@ -380,8 +382,6 @@ const ru = {
   blocker_pd_consent: "согласие на обработку данных",
 
   // правки карточки (предложение → проверка командой)
-  proposalTitle: "Изменения витрины",
-  proposalLead: "Предложить можно: название, описание, данные витрины и ссылки на видео.",
   proposalStart: "Предложить изменения",
   proposalPending: "Предложение на проверке с {date}. Клиенты пока видят прежнюю версию витрины.",
   proposalByTeam:
@@ -396,6 +396,7 @@ const ru = {
   proposalNoChanges: "Вы ничего не изменили.",
   proposalInvalid: "Проверьте выделенные поля.",
   proposalPendingExists: "Предложение уже на проверке: дождитесь решения или отзовите его.",
+  proposalPendingLocked: "Новое предложение можно отправить после решения команды.",
   // история решений по предложениям: свёрнута под основным блоком
   proposalHistory: "История предложений",
   revApproved: "Одобрено",
@@ -410,6 +411,24 @@ const ru = {
   packageNameUz: "Название на узбекском",
   packagePrice: "Цена, сум",
   fieldInvalid: "Проверьте это поле",
+
+  // витрина: карточки-группы и окна «Изменить»
+  groupBasics: "Основное",
+  groupPlace: "Место",
+  edit: "Изменить",
+  editSave: "Сохранить",
+  editSend: "Отправить изменения",
+  liveSaveNote: "Клиенты увидят изменения после проверки командой Bayramm.",
+  editSaved: "Сохранено.",
+  chipReview: "на проверке",
+  proposedLabel: "Предложено:",
+  addressRuLabel: "Адрес на русском",
+  addressUzLabel: "Адрес на узбекском",
+  capMinLabel: "Гостей от",
+  capMaxLabel: "Гостей до",
+  capErrOrder: "«До» не меньше «от»",
+  capErrRange: "От 1 до 5000",
+  districtPick: "Выберите район",
 
   // поводы и районы (коды — из справочников базы)
   occ_toy: "Свадьба",
@@ -530,8 +549,6 @@ const ru = {
   videoInvalid: "Нужна ссылка на видео YouTube или Instagram, без повторов.",
   videoAdd: "Добавить ссылку",
   videoRemove: "Убрать ссылку {n}",
-  priceFromServices: "Самая низкая цена среди одобренных услуг.",
-  priceFromNone: "Появится с первой одобренной услугой с ценой.",
   servicesSummary: "Услуги витрины",
   toServices: "К услугам",
 
@@ -772,6 +789,8 @@ const uz: VendorDict = {
   err_conflict: "Bunday yozuv allaqachon bor. Sahifani yangilang.",
   err_rule_violation: "Amal tekshiruvdan oʻtmadi. Sahifani yangilang va qayta urinib koʻring.",
   err_photo_ack_required: "Fotodagi belgi vitrina kategoriyasiga mos emas.",
+  err_version_conflict:
+    "Vitrina allaqachon oʻzgartirilgan — hozirgi holatini koʻrsatdik. Maydonlarni tekshiring va qayta saqlang.",
   doneWithdrawn: "Mijoz soʻrovni qaytarib oldi — javob berish shart emas.",
   doneExpired: "Bayram sanasi oʻtdi — soʻrov yopildi.",
 
@@ -830,8 +849,6 @@ const uz: VendorDict = {
   ],
   dateFormat: "{d}-{m}",
 
-  venueNote:
-    "Mijozlar vitrinani shunday koʻradi. Siz oʻzgartirgan hamma narsani avval Bayramm jamoasi tekshiradi.",
   venueNoteMember:
     "Mijozlar vitrinani shunday koʻradi. Uni va xizmatlarni faqat kabinet egasi oʻzgartira oladi.",
   vendorCode: "Menejer uchun kodingiz: {code}",
@@ -918,6 +935,8 @@ const uz: VendorDict = {
   todoPhotos: "Foto yuklang: {min} tadan {n} ta bor",
   todoDescriptions: "Rus va oʻzbek tillarida tavsif yozing",
   todoAttributes: "Vitrina maʼlumotlarini toʻldiring: {list}",
+  todoCapacity: "Sigʻimni kiriting: eng kami va eng koʻpi bilan nechta mehmon",
+  todoDistrict: "Tumanni tanlang",
   todoTeam: "Bayramm jamoasi bajaradi: {list}",
   todoOwner: "Bandlarni kabinet egasi bajaradi.",
   toPhotos: "Fotolarga",
@@ -935,8 +954,6 @@ const uz: VendorDict = {
   blocker_contacts: "kontaktlarni tasdiqlash",
   blocker_pd_consent: "maʼlumotlarni qayta ishlashga rozilik",
 
-  proposalTitle: "Vitrinadagi oʻzgarishlar",
-  proposalLead: "Taklif qilish mumkin: nom, tavsif, vitrina maʼlumotlari va video havolalari.",
   proposalStart: "Oʻzgarish taklif qilish",
   proposalPending:
     "Taklif {date} dan beri tekshiruvda. Mijozlar hozircha vitrinaning avvalgi koʻrinishini koʻradi.",
@@ -952,6 +969,7 @@ const uz: VendorDict = {
   proposalNoChanges: "Siz hech narsani oʻzgartirmadingiz.",
   proposalInvalid: "Belgilangan maydonlarni tekshiring.",
   proposalPendingExists: "Taklif allaqachon tekshiruvda: qarorni kuting yoki uni qaytarib oling.",
+  proposalPendingLocked: "Yangi taklifni jamoa qaror qilgandan keyin yuborish mumkin.",
   proposalHistory: "Takliflar tarixi",
   revApproved: "Tasdiqlandi",
   revDeclined: "Rad etildi",
@@ -965,6 +983,23 @@ const uz: VendorDict = {
   packageNameUz: "Oʻzbekcha nomi",
   packagePrice: "Narx, soʻm",
   fieldInvalid: "Bu maydonni tekshiring",
+
+  groupBasics: "Asosiy",
+  groupPlace: "Joy",
+  edit: "Oʻzgartirish",
+  editSave: "Saqlash",
+  editSend: "Oʻzgarishlarni yuborish",
+  liveSaveNote: "Mijozlar oʻzgarishlarni Bayramm jamoasi tekshirgandan keyin koʻradi.",
+  editSaved: "Saqlandi.",
+  chipReview: "tekshiruvda",
+  proposedLabel: "Taklif qilingan:",
+  addressRuLabel: "Ruscha manzil",
+  addressUzLabel: "Oʻzbekcha manzil",
+  capMinLabel: "Kamida mehmon",
+  capMaxLabel: "Koʻpi bilan mehmon",
+  capErrOrder: "«Gacha» «dan»dan kam boʻlmasligi kerak",
+  capErrRange: "1 dan 5000 gacha",
+  districtPick: "Tumanni tanlang",
 
   occ_toy: "Toʻy",
   occ_beshik: "Beshik toʻyi",
@@ -1080,8 +1115,6 @@ const uz: VendorDict = {
   videoInvalid: "YouTube yoki Instagram video havolasi kerak, takrorlarsiz.",
   videoAdd: "Havola qoʻshish",
   videoRemove: "{n}-havolani olib tashlash",
-  priceFromServices: "Tasdiqlangan xizmatlarning eng arzon narxi.",
-  priceFromNone: "Narxli birinchi tasdiqlangan xizmat bilan paydo boʻladi.",
   servicesSummary: "Vitrina xizmatlari",
   toServices: "Xizmatlarga",
 

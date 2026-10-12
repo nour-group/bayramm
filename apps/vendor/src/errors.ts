@@ -39,6 +39,7 @@ export const API_ERROR_CODES = [
   "conflict",
   "rule_violation",
   "photo_ack_required",
+  "version_conflict",
 ] as const;
 
 /** Текст ошибки действия: нет связи, код API или общий «не удалось» */

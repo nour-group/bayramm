@@ -5,6 +5,7 @@
    перезагрузку, но не закрытие вкладки. sessionStorage недоступен (старый вебвью,
    запрет) — токен только в памяти, до перезагрузки. */
 
+import type { Dictionaries } from "@bayramm/shared/api";
 import type { Me } from "@bayramm/shared/api/me";
 import type {
   DayPart,
@@ -16,6 +17,8 @@ import type {
   VendorCalendarChange,
   VendorCapacityChange,
   VendorListing,
+  VendorListingPatch,
+  VendorListingSaved,
   VendorMe,
   VendorPhoto,
   VendorRequestDetail,
@@ -254,6 +257,15 @@ export const api = {
     json<ListingService>(`${servicePath(listingId, serviceId)}/withdraw`, { method: "POST" }),
   deleteService: (listingId: string, serviceId: string) =>
     empty(servicePath(listingId, serviceId), { method: "DELETE" }),
+
+  /**
+   * Сохранить изменения витрины: сразу, пока её нет на сайте, иначе предложением команде
+   * (sentForModeration — какие поля ушли предложением). Только владелец кабинета
+   */
+  saveListing: (listingId: string, patch: VendorListingPatch) =>
+    json<VendorListingSaved>(listingPath(listingId), { method: "PATCH", body: JSON.stringify(patch) }),
+  /** Справочники (районы по городам): открытый адрес API, как у сайта */
+  dictionaries: () => json<Dictionaries>("/dictionaries"),
 
   revisions: (listingId: string) =>
     json<VendorRevisionList>(`/vendor/listings/${encodeURIComponent(listingId)}/revisions`),
