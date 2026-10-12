@@ -49,8 +49,8 @@ async function chooseVitrina(page: Page, name: string) {
     await page.locator(".side-vitrinas").getByRole("button", { name }).click();
     return;
   }
-  await page.locator("main .vitrina-select").getByRole("button").click();
-  await page.getByRole("option", { name }).click();
+  // До четырёх витрин — пилюли (ListingPicker.tsx)
+  await page.locator("main .vitrina-pills").getByRole("button", { name }).click();
 }
 
 test.describe("фото: порядок и обложка", () => {
@@ -224,8 +224,8 @@ test.describe("контакты витрины", () => {
     await expect(card.getByRole("heading", { name: t.contactsTitle })).toBeVisible();
     await expect(card).toContainText("+998 00 000 00 01");
     await expect(card).toContainText("@lola_zali");
-    // Телефон — один раз на экране: отдельной «плитки» телефона нет
-    await expect(page.locator(".facts")).not.toContainText("+998 00 000 00 01");
+    // Телефон — один раз на экране: в «Основном» его нет
+    await expect(page.locator('[data-group="basics"]')).not.toContainText("+998 00 000 00 01");
     await expectNoAxeViolations(page, "контакты: карточка");
     await expectHitAreas(page, "контакты: карточка", CONTROLS);
 
