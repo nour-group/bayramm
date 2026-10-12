@@ -203,16 +203,16 @@ test.describe("оповещения команды: бот должен знат
     await expect(page.locator(".no-bot")).toContainText(t.memberNoBot);
   });
 
-  test("«Сейчас» в метриках: плитка очереди ведёт туда, где её разбирают", async ({ page }) => {
+  test("метрики без «Сейчас»: очереди — счётчики у разделов; ссылка в очередь модерации фокусирует её", async ({
+    page,
+  }) => {
     const api = await start(page, "moderator");
     await page.goto("/metrics");
-    const services = page.getByRole("link", { name: new RegExp(t.metricsQueues.servicesPending ?? "") });
-    await expect(services).toContainText("2");
-    // У модератора заявок нет: «Ждут ответа вендора» — без ссылки
-    await expect(page.getByRole("link", { name: new RegExp(t.metricsQueues.awaiting ?? "") })).toHaveCount(0);
-    await services.click();
-    // Сразу к своей очереди: заголовок очереди услуг — в фокусе
-    await expect(page).toHaveURL("/moderation?queue=services");
+    await expect(heading(page)).toHaveText(t.metrics);
+    // Плиток очередей в метриках больше нет: каждое число жило ещё и в счётчике раздела
+    await expect(page.locator(".stat")).toHaveCount(0);
+    // Адрес с ?queue= по-прежнему ведёт сразу к своей очереди: её заголовок — в фокусе
+    await page.goto("/moderation?queue=services");
     await expect(heading(page)).toHaveText(t.moderation);
     await expect(
       page.getByRole("heading", { level: 2, name: new RegExp(`^${t.serviceQueue}`) }),

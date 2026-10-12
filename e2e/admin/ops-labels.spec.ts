@@ -116,8 +116,12 @@ test("заявки: в списке видно, чья заявка", async ({ p
   await expect(heading(page)).toHaveText(t.requests);
   await expect(rows(page)).toHaveCount(2);
   for (const n of [0, 1]) await expect(rows(page).nth(n)).toContainText("Азиза");
-  if (isPhone(page)) await expect(rows(page).first().locator("dt").first()).toHaveText(t.colClient);
-  else await expect(page.getByRole("columnheader", { name: t.colClient })).toBeVisible();
+  // Имя клиента — под номером (таблица) или рядом с ним в названии карточки (телефон); отдельного столбца нет
+  if (isPhone(page)) await expect(rows(page).first().getByRole("link").first()).toContainText("Азиза");
+  else {
+    await expect(rows(page).first().locator("td .sub").first()).toHaveText("Азиза");
+    await expect(page.getByRole("columnheader", { name: t.colClient })).toHaveCount(0);
+  }
   await expectFits(page, "заявки");
   expect(api.unexpected).toEqual([]);
 });
@@ -206,7 +210,7 @@ test.describe("фото: отказ с причиной", () => {
 
 test("метрики, контакты витрин: изменение открытий — знаком и словами, не цветом", async ({ page }) => {
   const api = await start(page);
-  await page.goto("/metrics");
+  await page.goto("/metrics?tab=contacts");
   const section = page.getByRole("region", { name: t.metricsContacts });
   const list = section.locator(".rcard, tbody tr");
   await expect(list).toHaveCount(3);

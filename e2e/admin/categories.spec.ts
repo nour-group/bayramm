@@ -200,6 +200,8 @@ test("услуги: из каталога с добавкой; правка; с�
     .getByRole("region", { name: t.optionN(1) })
     .getByLabel(t.serviceFields.priceUzs ?? "")
     .fill("100000");
+  // axe меряет цели под липкой панелью «закрытыми»: проверяем с начала страницы
+  await page.evaluate(() => window.scrollTo(0, 0));
   await expectNoAxeViolations(page, "форма услуги");
   await form.getByRole("button", { name: t.serviceCreate }).click();
   await expect(form).toHaveCount(0);

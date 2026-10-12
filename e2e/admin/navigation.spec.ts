@@ -204,8 +204,13 @@ test.describe("фильтры в адресе", () => {
     await expect(heading(page)).toHaveText(t.metrics);
     // Вкладка выбрана, фильтр категории — тоже; таблица одна — вендоры
     await expect(page.getByRole("radio", { name: t.metricsTabs.vendors })).toBeChecked();
-    await expect(page.getByRole("button", { name: new RegExp(`^${t.colCategory}`) })).toContainText("Кортеж");
-    await expect(page.locator("table")).toHaveCount(1);
+    if (isPhone(page)) await expect(page.getByRole("button", { name: `${t.filters} (1)` })).toBeVisible();
+    else
+      await expect(page.getByRole("button", { name: new RegExp(`^${t.colCategory}`) })).toContainText(
+        "Кортеж",
+      );
+    // Таблица одна: таблицей на компьютере, карточками на телефоне
+    await expect(page.locator("table, ul.rcards")).toHaveCount(1);
     await expect(page.locator("main .muted.small").filter({ hasText: t.metricsPeriod })).toBeVisible();
     // Определения — в листе
     await page.getByRole("button", { name: t.metricsHow }).click();

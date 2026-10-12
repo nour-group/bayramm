@@ -60,9 +60,10 @@ test.describe("клиенты", () => {
     await expect(first).toContainText(t.locales.uz ?? "");
     // Телефон — карточка в три строки: имя, код · вход · язык, заявки · когда был; последняя заявка
     // — на странице клиента, а в таблице компьютера — под числом заявок
-    await expect(first).toContainText(t.requestsOf(1));
-    if (isPhone(page)) await expect(first.locator(".rcard-meta")).toHaveCount(2);
-    else {
+    if (isPhone(page)) {
+      await expect(first).toContainText(t.requestsOf(1));
+      await expect(first.locator(".rcard-meta")).toHaveCount(2);
+    } else {
       await expect(first).toContainText(`${t.requestNo(1051)} · Lola zali`);
       await expect(first).toContainText(t.requestStatus.viewed ?? "");
     }
@@ -256,7 +257,7 @@ test.describe("метрики: контакты витрин", () => {
 
   test("за 30 дней: витрина ссылкой; открыли, позвонить, Telegram — числами", async ({ page }) => {
     const api = await start(page);
-    await page.goto("/metrics");
+    await page.goto("/metrics?tab=contacts");
     await expect(heading(page)).toHaveText(t.metrics);
     const list = section(page);
     await expect(list.getByRole("link", { name: "Lola zali" })).toHaveAttribute(
@@ -279,10 +280,8 @@ test.describe("метрики: контакты витрин", () => {
 
   test("фильтр категории сужает и контакты; пусто — словами", async ({ page }) => {
     const api = await start(page);
-    await page.goto("/metrics");
+    await page.goto("/metrics?tab=contacts");
     await expect(section(page).locator(".rcard, tbody tr")).toHaveCount(3);
-    // До выбора фильтр говорит, что он сужает
-    await expect(page.getByText(t.metricsFilterScope)).toBeVisible();
     await chooseCategory(page, "Кортеж");
     await expect(section(page).locator(".rcard, tbody tr")).toHaveCount(1);
     await expect(section(page)).toContainText("Oq kortej");

@@ -50,6 +50,7 @@ export function MetricsPage({ slaHours }: { slaHours?: number | undefined }) {
     <div className="stack">
       <RadioGroup<Tab>
         variant="segmented"
+        className="choice-segmented metrics-tabs"
         label={t.metrics}
         name="metrics-tab"
         value={tab}
