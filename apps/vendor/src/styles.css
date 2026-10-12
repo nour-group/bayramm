@@ -2140,9 +2140,16 @@ body {
   flex: none;
 }
 
-/* Цена «от» — с кнопкой к услугам под значением */
-.fact-link {
-  margin-top: 8px;
+/* Цена «от»: значение и кнопка к услугам справа от подписи; не помещаются — друг под другом */
+.detail-rows .price-row dd {
+  flex: 1 1 0;
+  min-width: 12ch;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-5) var(--gap-9);
+  text-align: right;
 }
 
 /* ── витрина: карточки-группы и окна «Изменить» ───────────────────────────── */

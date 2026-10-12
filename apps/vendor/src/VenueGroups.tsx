@@ -165,7 +165,7 @@ export function VenueGroups({
               ) : null}
             </dd>
           </div>
-          <div>
+          <div className="price-row">
             <dt>{t.priceLabel}</dt>
             <dd>
               {listing.priceFromUzs !== null
@@ -174,7 +174,7 @@ export function VenueGroups({
                     listing.priceUnit,
                   )}`
                 : t.notSet}
-              <SectionLink to={{ route: "services" }} navigate={navigate} className="btn btn-ghost fact-link">
+              <SectionLink to={{ route: "services" }} navigate={navigate} className="btn btn-ghost">
                 {t.toServices}
               </SectionLink>
             </dd>
