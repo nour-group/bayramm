@@ -531,6 +531,8 @@ export interface ChoiceFieldProps<V extends string> {
   readonly error?: string | undefined;
   readonly full?: boolean;
   readonly disabled?: boolean;
+  /** Нажатие на выбранный вариант снимает выбор (необязательное поле): «Не указано» вариантом не нужен */
+  readonly onClear?: () => void;
 }
 
 /** Один из вариантов — сразу на виду, без списка: подпись, варианты, подсказка или ошибка */
@@ -544,6 +546,7 @@ export function ChoiceField<V extends string>({
   error,
   full = true,
   disabled,
+  onClear,
 }: ChoiceFieldProps<V>) {
   const id = useId();
   const note = error ?? hint;
@@ -565,6 +568,7 @@ export function ChoiceField<V extends string>({
         value={value}
         options={options}
         onChange={onChange}
+        onClear={onClear}
         disabled={disabled}
       />
       {note ? (

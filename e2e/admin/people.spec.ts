@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { pick } from "../support/admin-ui";
+import { menuAction, moreButton, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   CAKE_LISTING_ID,
@@ -112,6 +112,10 @@ test.describe("клиенты", () => {
 test.describe("контакты витрины для клиентов", () => {
   const contacts = (page: Page) => page.locator(".contacts-reveal");
   const telegramField = (page: Page) => page.getByLabel(t.telegramChange);
+  /** Строка канала: «Телефон» или «Telegram» */
+  const row = (page: Page, name: string) => contacts(page).locator(".contact-row").filter({ hasText: name });
+  /** «Показать» у любой строки открывает оба значения: одно чтение */
+  const show = (page: Page) => contacts(page).getByRole("button", { name: t.contactsShow }).first();
   const save = (page: Page) => page.getByRole("button", { name: t.save, exact: true });
 
   test("телефон и Telegram скрыты до «Показать»; одно чтение открывает оба", async ({ page }) => {
@@ -122,7 +126,7 @@ test.describe("контакты витрины для клиентов", () => {
     await expect(contacts(page)).not.toContainText("111 22 33");
     expect(api.reveals).toEqual([]);
 
-    await contacts(page).getByRole("button", { name: t.contactsShow }).click();
+    await show(page).click();
     await expect(contacts(page).getByRole("link", { name: "+998 90 111 22 33" })).toHaveAttribute(
       "href",
       "tel:+998901112233",
@@ -144,10 +148,16 @@ test.describe("контакты витрины для клиентов", () => {
   }) => {
     const api = await start(page);
     await page.goto(`/listings/${CAR_LISTING_ID}`);
-    await contacts(page).getByRole("button", { name: t.contactsShow }).click();
+    await show(page).click();
     await expect(contacts(page)).toContainText(`@${CAR_CONTACTS.telegram}`);
 
+    // Новое имя — полем на месте строки Telegram
+    await row(page, t.telegramLabel).getByRole("button", { name: t.contactEdit }).click();
+    await expect(telegramField(page)).toBeFocused();
     await telegramField(page).fill("ab");
+    // Уход из поля показывает его собственную ошибку и сдвигает страницу: «Сохранить» нажимаем после
+    await telegramField(page).blur();
+    await expect(page.locator(".field-error")).toBeVisible();
     await save(page).click();
     await expect(
       page.locator(".field-error").filter({ hasText: t.listingFieldErrors.telegram ?? "" }),
@@ -164,23 +174,29 @@ test.describe("контакты витрины для клиентов", () => {
     expect(api.patches.map((body) => body.telegram)).toEqual(["Oq_Kortej_Official"]);
     // Показанное было до правки: контакты закрылись и просят нового «Показать»
     await expect(contacts(page)).not.toContainText(CAR_CONTACTS.telegram);
-    await contacts(page).getByRole("button", { name: t.contactsShow }).click();
+    await show(page).click();
     await expect(contacts(page).getByRole("link", { name: "@Oq_Kortej_Official" })).toBeVisible();
     expect(api.reveals).toEqual([CAR_LISTING_ID, CAR_LISTING_ID]);
     expect(api.unexpected).toEqual([]);
   });
 
-  test("«Убрать Telegram» — null; в контактах так и сказано", async ({ page }) => {
+  test("«Убрать Telegram» — в «…» строки: до «Сохранить» отметка с «Вернуть», потом null; в контактах так и сказано", async ({
+    page,
+  }) => {
     const api = await start(page);
     await page.goto(`/listings/${CAR_LISTING_ID}`);
-    await page.getByLabel(t.telegramRemove).check();
-    await expect(telegramField(page)).toBeDisabled();
+    await menuAction(page, t.telegramLabel, t.telegramRemove, contacts(page));
+    await expect(row(page, t.contactTelegramRemoving)).toBeVisible();
+    // Передумали — отметка снимается, сохранять нечего
+    await row(page, t.contactTelegramRemoving).getByRole("button", { name: t.contactUndo }).click();
+    await expect(contacts(page)).not.toContainText(t.contactTelegramRemoving);
+    await menuAction(page, t.telegramLabel, t.telegramRemove, contacts(page));
     await save(page).click();
     await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
     expect(api.patches.at(-1)?.telegram).toBeNull();
     await expect(contacts(page)).toContainText(t.telegramMissing);
-    // Убрать больше нечего: галочки нет
-    await expect(page.getByLabel(t.telegramRemove)).toHaveCount(0);
+    // Убирать больше нечего: «…» у строки нет
+    await expect(moreButton(contacts(page), t.telegramLabel)).toHaveCount(0);
     expect(api.unexpected).toEqual([]);
   });
 
@@ -191,11 +207,12 @@ test.describe("контакты витрины для клиентов", () => {
     // Опубликованную без телефона не оставить: галочки нет
     await page.goto(`/listings/${CAR_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Oq kortej");
-    await expect(page.getByLabel(t.phoneRemove)).toHaveCount(0);
+    const phoneMenu = (page: Page) => moreButton(contacts(page), t.listingFields.phone ?? "");
+    await expect(phoneMenu(page)).toHaveCount(0);
 
     await page.goto(`/listings/${CAKE_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Shirin");
-    await expect(page.getByLabel(t.phoneRemove)).toHaveCount(0);
+    await expect(phoneMenu(page)).toHaveCount(0);
     // Номера нет — сразу поле «Телефон» (не «Сменить номер»): +998 у поля, маска
     await expect(page.getByLabel(t.phoneChange)).toHaveCount(0);
     const phone = page.getByLabel(t.listingFields.phone ?? "", { exact: true });
@@ -203,19 +220,20 @@ test.describe("контакты витрины для клиентов", () => {
     await expect(phone).toHaveValue("90 111 22 33");
     await save(page).click();
     await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
-    // Номер есть — он скрыт; новый — по «Изменить номер»
-    const change = page.getByRole("button", { name: t.input.phoneChange });
-    await expect(change).toBeVisible();
+    // Номер есть — он скрыт; новый — по «Изменить»
+    await expect(
+      row(page, t.listingFields.phone ?? "").getByRole("button", { name: t.contactEdit }),
+    ).toBeVisible();
 
-    await page.getByLabel(t.phoneRemove).check();
-    await expect(change).toBeDisabled();
-    await expect(telegramField(page)).toBeDisabled();
-    await expect(page.getByText(t.phoneRemoveHint)).toBeVisible();
+    await menuAction(page, t.listingFields.phone ?? "", t.phoneRemove, contacts(page));
+    // Что будет с Telegram — в отметке: он уходит вместе с телефоном
+    await expect(contacts(page)).toContainText(t.contactPhoneRemoving);
     await save(page).click();
     await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
     expect(api.patches.map((body) => body.phone)).toEqual(["+998901112233", null]);
-    await expect(contacts(page)).toContainText(t.phoneMissing);
-    await expect(page.getByLabel(t.phoneRemove)).toHaveCount(0);
+    // Телефона нет — снова поле; убирать больше нечего
+    await expect(page.getByLabel(t.listingFields.phone ?? "", { exact: true })).toBeVisible();
+    await expect(phoneMenu(page)).toHaveCount(0);
     expect(api.unexpected).toEqual([]);
   });
 
@@ -224,8 +242,10 @@ test.describe("контакты витрины для клиентов", () => {
     // У фото и видео в подмене контактов нет
     await page.goto(`/listings/${PHOTO_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Kadr studio");
-    await expect(contacts(page)).toContainText(t.phoneMissing);
+    // Номера нет — сразу поле (он нужен для публикации); Telegram — по «Добавить»
+    await expect(page.getByLabel(t.listingFields.phone ?? "", { exact: true })).toBeVisible();
     await expect(contacts(page)).toContainText(t.telegramMissing);
+    await expect(contacts(page).getByRole("button", { name: t.contactAdd })).toBeVisible();
     await expect(contacts(page).getByRole("button", { name: t.contactsShow })).toHaveCount(0);
   });
 });

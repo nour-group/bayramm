@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { pick } from "../support/admin-ui";
+import { menuAction, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   BENTO_ID,
@@ -81,15 +81,26 @@ test("вторая витрина в другой категории: катег
   await page.getByRole("button", { name: t.createVitrina }).click();
   await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
   expect(api.vitrinas).toEqual([{ categoryCode: "photo" }]);
-  await expect(page.locator(".listing-head .cat-chip")).toHaveText("Фото и видео");
+  await expect(page.locator(".listing-top .cat-chip")).toHaveText("Фото и видео");
   await expect(page.getByRole("heading", { name: t.listingDataSections.videos })).toBeVisible();
-  await expect(page.getByRole("heading", { name: t.listingDataSections.occupancy })).toBeVisible();
-  // Портфолио: согласие людей на фото или «лиц нет» — ничего не отмечено заранее
+  // «Заказов одновременно» — в шапке календаря, у занятости по частям дня
+  await expect(
+    page.getByRole("region", { name: t.availability }).getByRole("spinbutton", {
+      name: t.listingDataSections.occupancy,
+    }),
+  ).toBeVisible();
+  // Портфолио: правило и согласие людей на фото (или «лиц нет») — при загрузке, ничего не отмечено заранее
+  await expect(page.getByRole("radiogroup", { name: t.photoAckLabel })).toHaveCount(0);
+  await page.getByRole("button", { name: t.photosAdd }).click();
   const ack = page.getByRole("radiogroup", { name: t.photoAckLabel });
   await expect(ack.getByRole("radio", { name: t.photoAckConsent })).not.toBeChecked();
   await expect(ack.getByRole("radio", { name: t.photoAckNoFaces })).not.toBeChecked();
   await expect(page.getByText(t.portfolioWarning)).toBeVisible();
-  // Категорию сменить можно, пока услуг нет: что будет — в форме, кнопка — цвета отказа
+  // Панель загрузки закрывается «Отмена»: на телефоне она — шторка, страница под ней недоступна
+  await page.locator(".upload").getByRole("button", { name: t.cancel }).click();
+  await expect(page.locator(".upload")).toHaveCount(0);
+  // Категорию сменить можно, пока услуг нет: в «Служебном»; что будет — в форме, кнопка — цвета отказа
+  await page.getByRole("button", { name: t.listingService }).click();
   await page.getByRole("button", { name: t.categoryChange }).click();
   const change = page.locator("form.confirm").filter({ hasText: t.categoryChangeConsequence });
   await expect(change).toBeVisible();
@@ -143,7 +154,7 @@ test("фото и видео: чего не хватает — по полям; 
 }) => {
   const api = await start(page);
   await page.goto(`/listings/${PHOTO_LISTING_ID}`);
-  const review = page.locator(".notice-warn").filter({ hasText: t.blockersReview });
+  const review = page.locator(".next-step");
   await expect(review).toContainText(t.blockers.attributes ?? "");
   await expect(review).toContainText(t.readinessAttributes("Команда, Готовый материал через, дней"));
 
@@ -221,7 +232,8 @@ test("услуги: из каталога с добавкой; правка; с�
   await expect(retro).toContainText(t.serviceStatus.active ?? "");
 
   // Снять с витрины — через подтверждение: услуга пропадёт у клиентов
-  await act(retro, t.servicePause, "Ретро-автомобиль").click();
+  // Действия услуги — в «…» её строки
+  await menuAction(page, "Ретро-автомобиль", t.servicePause, retro);
   const pause = page.getByRole("alertdialog", { name: t.servicePauseTitle });
   await expect(pause).toContainText(t.servicePauseText("Ретро-автомобиль"));
   await pause.getByRole("button", { name: t.servicePause }).click();
@@ -230,7 +242,7 @@ test("услуги: из каталога с добавкой; правка; с�
   await expect(
     page.getByRole("status").filter({ hasText: t.toastServicePaused("Ретро-автомобиль") }),
   ).toBeVisible();
-  await act(retro, t.serviceDelete, "Ретро-автомобиль").click();
+  await menuAction(page, "Ретро-автомобиль", t.serviceDelete, retro);
   await page
     .getByRole("alertdialog", { name: t.serviceDeleteTitle })
     .getByRole("button", { name: t.serviceDelete })
@@ -238,7 +250,7 @@ test("услуги: из каталога с добавкой; правка; с�
   await expect(services.getByText("Ретро-автомобиль")).toHaveCount(0);
 
   // Правка: в форме — предложенная цена (правка ждёт решения), уходит новая
-  await act(services, t.serviceEdit, "Машина для молодожёнов").click();
+  await menuAction(page, "Машина для молодожёнов", t.serviceEdit, services);
   const edit = services.locator("form.service-form");
   // Цена услуги — первое поле «Цена, сум» формы (дальше — цены добавок)
   const editPrice = edit.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true }).first();
@@ -335,7 +347,7 @@ test("части дня: вечер — одна машина из двух; о�
 }) => {
   const api = await start(page);
   await page.goto(`/listings/${CAR_LISTING_ID}`);
-  await expect(page.getByText(t.capacityNow(2))).toBeVisible();
+  await expect(page.getByRole("spinbutton", { name: t.listingDataSections.occupancy })).toHaveValue("2");
   const day = page.locator(".cal-day").filter({ hasText: /^10$/ });
   await day.click();
   const parts = page.getByRole("region", { name: t.pickedDay("10 октября") });

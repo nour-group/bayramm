@@ -81,6 +81,11 @@ export interface RadioGroupProps<V extends string> {
   readonly options: readonly RadioOption<V>[];
   readonly onChange: (value: V) => void;
   /**
+   * Нажатие на уже выбранный вариант (и пробел на нём) снимает выбор — для необязательных полей:
+   * варианта «не указано» в группе нет. Change у выбранной радиокнопки не приходит, поэтому click
+   */
+  readonly onClear?: () => void;
+  /**
    * pill — пилюли в строку (повод, бюджет); row — строки списком (причина отказа);
    * segmented — сегменты одной дорожки (два–четыре коротких варианта)
    */
@@ -105,6 +110,7 @@ export function RadioGroup<V extends string>({
   value,
   options,
   onChange,
+  onClear,
   variant = "pill",
   label,
   "aria-labelledby": labelledBy,
@@ -147,6 +153,7 @@ export function RadioGroup<V extends string>({
               aria-invalid={!named && invalid ? true : undefined}
               aria-describedby={!named ? describedBy : undefined}
               onChange={() => onChange(option.value)}
+              onClick={on && onClear ? onClear : undefined}
             />
             {variant === "row" ? <span className="ui-radio-dot" aria-hidden="true" /> : null}
             <span className="ui-radio-label">

@@ -226,7 +226,6 @@ export const t = {
   goTo: "Перейти",
   toChecklist: "К проверке вендора",
   blockersActive: "Не хватает для публикации",
-  readyToPublish: "Всё готово к публикации",
   legalForms: { ooo: "ООО", yatt: "ЯТТ (ИП)", self_employed: "Самозанятый" },
   sum: "сум",
 
@@ -354,11 +353,8 @@ export const t = {
   // витрина
   listingSections: {
     main: "Основное",
-    mainHint: "Название, район и адрес страницы витрины на сайте (латиница).",
     texts: "Описание и адрес",
-    textsHint: "На двух языках: клиент видит свой.",
-    phone: "Телефон и Telegram для клиентов",
-    phoneHint: "Клиент видит их сразу, до заявки. Telegram — по желанию.",
+    phone: "Контакты для клиентов",
   },
   listingFields: {
     name: "Название",
@@ -387,11 +383,8 @@ export const t = {
   telegramLabel: "Telegram",
   telegramMissing: "Telegram не указан",
   telegramChange: "Telegram для клиентов",
-  telegramHintNew: "@имя, имя или ссылка t.me/имя. Можно не указывать",
   telegramRemove: "Убрать Telegram",
   phoneRemove: "Убрать телефон",
-  phoneRemoveHint:
-    "Клиенты не увидят ни телефона, ни Telegram витрины: Telegram уберётся вместе с телефоном.",
   contactsShow: "Показать",
   history: "История статусов",
   historyEmpty: "Пока без изменений.",
@@ -409,7 +402,7 @@ export const t = {
   moderatedHint: "Через модерацию",
   sentForModeration: (fields: string, rest: boolean) =>
     `Отправлено на модерацию: ${fields}. На витрине появится после решения модератора.${rest ? " Остальное сохранено." : ""}`,
-  pendingRevisionTitle: "Предложение изменений ждёт решения модератора",
+  pendingRevisionTitle: "Есть предложение изменений",
   pendingRevisionOpen: "Открыть предложение",
 
   actions: {
@@ -432,8 +425,6 @@ export const t = {
   // удаление витрины
   listingDelete: "Удалить витрину",
   listingDeleteTitle: "Удалить витрину?",
-  listingDeleteHint:
-    "Витрина удалится насовсем — вместе с фото, услугами, занятостью, контактами и предложениями изменений. Отменить нельзя.",
   listingDeleteText: (name: string) =>
     `«${name}» удалится насовсем: фото, услуги, занятость, контакты и предложения изменений. Отменить нельзя.`,
   // Почему витрину нельзя удалить — DeleteBlocker
@@ -446,14 +437,12 @@ export const t = {
 
   // фото
   photos: "Фото",
-  photosHint: (min: number, max: number) =>
-    `Минимум ${min}, максимум ${max}. Первое — обложка. Фото сжимаются в браузере, метаданные (в том числе геопозиция) удаляются.`,
   noFacesWarning:
-    "На фото не должно быть людей и лиц — только то, что предлагает витрина: зал, машины, цветы, торты, подарки, оформление. Фото с людьми не загружайте.",
+    "Без людей и лиц — только то, что предлагает витрина: зал, машины, цветы, торты, подарки, оформление.",
   noFacesAck: "Подтверждаю: на выбранных фото нет лиц",
   // Портфолио (фото и видео, студия): люди на фото — только с их согласия
   portfolioWarning:
-    "Портфолио: люди на фото допустимы, только если они согласны на публикацию. Нет согласия — загружайте только фото без лиц.",
+    "Люди на фото — только с их согласия на публикацию. Нет согласия — загружайте фото без лиц.",
   photoAckLabel: "Что на выбранных фото",
   photoAckConsent: "Люди на фото согласны на публикацию",
   photoAckNoFaces: "На фото нет лиц",
@@ -463,8 +452,6 @@ export const t = {
   uploading: (done: number, total: number) => `Загружаем ${done} из ${total}…`,
   cover: "Обложка",
   makeCover: "Сделать обложкой",
-  moveEarlier: (n: number) => `Фото ${n}: раньше`,
-  moveLater: (n: number) => `Фото ${n}: позже`,
   photoN: (n: number) => `Фото ${n}`,
   addPhotosPhone: "Снять или выбрать фото",
   photosPick: "Камера или галерея: JPEG, PNG, WebP, HEIC",
@@ -1100,24 +1087,14 @@ export const t = {
   vitrinaNameHint: "Пусто — название вендора",
   createVitrina: "Создать витрину",
   categoryChange: "Сменить категорию",
-  categoryChangeHint:
-    "Только пока у витрины нет заявок и услуг: данные витрины очистятся. Если категория другая по сути — лучше новая витрина.",
-  categoryChangeLocked:
-    "У витрины есть услуги — категорию не сменить. Заведите вендору новую витрину в нужной категории.",
   categoryNew: "Новая категория",
   required: "обязательно",
-  priceFromAuto: "Цена «от» в каталоге — из одобренных услуг",
+  priceFromAuto: "Цена «от»",
   priceFromNone: "появится с первой услугой с ценой",
   listingDataSections: {
     attributes: "Данные витрины",
-    attributesHint: (category: string) =>
-      `Поля категории «${category}»: по ним клиент фильтрует каталог. Обязательные нужны для публикации.`,
     occupancy: "Заказов одновременно",
-    occupancyHint:
-      "Сколько машин, экипажей или команд работают в одно время. Часть дня занята, когда договорённостей на неё столько же.",
     videos: "Видео",
-    videosHint: (n: number) =>
-      `До ${n} ссылок на ролики YouTube или посты Instagram. Файлы видео не загружаются.`,
   },
   attributeError: "Проверьте значение",
   attributeIntError: (min: number, max: number) => `Целое число от ${min} до ${max}`,
@@ -1138,11 +1115,7 @@ export const t = {
   // услуги витрины
   services: "Услуги",
   // Цена «от» объяснена один раз — строкой «Цена «от» в каталоге — из одобренных услуг: …» ниже
-  servicesHint: "Цены витрины — только в услугах: «по запросу» не бывает.",
   servicesEmpty: "Услуг пока нет.",
-  servicesDecides: "Вы решаете по модерации: ваши услуги и их изменения сразу на витрине.",
-  servicesManager:
-    "Новые услуги и изменения услуг опубликованной витрины уходят модератору; у неопубликованной их одобрит модератор или публикация.",
   // услуга ждёт решения прямо на странице витрины (как в очереди «Модерации»)
   serviceWaits: "Ждёт решения",
   serviceStatus: {
@@ -1225,12 +1198,6 @@ export const t = {
   toModeration: "К модерации",
 
   // занятость по режимам категорий
-  availabilityHints: {
-    day: "Отметьте дни, когда витрина занята. Нажмите на день, чтобы отметить или снять.",
-    parts:
-      "День делится на утро, день и вечер. Нажмите на день, чтобы отметить его целиком или по частям. Часть занята, когда отмечена или договорённостей на неё столько же, сколько заказов одновременно.",
-    slot: "Студия: отмечайте дни целиком. Время начала и часы съёмки приходят в заявке.",
-  },
   dayParts: { morning: "Утро", day: "День", evening: "Вечер" } as Record<string, string>,
   wholeDay: "Весь день",
   markBusy: "Занять",
@@ -1238,10 +1205,8 @@ export const t = {
   partBookings: (count: number, capacity: number) => `договорённостей: ${count} из ${capacity}`,
   dayLoad: { free: "свободно", partial: "занято частично", busy: "занято" } as Record<string, string>,
   legendPartial: "занято частично",
-  capacityNow: (n: number) => `Заказов одновременно: ${n} — меняется в одноимённом блоке формы витрины.`,
   pickedDay: (day: string) => `День: ${day}`,
   leadTitle: "Срок заказа",
-  leadHint: "Календаря у этой категории нет: витрина принимает заказы не позже чем за указанный срок.",
   leadDaysValue: (n: number) => `Заказ не позже чем за ${n} дн.`,
   leadNotSet: "Срок не указан — заполните «Заказ не позже чем за, дней» в данных витрины.",
   leadServices: (list: string) => `Свой срок у услуг: ${list}`,
@@ -1276,7 +1241,6 @@ export const t = {
     range: (min: number, max: number) => `от ${min} до ${max}`,
     less: "меньше",
     more: "больше",
-    notChosen: "Не указано",
     stir: "Ровно 9 цифр — как в реестре",
     capacity: "Вместимость, гостей",
     capacityHint: "Сколько гостей принимает зал: от и до",
@@ -1413,15 +1377,8 @@ export const t = {
     photos: "Фото",
     services: "Услуги",
     calendar: "Занятость",
-    main: "Основное",
     attrs: "Данные",
     phone: "Контакты",
-    history: "История",
-  } as Record<string, string>,
-  // опубликовать или отправить на проверку нельзя: чего не хватает — в той же шторке
-  actionBlocked: {
-    publish: "Опубликовать пока нельзя — не хватает:",
-    submit: "Отправить на проверку пока нельзя — не хватает:",
   } as Record<string, string>,
 
   // ── заявка: бюджет одной границей ──
@@ -1458,6 +1415,32 @@ export const t = {
   auditObjectPickType: "Сначала выберите вид объекта",
   auditStaffInactive: (name: string) => `${name} (отключён)`,
   auditActorStaffOnly: "Только когда «Кто» — сотрудник",
+
+  // ── страница витрины: что дальше, фото, контакты, служебное ──
+  listingLeft: "Что осталось",
+  toVendor: "К вендору",
+  listingWaits: "Ждёт решения",
+  listingSubmitted: (at: string) => `Отправлена ${at}`,
+  vendorChecksDone: (done: number, all: number) => `Проверка вендора ${done}/${all}`,
+  actionLeft: (action: string, left: number) => `${action} (осталось ${left})`,
+  listingService: "Служебное",
+  historyAll: (n: number) => `Показать все (${n})`,
+  slugEdit: "Изменить",
+  slugEditContext: "адрес страницы",
+  contactEdit: "Изменить",
+  contactAdd: "Добавить",
+  contactKeep: "Не менять",
+  contactUndo: "Вернуть",
+  contactPhoneRemoving: "Уберётся при сохранении, Telegram — вместе с ним",
+  contactTelegramRemoving: "Уберётся при сохранении",
+  photosOf: (n: number, max: number) => `${n}/${max}`,
+  photosMin: (min: number) => `минимум ${min}`,
+  photosAdd: "Добавить фото",
+  photosApproveAll: (n: number) => `Одобрить все (${n})`,
+  moveToStart: "Переместить в начало",
+  toastPhotoFirst: (n: number) => `Фото ${n} — теперь первое`,
+  toastPhotosApproved: (n: number) => `Одобрено фото: ${n}`,
+  serviceOptionsN: (n: number) => `добавок: ${n}`,
 } as const;
 
 /** Текст ошибки API по коду */

@@ -645,22 +645,18 @@ describe("телефон: длинные списки, оглавление ви
     });
     await mount(`/listings/${LISTING_ID}`);
     expect(container.querySelector("nav.crumbs")).toBeNull();
-    expect(container.querySelector(".listing-head a")?.getAttribute("href")).toBe(`/vendors/${VENDOR_ID}`);
+    expect(container.querySelector(".listing-top a")?.getAttribute("href")).toBe(`/vendors/${VENDOR_ID}`);
     const index = byLabel(t.listingIndex);
     expect([...(index?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([
       t.listingIndexItems.photos,
       t.listingIndexItems.services,
       t.listingIndexItems.calendar,
-      t.listingIndexItems.main,
       t.listingIndexItems.attrs,
       t.listingIndexItems.phone,
-      t.listingIndexItems.history,
     ]);
     await click(
-      [...(index?.querySelectorAll("button") ?? [])].find(
-        (b) => b.textContent === t.listingIndexItems.history,
-      ),
+      [...(index?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.listingIndexItems.phone),
     );
-    expect(document.activeElement?.id).toBe("history-title");
+    expect(document.activeElement?.id).toBe("form-phone-title");
   });
 });

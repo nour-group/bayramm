@@ -127,27 +127,25 @@ test.describe("работа сотрудника", () => {
     await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
     expect(api.vitrinas).toEqual([{ categoryCode: "hall", name: "Navruz zali" }]);
 
-    // Оба списка — словами из словаря панели
-    const review = page.locator(".notice-warn").filter({ hasText: t.blockersReview });
-    await expect(review).toBeVisible();
-    for (const code of ["price", "capacity", "district", "descriptions", "phone", "packages", "photos"])
-      await expect(review.getByRole("listitem").filter({ hasText: t.blockers[code] ?? code })).toHaveCount(1);
-    const active = page.locator(".notice-warn").filter({ hasText: t.blockersActive });
-    for (const code of ["contract", "stir", "contacts", "pd_consent"])
-      await expect(active.getByRole("listitem").filter({ hasText: t.blockers[code] ?? code })).toHaveCount(1);
-    expect((await page.locator(".notice-warn ul.blockers").allInnerTexts()).join("\n")).not.toMatch(
-      BLOCKER_CODES,
+    // Один блок «Что осталось»: пункты витрины — словами из словаря панели, проверка вендора —
+    // одной строкой «n/4» со ссылкой на вендора
+    const left = page.locator(".next-step");
+    await expect(left.getByRole("heading", { name: t.listingLeft })).toBeVisible();
+    const review = ["price", "capacity", "district", "descriptions", "phone", "packages", "photos"];
+    for (const code of review)
+      await expect(left.getByRole("listitem").filter({ hasText: t.blockers[code] ?? code })).toHaveCount(1);
+    await expect(left.getByRole("listitem").filter({ hasText: t.vendorChecksDone(0, 4) })).toHaveCount(1);
+    await expect(left.getByRole("link", { name: t.toVendor })).toHaveAttribute(
+      "href",
+      `/vendors/${VENDOR_ID}`,
     );
+    expect((await left.locator("ul.blockers").allInnerTexts()).join("\n")).not.toMatch(BLOCKER_CODES);
 
-    // Отправить на проверку, пока чего-то не хватает: шторка сразу перечисляет, чего (словами, а
-    // не кодами), и кнопку не даёт — без запроса и отказа сервера (publish_blocked)
-    await page.getByRole("button", { name: t.actions.submit }).click();
-    const sheet = page.locator("form.confirm");
-    await expect(sheet).toContainText(t.actionBlocked.submit ?? "");
-    for (const code of ["price", "capacity", "district", "photos"])
-      await expect(sheet.getByRole("listitem").filter({ hasText: t.blockers[code] ?? code })).toHaveCount(1);
-    expect(await sheet.innerText()).not.toMatch(BLOCKER_CODES);
-    await expect(sheet.getByRole("button", { name: t.actions.submit })).toBeDisabled();
+    // Отправить на проверку, пока чего-то не хватает: кнопка говорит, сколько осталось, а нажатие
+    // ведёт к блоку «Что осталось» — без шторки, запроса и отказа сервера (publish_blocked)
+    await page.getByRole("button", { name: t.actionLeft(t.actions.submit, review.length) }).click();
+    await expect(page.locator("form.confirm")).toHaveCount(0);
+    await expect(left.getByRole("heading", { name: t.listingLeft })).toBeFocused();
     expect(api.actions).toEqual([]);
     await expectNoAxeViolations(page, "карточка");
     await expectHitAreas(page, "карточка", CONTROLS);

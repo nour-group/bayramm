@@ -7,6 +7,9 @@
    Услуга на проверке или с предложением изменений (от партнёра или менеджера, и у черновика
    тоже) — тому, кто решает по модерации, здесь же «Одобрить» и «Отклонить» с причиной для
    партнёра, как в очереди «Модерации» (ServiceDecision — один на оба места).
+   Строка услуги — название, цена, состояние и «…» (изменить, снять и вернуть, удалить); ждущая
+   решения — с рамкой «Ждёт решения» или «Изменения на проверке» (сейчас → предлагают) и
+   кнопками решения в той же рамке. Подсказок над списком нет: одна строка — цена «от».
    Форма услуги — на месте, под списком: длинная, со своими списками выбора, в шторке ей
    тесно. Цена — с разрядами и «сум», единица одна — словами, две–четыре — пилюлями, минимум и
    срок — числами с «−» и «+»; у дополнения — единицы категории и шаблона. «Снять с витрины» —
@@ -38,7 +41,18 @@ import { formatPrice, ru, unitName } from "../categories";
 import { ChoiceField, MoneyField, NumberField } from "../fields";
 import { formatSum } from "../format";
 import { apiErrorText, t } from "../texts";
-import { busyLabel, ConfirmForm, ErrorText, Field, focusSection, PhoneSheet, Pill, toneOf } from "../ui";
+import {
+  busyLabel,
+  ConfirmForm,
+  ErrorText,
+  Field,
+  focusSection,
+  type MenuAction,
+  OverflowMenu,
+  PhoneSheet,
+  Pill,
+  toneOf,
+} from "../ui";
 import { useUnsaved } from "../unsaved";
 
 /** Единицы цены дополнения: единицы категории и единица шаблона, если её там нет (как в кабинете) */
@@ -47,11 +61,12 @@ export function optionUnits(category: CategoryConfig, option: Pick<OptionDraft, 
   return units.includes(option.priceUnit) ? units : [...units, option.priceUnit];
 }
 
-/** Строка услуги: цена и единица, минимум, срок */
+/** Строка услуги: цена и единица, минимум, срок, сколько добавок (сами — в правке услуги) */
 function serviceFacts(service: ListingService): string {
   const parts = [formatPrice(service.priceUzs, service.priceUnit)];
   if (service.minQty !== null) parts.push(t.serviceMin(service.minQty, unitName(service.priceUnit)));
   if (service.leadDays !== null) parts.push(t.serviceLead(service.leadDays));
+  if (service.options.length > 0) parts.push(t.serviceOptionsN(service.options.length));
   return parts.join(" · ");
 }
 
@@ -274,6 +289,65 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
     onChanged();
   };
 
+  /** «…» у строки услуги: правка, снять и вернуть на витрину, отправить на проверку, удалить */
+  const menuOf = (service: ListingService): MenuAction[] => {
+    const locked = busy !== null || editing !== null;
+    return [
+      {
+        key: "edit",
+        label: t.serviceEdit,
+        disabled: locked,
+        run: () => {
+          setFailure(null);
+          setEditing({ kind: "edit", service });
+        },
+      },
+      ...(service.status === "active"
+        ? [
+            {
+              key: "pause",
+              label: t.servicePause,
+              disabled: busy !== null,
+              run: () => {
+                setFailure(null);
+                setPausing(service);
+              },
+            },
+          ]
+        : []),
+      ...(service.status === "paused"
+        ? [
+            {
+              key: "resume",
+              label: t.serviceResume,
+              disabled: busy !== null,
+              run: () => void act(service, "resume"),
+            },
+          ]
+        : []),
+      ...(service.status === "draft" || service.status === "rejected"
+        ? [
+            {
+              key: "submit",
+              label: t.serviceSubmit,
+              disabled: busy !== null,
+              run: () => void act(service, "resume"),
+            },
+          ]
+        : []),
+      {
+        key: "delete",
+        label: t.serviceDelete,
+        danger: true,
+        disabled: busy !== null,
+        run: () => {
+          setRemoveFailure(null);
+          setRemoving(service);
+        },
+      },
+    ];
+  };
+
   return (
     <section className="panel" aria-labelledby="services-title">
       <div className="panel-head">
@@ -294,7 +368,6 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
           </button>
         ) : null}
       </div>
-      <p className="muted small">{t.servicesHint}</p>
       <p className="visually-hidden" aria-live="polite">
         {said}
       </p>
@@ -306,9 +379,6 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
             : formatPrice(listing.priceFromUzs, listing.priceUnit)}
         </strong>
       </p>
-      {editable ? (
-        <p className="muted small">{can("revisions.moderate") ? t.servicesDecides : t.servicesManager}</p>
-      ) : null}
       {editing?.kind === "new" ? (
         <ServiceForm
           listingId={listing.id}
@@ -337,22 +407,27 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
                 </li>
               );
             }
+            // Ждёт решения тот, кто решает: одна рамка — что и «Одобрить» / «Отклонить»; остальным —
+            // только что предложено (у менеджера решение — у модератора)
+            const deciding = decides && awaitsDecision(service);
             return (
               <li key={service.id} className="card-row service-row">
-                <div className="rcard-head">
-                  <strong className="service-name">{service.name.ru}</strong>
+                <div className="service-main">
+                  <div className="service-text">
+                    <strong className="service-name">{service.name.ru}</strong>
+                    {service.customName ? <span className="sub">{typeLabel}</span> : null}
+                    <span className="sub">{serviceFacts(service)}</span>
+                  </div>
                   <Pill tone={toneOf("service", service.status)}>{t.serviceStatus[service.status]}</Pill>
+                  {editable ? (
+                    <OverflowMenu
+                      title={service.name.ru}
+                      context={service.name.ru}
+                      className="btn btn-icon"
+                      actions={menuOf(service)}
+                    />
+                  ) : null}
                 </div>
-                {service.customName ? <span className="sub">{typeLabel}</span> : null}
-                <span className="sub">{serviceFacts(service)}</span>
-                {service.options.length > 0 ? (
-                  <span className="sub">
-                    {t.serviceFields.options}:{" "}
-                    {service.options
-                      .map((o) => `${o.name.ru} — ${formatPrice(o.priceUzs, o.priceUnit)}`)
-                      .join("; ")}
-                  </span>
-                ) : null}
                 {service.decision?.outcome === "declined" && service.decision.reason ? (
                   <p className="reason">
                     {service.status === "rejected"
@@ -360,80 +435,13 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
                       : t.serviceProposalDeclined(service.decision.reason)}
                   </p>
                 ) : null}
-                {service.proposal ? (
-                  <div className="notice notice-warn">
-                    <p className="notice-title">{t.serviceProposal}</p>
-                    <ServiceChanges service={service} />
-                  </div>
-                ) : null}
-                {decides && awaitsDecision(service) ? (
-                  <div className="notice notice-warn">
-                    <p className="notice-title">{t.serviceWaits}</p>
-                    <ServiceDecision service={service} onDecided={(outcome) => decided(service, outcome)} />
-                  </div>
-                ) : null}
-                {editable ? (
-                  <div className="acts">
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={busy !== null || editing !== null}
-                      onClick={() => {
-                        setFailure(null);
-                        setEditing({ kind: "edit", service });
-                      }}
-                    >
-                      {t.serviceEdit}
-                      <span className="visually-hidden">: {service.name.ru}</span>
-                    </button>
-                    {service.status === "active" ? (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={busy !== null}
-                        onClick={() => {
-                          setFailure(null);
-                          setPausing(service);
-                        }}
-                      >
-                        {t.servicePause}
-                        <span className="visually-hidden">: {service.name.ru}</span>
-                      </button>
+                {service.proposal || deciding ? (
+                  <div className="notice notice-warn service-decision">
+                    <p className="notice-title">{service.proposal ? t.serviceProposal : t.serviceWaits}</p>
+                    {service.proposal ? <ServiceChanges service={service} /> : null}
+                    {deciding ? (
+                      <ServiceDecision service={service} onDecided={(outcome) => decided(service, outcome)} />
                     ) : null}
-                    {service.status === "paused" ? (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={busy !== null}
-                        onClick={() => void act(service, "resume")}
-                      >
-                        {t.serviceResume}
-                        <span className="visually-hidden">: {service.name.ru}</span>
-                      </button>
-                    ) : null}
-                    {service.status === "draft" || service.status === "rejected" ? (
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={busy !== null}
-                        onClick={() => void act(service, "resume")}
-                      >
-                        {t.serviceSubmit}
-                        <span className="visually-hidden">: {service.name.ru}</span>
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-danger"
-                      disabled={busy !== null}
-                      onClick={() => {
-                        setRemoveFailure(null);
-                        setRemoving(service);
-                      }}
-                    >
-                      {t.serviceDelete}
-                      <span className="visually-hidden">: {service.name.ru}</span>
-                    </button>
                   </div>
                 ) : null}
               </li>

@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { APPS } from "../support/account";
-import { pick } from "../support/admin-ui";
+import { moreButton, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   CAR_REQUEST_ID,
@@ -138,10 +138,13 @@ test.describe("путь к странице и переходы", () => {
     const api = await start(page);
     await page.goto(`/listings/${CAR_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Oq kortej");
-    const site = page.getByRole("link", { name: new RegExp(`^${t.listingOnSite}`) });
+    // Обе ссылки — в «…» шапки витрины
+    await moreButton(page.locator("body"), t.listingActionsContext).click();
+    const menu = page.locator(".ui-dialog");
+    const site = menu.getByRole("link", { name: new RegExp(`^${t.listingOnSite}`) });
     await expect(site).toHaveAttribute("href", `${APPS.web}/venue/oq-kortej`);
     await expect(site).toHaveAttribute("target", "_blank");
-    await page.getByRole("link", { name: t.listingRequests }).click();
+    await menu.getByRole("button", { name: t.listingRequests }).click();
     await expect(page).toHaveURL(`/requests?listingId=${CAR_LISTING_ID}`);
     await expect(rows(page)).toHaveCount(1);
     await expect(
