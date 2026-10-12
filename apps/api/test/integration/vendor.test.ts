@@ -10,6 +10,7 @@ import type {
   VendorCalendar,
   VendorCalendarChange,
   VendorListing,
+  VendorListingSaved,
   VendorMe,
   VendorPhoto,
   VendorRequestDetail,
@@ -849,11 +850,11 @@ describe("правки карточки из кабинета", () => {
   it("ничего не изменилось — 422 no_changes; неверные поля и чужие ключи — 422 со списком", async () => {
     const same = await call(revisionsUrl(A.listingId), post(A.token, { name: "Test Hall A" }));
     expect(await errorOf(same)).toMatchObject({ status: 422, code: "no_changes" });
-    const bad = await call(revisionsUrl(A.listingId), post(A.token, { name: "x", address_ru: "x" }));
+    const bad = await call(revisionsUrl(A.listingId), post(A.token, { name: "x", slug: "x" }));
     expect(await errorOf(bad)).toMatchObject({
       status: 422,
       code: "invalid_input",
-      details: expect.arrayContaining(["name", "address_ru"]),
+      details: expect.arrayContaining(["name", "slug"]),
     });
     // Цены и пакеты v0.1 правкой карточки больше не меняются — они в услугах
     const legacy = await call(
@@ -950,6 +951,224 @@ describe("правки карточки из кабинета", () => {
       payload: { name: "Test Hall A Grand" },
     });
     expect(list.items[0]?.decidedAt).not.toBeNull();
+  });
+});
+
+// ── партнёр сам настраивает витрину ─────────────────────────────────────────
+
+describe("партнёр сам настраивает витрину: сразу, пока её нет на сайте, иначе предложением", () => {
+  let C: TestVendor;
+  let member: string;
+  const save = (token: string, listingId: string, body: unknown) =>
+    call(`/vendor/listings/${listingId}`, patch(token, body));
+  const readListing = async (token: string, listingId: string) =>
+    (await (await call(`/vendor/listings/${listingId}`, bearer(token))).json()) as VendorListing;
+  const errorOf = async (res: Response) => {
+    const body = (await res.json()) as { error: { code: string; details?: string[] } };
+    return { status: res.status, code: body.error.code, details: body.error.details };
+  };
+
+  beforeAll(async () => {
+    C = await createVendor("C");
+    C.token = await vendorToken(C.telegram);
+    const userId = randomUUID();
+    const telegram = vendorTelegramUser();
+    await admin.query(
+      `insert into app.vendor_users (id, vendor_id, phone_hash, tg_user_hash, tg_linked_at, role)
+       values ($1, $2, $3, $4, now(), 'member')`,
+      [userId, C.accountId, randomBytes(32), tgIdHash(telegram.id)],
+    );
+    await admin.query(
+      "insert into pii.vendor_user_profiles (vendor_user_id, phone, full_name) values ($1, '+998000000113', 'Staff C')",
+      [userId],
+    );
+    member = await vendorToken(telegram);
+  });
+
+  it("черновик: вместимость, район, адрес, название, описания и поля витрины — сразу, без предложения", async () => {
+    const before = await readListing(C.token, C.draftId);
+    expect(before.blockers).toEqual(expect.arrayContaining(["capacity", "district"]));
+    const res = await save(C.token, C.draftId, {
+      version: before.version,
+      name: "Зал Лола",
+      descriptionRu: "Просторный зал",
+      descriptionUz: "Keng zal",
+      capMin: 80,
+      capMax: 300,
+      districtCode: "sergeli",
+      addressRu: "ул. Навои, 1",
+      addressUz: "Navoiy k., 1",
+      attributes: { stage: true, halls_count: 2 },
+    });
+    expect(res.status).toBe(200);
+    const saved = (await res.json()) as VendorListingSaved;
+    expect(saved.sentForModeration).toEqual([]);
+    expect(saved.listing).toMatchObject({
+      name: "Зал Лола",
+      capMin: 80,
+      capMax: 300,
+      districtCode: "sergeli",
+      address: { ru: "ул. Навои, 1", uz: "Navoiy k., 1" },
+      description: { ru: "Просторный зал", uz: "Keng zal" },
+      attributes: { stage: true, halls_count: 2 },
+    });
+    expect(saved.listing.version).toBeGreaterThan(before.version);
+    // Чек-лист: вместимость, район и описания больше не мешают
+    for (const code of ["capacity", "district", "descriptions"])
+      expect(saved.listing.blockers).not.toContain(code);
+    const { rows } = await admin.query("select 1 from app.listing_revisions where listing_id = $1", [
+      C.draftId,
+    ]);
+    expect(rows).toHaveLength(0);
+    // Журнал: только имена полей
+    const log = await admin.query<{ detail: { fields: string[] }; actor_kind: string; source: string }>(
+      "select detail, actor_kind, source from app.audit_log where action = 'listing.vendor_update' and object_id = $1",
+      [C.draftId],
+    );
+    expect(log.rows).toHaveLength(1);
+    expect(log.rows[0]?.detail.fields).toEqual(
+      expect.arrayContaining(["cap_max", "cap_min", "district_code", "address_ru", "name"]),
+    );
+    expect(JSON.stringify(log.rows[0]?.detail)).not.toMatch(/Навои|Зал Лола|Просторный/);
+    expect(log.rows[0]).toMatchObject({ actor_kind: "vendor_user", source: "vendor_cabinet" });
+  });
+
+  it("версия устарела — 409 version_conflict, карточка прежняя; ничего не изменилось — 422 no_changes", async () => {
+    const current = await readListing(C.token, C.draftId);
+    const stale = await save(C.token, C.draftId, { version: current.version - 1, capMax: 310 });
+    expect(await errorOf(stale)).toMatchObject({ status: 409, code: "version_conflict" });
+    expect((await readListing(C.token, C.draftId)).capMax).toBe(300);
+    const same = await save(C.token, C.draftId, { version: current.version, capMax: 300, name: "Зал Лола" });
+    expect(await errorOf(same)).toMatchObject({ status: 422, code: "no_changes" });
+  });
+
+  it("проверки: «до» меньше «от», неизвестный район, лишние ключи, неверное поле витрины", async () => {
+    const { version } = await readListing(C.token, C.draftId);
+    const order = await save(C.token, C.draftId, { version, capMin: 400, capMax: 100 });
+    expect(await errorOf(order)).toMatchObject({ status: 422, code: "invalid_input", details: ["capMax"] });
+    const merged = await save(C.token, C.draftId, { version, capMax: 70 });
+    expect(await errorOf(merged)).toMatchObject({ status: 422, details: ["capMax"] });
+    const district = await save(C.token, C.draftId, { version, districtCode: "atlantida" });
+    expect(await errorOf(district)).toMatchObject({ status: 422, details: ["districtCode"] });
+    const keys = await save(C.token, C.draftId, {
+      version,
+      slug: "moy-zal",
+      categoryCode: "car",
+      priceFromUzs: 1,
+    });
+    expect(await errorOf(keys)).toMatchObject({
+      status: 422,
+      code: "invalid_input",
+      details: ["slug", "categoryCode", "priceFromUzs"],
+    });
+    const attr = await save(C.token, C.draftId, { version, attributes: { nonsense: 1 } });
+    expect((await errorOf(attr)).code).toBe("invalid_input");
+    // Ни одна из ошибок ничего не записала
+    expect((await readListing(C.token, C.draftId)).version).toBe(version);
+  });
+
+  it("витрина на сайте: те же поля уходят предложением, карточка прежняя", async () => {
+    const before = await readListing(C.token, C.listingId);
+    const res = await save(C.token, C.listingId, {
+      version: before.version,
+      capMin: 100,
+      capMax: 350,
+      districtCode: "chilonzor",
+      addressRu: "ул. Навои, 5",
+    });
+    expect(res.status).toBe(200);
+    const saved = (await res.json()) as VendorListingSaved;
+    expect(saved.sentForModeration).toEqual(["capacity", "districtCode", "addressRu"]);
+    // Клиент видит прежнее
+    expect(saved.listing).toMatchObject({
+      capMin: 50,
+      capMax: 300,
+      districtCode: "yunusobod",
+      version: before.version,
+    });
+    const list = (await (
+      await call(`/vendor/listings/${C.listingId}/revisions`, bearer(C.token))
+    ).json()) as VendorRevisionList;
+    expect(list.items).toHaveLength(1);
+    expect(list.items[0]).toMatchObject({
+      status: "pending",
+      payload: { cap_min: 100, cap_max: 350, district_code: "chilonzor", address_ru: "ул. Навои, 5" },
+    });
+    const { rows } = await admin.query<{ base_version: number; submitted_by: string }>(
+      "select base_version, submitted_by from app.listing_revisions where id = $1",
+      [list.items[0]?.id],
+    );
+    expect(rows).toEqual([{ base_version: before.version, submitted_by: C.userId }]);
+    // В журнал «сразу» ничего не попало: правка ждёт решения
+    const log = await admin.query(
+      "select 1 from app.audit_log where action = 'listing.vendor_update' and object_id = $1",
+      [C.listingId],
+    );
+    expect(log.rows).toHaveLength(0);
+  });
+
+  it("предложение уже открыто — 409 revision_pending; «заказов одновременно» его не «устаревляет»", async () => {
+    const { version } = await readListing(C.token, C.listingId);
+    const second = await save(C.token, C.listingId, { version, capMax: 360 });
+    expect(await errorOf(second)).toMatchObject({ status: 409, code: "revision_pending" });
+
+    const calendar = await calendarVersion(C.token, C.listingId);
+    const capacity = await call(`/vendor/listings/${C.listingId}/calendar/capacity`, {
+      method: "PUT",
+      headers: { ...json, Authorization: `Bearer ${C.token}`, "If-Match": String(calendar) },
+      body: JSON.stringify({ parallelCapacity: 2 }),
+    });
+    expect(capacity.status).toBe(200);
+    const fresh = `select r.base_version = l.version as fresh from app.listing_revisions r
+         join app.listings l on l.id = r.listing_id where r.listing_id = $1 and r.status = 'pending'`;
+    expect((await admin.query<{ fresh: boolean }>(fresh, [C.listingId])).rows).toEqual([{ fresh: true }]);
+    // Поле, которое предложение тоже меняет, — устаревшее: решает человек
+    await admin.query("update app.listings set cap_max = 320 where id = $1", [C.listingId]);
+    expect((await admin.query<{ fresh: boolean }>(fresh, [C.listingId])).rows).toEqual([{ fresh: false }]);
+  });
+
+  it("сотрудник площадки — 403 vendor_owner_required; чужая витрина — 404; без версии — 422", async () => {
+    const { version } = await readListing(C.token, C.draftId);
+    const asMember = await save(member, C.draftId, { version, capMax: 310 });
+    expect(await errorOf(asMember)).toMatchObject({ status: 403, code: "vendor_owner_required" });
+    expect((await save(B.token, C.draftId, { version, capMax: 310 })).status).toBe(404);
+    expect(await errorOf(await save(C.token, C.draftId, { capMax: 310 }))).toMatchObject({
+      status: 422,
+      details: ["version"],
+    });
+    expect((await readListing(C.token, C.draftId)).capMax).toBe(300);
+  });
+
+  it("база тоже не даёт партнёру адрес страницы и поля витрины на сайте в обход API", async () => {
+    const client = new PgClient({ connectionString: apiDatabaseUrl });
+    await client.connect();
+    try {
+      const asOwner = async (sql: string, params: unknown[]) => {
+        await client.query("begin");
+        try {
+          await client.query(
+            "select set_config('app.actor_kind', 'vendor_user', true), set_config('app.actor_id', $1, true), set_config('app.vendor_id', $2, true)",
+            [C.userId, C.accountId],
+          );
+          return await client.query(sql, params);
+        } finally {
+          await client.query("rollback").catch(() => {});
+        }
+      };
+      await expect(
+        asOwner("update app.listings set slug = 'moy-zal' where id = $1", [C.draftId]),
+      ).rejects.toMatchObject({ code: "BR006" });
+      await expect(
+        asOwner("update app.listings set cap_max = 400 where id = $1", [C.listingId]),
+      ).rejects.toMatchObject({ code: "BR005" });
+      await expect(
+        asOwner("update app.listings set address_ru = 'x' where id = $1", [C.listingId]),
+      ).rejects.toMatchObject({ code: "BR005" });
+      const draft = await asOwner("update app.listings set cap_max = 400 where id = $1", [C.draftId]);
+      expect(draft.rowCount).toBe(1);
+    } finally {
+      await client.end();
+    }
   });
 });
 

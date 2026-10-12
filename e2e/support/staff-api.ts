@@ -716,8 +716,28 @@ const REVISION: RevisionDetail = {
   decidedBy: null,
 };
 
+/**
+ * Предложение партнёра с фактами витрины (revision: "facts"): вместимость 80–300 → 100–350,
+ * район и адрес. Одобрить и отклонить можно — решение остаётся в decisions
+ */
+const REVISION_FACTS: RevisionDetail = {
+  ...REVISION,
+  fields: ["capacity", "districtCode", "addressRu"],
+  changes: [
+    { field: "capacity", before: { min: 80, max: 300 }, after: { min: 100, max: 350 } },
+    { field: "districtCode", before: "yunusobod", after: "chilonzor" },
+    { field: "addressRu", before: null, after: "ул. Навои, 5" },
+  ],
+};
+
 export interface StaffApi {
   readonly unexpected: string[];
+  /** Решения по предложению изменений: approve — без тела, decline — с причиной */
+  readonly decisions: {
+    readonly id: string;
+    readonly decision: "approve" | "decline";
+    readonly body: unknown;
+  }[];
   /** POST /staff/listings — прежний путь создания карточки (панель им больше не ходит) */
   readonly created: ListingInput[];
   /** POST /staff/vendors — тела создания вендора (с категорией первой витрины) */
@@ -802,6 +822,8 @@ export interface StaffApiOptions {
   readonly botLinked?: boolean;
   /** Ещё столько заявок в списке: проверка страниц и «Показать ещё» */
   readonly manyRequests?: number;
+  /** Какое предложение изменений ждёт решения: по умолчанию название и описание, facts — вместимость, район, адрес */
+  readonly revision?: "default" | "facts";
 }
 
 export async function mockStaffApi(
@@ -818,11 +840,14 @@ export async function mockStaffApi(
     draftService = false,
     botLinked = true,
     manyRequests = 0,
+    revision: revisionKind = "default",
   }: StaffApiOptions = {},
 ) {
   let elevated = 0;
+  let revision: RevisionDetail = revisionKind === "facts" ? REVISION_FACTS : REVISION;
   const state: StaffApi = {
     unexpected: [],
+    decisions: [],
     created: [],
     vendorsCreated: [],
     vitrinas: [],
@@ -1332,10 +1357,27 @@ export async function mockStaffApi(
       requestMatch && method === "GET" ? requests.find((r) => r.id === requestMatch[1]) : undefined;
     if (found) return json(route, 200, found);
     if (key === "GET /staff/revisions") {
-      const list: RevisionList = { total: 1, items: [REVISION] };
+      // Решённое из очереди уходит
+      const list: RevisionList =
+        revision.status === "pending" ? { total: 1, items: [revision] } : { total: 0, items: [] };
       return json(route, 200, list);
     }
-    if (key === `GET /staff/revisions/${REVISION_ID}`) return json(route, 200, REVISION);
+    if (key === `GET /staff/revisions/${REVISION_ID}`) return json(route, 200, revision);
+    const verdict = /^POST \/staff\/revisions\/([0-9a-f-]{36})\/(approve|decline)$/.exec(key);
+    if (verdict?.[1] === REVISION_ID) {
+      const decision = verdict[2] === "approve" ? "approve" : "decline";
+      const body = decision === "decline" ? request.postDataJSON() : null;
+      state.decisions.push({ id: REVISION_ID, decision, body });
+      if (revision.status !== "pending") return fail(route, 409, "illegal_transition");
+      revision = {
+        ...revision,
+        status: decision === "approve" ? "approved" : "declined",
+        decidedAt: iso,
+        decidedBy: STAFF.displayName,
+        decisionReason: decision === "decline" ? String((body as { reason?: unknown }).reason ?? "") : null,
+      };
+      return json(route, 200, revision);
+    }
     if (key === "GET /staff/clients") {
       state.queries.push(`clients?${url.searchParams}`);
       const items = [CLIENT_ITEM, ...OTHER_CLIENTS].filter(

@@ -275,10 +275,16 @@ const REVISION_FIELDS_RU: Readonly<Record<string, string>> = {
   description_uz: "описание (узб.)",
   attributes: "поля витрины",
   video_links: "ссылки на видео",
+  cap_min: "вместимость",
+  cap_max: "вместимость",
+  district_code: "район",
+  address_ru: "адрес (рус.)",
+  address_uz: "адрес (узб.)",
 };
 
 export function opsRevisionSubmitted(f: OpsRevisionFacts): string {
-  const fields = f.fields.map((key) => REVISION_FIELDS_RU[key] ?? key).join(", ");
+  // Вместимость — два ключа, одно слово
+  const fields = [...new Set(f.fields.map((key) => REVISION_FIELDS_RU[key] ?? key))].join(", ");
   return (
     `Правка карточки на проверке: ${f.listing} (вендор ${f.vendorCode}).\n` +
     `Меняет: ${fields || "—"}.\n` +

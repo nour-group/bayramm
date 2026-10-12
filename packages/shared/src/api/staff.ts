@@ -1134,14 +1134,34 @@ export type TeamInviteInput = {
 // RevisionStatus и ListingRevisionPayload — в контракте кабинета (@bayramm/shared/api/vendor):
 // правку подаёт партнёр
 
-export type RevisionField = "name" | "descriptionRu" | "descriptionUz" | "attributes" | "videoLinks";
+/** capacity — cap_min и cap_max одной строкой; districtCode, addressRu, addressUz — как в карточке */
+export type RevisionField =
+  | "name"
+  | "descriptionRu"
+  | "descriptionUz"
+  | "attributes"
+  | "videoLinks"
+  | "capacity"
+  | "districtCode"
+  | "addressRu"
+  | "addressUz";
 
-/** attributes — изменённые поля витрины { ключ: значение | null }, videoLinks — ссылки целиком */
+/** Вместимость в правке: сейчас и после неё (то, чего правка не меняет, — как в карточке) */
+export interface RevisionCapacity {
+  readonly min: number | null;
+  readonly max: number | null;
+}
+
+/**
+ * attributes — изменённые поля витрины { ключ: значение | null }, videoLinks — ссылки целиком,
+ * capacity — вместимость { min, max }; districtCode — код района (подпись — из справочника)
+ */
 export type RevisionValue =
   | string
   | number
   | null
   | readonly string[]
+  | RevisionCapacity
   | Readonly<Record<string, AttributeValue | null>>;
 
 export interface RevisionChange {
