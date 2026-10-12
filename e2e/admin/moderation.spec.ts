@@ -30,7 +30,7 @@ test("плитки: два фото, у каждого ✓ и ✕; запрос�
   const api = await start(page);
   await page.goto("/moderation?queue=photos");
   const queue = photos(page);
-  await expect(queue.locator(".photo-tile")).toHaveCount(2);
+  await expect(queue.locator(".queue-photo")).toHaveCount(2);
   await expect(
     queue.getByRole("button", { name: new RegExp(`^${t.photoApproveOne(1, "Bogʻ zali")}$`) }),
   ).toBeVisible();
@@ -51,12 +51,12 @@ test("✓ —одобрить одно: решение уходит, плитк�
   await page.goto("/moderation?queue=photos");
   const queue = photos(page);
   await queue.getByRole("button", { name: t.photoApproveOne(1, "Bogʻ zali") }).click();
-  await expect(queue.locator(".photo-tile")).toHaveCount(1);
+  await expect(queue.locator(".queue-photo")).toHaveCount(1);
   expect(api.photoDecisions).toEqual([
     { listingId: PHOTO_QUEUE_LISTING_ID, photoId: photoQueueId(1), body: { decision: "approved" } },
   ]);
   // Осталась одна плитка: фокус на её ✓ — разбор подряд без поиска глазами и пальцем
-  await expect(queue.locator(".photo-tile .photo-approve")).toBeFocused();
+  await expect(queue.locator(".queue-photo .photo-approve")).toBeFocused();
   // «Одобрить все» у единственного фото не нужно
   await expect(queue.locator(".photo-approve-all")).toHaveCount(0);
   expect(api.unexpected).toEqual([]);
@@ -78,7 +78,7 @@ test("✕ — шторка с причиной и готовыми вариан�
   await expect(sheet.getByLabel(t.reason)).toHaveValue(t.reasons.photoDecline[1] ?? "");
   await submit.click();
   await expect(sheet).toHaveCount(0);
-  await expect(queue.locator(".photo-tile")).toHaveCount(1);
+  await expect(queue.locator(".queue-photo")).toHaveCount(1);
   expect(api.photoDecisions).toEqual([
     {
       listingId: PHOTO_QUEUE_LISTING_ID,
@@ -96,7 +96,7 @@ test("«Одобрить все» — все фото карточки; очер
   const api = await start(page, { photoQueue: 3 });
   await page.goto("/moderation?queue=photos");
   const queue = photos(page);
-  await expect(queue.locator(".photo-tile")).toHaveCount(3);
+  await expect(queue.locator(".queue-photo")).toHaveCount(3);
   await queue.getByRole("button", { name: t.photoApproveAll(3) }).click();
   await expect(queue).toHaveCount(0);
   expect(api.photoDecisions.map((d) => d.photoId)).toEqual([
@@ -127,8 +127,8 @@ test("нет фото на решении — очереди в сегмента
 test("менеджер видит плитки без кнопок: решает по фото модератор", async ({ page }) => {
   const api = await start(page, { role: "manager" });
   await page.goto("/moderation?queue=photos");
-  await expect(photos(page).locator(".photo-tile")).toHaveCount(2);
-  await expect(photos(page).locator(".photo-tile button")).toHaveCount(0);
+  await expect(photos(page).locator(".queue-photo")).toHaveCount(2);
+  await expect(photos(page).locator(".queue-photo button")).toHaveCount(0);
   await expect(photos(page).locator(".photo-approve-all")).toHaveCount(0);
   expect(api.unexpected).toEqual([]);
 });

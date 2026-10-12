@@ -205,7 +205,7 @@ test.describe("работа сотрудника", () => {
       `/listings/${PHOTO_QUEUE_LISTING_ID}?focus=photos`,
     );
     await expect(photos).toContainText(t.pendingPhotos(2));
-    await expect(photos.locator(".photo-tile")).toHaveCount(2);
+    await expect(photos.locator(".queue-photo")).toHaveCount(2);
     expect(api.unexpected).toEqual([]);
   });
 

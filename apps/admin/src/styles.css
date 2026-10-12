@@ -2420,7 +2420,7 @@ a.rcard-title {
 }
 
 /* Очередь фото: плитки ждущих фото, под каждой — ✓ и ✕ (кнопки по 44px, поровну) */
-.photo-tiles {
+.queue-photos {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: var(--gap-9);
@@ -2429,14 +2429,14 @@ a.rcard-title {
   list-style: none;
 }
 
-.photo-tile {
+.queue-photo {
   display: flex;
   flex-direction: column;
   gap: var(--gap-5);
   min-width: 0;
 }
 
-.photo-tile img {
+.queue-photo img {
   display: block;
   width: 100%;
   height: auto;
@@ -2448,18 +2448,18 @@ a.rcard-title {
 }
 
 /* Решённая плитка тускнеет, пока очередь перечитывается: порядок и фокус остаются на месте */
-.photo-tile.is-decided img {
+.queue-photo.is-decided img {
   opacity: 0.45;
 }
 
-.photo-tile-acts {
+.queue-photo-acts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--gap-5);
 }
 
 @media (max-width: 719px) {
-  .photo-tiles {
+  .queue-photos {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

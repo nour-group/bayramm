@@ -477,11 +477,11 @@ function PhotoCard({
       <p className="rcard-meta">
         {vendorLabel(listing.vendor)} · {t.pendingPhotos(listing.photos.pending)}
       </p>
-      <ul className="photo-tiles">
+      <ul className="queue-photos">
         {photos.map((photo, tile) => {
           const decidedHere = decidedIds.has(photo.id);
           return (
-            <li key={photo.id} className={`photo-tile${decidedHere ? " is-decided" : ""}`}>
+            <li key={photo.id} className={`queue-photo${decidedHere ? " is-decided" : ""}`}>
               <img
                 src={photoSrc(photo.key, 640)}
                 srcSet={photoSrcSet(photo.key)}
@@ -493,7 +493,7 @@ function PhotoCard({
                 decoding="async"
               />
               {decides ? (
-                <div className="photo-tile-acts">
+                <div className="queue-photo-acts">
                   <button
                     type="button"
                     className="btn btn-icon photo-approve"

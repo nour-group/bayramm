@@ -1634,7 +1634,7 @@ describe("правки карточек", () => {
     );
     expect(section?.textContent).toContain(`Lola · V102 · ${t.pendingPhotos(2)}`);
     // Две плитки, под каждой ✓ и ✕; запросов за фото карточки по одной — нет
-    const tiles = [...(section?.querySelectorAll(".photo-tile") ?? [])];
+    const tiles = [...(section?.querySelectorAll(".queue-photo") ?? [])];
     expect(tiles).toHaveLength(2);
     expect(tiles.map((tile) => tile.querySelectorAll("button").length)).toEqual([2, 2]);
     expect(tiles[0]?.querySelector("img")?.getAttribute("src")).toContain(
@@ -1660,12 +1660,12 @@ describe("правки карточек", () => {
       },
     });
     await mount("/moderation");
-    const approveFirst = container.querySelector<HTMLButtonElement>(".photo-tile .photo-approve");
+    const approveFirst = container.querySelector<HTMLButtonElement>(".queue-photo .photo-approve");
     expect(approveFirst?.textContent).toBe(t.photoApproveOne(1, "Lola zali"));
     await click(approveFirst ?? undefined);
     expect(lastCall("/moderation")?.body).toEqual({ decision: "approved" });
     // Очередь перечитана, на карточке осталось две плитки, фокус на ✓ той, что встала на место
-    expect(container.querySelectorAll(".photo-tile")).toHaveLength(2);
+    expect(container.querySelectorAll(".queue-photo")).toHaveLength(2);
     expect(document.activeElement?.classList.contains("photo-approve")).toBe(true);
     expect(container.querySelector("[aria-live=polite]")?.textContent).toBe(t.photoApprovedSaid("Lola zali"));
   });
@@ -1684,7 +1684,7 @@ describe("правки карточек", () => {
       },
     });
     await mount("/moderation");
-    const decline = [...container.querySelectorAll<HTMLButtonElement>(".photo-tile .btn-danger")][1];
+    const decline = [...container.querySelectorAll<HTMLButtonElement>(".queue-photo .btn-danger")][1];
     expect(decline?.textContent).toBe(t.photoDeclineOne(2, "Lola zali"));
     await click(decline);
     const sheet = document.querySelector<HTMLElement>("[role=dialog]") as HTMLElement;
@@ -1702,7 +1702,7 @@ describe("правки карточек", () => {
       reason: t.reasons.photoDecline[0],
     });
     expect(document.querySelector("[role=dialog]")).toBeNull();
-    expect(container.querySelectorAll(".photo-tile")).toHaveLength(1);
+    expect(container.querySelectorAll(".queue-photo")).toHaveLength(1);
   });
 
   it("новые фото: «Одобрить все» — по одному запросу на фото, очередь потом пуста", async () => {
@@ -1745,8 +1745,8 @@ describe("правки карточек", () => {
       "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
     });
     await mount("/moderation");
-    expect(container.querySelectorAll(".photo-tile")).toHaveLength(2);
-    expect(container.querySelector(".photo-tile button")).toBeNull();
+    expect(container.querySelectorAll(".queue-photo")).toHaveLength(2);
+    expect(container.querySelector(".queue-photo button")).toBeNull();
     expect(container.querySelector(".photo-approve-all")).toBeNull();
   });
 
