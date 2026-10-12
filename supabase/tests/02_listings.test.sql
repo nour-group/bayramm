@@ -1,7 +1,7 @@
 -- Листинги: защита публикации, переходы статусов, модерация, фото
 begin;
 \ir _fixtures.psql
-select plan(31);
+select plan(32);
 
 -- ── защита публикации (A2 — пустой черновик вендора A) ──────────────────────
 select throws_ok(
@@ -110,9 +110,12 @@ select pg_temp.as_actor('vendor_user', 'aaaaaaaa-0000-0000-0000-000000000011', '
 select throws_ok(
   $$update app.listings set name = 'Новое имя' where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
   'BR005', 'moderated_field_requires_revision', 'название опубликованного листинга вендор меняет только через ревизию');
-select lives_ok(
+select throws_ok(
   $$update app.listings set cap_min = 60 where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
-  'немодерируемое поле вендор меняет сам');
+  'BR005', 'moderated_field_requires_revision', 'вместимость опубликованного листинга вендор меняет только через ревизию');
+select lives_ok(
+  $$update app.listings set parallel_capacity = 2 where id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
+  'немодерируемое поле (заказов одновременно) вендор меняет сам');
 select throws_ok(
   $$update app.listing_services set price_uzs = 1000 where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101'$$,
   'BR005', 'moderated_field_requires_revision', 'цены услуг опубликованного листинга — предложением');
