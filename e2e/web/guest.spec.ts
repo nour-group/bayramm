@@ -81,8 +81,9 @@ test.describe("гость на телефоне", () => {
     await open(page, PATHS.home, ".ln-cards .card", { guest: true });
     await expect(page.locator("nav.tabs")).toHaveCount(0);
     await expect(page.locator(".top .brand")).toBeVisible();
-    // 390px: язык ещё влезает в шапку рядом со входом и меню
-    await expect(page.locator(".top > .lang")).toBeVisible();
+    // Телефон: в шапке — поиск, вход и меню; язык — в меню и в подвале
+    await expect(page.locator(".top > .lang")).toBeHidden();
+    await expect(page.locator(".top > .top-search")).toHaveAttribute("aria-label", ru.nav0);
     const signIn = page.locator(".top-signin");
     await expect(signIn).toHaveText(ru.accSignIn);
     await expect(signIn).toHaveAttribute("href", "/auth?return=%2F%3Fguest%3D");
@@ -336,8 +337,11 @@ test.describe("гость на всех ширинах", () => {
       await expectHeaderFits(page, `${width} лендинг`);
       await expectNoOverflow(page, `${width} лендинг`);
       await expectHitAreas(page, `${width} лендинг`, CONTROLS);
-      // Язык — в шапке, пока влезает (с 390px), и всегда в подвале (строкой, не вторым переключателем)
-      await expect(page.locator(".top > .lang")).toBeVisible({ visible: width >= 390 });
+      // Язык — в шапке с планшета (на телефоне там поиск, вход и меню) и всегда в подвале (строкой,
+      // не вторым переключателем); поиск — значком с 360px, на компьютере — полем
+      await expect(page.locator(".top > .lang")).toBeVisible({ visible: width >= 768 });
+      await expect(page.locator(".top > .top-search")).toBeVisible({ visible: width >= 360 && width < 1024 });
+      await expect(page.locator("#site-search")).toBeVisible({ visible: width >= 1024 });
       await expect(page.locator(".site-footer .footer-lang")).toBeVisible();
 
       const button = page.locator(".top-menu");

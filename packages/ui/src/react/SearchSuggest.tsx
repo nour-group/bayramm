@@ -9,8 +9,8 @@
 
    Список — не модальный слой, а панель прямо под полем: страница под ним живая, как у
    автодополнения. На телефоне панель не уходит под клавиатуру: её высота — до видимой части
-   экрана (visualViewport, а в Telegram ещё и --tg-viewport-stable-height), дальше список
-   прокручивается внутри. Стили — через CSSOM: CSP не пускает style-атрибуты. */
+   экрана (visualViewport, а в Telegram ещё и --tg-viewport-stable-height), дальше прокручивается
+   сам listbox. Стили — через CSSOM: CSP не пускает style-атрибуты. */
 
 import {
   type FocusEvent,
@@ -123,6 +123,7 @@ export function SearchSuggest({
   const wrap = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLSpanElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
   const items = useRef<(HTMLDivElement | null)[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -158,7 +159,7 @@ export function SearchSuggest({
 
   useLayoutEffect(() => {
     const item = items.current[active];
-    if (expanded && panel.current && item) keepVisible(panel.current, item);
+    if (expanded && list.current && item) keepVisible(list.current, item);
   });
 
   const pick = (index: number) => {
@@ -254,7 +255,8 @@ export function SearchSuggest({
               {status}
             </p>
           ) : (
-            <div id={listId} className="ui-suggest-list" role="listbox" aria-label={label}>
+            // Прокручивается сам listbox: он — всплывающий список combobox (так его понимает и axe)
+            <div ref={list} id={listId} className="ui-suggest-list" role="listbox" aria-label={label}>
               {groups.map((group) =>
                 group.options.length === 0 ? null : (
                   // biome-ignore lint/a11y/useSemanticElements: группа вариантов внутри listbox (ARIA), не группа полей формы

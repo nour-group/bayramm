@@ -288,16 +288,24 @@ img {
   font-size: var(--fs-14);
 }
 
-/* Язык в шапке гостя — пока влезает рядом со входом и меню: с 390px, а на внутренних
-   экранах (там ещё «назад») — с планшета. Уже — он в меню и в подвале */
-@media (max-width: 389px) {
+/* Язык в шапке гостя — с планшета: на телефоне рядом поиск, вход и меню. Уже — он в меню и
+   в подвале */
+@media (max-width: 767px) {
   .app.guest .top > .lang {
     display: none;
   }
 }
 
-@media (max-width: 767px) {
-  .app.guest.inner .top > .lang {
+/* Значок поиска — не на внутренних экранах до компьютера (там «назад» — к выдаче, и место
+   занято) и не у гостя уже 360px (логотип, вход и меню важнее: каталог — в меню) */
+@media (max-width: 1023px) {
+  .app.inner .top > .top-search {
+    display: none;
+  }
+}
+
+@media (max-width: 359px) {
+  .app.guest .top > .top-search {
     display: none;
   }
 }
