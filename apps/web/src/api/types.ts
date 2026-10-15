@@ -2,6 +2,7 @@ import type {
   CatalogCategories,
   CatalogPage,
   CatalogQuery,
+  CatalogSuggest,
   ClientRequest,
   ClientRequests,
   ConsentTexts,
@@ -77,6 +78,12 @@ export interface ClientApi {
   featured(signal?: AbortSignal): Promise<FeaturedListings>;
   /** Выдача категории (без category у API — залы, весь каталог — category=all); фильтры по полям витрины — query.filters (a.*) */
   catalog(query: CatalogQuery, signal?: AbortSignal): Promise<CatalogPage>;
+  /**
+   * Подсказки поиска (GET /catalog/suggest): разделы, районы, до пяти витрин. Не через кэш
+   * вкладки: каждый набранный текст — свой запрос, прежний отменяется сигналом (повтор того же
+   * текста отдаёт кэш браузера — ответ публичный)
+   */
+  suggest(q: string, signal?: AbortSignal): Promise<CatalogSuggest>;
   listing(slug: string, signal?: AbortSignal): Promise<ListingDetail>;
   /**
    * «Связаться»: телефон и Telegram витрины — до заявки и без входа; сервер считает открытие

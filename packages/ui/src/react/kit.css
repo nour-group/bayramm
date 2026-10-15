@@ -939,6 +939,110 @@ button.ui-cal-day.is-partial:not(.is-out):not(.is-busy) {
   color: var(--muted);
 }
 
+/* ---------- поиск с подсказками (SearchSuggest) ---------- */
+
+.ui-suggest {
+  position: relative;
+  min-width: 0;
+}
+
+.ui-suggest-field {
+  display: block;
+}
+
+.ui-suggest-field .ui-search {
+  width: 100%;
+}
+
+/* 16px: мельче — iOS при фокусе увеличивает страницу */
+.ui-suggest .ui-search-input {
+  font-size: var(--fs-16);
+}
+
+/* Панель — прямо под полем, страница под ней живая (не модальный слой). Высоту до видимой
+   части экрана (клавиатура, Telegram) ставит компонент; дальше — прокрутка внутри */
+.ui-suggest-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+  color: var(--ink);
+  box-shadow:
+    0 14px 28px -20px var(--plum),
+    0 2px 6px -4px var(--plum);
+}
+
+/* Прокручивается сам listbox (обе оси явно, ловушка №2) */
+.ui-suggest-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gap-3);
+  min-height: 0;
+  padding: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ui-suggest-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-3);
+}
+
+.ui-suggest-group + .ui-suggest-group {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.ui-suggest-head {
+  margin: 0;
+  padding: 8px 12px 2px;
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+}
+
+.ui-suggest-option {
+  justify-content: flex-start;
+}
+
+/* Рисунок подсказки: обложка во весь квадрат, значок — по центру */
+.ui-suggest-media {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: var(--r-8);
+  background: var(--line);
+  color: var(--plum);
+}
+
+.ui-suggest-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ui-suggest-note {
+  margin: 0;
+  padding: 12px;
+  color: var(--muted);
+  font-size: var(--fs-14);
+}
+
 /* ---------- диалог ---------- */
 
 /* На телефоне — шторка снизу; шире 560px — карточка по центру (ниже, в @media) */

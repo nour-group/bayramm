@@ -1,47 +1,117 @@
 import type { CatalogSort } from "@bayramm/shared/api";
 import { DateField, Dialog, NumberStepper, Select } from "@bayramm/ui/react";
 import { useEffect, useId, useRef, useState } from "react";
-import { categoryDesc, categoryName, hasCalendar, hasCapacity } from "../categories";
+import { CLIENT_CATEGORIES, categoryDesc, categoryName, hasCalendar, hasCapacity } from "../categories";
 import { AttrFiltersForm } from "../components/AttrFilters";
 import { useCalendarTexts } from "../components/Calendar";
-import { CategorySwitch } from "../components/Categories";
+import { CatalogSearch } from "../components/CatalogSearch";
+import { CategorySwitch, categoryHref, listingsIn, useCatalogCategories } from "../components/Categories";
+import { Link } from "../components/Link";
 import { CARD_PHOTO_SIZES, CARD_PHOTO_SIZES_SIDE, ListingCard } from "../components/ListingCard";
 import { CardsLoading, EmptyState, ErrorState, Loading } from "../components/States";
 import { useDictionaries, useLang, useServices } from "../context";
 import { addDays, formatDayMonth, tashkentToday } from "../format";
 import { useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
-import { hrefFor, useNav } from "../router";
+import { ALL_CATEGORIES, hrefFor, useNav } from "../router";
 import {
   busyLast,
   CATALOG_PARTS,
   type CatalogFilters,
   catalogCategory,
   DATE_HORIZON_DAYS,
-  DEFAULT_SORT,
+  defaultSortOf,
   filtersQuery,
   hasFilters,
   MAX_GUESTS,
   noFiltersIn,
   parseGuests,
   readFilters,
+  searchText,
   sortsOf,
   useCatalogFeed,
 } from "./catalog-feed";
 import { attrFilterCount, filterSpecs } from "./catalog-filters";
 import { placeChoice, placeFilters } from "./catalog-place";
 
-/* Каталог: весь (/catalog — раздел «Все») или раздел (/catalog?category=…): заголовок,
-   переключатель разделов, фильтры, порядок и сетка карточек. Всё — в адресе. Главные фильтры —
+/* Каталог: весь (/catalog — раздел «Все») или раздел (/catalog?category=…): заголовок, поиск,
+   переключатель разделов, фильтры, порядок и сетка карточек. Всё — в адресе. Поиск (?q=) — над
+   разделами во всю ширину, вместе с разделом и фильтрами; заголовок тогда — «По запросу «…» — N»,
+   пусто в разделе — ссылка на другие разделы, пусто везде — популярные разделы. Главные фильтры —
    одной строкой пилюль над выдачей: место (город → район), дата, время на дату (утро, день,
-   вечер, весь день — где календарь), гости (где вместимость), порядок; на телефоне строка листается вбок, каждая пилюля открывает шторку. Поля витрины
+   вечер, весь день — где календарь), гости (где вместимость), порядок; на телефоне строка
+   листается вбок, каждая пилюля открывает шторку. Поля витрины
    раздела — кнопкой «Фильтры» (шторка) на телефоне и планшете, на компьютере — колонкой слева. */
 
 const SORT_LABEL = {
   price_asc: "s_cheap",
   price_desc: "s_rich",
   capacity_desc: "s_capacity",
+  relevance: "s_relevance",
 } as const satisfies Record<CatalogSort, string>;
+
+/** Популярных разделов в пустой выдаче поиска */
+const POPULAR_SECTIONS = 4;
+
+/**
+ * Пусто в разделе по запросу — сколько нашлось бы во всех разделах (те же место и дата: гостей и
+ * полей витрины у «Все» нет); null — не спрашивали или ещё не ответили
+ */
+function useElsewhere(filters: CatalogFilters, empty: boolean): number | null {
+  const { api } = useServices();
+  const [count, setCount] = useState<number | null>(null);
+  const { q, category, city, district, date } = filters;
+  const ask = empty && q !== null && category !== ALL_CATEGORIES;
+  useEffect(() => {
+    setCount(null);
+    if (!ask || q === null) return;
+    const controller = new AbortController();
+    api
+      .catalog(
+        {
+          category: ALL_CATEGORIES,
+          q,
+          city: city ?? undefined,
+          district: district ?? undefined,
+          date: date ?? undefined,
+          limit: 1,
+        },
+        controller.signal,
+      )
+      .then(
+        (page) => setCount(page.total ?? page.items.length),
+        () => {},
+      );
+    return () => controller.abort();
+  }, [api, ask, q, city, district, date]);
+  return ask ? count : null;
+}
+
+/** Популярные разделы — где больше всего исполнителей (чисел не показываем) */
+function PopularSections() {
+  const { t, lang } = useLang();
+  const state = useCatalogCategories();
+  const counts = state.status === "ready" ? state.data.items : [];
+  const popular = CLIENT_CATEGORIES.filter((c) => listingsIn(state, c.code) === true)
+    .map((c) => ({ code: c.code, listings: counts.find((i) => i.code === c.code)?.listings ?? 0 }))
+    .sort((a, b) => b.listings - a.listings)
+    .slice(0, POPULAR_SECTIONS);
+  if (popular.length === 0) return null;
+  return (
+    <div className="search-popular">
+      <p className="muted small">{t.srPopular}</p>
+      <ul className="empty-cuts">
+        {popular.map((c) => (
+          <li key={c.code}>
+            <Link className="btn btn-secondary cut-chip" href={categoryHref(c.code)}>
+              {categoryName(c.code, t, lang)}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 // Пока человек печатает число гостей, выдачу не дёргаем на каждую цифру
 const GUESTS_DEBOUNCE_MS = 600;
@@ -115,13 +185,33 @@ export function Catalog() {
   const filtersButton = useRef<HTMLButtonElement>(null);
   const [sheet, setSheet] = useState(false);
   const name = category ? (categoryName(category.code, t, lang) ?? category.code) : t.catAll;
-  const title = category ? t.catTitle(name) : t.catAllTitle;
-  useDocumentTitle(title);
+  const sectionTitle = category ? t.catTitle(name) : t.catAllTitle;
+  const searching = filters.q !== null;
+  const title =
+    filters.q === null
+      ? sectionTitle
+      : feed.total !== null && feed.status !== "loading"
+        ? t.srResultsN(filters.q, feed.total)
+        : t.srResultsH(filters.q);
+  // Заголовок вкладки — без числа: оно меняется, а вкладку называют по запросу
+  useDocumentTitle(filters.q === null ? sectionTitle : t.srResultsH(filters.q));
 
   const setFilters = (patch: Partial<CatalogFilters>) =>
     navigate(hrefFor({ name: "catalog" }, filtersQuery({ ...filters, ...patch })), { replace: true });
   const reset = () =>
-    navigate(hrefFor({ name: "catalog" }, filtersQuery(noFiltersIn(filters.category))), { replace: true });
+    navigate(hrefFor({ name: "catalog" }, filtersQuery(noFiltersIn(filters.category, filters.q))), {
+      replace: true,
+    });
+  // Новый запрос — новая запись истории («назад» вернёт прежнюю выдачу); порядок — по умолчанию
+  // для поиска, раздел и фильтры остаются. Пусто — поиск снят
+  const search = (text: string) => {
+    const q = searchText(text);
+    if (q === filters.q) return;
+    navigate(hrefFor({ name: "catalog" }, filtersQuery({ ...filters, q, sort: null })));
+  };
+  const clearSearch = () => {
+    if (filters.q !== null) setFilters({ q: null, sort: null });
+  };
 
   // Подгрузка при прокрутке к концу. IntersectionObserver есть не везде — тогда кнопка
   const { loadMore } = feed;
@@ -136,7 +226,8 @@ export function Catalog() {
   }, [loadMore]);
 
   const items = busyLast(feed.items);
-  const sorts = sortsOf(filters.category);
+  const sorts = sortsOf(filters.category, searching);
+  const defaultSort = defaultSortOf(filters);
   const capacity = category !== null && hasCapacity(category);
   const extra = attrFilterCount(filters.attrs);
   const place = placeChoice(filters, dicts.status === "ready" ? dicts.data : null, t, lang);
@@ -184,6 +275,7 @@ export function Catalog() {
         }
       : { title: category ? t.catSoonH(name) : t.catAllSoonH, text: t.catSoonP };
   const loaded = feed.status !== "loading" && feed.status !== "error";
+  const elsewhere = useElsewhere(filters, loaded && items.length === 0);
   // Кнопка шторки показывает, сколько нашлось (пока выдача грузится — просто «Показать»)
   const apply = loaded ? t.filtersShowN(items.length, feed.hasMore) : t.filtersApply;
 
@@ -198,7 +290,17 @@ export function Catalog() {
         <p className="muted small">{t.catalogNote}</p>
       </div>
 
-      <CategorySwitch current={filters.category} date={filters.date} />
+      {/* Поиск — над разделами, во всю ширину; в Telegram — вверху вкладки каталога */}
+      <CatalogSearch
+        className="catalog-search"
+        takeFocus
+        value={filters.q ?? ""}
+        date={filters.date}
+        onSubmit={search}
+        onClear={clearSearch}
+      />
+
+      <CategorySwitch current={filters.category} date={filters.date} q={filters.q} />
 
       <section className="filters-panel" aria-label={t.moreFilters}>
         <div className="filter-row">
@@ -272,9 +374,9 @@ export function Catalog() {
               size="compact"
               label={t.sortBy}
               icon={<Icon name="sort" size={14} />}
-              value={filters.sort ?? DEFAULT_SORT}
+              value={filters.sort ?? defaultSort}
               options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
-              onChange={(sort) => setFilters({ sort: sort === DEFAULT_SORT ? null : sort })}
+              onChange={(sort) => setFilters({ sort: sort === defaultSort ? null : sort })}
             />
           </div>
         </div>
@@ -315,7 +417,25 @@ export function Catalog() {
 
           {feed.status === "loading" ? <CardsLoading /> : null}
           {feed.status === "error" ? <ErrorState onRetry={feed.retry} /> : null}
-          {loaded && items.length === 0 ? (
+          {loaded && items.length === 0 && filters.q !== null ? (
+            <SearchEmpty
+              section={category ? name : null}
+              elsewhere={elsewhere}
+              elsewhereHref={hrefFor(
+                { name: "catalog" },
+                filtersQuery({
+                  ...noFiltersIn(ALL_CATEGORIES, filters.q),
+                  city: filters.city,
+                  district: filters.district,
+                  date: filters.date,
+                }),
+              )}
+              filtered={filtered}
+              onReset={reset}
+              onClearSearch={clearSearch}
+            />
+          ) : null}
+          {loaded && items.length === 0 && filters.q === null ? (
             <EmptyState
               title={empty.title}
               text={empty.text}
@@ -412,5 +532,60 @@ export function Catalog() {
         ) : null}
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Пусто по запросу. В разделе — сколько нашлось бы в других (ссылка на «Все» с тем же запросом),
+ * а пока не ответили — без ссылки; везде пусто — сбросить фильтры и поиск, популярные разделы
+ */
+function SearchEmpty({
+  section,
+  elsewhere,
+  elsewhereHref,
+  filtered,
+  onReset,
+  onClearSearch,
+}: {
+  section: string | null;
+  elsewhere: number | null;
+  elsewhereHref: string;
+  filtered: boolean;
+  onReset: () => void;
+  onClearSearch: () => void;
+}) {
+  const { t } = useLang();
+  if (section !== null && elsewhere !== null && elsewhere > 0)
+    return (
+      <EmptyState
+        title={t.srEmptyInH(section)}
+        text={t.srElsewhereP}
+        action={
+          <Link className="btn btn-primary" href={elsewhereHref}>
+            {t.srElsewhere(elsewhere)}
+          </Link>
+        }
+      />
+    );
+  return (
+    <EmptyState
+      title={t.srNoneH}
+      text={t.srEmptyP}
+      action={
+        <div className="empty-filters">
+          <PopularSections />
+          <div className="search-empty-actions">
+            {filtered ? (
+              <button type="button" className="btn btn-secondary" onClick={onReset}>
+                {t.resetFilters}
+              </button>
+            ) : null}
+            <button type="button" className="btn btn-primary" onClick={onClearSearch}>
+              {t.srClear}
+            </button>
+          </div>
+        </div>
+      }
+    />
   );
 }

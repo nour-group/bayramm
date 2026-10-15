@@ -745,4 +745,21 @@ export const ru = {
   metaCatalogAllDesc:
     "Всё для праздника в Ташкенте: залы, кортежи, фото, торты и не только — цены, свободные дни и контакты исполнителей.",
   catAllSoonH: "Каталог скоро наполнится",
+  // ── поиск по каталогу (поле над разделами, подсказки, выдача с ?q=) ───────────
+  // «Поиск», подсказка в поле, «Что обычно ищут», «Районы», «Нашлось N», «Ничего не нашли» —
+  // из прототипа: nav0, srPh, srPopular, srAreas, srFound, srNoneH
+  srLabel: "Поиск по каталогу",
+  srSections: "Разделы",
+  srListings: "Исполнители",
+  srDistrictIn: (district: string, section: string) => `${district} — ${section}`,
+  srLoading: "Ищем…",
+  srNoHints: "Подсказок нет. Нажмите поиск — покажем всё, что совпало",
+  srResultsH: (q: string) => `По запросу «${q}»`,
+  srResultsN: (q: string, n: number) => `По запросу «${q}» — ${n}`,
+  srElsewhere: (n: number) => `В других разделах — ${n}`,
+  srEmptyInH: (section: string) => `В разделе «${section}» по запросу ничего нет`,
+  srElsewhereP: "Похожее нашлось в других разделах каталога.",
+  srEmptyP: "Проверьте, как написано, или загляните в разделы.",
+  srClear: "Сбросить поиск",
+  s_relevance: "Сначала подходящие",
 };

@@ -204,10 +204,15 @@ export const isAuth = (match: Match | null) => match?.name === "auth" || match?.
 
 /**
  * Страница для поисковиков: лендинг, каталог, площадка, документы. Личное (заявки, профиль,
- * сохранённое), форма заявки и вход — noindex
+ * сохранённое), форма заявки и вход — noindex; выдача поиска по каталогу (?q=) — тоже
+ * (isSearchResults): её canonical — каталог без запроса
  */
 export function isIndexable(match: Match | null): boolean {
   return (
     match?.name === "home" || match?.name === "catalog" || match?.name === "venue" || match?.name === "docs"
   );
 }
+
+/** Выдача поиска по каталогу: /catalog?q=… — не для поисковиков */
+export const isSearchResults = (match: Match | null, query: URLSearchParams): boolean =>
+  match?.name === "catalog" && (query.get("q") ?? "").trim() !== "";

@@ -129,7 +129,11 @@ export interface Photo {
   readonly height: number;
 }
 
-export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc";
+/**
+ * Порядок выдачи. relevance — по похожести на запрос поиска (q): только с q, с ним — по
+ * умолчанию; оплата на него, как и на остальные, не влияет
+ */
+export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc" | "relevance";
 
 /**
  * GET /catalog/listings — параметры строки запроса. Всё необязательно.
@@ -147,13 +151,19 @@ export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc";
  * Фильтры по полям витрины категории — параметры «a.<поле>» и «a.<список>.<поле>»
  * (categoryFilters в @bayramm/shared/categories): bool — 1|true, enum/multi — коды через
  * запятую, int — число. Неизвестный фильтр категории — 400 invalid_request.
- * sort по умолчанию — price_asc; цены сравниваются по comparablePriceUzs, а не как есть:
- * у одних залов цена за гостя, у других — за мероприятие. Неверный параметр — 400
- * invalid_request (details — имена параметров); курсор от другой сортировки, даты или
- * числа гостей — 400 invalid_cursor.
+ * sort по умолчанию — price_asc (с q — relevance); цены сравниваются по comparablePriceUzs, а не
+ * как есть: у одних залов цена за гостя, у других — за мероприятие. Неверный параметр — 400
+ * invalid_request (details — имена параметров); курсор от другой сортировки, даты, числа гостей
+ * или другого запроса — 400 invalid_cursor.
+ * q — поиск (@bayramm/shared/search): вместе со всеми фильтрами; название, раздел, район, услуги,
+ * текстовые поля витрины и описание, кириллицей и латиницей, с опечаткой. Короче
+ * SEARCH_MIN_LENGTH после нормализации — не поиск (q не учитывается); длиннее SEARCH_MAX_LENGTH —
+ * 400 invalid_request. Запрос нигде не сохраняется
  */
 export interface CatalogQuery {
   readonly category?: string;
+  /** Поиск: текст как ввёл человек */
+  readonly q?: string;
   /** Фильтры по полям витрины: { "a.parking_spaces": "50", "a.fleet.class": "premium,suv" } */
   readonly filters?: Readonly<Record<string, string>>;
   /**
@@ -235,6 +245,47 @@ export function comparablePriceUzs(card: PricedCard, guests: number | null): num
 export interface CatalogPage {
   readonly items: readonly ListingCard[];
   readonly nextCursor: string | null;
+  /** Сколько всего нашлось — только с q и только на первой странице (без cursor) */
+  readonly total?: number;
+}
+
+// ── подсказки поиска ───────────────────────────────────────────────────────
+
+/** Раздел, подходящий запросу; listings — сколько в нём витрин */
+export interface SuggestCategory {
+  readonly code: string;
+  readonly name: Localized;
+  readonly listings: number;
+}
+
+/** Район в разделе («Чиланзар — тойханы»): витрин раздела в районе — listings */
+export interface SuggestDistrict {
+  readonly code: string;
+  readonly name: Localized;
+  /** Раздел, где в районе есть витрины */
+  readonly category: string;
+  readonly listings: number;
+}
+
+/** Витрина в подсказках */
+export type SuggestListing = Pick<
+  ListingCard,
+  "id" | "slug" | "name" | "categoryCode" | "districtCode" | "cover"
+>;
+
+/** Сколько витрин в подсказках */
+export const SUGGEST_LISTINGS = 5;
+
+/**
+ * GET /catalog/suggest?q= → 200: что подходит набранному — разделы, районы в разделах, до
+ * SUGGEST_LISTINGS витрин (по похожести, как выдача с q). q короче SEARCH_MIN_LENGTH после
+ * нормализации — всё пусто; длиннее SEARCH_MAX_LENGTH — 400 invalid_request. Ответ одинаков для
+ * всех и кэшируется, как каталог; запрос нигде не сохраняется
+ */
+export interface CatalogSuggest {
+  readonly categories: readonly SuggestCategory[];
+  readonly districts: readonly SuggestDistrict[];
+  readonly listings: readonly SuggestListing[];
 }
 
 /** Сколько витрин на лендинге: ответ GET /catalog/featured и заготовки ждущего блока */

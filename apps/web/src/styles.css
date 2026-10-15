@@ -273,6 +273,12 @@ img {
   display: none;
 }
 
+/* Поиск в шапке сайта: на телефоне и планшете — значок (каталог с фокусом в поиске), на
+   компьютере — поле с подсказками (ниже, @media 1024px) */
+.top-search-field {
+  display: none;
+}
+
 /* Шапка гостя сайта (nav.ts): логотип, язык, «Войти» и меню. «Войти» — компактнее обычной
    кнопки: на телефоне в строке ещё логотип, язык и меню. После .btn (ловушка №7) */
 .top-signin {
@@ -282,16 +288,24 @@ img {
   font-size: var(--fs-14);
 }
 
-/* Язык в шапке гостя — пока влезает рядом со входом и меню: с 390px, а на внутренних
-   экранах (там ещё «назад») — с планшета. Уже — он в меню и в подвале */
-@media (max-width: 389px) {
+/* Язык в шапке гостя — с планшета: на телефоне рядом поиск, вход и меню. Уже — он в меню и
+   в подвале */
+@media (max-width: 767px) {
   .app.guest .top > .lang {
     display: none;
   }
 }
 
-@media (max-width: 767px) {
-  .app.guest.inner .top > .lang {
+/* Значок поиска — не на внутренних экранах до компьютера (там «назад» — к выдаче, и место
+   занято) и не у гостя уже 360px (логотип, вход и меню важнее: каталог — в меню) */
+@media (max-width: 1023px) {
+  .app.inner .top > .top-search {
+    display: none;
+  }
+}
+
+@media (max-width: 359px) {
+  .app.guest .top > .top-search {
     display: none;
   }
 }
@@ -622,6 +636,25 @@ textarea.field-input {
   color: var(--ink);
   font-size: var(--fs-14);
   line-height: 1.45;
+}
+
+/* Поиск по каталогу — над разделами во всю ширину (поле и подсказки — @bayramm/ui/react,
+   SearchSuggest). Подсказки — над картами и фильтрами: у панели свой слой */
+.catalog-search {
+  margin-bottom: 12px;
+}
+
+.search-popular {
+  display: grid;
+  justify-items: center;
+  gap: var(--gap-7);
+}
+
+.search-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--gap-7);
 }
 
 /* Главные фильтры — строкой пилюль над выдачей: место (город → район), дата, гости (где
@@ -2927,6 +2960,22 @@ textarea.field-input {
   .top-menu,
   .tabs {
     display: none;
+  }
+
+  /* Поиск в шапке — полем; значок — до компьютера */
+  .top-search {
+    display: none;
+  }
+
+  .top-search-field {
+    display: block;
+    flex: 0 1 280px;
+  }
+
+  /* Подсказки шире поля шапки: названия и районы целиком; край — у правого края поля */
+  .top-search-field .ui-suggest-pop {
+    left: auto;
+    width: 360px;
   }
 
   .main,

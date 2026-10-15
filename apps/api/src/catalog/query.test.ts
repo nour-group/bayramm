@@ -1,7 +1,16 @@
 // Параметры каталога и курсор — без базы
+
+import type { SearchQuery } from "@bayramm/shared/search";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../errors";
-import { type CatalogCursor, decodeCursor, encodeCursor, parseCatalogQuery, type QueryValues } from "./query";
+import {
+  type CatalogCursor,
+  decodeCursor,
+  encodeCursor,
+  parseCatalogQuery,
+  type QueryValues,
+  queryPrint,
+} from "./query";
 
 const ID = "aaaaaaaa-0000-4000-8000-000000000101";
 
@@ -23,6 +32,7 @@ describe("parseCatalogQuery", () => {
   it("без параметров — умолчания: залы, price_asc, 20 на страницу, без фильтров", () => {
     expect(parseCatalogQuery({})).toEqual({
       category: "hall",
+      q: null,
       filters: [],
       city: null,
       district: null,
@@ -51,6 +61,7 @@ describe("parseCatalogQuery", () => {
       ),
     ).toEqual({
       category: "hall",
+      q: null,
       filters: [],
       city: "tashkent",
       district: "mirzo_ulugbek",
@@ -146,6 +157,76 @@ describe("фильтры по полям витрины", () => {
   });
 });
 
+describe("поиск: q", () => {
+  it("нормализуется; порядок по умолчанию — relevance", () => {
+    expect(parseCatalogQuery(q({ q: "  Тўйхона «Ўрда»  " }))).toMatchObject({
+      q: { text: "toyxona orda", tokens: ["toyxona", "orda"] },
+      sort: "relevance",
+    });
+  });
+
+  it("с q можно и другой порядок — фильтры и сортировка остаются", () => {
+    expect(
+      parseCatalogQuery(q({ q: "kortej", category: "all", sort: "price_desc", district: "chilonzor" })),
+    ).toMatchObject({ q: { text: "kortej" }, sort: "price_desc", category: "all", district: "chilonzor" });
+  });
+
+  it("короче двух символов после нормализации — не поиск, порядок обычный", () => {
+    for (const value of ["a", " ' ", "★", "ж"]) {
+      expect(parseCatalogQuery(q({ q: value })), value).toMatchObject({ q: null, sort: "price_asc" });
+    }
+  });
+
+  it("relevance без запроса — порядок по умолчанию", () => {
+    expect(parseCatalogQuery(q({ sort: "relevance" }))).toMatchObject({ q: null, sort: "price_asc" });
+  });
+
+  it("длиннее 64 после нормализации или 200 до — 400 invalid_request [q]; повтор — тоже", () => {
+    for (const value of [["a".repeat(65)], ["!".repeat(201)], ["kortej", "zal"]]) {
+      const err = rejection(() => parseCatalogQuery(q({ q: value })));
+      expect(err).toMatchObject({ status: 400, code: "invalid_request", details: ["q"] });
+    }
+    // 64 буквы и знаки вокруг — можно: считается нормализованное
+    expect(parseCatalogQuery(q({ q: `«${"a".repeat(64)}»` })).q?.text).toHaveLength(64);
+  });
+
+  it("курсор помнит отпечаток запроса: другой запрос или без него — 400 invalid_cursor", () => {
+    const params = parseCatalogQuery(q({ q: "kortej" }));
+    const cursor = encodeCursor({
+      sort: "relevance",
+      date: null,
+      guests: null,
+      busy: false,
+      key: -350_000,
+      id: ID,
+      print: queryPrint(params.q as SearchQuery),
+    });
+    expect(parseCatalogQuery(q({ q: "Кортеж", cursor })).after).toMatchObject({ key: -350_000 });
+    for (const other of [{ q: "limuzin" }, { sort: "relevance" }] as Record<string, string>[]) {
+      const err = rejection(() => parseCatalogQuery(q({ ...other, cursor })));
+      expect(err.code, JSON.stringify(other)).toBe("invalid_cursor");
+    }
+    // Курсор без поиска к выдаче с поиском не подходит
+    const plain = encodeCursor({
+      sort: "relevance",
+      date: null,
+      guests: null,
+      busy: false,
+      key: 0,
+      id: ID,
+      print: null,
+    });
+    expect(rejection(() => parseCatalogQuery(q({ q: "kortej", cursor: plain }))).code).toBe("invalid_cursor");
+  });
+
+  it("отпечаток — целое без знака, одинаковый у одного запроса в разной записи", () => {
+    const a = queryPrint(parseCatalogQuery(q({ q: "Toʻyxona" })).q as SearchQuery);
+    const b = queryPrint(parseCatalogQuery(q({ q: "to'yxona" })).q as SearchQuery);
+    expect(a).toBe(b);
+    expect(Number.isInteger(a) && a >= 0 && a <= 0xffffffff).toBe(true);
+  });
+});
+
 describe("курсор", () => {
   const cursor: CatalogCursor = {
     sort: "price_desc",
@@ -154,6 +235,7 @@ describe("курсор", () => {
     busy: true,
     key: -150000,
     id: ID,
+    print: null,
   };
 
   it("туда и обратно; строка — base64url без дополнения", () => {
@@ -193,7 +275,9 @@ describe("курсор", () => {
     ["ключ дробный", b64([2, "price_desc", "2026-10-03", null, 1, 1.5, ID])],
     ["ключ строкой", b64([2, "price_desc", "2026-10-03", null, 1, "1; drop table", ID])],
     ["id не uuid", b64([2, "price_desc", "2026-10-03", null, 1, -150000, "1 or 1=1"])],
-    ["лишнее поле", b64([2, "price_desc", "2026-10-03", null, 1, -150000, ID, 0])],
+    ["лишнее поле", b64([2, "price_desc", "2026-10-03", null, 1, -150000, ID, 0, 0])],
+    ["отпечаток запроса строкой", b64([2, "price_desc", "2026-10-03", null, 1, -150000, ID, "kortej"])],
+    ["отпечаток запроса дробный", b64([2, "price_desc", "2026-10-03", null, 1, -150000, ID, 0.5])],
     ["слишком длинный", "A".repeat(600)],
   ])("%s — null, в запросе — 400 invalid_cursor", (_, value) => {
     expect(decodeCursor(value)).toBeNull();

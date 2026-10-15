@@ -2,6 +2,7 @@ import {
   type CatalogCategories,
   type CatalogPage,
   type CatalogQuery,
+  type CatalogSuggest,
   CLIENT_SOURCE_HEADER,
   type ClientRequest,
   type ClientRequests,
@@ -153,6 +154,7 @@ export function createHttpApi({
         // Фильтры по полям витрины — как есть (a.<поле>=…); имена и значения проверил экран
         ...query.filters,
         category: query.category,
+        q: query.q,
         city: query.city,
         district: query.district,
         date: query.date,
@@ -162,6 +164,7 @@ export function createHttpApi({
         cursor: query.cursor,
         limit: query.limit,
       }),
+    suggest: (q, signal) => get<CatalogSuggest>("/catalog/suggest", signal, { q }),
     listing: (slug, signal) => get<ListingDetail>(`/catalog/listings/${encodeURIComponent(slug)}`, signal),
     listingContacts: (slug, signedIn) =>
       call<ListingContacts>(fetchFn, base, `/catalog/listings/${encodeURIComponent(slug)}/contact`, {

@@ -16,13 +16,15 @@
     "./api/staff": "./src/api/staff.ts",
     "./api/vendor": "./src/api/vendor.ts",
     "./categories": "./src/categories/index.ts",
-    "./pkce": "./src/pkce.ts"
+    "./pkce": "./src/pkce.ts",
+    "./search": "./src/search/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "extract:dict": "node scripts/extract-client-dict.mjs && biome check --write src/i18n/ru.ts src/i18n/uz.ts",
-    "categories:sql": "node --import ./scripts/ts-resolve.mjs scripts/categories-sql.ts"
+    "categories:sql": "node --import ./scripts/ts-resolve.mjs scripts/categories-sql.ts",
+    "search:sql": "node --import ./scripts/ts-resolve.mjs scripts/search-sql.ts"
   },
   "devDependencies": {
     "typescript": "^6.0.2",
