@@ -49,6 +49,15 @@ const checkboxIn = (root: ParentNode, label: string) =>
     ?.querySelector("input") ?? null;
 const transferCheckbox = () =>
   byText<HTMLLabelElement>("label.consent-check", /Разрешаю передать/)?.querySelector("input") ?? null;
+/** Пилюля времени в форме заявки: «Утро …», «Весь день» */
+const partChip = (name: string) =>
+  [...document.querySelectorAll<HTMLLabelElement>(".part-chips label.ui-check")].find((l) =>
+    l.textContent?.trim().startsWith(name),
+  ) ?? null;
+const checkedParts = () =>
+  [...document.querySelectorAll<HTMLLabelElement>(".part-chips label.ui-check")]
+    .filter((l) => l.querySelector("input")?.checked)
+    .map((l) => l.textContent?.trim());
 
 describe("каталог категории", () => {
   it("переключатель категорий, заголовок, только свои фильтры и цены с единицей", async () => {
@@ -88,7 +97,9 @@ describe("каталог категории", () => {
     const visible = [...row.children].filter(
       (el) => !el.classList.contains("sr-only") && !el.hasAttribute("hidden"),
     );
+    // С датой — ещё «Время» (части дня)
     expect(visible.map((el) => el.className.split(" ")[0])).toEqual([
+      "ui-select",
       "ui-select",
       "ui-select",
       "filter-pill",
@@ -96,6 +107,7 @@ describe("каталог категории", () => {
     ]);
     expect(field("Город и район")).toBe(row.querySelector(".filter-place"));
     expect(field("Дата")).toBe(row.querySelector(".ui-date"));
+    expect(field("Время")).toBe(row.querySelector(".filter-part"));
     expect(row.querySelector(".filter-place")?.textContent).toContain("Ташкент — весь город");
     expect(row.querySelector(".ui-date")?.textContent).toContain("8 окт");
     // Поля витрины — колонкой рядом с выдачей (видна на компьютере) и шторкой по «Фильтры»
@@ -224,11 +236,21 @@ describe("витрина категории", () => {
     expect(document.querySelector(".venue-meta")?.textContent).toBe("Кортежи");
     // Дата из каталога: частично занята — что именно
     expect(document.querySelector(".venue-head .chip")?.textContent).toBe("8 окт — частично занято");
-    expect([...document.querySelectorAll(".parts .part")].map((p) => p.textContent)).toEqual([
-      "утро 05:00–11:00свободно",
-      "день 11:00–17:00свободно",
-      "вечер 17:00–24:00занято",
+    const rows = [...document.querySelectorAll(".parts .part")];
+    expect(rows.map((p) => p.textContent)).toEqual([
+      "Утро 05:00–11:00свободно",
+      "День 11:00–17:00свободно",
+      "Вечер 17:00–24:00занято",
     ]);
+    // Свободная часть — ссылка в заявку с этой частью; занятая — просто строка
+    const morning = rows[0]?.querySelector("a");
+    expect(morning?.getAttribute("href")).toBe("/venue/oq-kortej/request?date=2026-10-08&part=morning");
+    expect(morning?.getAttribute("aria-label")).toBe("Утро 05:00–11:00 — свободно, оставить заявку");
+    expect(rows[2]?.querySelector("a")).toBeNull();
+    // Ближайшие частично занятые — без выбранного дня: он расписан выше
+    const upcoming = [...document.querySelectorAll(".parts-upcoming li")].map((li) => li.textContent ?? "");
+    expect(upcoming.length).toBeGreaterThan(0);
+    expect(upcoming.some((line) => line.startsWith("8 окт"))).toBe(false);
     // Календарь: частично занятые дни помечены и названы для диктора; день можно выбрать —
     // он уйдёт в заявку
     const partial = [...document.querySelectorAll(".ui-cal-day.is-partial")].map((d) =>
@@ -332,8 +354,10 @@ describe("заявка по форме категории", () => {
     expect(field("Гостей")).toBeNull();
     await click(byText("label.ui-radio", "Свадьба"));
     await pickDate(field("Дата события"), "20 окт");
+    // Повод «Свадьба» отметил вечер
+    expect(checkedParts()).toEqual(["Вечер 17:00–24:00"]);
     await choose(field("Начало"), "17:30");
-    expect(text()).toContain("Это вечер: 17:00–24:00");
+    expect(text()).toContain("Выбрано: вечер 17:00–24:00");
     await type(field("Сколько часов"), "5");
     await type(field("Сколько машин"), "2");
     await click(document.querySelector(".svc-choice input[type=checkbox]"));
@@ -363,7 +387,8 @@ describe("заявка по форме категории", () => {
       cars_count: 2,
       services: [{ id: bride.id, qty: 5, options: [flowers.id] }],
     });
-    expect((api as MockApi).requests[0]?.dayPart).toBe("evening");
+    expect(created?.dayParts).toEqual(["evening"]);
+    expect((api as MockApi).requests[0]?.dayParts).toEqual(["evening"]);
   });
 
   it("фото: что снимать — обязательно, гости — по желанию; без отметки — ошибка у поля", async () => {
@@ -373,6 +398,9 @@ describe("заявка по форме категории", () => {
     expect(guests?.textContent).toContain("по желанию");
     await click(byText("label.ui-radio", "Свадьба"));
     await pickDate(field("Дата события"), "20 окт");
+    // Снимать с утра: вечер, отмеченный поводом, меняем на утро
+    await click(partChip("Вечер")?.querySelector("input"));
+    await click(partChip("Утро")?.querySelector("input"));
     await choose(field("Начало"), "10:00");
     await type(field("Как к вам обращаться"), "Азиза");
     await type(field("Телефон"), "00 123 45 67");
@@ -388,7 +416,7 @@ describe("заявка по форме категории", () => {
       start_time: "10:00",
       coverage: ["photo", "love_story"],
     });
-    expect((api as MockApi).requests[0]?.dayPart).toBe("morning");
+    expect((api as MockApi).requests[0]?.dayParts).toEqual(["morning"]);
   });
 
   it("торт: дата раньше срока заказа не предлагается; сервер всё же отказал — понятно почему", async () => {
@@ -441,16 +469,149 @@ describe("заявка по форме категории", () => {
       "Заполните это поле",
       "Заполните это поле",
     ]);
+    // Свадьба — вечер (студия 17:00–21:00); начало 15:00 — вне выбранного
     await choose(field("Начало"), "15:00");
     await type(field("Сколько часов"), "2");
     await type(field("Сколько человек"), "4");
     await click(byText("button", "Отправить заявку"));
+    expect(text()).toContain("Время начала — внутри выбранного: вечер 17:00–21:00");
+    expect((api as MockApi).created).toHaveLength(0);
+    // Две части сразу: день и вечер
+    await click(partChip("День")?.querySelector("input"));
+    expect(checkedParts()).toEqual(["День 13:00–17:00", "Вечер 17:00–21:00"]);
+    await click(byText("button", "Отправить заявку"));
     await waitFor(() => byText("h1", "Заявка отправлена"), "отправлено");
     expect((api as MockApi).created[0]).toMatchObject({
       details: { start_time: "15:00", hours: 2, people: 4 },
+      dayParts: ["day", "evening"],
     });
-    // У студии частей дня нет
-    expect((api as MockApi).requests[0]?.dayPart).toBeNull();
+    expect((api as MockApi).requests[0]?.dayParts).toEqual(["day", "evening"]);
+  });
+});
+
+describe("несколько мероприятий в день", () => {
+  /** Заполнить остальное и отправить */
+  async function finish() {
+    await type(field("Гостей"), "100");
+    await type(field("Как к вам обращаться"), "Азиза");
+    await type(field("Телефон"), "00 123 45 67");
+    await click(transferCheckbox());
+    await click(byText("button", "Отправить заявку"));
+    await waitFor(() => byText("h1", "Заявка отправлена"), "отправлено");
+  }
+
+  it("витрина: свободная часть дня — сразу в заявку с ней; занятое время в форме не выбрать", async () => {
+    const lola = by("lola-zali");
+    const { api } = await mount({ path: "/venue/lola-zali?date=2026-10-06", mock: { listings: ALL } });
+    await waitFor(() => document.querySelector("h1")?.textContent === lola.name, "витрина");
+    // 6 октября: утро и вечер заняты, день свободен — окна зала
+    const rows = [...document.querySelectorAll(".parts .part")];
+    expect(rows.map((p) => p.textContent)).toEqual([
+      "Утро 06:00–11:00занято",
+      "День 12:00–17:00свободно",
+      "Вечер 18:00–24:00занято",
+    ]);
+    await click(rows[1]?.querySelector("a"));
+    await waitFor(() => transferCheckbox(), "форма");
+    expect(window.location.search).toBe("?date=2026-10-06&part=day");
+    expect(field("Дата события")?.textContent).toContain("6 окт");
+    expect(checkedParts()).toEqual(["День 12:00–17:00"]);
+    // Занятое — недоступно и подписано; «весь день» тоже: день уже частично занят
+    expect(partChip("Утро")?.textContent).toBe("Утро 06:00–11:00 · занято");
+    expect(partChip("Утро")?.querySelector("input")?.disabled).toBe(true);
+    expect(partChip("Весь день")?.textContent).toBe("Весь день · частично занято");
+    expect(partChip("Весь день")?.querySelector("input")?.disabled).toBe(true);
+    // Время выбрано с витрины: повод его не меняет
+    await click(byText("label.ui-radio", "Свадьба"));
+    expect(checkedParts()).toEqual(["День 12:00–17:00"]);
+    await finish();
+    expect((api as MockApi).created[0]?.dayParts).toEqual(["day"]);
+  });
+
+  it("форма: повод отмечает своё время, клиент выбирает две части или весь день", async () => {
+    const { api } = await mount({ path: "/venue/lola-zali/request", mock: { listings: ALL } });
+    await waitFor(() => transferCheckbox(), "форма");
+    // Время — сразу после даты: части с окнами и «весь день»
+    expect([...document.querySelectorAll(".part-chips label")].map((l) => l.textContent)).toEqual([
+      "Утро 06:00–11:00",
+      "День 12:00–17:00",
+      "Вечер 18:00–24:00",
+      "Весь день",
+    ]);
+    await click(byText("label.ui-radio", "Нахорги ош"));
+    expect(checkedParts()).toEqual(["Утро 06:00–11:00"]);
+    await click(byText("label.ui-radio", "Свадьба"));
+    expect(checkedParts()).toEqual(["Вечер 18:00–24:00"]);
+    // Утро и вечер: нахорги ош и свадьба в один день
+    await click(partChip("Утро")?.querySelector("input"));
+    expect(checkedParts()).toEqual(["Утро 06:00–11:00", "Вечер 18:00–24:00"]);
+    // Дата, где вечер занят: его отметка снимается
+    await pickDate(field("Дата события"), "13 окт");
+    expect(checkedParts()).toEqual(["Утро 06:00–11:00"]);
+    expect(partChip("Вечер")?.textContent).toBe("Вечер 18:00–24:00 · занято");
+    expect(text()).not.toContain("Выберите время");
+    // Весь день — вместо частей; на день с занятым временем — нельзя
+    await pickDate(field("Дата события"), "20 окт");
+    await click(partChip("Весь день")?.querySelector("input"));
+    expect(checkedParts()).toEqual(["Весь день"]);
+    await click(byText("label.ui-radio", "День рождения"));
+    expect(checkedParts()).toEqual(["Весь день"]);
+    await finish();
+    const created = (api as MockApi).created[0];
+    expect(created).toMatchObject({ wholeDay: true });
+    expect(created).not.toHaveProperty("dayParts");
+    expect((api as MockApi).requests[0]?.dayParts).toEqual([]);
+  });
+
+  it("без выбранного времени — ошибка у поля «Время»", async () => {
+    const { api } = await mount({ path: "/venue/lola-zali/request", mock: { listings: ALL } });
+    await waitFor(() => transferCheckbox(), "форма");
+    await click(byText("label.ui-radio", "Свадьба"));
+    await click(partChip("Вечер")?.querySelector("input"));
+    await pickDate(field("Дата события"), "20 окт");
+    await click(byText("button", "Отправить заявку"));
+    expect(text()).toContain("Выберите время или «Весь день»");
+    expect((api as MockApi).created).toHaveLength(0);
+  });
+
+  it("одно мероприятие в день: на витрине и в форме — «на весь день», без выбора времени", async () => {
+    const nilufar = by("nilufar-zali");
+    const { api } = await mount({ path: "/venue/nilufar-zali?date=2026-10-20", mock: { listings: ALL } });
+    await waitFor(() => document.querySelector("h1")?.textContent === nilufar.name, "витрина");
+    expect(document.querySelector(".parts")).toBeNull();
+    expect(text(document.querySelector(".parts-day") as HTMLElement)).toContain(
+      "На весь день: здесь одно мероприятие в день.",
+    );
+    await click(byText(".venue-bar a", "Оставить заявку"));
+    await waitFor(() => transferCheckbox(), "форма");
+    expect(document.querySelector(".part-chips")).toBeNull();
+    expect(text()).toContain("На весь день: здесь одно мероприятие в день.");
+    await click(byText("label.ui-radio", "Свадьба"));
+    await finish();
+    const created = (api as MockApi).created[0];
+    expect(created).not.toHaveProperty("dayParts");
+    expect(created).not.toHaveProperty("wholeDay");
+  });
+
+  it("каталог: «Время» — с датой; выбор уходит в адрес и снимается вместе с датой", async () => {
+    await mount({ path: "/catalog?category=hall", mock: { listings: ALL } });
+    await waitFor(() => cardNames().length > 0, "залы");
+    expect(field("Время")).toBeNull();
+    await pickDate(field("Дата"), "6 окт");
+    await waitFor(() => field("Время"), "время");
+    expect(field("Время")?.textContent).toContain("Любое время");
+    await choose(field("Время"), "Утро");
+    await waitFor(() => window.location.search.includes("part=morning"), "утро в адресе");
+    // На 6 октября утро у «Lola» занято — в выдаче её нет
+    await waitFor(() => !cardNames().includes(by("lola-zali").name), "без занятых утром");
+    expect(document.querySelector(".filter-part")?.classList.contains("is-set")).toBe(true);
+    await choose(field("Время"), "Весь день");
+    await waitFor(() => window.location.search.includes("part=whole"), "весь день в адресе");
+    // Дату сняли — время тоже
+    await click(field("Дата"));
+    await click(byText(".ui-date-actions button", "Без даты"));
+    await waitFor(() => !window.location.search.includes("part="), "время снято");
+    expect(field("Время")).toBeNull();
   });
 });
 

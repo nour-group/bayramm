@@ -150,6 +150,7 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
     expect(screenOf(matchRoute(url.pathname), true)).toEqual({ name: "catalog" });
     expect(readFilters(url.searchParams, "2026-10-01")).toEqual({
       ...filters,
+      part: null,
       city: null,
       sort: null,
       attrs: {},
@@ -166,6 +167,7 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
     expect(readFilters(url.searchParams, "2026-10-01")).toEqual({
       category: "car",
       date: "2026-10-20",
+      part: null,
       guests: null,
       city: null,
       district: "chilonzor",
@@ -184,6 +186,7 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
     expect(filters).toEqual({
       category: "all",
       date: "2026-10-20",
+      part: null,
       guests: null,
       city: null,
       district: "chilonzor",

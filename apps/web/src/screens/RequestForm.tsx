@@ -1,17 +1,21 @@
 import type { Dict } from "@bayramm/shared";
 import type {
   ConsentText,
+  DayPart,
   DictItem,
   ListingDetail,
+  OccasionItem,
   PublicService,
   RequestCreated,
 } from "@bayramm/shared/api";
 import {
   type CategoryConfig,
   categoryConfig,
-  dayPartOf,
   hasDayParts,
+  isDayPart,
   MAX_CHOSEN_SERVICES,
+  occasionParts,
+  windowText,
 } from "@bayramm/shared/categories";
 import { Checkbox, DateField, NumberStepper, RadioGroup, Select, TimeField } from "@bayramm/ui/react";
 import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -49,6 +53,7 @@ import { MAX_GUESTS, parseGuests } from "./catalog-feed";
 import {
   budgetScale,
   COMMENT_MAX,
+  choosesParts,
   clearDraft,
   type DetailField,
   type Draft,
@@ -66,13 +71,13 @@ import {
   loadDraft,
   NAME_MAX,
   parseQty,
+  partsWindows,
   saveDraft,
   servicesField,
   toCreateRequest,
   validate,
 } from "./request-draft";
 import { estimate, hasQty, suggestedQty } from "./request-estimate";
-import { dayPartWindow } from "./venue-attributes";
 
 const GUESTS_STEP = 20;
 
@@ -116,17 +121,16 @@ function serverFieldErrors(
   if (!isApiError(error)) return {};
   const out: Partial<Record<Field, string>> = {};
   if (error.code === "lead_time_too_short") out.date = t.errLeadServer;
-  // Занятость сверил сервер (витрина во вкладке устарела): занят день или выбранная часть дня
+  // Занятость сверил сервер (витрина во вкладке устарела): занят день или выбранное время
   if (error.code === "date_busy") {
-    if (error.details.includes("details.start_time")) {
-      const start = draft.values.start_time;
-      out["d.start_time"] =
-        typeof start === "string" && start
-          ? t.errPartBusy(t.dayPartName(dayPartOf(category, start)))
-          : t.errInvalid;
+    if (error.details.includes("dayParts") || error.details.includes("details.start_time")) {
+      out.parts = draft.wholeDay
+        ? t.errWholeBusy
+        : t.errPartBusy(draft.dayParts.map((p) => t.dayPartName(p)).join(", "));
     } else out.date = t.errDateBusy;
     return out;
   }
+  if (hasDayParts(category) && error.details.includes("dayParts")) out.parts = t.errParts;
   for (const path of error.details) {
     const [head = "", key, index, sub] = path.split(".");
     if (head === "guests") out.guests = t.errGuests;
@@ -524,7 +528,7 @@ function ServicePick({
 interface FormProps {
   readonly listing: ListingDetail;
   readonly category: CategoryConfig;
-  readonly occasions: readonly DictItem[];
+  readonly occasions: readonly OccasionItem[];
   readonly districts: readonly DictItem[];
   readonly consents: readonly ConsentText[];
   readonly onCreated: (created: RequestCreated) => void;
@@ -549,11 +553,21 @@ function initialDraft(
   const saved = loadDraft(listing.slug);
   const date = query.get("date");
   const guests = parseGuests(query.get("guests"));
+  // Часть дня с витрины (нажали на свободное утро): она и выбрана — если на дату свободна
+  const part = query.get("part");
+  const takenOnDate = listing.busyParts.find((p) => p.date === date)?.parts ?? [];
+  const asked =
+    isDayPart(part) &&
+    choosesParts(category, listing) &&
+    listing.sessions.parts.includes(part) &&
+    !takenOnDate.includes(part);
+  const parts = asked ? { dayParts: [part], wholeDay: false, partsTouched: true } : {};
   // Черновик с формой: в нём уже всё; с витрины — только отмеченные услуги: дополняем
-  if (saved && touched(saved)) return saved;
+  if (saved && touched(saved)) return { ...saved, ...parts };
   const lead = leadDaysOf(listing, saved?.services.map((s) => s.id) ?? []);
   return {
     ...EMPTY_DRAFT,
+    ...parts,
     services: saved?.services ?? [],
     date:
       isIsoDate(date) && date >= firstDate(today, lead) && !listing.busyDates.includes(date) ? date : null,
@@ -609,6 +623,59 @@ function Form({
     if (notifyId) setNotify(false);
   }, [notifyId]);
   const context = { listing, category, busy, today, transferChecked: transfer };
+  // Время: части дня или весь день — у витрины с несколькими мероприятиями в день
+  const parts = choosesParts(category, listing);
+  const takenOn = (date: string | null): readonly DayPart[] =>
+    date === null
+      ? []
+      : (listing.busyParts.find((p) => p.date === date)?.parts ?? []).filter((p) =>
+          listing.sessions.parts.includes(p),
+        );
+  // Частично занятые дни — в календаре поля даты (что занято — в имени дня)
+  const partial = useMemo(
+    () =>
+      parts
+        ? new Map(
+            listing.busyParts
+              .map((p) => [p.date, p.parts.filter((x) => listing.sessions.parts.includes(x))] as const)
+              .filter(([date, taken]) => taken.length > 0 && !busy.has(date))
+              .map(([date, taken]) => [date, taken.map((x) => t.dayPartName(x)).join(", ")]),
+          )
+        : undefined,
+    [parts, listing.busyParts, listing.sessions.parts, busy, t],
+  );
+  /** Повод отмечает свои части дня (из рабочих и не занятых на дату), пока клиент не выбрал время сам */
+  const chooseOccasion = (code: string) => {
+    const occasion = occasions.find((o) => o.code === code);
+    if (!parts || draft.partsTouched || !occasion) {
+      update({ occasion: code });
+      return;
+    }
+    const taken = takenOn(draft.date);
+    const dayParts = occasionParts(occasion.defaultParts, listing.sessions.parts).filter(
+      (p) => !taken.includes(p),
+    );
+    update({ occasion: code, dayParts, wholeDay: false });
+  };
+  /** Другая дата: занятое на неё время снимается — отмеченным его не оставляем */
+  const chooseDate = (date: string | null) => {
+    const taken = takenOn(date);
+    update({
+      date,
+      dayParts: draft.dayParts.filter((p) => !taken.includes(p)),
+      wholeDay: draft.wholeDay && taken.length === 0,
+    });
+  };
+  const togglePart = (part: DayPart, on: boolean) =>
+    update({
+      dayParts: on
+        ? listing.sessions.parts.filter((p) => p === part || draft.dayParts.includes(p))
+        : draft.dayParts.filter((p) => p !== part),
+      wholeDay: false,
+      partsTouched: true,
+    });
+  const toggleWholeDay = (on: boolean) =>
+    update({ wholeDay: on, dayParts: on ? [] : draft.dayParts, partsTouched: true });
   const errors = submitted ? { ...serverErrors, ...validate(draft, context, t) } : serverErrors;
   const guests = parseGuests(draft.guests);
   const price = formatPriceFrom(listing.priceFromUzs, listing.priceUnit, t);
@@ -666,7 +733,7 @@ function Form({
     setSendError(null);
     setServerErrors({});
     const found = validate(draft, context, t);
-    const first = fieldOrder(category, draft).find((field) => found[field]);
+    const first = fieldOrder(category, draft, parts).find((field) => found[field]);
     if (first || !transferText) {
       haptic(webApp, "error");
       if (first) document.getElementById(fieldId(first))?.focus({ preventScroll: false });
@@ -714,14 +781,11 @@ function Form({
       : hasDayParts(category) && dateParts.length > 0
         ? t.partsTaken(dateParts.map((part) => t.dayPartName(part)).join(", "))
         : undefined;
-  const start = draft.values.start_time;
+  // Подсказка у времени начала: окна выбранного времени
+  const chosenParts = draft.wholeDay ? listing.sessions.parts : draft.dayParts;
   const startHint =
-    hasDayParts(category) && typeof start === "string" && start
-      ? t.dayPartHint(
-          t.dayPartName(dayPartOf(category, start)),
-          dayPartWindow(category, dayPartOf(category, start)),
-        )
-      : undefined;
+    parts && chosenParts.length > 0 ? t.startWithin(partsWindows(listing, chosenParts, t)) : undefined;
+  const taken = takenOn(draft.date);
 
   return (
     <form className="screen request" onSubmit={onSubmit} noValidate>
@@ -749,7 +813,7 @@ function Form({
           name={`${id}-occasion`}
           value={draft.occasion}
           options={occasions.map((occasion) => ({ value: occasion.code, label: pick(occasion.name, lang) }))}
-          onChange={(occasion) => update({ occasion })}
+          onChange={chooseOccasion}
         />
       </Fld>
 
@@ -762,13 +826,47 @@ function Form({
           min={minDate}
           max={addDays(today, EVENT_MAX_DAYS_AHEAD)}
           busy={busy}
+          partial={partial}
           format={dateLabel}
           texts={calendarTexts}
           aria-invalid={errors.date ? true : undefined}
           aria-describedby={describedBy(fieldId("date"), errors.date, Boolean(dateHint))}
-          onChange={(date) => update({ date })}
+          onChange={chooseDate}
         />
       </Fld>
+
+      {parts ? (
+        <Fld id={fieldId("parts")} label={t.fTime} required error={errors.parts} group>
+          <div className="part-chips">
+            {listing.sessions.parts.map((part, i) => {
+              const busyPart = taken.includes(part);
+              const label = `${t.dayPartTitle(part)} ${windowText(listing.sessions.windows[part])}`;
+              return (
+                <Checkbox
+                  key={part}
+                  id={i === 0 ? fieldId("parts") : undefined}
+                  className="chip-check"
+                  checked={!draft.wholeDay && draft.dayParts.includes(part)}
+                  disabled={busyPart}
+                  onChange={(on) => togglePart(part, on)}
+                >
+                  {busyPart ? `${label} · ${t.legBusy}` : label}
+                </Checkbox>
+              );
+            })}
+            <Checkbox
+              className="chip-check"
+              checked={draft.wholeDay}
+              disabled={taken.length > 0}
+              onChange={toggleWholeDay}
+            >
+              {taken.length > 0 ? `${t.partWhole} · ${t.legPartial}` : t.partWhole}
+            </Checkbox>
+          </div>
+        </Fld>
+      ) : hasDayParts(category) ? (
+        <p className="fld-note muted small">{t.partsWholeOnly}</p>
+      ) : null}
 
       {guestsMode === "hidden" ? null : (
         <Fld

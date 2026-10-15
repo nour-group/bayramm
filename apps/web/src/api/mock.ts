@@ -2,6 +2,7 @@ import { normalizeUzPhone } from "@bayramm/shared";
 import {
   type CatalogCategories,
   type CatalogPage,
+  type CatalogPart,
   type CatalogQuery,
   type ClientConsentPurpose,
   type ClientRequest,
@@ -27,14 +28,20 @@ import type { ClientDataExport, ClientMe, Favorites, Me } from "@bayramm/shared/
 import {
   type AttributeFilter,
   CATEGORIES,
+  type CategoryConfig,
   type ChosenServiceSnapshot,
   categoryConfig,
   categoryTexts,
-  dayPartOf,
+  type DayMarks,
+  dayLoadOf,
+  dayPartWindows,
+  freeIn,
   guestsAllowed,
   hasDayParts,
+  OCCASIONS,
   parseAttributeFilters,
   validateRequestDetails,
+  validateRequestParts,
 } from "@bayramm/shared/categories";
 import { addDays, tashkentToday } from "../format";
 import { type DemoListing, demoTelegram, demoUuid, demoVitrinas } from "./demo-vitrinas";
@@ -46,9 +53,10 @@ import type { ClientApi, PhoneProof } from "./types";
 
 /* Демо-реализация API в памяти: для тестов и для `pnpm dev:web` без сервера.
    Ведёт себя по контракту @bayramm/shared/api: выдача по категории (без неё — залы),
-   фильтры по полям витрины (a.*), загрузка на дату (свободно, занята часть дня, занято),
-   занятые — в конце выдачи при любом порядке, гости отсекают по вместимости, курсор, 404,
-   заявка проверяется по форме категории (поля, услуги, срок заказа), 409 на повторную.
+   фильтры по полям витрины (a.*), загрузка на дату по рабочим частям витрины (свободно,
+   частично занято, занято) и фильтр «Время» (part), занятые — в конце выдачи при любом порядке,
+   гости отсекают по вместимости, курсор, 404, заявка проверяется по форме категории (поля,
+   услуги, срок заказа, части дня), 409 на повторную и на занятую часть.
    Площадки вымышленные, телефоны в несуществующем коде +998 00 — живых людей тут нет.
    В сборку для staging и production не попадает (api/index.ts, проверка в тесте). */
 
@@ -72,13 +80,8 @@ export const DEMO_DICTIONARIES: Dictionaries = {
     { code: "bektemir", name: { ru: "Бектемир", uz: "Bektemir" }, city: "tashkent" },
     { code: "yangihayot", name: { ru: "Янгихаят", uz: "Yangihayot" }, city: "tashkent" },
   ],
-  occasions: [
-    { code: "toy", name: { ru: "Свадьба", uz: "Toʻy" } },
-    { code: "beshik", name: { ru: "Бешик-той", uz: "Beshik toʻyi" } },
-    { code: "bd", name: { ru: "День рождения", uz: "Tugʻilgan kun" } },
-    { code: "corp", name: { ru: "Корпоратив", uz: "Korporativ" } },
-    { code: "small", name: { ru: "Частное", uz: "Yopiq davra" } },
-  ],
+  // Как сеет миграция (packages/shared/src/categories/occasions.ts)
+  occasions: OCCASIONS.map((o) => ({ code: o.code, name: o.name, defaultParts: o.defaultParts })),
 };
 
 const NAMES = [
@@ -108,6 +111,9 @@ const NAMES = [
   "Sayyora",
 ];
 
+/** Залы — категория демо-залов */
+const HALL = categoryConfig("hall") as CategoryConfig;
+
 const SLUGS = NAMES.map((name) => `${name.toLowerCase().replace(/[^a-z]/g, "")}-zali`);
 
 const CAPACITY = [120, 200, 250, 300, 350, 400, 500, 600, 800, 1000];
@@ -133,6 +139,21 @@ export function demoListings(today: string): DemoListing[] {
       ...(i % 3 === 0 ? [addDays(today, 7)] : []),
       ...Array.from({ length: 8 }, (_, k) => addDays(today, ((i * 5 + k * 13) % 150) + 2)),
     ];
+    // Несколько мероприятий в день: утро и вечер заняты (нахорги ош и свадьба), день свободен; у
+    // каждого шестого зала — одно мероприятие в день, у каждого четвёртого — без дневной части
+    // (у него занят только вечер: занятые утро и вечер были бы днём, занятым целиком)
+    const whole = i % 6 === 5;
+    const twoParts = i % 4 === 2;
+    const workingParts: DayPart[] = twoParts ? ["morning", "evening"] : ["morning", "day", "evening"];
+    const busyParts = whole
+      ? []
+      : [
+          {
+            date: addDays(today, 5 + (i % 3)),
+            parts: (twoParts ? ["evening"] : ["morning", "evening"]) as DayPart[],
+          },
+          { date: addDays(today, 12 + (i % 4)), parts: ["evening"] as DayPart[] },
+        ].filter((p) => !busyDates.includes(p.date));
     return {
       id,
       slug: SLUGS[i] ?? `zal-${i + 1}`,
@@ -172,12 +193,17 @@ export function demoListings(today: string): DemoListing[] {
         options: [],
       })),
       parallelCapacity: 1,
+      sessions: {
+        mode: whole ? "whole" : "parts",
+        parts: workingParts,
+        windows: dayPartWindows(HALL),
+      },
       photos,
       contactChannels: demoTelegram(SLUGS[i] ?? `zal-${i + 1}`, i + 1) ? ["phone", "telegram"] : ["phone"],
       phone: `+998000000${String(i + 1).padStart(3, "0")}`,
       telegram: demoTelegram(SLUGS[i] ?? `zal-${i + 1}`, i + 1),
       busyDates: [...new Set(busyDates)].sort(),
-      busyParts: [],
+      busyParts: busyParts.sort((a, b) => a.date.localeCompare(b.date)),
     } satisfies DemoListing;
   });
 }
@@ -286,7 +312,7 @@ export function demoRequests(listings: readonly ListingDetail[], now: number): C
         ...base(listing, n, status, hoursAgo, answeredAfter),
         declineReason,
         guests: Math.min(200, listing.capMax ?? 200),
-        dayPart: null,
+        dayParts: n === 0 ? (["morning", "evening"] as DayPart[]) : [],
         details: {},
       },
     ];
@@ -299,7 +325,7 @@ export function demoRequests(listings: readonly ListingDetail[], now: number): C
     out.push({
       ...base(car, 4, "new", 1, null),
       guests: null,
-      dayPart: "evening",
+      dayParts: ["evening"],
       details: { start_time: "17:30", hours: 5, cars_count: 2, car_class: "premium", services: [carChoice] },
     });
   const cake = listings.find((l) => l.categoryCode === "cake");
@@ -309,7 +335,7 @@ export function demoRequests(listings: readonly ListingDetail[], now: number): C
     out.push({
       ...base(cake, 5, "contacted", 30, 3),
       guests: 150,
-      dayPart: null,
+      dayParts: [],
       details: { weight_kg: 6, tiers: 3, filling: "berry", fulfillment: "delivery", services: [cakeChoice] },
     });
   return out;
@@ -326,16 +352,33 @@ function pickListing(listing: ListingDetail): ClientRequest["listing"] {
   };
 }
 
+/** Отметки дня демо-витрины: занятые даты — день целиком, частично занятые — отмеченные части */
+function demoMarks(listing: ListingDetail, date: string): DayMarks {
+  return {
+    whole: listing.busyDates.includes(date),
+    marked: listing.busyParts.find((p) => p.date === date)?.parts ?? [],
+    booked: {},
+  };
+}
+
+const sessionsCore = (listing: ListingDetail) => ({
+  ...listing.sessions,
+  parallelCapacity: listing.parallelCapacity,
+});
+
 /**
- * Загрузка витрины на дату — как app.listing_day_load: занята целиком (вендор отметил день или
- * заняты все части дня) — busy, занята часть дня — partial; без календаря (срок заказа) — free
+ * Загрузка витрины на дату — как app.listing_day_load: по рабочим частям витрины (у одного
+ * мероприятия в день любая занятая часть — весь день); без календаря (срок заказа) — free
  */
 export function demoDayLoad(listing: ListingDetail, date: string): DateLoad {
   if (categoryConfig(listing.categoryCode)?.availability === "lead") return "free";
-  if (listing.busyDates.includes(date)) return "busy";
-  const parts = listing.busyParts.find((p) => p.date === date)?.parts ?? [];
-  if (parts.length >= 3) return "busy";
-  return parts.length > 0 ? "partial" : "free";
+  return dayLoadOf(sessionsCore(listing), demoMarks(listing, date));
+}
+
+/** Свободна ли витрина в часть дня на дату — фильтр «Время» каталога */
+function demoFreeIn(listing: ListingDetail, date: string, part: CatalogPart): boolean {
+  if (categoryConfig(listing.categoryCode)?.availability === "lead") return true;
+  return freeIn(sessionsCore(listing), demoMarks(listing, date), part);
 }
 
 function toCard(listing: ListingDetail, date: string | undefined): ListingCard {
@@ -399,14 +442,14 @@ const invalid = (details: readonly string[]) =>
 
 /**
  * Поля заявки по форме категории витрины — как apps/api/src/requests/details.ts: гости по
- * правилу формы и вместимости, поля категории, услуги только этой витрины, срок заказа,
- * часть дня из времени начала
+ * правилу формы и вместимости, поля категории, услуги только этой витрины, срок заказа, части
+ * дня по времени работы витрины (время начала — внутри выбранной)
  */
 function checkDetails(
   listing: ListingDetail,
   body: CreateRequest,
   today: string,
-): { details: RequestDetails; dayPart: DayPart | null } {
+): { details: RequestDetails; dayParts: DayPart[] } {
   const category = categoryConfig(listing.categoryCode);
   if (!category) throw invalid(["listingId"]);
   const guests = body.guests ?? null;
@@ -443,11 +486,15 @@ function checkDetails(
   const details: Record<string, RequestDetails[string]> = { ...values };
   const servicesField = category.requestForm.fields.find((f) => f.type === "services");
   if (servicesField && snapshots.length > 0) details[servicesField.key] = snapshots;
-  const start = values.start_time;
-  return {
-    details,
-    dayPart: hasDayParts(category) && typeof start === "string" ? dayPartOf(category, start) : null,
-  };
+  if (!hasDayParts(category)) return { details, dayParts: [] };
+  const start = typeof values.start_time === "string" ? values.start_time : null;
+  const parts = validateRequestParts(
+    listing.sessions,
+    { dayParts: body.dayParts, wholeDay: body.wholeDay },
+    start,
+  );
+  if (!parts.ok) throw invalid(parts.errors);
+  return { details, dayParts: parts.value };
 }
 
 function abortError(): Error {
@@ -685,6 +732,8 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           )
           .filter((l) => !query.district || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax === null || l.capMax >= query.guests)
+          // «Время» — вместе с датой: свободные в эту часть дня (или весь день)
+          .filter((l) => !query.date || !query.part || demoFreeIn(l, query.date, query.part))
           .map((l) => toCard(l, query.date));
         // Без sort — по возрастанию цены, как у сервера; цены сравниваются по той же
         // формуле (за мероприятие и за гостя — на одной шкале, с гостями — сумма на них)
@@ -774,7 +823,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         const listing = listings.find((l) => l.id === body.listingId);
         if (!listing) throw new ApiError(404, "not_found");
         if (!body.requestTransferConsentId) throw new ApiError(422, "validation_failed");
-        const { details, dayPart } = checkDetails(listing, body, tashkentToday(now()));
+        const { details, dayParts } = checkDetails(listing, body, tashkentToday(now()));
         const duplicate = requests.find(
           (r) =>
             r.listing.id === body.listingId && r.eventDate === body.eventDate && ACTIVE.includes(r.status),
@@ -784,8 +833,12 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         if (demoDayLoad(listing, body.eventDate) === "busy")
           throw new ApiError(409, "date_busy", undefined, undefined, ["eventDate"]);
         const takenParts = listing.busyParts.find((p) => p.date === body.eventDate)?.parts ?? [];
-        if (dayPart !== null && takenParts.includes(dayPart))
-          throw new ApiError(409, "date_busy", undefined, undefined, ["details.start_time"]);
+        const taken =
+          dayParts.length === 0
+            ? takenParts.some((p) => listing.sessions.parts.includes(p))
+            : dayParts.some((p) => takenParts.includes(p));
+        if (hasDayParts(categoryConfig(listing.categoryCode) ?? HALL) && taken)
+          throw new ApiError(409, "date_busy", undefined, undefined, ["dayParts"]);
         created.push(body);
         const createdAt = now();
         const request: ClientRequest = {
@@ -795,7 +848,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           declineReason: null,
           eventDate: body.eventDate,
           guests: body.guests ?? null,
-          dayPart,
+          dayParts,
           details,
           occasionCode: body.occasionCode,
           createdAt: new Date(createdAt).toISOString(),
