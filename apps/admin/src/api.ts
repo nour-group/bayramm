@@ -4,7 +4,7 @@
    кончилась: панель возвращает на вход. */
 
 import type { AuthMethods } from "@bayramm/shared/api/account";
-import type { StaffMe, StaffPermission } from "@bayramm/shared/api/staff";
+import type { DayPart, StaffMe, StaffPermission } from "@bayramm/shared/api/staff";
 import { useOnReconnect } from "@bayramm/ui/react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { fetchMethods } from "./session";
@@ -16,6 +16,8 @@ export type Failure = {
   readonly status: number;
   readonly code: string;
   readonly details: string[];
+  /** 409 part_in_use: сколько будущих заявок в каждой убираемой части дня */
+  readonly inUse?: readonly { readonly part: DayPart; readonly count: number }[];
 };
 export type Result<T> = { readonly ok: true; readonly data: T } | Failure;
 
@@ -35,6 +37,7 @@ async function parse<T>(res: Response): Promise<Result<T>> {
   const body = (await res.json().catch(() => null)) as unknown;
   if (res.ok) return { ok: true, data: body as T };
   const error = (body as { error?: { code?: unknown; details?: unknown } } | null)?.error;
+  const inUse = (body as { inUse?: unknown } | null)?.inUse;
   return {
     ok: false,
     status: res.status,
@@ -42,6 +45,17 @@ async function parse<T>(res: Response): Promise<Result<T>> {
     details: Array.isArray(error?.details)
       ? error.details.filter((d): d is string => typeof d === "string")
       : [],
+    ...(Array.isArray(inUse)
+      ? {
+          inUse: inUse.filter(
+            (p): p is { part: DayPart; count: number } =>
+              typeof p === "object" &&
+              p !== null &&
+              typeof p.part === "string" &&
+              typeof p.count === "number",
+          ),
+        }
+      : {}),
   };
 }
 

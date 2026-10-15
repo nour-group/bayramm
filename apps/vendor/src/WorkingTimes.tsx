@@ -12,18 +12,21 @@
    Вписанное и не сохранённое — уход переспросит (useUnsaved). */
 
 import { ruPlural } from "@bayramm/shared";
-import type { DaySessionsInput, VendorListing } from "@bayramm/shared/api/vendor";
+import type { VendorListing } from "@bayramm/shared/api/vendor";
 import {
   categoryConfig,
   DAY_PARTS,
   type DayPart,
-  type DayPartWindow,
+  type DaySessionsDraft,
   dayPartWindows,
+  daySessionsDirty,
+  daySessionsDraft,
+  daySessionsInput,
   MAX_PARALLEL_CAPACITY,
   type PartMode,
-  toMinutes,
   validateDaySessions,
   windowText,
+  windowTimes,
 } from "@bayramm/shared/categories";
 import { Checkbox, Dialog, NumberStepper, RadioGroup, Select } from "@bayramm/ui/react";
 import { type FormEvent, useId, useRef, useState } from "react";
@@ -42,59 +45,7 @@ interface Props {
   readonly onChanged: () => Promise<void>;
 }
 
-interface Draft {
-  readonly mode: PartMode;
-  readonly parts: readonly DayPart[];
-  readonly windows: Readonly<Record<DayPart, DayPartWindow>>;
-  readonly capacity: string;
-}
-
-const STEP = 30;
-const pad = (n: number) => String(n).padStart(2, "0");
-const clock = (minutes: number) => `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
-
-/** Время начала: 00:00–23:30; конец: 00:30–24:00; значение не на сетке — на своём месте */
-export function timeChoices(kind: "from" | "to", current: string): string[] {
-  const out: string[] = [];
-  for (let m = kind === "from" ? 0 : STEP; m <= (kind === "from" ? 1440 - STEP : 1440); m += STEP)
-    out.push(clock(m));
-  if (!out.includes(current)) out.push(current);
-  return out.sort((a, b) => toMinutes(a) - toMinutes(b));
-}
-
-const draftOf = (listing: VendorListing): Draft => ({
-  mode: listing.daySessions.mode,
-  parts: listing.daySessions.parts,
-  windows: listing.daySessions.windows,
-  capacity: String(listing.daySessions.parallelCapacity),
-});
-
-/** Тело правки: свои окна — только у рабочих частей и только отличные от окон категории */
-export function inputOf(listing: VendorListing, draft: Draft): DaySessionsInput {
-  const category = categoryConfig(listing.categoryCode);
-  const base = category ? dayPartWindows(category) : null;
-  const windows: Partial<Record<DayPart, DayPartWindow>> = {};
-  for (const part of draft.parts) {
-    const w = draft.windows[part];
-    if (!base || w.from !== base[part].from || w.to !== base[part].to) windows[part] = w;
-  }
-  return {
-    mode: draft.mode,
-    parts: DAY_PARTS.filter((p) => draft.parts.includes(p)),
-    windows: Object.keys(windows).length > 0 ? windows : null,
-    parallelCapacity: /^\d{1,2}$/.test(draft.capacity) ? Number(draft.capacity) : Number.NaN,
-  };
-}
-
-const sameDraft = (a: Draft, b: Draft) =>
-  a.mode === b.mode &&
-  a.capacity === b.capacity &&
-  DAY_PARTS.every(
-    (p) =>
-      a.parts.includes(p) === b.parts.includes(p) &&
-      (!a.parts.includes(p) ||
-        (a.windows[p].from === b.windows[p].from && a.windows[p].to === b.windows[p].to)),
-  );
+type Draft = DaySessionsDraft;
 
 /** «на эту часть 2 будущие заявки» */
 function inUseText(t: VendorDict, lang: "ru" | "uz", part: DayPart, count: number): string {
@@ -109,17 +60,17 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
   const formId = useId();
   const edit = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [start, setStart] = useState<Draft>(() => draftOf(listing));
+  const [start, setStart] = useState<Draft>(() => daySessionsDraft(listing.daySessions));
   const [draft, setDraft] = useState<Draft>(start);
   const [errors, setErrors] = useState<readonly string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
-  useUnsaved(open && !sameDraft(draft, start));
+  useUnsaved(open && daySessionsDirty(draft, start));
 
   const openSheet = () => {
-    const next = draftOf(listing);
+    const next = daySessionsDraft(listing.daySessions);
     setStart(next);
     setDraft(next);
     setErrors([]);
@@ -146,7 +97,7 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!category) return;
-    const input = inputOf(listing, draft);
+    const input = daySessionsInput(category, draft);
     const checked = validateDaySessions(category, input);
     if (!checked.ok) {
       setErrors(checked.errors);
@@ -280,7 +231,7 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
                               size="compact"
                               label={fill(t.sessionsFrom, { part: name })}
                               value={w.from}
-                              options={timeChoices("from", w.from).map((v) => ({ value: v, label: v }))}
+                              options={windowTimes("from", w.from).map((v) => ({ value: v, label: v }))}
                               onChange={(value) => setWindow(part, "from", value)}
                               aria-invalid={windowError(part) || undefined}
                             />
@@ -289,7 +240,7 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
                               size="compact"
                               label={fill(t.sessionsTo, { part: name })}
                               value={w.to}
-                              options={timeChoices("to", w.to).map((v) => ({ value: v, label: v }))}
+                              options={windowTimes("to", w.to).map((v) => ({ value: v, label: v }))}
                               onChange={(value) => setWindow(part, "to", value)}
                               aria-invalid={windowError(part) || undefined}
                             />

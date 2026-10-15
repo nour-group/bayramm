@@ -25,18 +25,12 @@ import {
   chosenServices,
   type DayPart,
   detailRows,
+  hasDayParts,
 } from "@bayramm/shared/categories";
 import { Dialog, RadioGroup, type RadioOption, SearchField, Select, useToast } from "@bayramm/ui/react";
 import { type FormEvent, Fragment, type ReactNode, useCallback, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
-import {
-  CategoryChip,
-  categoryName,
-  categoryOptions,
-  formatPrice,
-  knownCategory,
-  partWindow,
-} from "../categories";
+import { CategoryChip, categoryName, categoryOptions, formatPrice, knownCategory } from "../categories";
 import {
   formatDay,
   formatDayShort,
@@ -93,7 +87,7 @@ const STATUSES: readonly RequestStatus[] = [
 /** Заявок на странице */
 const PAGE = 50;
 
-const KEYS = ["q", "sla", "status", "category", "listingId", "page"] as const;
+const KEYS = ["q", "sla", "status", "category", "part", "listingId", "page"] as const;
 
 type Key = (typeof KEYS)[number];
 
@@ -138,10 +132,32 @@ const slaLabel = (filter: SlaFilter): string => (filter === "late" ? t.slaLate :
 /** «Требуют действия · 3»; ноль — без числа */
 const withCount = (label: string, count: number): string => (count > 0 ? `${label} · ${count}` : label);
 
-/** «Утро» — часть дня заявки; у категории без частей дня — пусто */
-function partName(part: DayPart | null): string {
-  return part === null ? "" : (t.dayParts[part] ?? part);
+/**
+ * Части дня заявки: «Утро, вечер»; без частей — «Весь день»; у категории без календаря (срок
+ * заказа) — пусто
+ */
+export function partsName(categoryCode: string, parts: readonly DayPart[]): string {
+  const config = categoryConfig(categoryCode);
+  if (config !== undefined && !hasDayParts(config)) return "";
+  if (parts.length === 0) return t.wholeDay;
+  return parts
+    .map((part, i) => {
+      const name = t.dayParts[part] ?? part;
+      return i === 0 ? name : name.toLowerCase();
+    })
+    .join(", ");
 }
+
+/** Фильтр «Время»: заявки на часть дня или на весь день */
+type PartFilter = DayPart | "whole";
+const PART_FILTERS: readonly PartFilter[] = ["morning", "day", "evening", "whole"];
+const partOf = (value: string | undefined): PartFilter | null =>
+  PART_FILTERS.find((part) => part === value) ?? null;
+const partLabel = (part: PartFilter) => (part === "whole" ? t.wholeDay : (t.dayParts[part] ?? part));
+const PART_OPTIONS = [
+  { value: "", label: t.allParts },
+  ...PART_FILTERS.map((value) => ({ value, label: partLabel(value) })),
+];
 
 /** Просрочена и нарушен срок — одна очередь «Требуют действия»; старые ссылки на них ведут туда */
 const slaOf = (value: string | undefined): SlaFilter | null => {
@@ -173,6 +189,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
   const sla = slaOf(query.sla);
   const status = statusOf(query.status);
   const category = knownCategory(query.category);
+  const part = partOf(query.part);
   const listingId = query.listingId && UUID.test(query.listingId) ? query.listingId : null;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterId = useId();
@@ -181,6 +198,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
   if (sla) params.set("sla", sla);
   if (status) params.set("status", status);
   if (category) params.set("category", category);
+  if (part) params.set("part", part);
   if (listingId) params.set("listingId", listingId);
   if (query.q) params.set("q", query.q);
   const list = usePagedList<StaffRequestItem, StaffRequestList>(`/staff/requests?${params}`, {
@@ -189,12 +207,12 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
     append: phone,
   });
   const data = list.loaded.state === "ready" ? list.loaded.data : null;
-  const filtered = Boolean(query.q || sla || status || category || listingId);
+  const filtered = Boolean(query.q || sla || status || category || part || listingId);
   // Другой фильтр — с первой страницы
   const set = (patch: Partial<Record<Key, string | null>>) => setQuery({ ...patch, page: null });
   const reset = () => {
     setQ("");
-    setQuery({ q: null, sla: null, status: null, category: null, listingId: null, page: null });
+    setQuery({ q: null, sla: null, status: null, category: null, part: null, listingId: null, page: null });
   };
   const onPage = (next: number) => {
     setQuery({ page: next > 0 ? String(next / PAGE + 1) : null });
@@ -226,7 +244,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
         />
         {phone ? (
           <FilterButton
-            count={(history ? 1 : 0) + (status ? 1 : 0) + (category ? 1 : 0)}
+            count={(history ? 1 : 0) + (status ? 1 : 0) + (category ? 1 : 0) + (part ? 1 : 0)}
             open={filtersOpen}
             onOpen={() => setFiltersOpen(true)}
           />
@@ -254,6 +272,13 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
               onChange={(code) => set({ category: code === "" ? null : code })}
               options={[{ value: "", label: t.allCategories }, ...categoryOptions()]}
             />
+            <Select
+              size="compact"
+              label={t.partFilter}
+              value={part ?? ""}
+              onChange={(value) => set({ part: value === "" ? null : value })}
+              options={PART_OPTIONS}
+            />
           </>
         )}
       </div>
@@ -280,6 +305,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
       {phone && category ? (
         <ActiveFilter label={categoryName(category)} onClear={() => set({ category: null })} />
       ) : null}
+      {phone && part ? <ActiveFilter label={partLabel(part)} onClear={() => set({ part: null })} /> : null}
       {phone ? (
         <Dialog
           open={filtersOpen}
@@ -290,7 +316,7 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
               <button
                 type="button"
                 className="ui-btn ui-btn-secondary"
-                onClick={() => set({ sla: null, status: null, category: null })}
+                onClick={() => set({ sla: null, status: null, category: null, part: null })}
               >
                 {t.reset}
               </button>
@@ -330,6 +356,16 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
             onChange={(value) => set({ category: value === "all" ? null : value })}
             options={[{ value: "all", label: t.allCategories }, ...categoryOptions()]}
           />
+          <p className="sheet-group" id={`${filterId}-part`}>
+            {t.partFilter}
+          </p>
+          <RadioGroup<string>
+            variant="row"
+            aria-labelledby={`${filterId}-part`}
+            value={part ?? ""}
+            onChange={(value) => set({ part: value === "" ? null : value })}
+            options={PART_OPTIONS}
+          />
         </Dialog>
       ) : null}
       <LoadedView loaded={list.loaded} onRetry={list.reload}>
@@ -367,7 +403,7 @@ interface RowsProps {
 function eventLine(request: StaffRequestItem, dictionaries: StaffDictionaries | null): string {
   return [
     formatDayShort(request.eventDate),
-    request.dayPart ? partName(request.dayPart) : "",
+    partsName(request.listing.categoryCode, request.dayParts),
     occasionName(dictionaries, request.occasionCode),
     request.guests !== null ? t.guests(request.guests) : "",
   ]
@@ -437,7 +473,9 @@ function RequestTable({ items, dictionaries, category }: RowsProps) {
                 </td>
                 <td>
                   {formatDay(request.eventDate)}
-                  {request.dayPart ? ` · ${partName(request.dayPart)}` : ""}
+                  {partsName(request.listing.categoryCode, request.dayParts)
+                    ? ` · ${partsName(request.listing.categoryCode, request.dayParts)}`
+                    : ""}
                   <span className="sub">
                     {occasionName(dictionaries, request.occasionCode)}
                     {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
@@ -514,12 +552,10 @@ function RequestView({
           {formatDay(request.eventDate)} · {occasionName(dictionaries, request.occasionCode)}
           {request.guests !== null ? ` · ${t.guests(request.guests)}` : ""}
         </dd>
-        {request.dayPart && category ? (
+        {partsName(request.listing.categoryCode, request.dayParts) ? (
           <>
             <dt>{t.dayPart}</dt>
-            <dd>
-              {partName(request.dayPart)} · {partWindow(category, request.dayPart)}
-            </dd>
+            <dd>{partsName(request.listing.categoryCode, request.dayParts)}</dd>
           </>
         ) : null}
         {hasBudget ? (

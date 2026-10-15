@@ -89,7 +89,6 @@ import { useUnsaved } from "../unsaved";
 import { Calendar, LeadTime } from "./Calendar";
 import { ContactChange } from "./ContactChange";
 import {
-  CapacityControl,
   ContactsSection,
   DataSection,
   EditorBar,
@@ -100,6 +99,7 @@ import {
 import { NextInQueue } from "./NextInQueue";
 import { Photos } from "./Photos";
 import { Services } from "./Services";
+import { WorkingTimes } from "./WorkingTimes";
 
 // Какие действия доступны из статуса — те же переходы, что в базе
 const ACTIONS_FROM: Record<ListingStatus, readonly ListingAction[]> = {
@@ -490,13 +490,20 @@ function CategoryListing({
             {category.availability === "lead" ? (
               <LeadTime listing={listing} category={category} />
             ) : (
-              <Calendar
-                key={category.code}
-                listingId={listing.id}
-                category={category}
-                capacity={listing.parallelCapacity}
-                headerExtra={<CapacityControl />}
-              />
+              <>
+                <WorkingTimes
+                  key={`sessions-${listing.id}:${listing.calendarVersion}`}
+                  listing={listing}
+                  category={category}
+                  onSaved={onReload}
+                />
+                <Calendar
+                  key={category.code}
+                  listingId={listing.id}
+                  category={category}
+                  revision={listing.calendarVersion}
+                />
+              </>
             )}
             <DataSection />
             {/* Партнёр просит сменить контакты витрины на проверке или на сайте (блок сам прячется, если просьбы нет) */}

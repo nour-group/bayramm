@@ -45,8 +45,10 @@ import type {
   VendorRole,
 } from "@bayramm/shared/api/vendor";
 import {
+  DAY_PARTS,
   type DayLoad,
   type DayMarks,
+  DEFAULT_DAY_PARTS,
   dayLoadOf,
   type PartLoad,
   partLoads,
@@ -85,6 +87,26 @@ const addDay = (day: string, n: number) =>
   new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
 // ── день ───────────────────────────────────────────────────────────────────
+
+/**
+ * Ответ без времени работы и заявок дня (старый API во время выкладки) — как у витрины по
+ * умолчанию: несколько мероприятий, все части, окна по умолчанию
+ */
+export function withDefaults(calendar: VendorCalendar): VendorCalendar {
+  return {
+    ...calendar,
+    sessions: calendar.sessions ?? {
+      mode: "parts",
+      parts: [...DAY_PARTS],
+      windows: DEFAULT_DAY_PARTS,
+      custom: null,
+      parallelCapacity: calendar.parallelCapacity ?? 1,
+    },
+    requests: calendar.requests ?? [],
+    parts: calendar.parts ?? [],
+    bookings: calendar.bookings ?? [],
+  };
+}
 
 /** Отметки и договорённости дня — для правил занятости из @bayramm/shared/categories */
 export function marksOf(calendar: VendorCalendar, day: string): DayMarks {
@@ -805,7 +827,7 @@ function CalendarMonth({
     queue.current = queue.current.then(() => save(listingId, day, part, entry, asked));
   };
 
-  const ready = calendar.state === "ready" ? calendar.data : null;
+  const ready = calendar.state === "ready" ? withDefaults(calendar.data) : null;
   const bounds = ready ? { today: ready.today, max: ready.maxDay } : null;
   const chosenDays =
     ranging && range && bounds ? rangeDays(range.start, range.end ?? range.start, bounds, weekdays) : [];
