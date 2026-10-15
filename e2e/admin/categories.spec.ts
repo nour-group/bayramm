@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { menuAction, pick } from "../support/admin-ui";
+import { menuAction, named, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   BENTO_ID,
@@ -55,7 +55,7 @@ const save = (page: Page) => page.getByRole("button", { name: t.save, exact: tru
 test("новый вендор: без категории не создать; с ней — первая витрина этой категории", async ({ page }) => {
   const api = await start(page, {});
   await page.goto("/vendors/new");
-  await page.getByLabel(t.fields.name ?? "", { exact: true }).fill("Navruz");
+  await page.getByLabel(named(t.vendorNameNew)).fill("Navruz");
   await page.getByRole("button", { name: t.createVendor }).click();
   await expect(page.locator(".field-error").first()).toHaveText(t.categoryRequired);
   expect(api.vendorsCreated).toEqual([]);
@@ -119,7 +119,7 @@ test("кортеж: автопарк — ошибка поля до отправ
   const car = page.getByRole("region", { name: t.listItem("Автопарк", 2) });
   await car.getByLabel("Марка и модель").fill("Lexus LX");
   // Число — с «−» и «+»: буквы в поле не попадают, границы видны заранее
-  const seats = car.getByLabel("Мест", { exact: true });
+  const seats = car.getByLabel(named("Мест"));
   await seats.fill("семь");
   await expect(seats).toHaveValue("");
   await expect(car.getByText(t.input.range(1, 60))).toBeVisible();
@@ -166,7 +166,7 @@ test("фото и видео: чего не хватает — по полям; 
 
   await page.getByLabel(t.videoLink(1)).fill("https://youtu.be/dQw4w9WgXcQ");
   await page.getByRole("group", { name: "Команда" }).getByRole("checkbox", { name: "Фотограф" }).check();
-  await page.getByLabel("Готовый материал через, дней", { exact: true }).fill("30");
+  await page.getByLabel(named("Готовый материал через, дней")).fill("30");
   await save(page).click();
   await expect(page.getByText(t.saved, { exact: true })).toBeVisible();
   expect(api.patches[0]).toEqual({
@@ -201,7 +201,7 @@ test("услуги: из каталога с добавкой; правка; с�
   await expect(form.locator(".field-error")).toContainText([t.serviceErrors.priceUzs ?? ""]);
   expect(api.services.filter((c) => c.key.startsWith("POST"))).toEqual([]);
 
-  const price = form.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true });
+  const price = form.getByLabel(named(t.serviceFields.priceUzs ?? ""));
   await price.fill("450000");
   // Разряды — узким неразрывным пробелом, «сум» — у поля
   await expect(price).toHaveValue("450\u202f000");
@@ -256,7 +256,7 @@ test("услуги: из каталога с добавкой; правка; с�
   await menuAction(page, "Машина для молодожёнов", t.serviceEdit, services);
   const edit = services.locator("form.service-form");
   // Цена услуги — первое поле «Цена, сум» формы (дальше — цены добавок)
-  const editPrice = edit.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true }).first();
+  const editPrice = edit.getByLabel(named(t.serviceFields.priceUzs ?? "")).first();
   await expect(editPrice).toHaveValue("350\u202f000");
   await editPrice.fill("380000");
   await edit.getByRole("button", { name: t.serviceSave }).click();

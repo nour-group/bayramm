@@ -1108,7 +1108,7 @@ export function OverflowMenu({
 export function TableWrap({ label, children }: { label: string; children: ReactNode }) {
   return (
     // biome-ignore lint/a11y/noNoninteractiveTabindex: прокручиваемая область — в Tab, иначе её не прокрутить с клавиатуры
-    <section className="table-wrap" aria-label={label} tabIndex={0}>
+    <section className="table-wrap" aria-label={t.tableOf(label)} tabIndex={0}>
       {children}
     </section>
   );

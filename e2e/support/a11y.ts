@@ -199,6 +199,9 @@ export async function expectFocusNotObscured(
       if (r.width === 0 || r.height === 0) return "none";
       const cx = r.left + r.width / 2;
       const cy = r.top + r.height / 2;
+      // Сам элемент сверху (ссылка «К содержимому» поверх шапки) — не закрыт
+      const top = document.elementFromPoint(cx, cy);
+      if (top && (top === el || el.contains(top))) return "none";
       for (const bar of document.querySelectorAll<HTMLElement>(barsSelector)) {
         const position = getComputedStyle(bar).position;
         if (position !== "fixed" && position !== "sticky") continue;

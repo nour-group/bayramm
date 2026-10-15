@@ -418,12 +418,15 @@ html.in-telegram body {
 
 /* ── нижняя панель телефона ──────────────────────────────────────────────── */
 
+/* Высота — ровно --tabbar-full над безопасной зоной: от неё отсчитываются прилипшая панель
+   действий и запас страницы, иначе они наезжали бы на панель на доли пикселя */
 .tabbar {
   position: fixed;
   right: 0;
   bottom: 0;
   left: 0;
   z-index: 3;
+  height: calc(var(--tabbar-full) + var(--pad-b));
   display: grid;
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
@@ -995,9 +998,10 @@ textarea.input {
   white-space: nowrap;
 }
 
-/* Переход к блоку на телефоне: заголовок встаёт под шапкой и оглавлением, а не под ними */
+/* Переход к блоку на телефоне: заголовок встаёт под шапкой и оглавлением, а не под ними. Шапку
+   и полосу «нет связи» уже учитывает scroll-padding (--sticky-t), здесь — только оглавление */
 .app-phone .page [id$="-title"] {
-  scroll-margin-top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)) + 64px);
+  scroll-margin-top: 56px;
 }
 
 /* После решения — к следующему в очереди */
@@ -3271,10 +3275,11 @@ a.rcard-title {
   background: var(--white);
 }
 
-/* Открытый день на телефоне прокручивается к частям: целиком над нижней панелью и панелью действий */
+/* Открытый день на телефоне прокручивается к частям: целиком над нижней панелью и панелью действий
+   (их высоту уже учитывает scroll-padding — --sticky-t и --sticky-b), здесь — небольшой запас */
 .app-phone .day-parts {
-  scroll-margin-top: calc(var(--bar-h) + max(var(--pad-t), var(--net-h)) + 12px);
-  scroll-margin-bottom: calc(var(--tabbar-full) + var(--pad-b) + 84px);
+  scroll-margin-top: 4px;
+  scroll-margin-bottom: 8px;
 }
 
 .day-parts-title {

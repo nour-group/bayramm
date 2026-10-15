@@ -783,6 +783,17 @@ function PhotoViewer({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [declining, total]);
+  // Решили или перелистнули: кнопка «Одобрить» была недоступна, пока шёл запрос, и фокус ушёл с
+  // неё — возвращаем его в просмотр (на «Одобрить», без него — на сам диалог), иначе Esc и Tab
+  // не дошли бы до просмотра
+  const approveRef = useRef<HTMLButtonElement>(null);
+  const shownId = photo?.id;
+  useEffect(() => {
+    if (working || shownId === undefined) return;
+    const viewer = document.querySelector<HTMLElement>(".photo-viewer");
+    if (viewer?.contains(document.activeElement)) return;
+    (approveRef.current ?? viewer)?.focus({ preventScroll: true });
+  }, [working, shownId]);
   if (!photo) return null;
   const policy = categoryConfig(listing.categoryCode)?.photoPolicy;
   const decidedHere = decided.has(photo.id);
@@ -807,6 +818,7 @@ function PhotoViewer({
           {decides ? (
             <>
               <button
+                ref={approveRef}
                 type="button"
                 className="btn btn-primary viewer-approve"
                 disabled={working || decidedHere}

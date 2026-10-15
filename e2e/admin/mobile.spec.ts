@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectFocusNotObscured, expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { createVitrina } from "../support/admin-ui";
+import { createVitrina, named } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   CAKE_LISTING_ID,
@@ -231,7 +231,7 @@ test.describe("навигация на телефоне", () => {
   }) => {
     await start(page);
     await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    const name = page.getByLabel(t.vitrinaName, { exact: true });
+    const name = page.getByLabel(named(t.vitrinaName));
     await name.fill("Navruz zali");
     await name.blur();
     const more = tabbar(page).getByRole("button", { name: t.more });
@@ -304,7 +304,11 @@ test.describe("навигация на телефоне", () => {
     await start(page);
     await page.goto("/vendors/new");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await page.getByLabel(t.vendorNameNew).fill("Navruz");
+    const name = page.getByLabel(t.vendorNameNew);
+    await name.fill("Navruz");
+    // Клавиатура закрыта (поле без фокуса): нижняя панель на месте
+    await name.blur();
+    await expect(tabbar(page)).toBeVisible();
     const bar = page.locator(".actionbar");
     await expect(bar).toBeVisible();
     const box = await bar.boundingBox();
@@ -379,7 +383,7 @@ test.describe("Telegram на телефоне", () => {
     await start(page);
     await fakeTelegram(page);
     await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    const name = page.getByLabel(t.vitrinaName, { exact: true });
+    const name = page.getByLabel(named(t.vitrinaName));
     await name.fill("Navruz zali");
     await name.blur();
     await expect
