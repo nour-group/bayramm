@@ -165,6 +165,7 @@ export const categoriesUz: CategoryDict = {
   attr_entrance_arch: "Kirish arkasi",
   attr_accessible: "Nogironligi bor odamlar uchun kirish",
   attr_fleet: "Avtopark",
+  attr_fleet_add: "Mashina qoʻshish",
   attr_fleet_model: "Marka va model",
   attr_fleet_class: "Sinf",
   attr_fleet_color: "Rang",

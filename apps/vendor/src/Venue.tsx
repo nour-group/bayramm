@@ -41,6 +41,7 @@ import { ApiFailure, api } from "./api";
 import { categoryName } from "./category";
 import { errorText } from "./errors";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
+import { Icon } from "./icons";
 import { EditSheet } from "./ListingEdit";
 import { ListingPicker } from "./ListingPicker";
 import type { EditGroup } from "./listing-edit";
@@ -149,17 +150,17 @@ export function vendorTodos(
     todos.push({ key: "capacity", lines: [t.todoCapacity], action: fillIn("place") });
   if (blockers.has("district") && pending.district_code === undefined)
     todos.push({ key: "district", lines: [t.todoDistrict], action: fillIn("place") });
-  // Поля витрины, которых нет ни в карточке, ни в предложении
+  // Поля витрины, которых нет ни в карточке, ни в предложении: по строке на поле, подписью как в
+  // форме — подписи не склеиваются (у них бывает единица через запятую: «…через, дней»)
   const missing = listing.missingAttributes.filter((key) => pending.attributes?.[key] === undefined);
   if ((blockers.has("attributes") && pending.attributes === undefined) || missing.length > 0) {
-    const list =
+    const labels =
       category && missing.length > 0
-        ? // «;»: у подписи бывает единица через запятую («Готовый материал через, дней»)
-          missing.map((key) => attributeLabel(lang, category, key)).join("; ")
-        : t.blocker_attributes;
+        ? missing.map((key) => attributeLabel(lang, category, key))
+        : [t.blocker_attributes];
     todos.push({
       key: "attributes",
-      lines: [fill(t.todoAttributes, { list })],
+      lines: labels.map((label) => fill(t.todoAttribute, { label })),
       action: fillIn("attributes"),
     });
   }
@@ -313,7 +314,10 @@ function Readiness({ listing, category, t, lang, owner, go, pending, onSubmitted
           {todos.map((todo) => (
             <li key={todo.key} className="todo-item">
               <span className="todo-text">
-                <span className="todo-mark" aria-hidden="true" />
+                {/* «Не готово» — значком, а не пустым квадратом: он похож на флажок, которого нет */}
+                <span className="todo-mark" aria-hidden="true">
+                  <Icon name="warning" size={17} />
+                </span>
                 <span className="todo-lines">
                   {todo.lines.map((line) => (
                     <span key={line} className="todo-line">

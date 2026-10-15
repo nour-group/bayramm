@@ -1,9 +1,10 @@
-/* Входящие: вкладки «Новые · В работе · Закрытые» со счётчиками. В открытых вкладках
-   сверху те, где время ответа истекает (просроченные — первыми), в закрытой — новые;
-   порядок задаёт API. У ждущих ответа — счётчик 12 часов; плашка про 12 часов над списком
-   есть, только когда какая-то заявка уже просрочена (в остальное время счётчик — в самой
-   заявке). Телефона в списке нет: он в карточке заявки, где его чтение записывается в журнал,
-   там же — текст о согласии клиента.
+/* Входящие: вкладки «Ждут ответа · В работе · Закрытые» со счётчиками. «Ждут ответа» — и новые,
+   и открытые без ответа: открыть заявку — не ответить, она уходит оттуда, только когда партнёр
+   связался или отказал. В открытых вкладках сверху те, где время ответа истекает (просроченные —
+   первыми), в закрытой — новые; порядок задаёт API. У ждущих ответа — счётчик 12 часов; плашка
+   про 12 часов над списком — по числу просроченных из ответа API (overdue — по всем вкладкам,
+   а не по открытой), поэтому она видна над любой вкладкой. Телефона в списке нет: он в карточке
+   заявки, где его чтение записывается в журнал, там же — текст о согласии клиента.
 
    Витрин несколько — над вкладками выбор: все витрины или одна (запрос с listingId,
    счётчики вкладок — тоже по ней); на компьютере этот выбор — в боковой панели. У каждой
@@ -37,13 +38,13 @@ import { useLoad } from "./useLoad";
 import { useNow } from "./useNow";
 
 const TAB_LABEL: Readonly<Record<RequestTab, TextKey>> = {
-  new: "tabNew",
+  waiting: "tabWaiting",
   active: "tabActive",
   closed: "tabClosed",
 };
 
 const EMPTY: Readonly<Record<RequestTab, [TextKey, TextKey]>> = {
-  new: ["emptyNew", "emptyNewText"],
+  waiting: ["emptyWaiting", "emptyWaitingText"],
   active: ["emptyActive", "emptyActiveText"],
   closed: ["emptyClosed", "emptyClosedText"],
 };
@@ -125,7 +126,7 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
       >
         <span className="rq-top">
           <span className="rq-name">{item.contactName ?? fill(t.requestNo, { n: item.publicNo })}</span>
-          <StatusChip status={item.status} late={late} t={t} />
+          <StatusChip status={item.status} late={late} t={t} lang={lang} />
         </span>
         <span className="rq-meta">
           {textOf(t, `occ_${item.occasionCode}`)} · {formatDate(item.eventDate, t, true)}
@@ -245,7 +246,7 @@ export function Requests({
   const now = useNow();
   // Ключ — вкладка и витрина: смена любой из них — новая загрузка, ответ на старую отброшен
   const [page, reload, setPage, refresh] = useLoad<VendorRequestPage>(`${tab}/${filter ?? ""}`, (key) => {
-    const [askedTab = "new", listingId = ""] = key.split("/");
+    const [askedTab = "waiting", listingId = ""] = key.split("/");
     return api.requests(askedTab, null, listingId || null);
   });
   const [more, setMore] = useState<"idle" | "loading" | "failed">("idle");
@@ -271,9 +272,12 @@ export function Requests({
     }
   };
 
+  // Просроченные — по счётчику API (все вкладки), а не только по заявкам открытой вкладки; пока
+  // экран открыт, срок может выйти и у показанной — её счётчик тоже в счёт
   const hasLate =
     page.state === "ready" &&
-    page.data.items.some((i) => awaitsAnswer(i) && slaView(i.sla, now).kind === "late");
+    (page.data.overdue > 0 ||
+      page.data.items.some((i) => awaitsAnswer(i) && slaView(i.sla, now).kind === "late"));
 
   return (
     <section className="page inbox-list" aria-labelledby="page-title">

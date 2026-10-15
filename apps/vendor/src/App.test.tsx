@@ -69,10 +69,11 @@ function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
   };
 }
 
-const page = (items: VendorRequestItem[]): VendorRequestPage => ({
+const page = (items: VendorRequestItem[], overdue = 0): VendorRequestPage => ({
   items,
   nextCursor: null,
-  counts: { new: items.length, active: 3, closed: 5 },
+  counts: { waiting: items.length, active: 3, closed: 5 },
+  overdue,
 });
 
 const detail = (patch: Partial<VendorRequestDetail> = {}): VendorRequestDetail => ({
@@ -364,7 +365,7 @@ describe("заявки", () => {
   it("список: вкладки со счётчиками, имя, гости, бюджет, счётчик 12 часов; без телефона", async () => {
     await mount("/requests");
     const tabs = [...container.querySelectorAll(".pills .pill")].map((b) => b.textContent);
-    expect(tabs).toEqual(["Новые1", "В работе3", "Закрытые5"]);
+    expect(tabs).toEqual(["Ждут ответа1", "В работе3", "Закрытые5"]);
     const card = container.querySelector(".rq");
     expect(card?.getAttribute("href")).toBe(`/requests/${REQUEST_ID}`);
     expect(card?.textContent).toContain("Dilnoza");
@@ -378,6 +379,18 @@ describe("заявки", () => {
     expect(container.textContent).not.toContain("Клиент дал согласие");
   });
 
+  it("плашка «больше 12 часов без ответа» — по счётчику API, и над вкладкой, где таких заявок нет", async () => {
+    routes["GET /api/vendor/requests"] = (_init, url) => ({
+      // Открыта «Закрытые»: заявок без ответа в ней нет, но просроченная есть во «Ждут ответа»
+      body: url.searchParams.get("tab") === "closed" ? page([], 1) : page([item()], 1),
+    });
+    await mount("/requests");
+    expect(container.querySelector(".promise-late")?.textContent).toContain("без ответа больше 12 часов");
+    await click(byText(".pills .pill", "Закрытые"));
+    expect(calls.some((c) => c.path === "/api/vendor/requests?tab=closed")).toBe(true);
+    expect(container.querySelector(".promise-late")).not.toBeNull();
+  });
+
   it("витрина одна — список и карточка заявки её не называют: ни категории, ни имени", async () => {
     await mount("/requests");
     expect(container.querySelector(".rq")).not.toBeNull();
@@ -388,14 +401,13 @@ describe("заявки", () => {
     expect(container.querySelector(".req-summary")?.textContent).not.toContain("Test Hall");
   });
 
-  it("история: открытие заявки — «Просмотрена», а не «Ждёт ответа» (так назван статус)", async () => {
+  it("статус — одним словом и в истории, и у заголовка: «Просмотрена», как у клиента и команды", async () => {
     await mount(`/requests/${REQUEST_ID}`);
     expect([...container.querySelectorAll(".history-status")].map((el) => el.textContent)).toEqual([
       "Новая",
       "Просмотрена",
     ]);
-    // Статус рядом с заголовком — прежний
-    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Ждёт ответа");
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Просмотрена");
   });
 
   it("история: два перехода и меньше — строкой, больше — списком", async () => {
@@ -443,7 +455,7 @@ describe("заявки", () => {
     routes["GET /api/vendor/requests"] = (_, url) => ({
       body:
         url.searchParams.get("tab") === "closed"
-          ? { ...page([]), counts: { new: 0, active: 0, closed: 0 } }
+          ? { ...page([]), counts: { waiting: 0, active: 0, closed: 0 } }
           : page([item()]),
     });
     await mount("/requests");
@@ -487,18 +499,50 @@ describe("заявки", () => {
     expect(webApp.WebApp.BackButton.hide).toHaveBeenCalled();
   });
 
-  it("«Я связался» → статус «Вы связались», дальше «Договорились» / «Не подошло»", async () => {
+  it("«Я связался» → статус «Связались», дальше «Договорились» / «Не подошло»", async () => {
     await mount(`/requests/${REQUEST_ID}`);
     const reads = () =>
       calls.filter((c) => c.method === "GET" && c.path === `/api/vendor/requests/${REQUEST_ID}`);
     expect(reads()).toHaveLength(1);
     await click(byText("button", "Я связался с клиентом"));
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ status: "contacted" });
-    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Вы связались");
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Связались");
     expect(byText("button", "Договорились")).toBeDefined();
     expect(byText("button", "Не подошло")).toBeDefined();
     // Без повторного чтения карточки: телефон клиента не читается лишний раз
     expect(reads()).toHaveLength(1);
+  });
+
+  it("«Я связался» по ошибке: «Отмечено · Отменить» — заявка снова ждёт ответа", async () => {
+    routes[`POST /api/vendor/requests/${REQUEST_ID}/undo`] = () => ({ body: item({ status: "viewed" }) });
+    await mount(`/requests/${REQUEST_ID}`);
+    await click(byText("button", "Я связался с клиентом"));
+    const toast = document.querySelector(".ui-toast");
+    expect(toast?.textContent).toContain("Отмечено: вы связались с клиентом");
+    await click([...document.querySelectorAll(".ui-toast button")].find((b) => b.textContent === "Отменить"));
+    expect(
+      calls.some((c) => c.method === "POST" && c.path === `/api/vendor/requests/${REQUEST_ID}/undo`),
+    ).toBe(true);
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Просмотрена");
+    expect(byText("button", "Я связался с клиентом")).toBeDefined();
+    // Отметки и её отмены в истории нет
+    expect([...container.querySelectorAll(".history-status")].map((el) => el.textContent)).toEqual([
+      "Новая",
+      "Просмотрена",
+    ]);
+    expect(document.querySelector(".ui-toast")?.textContent).toContain("Отметку отменили");
+  });
+
+  it("отменить поздно (409 undo_expired) — словами, заявка как была", async () => {
+    routes[`POST /api/vendor/requests/${REQUEST_ID}/undo`] = () => ({
+      status: 409,
+      body: { error: { code: "undo_expired", message: "x" } },
+    });
+    await mount(`/requests/${REQUEST_ID}`);
+    await click(byText("button", "Я связался с клиентом"));
+    await click([...document.querySelectorAll(".ui-toast button")].find((b) => b.textContent === "Отменить"));
+    expect(document.querySelector(".ui-toast-error")?.textContent).toContain("Отменить уже нельзя");
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Связались");
   });
 
   it("отказ: причина обязательна, «занято» предупреждает о календаре", async () => {
@@ -562,7 +606,7 @@ describe("заявки", () => {
     });
     await click(byText("button", "Я связался с клиентом"));
     expect(container.textContent).toContain("Клиент отозвал согласие — контакты скрыты");
-    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Клиент отозвал");
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Отозвана");
   });
 
   it("чужая или несуществующая заявка — «не найдена»", async () => {
@@ -1381,7 +1425,7 @@ describe("раскладка", () => {
     insideTelegram();
   });
 
-  it("телефон: нижняя панель из пяти разделов; у «Заявок» — число новых, словами для диктора", async () => {
+  it("телефон: нижняя панель из пяти разделов; у «Заявок» — сколько ждут ответа, словами для диктора", async () => {
     await mount("/requests");
     const tabs = [...container.querySelectorAll("nav.tabbar a")];
     expect(tabs.map((a) => a.getAttribute("href"))).toEqual([
@@ -1393,7 +1437,7 @@ describe("раскладка", () => {
     ]);
     expect(tabs[0]?.getAttribute("aria-current")).toBe("page");
     expect(tabs[0]?.querySelector(".nav-count")?.textContent).toBe("1");
-    expect(tabs[0]?.querySelector(".sr-only")?.textContent).toBe("новых: 1");
+    expect(tabs[0]?.querySelector(".sr-only")?.textContent).toBe("ждут ответа: 1");
     expect(container.querySelector(".side, .rail")).toBeNull();
   });
 
@@ -1441,7 +1485,12 @@ describe("раскладка", () => {
   it("компьютер: заявка по ссылке с другой вкладки — список переходит на её вкладку", async () => {
     resize(1280);
     await mount(`/requests/${REQUEST_ID}`);
-    // Открытая заявка — «Ждёт ответа», то есть во вкладке «В работе»
+    // Открытая заявка ответа ещё ждёт — вкладка «Ждут ответа»; «связались» — уже «В работе»
+    expect(container.querySelector(".pill[aria-pressed='true']")?.textContent).toContain("Ждут ответа");
+    routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({ body: detail({ status: "contacted" }) });
+    await act(async () => root.unmount());
+    container.remove();
+    await mount(`/requests/${REQUEST_ID}`);
     expect(calls.some((c) => c.path === "/api/vendor/requests?tab=active")).toBe(true);
     expect(container.querySelector(".pill[aria-pressed='true']")?.textContent).toContain("В работе");
   });
@@ -1607,7 +1656,7 @@ describe("что ждёт партнёра", () => {
     expect(tab("/services")?.querySelector(".sr-only")?.textContent).toBe("требует внимания: 2");
     // Число — текстом, а не только цветом; значок «Заявок» прежний — новые заявки
     expect(tab("/card")?.querySelector(".nav-count")?.getAttribute("aria-hidden")).toBe("true");
-    expect(tab("/requests")?.querySelector(".sr-only")?.textContent).toBe("новых: 1");
+    expect(tab("/requests")?.querySelector(".sr-only")?.textContent).toBe("ждут ответа: 1");
     expect(tab("/calendar")?.querySelector(".nav-count")).toBeNull();
     expect(tab("/account")?.querySelector(".nav-count")).toBeNull();
   });

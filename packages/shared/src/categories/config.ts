@@ -267,6 +267,7 @@ const car: CategoryConfig = {
       label: "attr_fleet",
       type: "list",
       maxItems: 30,
+      addLabel: "attr_fleet_add",
       required: true,
       fields: [
         {

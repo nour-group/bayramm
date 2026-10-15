@@ -54,6 +54,7 @@ import { fill, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
 import { type Location, type Navigate, pathOf } from "./router";
+import { TeamContactInline } from "./TeamContact";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
@@ -767,6 +768,7 @@ function CalendarMonth({ t, listing }: { t: VendorDict; listing: VendorListingRe
                 {message === "failed" && failure ? failure : t[MESSAGE_TEXT[message]]}
               </p>
             ) : null}
+            {message === "staff" ? <TeamContactInline t={t} /> : null}
           </div>
           {ready && selectedDay ? (
             <div ref={dayPanel} className="day-panel-slot">

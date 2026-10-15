@@ -166,8 +166,16 @@ body {
   padding: 20px calc(var(--sa-r) + 16px) calc(var(--pad-b) + 24px) calc(var(--sa-l) + 16px);
 }
 
+/* Телефон: страница не короче экрана — у короткой заявки панель действий стоит внизу, над
+   нижней панелью, а не посреди экрана */
 .app-phone .main {
-  padding-bottom: calc(var(--pad-b) + 96px);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(var(--pad-b) + var(--main-end));
+}
+
+.app-phone .main > .page.request {
+  flex: 1 0 auto;
 }
 
 /* Экран входа из браузера на компьютере — шире: рассказ и вход рядом */
@@ -784,11 +792,13 @@ body {
   flex: 0 1 auto;
 }
 
+/* У низа страницы (margin-top: auto), вплотную к нижней панели: запас страницы под панелью
+   (--main-end) длиннее самой панели — разницу панель действий забирает отрицательным полем */
 .app-phone .request-actions.is-bar {
   position: sticky;
   bottom: calc(var(--tabbar-full) + var(--pad-b));
   z-index: 1;
-  margin: 0 calc(-16px - var(--sa-r)) 0 calc(-16px - var(--sa-l));
+  margin: auto calc(-16px - var(--sa-r)) calc(var(--tabbar-full) - var(--main-end)) calc(-16px - var(--sa-l));
   padding: 8px calc(var(--sa-r) + 16px) 8px calc(var(--sa-l) + 16px);
   border-top: 1px solid var(--rule);
   background: var(--white);
@@ -796,6 +806,28 @@ body {
 
 .actions .btn {
   flex: 1 1 160px;
+}
+
+/* Уже 360px две кнопки ответа — столбиком: подписи целиком, без переноса по слогам */
+@media (max-width: 359px) {
+  .app-phone .request-actions.is-bar .actions {
+    flex-direction: column;
+  }
+
+  .app-phone .request-actions.is-bar .actions > button:first-child,
+  .app-phone .request-actions.is-bar .actions > button:last-child {
+    flex: none;
+  }
+}
+
+/* Форма услуги: одна главная кнопка и «⋯» рядом */
+.svc-editor-actions {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.svc-editor-actions > .btn {
+  flex: 1 1 auto;
 }
 
 /* Отказ с причиной: варианты — RadioGroup из @bayramm/ui/react (строки с кружком) */
@@ -813,6 +845,21 @@ body {
   color: var(--muted-lt);
   font-size: var(--fs-13-5);
   font-weight: 600;
+}
+
+/* Пометка у подписи поля — как в форме заявки клиента: «обязательно» акцентом, «по желанию» —
+   приглушённо; не курсивом */
+.mark {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.mark-req {
+  color: var(--coral-deep);
+}
+
+.mark-opt {
+  color: var(--muted);
 }
 
 .field {
@@ -1293,8 +1340,9 @@ body {
    слоем (::after), сам рисунок не растёт */
 .photo-x {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1503,6 +1551,17 @@ body {
   align-self: flex-start;
 }
 
+.welcome-join {
+  gap: var(--gap-12);
+}
+
+/* Контакт команды: Telegram и телефон — кнопками в строку, узко — друг под другом */
+.team-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-9);
+}
+
 /* ── разделы кабинета ─────────────────────────────────────────────────────── */
 
 .nav-icon {
@@ -1531,6 +1590,8 @@ body {
    прилипающая панель действий экрана (заявка) стоит ровно над ней */
 .app-phone {
   --tabbar-full: 66px;
+  /* Запас под нижней панелью в конце страницы (над безопасной зоной) */
+  --main-end: 96px;
 }
 
 .tabbar {
@@ -2196,10 +2257,6 @@ body {
   color: var(--berry);
 }
 
-.sheet-done {
-  width: 100%;
-}
-
 .svc-name {
   margin: 0;
   color: var(--ink);
@@ -2397,13 +2454,12 @@ body {
   gap: var(--gap-3);
 }
 
+/* «Не готово» — значком предупреждения, а не пустым квадратом (он читался как флажок) */
 .todo-mark {
+  display: inline-flex;
   flex: none;
-  width: 14px;
-  height: 14px;
-  margin-top: 4px;
-  border: 2px solid var(--coral);
-  border-radius: var(--r-3);
+  margin-top: 2px;
+  color: var(--coral-deep);
 }
 
 .todo-go {
@@ -2957,7 +3013,9 @@ body {
 
   .welcome {
     display: grid;
-    grid-template-areas: "intro signin";
+    grid-template-areas:
+      "intro signin"
+      "join signin";
     grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr);
     align-items: start;
     gap: 24px 48px;
@@ -2976,6 +3034,10 @@ body {
   .welcome-signin {
     grid-area: signin;
     padding: 24px;
+  }
+
+  .welcome-join {
+    grid-area: join;
   }
 }
 

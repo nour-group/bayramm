@@ -4,9 +4,11 @@ import type { RequestTab, VendorMe } from "@bayramm/shared/api/vendor";
 import {
   ConnectivityProvider,
   OfflineBanner,
+  ToastProvider,
   Tooltip,
   UiTextsProvider,
   useOnReconnect,
+  useStickyBar,
 } from "@bayramm/ui/react";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VendorChooser } from "./Account";
@@ -196,7 +198,7 @@ interface SectionsProps {
   readonly t: VendorDict;
   readonly section: Section | null;
   readonly navigate: Navigate;
-  /** Новых заявок (из последнего ответа списка); null — ещё не знаем */
+  /** Заявок, которые ждут ответа (из последнего ответа списка); null — ещё не знаем */
   readonly fresh: number | null;
   /** Что ждёт партнёра в «Витрине» и «Услугах»: отказы команды по всем витринам (GET /vendor/me) */
   readonly attention: Readonly<Record<AttentionMark, number>>;
@@ -215,7 +217,7 @@ function sectionBadge(
   fresh: number | null,
   attention: SectionsProps["attention"],
 ): { readonly count: number; readonly words: string } | null {
-  if (item === "requests") return fresh ? { count: fresh, words: fill(t.newCount, { n: fresh }) } : null;
+  if (item === "requests") return fresh ? { count: fresh, words: fill(t.waitingCount, { n: fresh }) } : null;
   if (item === "card" || item === "services") {
     const count = attention[item];
     return count > 0 ? { count, words: fill(t.attentionCount, { n: count }) } : null;
@@ -225,8 +227,11 @@ function sectionBadge(
 
 /** Разделы кабинета: нижняя панель телефона, колонка планшета, боковая панель компьютера */
 function Sections({ t, section, navigate, fresh, attention, className, linkClass }: SectionsProps) {
+  // Нижняя панель телефона прилипла к низу: фокус и прокрутка к полю останавливаются над ней
+  const nav = useRef<HTMLElement>(null);
+  useStickyBar(nav, "bottom", className === "tabbar");
   return (
-    <nav className={className} aria-label={t.sections}>
+    <nav ref={nav} className={className} aria-label={t.sections}>
       {NAV.map((item) => {
         const badge = sectionBadge(item, t, fresh, attention);
         return (
@@ -272,7 +277,7 @@ function Cabinet() {
   const layout: Layout = useLayout();
   const [auth, setAuth] = useState<Auth>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [inboxTab, setInboxTab] = useState<RequestTab>("new");
+  const [inboxTab, setInboxTab] = useState<RequestTab>("waiting");
   const [listingId, setListingId] = useState<string | null>(null);
   // Входящие: все витрины или только выбранная
   const [scope, setScope] = useState<"all" | "listing">("all");
@@ -381,7 +386,11 @@ function Cabinet() {
   });
   const uiTexts = useMemo(() => ({ close: t.close, clear: t.clear }), [t]);
   const screenProps = { t, lang, headingRef } as const;
-  const onCounts = useCallback((counts: Readonly<Record<RequestTab, number>>) => setFresh(counts.new), []);
+  // Значок у раздела — заявки, которые ждут ответа (новые и открытые без ответа)
+  const onCounts = useCallback(
+    (counts: Readonly<Record<RequestTab, number>>) => setFresh(counts.waiting),
+    [],
+  );
   // Значки «Витрины» и «Услуг» — из GET /vendor/me. Партнёр что-то исправил (удалил фото, отправил
   // услугу или предложение) или зашёл в раздел, где команда могла решить, — перечитываем тихо:
   // не вышло — значки прежние, экран на месте
@@ -548,78 +557,92 @@ function Cabinet() {
   const shell = ready ? layout : "gate";
   return (
     <UiTextsProvider texts={uiTexts}>
-      <UnsavedContext.Provider value={unsaved.registry}>
-        <div className={`app app-${shell}`}>
-          <a className="skip" href="#main">
-            {t.skip}
-          </a>
-          {shell === "desktop" && ready ? (
-            <aside className="side">
-              <Brand t={t} />
+      {/* Уведомления — над прилипшими панелями низа (нижняя панель, панель действий заявки) */}
+      <ToastProvider offset="bars">
+        <UnsavedContext.Provider value={unsaved.registry}>
+          <div className={`app app-${shell}`}>
+            <a className="skip" href="#main">
+              {t.skip}
+            </a>
+            {shell === "desktop" && ready ? (
+              <aside className="side">
+                <Brand t={t} />
+                <Sections
+                  t={t}
+                  section={section}
+                  navigate={navigate}
+                  fresh={fresh}
+                  attention={attention}
+                  className="side-nav"
+                  linkClass="side-link"
+                />
+                <SideVitrinas
+                  listings={ready.me.listings}
+                  value={section === "requests" ? inboxFilter : listingId}
+                  onChange={section === "requests" ? filterInbox : (id) => id && chooseListing(id)}
+                  allLabel={section === "requests" ? t.allListings : undefined}
+                  mark={section === "card" || section === "services" ? section : undefined}
+                  t={t}
+                  lang={lang}
+                />
+                <div className="side-foot">
+                  <p className="side-vendor">
+                    <span className="side-vendor-name">{ready.me.vendor.name || ready.me.vendor.code}</span>
+                    <span className="side-vendor-code">
+                      {fill(t.vendorCode, { code: ready.me.vendor.code })}
+                    </span>
+                  </p>
+                </div>
+              </aside>
+            ) : (
+              <TopBar>
+                <Brand t={t} />
+                {ready ? null : <LangSwitch lang={lang} t={t} onChange={chooseLang} />}
+              </TopBar>
+            )}
+            {shell === "tablet" ? (
               <Sections
                 t={t}
                 section={section}
                 navigate={navigate}
                 fresh={fresh}
                 attention={attention}
-                className="side-nav"
-                linkClass="side-link"
+                className="rail"
+                linkClass="rail-link"
               />
-              <SideVitrinas
-                listings={ready.me.listings}
-                value={section === "requests" ? inboxFilter : listingId}
-                onChange={section === "requests" ? filterInbox : (id) => id && chooseListing(id)}
-                allLabel={section === "requests" ? t.allListings : undefined}
-                mark={section === "card" || section === "services" ? section : undefined}
+            ) : null}
+            <div className="frame">
+              <OfflineBanner offline={t.offline} back={t.backOnline} />
+              <main id="main" className="main" tabIndex={-1}>
+                {screen}
+              </main>
+            </div>
+            {shell === "phone" ? (
+              <Sections
                 t={t}
-                lang={lang}
+                section={section}
+                navigate={navigate}
+                fresh={fresh}
+                attention={attention}
+                className="tabbar"
+                linkClass="tab"
               />
-              <div className="side-foot">
-                <p className="side-vendor">
-                  <span className="side-vendor-name">{ready.me.vendor.name || ready.me.vendor.code}</span>
-                  <span className="side-vendor-code">
-                    {fill(t.vendorCode, { code: ready.me.vendor.code })}
-                  </span>
-                </p>
-              </div>
-            </aside>
-          ) : (
-            <header className="top">
-              <Brand t={t} />
-              {ready ? null : <LangSwitch lang={lang} t={t} onChange={chooseLang} />}
-            </header>
-          )}
-          {shell === "tablet" ? (
-            <Sections
-              t={t}
-              section={section}
-              navigate={navigate}
-              fresh={fresh}
-              attention={attention}
-              className="rail"
-              linkClass="rail-link"
-            />
-          ) : null}
-          <div className="frame">
-            <OfflineBanner offline={t.offline} back={t.backOnline} />
-            <main id="main" className="main" tabIndex={-1}>
-              {screen}
-            </main>
+            ) : null}
           </div>
-          {shell === "phone" ? (
-            <Sections
-              t={t}
-              section={section}
-              navigate={navigate}
-              fresh={fresh}
-              attention={attention}
-              className="tabbar"
-              linkClass="tab"
-            />
-          ) : null}
-        </div>
-        {unsaved.sheet}
-      </UnsavedContext.Provider>
+          {unsaved.sheet}
+        </UnsavedContext.Provider>
+      </ToastProvider>
     </UiTextsProvider>
+  );
+}
+
+/** Шапка телефона и планшета прилипла к верху: фокус и прокрутка к полю не уходят под неё */
+function TopBar({ children }: { children: ReactNode }) {
+  const bar = useRef<HTMLElement>(null);
+  useStickyBar(bar, "top");
+  return (
+    <header ref={bar} className="top">
+      {children}
+    </header>
   );
 }

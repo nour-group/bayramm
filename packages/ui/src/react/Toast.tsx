@@ -57,8 +57,11 @@ const DEFAULT_MS = 5000;
 
 export interface ToastProviderProps {
   readonly children: ReactNode;
-  /** Отступ снизу над безопасной зоной, px: над нижней панелью вкладок — её высота */
-  readonly offset?: number;
+  /**
+   * Отступ снизу над безопасной зоной, px: над нижней панелью вкладок — её высота. "bars" — над
+   * прилипшими панелями низа, какие есть сейчас (--sticky-b, их отмечает useStickyBar)
+   */
+  readonly offset?: number | "bars";
 }
 
 export function ToastProvider({ children, offset = 16 }: ToastProviderProps) {
@@ -117,7 +120,15 @@ export function ToastProvider({ children, offset = 16 }: ToastProviderProps) {
     };
   }, []);
 
-  const bottom = useMemo(() => ({ bottom: `calc(${offset}px + var(--pad-b))` }), [offset]);
+  const bottom = useMemo(
+    () => ({
+      bottom:
+        offset === "bars"
+          ? "max(calc(var(--sticky-b) + 12px), calc(16px + var(--pad-b)))"
+          : `calc(${offset}px + var(--pad-b))`,
+    }),
+    [offset],
+  );
   const render = (list: readonly Item[]) =>
     list.map((item) => (
       // biome-ignore lint/a11y/noStaticElementInteractions: наведение и фокус только держат уведомление на экране

@@ -20,6 +20,7 @@ const METHODS: AuthMethods = {
   phone: false,
   turnstileSiteKey: null,
   apps: { web: "https://bayramm.example", vendor: "https://vendor.example", admin: "https://admin.example" },
+  team: { telegram: null, phone: null },
 };
 
 const vendorMe = (vendorId = VENDOR_A): VendorMe => ({
@@ -105,7 +106,7 @@ beforeEach(() => {
     "POST /api/auth/hub/exchange": () => ({ body: { token: TOKEN, expiresAt: "2026-10-08T00:00:00Z" } }),
     "GET /api/vendor/me": () => ({ body: vendorMe() }),
     "GET /api/vendor/requests": () => ({
-      body: { items: [], nextCursor: null, counts: { new: 0, active: 0, closed: 0 } },
+      body: { items: [], nextCursor: null, counts: { waiting: 0, active: 0, closed: 0 }, overdue: 0 },
     }),
     "GET /api/me": () => ({ body: account(true) }),
   };
@@ -222,7 +223,7 @@ describe("хаб входа из кабинета", () => {
     expect(byText<HTMLAnchorElement>("a", "Bayramm для клиентов")?.getAttribute("href")).toBe(
       "https://bayramm.example",
     );
-    expect(byText<HTMLAnchorElement>("a", "Панель оператора")?.getAttribute("href")).toBe(
+    expect(byText<HTMLAnchorElement>("a", "Панель команды")?.getAttribute("href")).toBe(
       "https://admin.example/?signin=1",
     );
   });
