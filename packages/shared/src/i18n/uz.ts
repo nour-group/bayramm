@@ -750,4 +750,21 @@ export const uz: Dict = {
   metaCatalogAllDesc:
     "Toshkentda bayram uchun hammasi: toʻyxonalar, kortejlar, foto, tortlar va boshqalar — narxlar, boʻsh kunlar va hamkorlar kontaktlari.",
   catAllSoonH: "Katalog tez orada toʻldiriladi",
+  // ── поиск по каталогу (поле над разделами, подсказки, выдача с ?q=) ───────────
+  // «Поиск», подсказка в поле, «Что обычно ищут», «Районы», «Нашлось N», «Ничего не нашли» —
+  // из прототипа: nav0, srPh, srPopular, srAreas, srFound, srNoneH
+  srLabel: "Katalog boʻyicha qidiruv",
+  srSections: "Boʻlimlar",
+  srListings: "Hamkorlar",
+  srDistrictIn: (district: string, section: string) => `${district} — ${section}`,
+  srLoading: "Qidirilmoqda…",
+  srNoHints: "Takliflar yoʻq. Qidiruvni bosing — mos kelganlarning hammasini koʻrsatamiz",
+  srResultsH: (q: string) => `«${q}» boʻyicha`,
+  srResultsN: (q: string, n: number) => `«${q}» boʻyicha — ${n} ta`,
+  srElsewhere: (n: number) => `Boshqa boʻlimlarda — ${n} ta`,
+  srEmptyInH: (section: string) => `«${section}» boʻlimida hech narsa topilmadi`,
+  srElsewhereP: "Oʻxshashlari katalogning boshqa boʻlimlarida topildi.",
+  srEmptyP: "Yozilishini tekshiring yoki boʻlimlarga qarang.",
+  srClear: "Qidiruvni tozalash",
+  s_relevance: "Avval mosroqlari",
 };

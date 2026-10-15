@@ -15,6 +15,26 @@ describe("каталог: отказ до базы", () => {
     expect(await error(res)).toMatchObject({ code: "invalid_request", details: ["guests", "limit", "sort"] });
   });
 
+  it("поиск: q длиннее 64 после нормализации — 400 invalid_request [q] и в выдаче, и в подсказках", async () => {
+    const long = encodeURIComponent("кортеж ".repeat(12));
+    for (const path of [`/catalog/listings?q=${long}`, `/catalog/suggest?q=${long}`]) {
+      const { res } = await call(path);
+      expect(res.status, path).toBe(400);
+      expect(await error(res)).toMatchObject({ code: "invalid_request", details: ["q"] });
+    }
+  });
+
+  it("подсказки: не поиск (короче двух символов) — пусто без базы, кэшируется как каталог", async () => {
+    for (const q of ["", "a", "%E2%98%85"]) {
+      const { res } = await call(`/catalog/suggest?q=${q}`);
+      expect(res.status, q).toBe(200);
+      expect(await res.json()).toEqual({ categories: [], districts: [], listings: [] });
+      expect(res.headers.get("Cache-Control")).toBe(
+        "public, max-age=30, s-maxage=30, stale-while-revalidate=60",
+      );
+    }
+  });
+
   it("испорченный курсор — 400 invalid_cursor", async () => {
     const { res } = await call("/catalog/listings?cursor=bm90LWEtY3Vyc29y");
     expect(res.status).toBe(400);

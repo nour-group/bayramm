@@ -13,8 +13,11 @@
 //   · guests отсекает витрины, где cap_max меньше (у категорий без вместимости — нет);
 //     date не отсекает — занятые в этот день целиком идут в конце при любой сортировке,
 //     частично занятые (режим parts) — среди свободных, с пометкой;
-//   · порядок — только по цене или вместимости, затем по id. Оплата, премиум и
+//   · порядок — по цене, вместимости или (с поиском q) похожести, затем по id. Оплата, премиум и
 //     продвижение на порядок не влияют (их и нет);
+//   · q — поиск: app.catalog_search (документ витрины, триграммы) отбирает подходящие активные
+//     витрины и даёт оценку для порядка relevance; остальные правила выдачи — те же. Запрос
+//     уходит в базу параметром, в лог — никогда;
 //   · цены сравниваются на одной шкале, хотя у одних залов цена за гостя, у других —
 //     за мероприятие (comparablePriceUzs в @bayramm/shared/api): с числом гостей —
 //     примерная сумма на это число, без него — цена за гостя (цена за мероприятие,
@@ -28,6 +31,7 @@ import type {
   CatalogCategories,
   CatalogPage,
   CatalogSort,
+  CatalogSuggest,
   ClientConsentPurpose,
   ConsentText,
   ConsentTexts,
@@ -41,15 +45,16 @@ import type {
   Photo,
   PublicService,
 } from "@bayramm/shared/api";
-import { FEATURED_LISTINGS, pickFeatured } from "@bayramm/shared/api";
+import { FEATURED_LISTINGS, pickFeatured, SUGGEST_LISTINGS } from "@bayramm/shared/api";
 import { type AttributeFilter, categoryConfig, readAttributes } from "@bayramm/shared/categories";
+import { matchPlaces, type SearchQuery, SUGGEST_DISTRICTS, suggestPlaces } from "@bayramm/shared/search";
 import { type RawBuilder, sql } from "kysely";
 import { GUEST, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { type ListingContactValues, listingContactKinds, revealListingContacts } from "../db/pii";
 import { type ServiceRow, selectServices, serviceView } from "../listing-services/store";
 import { addDays } from "../time";
-import { ALL_CATEGORIES, type CatalogCursor, type CatalogParams, encodeCursor } from "./query";
+import { ALL_CATEGORIES, type CatalogCursor, type CatalogParams, encodeCursor, queryPrint } from "./query";
 
 /** Правило продукта «Фото обязательны»: меньше трёх — не публикуется (у категории бывает больше) */
 export const MIN_PUBLIC_PHOTOS = 3;
@@ -156,8 +161,10 @@ function comparablePrice(guests: number | null): RawBuilder<string> {
   return sql<string>`(case when l.price_unit = 'per_event' and l.cap_max is not null then (l.price_from_uzs + l.cap_max - 1) / l.cap_max else l.price_from_uzs end)`;
 }
 
-// Ключ сортировки — всегда по возрастанию: «дороже» и «больше мест» — минус
-// сравнимая цена и минус вместимость. Так курсор — одно сравнение строк (занята, ключ, id)
+// Ключ сортировки — всегда по возрастанию: «дороже», «больше мест» и «похожее» — минус
+// сравнимая цена, минус вместимость и минус оценка поиска (×100000, целым — как relevanceKey из
+// @bayramm/shared/search). Так курсор — одно сравнение строк (занята, ключ, id). relevance — только
+// с соединением sr (app.catalog_search)
 export function sortKey(sort: CatalogSort, guests: number | null): RawBuilder<string> {
   switch (sort) {
     case "price_asc":
@@ -166,7 +173,22 @@ export function sortKey(sort: CatalogSort, guests: number | null): RawBuilder<st
       return sql<string>`(-${comparablePrice(guests)})`;
     case "capacity_desc":
       return sql<string>`(-coalesce(l.cap_max, 0))::bigint`;
+    case "relevance":
+      return sql<string>`(-round(sr.score * 100000))::bigint`;
   }
+}
+
+interface SearchRow {
+  listing_id: string;
+  score: number;
+}
+
+/**
+ * Подходящие запросу активные витрины раздела и оценка (app.catalog_search). В базу — только
+ * нормализованный текст (searchNorm), параметром
+ */
+function searchRelation(q: SearchQuery, category: string | null): RawBuilder<SearchRow> {
+  return sql<SearchRow>`app.catalog_search(${q.text}::text, ${category}::text)`;
 }
 
 /**
@@ -361,13 +383,21 @@ export function attributeFilter(filter: AttributeFilter): RawBuilder<boolean> {
 
 /** GET /catalog/listings: страница выдачи и курсор следующей (null — последняя) */
 export async function listCatalog(db: Db, params: CatalogParams): Promise<CatalogPage> {
-  const { category, filters, city, district, date, guests, sort, limit, after } = params;
+  const { category, q, filters, city, district, date, guests, sort, limit, after } = params;
   const key = sortKey(sort, guests);
   const source: DayLoadSource = date === null ? NO_DATE : { date, category };
   const busy = busyOn(source);
+  // Сколько нашлось — с поиском и на первой странице: всё, что подошло, до limit
+  const counted = q !== null && after === null;
   const rows = await withActor(db, GUEST, (trx) =>
     publicListings(trx, source)
       .select(key.as("sort_key"))
+      .$if(q !== null, (qb) =>
+        qb.innerJoin(searchRelation(q as SearchQuery, category).as("sr"), (j) =>
+          j.onRef("sr.listing_id", "=", "l.id"),
+        ),
+      )
+      .$if(counted, (qb) => qb.select(sql<number>`(count(*) over ())::int`.as("total")))
       .$if(category !== ALL_CATEGORIES, (qb) => qb.where("l.category_code", "=", category))
       // Город: витрины в его районах и без района — выездные (адреса нет, приезжают сами)
       .$if(city !== null, (qb) =>
@@ -395,9 +425,20 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
   const last = page.at(-1);
   const nextCursor =
     rows.length > limit && last !== undefined
-      ? encodeCursor({ sort, date, guests, busy: last.busy, key: Number(last.sort_key), id: last.id })
+      ? encodeCursor({
+          sort,
+          date,
+          guests,
+          busy: last.busy,
+          key: Number(last.sort_key),
+          id: last.id,
+          print: q === null ? null : queryPrint(q),
+        })
       : null;
-  return { items: page.map((row) => toCard(row, date)), nextCursor } satisfies CatalogPage;
+  const items = page.map((row) => toCard(row, date));
+  if (!counted) return { items, nextCursor } satisfies CatalogPage;
+  const total = (rows[0] as { total?: number } | undefined)?.total ?? 0;
+  return { items, nextCursor, total } satisfies CatalogPage;
 }
 
 /**
@@ -423,6 +464,88 @@ export function getListingCards(db: Db, ids: readonly string[]): Promise<Listing
 // Строго после курсора в порядке (занята, ключ, id): false < true, как в ORDER BY
 function afterCursor(busy: RawBuilder<boolean>, key: RawBuilder<string>, c: CatalogCursor) {
   return sql<boolean>`(${busy}, ${key}, l.id) > (${c.busy}::boolean, ${c.key}::bigint, ${c.id}::uuid)`;
+}
+
+// ── подсказки поиска ───────────────────────────────────────────────────────
+
+/**
+ * GET /catalog/suggest: разделы и районы, чьи названия подходят запросу (только где есть
+ * витрины), район — в паре с разделом («Чиланзар — тойханы»), и до SUGGEST_LISTINGS витрин по
+ * похожести. Правила подбора разделов и районов — suggestPlaces (общие с демо-API); витрины — по
+ * тем же правилам выдачи, что каталог. Всё — под гостем
+ */
+export async function catalogSuggest(db: Db, q: SearchQuery): Promise<CatalogSuggest> {
+  return withActor(db, GUEST, async (trx) => {
+    const named = (r: { code: string; name_ru: string; name_uz: string }) => ({
+      code: r.code,
+      name: { ru: r.name_ru, uz: r.name_uz },
+    });
+    const categories = (
+      await trx
+        .selectFrom("app.categories")
+        .select(["code", "name_ru", "name_uz"])
+        .where("enabled", "=", true)
+        .orderBy("sort")
+        .orderBy("code")
+        .execute()
+    ).map(named);
+    const districts = (
+      await trx
+        .selectFrom("app.districts")
+        .select(["code", "name_ru", "name_uz"])
+        .orderBy("sort")
+        .orderBy("code")
+        .execute()
+    ).map(named);
+    const categoryHits = matchPlaces(q, categories).map((c) => c.code);
+    const districtHits = matchPlaces(q, districts)
+      .slice(0, SUGGEST_DISTRICTS)
+      .map((d) => d.code);
+
+    // Витрин в подошедших разделах и районах — только если что-то подошло
+    const counts =
+      categoryHits.length === 0 && districtHits.length === 0
+        ? []
+        : await trx
+            .selectFrom(publicListings(trx, NO_DATE).as("pl"))
+            .select(["pl.category_code", "pl.district_code", sql<number>`count(*)::int`.as("n")])
+            .where((eb) =>
+              eb.or([
+                ...(categoryHits.length > 0 ? [eb("pl.category_code", "in", categoryHits)] : []),
+                ...(districtHits.length > 0 ? [eb("pl.district_code", "in", districtHits)] : []),
+              ]),
+            )
+            .groupBy(["pl.category_code", "pl.district_code"])
+            .execute();
+    const places = suggestPlaces(
+      q,
+      categories,
+      districts,
+      counts.map((c) => ({ category: c.category_code, district: c.district_code, listings: c.n })),
+    );
+
+    const listings = await publicListings(trx, NO_DATE)
+      .innerJoin(searchRelation(q, null).as("sr"), (j) => j.onRef("sr.listing_id", "=", "l.id"))
+      .orderBy("sr.score", "desc")
+      .orderBy("l.id")
+      .limit(SUGGEST_LISTINGS)
+      .execute();
+
+    return {
+      ...places,
+      listings: listings.map((row) => {
+        const card = toCard(row, null);
+        return {
+          id: card.id,
+          slug: card.slug,
+          name: card.name,
+          categoryCode: card.categoryCode,
+          districtCode: card.districtCode,
+          cover: card.cover,
+        };
+      }),
+    } satisfies CatalogSuggest;
+  });
 }
 
 // ── категории ──────────────────────────────────────────────────────────────

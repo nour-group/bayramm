@@ -1,8 +1,10 @@
 // Адрес витрины (slug): латиница, цифры и дефис, 3–40 символов — как CHECK в app.listings.
 // Кириллица — по узбекской латинице (х → x, қ → q): названия тойхон узнаваемее так, чем по
 // русской транслитерации. Один разбор для API (адрес новой витрины) и панели («из названия»).
+// Та же таблица — у поиска (@bayramm/shared/search: searchNorm и app.search_norm).
 
-const CYRILLIC: Readonly<Record<string, string>> = {
+/** Кириллица (русская и узбекская, строчные) → узбекская латиница; ъ и ь — без следа */
+export const CYRILLIC_LATIN: Readonly<Record<string, string>> = {
   а: "a",
   б: "b",
   в: "v",
@@ -49,7 +51,7 @@ export const MAX_SLUG = 40;
 function latin(text: string): string {
   return (
     Array.from(text.toLowerCase())
-      .map((ch) => CYRILLIC[ch] ?? ch)
+      .map((ch) => CYRILLIC_LATIN[ch] ?? ch)
       .join("")
       // oʻ, gʻ, tutuq belgisi и кавычки — без следа, диакритика — без знаков
       .replace(/[ʻʼ'‘’`"]/g, "")

@@ -150,6 +150,18 @@ describe("разметка страниц", () => {
     expect(canonical(other.body)).toBe(`${PROD}/catalog`);
   });
 
+  it("выдача поиска (?q=) — noindex, canonical — каталог раздела без запроса", async () => {
+    const { body } = await setup().html(`${PROD}/catalog?category=car&q=${encodeURIComponent("кортеж")}`);
+    expect(metaContent(body, "name", "robots")).toBe("noindex, nofollow");
+    expect(canonical(body)).toBe(`${PROD}/catalog?category=car`);
+    const all = await setup().html(`${PROD}/catalog?q=versal&lang=uz`);
+    expect(metaContent(all.body, "name", "robots")).toBe("noindex, nofollow");
+    expect(canonical(all.body)).toBe(`${PROD}/catalog?lang=uz`);
+    // Пустой q — обычный каталог
+    const empty = await setup().html(`${PROD}/catalog?q=`);
+    expect(metaContent(empty.body, "name", "robots")).toBe("index, follow");
+  });
+
   it("витрина: в описании — категория и цена с единицей", async () => {
     const { body } = await setup(fakeApi([CAR])).html(`${PROD}/venue/${CAR.slug}?lang=ru`);
     expect(metaContent(body, "name", "description")).toContain("Кортеж");

@@ -21,6 +21,7 @@ import {
   pickFeatured,
   type RequestDetails,
   type RequestStatus,
+  SUGGEST_LISTINGS,
 } from "@bayramm/shared/api";
 import type { AccountIdentity, AppCode, VendorMembership } from "@bayramm/shared/api/account";
 import type { ClientDataExport, ClientMe, Favorites, Me } from "@bayramm/shared/api/me";
@@ -36,7 +37,15 @@ import {
   parseAttributeFilters,
   validateRequestDetails,
 } from "@bayramm/shared/categories";
+import {
+  relevanceKey,
+  SEARCH_MAX_LENGTH,
+  SEARCH_RAW_MAX_LENGTH,
+  searchNorm,
+  searchQuery,
+} from "@bayramm/shared/search";
 import { addDays, tashkentToday } from "../format";
+import { demoSearch, demoSuggest } from "./demo-search";
 import { type DemoListing, demoTelegram, demoUuid, demoVitrinas } from "./demo-vitrinas";
 
 export type { DemoListing } from "./demo-vitrinas";
@@ -450,6 +459,13 @@ function checkDetails(
   };
 }
 
+/** Параметр q — как у сервера (catalog/query.ts): короткий — не поиск, длинный — 400 */
+function searchParam(raw: string | undefined) {
+  if (raw === undefined || raw === "") return null;
+  if (raw.length > SEARCH_RAW_MAX_LENGTH || searchNorm(raw).length > SEARCH_MAX_LENGTH) throw invalid(["q"]);
+  return searchQuery(raw);
+}
+
 function abortError(): Error {
   const error = new Error("Aborted");
   error.name = "AbortError";
@@ -673,7 +689,11 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         }
         const limit = Math.min(50, Math.max(1, query.limit ?? 20));
         const offset = Number(query.cursor ?? 0) || 0;
+        // Поиск — как у сервера: короткий — не поиск, длинный — 400; подходящие и их оценка
+        const q = searchParam(query.q);
+        const scores = q === null ? null : demoSearch(listings, DEMO_DICTIONARIES, q);
         const rows = listings
+          .filter((l) => scores === null || scores.has(l.id))
           .filter((l) => all || l.categoryCode === category)
           .filter((l) => filters.every((f) => matchesAttributeFilter(l.attributes, f)))
           // Город — его районы и витрины без района (выездные), как у API
@@ -689,7 +709,11 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         // Без sort — по возрастанию цены, как у сервера; цены сравниваются по той же
         // формуле (за мероприятие и за гостя — на одной шкале, с гостями — сумма на них)
         const price = (card: ListingCard) => comparablePriceUzs(card, query.guests ?? null);
+        const relevance = (card: ListingCard) => relevanceKey(scores?.get(card.id) ?? 0);
+        const sort = query.sort ?? (scores === null ? "price_asc" : "relevance");
         const order = (a: ListingCard, b: ListingCard) => {
+          if (sort === "relevance" && scores !== null)
+            return relevance(a) - relevance(b) || a.id.localeCompare(b.id);
           if (query.sort === "price_desc") return price(b) - price(a) || a.id.localeCompare(b.id);
           if (query.sort === "capacity_desc")
             return (b.capMax ?? 0) - (a.capMax ?? 0) || a.id.localeCompare(b.id);
@@ -699,7 +723,17 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         rows.sort((a, b) => Number(a.busyOnDate === true) - Number(b.busyOnDate === true) || order(a, b));
         const items = rows.slice(offset, offset + limit);
         const next = offset + limit;
-        return { items, nextCursor: next < rows.length ? String(next) : null };
+        const page = { items, nextCursor: next < rows.length ? String(next) : null };
+        // Сколько нашлось — с поиском, на первой странице
+        return scores !== null && !query.cursor ? { ...page, total: rows.length } : page;
+      }),
+
+    suggest: (raw, signal) =>
+      respond("suggest", signal, () => {
+        const q = searchParam(raw);
+        return q === null
+          ? { categories: [], districts: [], listings: [] }
+          : demoSuggest(listings, DEMO_DICTIONARIES, q, SUGGEST_LISTINGS);
       }),
 
     listing: (slug, signal) =>

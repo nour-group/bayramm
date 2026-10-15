@@ -1,10 +1,11 @@
 /* Поиск вместо системного вида <input type="search">: сам тип остаётся (роль searchbox,
-   клавиша «Найти» на клавиатуре телефона), а системный крестик спрятан — у него зона
-   нажатия меньше 44px и вид в каждом браузере свой. Свой крестик появляется, когда в поле
-   есть текст, чистит его и возвращает фокус в поле.
+   клавиша «Найти» на клавиатуре телефона — enterkeyhint="search"), а системный крестик
+   спрятан — у него зона нажатия меньше 44px и вид в каждом браузере свой. Свой крестик
+   появляется, когда в поле есть текст, чистит его и возвращает фокус в поле.
 
-   Внутри списка с поиском (Combobox) поле — combobox: роль, связь со списком вариантов и
-   активный вариант (aria-activedescendant), стрелки и Enter обрабатывает список. */
+   Внутри списка с поиском (Combobox) и поиска с подсказками (SearchSuggest) поле — combobox:
+   роль, связь со списком вариантов и активный вариант (aria-activedescendant), стрелки и Enter
+   обрабатывает список. */
 
 import { type ChangeEvent, type KeyboardEvent, type Ref, useCallback, useRef } from "react";
 import { UiIcon } from "./icons";
@@ -21,9 +22,17 @@ export interface SearchFieldProps {
   readonly id?: string;
   readonly maxLength?: number;
   readonly className?: string;
-  /** Поле внутри списка с поиском: id списка вариантов и активного варианта */
-  readonly combobox?: { readonly listId: string; readonly activeId?: string | undefined };
+  /**
+   * Поле — combobox: id списка вариантов, активного варианта и открыт ли список (по умолчанию
+   * да: в списке с поиском поле видно, только пока список открыт)
+   */
+  readonly combobox?: {
+    readonly listId: string;
+    readonly activeId?: string | undefined;
+    readonly expanded?: boolean;
+  };
   readonly onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
+  readonly onFocus?: () => void;
   /** Само поле ввода: на него ставят фокус снаружи */
   readonly inputRef?: Ref<HTMLInputElement>;
 }
@@ -37,6 +46,7 @@ export function SearchField({
   className,
   combobox,
   onKeyDown,
+  onFocus,
   inputRef,
   "aria-label": ariaLabel,
   "aria-describedby": describedBy,
@@ -59,10 +69,15 @@ export function SearchField({
     type: "search",
     enterKeyHint: "search",
     autoComplete: "off",
+    // Запрос — не текст письма: без исправлений и заглавной буквы (Toʻyxona, район, название)
+    autoCorrect: "off",
+    autoCapitalize: "none",
+    spellCheck: false,
     value,
     placeholder,
     maxLength,
     onKeyDown,
+    onFocus,
     onChange: (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
     "aria-label": ariaLabel,
     "aria-describedby": describedBy,
@@ -75,8 +90,9 @@ export function SearchField({
           {...common}
           role="combobox"
           aria-autocomplete="list"
-          aria-expanded="true"
-          aria-controls={combobox.listId}
+          aria-expanded={combobox.expanded ?? true}
+          // Закрытый список не нарисован: ссылаться не на что
+          aria-controls={combobox.expanded === false ? undefined : combobox.listId}
           aria-activedescendant={combobox.activeId}
         />
       ) : (
