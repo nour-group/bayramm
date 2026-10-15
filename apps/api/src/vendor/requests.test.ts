@@ -1,3 +1,4 @@
+import type { RequestStatus } from "@bayramm/shared/api/vendor";
 import { describe, expect, it } from "vitest";
 import type { VendorActor } from "../db/actor";
 import { ApiError } from "../errors";
@@ -13,7 +14,9 @@ import {
   parseInboxCursor,
   parseListQuery,
   parsePatch,
+  undoContacted,
   updateRequestStatus,
+  withoutUndone,
 } from "./requests";
 
 const ACTOR: VendorActor = {
@@ -86,11 +89,13 @@ describe("разбор запроса", () => {
 
   it("список: вкладка, курсор и размер страницы", () => {
     expect(parseListQuery({})).toEqual({
-      tab: "new",
+      tab: "waiting",
       listingId: null,
       after: null,
       limit: PAGE_LIMIT_DEFAULT,
     });
+    // Прежнее имя вкладки «Ждут ответа» — от старых сборок кабинета
+    expect(parseListQuery({ tab: "new" }).tab).toBe("waiting");
     expect(parseListQuery({ tab: "closed", cursor: "1042", limit: "10" })).toEqual({
       tab: "closed",
       listingId: null,
@@ -109,10 +114,11 @@ describe("разбор запроса", () => {
       { tab: "closed", cursor: "-1" },
       // курсор другой вкладки: у открытых — срок и номер, у закрытой — только номер
       { tab: "closed", cursor: "0.1790000000123456.1042" },
-      { tab: "new", cursor: "1042" },
-      { tab: "new", cursor: "2.1790000000123456.1042" },
-      { tab: "new", cursor: "0.1790000000123456.0" },
-      { tab: "new", cursor: "0.99999999999999999.1" },
+      { tab: "waiting", cursor: "1042" },
+      { tab: "waiting", cursor: "2.1790000000123456.1042" },
+      { tab: "waiting", cursor: "0.1790000000123456.0" },
+      { tab: "waiting", cursor: "0.99999999999999999.1" },
+      { tab: "constructor" },
       { limit: "0" },
       { limit: "51" },
       { listingId: "not-a-uuid" },
@@ -167,7 +173,7 @@ describe("курсор входящих", () => {
       { kind: "newest", no: 7 },
       { kind: "deadline", answered: false, dueUs: 1790000000123456, no: 1001 },
     ] satisfies InboxCursor[]) {
-      const tab = cursor.kind === "newest" ? "closed" : "new";
+      const tab = cursor.kind === "newest" ? "closed" : "waiting";
       expect(parseInboxCursor(tab, formatInboxCursor(cursor))).toEqual(cursor);
     }
   });
@@ -177,7 +183,7 @@ describe("listRequests", () => {
   it("открытые вкладки: сначала ждущие ответа, по сроку — ближайший (и просроченный) сверху", async () => {
     const fake = fakeDb();
     await listRequests(fake.db, ACTOR, {
-      tab: "new",
+      tab: "waiting",
       listingId: null,
       after: { kind: "deadline", answered: false, dueUs: 1790000000123456, no: 1042 },
       limit: 20,
@@ -194,9 +200,10 @@ describe("listRequests", () => {
     const fake = dbWith(row(), (q) =>
       q.sql.includes("group by")
         ? [
-            { status: "new", n: 2 },
-            { status: "contacted", n: 1 },
-            { status: "deal", n: 4 },
+            { status: "new", n: 2, overdue: 1 },
+            { status: "viewed", n: 3, overdue: 2 },
+            { status: "contacted", n: 1, overdue: 0 },
+            { status: "deal", n: 4, overdue: 0 },
           ]
         : null,
     );
@@ -226,7 +233,13 @@ describe("listRequests", () => {
     expect(list?.sql).not.toContain("read_request_phone");
     expect(list?.sql).not.toContain("contact_phone");
 
-    expect(page.counts).toEqual({ new: 2, active: 1, closed: 4 });
+    // «Ждут ответа» — новые и просмотренные; просрочено — по всем вкладкам, только у ждущих
+    expect(page.counts).toEqual({ waiting: 5, active: 1, closed: 4 });
+    expect(page.overdue).toBe(3);
+    const counts = fake.queries.find((q) => q.sql.includes("group by"));
+    expect(counts?.sql).toContain(
+      "count(*) filter (where first_response_at is null and sla_due_at <= now())",
+    );
     expect(page.nextCursor).toBeNull();
     expect(page.items).toEqual([
       {
@@ -285,7 +298,12 @@ describe("listRequests", () => {
       row({ public_no: "1002", answered: true, due_us: "1790000000000000" }),
     ];
     const fake = fakeDb((q) => (isItemQuery(q) ? open : []));
-    const page = await listRequests(fake.db, ACTOR, { tab: "new", listingId: null, after: null, limit: 2 });
+    const page = await listRequests(fake.db, ACTOR, {
+      tab: "waiting",
+      listingId: null,
+      after: null,
+      limit: 2,
+    });
     expect(page.items.map((i) => i.publicNo)).toEqual([1001, 1003]);
     expect(page.nextCursor).toBe("0.1790000000000002.1003");
 
@@ -298,6 +316,26 @@ describe("listRequests", () => {
       limit: 2,
     });
     expect(last.nextCursor).toBe("1002");
+  });
+});
+
+describe("withoutUndone: отменённая отметка «связались» — не шаг заявки", () => {
+  it("отметка и её отмена уходят из истории; настоящая отметка остаётся", () => {
+    const at = new Date("2026-10-01T08:00:00Z");
+    const step = (from: RequestStatus | null, to: RequestStatus) => ({
+      from_status: from,
+      to_status: to,
+      at,
+    });
+    const log = [
+      step(null, "new"),
+      step("new", "viewed"),
+      step("viewed", "contacted"),
+      step("contacted", "viewed"),
+      step("viewed", "contacted"),
+      step("contacted", "deal"),
+    ];
+    expect(withoutUndone(log).map((e) => e.to_status)).toEqual(["new", "viewed", "contacted", "deal"]);
   });
 });
 
@@ -316,7 +354,9 @@ describe("getRequest", () => {
     const fake = dbWith(row({ status: "viewed" }), (q) => {
       if (q.sql.includes("pii.read_request_phone")) return [{ phone: "+998000000301" }];
       if (q.sql.includes("request_status_log"))
-        return [{ to_status: "new", at: new Date("2026-10-01T08:00:00Z"), actor_kind: "system" }];
+        return [
+          { from_status: null, to_status: "new", at: new Date("2026-10-01T08:00:00Z"), actor_kind: "system" },
+        ];
       return null;
     });
     const detail = await getRequest(fake.db, ACTOR, REQUEST_ID);
@@ -387,6 +427,27 @@ describe("updateRequestStatus", () => {
     );
     expect(err.status).toBe(404);
     expect(fake.queries.some((q) => q.sql.startsWith("update"))).toBe(false);
+  });
+});
+
+describe("undoContacted", () => {
+  it("свою заявку отменяет функция базы; ответ — заявка как стала", async () => {
+    let calls = 0;
+    const fake = fakeDb((q) => {
+      if (!isItemQuery(q)) return [];
+      calls++;
+      return [row(calls === 1 ? { status: "contacted" } : { status: "viewed" })];
+    });
+    const item = await undoContacted(fake.db, ACTOR, REQUEST_ID);
+    const call = fake.queries.find((q) => q.sql.includes("vendor_request_undo_contacted"));
+    expect(call?.parameters).toEqual([REQUEST_ID]);
+    expect(item.status).toBe("viewed");
+  });
+
+  it("чужая — 404, база не вызывается", async () => {
+    const fake = dbWith(null);
+    expect((await rejection(() => undoContacted(fake.db, ACTOR, REQUEST_ID))).status).toBe(404);
+    expect(fake.queries.some((q) => q.sql.includes("vendor_request_undo_contacted"))).toBe(false);
   });
 });
 

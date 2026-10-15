@@ -22,6 +22,7 @@ import {
   REDUCED_DURATION,
   radiusVar,
   safeArea,
+  stickyBars,
   THEME_ATTRIBUTE,
 } from "./tokens";
 
@@ -65,6 +66,9 @@ export function renderTokensCss(): string {
     "",
     "  /* безопасные зоны: Telegram → env() → 0; верх и низ складывают обе зоны */",
     ...Object.entries(safeArea).map(([name, value]) => decl(`--${name}`, value)),
+    "",
+    "  /* прилипшие панели оболочки: их высоту ставит useStickyBar; без панелей — ноль */",
+    ...Object.entries(stickyBars).map(([name, value]) => decl(`--${name}`, value)),
   ];
   const reduced = Object.keys(durations).map(
     (name) => `  ${decl(durationVar(name as keyof typeof durations), REDUCED_DURATION)}`,

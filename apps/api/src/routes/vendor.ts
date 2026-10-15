@@ -7,6 +7,8 @@
 //   GET    /vendor/requests/:id                    → 200 VendorRequestDetail (new → viewed)
 //   PATCH  /vendor/requests/:id        { status, declineReason?, declineNote? } → 200 VendorRequestItem
 //   POST   /vendor/requests/:id/call               → 204 (нажатие на телефон — в журнал)
+//   POST   /vendor/requests/:id/undo               → 200 VendorRequestItem (отмена «связались»,
+//                                                  30 секунд; иначе 409 undo_expired)
 //   GET    /vendor/listings/:id                    → 200 VendorListing
 //   PATCH  /vendor/listings/:id                    VendorListingPatch → 200 VendorListingSaved (сразу, пока
 //                                                  витрины нет на сайте; иначе — предложением)
@@ -72,6 +74,7 @@ import {
   logCallAttempt,
   parseListQuery,
   parsePatch,
+  undoContacted,
   updateRequestStatus,
 } from "../vendor/requests";
 import { listRevisions, submitRevision, withdrawRevision } from "../vendor/revisions";
@@ -147,6 +150,12 @@ vendor.patch("/requests/:id", limitBody, outboxKick, async (c) => {
   const id = idOrNotFound(c.req.param("id"));
   const patch = parsePatch(await readJson(c.req.raw));
   return c.json(await updateRequestStatus(c.var.db, vendorOf(c), id, patch));
+});
+
+// Отмена удаляет ещё не ушедшее сообщение клиенту — отправлять нечего, outboxKick не нужен
+vendor.post("/requests/:id/undo", async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  return c.json(await undoContacted(c.var.db, vendorOf(c), id));
 });
 
 vendor.post("/requests/:id/call", async (c) => {

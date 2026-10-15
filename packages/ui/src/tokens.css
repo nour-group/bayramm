@@ -88,6 +88,10 @@
   --csa-b: var(--tg-content-safe-area-inset-bottom, 0px);
   --pad-t: calc(var(--sa-t) + var(--csa-t));
   --pad-b: calc(var(--sa-b) + var(--csa-b));
+
+  /* прилипшие панели оболочки: их высоту ставит useStickyBar; без панелей — ноль */
+  --sticky-t: 0px;
+  --sticky-b: 0px;
 }
 
 /* Премиум «Suzani»: переопределяет те же базовые токены, не отдельные классы */

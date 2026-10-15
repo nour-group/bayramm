@@ -353,12 +353,21 @@ export interface ListingListItem extends ListingBrief {
   readonly pendingPhotos?: readonly PendingPhoto[];
 }
 
+/**
+ * Что загрузивший подтвердил о людях на фото: no_faces — лиц нет (X-No-Faces), people_consent —
+ * люди на фото согласны на публикацию (X-Photo-Consent, только у категорий с правилом
+ * portfolio). Хранится у каждого фото с его загрузки
+ */
+export type PhotoAck = "no_faces" | "people_consent";
+
 /** Фото в очереди «Новые фото»: адреса вариантов — mediaUrl / mediaSrcSet из @bayramm/media по key */
 export interface PendingPhoto {
   readonly id: string;
   readonly key: string;
   readonly width: number;
   readonly height: number;
+  /** Что отметил загрузивший: модератор сверяет это с правилом фото категории */
+  readonly ack: PhotoAck;
 }
 
 /** Сколько ждущих фото одной карточки отдаёт очередь «Новые фото» (больше — на странице витрины) */
@@ -377,6 +386,11 @@ export interface ListingList {
   readonly items: readonly ListingListItem[];
   /** Сколько карточек в каждом статусе (без учёта фильтров) */
   readonly counts: Readonly<Record<ListingStatus, number>>;
+  /**
+   * Только в ответе ?photos=pending: сколько фото ждут решения во всей очереди (total — это
+   * карточки). Число у очереди «Фото» — фото, как у остальных очередей — их предметы
+   */
+  readonly pendingPhotosTotal?: number;
 }
 
 export type PhotoModeration = "pending" | "approved" | "declined";
@@ -1053,10 +1067,28 @@ export type SettingKey =
   | "request_contact_retention_days"
   | "otp_retention_hours"
   | "session_retention_days"
-  | "ops_reminder_pause_minutes";
+  | "ops_reminder_pause_minutes"
+  | "team_telegram"
+  | "team_phone";
 
-/** Значение: число; sla_reminder_hours — [часы, часы]; quiet_hours — { from: "22:00", to: "08:00" } */
-export type SettingValue = number | readonly number[] | { readonly from: string; readonly to: string };
+/**
+ * Контакт команды Bayramm для партнёров — строкой: team_telegram — имя в Telegram без «@»
+ * (TELEGRAM_NAME_RE), team_phone — +998XXXXXXXXX; "" — не указан. Не ПДн: это контакт компании,
+ * его отдаёт всем GET /auth/methods (AuthMethods.team), кабинет показывает его будущему
+ * партнёру («Стать партнёром») и в «Аккаунте» («Команда Bayramm»)
+ */
+export const TEAM_CONTACT_KEYS = ["team_telegram", "team_phone"] as const;
+export type TeamContactKey = (typeof TEAM_CONTACT_KEYS)[number];
+
+/**
+ * Значение: число; sla_reminder_hours — [часы, часы]; quiet_hours — { from: "22:00", to: "08:00" };
+ * контакт команды (TEAM_CONTACT_KEYS) — строка
+ */
+export type SettingValue =
+  | number
+  | readonly number[]
+  | { readonly from: string; readonly to: string }
+  | string;
 
 /**
  * Границы числовых настроек — как в app.setting_value_ok: их проверяет API до базы, а панель —
@@ -1072,7 +1104,7 @@ export const SETTING_LIMITS = {
   otp_retention_hours: [1, 720],
   session_retention_days: [1, 365],
   ops_reminder_pause_minutes: [5, 1440],
-} as const satisfies Record<Exclude<SettingKey, "quiet_hours">, readonly [number, number]>;
+} as const satisfies Record<Exclude<SettingKey, "quiet_hours" | TeamContactKey>, readonly [number, number]>;
 
 export interface StaffSetting {
   readonly key: SettingKey;

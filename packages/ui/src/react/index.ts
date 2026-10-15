@@ -1,6 +1,6 @@
 /* Свои контролы Bayramm вместо системных: выпадающий список (и список с поиском), галочка, переключатель,
    группа вариантов, число, дата, время, файлы, поиск, диалог, уведомления, подсказка;
-   связь (есть ли сеть и баннер «нет связи»).
+   связь (есть ли сеть и баннер «нет связи»); прилипшие панели (высота — в scroll-padding).
    Стили — @bayramm/ui/kit.css (только токены), тексты — из словаря приложения. */
 
 export { Calendar, type CalendarProps, type CalendarTexts } from "./Calendar";
@@ -22,7 +22,15 @@ export {
 export { SHEET_BELOW } from "./overlay";
 export { SearchField, type SearchFieldProps } from "./SearchField";
 export { Select, type SelectOption, type SelectProps } from "./Select";
+export { type StickyEdge, stickyBar, useStickyBar } from "./sticky";
 export { TimeField, type TimeFieldProps, timeOptions } from "./TimeField";
-export { ToastProvider, type ToastProviderProps, type ToastTone, useToast } from "./Toast";
+export {
+  type ToastAction,
+  type ToastOptions,
+  ToastProvider,
+  type ToastProviderProps,
+  type ToastTone,
+  useToast,
+} from "./Toast";
 export { Tooltip, type TooltipProps, type TooltipTriggerProps } from "./Tooltip";
 export { type UiTexts, UiTextsProvider, useUiTexts } from "./texts";

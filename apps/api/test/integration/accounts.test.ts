@@ -211,6 +211,8 @@ describe("GET /auth/methods", () => {
       // Проверки «не робот» без секрета Turnstile нет
       turnstileSiteKey: null,
       apps: { web: "http://localhost:5173", vendor: VENDOR_ORIGIN, admin: ADMIN_ORIGIN },
+      // Контакт команды в настройках не указан — строк в кабинете нет
+      team: { telegram: null, phone: null },
     });
   });
 });

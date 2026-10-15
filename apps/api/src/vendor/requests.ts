@@ -49,7 +49,7 @@ const invalid = (field: string) => new ApiError(422, "invalid_input", "Invalid i
 // ── разбор запроса ─────────────────────────────────────────────────────────
 //
 // Порядок входящих (кабинет, раздел «Заявки»: сначала те, где время истекает):
-//   · «Новые» и «В работе» — сначала ждущие ответа (new/viewed без первого ответа),
+//   · «Ждут ответа» и «В работе» — сначала ждущие ответа (new/viewed без первого ответа),
 //     среди них — по сроку ответа, ближайший сверху; просроченные — самые ранние
 //     сроки, поэтому они выше всех. Ответившие («связались») — ниже, тоже по сроку;
 //   · «Закрытые» — новые сверху (по номеру заявки).
@@ -92,9 +92,13 @@ export function formatInboxCursor(cursor: InboxCursor): string {
     : `${cursor.answered ? 1 : 0}.${cursor.dueUs}.${cursor.no}`;
 }
 
+/** Прежнее имя вкладки «Ждут ответа» — его шлют старые сборки кабинета */
+const LEGACY_TABS: Readonly<Record<string, RequestTab>> = { new: "waiting" };
+
 export function parseListQuery(query: Record<string, string | undefined>): ListQuery {
-  const tab = query.tab ?? "new";
-  if (!(REQUEST_TABS as readonly string[]).includes(tab)) throw invalid("tab");
+  const asked = query.tab ?? "waiting";
+  const tab = Object.hasOwn(LEGACY_TABS, asked) ? LEGACY_TABS[asked] : asked;
+  if (tab === undefined || !(REQUEST_TABS as readonly string[]).includes(tab)) throw invalid("tab");
 
   let after: InboxCursor | null = null;
   if (query.cursor !== undefined) {
@@ -215,7 +219,7 @@ function toItem(row: ItemRow): VendorRequestItem {
 }
 
 function emptyCounts(): Record<RequestTab, number> {
-  return { new: 0, active: 0, closed: 0 };
+  return { waiting: 0, active: 0, closed: 0 };
 }
 
 const tabOf = (status: RequestStatus): RequestTab =>
@@ -226,7 +230,10 @@ const tabOf = (status: RequestStatus): RequestTab =>
 const ANSWERED = sql<boolean>`(r.status not in ('new', 'viewed') or r.first_response_at is not null)`;
 const DUE_US = sql<string>`(extract(epoch from r.sla_due_at) * 1000000)::bigint`;
 
-/** GET /vendor/requests: страница вкладки в порядке входящих (см. выше) и счётчики вкладок */
+/**
+ * GET /vendor/requests: страница вкладки в порядке входящих (см. выше), счётчики вкладок и
+ * сколько ждущих ответа уже просрочено — по всем вкладкам (плашка над списком и значок)
+ */
 export async function listRequests(db: Db, actor: VendorActor, query: ListQuery): Promise<VendorRequestPage> {
   return withActor(db, actor, async (trx) => {
     const base = requestsOf(trx, actor)
@@ -256,9 +263,16 @@ export async function listRequests(db: Db, actor: VendorActor, query: ListQuery)
             .limit(query.limit + 1)
             .execute();
 
+    // Просроченные — ждут первого ответа и срок вышел (как app.metrics_ops_now у команды)
     const byStatus = await trx
       .selectFrom("app.requests")
-      .select(["status", sql<number>`count(*)::int`.as("n")])
+      .select([
+        "status",
+        sql<number>`count(*)::int`.as("n"),
+        sql<number>`(count(*) filter (where first_response_at is null and sla_due_at <= now()))::int`.as(
+          "overdue",
+        ),
+      ])
       .where("vendor_id", "=", actor.vendorId)
       .$if(typeof query.listingId === "string", (qb) =>
         qb.where("listing_id", "=", query.listingId as string),
@@ -267,7 +281,11 @@ export async function listRequests(db: Db, actor: VendorActor, query: ListQuery)
       .execute();
 
     const counts = emptyCounts();
-    for (const { status, n } of byStatus) counts[tabOf(status)] += Number(n);
+    let overdue = 0;
+    for (const row of byStatus) {
+      counts[tabOf(row.status)] += Number(row.n);
+      if (row.status === "new" || row.status === "viewed") overdue += Number(row.overdue);
+    }
 
     const page = rows.slice(0, query.limit);
     const last = page.at(-1);
@@ -280,7 +298,7 @@ export async function listRequests(db: Db, actor: VendorActor, query: ListQuery)
           : { kind: "deadline", answered: last.answered, dueUs: Number(last.due_us), no },
       );
     }
-    return { items: page.map(toItem), nextCursor, counts };
+    return { items: page.map(toItem), nextCursor, counts, overdue };
   });
 }
 
@@ -314,7 +332,7 @@ export async function getRequest(db: Db, actor: VendorActor, id: string): Promis
 
     const history = await trx
       .selectFrom("app.request_status_log")
-      .select(["to_status", "at", "actor_kind"])
+      .select(["from_status", "to_status", "at", "actor_kind"])
       .where("request_id", "=", id)
       .orderBy("id")
       .execute();
@@ -323,13 +341,34 @@ export async function getRequest(db: Db, actor: VendorActor, id: string): Promis
       ...toItem(row),
       declineNote: row.decline_note,
       contact: row.contact_name === null ? null : { name: row.contact_name, phone, comment: row.comment },
-      history: history.map((entry) => ({
+      history: withoutUndone(history).map((entry) => ({
         status: entry.to_status,
         at: entry.at.toISOString(),
         by: roleActorKind(entry.actor_kind),
       })),
     };
   });
+}
+
+/**
+ * История без отменённой отметки: «связались» и её отмена (contacted → new/viewed — так меняет
+ * только отмена) — нажатие по ошибке, а не шаг заявки
+ */
+export function withoutUndone<E extends { from_status: RequestStatus | null; to_status: RequestStatus }>(
+  entries: readonly E[],
+): E[] {
+  const kept: E[] = [];
+  for (const [index, entry] of entries.entries()) {
+    const next = entries[index + 1];
+    const undone =
+      entry.to_status === "contacted" &&
+      next?.from_status === "contacted" &&
+      (next.to_status === "new" || next.to_status === "viewed");
+    const undo =
+      entry.from_status === "contacted" && (entry.to_status === "new" || entry.to_status === "viewed");
+    if (!undone && !undo) kept.push(entry);
+  }
+  return kept;
 }
 
 // ── действия ───────────────────────────────────────────────────────────────
@@ -362,6 +401,19 @@ export async function updateRequestStatus(
       .where("id", "=", id)
       .where("vendor_id", "=", actor.vendorId)
       .execute();
+    return toItem(await readItem(trx, actor, id));
+  });
+}
+
+/**
+ * POST /vendor/requests/:id/undo: отменить «Я связался с клиентом», нажатое по ошибке. Решает
+ * база (app.vendor_request_undo_contacted): тот же пользователь, первые VENDOR_UNDO_SECONDS, отметка —
+ * последний шаг; иначе 409 undo_expired. Чужая заявка — 404, как несуществующая
+ */
+export async function undoContacted(db: Db, actor: VendorActor, id: string): Promise<VendorRequestItem> {
+  return withActor(db, actor, async (trx) => {
+    await readItem(trx, actor, id);
+    await sql`select app.vendor_request_undo_contacted(${id}::uuid)`.execute(trx);
     return toItem(await readItem(trx, actor, id));
   });
 }

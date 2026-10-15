@@ -45,6 +45,13 @@
   border: 0;
 }
 
+/* Прилипшие панели оболочки (их высоту у края ставит useStickyBar): фокус с клавиатуры и
+   прокрутка к полю останавливаются над нижней панелью и под шапкой, а не под ними (WCAG 2.4.11) */
+html {
+  scroll-padding-top: calc(var(--sticky-t) + 8px);
+  scroll-padding-bottom: calc(var(--sticky-b) + 8px);
+}
+
 /* Модальный слой открыт: страница под ним не прокручивается */
 html.ui-lock {
   overflow: hidden;
@@ -902,7 +909,8 @@ button.ui-cal-day {
 
 /* ---------- диалог ---------- */
 
-/* На телефоне — шторка снизу; шире 560px — карточка по центру (ниже, в @media) */
+/* На телефоне — шторка снизу; шире 560px — карточка по центру (ниже, в @media). Заголовок и
+   кнопки действий — на месте, прокручивается только тело (.ui-dialog-body) */
 .ui-dialog {
   position: fixed;
   right: 0;
@@ -914,7 +922,7 @@ button.ui-cal-day {
   max-height: 85vh;
   padding: 8px calc(20px + var(--sa-r)) calc(20px + var(--pad-b)) calc(20px + var(--sa-l));
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   border-radius: var(--r-22) var(--r-22) 0 0;
   background: var(--paper);
   color: var(--ink);
@@ -926,16 +934,44 @@ button.ui-cal-day {
   margin-top: 0;
 }
 
+/* Заголовок и крестик «Закрыть»: крестик не сжимается, длинный заголовок переносится */
+.ui-dialog-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+}
+
 .ui-dialog-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   color: var(--plum);
   font-family: var(--font-display);
   font-size: var(--fs-19);
   font-weight: 600;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
+/* Зона нажатия 44px, а строку заголовка крестик почти не раздвигает: поля в минус */
+.ui-dialog-close {
+  margin: -8px -12px -8px 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+/* Прокручивается только тело. Запас по краям — под кольцо фокуса полей: прокрутка его не
+   обрезает (поля стоят на прежнем месте — запас снят отрицательным полем) */
 .ui-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: -6px;
+  padding: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: var(--fs-14);
 }
 
@@ -949,12 +985,18 @@ button.ui-cal-day {
   font-weight: 700;
 }
 
-/* Две кнопки — одной ширины и высоты: отказ не меньше согласия */
+/* Две кнопки — одной ширины и высоты: отказ не меньше согласия. Всегда на виду, под телом */
 .ui-dialog-actions {
   display: grid;
+  flex: none;
   grid-template-columns: 1fr 1fr;
   gap: var(--gap-9);
   margin-top: 4px;
+}
+
+/* Одна кнопка — во всю ширину */
+.ui-dialog-actions > :only-child {
+  grid-column: 1 / -1;
 }
 
 @supports (max-height: 85dvh) {
@@ -1025,6 +1067,22 @@ button.ui-cal-day {
   color: var(--sel-ink);
 }
 
+/* Действие уведомления («Отменить»): текстом, подчёркнуто — видно, что это кнопка */
+.ui-toast-action {
+  flex: none;
+  min-height: var(--hit-min);
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-11);
+  background: transparent;
+  color: var(--sel-ink);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
 /* ---------- связь ---------- */
 
 /* Живая область «нет связи» есть всегда; пустая места не занимает */
@@ -1085,7 +1143,8 @@ button.ui-cal-day {
     border-color: var(--plum-mid);
   }
 
-  .ui-toast .ui-icon-btn:hover {
+  .ui-toast .ui-icon-btn:hover,
+  .ui-toast-action:hover {
     background: var(--plum-mid);
   }
 }
@@ -1131,6 +1190,8 @@ button.ui-cal-day {
    [tabindex="-1"]:focus приложений: у дней roving tabindex, стрелки ставят фокус на -1 */
 .ui-btn:focus-visible,
 .ui-icon-btn:focus-visible,
+.ui-toast-action:focus-visible,
+.ui-dialog-body:focus-visible,
 .ui-select:focus-visible,
 .ui-cal .ui-cal-day:focus-visible,
 .ui-number-input:focus-visible,

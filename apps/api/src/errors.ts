@@ -206,6 +206,12 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
     code: "contacts_not_live",
     message: "Contacts of a listing that is not on review or on the site are saved directly",
   },
+  // 20261015120000_team_contact_undo_contacted.sql
+  BR044: {
+    status: 409,
+    code: "undo_expired",
+    message: "Only your own last mark, within 30 seconds, can be undone",
+  },
 };
 
 // У publish_blocked в DETAIL — коды недостающих пунктов через запятую

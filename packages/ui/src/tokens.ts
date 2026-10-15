@@ -200,6 +200,14 @@ export const safeArea = {
   "pad-b": "calc(var(--sa-b) + var(--csa-b))",
 } as const;
 
+/* Прилипшие панели оболочки: сколько они закрывают у верхнего и нижнего края, с безопасными
+   зонами. Значение ставит useStickyBar (@bayramm/ui/react) у <html>; без панелей — ноль.
+   По ним kit.css ставит scroll-padding: фокус не уходит под панель (WCAG 2.4.11) */
+export const stickyBars = {
+  "sticky-t": "0px",
+  "sticky-b": "0px",
+} as const;
+
 /* ---------- имена CSS-переменных ---------- */
 
 const kebab = (name: string) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);

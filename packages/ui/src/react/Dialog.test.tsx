@@ -147,3 +147,54 @@ describe("Dialog", () => {
     expect(box?.querySelector("h2")?.textContent).toBe("Открыт");
   });
 });
+
+describe("Dialog: заголовок и действия на месте, прокручивается тело", () => {
+  function Filters() {
+    const [open, setOpen] = useState(true);
+    return (
+      <Dialog
+        open={open}
+        title="Фильтры"
+        onClose={() => setOpen(false)}
+        actions={
+          <button type="button" className="ui-btn ui-btn-primary">
+            Показать
+          </button>
+        }
+      >
+        <p>Длинный список</p>
+      </Dialog>
+    );
+  }
+
+  it("крестик «Закрыть» — подпись из UiTextsProvider, нажатие закрывает", () => {
+    render(<Filters />);
+    const box = document.querySelector<HTMLElement>('[role="dialog"]');
+    const close = box?.querySelector<HTMLButtonElement>(".ui-dialog-head .ui-dialog-close");
+    expect(close?.getAttribute("aria-label")).toBe("Закрыть");
+    click(close);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("порядок: заголовок, тело, действия — тело между ними, действия последними", () => {
+    render(<Filters />);
+    const box = document.querySelector<HTMLElement>('[role="dialog"]');
+    const parts = [...(box?.children ?? [])].map((el) => el.className);
+    expect(parts).toEqual(["ui-sheet-grab", "ui-dialog-head", "ui-dialog-body", "ui-dialog-actions"]);
+  });
+
+  it("у подтверждения (alertdialog) крестика нет: ответ — одна из двух кнопок", () => {
+    render(<Withdraw />);
+    click(opener());
+    expect(dialog()?.querySelector(".ui-dialog-close")).toBeNull();
+  });
+
+  it("closeButton={false} — без крестика", () => {
+    render(
+      <Dialog open title="Без крестика" closeButton={false} onClose={() => {}}>
+        Текст
+      </Dialog>,
+    );
+    expect(document.querySelector(".ui-dialog-close")).toBeNull();
+  });
+});

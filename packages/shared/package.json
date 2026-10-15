@@ -9,6 +9,7 @@
     "./i18n": "./src/i18n/index.ts",
     "./i18n/ru": "./src/i18n/ru.ts",
     "./i18n/uz": "./src/i18n/uz.ts",
+    "./i18n/status": "./src/i18n/request-status.ts",
     "./api": "./src/api/client.ts",
     "./api/account": "./src/api/account.ts",
     "./api/me": "./src/api/me.ts",

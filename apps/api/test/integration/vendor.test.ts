@@ -455,7 +455,7 @@ describe("доступ к /vendor", () => {
 describe("вендор A не видит ничего у вендора B", () => {
   it("список входящих — только свои заявки", async () => {
     const page = (await (
-      await call("/vendor/requests?tab=new", bearer(A.token))
+      await call("/vendor/requests?tab=waiting", bearer(A.token))
     ).json()) as VendorRequestPage;
     const ids = page.items.map((r) => r.id);
     expect(ids).toEqual(expect.arrayContaining([ra1.id, ra2.id]));
@@ -498,9 +498,11 @@ describe("вендор A не видит ничего у вендора B", () =
 describe("заявки вендора A", () => {
   it("список: вкладки со счётчиками, срок ответа, имя клиента без телефона", async () => {
     const page = (await (
-      await call("/vendor/requests?tab=new", bearer(A.token))
+      await call("/vendor/requests?tab=waiting", bearer(A.token))
     ).json()) as VendorRequestPage;
-    expect(page.counts).toEqual({ new: 2, active: 0, closed: 0 });
+    expect(page.counts).toEqual({ waiting: 2, active: 0, closed: 0 });
+    // Срок ответа ни у одной не вышел
+    expect(page.overdue).toBe(0);
     const item = page.items.find((r) => r.id === ra1.id) as VendorRequestItem;
     expect(item).toMatchObject({
       status: "new",
@@ -523,12 +525,12 @@ describe("заявки вендора A", () => {
 
   it("постранично: курсор продолжает с того же места", async () => {
     const first = (await (
-      await call("/vendor/requests?tab=new&limit=1", bearer(A.token))
+      await call("/vendor/requests?tab=waiting&limit=1", bearer(A.token))
     ).json()) as VendorRequestPage;
     expect(first.items).toHaveLength(1);
     expect(first.nextCursor).not.toBeNull();
     const second = (await (
-      await call(`/vendor/requests?tab=new&limit=1&cursor=${first.nextCursor}`, bearer(A.token))
+      await call(`/vendor/requests?tab=waiting&limit=1&cursor=${first.nextCursor}`, bearer(A.token))
     ).json()) as VendorRequestPage;
     expect(second.items).toHaveLength(1);
     expect([first.items[0]?.id, second.items[0]?.id]).toEqual([ra1.id, ra2.id]);
@@ -564,11 +566,17 @@ describe("заявки вендора A", () => {
     );
     expect(reads).toEqual([{ actor_kind: "vendor_user", actor_id: A.userId, purpose: "request_inbox" }]);
 
+    // Открыть — не ответить: просмотренная остаётся в «Ждут ответа»
     const page = (await (
-      await call("/vendor/requests?tab=active", bearer(A.token))
+      await call("/vendor/requests?tab=waiting", bearer(A.token))
     ).json()) as VendorRequestPage;
-    expect(page.items.map((r) => r.id)).toContain(ra1.id);
-    expect(page.counts).toMatchObject({ new: 1, active: 1 });
+    expect(page.items.map((r) => [r.id, r.status])).toContainEqual([ra1.id, "viewed"]);
+    expect(page.counts).toMatchObject({ waiting: 2, active: 0 });
+    // Прежнее имя вкладки (старые сборки кабинета) — та же вкладка
+    const legacy = (await (
+      await call("/vendor/requests?tab=new", bearer(A.token))
+    ).json()) as VendorRequestPage;
+    expect(legacy.items.map((r) => r.id)).toEqual(page.items.map((r) => r.id));
   });
 
   it("звонок клиенту — событие в журнале действий, статус не меняется", async () => {
@@ -615,23 +623,37 @@ describe("заявки вендора A", () => {
     expect(rows[0]?.first_response_by).toBe("vendor_user");
   });
 
-  it("«В работе»: ждущая ответа выше ответившей, хотя её срок позже", async () => {
+  it("вкладки: просмотренная без ответа — в «Ждут ответа», «связались» — в «В работе»", async () => {
     // ra1 уже «связались»; ra2 открываем — просмотрена, ответа ещё нет
     expect((await call(`/vendor/requests/${ra2.id}`, bearer(A.token))).status).toBe(200);
-    const page = (await (
+    const waiting = (await (
+      await call("/vendor/requests?tab=waiting", bearer(A.token))
+    ).json()) as VendorRequestPage;
+    expect(waiting.items.map((r) => [r.id, r.status])).toEqual([[ra2.id, "viewed"]]);
+    const active = (await (
       await call("/vendor/requests?tab=active", bearer(A.token))
     ).json()) as VendorRequestPage;
-    expect(page.items.map((r) => [r.id, r.status])).toEqual([
-      [ra2.id, "viewed"],
-      [ra1.id, "contacted"],
-    ]);
-    const first = (await (
-      await call("/vendor/requests?tab=active&limit=1", bearer(A.token))
-    ).json()) as VendorRequestPage;
-    const second = (await (
-      await call(`/vendor/requests?tab=active&limit=1&cursor=${first.nextCursor}`, bearer(A.token))
-    ).json()) as VendorRequestPage;
-    expect([first.items[0]?.id, second.items[0]?.id]).toEqual([ra2.id, ra1.id]);
+    expect(active.items.map((r) => [r.id, r.status])).toEqual([[ra1.id, "contacted"]]);
+    expect(active.counts).toEqual({ waiting: 1, active: 1, closed: 0 });
+  });
+
+  it("«Я связался» по ошибке: отмена в первые секунды тем же партнёром; второй раз — 409", async () => {
+    const marked = await call(`/vendor/requests/${ra2.id}`, patch(A.token, { status: "contacted" }));
+    expect(((await marked.json()) as VendorRequestItem).status).toBe("contacted");
+    const undo = await call(`/vendor/requests/${ra2.id}/undo`, as(A.token, "POST"));
+    expect(undo.status).toBe(200);
+    const item = (await undo.json()) as VendorRequestItem;
+    expect([item.status, item.sla.firstResponseAt, item.firstResponseBy]).toEqual(["viewed", null, null]);
+    const again = await call(`/vendor/requests/${ra2.id}/undo`, as(A.token, "POST"));
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: { code: string } }).error.code).toBe("undo_expired");
+    // Чужую заявку не отменить: её как будто нет
+    expect((await call(`/vendor/requests/${rb.id}/undo`, as(A.token, "POST"))).status).toBe(404);
+    // В истории отметки и её отмены нет: нажатие по ошибке — не шаг заявки
+    const detail = (await (
+      await call(`/vendor/requests/${ra2.id}`, bearer(A.token))
+    ).json()) as VendorRequestDetail;
+    expect(detail.history.map((h) => h.status)).toEqual(["new", "viewed"]);
   });
 
   it("отказ без причины — 422; «занято» занимает дату, возврат её освобождает", async () => {
