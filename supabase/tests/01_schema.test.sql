@@ -18,8 +18,9 @@ select set_eq(
   'включены двенадцать категорий пути пары; музыка и аниматоры — выключены');
 select set_eq(
   'select code from app.occasions',
-  array['toy', 'beshik', 'bd', 'corp', 'small'],
-  '5 поводов');
+  array['toy', 'nahorgi_osh', 'nikoh', 'fotiha', 'qiz_bazmi', 'kelin_salom', 'sunnat', 'beshik', 'bd', 'yubiley',
+        'corp', 'small'],
+  '12 поводов (packages/shared/src/categories/occasions.ts)');
 select set_eq(
   'select code from app.districts',
   array['yunusobod', 'mirzo_ulugbek', 'chilonzor', 'yakkasaroy', 'shayxontohur', 'mirobod',

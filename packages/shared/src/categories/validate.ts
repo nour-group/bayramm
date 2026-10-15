@@ -6,14 +6,22 @@
    подсвечивает поля. Строки обрезаются по краям; управляющие символы не принимаются. */
 
 import type { CategoryTextKey } from "../i18n/categories";
+import { dayPartWindows, effectiveWindows, inWindow, sortParts, toMinutes } from "./availability";
 import { CATEGORIES } from "./config";
 import {
   type AttributeField,
   type CategoryCode,
   type CategoryConfig,
   type Choice,
+  DAY_PARTS,
+  type DayPart,
+  type DayPartWindow,
+  type DayPartWindows,
+  type DaySessions,
   type IntField,
   type ListItemField,
+  PART_MODES,
+  type PartMode,
   PRICE_UNITS,
   type PriceUnit,
   type RequestField,
@@ -755,3 +763,201 @@ export function parseAttributeFilters(
   }
   return errors.length > 0 ? fail(errors) : ok(filters);
 }
+
+// ── «Время работы» витрины и части дня заявки ───────────────────────────────
+// Окна (свои у витрины): «ЧЧ:ММ», начало раньше конца, в пределах суток (конец — до «24:00»
+// включительно); рабочие части — по порядку утро → день → вечер и без пересечений (конец одной
+// не позже начала следующей). Окно, совпавшее с окном категории, своим не считается. Ошибки —
+// «mode», «parts», «windows.<часть>», «parallelCapacity», «dayParts», «details.start_time».
+
+/** Начало окна: 00:00–23:59 */
+const FROM_RE = /^([01][0-9]|2[0-3]):[0-5][0-9]$/;
+/** Конец окна: 00:01–24:00 */
+const TO_RE = /^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$/;
+
+export const MAX_PARALLEL_CAPACITY = 50;
+
+export const isDayPart = (value: unknown): value is DayPart =>
+  typeof value === "string" && (DAY_PARTS as readonly string[]).includes(value);
+
+/** Окно из тела запроса: { from, to } с from < to; иначе null */
+function windowOf(value: unknown): DayPartWindow | null {
+  if (!isObject(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length !== 2 || !keys.includes("from") || !keys.includes("to")) return null;
+  const { from, to } = value;
+  if (typeof from !== "string" || typeof to !== "string" || !FROM_RE.test(from) || !TO_RE.test(to))
+    return null;
+  return toMinutes(from) < toMinutes(to) ? { from, to } : null;
+}
+
+const sameWindow = (a: DayPartWindow, b: DayPartWindow) => a.from === b.from && a.to === b.to;
+
+/**
+ * Окна рабочих частей идут по порядку и не пересекаются. Ошибка — у части, которая начинается
+ * раньше конца предыдущей
+ */
+export function windowOverlaps(windows: DayPartWindows, parts: readonly DayPart[]): DayPart[] {
+  const bad: DayPart[] = [];
+  let end = 0;
+  for (const part of sortParts(parts)) {
+    const window = windows[part];
+    if (toMinutes(window.from) < end) bad.push(part);
+    end = Math.max(end, toMinutes(window.to));
+  }
+  return bad;
+}
+
+/**
+ * Свои окна витрины из тела запроса: null — окна категории; объект — окна частей (ключи — части
+ * дня). Окна, совпавшие с окнами категории, отбрасываются; пусто — null
+ */
+export function parseWindows(
+  category: CategoryConfig,
+  value: unknown,
+): Result<Partial<DayPartWindows> | null> {
+  if (value === undefined || value === null) return ok(null);
+  if (!isObject(value)) return fail(["windows"]);
+  const errors: string[] = [];
+  const base = dayPartWindows(category);
+  const out: Partial<Record<DayPart, DayPartWindow>> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (!isDayPart(key)) {
+      errors.push(`windows.${key}`);
+      continue;
+    }
+    const window = windowOf(raw);
+    if (window === null) errors.push(`windows.${key}`);
+    else if (!sameWindow(window, base[key])) out[key] = window;
+  }
+  if (errors.length > 0) return fail(errors);
+  return ok(Object.keys(out).length > 0 ? out : null);
+}
+
+/** Тело правки «Время работы» после проверки */
+export interface DaySessionsValue {
+  readonly mode: PartMode;
+  readonly parts: readonly DayPart[];
+  readonly custom: Partial<DayPartWindows> | null;
+  readonly parallelCapacity: number;
+}
+
+/**
+ * Проверка «Время работы»: режим, непустые части без повторов, окна (формат, по порядку, без
+ * пересечений у рабочих частей), заказов одновременно — 1–50
+ */
+export function validateDaySessions(category: CategoryConfig, input: unknown): Result<DaySessionsValue> {
+  if (!isObject(input)) return fail(["mode", "parts"]);
+  const errors: string[] = [];
+  for (const key of Object.keys(input))
+    if (!["mode", "parts", "windows", "parallelCapacity"].includes(key)) errors.push(key);
+
+  const mode = input.mode;
+  if (typeof mode !== "string" || !(PART_MODES as readonly string[]).includes(mode)) errors.push("mode");
+
+  const raw = input.parts;
+  const parts =
+    Array.isArray(raw) &&
+    raw.length > 0 &&
+    raw.length <= DAY_PARTS.length &&
+    raw.every(isDayPart) &&
+    new Set(raw).size === raw.length
+      ? sortParts(raw)
+      : null;
+  if (parts === null) errors.push("parts");
+
+  const windows = parseWindows(category, input.windows);
+  if (!windows.ok) errors.push(...windows.errors);
+  else if (parts !== null) {
+    const merged = effectiveWindows(category, windows.value);
+    for (const part of windowOverlaps(merged, parts)) errors.push(`windows.${part}`);
+  }
+
+  const capacity = input.parallelCapacity;
+  if (
+    typeof capacity !== "number" ||
+    !Number.isSafeInteger(capacity) ||
+    capacity < 1 ||
+    capacity > MAX_PARALLEL_CAPACITY
+  )
+    errors.push("parallelCapacity");
+
+  if (errors.length > 0 || parts === null || !windows.ok) return fail(errors);
+  return ok({
+    mode: mode as PartMode,
+    parts,
+    custom: windows.value,
+    parallelCapacity: capacity as number,
+  });
+}
+
+/** «Время работы» витрины из её столбцов (части — по порядку, окна — свои поверх категории) */
+export function daySessionsOf(
+  category: CategoryConfig,
+  row: {
+    readonly mode: PartMode;
+    readonly parts: readonly DayPart[];
+    readonly custom: Partial<DayPartWindows> | null;
+    readonly parallelCapacity: number;
+  },
+): DaySessions {
+  const parts = sortParts(row.parts);
+  return {
+    mode: row.mode,
+    parts: parts.length > 0 ? parts : [...DAY_PARTS],
+    windows: effectiveWindows(category, row.custom),
+    custom: row.custom,
+    parallelCapacity: row.parallelCapacity,
+  };
+}
+
+// ── части дня заявки ────────────────────────────────────────────────────────
+
+/** Что клиент выбрал в заявке: части или весь день */
+export interface RequestPartsInput {
+  readonly dayParts?: unknown;
+  readonly wholeDay?: unknown;
+}
+
+/**
+ * Части дня заявки ([] — весь день) по «Времени работы» витрины:
+ *   · whole — выбора нет: весь день (что бы ни пришло);
+ *   · wholeDay: true — весь день; время начала (если есть) — внутри одной из рабочих частей;
+ *   · dayParts — непустой список рабочих частей без повторов; время начала — внутри выбранной;
+ *   · ни того ни другого (старые сборки клиента) — часть по времени начала, без него — весь день.
+ * Ошибки: dayParts — неверный выбор, details.start_time — время вне выбранных частей
+ */
+export function validateRequestParts(
+  sessions: Pick<DaySessions, "mode" | "parts" | "windows">,
+  input: RequestPartsInput,
+  startTime: string | null,
+): Result<DayPart[]> {
+  if (sessions.mode === "whole") return ok([]);
+  const fits = (parts: readonly DayPart[]) =>
+    startTime === null || parts.some((part) => inWindow(sessions.windows[part], startTime));
+  const raw = input.dayParts;
+  const listed = Array.isArray(raw) && raw.length > 0;
+
+  if (input.wholeDay !== undefined && input.wholeDay !== null && input.wholeDay !== false) {
+    if (input.wholeDay !== true || listed) return fail(["dayParts"]);
+    return fits(sessions.parts) ? ok([]) : fail(["details.start_time"]);
+  }
+  if (raw === undefined || raw === null || (Array.isArray(raw) && raw.length === 0)) {
+    if (startTime === null) return ok([]);
+    const part = sessions.parts.find((p) => inWindow(sessions.windows[p], startTime));
+    return part === undefined ? fail(["details.start_time"]) : ok([part]);
+  }
+  if (
+    !Array.isArray(raw) ||
+    raw.length > DAY_PARTS.length ||
+    !raw.every((part) => isDayPart(part) && sessions.parts.includes(part)) ||
+    new Set(raw).size !== raw.length
+  )
+    return fail(["dayParts"]);
+  const parts = sortParts(raw as DayPart[]);
+  return fits(parts) ? ok(parts) : fail(["details.start_time"]);
+}
+
+/** Заявка занимает часть дня: весь день ([]) — каждую */
+export const requestCovers = (dayParts: readonly DayPart[], part: DayPart): boolean =>
+  dayParts.length === 0 || dayParts.includes(part);

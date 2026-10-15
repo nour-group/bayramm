@@ -24,6 +24,8 @@ const input: CreateRequestInput = {
   eventDate: "2026-10-03",
   guests: 200,
   details: null,
+  dayParts: null,
+  wholeDay: null,
   budgetMinUzs: null,
   budgetMaxUzs: 50_000_000,
   contactName: "Азиз",
@@ -51,7 +53,8 @@ async function rejection(run: () => Promise<unknown>): Promise<ApiError> {
 
 const is = {
   listing: (q: RecordedQuery) =>
-    q.sql.startsWith('select "id", "vendor_id", "category_code", "attributes" from "app"."listings"'),
+    q.sql.startsWith('select "id", "vendor_id", "category_code", "attributes", ') &&
+    q.sql.includes('from "app"."listings"'),
   duplicate: (q: RecordedQuery) => q.sql.startsWith('select "id" from "app"."requests"'),
   occasion: (q: RecordedQuery) => q.sql.includes('from "app"."occasions"'),
   busy: (q: RecordedQuery) => q.sql.includes("app.listing_busy"),
@@ -74,7 +77,20 @@ function scriptedDb(script: Script = {}) {
   const duplicates = [...(script.duplicate ?? [])];
   return fakeDb((q) => {
     if (is.listing(q))
-      return script.listing ?? [{ id: LISTING, vendor_id: VENDOR, category_code: "hall", attributes: {} }];
+      return (
+        script.listing ?? [
+          {
+            id: LISTING,
+            vendor_id: VENDOR,
+            category_code: "hall",
+            attributes: {},
+            part_mode: "parts",
+            day_parts: "{morning,day,evening}",
+            part_windows: null,
+            parallel_capacity: 1,
+          },
+        ]
+      );
     if (is.duplicate(q)) return duplicates.shift() ?? [];
     if (is.occasion(q)) return script.occasion ?? [{ code: "toy" }];
     if (is.busy(q)) return script.busy ?? [];
@@ -216,9 +232,49 @@ describe("createRequest", () => {
     expect(fake.log.at(-1)).toBe("rollback");
   });
 
-  it("занята другая часть дня (у зала частей нет) — заявка проходит", async () => {
-    const fake = scriptedDb({ busy: [{ parts: ["evening"] }] });
-    await expect(createRequest(fake.db, CLIENT, input, "web")).resolves.toMatchObject({ status: "new" });
+  it("части дня: занята другая — заявка проходит, части — в заявке по порядку", async () => {
+    const fake = scriptedDb({ busy: [{ parts: ["day"] }] });
+    await expect(
+      createRequest(fake.db, CLIENT, { ...input, dayParts: ["evening", "morning"] }, "web"),
+    ).resolves.toMatchObject({ status: "new" });
+    expect(fake.queries.find(is.request)?.parameters).toContainEqual(["morning", "evening"]);
+  });
+
+  it("занята выбранная часть — 409 date_busy по частям; весь день при занятой части — тоже", async () => {
+    const busyEvening = scriptedDb({ busy: [{ parts: ["evening"] }] });
+    expect(
+      await rejection(() =>
+        createRequest(busyEvening.db, CLIENT, { ...input, dayParts: ["morning", "evening"] }, "web"),
+      ),
+    ).toMatchObject({ status: 409, code: "date_busy", details: ["dayParts"] });
+    const whole = scriptedDb({ busy: [{ parts: ["evening"] }] });
+    expect(
+      await rejection(() => createRequest(whole.db, CLIENT, { ...input, wholeDay: true }, "web")),
+    ).toMatchObject({ status: 409, code: "date_busy", details: ["dayParts"] });
+    expect(whole.queries.some((q) => q.sql.startsWith("insert"))).toBe(false);
+  });
+
+  it("часть, в которой витрина не работает, — 400; одно мероприятие в день — весь день без выбора", async () => {
+    const listing = (over: Record<string, unknown>) => [
+      {
+        id: LISTING,
+        vendor_id: VENDOR,
+        category_code: "hall",
+        attributes: {},
+        part_mode: "parts",
+        day_parts: "{morning,evening}",
+        part_windows: null,
+        parallel_capacity: 1,
+        ...over,
+      },
+    ];
+    const notWorking = scriptedDb({ listing: listing({}) });
+    expect(
+      await rejection(() => createRequest(notWorking.db, CLIENT, { ...input, dayParts: ["day"] }, "web")),
+    ).toMatchObject({ status: 400, code: "invalid_request", details: ["dayParts"] });
+    const whole = scriptedDb({ listing: listing({ part_mode: "whole" }) });
+    await createRequest(whole.db, CLIENT, { ...input, dayParts: ["morning"] }, "web");
+    expect(whole.queries.find(is.request)?.parameters).toContainEqual([]);
   });
 
   it("неизвестный повод — 400 до записи", async () => {
@@ -263,6 +319,7 @@ function requestRow(patch: Record<string, unknown> = {}) {
     decline_reason: null,
     event_date: "2026-10-03",
     guests: 200,
+    day_parts: "{evening}",
     occasion_code: "toy",
     created_at: new Date("2026-09-29T07:00:00Z"),
     sla_due_at: new Date("2026-09-29T19:00:00Z"),
@@ -312,6 +369,7 @@ describe("listClientRequests", () => {
         declineReason: "busy",
         eventDate: "2026-10-03",
         guests: 200,
+        dayParts: ["evening"],
         occasionCode: "toy",
         createdAt: "2026-09-29T07:00:00.000Z",
         slaDueAt: "2026-09-29T19:00:00.000Z",

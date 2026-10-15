@@ -6,7 +6,8 @@
      types.ts        — типы описания и перечисления (единицы цены, части дня, …);
      validate.ts     — проверки полей витрины, ссылок на видео, услуг, формы заявки и
                        фильтров каталога — одинаковые на сервере и в интерфейсах;
-     availability.ts — части дня (модель parts) и перевод времени заявки в часть дня;
+     availability.ts — части дня (модель parts): окна, «Время работы» витрины и занятость дня;
+     occasions.ts    — поводы заявки и части дня по умолчанию у каждого;
      details.ts      — поля заявки как их хранит база и их краткая запись строками;
      forms.ts        — формы панели и кабинета: поля витрины, ссылки на видео, услуга с
                        опциями, поля заявки и предложение правки услуги для показа;
@@ -22,7 +23,27 @@ export {
   categoryText,
   categoryTexts,
 } from "../i18n/categories";
-export { DEFAULT_DAY_PARTS, dayPartOf, dayPartWindows, hasDayParts } from "./availability";
+export {
+  busyParts,
+  choosableParts,
+  type DayLoad,
+  type DayMarks,
+  DEFAULT_DAY_PARTS,
+  dayLoadOf,
+  dayPartOf,
+  dayPartWindows,
+  defaultDaySessions,
+  effectiveWindows,
+  FREE_DAY,
+  freeIn,
+  hasDayParts,
+  inWindow,
+  type PartLoad,
+  partLoads,
+  sortParts,
+  toMinutes,
+  windowText,
+} from "./availability";
 export { CATEGORIES } from "./config";
 export {
   type ChosenOptionSnapshot,
@@ -63,6 +84,7 @@ export {
   videoLinkErrors,
   videoLinksValue,
 } from "./forms";
+export { OCCASIONS, type OccasionSpec, occasionParts } from "./occasions";
 export { categoriesSeedSql, SEED_BEGIN, SEED_END } from "./sql";
 export * from "./types";
 export {
@@ -72,23 +94,30 @@ export {
   categoryConfig,
   categoryFilters,
   categoryPriceUnits,
+  type DaySessionsValue,
   type DetailValue,
+  daySessionsOf,
   type FilterSpec,
   guestsAllowed,
   isCategoryCode,
+  isDayPart,
   isPriceUnit,
   type ListItemValue,
   type ListingAttributes,
   type LocalizedText,
   MAX_CHOSEN_QTY,
   MAX_CHOSEN_SERVICES,
+  MAX_PARALLEL_CAPACITY,
   mergeAttributes,
   missingAttributes,
   normalizeVideoLink,
   parseAttributeFilters,
+  parseWindows,
   type RequestDetailsInput,
+  type RequestPartsInput,
   type Result,
   readAttributes,
+  requestCovers,
   requiredAttributeKeys,
   SERVICE_LIMITS,
   type ServiceChoice,
@@ -97,7 +126,10 @@ export {
   serviceType,
   VIDEO_LINK_DB_RE,
   validateAttributePatch,
+  validateDaySessions,
   validateRequestDetails,
+  validateRequestParts,
   validateServiceInput,
   validateVideoLinks,
+  windowOverlaps,
 } from "./validate";

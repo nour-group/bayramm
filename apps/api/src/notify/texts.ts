@@ -2,13 +2,13 @@
 // payload (в нём только id). Правила словарей @bayramm/shared: «заявка», а не
 // «бронь»; узбекский — латиница с ʻ (U+02BB) после o/g и ʼ (U+02BC).
 //
-// Вендору — номер заявки, категория и витрина, дата, гости и повод, поля заявки
+// Вендору — номер заявки, категория и витрина, дата, части дня, гости и повод, поля заявки
 // категории (часы, машины, выбранные услуги — без ПДн); имени, телефона и комментария
 // клиента в уведомлении нет: их вендор видит в кабинете, пока действует согласие.
 // Без parse_mode: название площадки пишет человек, разметка из него не исполняется.
 
 import { type Lang, ruPlural } from "@bayramm/shared";
-import type { ListingStatus } from "@bayramm/shared/api/staff";
+import type { DayPart, ListingStatus } from "@bayramm/shared/api/staff";
 
 /** Заявка глазами уведомления: только то, что можно показать получателю */
 export interface RequestFacts {
@@ -22,6 +22,8 @@ export interface RequestFacts {
   readonly date: string;
   /** Число гостей; null — категория его не спрашивает или клиент не указал */
   readonly guests: number | null;
+  /** Части дня словами («Утро, вечер», «Весь день»); null — у категории нет календаря */
+  readonly parts: string | null;
   /** Повод на языке получателя */
   readonly occasion: string;
   /** Часов на ответ (из sla_due_at − created_at) */
@@ -39,15 +41,28 @@ export interface Buttons {
   readonly similar: string;
 }
 
+const PART_NAMES: Readonly<Record<Lang, Readonly<Record<DayPart, string>> & { readonly whole: string }>> = {
+  ru: { morning: "Утро", day: "День", evening: "Вечер", whole: "Весь день" },
+  uz: { morning: "Ertalab", day: "Kunduzi", evening: "Kechqurun", whole: "Kun boʻyi" },
+};
+
+/** Части дня заявки словами: «Утро, вечер»; пусто — «Весь день» (через запятую — со строчной) */
+export function partsText(lang: Lang, parts: readonly DayPart[]): string {
+  const names = PART_NAMES[lang];
+  if (parts.length === 0) return names.whole;
+  return parts.map((part, i) => (i === 0 ? names[part] : names[part].toLowerCase())).join(", ");
+}
+
 const hoursRu = (n: number) => `${n} ${ruPlural(n, "час", "часа", "часов")}`;
 const guestsRu = (n: number) => `${n} ${ruPlural(n, "гость", "гостя", "гостей")}`;
 
+// Части дня — рядом с поводом: «Утро · Нахорги ош»
 const summaryRu = (f: RequestFacts) =>
-  [f.listing, f.date, f.guests === null ? null : guestsRu(f.guests), f.occasion]
+  [f.listing, f.date, f.guests === null ? null : guestsRu(f.guests), f.parts, f.occasion]
     .filter((x) => x !== null)
     .join(" · ");
 const summaryUz = (f: RequestFacts) =>
-  [f.listing, f.date, f.guests === null ? null : `${f.guests} mehmon`, f.occasion]
+  [f.listing, f.date, f.guests === null ? null : `${f.guests} mehmon`, f.parts, f.occasion]
     .filter((x) => x !== null)
     .join(" · ");
 /** Поля заявки категории — строками под сводкой */
@@ -167,9 +182,10 @@ export interface OpsSlaFacts extends RequestFacts {
 
 export function opsSlaBreach(f: OpsSlaFacts): string {
   const guests = f.guests === null ? "" : ` · ${guestsRu(f.guests)}`;
+  const parts = f.parts === null ? "" : ` · ${f.parts}`;
   return (
     `SLA: заявка №${f.no} без ответа ${hoursRu(f.slaHours)}.\n` +
-    `Вендор ${f.vendorCode} · ${f.category} · ${f.listing} · ${f.date}${guests}.\n` +
+    `Вендор ${f.vendorCode} · ${f.category} · ${f.listing} · ${f.date}${parts}${guests}.\n` +
     "Клиенту предложены похожие; позвоните вендору."
   );
 }

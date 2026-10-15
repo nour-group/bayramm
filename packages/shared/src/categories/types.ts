@@ -36,17 +36,27 @@ export const PRICE_UNITS = [
 export type PriceUnit = (typeof PRICE_UNITS)[number];
 
 /**
- * Модель занятости:
- *   day   — календарь «день занят / свободен» (залы);
- *   parts — день делится на части (утро, день, вечер), у карточки — сколько заказов она
- *           берёт одновременно (parallelCapacity: экипажи, машины). Часть занята, когда
- *           договорённостей на неё столько же, сколько мест, или вендор отметил её занятой;
- *           день занят, когда заняты все части или вендор отметил весь день;
- *   slot  — тот же календарь, что day; время и часы приходят в заявке (студия);
- *   lead  — календаря нет, заказ не позже чем за N дней (цветы, торты, подарки)
+ * Модель занятости категории:
+ *   parts — календарь: день делится на части (утро, день, вечер) с окнами категории. Витрина
+ *           сама выбирает, как работает (DaySessions): одно мероприятие в день (whole) или
+ *           несколько (parts) — в каких частях и сколько заказов одновременно
+ *           (parallelCapacity: залы, экипажи, машины). Часть занята, когда её отметили или
+ *           договорённостей на неё столько же, сколько мест; день занят, когда отмечен целиком
+ *           или заняты все рабочие части;
+ *   lead  — календаря нет, заказ не позже чем за N дней (цветы, торты, подарки).
+ * Прежние day и slot (залы, студия, ЗАГС) — тоже parts: значения остались только в
+ * перечислении базы app.availability_mode
  */
-export const AVAILABILITY_MODES = ["day", "parts", "slot", "lead"] as const;
+export const AVAILABILITY_MODES = ["parts", "lead"] as const;
 export type AvailabilityMode = (typeof AVAILABILITY_MODES)[number];
+
+/**
+ * Как витрина работает в течение дня (app.listings.part_mode):
+ *   whole — одно мероприятие в день: любая договорённость или отметка занимает весь день;
+ *   parts — несколько мероприятий в день: по частям, в которых витрина работает
+ */
+export const PART_MODES = ["whole", "parts"] as const;
+export type PartMode = (typeof PART_MODES)[number];
 
 /** Части дня — для модели parts. Тот же набор — в app.day_part */
 export const DAY_PARTS = ["morning", "day", "evening"] as const;
@@ -59,6 +69,23 @@ export interface DayPartWindow {
 }
 
 export type DayPartWindows = Readonly<Record<DayPart, DayPartWindow>>;
+
+/**
+ * «Время работы» витрины (app.listings: part_mode, day_parts, part_windows,
+ * parallel_capacity). Меняют владелец кабинета и сотрудник напрямую, без модерации, от версии
+ * календаря (это часть календаря, как и занятость)
+ */
+export interface DaySessions {
+  readonly mode: PartMode;
+  /** Части, в которых витрина работает: непустые, по порядку DAY_PARTS */
+  readonly parts: readonly DayPart[];
+  /** Окна частей: свои у витрины или окна категории */
+  readonly windows: DayPartWindows;
+  /** Свои окна витрины (что отличается от категории); null — окна категории */
+  readonly custom: Partial<DayPartWindows> | null;
+  /** Сколько заказов витрина берёт одновременно (1–50) */
+  readonly parallelCapacity: number;
+}
 
 /**
  * Правило фото: no_people — на фото нет людей (подтверждение «без лиц», X-No-Faces);
@@ -225,8 +252,8 @@ export interface CategoryConfig {
   readonly sort: number;
   readonly availability: AvailabilityMode;
   /**
-   * Окна частей дня (модель parts): по ним время начала из заявки переводится в часть
-   * дня. Нет — DEFAULT_DAY_PARTS
+   * Окна частей дня (модель parts) по умолчанию для витрин категории: витрина может задать
+   * свои. Время начала из заявки обязано попасть в выбранную часть. Нет — DEFAULT_DAY_PARTS
    */
   readonly dayParts?: DayPartWindows;
   readonly photoPolicy: PhotoPolicy;

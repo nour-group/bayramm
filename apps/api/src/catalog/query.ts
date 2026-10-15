@@ -12,14 +12,17 @@
 // Без category — залы (hall), как в v0.1 (старые сборки клиента). category=all — все включённые
 // категории одной выдачей (раздел «Все»): цены разных единиц сравниваются как есть. Фильтры
 // «a.<поле>» — из конфигурации категории (@bayramm/shared/categories), неизвестный — 400
-// invalid_request; у «all» их нет.
+// invalid_request; у «all» их нет. part (morning | day | evening | whole) — только вместе с
+// date: без даты время не действует; ключ сортировки он не меняет (отсекает, как фильтры).
 
-import type { CatalogSort } from "@bayramm/shared/api";
+import type { CatalogPart, CatalogSort } from "@bayramm/shared/api";
 import { type AttributeFilter, categoryConfig, parseAttributeFilters } from "@bayramm/shared/categories";
 import { ApiError } from "../errors";
 import { isIsoDate } from "../time";
 
 export const CATALOG_SORTS: readonly CatalogSort[] = ["price_asc", "price_desc", "capacity_desc"];
+/** Фильтр «Время»: часть дня или весь день */
+export const CATALOG_PARTS: readonly CatalogPart[] = ["morning", "day", "evening", "whole"];
 export const DEFAULT_SORT: CatalogSort = "price_asc";
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 50;
@@ -56,6 +59,8 @@ export interface CatalogParams {
   /** Район: только витрины в нём */
   readonly district: string | null;
   readonly date: string | null;
+  /** Свободные в эту часть дня (или весь день) — только с датой */
+  readonly part: CatalogPart | null;
   readonly guests: number | null;
   readonly sort: CatalogSort;
   readonly limit: number;
@@ -131,6 +136,12 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
   const city = code(query, "city", bad);
   const district = code(query, "district", bad);
   const date = dateParam(query, bad);
+  const partValue = single(query, "part", bad);
+  let part: CatalogPart | null = null;
+  if (partValue !== null) {
+    if ((CATALOG_PARTS as readonly string[]).includes(partValue)) part = partValue as CatalogPart;
+    else bad.push("part");
+  }
   const guests = int(query, "guests", MAX_GUESTS, bad);
   const limit = int(query, "limit", MAX_LIMIT, bad) ?? DEFAULT_LIMIT;
 
@@ -151,7 +162,18 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
     if (after === null || after.sort !== sort || after.date !== date || after.guests !== guests)
       throw invalidCursor();
   }
-  return { category, filters, city, district, date, guests, sort, limit, after };
+  return {
+    category,
+    filters,
+    city,
+    district,
+    date,
+    part: date === null ? null : part,
+    guests,
+    sort,
+    limit,
+    after,
+  };
 }
 
 // ── курсор ─────────────────────────────────────────────────────────────────

@@ -46,7 +46,7 @@ const requestRow = (n: number) => ({
   occasion_code: "toy",
   event_date: "2026-12-01",
   guests: 100,
-  day_part: null,
+  day_parts: "{}",
   created_at: AT,
   listing_id: "bbbbbbbb-0000-4000-8000-000000000001",
   listing_name: "Hall",
@@ -182,6 +182,24 @@ describe("GET /requests", () => {
     await listing.get<StaffRequestList>("/requests?limit=2&listingId=bbbbbbbb-0000-4000-8000-000000000001");
     expect(listing.counts()[0]?.sql).not.toContain("join");
     expect(listing.counts()[0]?.sql).toContain("r.listing_id = ");
+  });
+
+  it("часть дня: заявки на эту часть; весь день — без частей, только у категорий с календарём", async () => {
+    const evening = setup({ requests: 2 });
+    const body = await evening.get<StaffRequestList>("/requests?limit=2&part=evening");
+    expect(body.items[0]?.dayParts).toEqual([]);
+    expect(evening.counts()[0]?.sql).toContain("::app.day_part = any (r.day_parts)");
+    expect(evening.counts()[0]?.parameters).toContain("evening");
+    expect(evening.counts()[0]?.sql).not.toContain("join");
+
+    const whole = setup({ requests: 2 });
+    await whole.get<StaffRequestList>("/requests?limit=2&part=whole");
+    expect(whole.counts()[0]?.sql).toContain("cardinality(r.day_parts) = 0");
+    expect(whole.counts()[0]?.sql).toContain("inner join");
+
+    const unknown = setup({ requests: 2 });
+    await unknown.get<StaffRequestList>("/requests?limit=2&part=night");
+    expect(unknown.counts()[0]?.sql).not.toContain("day_parts");
   });
 
   it("дальняя пустая страница — total настоящий, а не ноль", async () => {

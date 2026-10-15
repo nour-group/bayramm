@@ -8,9 +8,9 @@
 //      клиент отдельно отметил уведомления;
 //   3. согласие request_transfer на этот листинг (и bot_notifications) — в
 //      журнал app.consents: что, когда, версия текста, откуда;
-//   4. поля категории: число гостей по форме, details, выбранные услуги и часть дня
-//      (requests/details.ts); день (у режима parts — часть дня) не занят — та же
-//      занятость, что видят каталог и витрина (app.listing_busy), иначе 409 date_busy;
+//   4. поля категории: число гостей по форме, details, выбранные услуги и части дня
+//      (requests/details.ts); день и выбранные части (весь день — все рабочие) не заняты — та
+//      же занятость, что видят каталог и витрина (app.listing_busy), иначе 409 date_busy;
 //   5. заявка и контакты (request_contacts, db/pii). Листинг, блокировку, согласие,
 //      вместимость, часть дня и лимит заявок проверяют триггеры базы.
 // Уведомление вендору ставит в очередь база (триггер на вставку заявки), не API.
@@ -18,6 +18,7 @@
 import type { ClientRequest, ClientSource, DayPart, RequestCreated } from "@bayramm/shared/api";
 import type { RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
+import { dayPartsOf } from "../calendar/sessions";
 import { type ClientActor, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { insertRequestContact } from "../db/pii";
@@ -48,22 +49,24 @@ async function findDuplicate(trx: Tx, clientId: string, listingId: string, event
     .executeTakeFirst();
 }
 
-/** Витрина занята в этот день (или в эту часть дня): заявку — на другую дату */
-export const dateBusy = (field: "eventDate" | "details.start_time") =>
+/** Витрина занята в этот день (или в выбранную часть дня): заявку — на другую дату или время */
+export const dateBusy = (field: "eventDate" | "dayParts") =>
   new ApiError(409, "date_busy", "The listing is busy on this date", [field]);
 
 /**
  * День заявки свободен — по тем же правилам, что каталог (app.catalog_day_load) и календарь
- * витрины (app.listing_busy): занят целиком — отказ по дате, занята выбранная часть дня (parts) —
- * по времени начала. Клиент не даёт выбрать занятое; здесь — на случай устаревшей витрины во вкладке
+ * витрины (app.listing_busy): занят целиком — отказ по дате, занята выбранная часть (у заявки на
+ * весь день — любая рабочая) — по частям дня. Клиент не даёт выбрать занятое; здесь — на случай
+ * устаревшей витрины во вкладке
  */
-async function assertDateFree(trx: Tx, listingId: string, day: string, dayPart: DayPart | null) {
+async function assertDateFree(trx: Tx, listingId: string, day: string, dayParts: readonly DayPart[]) {
   const { rows } = await sql<{ parts: string[] | null }>`
     select b.parts from app.listing_busy(${listingId}::uuid, ${day}::date, ${day}::date + 1) b
   `.execute(trx);
   const parts = rows[0]?.parts ?? [];
   if (parts.includes("all")) throw dateBusy("eventDate");
-  if (dayPart !== null && parts.includes(dayPart)) throw dateBusy("details.start_time");
+  const taken = dayParts.length === 0 ? parts.length > 0 : dayParts.some((part) => parts.includes(part));
+  if (taken) throw dateBusy("dayParts");
 }
 
 /** POST /requests */
@@ -98,7 +101,16 @@ async function insertRequest(
 ): Promise<RequestCreated> {
   const listing = await trx
     .selectFrom("app.listings")
-    .select(["id", "vendor_id", "category_code", "attributes"])
+    .select([
+      "id",
+      "vendor_id",
+      "category_code",
+      "attributes",
+      "part_mode",
+      "day_parts",
+      "part_windows",
+      "parallel_capacity",
+    ])
     .where("id", "=", input.listingId)
     .where("status", "=", "active")
     .executeTakeFirst();
@@ -117,7 +129,7 @@ async function insertRequest(
   }
 
   const checked = await checkDetails(trx, listing, input, today);
-  await assertDateFree(trx, listing.id, input.eventDate, checked.dayPart);
+  await assertDateFree(trx, listing.id, input.eventDate, checked.dayParts);
 
   // Текст той цели, о которой спрашивали. Действует ли он ещё — проверяет
   // триггер согласий (consent_text_not_current)
@@ -176,7 +188,7 @@ async function insertRequest(
       event_date: input.eventDate,
       guests: checked.guests,
       details: JSON.stringify(checked.details),
-      day_part: checked.dayPart,
+      day_parts: [...checked.dayParts],
       budget_min_uzs: input.budgetMinUzs,
       budget_max_uzs: input.budgetMaxUzs,
       source,
@@ -234,7 +246,7 @@ function clientRequests(trx: Tx, clientId: string) {
       "r.decline_reason",
       "r.event_date",
       "r.guests",
-      "r.day_part",
+      "r.day_parts",
       "r.details",
       "r.occasion_code",
       "r.created_at",
@@ -267,7 +279,7 @@ function toClientRequest(row: ClientRequestRow): ClientRequest {
     declineReason: row.decline_reason,
     eventDate: row.event_date,
     guests: row.guests,
-    dayPart: row.day_part,
+    dayParts: dayPartsOf(row.day_parts),
     details: row.details as RequestDetails,
     occasionCode: row.occasion_code,
     createdAt: row.created_at.toISOString(),

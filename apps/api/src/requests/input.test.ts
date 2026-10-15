@@ -36,6 +36,8 @@ describe("parseCreateRequest", () => {
       eventDate: "2026-10-03",
       guests: 200,
       details: null,
+      dayParts: null,
+      wholeDay: null,
       budgetMinUzs: null,
       budgetMaxUzs: null,
       contactName: "Азиз",
@@ -51,6 +53,14 @@ describe("parseCreateRequest", () => {
     const input = parseCreateRequest({ ...withoutGuests, details: { hours: 3 } }, TODAY);
     expect(input.guests).toBeNull();
     expect(input.details).toEqual({ hours: 3 });
+  });
+
+  it("части дня и весь день — как пришли (их проверяет время работы витрины); форма — здесь", () => {
+    const input = parseCreateRequest({ ...valid, dayParts: ["morning", "evening"] }, TODAY);
+    expect(input.dayParts).toEqual(["morning", "evening"]);
+    expect(parseCreateRequest({ ...valid, wholeDay: true }, TODAY).wholeDay).toBe(true);
+    expect(rejection({ ...valid, dayParts: "morning" }).details).toEqual(["dayParts"]);
+    expect(rejection({ ...valid, wholeDay: "yes" }).details).toEqual(["wholeDay"]);
   });
 
   it("полное тело: телефон без пробелов и скобок, текст обрезан по краям", () => {

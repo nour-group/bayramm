@@ -185,7 +185,14 @@ const hall: CategoryConfig = {
   label: "cat_hall",
   enabled: true,
   sort: 2,
-  availability: "day",
+  // Утром — нахорги ош, днём — фотиха и небольшие торжества, вечером — свадьба; перерыв между
+  // ними — на уборку зала
+  availability: "parts",
+  dayParts: {
+    morning: { from: "06:00", to: "11:00" },
+    day: { from: "12:00", to: "17:00" },
+    evening: { from: "18:00", to: "24:00" },
+  },
   photoPolicy: "no_people",
   minPhotos: 3,
   recommendedPhotos: 6,
@@ -354,7 +361,13 @@ const studio: CategoryConfig = {
   label: "cat_studio",
   enabled: true,
   sort: 5,
-  availability: "slot",
+  // Съёмки по времени: утро, день и вечер — свои окна студии; точное время и часы — в заявке
+  availability: "parts",
+  dayParts: {
+    morning: { from: "09:00", to: "13:00" },
+    day: { from: "13:00", to: "17:00" },
+    evening: { from: "17:00", to: "21:00" },
+  },
   photoPolicy: "portfolio",
   minPhotos: 3,
   recommendedPhotos: 6,
@@ -775,8 +788,8 @@ const zags: CategoryConfig = {
   label: "cat_zags",
   enabled: true,
   sort: 1,
-  // Церемонии идут по времени: календарь дней, время — в заявке (как у студии)
-  availability: "slot",
+  // Церемонии идут по времени: утром, днём и вечером; время — в заявке
+  availability: "parts",
   photoPolicy: "no_people",
   minPhotos: 3,
   recommendedPhotos: 6,
@@ -1121,7 +1134,7 @@ function later(
     label,
     enabled: false,
     sort,
-    availability: "day",
+    availability: "parts",
     photoPolicy: "no_people",
     minPhotos: 3,
     recommendedPhotos: 6,

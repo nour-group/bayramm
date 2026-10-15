@@ -16,8 +16,8 @@ update pii.vendor_user_profiles set telegram_chat_id = 9101, telegram_user_id = 
 select results_eq(
   $$select code, availability_mode::text, photo_policy::text from app.categories
      where code in ('hall', 'car', 'studio', 'flowers', 'photo') order by sort$$,
-  $$values ('hall', 'day', 'no_people'), ('car', 'parts', 'no_people'), ('photo', 'parts', 'portfolio'),
-           ('studio', 'slot', 'portfolio'), ('flowers', 'lead', 'no_people')$$,
+  $$values ('hall', 'parts', 'no_people'), ('car', 'parts', 'no_people'), ('photo', 'parts', 'portfolio'),
+           ('studio', 'parts', 'portfolio'), ('flowers', 'lead', 'no_people')$$,
   'режим занятости и правило фото — из конфигурации');
 select is_empty(
   $$select c.code from app.categories c
@@ -241,35 +241,40 @@ reset role;
 
 -- ── части дня и одновременные заказы ────────────────────────────────────────
 select pg_temp.as_actor(null);
-select throws_ok(
+select lives_ok(
   $$insert into app.availability_parts (listing_id, day, part)
     values ('aaaaaaaa-0000-0000-0000-000000000101', current_date + 10, 'morning')$$,
-  '23514', null, 'части дня — только у режима parts (зал — весь день)');
+  'части дня — у всех категорий с календарём, у зала тоже (20261015100000_day_sessions.sql)');
+delete from app.availability_parts
+where listing_id = 'aaaaaaaa-0000-0000-0000-000000000101' and day = current_date + 10;
 
 insert into app.consents (id, subject_kind, subject_id, purpose, action, text_id, scope_listing_id, source) values
   ('ffffffff-0000-0000-0000-0000000000c1', 'client', 'cccccccc-0000-0000-0000-000000000001', 'request_transfer',
    'grant', 'dddddddd-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000201', 'tma');
 select throws_ok(
-  $$insert into app.requests (client_id, listing_id, vendor_id, consent_id, occasion_code, event_date, source, sla_due_at)
+  $$insert into app.requests (client_id, listing_id, vendor_id, consent_id, occasion_code, event_date, source, sla_due_at,
+                              day_parts)
     values ('cccccccc-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000201',
             'aaaaaaaa-0000-0000-0000-000000000001', 'ffffffff-0000-0000-0000-0000000000c1', 'toy',
-            current_date + 20, 'tma', now())$$,
-  '23514', null, 'заявке режима parts нужна часть дня');
+            current_date + 20, 'tma', now(), '{evening,evening}')$$,
+  '23514', null, 'части дня заявки — без повторов');
 insert into app.requests (id, client_id, listing_id, vendor_id, consent_id, occasion_code, event_date, source, sla_due_at,
-                          day_part, details)
+                          day_parts, details)
 values ('eeeeeeee-0000-0000-0000-0000000000c1', 'cccccccc-0000-0000-0000-000000000001',
         'aaaaaaaa-0000-0000-0000-000000000201', 'aaaaaaaa-0000-0000-0000-000000000001',
         'ffffffff-0000-0000-0000-0000000000c1', 'toy', current_date + 20, 'tma', now(),
-        'evening', '{"start_time": "18:00", "coverage": ["photo"]}');
+        '{evening}', '{"start_time": "18:00", "coverage": ["photo"]}');
 select is((select guests from app.requests where id = 'eeeeeeee-0000-0000-0000-0000000000c1'), null,
   'число гостей фото и видео не обязательно');
+update app.listings set part_mode = 'whole' where id = 'bbbbbbbb-0000-0000-0000-000000000101';
 select throws_ok(
   $$insert into app.requests (client_id, listing_id, vendor_id, consent_id, occasion_code, event_date, guests, source,
-                              sla_due_at, day_part)
+                              sla_due_at, day_parts)
     values ('cccccccc-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000101',
             'bbbbbbbb-0000-0000-0000-000000000001', 'ffffffff-0000-0000-0000-0000000000b1', 'toy',
-            current_date + 21, 50, 'tma', now(), 'evening')$$,
-  '23514', null, 'у зала части дня нет');
+            current_date + 21, 50, 'tma', now(), '{evening}')$$,
+  '23514', null, 'у витрины с одним мероприятием в день заявка — на весь день, без частей');
+update app.listings set part_mode = 'parts' where id = 'bbbbbbbb-0000-0000-0000-000000000101';
 
 select is_empty(
   $$select * from app.listing_busy('aaaaaaaa-0000-0000-0000-000000000201', current_date + 20, current_date + 21)$$,

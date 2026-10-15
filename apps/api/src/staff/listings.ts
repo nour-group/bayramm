@@ -42,6 +42,7 @@ import { categoryConfig, missingAttributes, readAttributes } from "@bayramm/shar
 import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
+import { sessionsOfRow } from "../calendar/sessions";
 import { roleActorKind, type Tx, withActor } from "../db/actor";
 import {
   listingContactKinds,
@@ -128,6 +129,9 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
       "l.attributes",
       "l.video_links",
       "l.parallel_capacity",
+      "l.part_mode",
+      "l.day_parts",
+      "l.part_windows",
       "l.submitted_at",
       "l.published_at",
       "l.version",
@@ -200,6 +204,7 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
     missingAttributes: category === undefined ? [] : missingAttributes(category, attributes),
     videoLinks: row.video_links,
     parallelCapacity: row.parallel_capacity,
+    daySessions: sessionsOfRow(row),
     services: await listServices(trx, id),
     submittedAt: iso(row.submitted_at),
     publishedAt: iso(row.published_at),

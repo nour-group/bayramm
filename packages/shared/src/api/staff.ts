@@ -9,19 +9,31 @@
    Телефоны в ответах не отдаются: только отдельным запросом «показать», который
    база пишет в журнал доступа к ПДн. */
 
-import type { AvailabilityMode, DayPart } from "../categories/types";
+import type { AvailabilityMode, DayPart, DaySessions } from "../categories/types";
 import type { AttributeValue } from "../categories/validate";
 import type { DeclineReason, ListingAttributes, PriceUnit, RequestDetails, RequestStatus } from "./client";
 import type { ListingService } from "./services";
-import type { ListingRevisionPayload, RevisionStatus } from "./vendor";
+import type {
+  CalendarRequest,
+  DaySessionsChange,
+  DaySessionsInput,
+  ListingRevisionPayload,
+  PartInUse,
+  RevisionStatus,
+} from "./vendor";
 
 export * from "./services";
 export type {
   AvailabilityMode,
+  CalendarRequest,
   DayPart,
+  DaySessions,
+  DaySessionsChange,
+  DaySessionsInput,
   DeclineReason,
   ListingAttributes,
   ListingRevisionPayload,
+  PartInUse,
   PriceUnit,
   RequestDetails,
   RequestStatus,
@@ -431,8 +443,10 @@ export interface ListingDetail {
   readonly missingAttributes: readonly string[];
   /** Ссылки на видео (YouTube, Instagram) */
   readonly videoLinks: readonly string[];
-  /** Сколько заказов витрина берёт одновременно (режим parts) */
+  /** Сколько заказов витрина берёт одновременно */
   readonly parallelCapacity: number;
+  /** Время работы витрины (режим, рабочие части, окна, заказов одновременно) */
+  readonly daySessions: DaySessions;
   /** Услуги витрины по порядку — все статусы */
   readonly services: readonly ListingService[];
   readonly submittedAt: string | null;
@@ -584,12 +598,15 @@ export interface BusyDay {
   readonly source: "vendor" | "staff" | "request_decline";
 }
 
-/** Занятая часть дня (режим parts) */
+/** Занятая часть дня */
 export interface BusyPart extends BusyDay {
   readonly part: DayPart;
 }
 
-/** Договорённости (заявки deal) на часть дня */
+/**
+ * Договорённости (заявки deal) на часть дня. Заявка на весь день и любая заявка витрины с одним
+ * мероприятием в день — в каждой части
+ */
 export interface PartBookings {
   readonly day: string;
   readonly part: DayPart;
@@ -605,22 +622,26 @@ export interface DayPartRef {
 /**
  * GET /staff/listings/:id/availability?from=YYYY-MM-DD&to=YYYY-MM-DD (не больше 400 дней)
  * PUT /staff/listings/:id/availability { version, busy: [дни], free: [дни], busyParts, freeParts }
- * — отметить и снять (весь день или часть дня — только у режима parts, иначе 422 invalid_input
- * ["busyParts"]); ответ — изменённые дни и новая версия. version — из последнего ответа:
- * календарь с тех пор изменили (партнёр, другой сотрудник, отказ «занято») — 409
+ * — отметить и снять (весь день или рабочую часть дня витрины с несколькими мероприятиями в день,
+ * иначе 422 invalid_input ["busyParts"]); ответ — изменённые дни и новая версия. version — из
+ * последнего ответа: календарь с тех пор изменили (партнёр, другой сотрудник, отказ «занято») — 409
  * calendar_conflict, перечитать. Прошедший день по Ташкенту — 422 date_out_of_range
- * (details — busy/free/busyParts/freeParts)
+ * (details — busy/free/busyParts/freeParts). requests — открытые заявки и договорённости на эти
+ * дни с частями (ссылки из дня на заявку)
  */
 export interface Availability {
   readonly from: string;
   readonly to: string;
   readonly mode: AvailabilityMode;
   readonly parallelCapacity: number;
+  /** Время работы витрины */
+  readonly sessions: DaySessions;
   readonly busy: readonly BusyDay[];
-  /** Занятые части дня (режим parts) */
+  /** Занятые части дня */
   readonly parts: readonly BusyPart[];
-  /** Договорённости по частям дня (режим parts) */
+  /** Договорённости по частям дня */
   readonly bookings: readonly PartBookings[];
+  readonly requests: readonly CalendarRequest[];
   /** Версия календаря карточки (всех дней) — для следующей правки */
   readonly version: number;
 }
@@ -631,6 +652,16 @@ export interface AvailabilityInput {
   readonly free?: readonly string[];
   readonly busyParts?: readonly DayPartRef[];
   readonly freeParts?: readonly DayPartRef[];
+}
+
+/**
+ * PUT /staff/listings/:id/day-sessions { version, mode, parts, windows, parallelCapacity } → 200
+ * DaySessionsChange (право listings.write): «Время работы» витрины — сразу, без модерации, от
+ * версии календаря (version — из календаря; устарела — 409 calendar_conflict). Ошибки — как в
+ * кабинете: 422 invalid_input, 409 part_in_use { inUse }
+ */
+export interface StaffDaySessionsInput extends DaySessionsInput {
+  readonly version: number;
 }
 
 // ── услуги витрин ──────────────────────────────────────────────────────────
@@ -726,8 +757,8 @@ export interface StaffRequestItem {
   readonly eventDate: string;
   /** Число гостей; null — категория его не спрашивает или клиент не указал */
   readonly guests: number | null;
-  /** Часть дня (режим parts); null — у категории её нет */
-  readonly dayPart: DayPart | null;
+  /** Части дня заявки; пусто — весь день (у категорий без календаря — не про время) */
+  readonly dayParts: readonly DayPart[];
   readonly createdAt: string;
   /** Имя, которое клиент вписал в заявку — чья она; null — удалено по сроку хранения или не вписано */
   readonly contactName: string | null;
@@ -738,9 +769,11 @@ export interface StaffRequestItem {
 }
 
 /**
- * GET /staff/requests?status=&sla=&category=&listingId=&q=&limit=&offset= — сначала без ответа:
- * ближайший (или самый давний) срок первым. sla=late — очередь просроченных и нарушенных;
- * category — заявки витрин этой категории; listingId — заявки одной витрины
+ * GET /staff/requests?status=&sla=&category=&listingId=&part=&q=&limit=&offset= — сначала без
+ * ответа: ближайший (или самый давний) срок первым. sla=late — очередь просроченных и нарушенных;
+ * category — заявки витрин этой категории; listingId — заявки одной витрины; part — заявки на
+ * эту часть дня (morning | day | evening) или на весь день (whole: без частей, у категорий с
+ * календарём)
  */
 export interface StaffRequestList {
   readonly total: number;
