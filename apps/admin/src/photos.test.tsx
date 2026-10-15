@@ -77,6 +77,18 @@ const LISTING: ListingDetail = {
   missingAttributes: [],
   videoLinks: [],
   parallelCapacity: 1,
+  daySessions: {
+    mode: "parts",
+    parts: ["morning", "day", "evening"],
+    windows: {
+      morning: { from: "05:00", to: "11:00" },
+      day: { from: "11:00", to: "17:00" },
+      evening: { from: "17:00", to: "24:00" },
+    },
+    custom: null,
+    parallelCapacity: 1,
+  },
+  calendarVersion: 0,
   services: [],
   photos: [photo(1, { isCover: true, moderation: "approved" }), photo(2)],
   blockers: { review: [], active: [] },

@@ -1,23 +1,24 @@
-/* Занятость витрины — по режиму её категории (@bayramm/shared/categories):
-     · day   — месяц сеткой, неделя с понедельника; нажатие на день отмечает его занятым
-               или снимает отметку (площадка);
-     · parts — день делится на утро, день и вечер (кортеж, фото и видео, декор): нажатие
-               открывает день — отметить его целиком или по частям; у части видно, сколько
-               договорённостей из «заказов одновременно» витрины. Часть занята, когда
-               отмечена или мест не осталось; день — когда занят целиком или все части;
-     · slot  — как day (студия): время и часы съёмки приходят в заявке;
-     · lead  — календаря нет (цветы, торты, подарки): срок заказа — LeadTime.
-   «Заказов одновременно» — справа в шапке блока (headerExtra: число с «−» и «+», его правка — до
-   «Сохранить» формы витрины); сохранили — месяц перечитывается. Объяснений над сеткой нет: нажатие
-   на день и «Несколько дней» говорят сами, подсказка — только тому, кто дни не меняет.
-   Прошедшие дни не меняются. «Сегодня» — по Ташкенту. Календарь ведут и вендор, и команда:
-   правка уходит с версией календаря из последнего ответа. Его успели изменить — сервер
-   отвечает calendar_conflict: месяц перечитывается, сотрудник отмечает ещё раз. Правки идут
-   по одной — дни неактивны, пока не пришёл ответ.
-   «Несколько дней»: первое нажатие — начало, второе — конец (пальцем, без перетаскивания,
-   можно и через месяц), затем «Занять» или «Освободить» — одной правкой, днями целиком.
-   «Освободить» больше одного дня — через подтверждение со счётом: сколько дней выбрано,
-   сколько из них занято и сколько отметил сам вендор (до 400 дней одним нажатием).
+/* Занятость витрины. У категорий с календарём день делится на утро, день и вечер; как витрина
+   работает — «Время работы» (WorkingTimes.tsx, блок рядом): одно мероприятие в день или
+   несколько, в своих частях, со своими окнами и числом заказов одновременно. У срока заказа
+   (цветы, торты, подарки) календаря нет — LeadTime.
+     · месяц сеткой, неделя с понедельника; у дня — три маленькие отметки рабочих частей
+       (свободна, есть договорённость, занята), весь день занят — заливка; сегодня — точка в углу
+       (кольцо — у фокуса);
+     · нажатие на день открывает его под сеткой: «Весь день» (занять или освободить целиком) и
+       рабочие части — окно, «занято N из M мест», заявки на эту часть (ссылки) и «Закрыть» /
+       «Открыть». Часть занята, когда отмечена или мест не осталось; у одного мероприятия в день
+       частей нет — только день целиком;
+     · «Несколько дней»: первое нажатие — начало, второе — конец (пальцем, без перетаскивания,
+       можно и через месяц), дни недели — только эти, что — весь день или часть; затем «Занять»
+       или «Освободить» — одной правкой. «Освободить» больше одного дня — через подтверждение со
+       счётом: сколько дней выбрано, сколько из них занято и сколько отметил сам вендор (до 400
+       отметок одним нажатием).
+   Объяснений над сеткой нет: нажатие на день и «Несколько дней» говорят сами, подсказка — только
+   тому, кто дни не меняет. Прошедшие дни не меняются. «Сегодня» — по Ташкенту. Календарь ведут и
+   вендор, и команда: правка уходит с версией календаря из последнего ответа. Его успели
+   изменить — сервер отвечает calendar_conflict: месяц перечитывается, сотрудник отмечает ещё раз.
+   Правки идут по одной — дни неактивны, пока не пришёл ответ.
    Месяц листают стрелками, «Сегодня» возвращает к текущему; пока новый месяц грузится, дни
    прежнего на экране неактивны — отметка не уйдёт в чужой месяц.
    Клетка дня — вся дорожка сетки, не меньше 44px: на 320px месяц выходит на 10px за поля
@@ -28,17 +29,28 @@ import type {
   AvailabilityInput,
   BusyDay,
   BusyPart,
+  CalendarRequest,
   DayPart,
   ListingDetail,
 } from "@bayramm/shared/api/staff";
-import { type CategoryConfig, DAY_PARTS, readAttributes } from "@bayramm/shared/categories";
+import {
+  type CategoryConfig,
+  DAY_PARTS,
+  type DayLoad,
+  type DayMarks,
+  DEFAULT_DAY_PARTS,
+  dayLoadOf,
+  type PartLoad,
+  partLoads,
+  readAttributes,
+  windowText,
+} from "@bayramm/shared/categories";
 import { ConfirmSheet, Tooltip, UiIcon } from "@bayramm/ui/react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
-import { partWindow } from "../categories";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
-import { ErrorText, LoadedView } from "../ui";
+import { ErrorText, Link, LoadedView } from "../ui";
 
 const DAY_MS = 86_400_000;
 
@@ -73,20 +85,28 @@ export function monthTitle(month: string): string {
 const dayTitle = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
 const dayName = (day: string) => dayTitle.format(new Date(`${day}T00:00:00Z`));
 
+/** 0 — понедельник … 6 — воскресенье */
+const weekdayOf = (day: string) => (new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7;
+
 /** Не больше, чем сервер примет одной правкой */
 const MAX_RANGE = 400;
 
 /**
  * Дни выбора «несколько дней» по порядку, от раннего к позднему (концы можно выбрать в любом
- * порядке); прошедшие до today — не входят
+ * порядке); прошедшие до today — не входят; weekdays — только эти дни недели (пусто — все)
  */
-export function rangeDays(a: string, b: string, today: string): string[] {
+export function rangeDays(
+  a: string,
+  b: string,
+  today: string,
+  weekdays: ReadonlySet<number> = new Set(),
+): string[] {
   const [from, to] = a <= b ? [a, b] : [b, a];
   const days: string[] = [];
   for (let d = Date.parse(`${from}T00:00:00Z`); days.length < MAX_RANGE; d += DAY_MS) {
     const day = new Date(d).toISOString().slice(0, 10);
     if (day > to) break;
-    if (day >= today) days.push(day);
+    if (day >= today && (weekdays.size === 0 || weekdays.has(weekdayOf(day)))) days.push(day);
   }
   return days;
 }
@@ -104,38 +124,77 @@ export function mergeBusy(current: Availability, result: Availability): Availabi
     busy: [...current.busy.filter(outside), ...result.busy].sort(byDay),
     parts: [...current.parts.filter(outside), ...result.parts].sort(byDay),
     bookings: [...current.bookings.filter(outside), ...result.bookings].sort(byDay),
+    requests: [...(current.requests ?? []).filter(outside), ...(result.requests ?? [])].sort(byDay),
+    sessions: result.sessions ?? current.sessions,
     parallelCapacity: result.parallelCapacity,
     version: result.version,
   };
 }
 
-/** Часть дня глазами календаря: отмечена ли, сколько договорённостей, занята ли */
-export interface PartState {
-  readonly part: DayPart;
-  readonly mark: BusyPart | undefined;
-  readonly count: number;
-  /** Мест не осталось: договорённостей не меньше, чем заказов одновременно */
-  readonly full: boolean;
-  readonly busy: boolean;
+/**
+ * Ответ сервера без времени работы и заявок дня (старый API во время выкладки) — как у витрины
+ * по умолчанию: несколько мероприятий, все части, окна по умолчанию
+ */
+export function withDefaults(availability: Availability): Availability {
+  return {
+    ...availability,
+    sessions: availability.sessions ?? {
+      mode: "parts",
+      parts: [...DAY_PARTS],
+      windows: DEFAULT_DAY_PARTS,
+      custom: null,
+      parallelCapacity: availability.parallelCapacity ?? 1,
+    },
+    requests: availability.requests ?? [],
+    parts: availability.parts ?? [],
+    bookings: availability.bookings ?? [],
+  };
 }
 
-export type DayLoad = "free" | "partial" | "busy";
+/** Часть дня глазами календаря: отмечена ли, сколько договорённостей, занята ли */
+export interface PartState extends PartLoad {
+  readonly mark: BusyPart | undefined;
+  readonly requests: readonly CalendarRequest[];
+}
 
-/** Части дня и его загрузка (режим parts) */
-export function dayState(availability: Availability, day: string): { parts: PartState[]; load: DayLoad } {
-  const whole = availability.busy.some((b) => b.day === day);
-  const parts = DAY_PARTS.map((part): PartState => {
-    const mark = availability.parts.find((p) => p.day === day && p.part === part);
-    const count = availability.bookings.find((b) => b.day === day && b.part === part)?.count ?? 0;
-    const full = count >= availability.parallelCapacity;
-    return { part, mark, count, full, busy: whole || mark !== undefined || full };
-  });
-  const busyParts = parts.filter((p) => p.busy).length;
-  const load: DayLoad = whole || busyParts === DAY_PARTS.length ? "busy" : busyParts > 0 ? "partial" : "free";
-  return { parts, load };
+export type { DayLoad };
+
+/** День: отметка целиком, рабочие части (у одного мероприятия в день — нет) и загрузка */
+export function dayState(
+  availability: Availability,
+  day: string,
+): { entry: BusyDay | undefined; parts: PartState[]; load: DayLoad; requests: CalendarRequest[] } {
+  const booked: Partial<Record<DayPart, number>> = {};
+  for (const b of availability.bookings) if (b.day === day) booked[b.part] = b.count;
+  const marks: DayMarks = {
+    whole: availability.busy.some((b) => b.day === day),
+    marked: availability.parts.filter((p) => p.day === day).map((p) => p.part),
+    booked,
+  };
+  const { sessions } = availability;
+  const requests = availability.requests.filter((r) => r.day === day);
+  const parts =
+    sessions.mode === "whole"
+      ? []
+      : partLoads(sessions, marks)
+          .filter((p) => sessions.parts.includes(p.part))
+          .map((p) => ({
+            ...p,
+            mark: availability.parts.find((m) => m.day === day && m.part === p.part),
+            requests: requests.filter((r) => r.parts.includes(p.part)),
+          }));
+  return {
+    entry: availability.busy.find((b) => b.day === day),
+    parts,
+    load: dayLoadOf(sessions, marks),
+    requests,
+  };
 }
 
 type Range = { readonly start: string; readonly end: string | null };
+
+/** Что закрыть или открыть на нескольких днях: весь день или часть */
+export type RangeWhat = "whole" | DayPart;
 
 /** Что снимет «Освободить»: выбрано дней, из них занято (отмечено) и отмечено вендором */
 export interface FreeCount {
@@ -145,10 +204,17 @@ export interface FreeCount {
   readonly byVendor: number | null;
 }
 
-/** Счёт для подтверждения по занятым дням отрезка */
-export function freeCount(days: readonly string[], busy: readonly BusyDay[]): FreeCount {
+/** Счёт для подтверждения по отметкам отрезка: дня целиком или выбранной части */
+export function freeCount(
+  days: readonly string[],
+  availability: Pick<Availability, "busy" | "parts">,
+  what: RangeWhat = "whole",
+): FreeCount {
   const chosen = new Set(days);
-  const marked = busy.filter((b) => chosen.has(b.day));
+  const marked =
+    what === "whole"
+      ? availability.busy.filter((b) => chosen.has(b.day))
+      : availability.parts.filter((p) => p.part === what && chosen.has(p.day));
   return {
     days: days.length,
     marked: marked.length,
@@ -156,18 +222,55 @@ export function freeCount(days: readonly string[], busy: readonly BusyDay[]): Fr
   };
 }
 
+/** Правка нескольких дней: весь день — busy/free, часть — busyParts/freeParts */
+export function rangeInput(
+  version: number,
+  days: readonly string[],
+  what: RangeWhat,
+  mark: "busy" | "free",
+): AvailabilityInput {
+  if (what === "whole") return { version, [mark]: days };
+  const refs = days.map((day) => ({ day, part: what }));
+  return mark === "busy" ? { version, busyParts: refs } : { version, freeParts: refs };
+}
+
+/** Состояние части словами: отмечена (кем), занята местами, «занято N из M мест», свободна */
+function partWord(state: PartState, capacity: number, whole: boolean): string {
+  if (whole) return t.partState.covered ?? t.partState.busy ?? "";
+  if (state.mark) return t.partState.busy ?? "";
+  if (state.booked > 0) return t.partSeats(state.booked, capacity);
+  return t.partState.free ?? "";
+}
+
+function RequestLinks({ requests }: { requests: readonly CalendarRequest[] }) {
+  if (requests.length === 0) return null;
+  return (
+    <ul className="day-requests">
+      {requests.map((r) => (
+        <li key={r.id}>
+          <Link to={{ name: "request", id: r.id }} className="day-request">
+            {t.dayRequest(r.publicNo, t.requestStatus[r.status] ?? r.status)}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function Calendar({
   listingId,
-  category,
-  capacity,
+  revision,
   headerExtra,
+  onVersion,
 }: {
   listingId: string;
   category: CategoryConfig;
-  /** Заказов одновременно у витрины: сохранили новое — месяц перечитывается (части дня считаются по нему) */
-  capacity?: number;
-  /** Справа в шапке блока: «Заказов одновременно» */
+  /** Версия календаря из витрины: время работы сохранили — месяц перечитывается */
+  revision?: number;
+  /** Справа в шапке блока */
   headerExtra?: ReactNode;
+  /** Версия календаря из последнего ответа: «Время работы» сохраняет от неё */
+  onVersion?: (version: number) => void;
 }) {
   const { api } = useSession();
   const can = useCan();
@@ -183,10 +286,12 @@ export function Calendar({
   shown.current = path;
   const [failure, setFailure] = useState<Failure | null>(null);
   const [pending, setPending] = useState<string | null>(null);
-  // Выбор нескольких дней: null — обычный режим (нажатие отмечает день сразу)
+  // Выбор нескольких дней: null — обычный режим (нажатие открывает день)
   const [ranging, setRanging] = useState(false);
   const [range, setRange] = useState<Range | null>(null);
-  // Режим parts: открытый день — его части под сеткой
+  const [weekdays, setWeekdays] = useState<ReadonlySet<number>>(new Set());
+  const [what, setWhat] = useState<RangeWhat>("whole");
+  // Открытый день — его части под сеткой
   const [opened, setOpened] = useState<string | null>(null);
   // На телефоне части дня — под месяцем, у нижних панелей: открыли день — прокрутить к ним
   // (scrollIntoView есть не везде — ловушка №5; запас под панелями — scroll-margin в styles.css)
@@ -204,15 +309,18 @@ export function Calendar({
   // biome-ignore lint/correctness/useExhaustiveDependencies: loaded — повод: пришёл ответ нового месяца
   useEffect(() => setWaiting(false), [loaded]);
   const editable = can("listings.write");
-  const parts = category.availability === "parts";
-  const selected = range ? rangeDays(range.start, range.end ?? range.start, today) : [];
-  // Заказов одновременно сохранили — части дня и занятость считаются по новому числу
-  const lastCapacity = useRef(capacity);
+  const selected = range ? rangeDays(range.start, range.end ?? range.start, today, weekdays) : [];
+  const seen = loaded.state === "ready" ? loaded.data.version : null;
   useEffect(() => {
-    if (lastCapacity.current === capacity) return;
-    lastCapacity.current = capacity;
+    if (seen !== null) onVersion?.(seen);
+  }, [seen, onVersion]);
+  // Время работы сохранили — части дня и занятость считаются по-новому
+  const lastRevision = useRef(revision);
+  useEffect(() => {
+    if (lastRevision.current === revision) return;
+    lastRevision.current = revision;
     reload();
-  }, [capacity, reload]);
+  }, [revision, reload]);
 
   // Сообщение об ошибке — про месяц, где отмечали: в другом месяце оно только путает
   const goMonth = (delta: number) => {
@@ -273,7 +381,7 @@ export function Calendar({
 
   const applyRange = async (mark: "busy" | "free", current: Availability) => {
     if (selected.length === 0) return;
-    const ok = await send("range", { version: current.version, [mark]: selected }, current);
+    const ok = await send("range", rangeInput(current.version, selected, what, mark), current);
     if (ok) {
       setRange(null);
       setRanging(false);
@@ -294,7 +402,7 @@ export function Calendar({
       return;
     }
     if (first >= current.from && last <= current.to) {
-      setFreeing(freeCount(selected, current.busy));
+      setFreeing(freeCount(selected, current, what));
       return;
     }
     setPending("count");
@@ -304,7 +412,7 @@ export function Calendar({
     setPending(null);
     setFreeing(
       result.ok
-        ? freeCount(selected, result.data.busy)
+        ? freeCount(selected, result.data, what)
         : { days: selected.length, marked: null, byVendor: null },
     );
   };
@@ -312,9 +420,18 @@ export function Calendar({
   const toggleRanging = () => {
     setRanging(!ranging);
     setRange(null);
+    setWeekdays(new Set());
+    setWhat("whole");
     setOpened(null);
     setFailure(null);
   };
+  const toggleWeekday = (index: number) =>
+    setWeekdays((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
 
   return (
     <section className="panel cal-panel" aria-labelledby="calendar-title">
@@ -357,12 +474,14 @@ export function Calendar({
         </div>
       )}
       <LoadedView loaded={loaded} onRetry={reload} skeleton="block">
-        {(availability) => {
+        {(loadedAvailability) => {
+          const availability = withDefaults(loadedAvailability);
           // Новый месяц ещё грузится, на экране — прежний ответ: дни неактивны, отметки не видны
           const stale = waiting;
-          const busyByDay = new Map(stale ? [] : availability.busy.map((b) => [b.day, b]));
           const inRange = new Set(selected);
           const openedState = opened && !stale ? dayState(availability, opened) : null;
+          const capacity = availability.sessions.parallelCapacity;
+          const rangeParts = availability.sessions.mode === "whole" ? [] : availability.sessions.parts;
           return (
             <>
               {stale ? (
@@ -371,8 +490,8 @@ export function Calendar({
                 </p>
               ) : null}
               <div className="cal" aria-busy={stale || undefined}>
-                {t.weekdays.map((name) => (
-                  <span key={name} className="cal-wd" aria-hidden="true">
+                {t.weekdays.map((name, index) => (
+                  <span key={name} className={index > 4 ? "cal-wd cal-we" : "cal-wd"} aria-hidden="true">
                     {name}
                   </span>
                 ))}
@@ -381,21 +500,12 @@ export function Calendar({
                   <span key={`pad-${i}`} className="cal-pad" aria-hidden="true" />
                 ))}
                 {days.map((day) => {
-                  const busy = busyByDay.get(day);
+                  const state = stale ? null : dayState(availability, day);
                   const past = day < today;
                   const chosen = inRange.has(day);
-                  const load: DayLoad =
-                    parts && !stale ? dayState(availability, day).load : busy ? "busy" : "free";
-                  const status = parts
-                    ? load === "free"
-                      ? ""
-                      : ` — ${t.dayLoad[load]}`
-                    : busy
-                      ? ` — ${t.busy}, ${t.busySources[busy.source] ?? ""}`
-                      : "";
-                  const label = `${dayName(day)}${status}${chosen ? `, ${t.rangeInside}` : ""}`;
-                  // Режим parts: день открывается (части — под сеткой); иначе нажатие отмечает день
-                  const open = parts && !ranging;
+                  const load: DayLoad = state?.load ?? "free";
+                  const status = load === "free" ? "" : ` — ${t.dayLoad[load]}`;
+                  const label = `${dayName(day)}${status}${day === today ? `, ${t.legendToday}` : ""}${chosen ? `, ${t.rangeInside}` : ""}`;
                   // Подсказка под мышью повторяет aria-label: диктору её не дублируем
                   return (
                     <Tooltip key={day} text={label} describe={false}>
@@ -403,19 +513,24 @@ export function Calendar({
                         <button
                           {...tip}
                           type="button"
-                          className={`cal-day${load === "busy" ? " cal-busy" : load === "partial" ? " cal-partial" : ""}${day === today ? " cal-today" : ""}${chosen ? " cal-chosen" : ""}${open && opened === day ? " cal-open" : ""}`}
-                          aria-pressed={open ? opened === day : Boolean(busy)}
+                          className={`cal-day${weekdayOf(day) > 4 ? " cal-we" : ""}${load === "busy" ? " cal-busy" : load === "partial" ? " cal-partial" : ""}${day === today ? " cal-today" : ""}${chosen ? " cal-chosen" : ""}${!ranging && opened === day ? " cal-open" : ""}`}
+                          aria-pressed={ranging ? chosen : opened === day}
                           aria-label={label}
                           disabled={!editable || past || pending !== null || stale}
-                          onClick={() =>
-                            ranging
-                              ? pick(day)
-                              : open
-                                ? setOpened(opened === day ? null : day)
-                                : toggle(day, busy, availability)
-                          }
+                          onClick={() => (ranging ? pick(day) : setOpened(opened === day ? null : day))}
                         >
+                          {day === today ? <span className="cal-today-dot" aria-hidden="true" /> : null}
                           {Number(day.slice(8))}
+                          {state && state.parts.length > 0 ? (
+                            <span className="cal-parts" aria-hidden="true">
+                              {state.parts.map((p) => (
+                                <i
+                                  key={p.part}
+                                  className={p.busy ? "is-busy" : p.booked > 0 ? "is-booked" : undefined}
+                                />
+                              ))}
+                            </span>
+                          ) : null}
                         </button>
                       )}
                     </Tooltip>
@@ -427,12 +542,10 @@ export function Calendar({
                   <span className="cal-key cal-key-free" aria-hidden="true" />
                   {t.legendFree}
                 </li>
-                {parts ? (
-                  <li>
-                    <span className="cal-key cal-key-partial" aria-hidden="true" />
-                    {t.legendPartial}
-                  </li>
-                ) : null}
+                <li>
+                  <span className="cal-key cal-key-partial" aria-hidden="true" />
+                  {t.legendPartial}
+                </li>
                 <li>
                   <span className="cal-key cal-key-busy" aria-hidden="true" />
                   {t.legendBusy}
@@ -455,51 +568,91 @@ export function Calendar({
                     <span className="day-part-name">
                       {t.wholeDay}
                       <span className="sub">
-                        {busyByDay.has(opened) ? t.partState.busy : t.partState.free}
+                        {openedState.entry
+                          ? `${t.partState.busy} · ${t.busySources[openedState.entry.source] ?? ""}`
+                          : openedState.load === "partial" || openedState.parts.some((p) => p.booked > 0)
+                            ? t.wholePartial
+                            : (t.partState[openedState.load === "busy" ? "busy" : "free"] ?? "")}
                       </span>
                     </span>
                     <button
                       type="button"
                       className="btn btn-sm"
-                      aria-pressed={busyByDay.has(opened)}
                       disabled={pending !== null}
-                      onClick={() => toggle(opened, busyByDay.get(opened), availability)}
+                      onClick={() => toggle(opened, openedState.entry, availability)}
                     >
-                      {busyByDay.has(opened) ? t.rangeFree : t.markBusy}
-                      <span className="visually-hidden">: {t.wholeDay}</span>
+                      {openedState.entry ? t.openWholeDay : t.closeWholeDay}
                     </button>
+                    <RequestLinks
+                      requests={openedState.requests.filter(
+                        (r) => r.parts.length === 0 || openedState.parts.length === 0,
+                      )}
+                    />
                   </div>
                   {openedState.parts.map((state) => {
                     const name = t.dayParts[state.part] ?? state.part;
-                    const whole = busyByDay.has(opened);
-                    const word =
-                      state.mark || whole
-                        ? t.partState.busy
-                        : state.full
-                          ? t.partState.full
-                          : t.partState.free;
+                    const whole = openedState.entry !== undefined;
                     return (
                       <div key={state.part} className="day-part-row">
                         <span className="day-part-name">
-                          {name} <span className="sub">{partWindow(category, state.part)}</span>
-                          <span className="sub">
-                            {word} · {t.partBookings(state.count, availability.parallelCapacity)}
-                          </span>
+                          {name}{" "}
+                          <span className="sub">{windowText(availability.sessions.windows[state.part])}</span>
+                          <span className="sub">{partWord(state, capacity, whole)}</span>
                         </span>
+                        {/* Подпись меняется («Закрыть» / «Открыть») — aria-pressed не нужен; часть — в имени */}
                         <button
                           type="button"
                           className="btn btn-sm"
-                          aria-pressed={state.mark !== undefined}
+                          aria-label={`${state.mark ? t.openPart : t.closePart}: ${name}`}
                           disabled={pending !== null || whole || (state.full && !state.mark)}
                           onClick={() => togglePart(opened, state, availability)}
                         >
-                          {state.mark ? t.rangeFree : t.markBusy}
-                          <span className="visually-hidden">: {name}</span>
+                          {state.mark ? t.openPart : t.closePart}
                         </button>
+                        <RequestLinks requests={state.requests} />
                       </div>
                     );
                   })}
                 </section>
+              ) : null}
+              {ranging ? (
+                <div className="cal-range">
+                  <fieldset className="cal-range-group">
+                    <legend>{t.rangeWeekdays}</legend>
+                    <div className="chips">
+                      {t.weekdays.map((name, index) => (
+                        <button
+                          key={name}
+                          type="button"
+                          className="chip"
+                          aria-pressed={weekdays.has(index)}
+                          aria-label={t.weekdaysLong[index] ?? name}
+                          onClick={() => toggleWeekday(index)}
+                        >
+                          {name}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+                  {rangeParts.length > 0 ? (
+                    <fieldset className="cal-range-group">
+                      <legend>{t.rangeWhat}</legend>
+                      <div className="chips">
+                        {(["whole", ...rangeParts] as const).map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className="chip"
+                            aria-pressed={what === value}
+                            onClick={() => setWhat(value)}
+                          >
+                            {value === "whole" ? t.wholeDay : (t.dayParts[value] ?? value)}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ) : null}
+                </div>
               ) : null}
               {ranging && selected.length > 0 && range?.end !== null && (
                 <div className="acts cal-range-acts">

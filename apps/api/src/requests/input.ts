@@ -4,8 +4,8 @@
 //
 //   · даты — по Ташкенту: событие не раньше завтрашнего дня и не дальше двух лет;
 //   · гостей 1–5000 (вместимость листинга проверяет база: BR015); нужно ли их число,
-//     решает форма категории — это и поля категории (details) проверяет
-//     requests/service.ts, когда известна витрина;
+//     решает форма категории — это и поля категории (details), и части дня (dayParts или
+//     wholeDay) проверяет requests/service.ts, когда известна витрина;
 //   · телефон — +998 и 9 цифр; пробелы, дефисы и скобки убираются;
 //   · имя до 80 символов, комментарий до 1000 — как ограничения таблицы request_contacts;
 //   · согласие на передачу контактов обязательно: без него — 422 consent_required.
@@ -35,6 +35,10 @@ export interface CreateRequestInput {
   readonly guests: number | null;
   /** Поля категории как пришли: проверяются по форме категории витрины */
   readonly details: unknown;
+  /** Части дня как пришли (список частей) — проверяются по времени работы витрины */
+  readonly dayParts: unknown;
+  /** Заявка на весь день */
+  readonly wholeDay: boolean | null;
   readonly budgetMinUzs: number | null;
   readonly budgetMaxUzs: number | null;
   readonly contactName: string;
@@ -91,6 +95,11 @@ export function parseCreateRequest(body: unknown, today: string): CreateRequestI
   const details = b.details ?? null;
   if (details !== null && (typeof details !== "object" || Array.isArray(details))) bad.push("details");
 
+  const dayParts = b.dayParts ?? null;
+  if (dayParts !== null && (!Array.isArray(dayParts) || dayParts.length > 3)) bad.push("dayParts");
+  const wholeDay = b.wholeDay ?? null;
+  if (wholeDay !== null && typeof wholeDay !== "boolean") bad.push("wholeDay");
+
   const budgetMin = optionalInt(b.budgetMinUzs, 0, MAX_UZS);
   if (budgetMin === undefined) bad.push("budgetMinUzs");
   const budgetMax = optionalInt(b.budgetMaxUzs, 1, MAX_UZS);
@@ -134,6 +143,8 @@ export function parseCreateRequest(body: unknown, today: string): CreateRequestI
     eventDate: eventDate as string,
     guests: guests ?? null,
     details,
+    dayParts,
+    wholeDay: wholeDay as boolean | null,
     budgetMinUzs: budgetMin ?? null,
     budgetMaxUzs: budgetMax ?? null,
     contactName: contactName as string,

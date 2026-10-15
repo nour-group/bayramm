@@ -300,6 +300,9 @@ test.describe("цена обязательна и с единицей", () => {
 
 test.describe("занятые на дату", () => {
   const busyOn = (l: ListingDetail) => l.busyDates.includes(BUSY_DAY);
+  // Занята часть дня (нахорги ош утром, свадьба вечером) — не «занято», а «частично занято»
+  const partialOn = (l: ListingDetail) =>
+    !busyOn(l) && (l.busyParts.find((p) => p.date === BUSY_DAY)?.parts.length ?? 0) > 0;
   // Цены за гостя и за мероприятие — на одной шкале, как у API (без числа гостей — на гостя)
   const price = (l: ListingDetail) => comparablePriceUzs(l, null);
   const ORDERS = {
@@ -335,13 +338,16 @@ test.describe("занятые на дату", () => {
 
       const expected = [...LISTINGS].sort((a, b) => Number(busyOn(a)) - Number(busyOn(b)) || order(a, b));
       expect(await cards.locator(".card-name").allInnerTexts()).toEqual(expected.map((l) => l.name));
-      // Занятые помечены словами, свободные — тоже
+      // Занятые помечены словами, частично занятые и свободные — тоже
       const busyCards = page.locator(".cards .card.busy");
       await expect(busyCards).toHaveCount(busy.length);
       for (const chip of await busyCards.locator(".chip-busy").all())
         await expect(chip).toHaveText(ru.dayBusy(formatDayMonth(BUSY_DAY, ru)));
+      const partial = LISTINGS.filter(partialOn).length;
+      expect(partial, "в демо-данных есть частично занятые на эту дату").toBeGreaterThan(0);
+      await expect(page.locator(".cards .card:not(.busy) .chip-partial")).toHaveCount(partial);
       await expect(page.locator(".cards .card:not(.busy) .chip-free")).toHaveCount(
-        LISTINGS.length - busy.length,
+        LISTINGS.length - busy.length - partial,
       );
     });
   }

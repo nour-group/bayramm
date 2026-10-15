@@ -28,6 +28,7 @@ import {
 } from "@bayramm/shared/api/vendor";
 import type { RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
+import { dayPartsOf } from "../calendar/sessions";
 import { roleActorKind, type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { readRequestPhone, requestContactsAs } from "../db/pii";
@@ -166,7 +167,7 @@ function requestsOf(trx: Tx, actor: VendorActor) {
       "r.occasion_code",
       "r.event_date",
       "r.guests",
-      "r.day_part",
+      "r.day_parts",
       "r.details",
       "r.budget_min_uzs",
       "r.budget_max_uzs",
@@ -198,7 +199,7 @@ function toItem(row: ItemRow): VendorRequestItem {
     occasionCode: row.occasion_code,
     eventDate: row.event_date,
     guests: row.guests,
-    dayPart: row.day_part,
+    dayParts: dayPartsOf(row.day_parts),
     details: row.details as RequestDetails,
     budgetMinUzs: money(row.budget_min_uzs),
     budgetMaxUzs: money(row.budget_max_uzs),

@@ -128,6 +128,14 @@ const editButton = (page: Page, group: string) =>
 const sheet = (page: Page, group: string) => page.getByRole("dialog", { name: group, exact: true });
 const dayButton = (page: Page, day: number) =>
   page.locator("button.cal-day").filter({ has: page.getByText(String(day), { exact: true }) });
+/** Открытый день календаря: шторка на телефоне, колонка справа от месяца на компьютере */
+const dayPanel = (page: Page) => page.locator(".day-panel");
+/** Закрыть открытый день: шторку на телефоне (колонка на компьютере остаётся до другого дня) */
+async function closeDay(page: Page) {
+  if (isDesktop(page)) return;
+  await page.getByRole("dialog").getByRole("button", { name: t.close, exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+}
 
 test.describe("до входа", () => {
   test("вне Telegram: что это за кабинет, как получить доступ, вход через сайт и бот", async ({ page }) => {
@@ -326,30 +334,47 @@ test.describe("кабинет", () => {
     ]);
   });
 
-  test("календарь: день занимается и освобождается одним нажатием; закрытый менеджером — нет", async ({
+  test("календарь: день открывается — весь день закрыть и открыть; закрытый менеджером — не снять", async ({
     page,
   }) => {
     const api = await start(page);
     await page.goto("/calendar");
     await expect(heading(page)).toHaveText(t.calendar);
-    await expect(dayButton(page, 10)).toHaveAttribute("aria-pressed", "true");
+    // Как закрыть день или часть — одной строкой над месяцем; день сам по себе не открыт
+    await expect(page.getByText(t.calendarHint)).toBeVisible();
+    await expect(dayPanel(page)).toHaveCount(0);
+    await expect(dayButton(page, 10)).toHaveClass(/cal-busy/);
     await expectNoAxeViolations(page, "календарь");
     await expectHitAreas(page, "календарь", CONTROLS);
 
+    // 20-е свободно: открыть и закрыть весь день
     await dayButton(page, 20).click();
     await expect(dayButton(page, 20)).toHaveAttribute("aria-pressed", "true");
+    const panel = dayPanel(page);
+    await expect(panel.locator(".day-whole")).toContainText(`${t.wholeDay}${t.partFree}`);
+    await expect(panel.getByRole("switch")).toHaveCount(3);
+    await expectNoAxeViolations(page, "календарь: день");
+    await expectHitAreas(page, "календарь: день", CONTROLS);
+    await expectNoOverflow(page, "календарь: день");
+    await panel.getByRole("button", { name: t.closeWholeDay }).click();
+    await expect(panel.getByRole("button", { name: t.openWholeDay })).toBeVisible();
+    await expect(dayButton(page, 20)).toHaveClass(/cal-busy/);
     // Отметка на экране — сразу, запрос — следом: состояние API ждём, а не читаем разом
     await expect.poll(() => api.busy.get("2026-10-20")?.source).toBe("vendor");
+    await closeDay(page);
 
     await dayButton(page, 10).click();
-    await expect(dayButton(page, 10)).toHaveAttribute("aria-pressed", "false");
+    await dayPanel(page).getByRole("button", { name: t.openWholeDay }).click();
+    await expect(dayButton(page, 10)).not.toHaveClass(/cal-busy/);
     await expect.poll(() => api.busy.has("2026-10-10")).toBe(false);
+    await closeDay(page);
 
-    // aria-disabled, но нажимается: объясняет, почему день не освободить (Playwright такое сам не жмёт)
-    await dayButton(page, 17).click({ force: true });
-    await expect(page.getByRole("alert")).toHaveText(t.staffLocked);
-    await expect(dayButton(page, 17)).toHaveAttribute("aria-pressed", "true");
+    // 17-е закрыл менеджер: так и сказано, «открыть» недоступно
+    await dayButton(page, 17).click();
+    await expect(dayPanel(page).locator(".day-whole")).toContainText(t.legendStaff);
+    await expect(dayPanel(page).getByRole("button", { name: t.openWholeDay })).toBeDisabled();
     expect(api.busy.get("2026-10-17")?.source).toBe("staff");
+    await closeDay(page);
     // Каждая правка — от версии календаря из прошлого ответа (If-Match)
     await expect
       .poll(() => api.calendarWrites)
@@ -362,20 +387,23 @@ test.describe("кабинет", () => {
   }) => {
     const api = await start(page);
     await page.goto("/calendar");
-    await expect(dayButton(page, 20)).toHaveAttribute("aria-pressed", "false");
+    await expect(dayButton(page, 20)).not.toHaveClass(/cal-busy/);
     // Пока календарь открыт, отказ «занято» по другой заявке занял 25-е
     api.busy.set("2026-10-25", { day: "2026-10-25", source: "request_decline", requestId: REQUEST_LATE });
     api.calendar.version += 1;
 
     await dayButton(page, 20).click();
+    await dayPanel(page).getByRole("button", { name: t.closeWholeDay }).click();
+    // Сообщение — на виду: на телефоне в шторке дня, на компьютере у месяца
     await expect(page.getByRole("alert")).toHaveText(t.calendarConflict);
-    await expect(dayButton(page, 25)).toHaveAttribute("aria-pressed", "true");
-    await expect(dayButton(page, 20)).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(dayButton(page, 25)).toHaveClass(/cal-busy/);
+    await expect(dayButton(page, 20)).not.toHaveClass(/cal-busy/);
     expect(api.busy.has("2026-10-20")).toBe(false);
     await expectNoAxeViolations(page, "календарь: изменили");
 
-    await dayButton(page, 20).click();
-    await expect(dayButton(page, 20)).toHaveAttribute("aria-pressed", "true");
+    await dayPanel(page).getByRole("button", { name: t.closeWholeDay }).click();
+    await expect(dayButton(page, 20)).toHaveClass(/cal-busy/);
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect.poll(() => api.busy.get("2026-10-20")?.source).toBe("vendor");
     expect(api.calendarWrites).toEqual(["PUT 2026-10-20 If-Match: 1", "PUT 2026-10-20 If-Match: 2"]);
@@ -478,8 +506,12 @@ test.describe("кабинет", () => {
     await expectHitAreas(page, "площадка: сотрудник площадки", CONTROLS);
 
     await page.goto("/calendar");
+    // Время работы сотрудник видит, но не меняет
+    await expect(page.locator(".sessions-line")).toContainText(t.sessionsTitle);
+    await expect(page.locator(".sessions-line").getByRole("link")).toHaveCount(0);
     await dayButton(page, 20).click();
-    await expect(dayButton(page, 20)).toHaveAttribute("aria-pressed", "true");
+    await dayPanel(page).getByRole("button", { name: t.closeWholeDay }).click();
+    await expect(dayButton(page, 20)).toHaveClass(/cal-busy/);
     await expect.poll(() => api.busy.get("2026-10-20")?.source).toBe("vendor");
     expect(api.ownerOnly).toEqual([]);
     expect(api.unexpected).toEqual([]);
@@ -806,7 +838,7 @@ test.describe("витрины в разных категориях", () => {
     await expect(page.locator(".rq-list .rq")).toHaveCount(2);
     const car = page.locator(".rq-list .rq").filter({ hasText: "Дильноза" });
     await expect(car.locator(".rq-vitrina")).toHaveText("Кортеж · Kortej Premium");
-    await expect(car.locator(".rq-meta")).toContainText(t.part_evening.toLowerCase());
+    await expect(car.locator(".rq-meta")).toContainText(` · ${t.part_evening} · `);
     // Одно поле заявки, а не весь «Начало · Часы · Машины · Класс · Услуги»
     await expect(car.locator(".rq-details")).toHaveText("Начало: 18:00");
     await expectNoAxeViolations(page, "входящие: витрины");
@@ -823,9 +855,8 @@ test.describe("витрины в разных категориях", () => {
     await expect(requestTitle(page)).toContainText("1060");
     await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
     const details = page.locator(".request-details");
-    await expect(page.locator(".request .req-when")).toContainText(
-      `${t.part_evening.toLowerCase()} 17:00–24:00`,
-    );
+    // Когда: дата и части дня заявки
+    await expect(page.locator(".request .req-when")).toHaveText(`24 октября, сб · ${t.part_evening}`);
     await expect(page.locator(".request .detail-vitrina")).toHaveText("Кортеж · Kortej Premium");
     await expect(details.locator(".detail-rows")).toContainText("Класс машины");
     await expect(details.locator(".detail-rows")).toContainText("Премиум");
@@ -1132,29 +1163,46 @@ test.describe("витрины в разных категориях", () => {
     expect(api.unexpected).toEqual([]);
   });
 
-  test("кортеж: календарь частей дня — часть дня и сколько заказов одновременно, от версии календаря", async ({
+  test("кортеж: день по частям — шторка на телефоне, колонка справа на компьютере; «занято N из M мест»", async ({
     page,
   }) => {
     const api = await start(page, { listings: "many" });
     await page.goto("/calendar");
     await chooseVitrina(page, "Kortej Premium");
-    // Одна строка над месяцем; пока день не выбран, частей дня на экране нет
-    await expect(page.getByText(t.calendarNoteParts)).toBeVisible();
-    await expect(page.locator(".day-panel")).toHaveCount(0);
-    // Точки частей дня — только у дней, где что-то занято (20-е целиком, 24-е утро и вечер)
-    await expect(page.locator(".cal-day .cal-parts")).toHaveCount(1);
+    await expect(page.getByText(t.calendarHint)).toBeVisible();
+    await expect(dayPanel(page)).toHaveCount(0);
+    // 20-е занято целиком, 24-е — частично (утро закрыто, на вечер — договорённость)
+    await expect(dayButton(page, 20)).toHaveClass(/cal-busy/);
+    await expect(dayButton(page, 24)).toHaveClass(/cal-partial/);
+    // Время работы — строкой рядом с месяцем, владельцу — ссылка туда, где оно меняется
+    await expect(page.locator(".capacity-text")).toContainText(fill(t.sessionsCapacity, { n: 2 }));
+    await expect(page.locator(".sessions-line").getByRole("link", { name: t.sessionsEdit })).toBeVisible();
+
     await dayButton(page, 24).click();
     await expect(dayButton(page, 24)).toHaveAttribute("aria-pressed", "true");
-    const panel = page.locator(".day-panel");
-    await expect(panel.getByRole("heading", { level: 2 })).toContainText("24");
-    // Части выбранного дня — на экране, даже если месяц занял его целиком (телефон)
+    const panel = dayPanel(page);
     await expect(panel).toBeInViewport();
-    // Часть дня — строка с переключателем «занято»: утро занято, вечер свободен (1 из 2 мест)
-    const morning = panel.getByRole("switch", { name: t.part_morning });
-    const evening = panel.getByRole("switch", { name: t.part_evening });
+    if (isDesktop(page)) {
+      // Компьютер: день — в колонке справа от месяца, прокручивать к нему не нужно
+      const month = await page.locator(".cal").boundingBox();
+      const box = await panel.boundingBox();
+      expect(box && month ? box.x : 0).toBeGreaterThanOrEqual((month?.x ?? 0) + (month?.width ?? 0));
+      expect(box && month ? box.y : 1e6).toBeLessThan((month?.y ?? 0) + (month?.height ?? 0));
+      await expect(panel.getByRole("heading", { level: 2 })).toContainText("24");
+    } else {
+      await expect(page.getByRole("dialog")).toContainText("24");
+    }
+    // Весь день — «частично занят», а не «свободно»
+    await expect(panel.locator(".day-whole")).toContainText(`${t.wholeDay}${t.wholePartial}`);
+    // Части с окнами: утро закрыто, вечер — одна договорённость из двух мест и ссылка на заявку
+    const morning = panel.getByRole("switch", { name: /^Утро/ });
+    const evening = panel.getByRole("switch", { name: /^Вечер/ });
     await expect(morning).toBeChecked();
     await expect(evening).not.toBeChecked();
-    await expect(panel.locator(".day-part").nth(3)).toContainText(fill(t.partBookings, { n: 1, cap: 2 }));
+    const rows = panel.locator(".day-part");
+    await expect(rows.nth(0)).toContainText("05:00–11:00");
+    await expect(rows.nth(2)).toContainText(fill(t.partSeats, { n: 1, cap: 2, seats: t.seatsMany }));
+    await expect(rows.nth(2).locator(".day-request")).toContainText("1060");
     await expectNoAxeViolations(page, "календарь частей дня");
     await expectHitAreas(page, "календарь частей дня", CONTROLS);
     await expectNoOverflow(page, "календарь частей дня");
@@ -1162,23 +1210,15 @@ test.describe("витрины в разных категориях", () => {
     await evening.check();
     await expect(evening).toBeChecked();
     await expect.poll(() => api.calendarWrites).toEqual(["PUT 2026-10-24?part=evening If-Match: 1"]);
+    // Заявка из дня — ссылкой на карточку заявки
+    await rows.nth(2).locator(".day-request").click();
+    await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
+    await page.goBack();
+    await chooseVitrina(page, "Kortej Premium");
 
-    // Число заказов одновременно — свёрнуто в строку «… · Изменить»
-    await expect(page.locator(".capacity-line")).toContainText(`${t.capacityTitle}: 2`);
-    await expect(page.locator("#capacity-input")).toHaveCount(0);
-    await page.getByRole("button", { name: `${t.capacityEdit}: ${t.capacityTitle}` }).click();
-    await page.getByRole("button", { name: `${t.capacityTitle}: ${t.capacityMore}` }).click();
-    await page.locator(".capacity").getByRole("button", { name: t.serviceSave }).click();
-    await expect.poll(() => api.calendars.get(CAR_ID)?.capacity).toBe(3);
-    expect(api.calendarWrites).toEqual([
-      "PUT 2026-10-24?part=evening If-Match: 1",
-      "PUT capacity If-Match: 2",
-    ]);
-    await expect(page.locator(".capacity-text")).toContainText(`${t.capacityTitle}: 3`);
-    // Обозначения — свёрнуты, только то, что есть в месяце (занято, часть дня, заявка на 24-е, сегодня)
+    // Обозначения открыты, пока их не свернули; помнит вкладка
     const legend = page.getByRole("button", { name: t.legendTitle });
-    await expect(legend).toHaveAttribute("aria-expanded", "false");
-    await legend.click();
+    await expect(legend).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator(".cal-legend li")).toHaveText([
       t.legendBusy,
       t.legendPart,
@@ -1186,7 +1226,107 @@ test.describe("витрины в разных категориях", () => {
       t.legendToday,
     ]);
     await expectNoAxeViolations(page, "календарь: обозначения");
-    await expectHitAreas(page, "календарь: обозначения", CONTROLS);
+    await legend.click();
+    await expect(legend).toHaveAttribute("aria-expanded", "false");
+    await page.reload();
+    await chooseVitrina(page, "Kortej Premium");
+    await expect(page.getByRole("button", { name: t.legendTitle })).toHaveAttribute("aria-expanded", "false");
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("кортеж: несколько дней — все вечера суббот месяца одной правкой; открыть — через подтверждение", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/calendar");
+    await chooseVitrina(page, "Kortej Premium");
+    await page.getByRole("button", { name: t.rangeMode }).click();
+    await expect(page.getByText(t.rangeHint)).toBeVisible();
+    await expect(page.getByText(t.rangePickStart)).toBeVisible();
+    await dayButton(page, 5).click();
+    await expect(page.getByText(t.rangePickEnd)).toBeVisible();
+    await dayButton(page, 31).click();
+    await page.getByRole("button", { name: t.weekdaysLong[5] }).click();
+    await page.locator(".range-what").getByRole("button", { name: t.part_evening }).click();
+    await expect(page.getByText(fill(t.rangeChosen, { n: 4 }))).toBeVisible();
+    await expect(dayButton(page, 10)).toHaveClass(/cal-chosen/);
+    await expect(dayButton(page, 11)).not.toHaveClass(/cal-chosen/);
+    await expectNoAxeViolations(page, "календарь: несколько дней");
+    await expectHitAreas(page, "календарь: несколько дней", CONTROLS);
+    await expectNoOverflow(page, "календарь: несколько дней");
+    await page.getByRole("button", { name: fill(t.rangeClose, { n: 4 }) }).click();
+    const saturdays = ["2026-10-10", "2026-10-17", "2026-10-24", "2026-10-31"];
+    await expect
+      .poll(() => api.batches)
+      .toEqual([{ busyParts: saturdays.map((day) => ({ day, part: "evening" })) }]);
+    expect(api.calendarWrites).toEqual(["PUT batch If-Match: 1"]);
+    await expect(dayButton(page, 17)).toHaveClass(/cal-partial/);
+
+    // Открыть два дня — переспросит: снимутся отметки
+    await dayButton(page, 10).click();
+    await dayButton(page, 17).click();
+    await page.locator(".range-acts").getByRole("button", { name: t.rangeOpen, exact: true }).click();
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText(t.rangeOpenTitle);
+    await confirm.getByRole("button", { name: fill(t.rangeOpenConfirm, { n: 2 }) }).click();
+    await expect.poll(() => api.batches.length).toBe(2);
+    expect(api.batches[1]).toEqual({
+      freeParts: ["2026-10-10", "2026-10-17"].map((day) => ({ day, part: "evening" })),
+    });
+    await expect(dayButton(page, 17)).not.toHaveClass(/cal-partial/);
+    expect(api.calendars.get(CAR_ID)?.parts.has("2026-10-24/evening")).toBe(true);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("время работы витрины: части, окна, заказов одновременно; часть с будущей заявкой не убрать", async ({
+    page,
+  }) => {
+    const api = await start(page, { listings: "many" });
+    await page.goto("/card");
+    await chooseVitrina(page, "Kortej Premium");
+    const card = page.locator(".sessions");
+    await expect(card).toContainText(t.sessionsModeParts);
+    await expect(card.locator(".sessions-parts li")).toHaveText([
+      `${t.part_morning} 05:00–11:00`,
+      `${t.part_day} 11:00–17:00`,
+      `${t.part_evening} 17:00–24:00`,
+    ]);
+    await card.getByRole("button", { name: t.sessionsEdit }).click();
+    const form = page.getByRole("dialog", { name: t.sessionsTitle });
+    await expectNoAxeViolations(page, "время работы");
+    await expectHitAreas(page, "время работы", CONTROLS);
+    await expectNoOverflow(page, "время работы");
+    // Вечер убрать нельзя: на 24-е — заявка на вечер
+    await form.getByRole("checkbox", { name: t.part_evening }).uncheck();
+    await form.getByRole("button", { name: t.sessionsSave }).click();
+    await expect(form.getByRole("alert")).toHaveText(
+      fill(t.sessionsInUse, { part: t.part_evening.toLowerCase(), n: 1, requests: t.requestsOne }),
+    );
+    // Не сохранённое — «Уйти без сохранения?»
+    await form.getByRole("button", { name: t.cancel }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: t.unsavedStay }).click();
+    // Вечер — оставить, дня — нет; утро — с 07:00; машин — три
+    await form.getByRole("checkbox", { name: t.part_evening }).check();
+    await form.getByRole("checkbox", { name: t.part_day }).uncheck();
+    await form.getByRole("button", { name: fill(t.sessionsFrom, { part: t.part_morning }) }).click();
+    await page.getByRole("option", { name: "07:00", exact: true }).click();
+    await form.getByRole("button", { name: `${t.capacityTitle}: ${t.capacityMore}` }).click();
+    await form.getByRole("button", { name: t.sessionsSave }).click();
+    await expect(form).toHaveCount(0);
+    expect(api.calendarWrites).toEqual(["PUT day-sessions If-Match: 1", "PUT day-sessions If-Match: 1"]);
+    const sessions = api.calendars.get(CAR_ID)?.sessions;
+    expect(sessions?.parts).toEqual(["morning", "evening"]);
+    expect(sessions?.windows.morning).toEqual({ from: "07:00", to: "11:00" });
+    expect(api.calendars.get(CAR_ID)?.capacity).toBe(3);
+    await expect(card.locator(".sessions-parts li")).toHaveText([
+      `${t.part_morning} 07:00–11:00`,
+      `${t.part_evening} 17:00–24:00`,
+    ]);
+    // Календарь — по новому времени: частей две
+    await sections(page).getByRole("link", { name: t.calendar }).click();
+    await chooseVitrina(page, "Kortej Premium");
+    await dayButton(page, 22).click();
+    await expect(dayPanel(page).getByRole("switch")).toHaveCount(2);
     expect(api.unexpected).toEqual([]);
   });
 

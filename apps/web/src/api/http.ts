@@ -158,6 +158,7 @@ export function createHttpApi({
         city: query.city,
         district: query.district,
         date: query.date,
+        part: query.date ? query.part : undefined,
         guests: query.guests,
         sort: query.sort,
         cursor: query.cursor,

@@ -6,7 +6,9 @@
 //   · выбранные услуги — только одобренные услуги этой витрины, опции — только этих услуг,
 //     количество — не меньше минимального у услуги. Названия и цены сохраняются в заявке
 //     как есть сейчас: вендор мог их потом поменять, а заявка — о том, что видел клиент;
-//   · часть дня (режим parts) — из времени начала (dayPartOf по окнам категории);
+//   · части дня — выбор клиента (dayParts или «весь день») по времени работы витрины
+//     (validateRequestParts): рабочие части, время начала — внутри выбранной; у витрины с одним
+//     мероприятием в день — весь день; без выбора (старые сборки) — по времени начала;
 //   · срок подготовки — поле витрины lead_days и срок выбранных услуг: заказ позже —
 //     422 lead_time_too_short.
 // Свободного текста в details нет — всё, что клиент пишет словами, в комментарии (ПДн,
@@ -18,19 +20,20 @@ import {
   type ChosenServiceSnapshot,
   categoryConfig,
   type DetailValue,
-  dayPartOf,
   guestsAllowed,
   hasDayParts,
   type RequestDetails,
   validateRequestDetails,
+  validateRequestParts,
 } from "@bayramm/shared/categories";
+import { type SessionsRow, sessionsOfRow } from "../calendar/sessions";
 import type { Tx } from "../db/actor";
 import type { Json } from "../db/schema.generated";
 import { ApiError } from "../errors";
 import { type ServiceRow, selectServices, serviceView } from "../listing-services/store";
 import { addDays } from "../time";
 
-export interface DetailsListing {
+export interface DetailsListing extends SessionsRow {
   readonly id: string;
   readonly category_code: string;
   readonly attributes: Json;
@@ -39,7 +42,8 @@ export interface DetailsListing {
 export interface CheckedDetails {
   readonly guests: number | null;
   readonly details: RequestDetails;
-  readonly dayPart: DayPart | null;
+  /** Части дня заявки; пусто — весь день (и у категорий без календаря) */
+  readonly dayParts: readonly DayPart[];
 }
 
 const invalidRequest = (fields: string[]) =>
@@ -55,7 +59,13 @@ function listingLeadDays(attributes: Json): number {
 export async function checkDetails(
   trx: Tx,
   listing: DetailsListing,
-  input: { readonly guests: number | null; readonly details: unknown; readonly eventDate: string },
+  input: {
+    readonly guests: number | null;
+    readonly details: unknown;
+    readonly eventDate: string;
+    readonly dayParts?: unknown;
+    readonly wholeDay?: unknown;
+  },
   today: string,
 ): Promise<CheckedDetails> {
   const category: CategoryConfig | undefined = categoryConfig(listing.category_code);
@@ -135,12 +145,25 @@ export async function checkDetails(
   const servicesField = category.requestForm.fields.find((f) => f.type === "services");
   if (servicesField !== undefined && snapshots.length > 0) details[servicesField.key] = snapshots;
 
-  // Часть дня — из времени начала (у режима parts оно в форме обязательно)
-  let dayPart: DayPart | null = null;
+  // Части дня — по времени работы витрины; у категорий без календаря их нет
+  let dayParts: readonly DayPart[] = [];
   if (hasDayParts(category)) {
-    const start = values.start_time;
-    if (typeof start !== "string") throw invalidRequest(["details.start_time"]);
-    dayPart = dayPartOf(category, start);
+    const start = typeof values.start_time === "string" ? values.start_time : null;
+    const parts = validateRequestParts(
+      sessionsOfRow(listing),
+      { dayParts: input.dayParts, wholeDay: input.wholeDay },
+      start,
+    );
+    if (!parts.ok) throw invalidRequest(parts.errors);
+    dayParts = parts.value;
+  } else if (
+    (Array.isArray(input.dayParts) && input.dayParts.length > 0) ||
+    (input.wholeDay !== undefined &&
+      input.wholeDay !== null &&
+      input.wholeDay !== true &&
+      input.wholeDay !== false)
+  ) {
+    throw invalidRequest(["dayParts"]);
   }
-  return { guests: input.guests, details, dayPart };
+  return { guests: input.guests, details, dayParts };
 }

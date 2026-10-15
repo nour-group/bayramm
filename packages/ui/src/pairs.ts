@@ -45,7 +45,6 @@ export const TEXT_PAIRS: readonly TextPair[] = [
   small("mutedLt", "white", "подписи и плейсхолдеры в полях"),
   small("mutedLt", "raise", "подписи на приподнятом"),
   small("mutedLt", "cell", "цена дня в календаре"),
-  small("mutedLt", "cellWk", "цена выходного дня, дни недели"),
   // заголовки и тёмные поверхности
   small("plum", "paper", "заголовки на фоне"),
   small("plum", "white", "заголовки и кнопки в карточках"),

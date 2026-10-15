@@ -66,15 +66,15 @@ insert into app.consents (id, subject_kind, subject_id, purpose, action, text_id
   ('ffffffff-0000-0000-0000-0000000000c1', 'client', 'cccccccc-0000-0000-0000-000000000001', 'request_transfer',
    'grant', 'dddddddd-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000201', 'tma');
 insert into app.requests (id, client_id, listing_id, vendor_id, consent_id, occasion_code, event_date, guests,
-                          status, source, sla_due_at, day_part) values
+                          status, source, sla_due_at, day_parts) values
   ('eeeeeeee-0000-0000-0000-0000000000c1', 'cccccccc-0000-0000-0000-000000000001',
    'bbbbbbbb-0000-0000-0000-000000000201', 'bbbbbbbb-0000-0000-0000-000000000001',
    'ffffffff-0000-0000-0000-0000000000c1', 'toy', current_date + 20, null, 'new', 'tma',
-   now() + interval '12 hours', 'evening'),
+   now() + interval '12 hours', '{evening}'),
   ('eeeeeeee-0000-0000-0000-0000000000c2', 'cccccccc-0000-0000-0000-000000000002',
    'bbbbbbbb-0000-0000-0000-000000000201', 'bbbbbbbb-0000-0000-0000-000000000001',
    'ffffffff-0000-0000-0000-0000000000c1', 'toy', current_date + 13, null, 'deal', 'tma',
-   now() + interval '12 hours', 'day');
+   now() + interval '12 hours', '{day}');
 insert into app.outbox (kind, recipient_kind, recipient_id, request_id, status, dedupe_key) values
   ('vendor.request_new', 'vendor_user', 'bbbbbbbb-0000-0000-0000-000000000011',
    'eeeeeeee-0000-0000-0000-0000000000c1', 'dead', 'test:car:dead');

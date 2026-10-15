@@ -20,6 +20,7 @@ const FACTS: RequestFacts = {
   category: "Тойхона",
   date: "12.10.2026",
   guests: 200,
+  parts: "Вечер",
   occasion: "Свадьба",
   slaHours: 12,
   details: [],

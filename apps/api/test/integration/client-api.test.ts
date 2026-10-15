@@ -18,6 +18,7 @@ import type {
   ListingDetail,
   RequestCreated,
 } from "@bayramm/shared/api";
+import { OCCASIONS } from "@bayramm/shared/categories";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addDays, tashkentToday } from "../../src/time";
@@ -181,7 +182,7 @@ async function newClient(): Promise<string> {
 // ── справочники и тексты согласий ──────────────────────────────────────────
 
 describe("GET /dictionaries", () => {
-  it("включённые категории, 12 районов и 5 поводов на двух языках; ETag и кэш", async () => {
+  it("включённые категории, 12 районов и 12 поводов на двух языках; ETag и кэш", async () => {
     const res = await call("/dictionaries");
     const body = await json<Dictionaries>(res, 200);
     // Путь пары: ЗАГС, тойхона, кортеж, фото и видео… — порядок показа (sort)
@@ -212,7 +213,10 @@ describe("GET /dictionaries", () => {
       city: "tashkent",
     });
     expect(body.districts.every((d) => d.city === "tashkent")).toBe(true);
-    expect(body.occasions.map((o) => o.code)).toEqual(["toy", "beshik", "bd", "corp", "small"]);
+    // Поводы и части дня по умолчанию — как @bayramm/shared/categories (occasions.ts)
+    expect(body.occasions).toEqual(
+      OCCASIONS.map((o) => ({ code: o.code, name: o.name, defaultParts: [...o.defaultParts] })),
+    );
     expect(res.headers.get("cache-control")).toMatch(/^public, max-age=\d+/);
 
     const tag = res.headers.get("etag");

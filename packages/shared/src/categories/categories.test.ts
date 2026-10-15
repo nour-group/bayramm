@@ -11,24 +11,37 @@ import {
   categoryFilters,
   categoryPriceUnits,
   DAY_PARTS,
+  type DayMarks,
   DEFAULT_DAY_PARTS,
+  dayLoadOf,
   dayPartOf,
+  dayPartWindows,
+  daySessionsOf,
+  defaultDaySessions,
   detailsSummary,
+  effectiveWindows,
+  freeIn,
   guestsAllowed,
   hasDayParts,
   mergeAttributes,
   missingAttributes,
   normalizeVideoLink,
+  OCCASIONS,
+  occasionParts,
   PRICE_UNITS,
   parseAttributeFilters,
+  partLoads,
   readAttributes,
   requiredAttributeKeys,
   SERVICE_LIMITS,
   VIDEO_LINK_DB_RE,
   validateAttributePatch,
+  validateDaySessions,
   validateRequestDetails,
+  validateRequestParts,
   validateServiceInput,
   validateVideoLinks,
+  windowOverlaps,
 } from "./index";
 
 const cfg = (code: string): CategoryConfig => {
@@ -138,14 +151,14 @@ describe("конфигурация категорий", () => {
     ]);
   });
 
-  it("режим занятости по категориям; части дня — только у parts", () => {
+  it("режим занятости по категориям: у всех с календарём — части дня; day и slot больше нет", () => {
     const modes = Object.fromEntries(
       CATEGORIES.filter((c) => c.enabled).map((c) => [c.code, c.availability]),
     );
     expect(modes).toEqual({
-      hall: "day",
+      hall: "parts",
       car: "parts",
-      studio: "slot",
+      studio: "parts",
       flowers: "lead",
       photo: "parts",
       cake: "lead",
@@ -154,8 +167,9 @@ describe("конфигурация категорий", () => {
       food: "parts",
       restaurant: "parts",
       attire: "lead",
-      zags: "slot",
+      zags: "parts",
     });
+    expect(AVAILABILITY_MODES).toEqual(["parts", "lead"]);
     for (const c of CATEGORIES) {
       expect(AVAILABILITY_MODES).toContain(c.availability);
       if (c.dayParts !== undefined) expect(c.availability).toBe("parts");
@@ -218,13 +232,10 @@ describe("конфигурация категорий", () => {
       }
       const fields = c.requestForm.fields.map((f) => f.key);
       expect(new Set(fields).size, c.code).toBe(fields.length);
-      // У модели parts время начала обязательно: по нему выбирается часть дня
-      if (c.availability === "parts") {
-        expect(c.requestForm.fields.find((f) => f.key === "start_time")).toMatchObject({
-          type: "time",
-          required: true,
-        });
-      }
+      // Время начала — поле времени; части дня клиент выбирает сам (время — внутри выбранной)
+      const start = c.requestForm.fields.find((f) => f.key === "start_time");
+      if (start !== undefined) expect(start.type, c.code).toBe("time");
+      if (c.availability === "lead") expect(start, c.code).toBeUndefined();
       // Выбор услуг в форме — у каждой включённой категории
       if (c.enabled)
         expect(
@@ -241,7 +252,7 @@ describe("конфигурация категорий", () => {
 // ── части дня ───────────────────────────────────────────────────────────────
 
 describe("части дня", () => {
-  it("окна по умолчанию идут подряд и покрывают сутки с 05:00", () => {
+  it("окна по умолчанию идут подряд с 05:00 до полуночи", () => {
     expect(DAY_PARTS.map((p) => DEFAULT_DAY_PARTS[p])).toEqual([
       { from: "05:00", to: "11:00" },
       { from: "11:00", to: "17:00" },
@@ -249,17 +260,293 @@ describe("части дня", () => {
     ]);
   });
 
+  it("свои окна у зала и студии, у остальных — по умолчанию; окна каждой категории по порядку", () => {
+    expect(dayPartWindows(hall)).toEqual({
+      morning: { from: "06:00", to: "11:00" },
+      day: { from: "12:00", to: "17:00" },
+      evening: { from: "18:00", to: "24:00" },
+    });
+    expect(dayPartWindows(cfg("studio"))).toEqual({
+      morning: { from: "09:00", to: "13:00" },
+      day: { from: "13:00", to: "17:00" },
+      evening: { from: "17:00", to: "21:00" },
+    });
+    for (const code of ["car", "photo", "decor", "food", "restaurant", "zags"])
+      expect(dayPartWindows(cfg(code)), code).toBe(DEFAULT_DAY_PARTS);
+    for (const c of CATEGORIES) expect(windowOverlaps(dayPartWindows(c), DAY_PARTS), c.code).toEqual([]);
+  });
+
   it.each([
-    ["00:30", "morning"],
-    ["04:59", "morning"],
+    ["00:30", null],
     ["05:00", "morning"],
     ["10:59", "morning"],
     ["11:00", "day"],
     ["16:59", "day"],
     ["17:00", "evening"],
     ["23:59", "evening"],
-  ] as const)("%s → %s", (time, part) => {
-    expect(dayPartOf(car, time)).toBe(part);
+  ] as const)("кортеж: %s → %s", (time, part) => {
+    expect(dayPartOf(dayPartWindows(car), time)).toBe(part);
+  });
+
+  it("зал: время в перерыве между окнами — ни в одной части", () => {
+    const windows = dayPartWindows(hall);
+    expect(dayPartOf(windows, "06:00")).toBe("morning");
+    expect(dayPartOf(windows, "11:30")).toBeNull();
+    expect(dayPartOf(windows, "12:00")).toBe("day");
+    expect(dayPartOf(windows, "17:30")).toBeNull();
+    expect(dayPartOf(windows, "19:00", ["morning", "day"])).toBeNull();
+  });
+
+  it("время работы по умолчанию: несколько мероприятий, все части, окна категории", () => {
+    expect(defaultDaySessions(hall)).toEqual({
+      mode: "parts",
+      parts: ["morning", "day", "evening"],
+      windows: dayPartWindows(hall),
+      custom: null,
+      parallelCapacity: 1,
+    });
+    const own = daySessionsOf(hall, {
+      mode: "whole",
+      parts: ["evening", "morning"],
+      custom: { morning: { from: "07:00", to: "10:00" } },
+      parallelCapacity: 2,
+    });
+    expect(own.parts).toEqual(["morning", "evening"]);
+    expect(own.windows.morning).toEqual({ from: "07:00", to: "10:00" });
+    expect(own.windows.evening).toEqual({ from: "18:00", to: "24:00" });
+    expect(effectiveWindows(hall, null)).toBe(dayPartWindows(hall));
+  });
+});
+
+describe("validateDaySessions", () => {
+  const base = { mode: "parts", parts: ["morning", "evening"], windows: null, parallelCapacity: 2 };
+
+  it("режим, части по порядку, окна категории — null", () => {
+    expect(validateDaySessions(hall, { ...base, parts: ["evening", "morning"] })).toEqual({
+      ok: true,
+      value: { mode: "parts", parts: ["morning", "evening"], custom: null, parallelCapacity: 2 },
+    });
+    expect(validateDaySessions(hall, { ...base, mode: "whole" })).toMatchObject({ ok: true });
+  });
+
+  it("свои окна: совпавшие с окнами категории отбрасываются; 24:00 — конец дня", () => {
+    const result = validateDaySessions(hall, {
+      ...base,
+      windows: { morning: { from: "06:00", to: "11:00" }, evening: { from: "17:30", to: "24:00" } },
+    });
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        mode: "parts",
+        parts: ["morning", "evening"],
+        custom: { evening: { from: "17:30", to: "24:00" } },
+        parallelCapacity: 2,
+      },
+    });
+  });
+
+  it.each([
+    [{ morning: { from: "6:00", to: "11:00" } }, "windows.morning"],
+    [{ morning: { from: "11:00", to: "11:00" } }, "windows.morning"],
+    [{ morning: { from: "12:00", to: "10:00" } }, "windows.morning"],
+    [{ morning: { from: "24:00", to: "24:00" } }, "windows.morning"],
+    [{ evening: { from: "18:00", to: "24:30" } }, "windows.evening"],
+    [{ morning: { from: "06:00", to: "11:00", extra: 1 } }, "windows.morning"],
+    [{ night: { from: "00:00", to: "05:00" } }, "windows.night"],
+    [[], "windows"],
+  ])("окно %j — ошибка %s", (windows, path) => {
+    expect(validateDaySessions(hall, { ...base, windows })).toEqual({ ok: false, errors: [path] });
+  });
+
+  it("окна рабочих частей не пересекаются и идут по порядку; нерабочие не мешают", () => {
+    const overlap = { morning: { from: "06:00", to: "19:00" } };
+    expect(validateDaySessions(hall, { ...base, windows: overlap })).toEqual({
+      ok: false,
+      errors: ["windows.evening"],
+    });
+    // утро до 13:00 пересекло бы день (12:00–17:00), но день — не рабочая часть
+    expect(
+      validateDaySessions(hall, { ...base, windows: { morning: { from: "06:00", to: "13:00" } } }),
+    ).toMatchObject({ ok: true });
+    expect(
+      validateDaySessions(hall, {
+        ...base,
+        parts: ["morning", "day", "evening"],
+        windows: { morning: { from: "06:00", to: "13:00" } },
+      }),
+    ).toEqual({ ok: false, errors: ["windows.day"] });
+  });
+
+  it("части и заказов одновременно; лишние поля — ошибки", () => {
+    expect(validateDaySessions(hall, { ...base, parts: [] })).toEqual({ ok: false, errors: ["parts"] });
+    expect(validateDaySessions(hall, { ...base, parts: ["morning", "morning"] })).toEqual({
+      ok: false,
+      errors: ["parts"],
+    });
+    expect(validateDaySessions(hall, { ...base, parts: ["night"] })).toEqual({
+      ok: false,
+      errors: ["parts"],
+    });
+    expect(validateDaySessions(hall, { ...base, mode: "day" })).toEqual({ ok: false, errors: ["mode"] });
+    expect(validateDaySessions(hall, { ...base, parallelCapacity: 51 })).toEqual({
+      ok: false,
+      errors: ["parallelCapacity"],
+    });
+    expect(validateDaySessions(hall, { ...base, parallelCapacity: 1.5 })).toEqual({
+      ok: false,
+      errors: ["parallelCapacity"],
+    });
+    expect(validateDaySessions(hall, { ...base, price: 1 })).toEqual({ ok: false, errors: ["price"] });
+    expect(validateDaySessions(hall, null)).toMatchObject({ ok: false });
+  });
+});
+
+describe("части дня заявки", () => {
+  const sessions = daySessionsOf(cfg("studio"), {
+    mode: "parts",
+    parts: ["morning", "evening"],
+    custom: null,
+    parallelCapacity: 1,
+  });
+
+  it("выбор частей: рабочие, по порядку; весь день — пусто", () => {
+    expect(validateRequestParts(sessions, { dayParts: ["evening", "morning"] }, null)).toEqual({
+      ok: true,
+      value: ["morning", "evening"],
+    });
+    expect(validateRequestParts(sessions, { wholeDay: true }, null)).toEqual({ ok: true, value: [] });
+    expect(validateRequestParts(sessions, { dayParts: ["day"] }, null)).toEqual({
+      ok: false,
+      errors: ["dayParts"],
+    });
+    expect(validateRequestParts(sessions, { dayParts: ["morning", "morning"] }, null)).toMatchObject({
+      ok: false,
+    });
+    expect(validateRequestParts(sessions, { dayParts: ["morning"], wholeDay: true }, null)).toEqual({
+      ok: false,
+      errors: ["dayParts"],
+    });
+  });
+
+  it("время начала — внутри выбранной части; весь день — внутри рабочей", () => {
+    expect(validateRequestParts(sessions, { dayParts: ["morning"] }, "10:00")).toMatchObject({ ok: true });
+    expect(validateRequestParts(sessions, { dayParts: ["morning"] }, "18:00")).toEqual({
+      ok: false,
+      errors: ["details.start_time"],
+    });
+    expect(validateRequestParts(sessions, { wholeDay: true }, "18:00")).toMatchObject({ ok: true });
+    expect(validateRequestParts(sessions, { wholeDay: true }, "14:00")).toEqual({
+      ok: false,
+      errors: ["details.start_time"],
+    });
+  });
+
+  it("старые сборки без выбора: часть — по времени начала, без него — весь день", () => {
+    expect(validateRequestParts(sessions, {}, "19:30")).toEqual({ ok: true, value: ["evening"] });
+    expect(validateRequestParts(sessions, {}, null)).toEqual({ ok: true, value: [] });
+    expect(validateRequestParts(sessions, {}, "14:00")).toEqual({
+      ok: false,
+      errors: ["details.start_time"],
+    });
+  });
+
+  it("одно мероприятие в день — всегда весь день", () => {
+    const whole = { ...sessions, mode: "whole" as const };
+    expect(validateRequestParts(whole, { dayParts: ["morning"] }, "14:00")).toEqual({ ok: true, value: [] });
+  });
+});
+
+describe("занятость дня", () => {
+  const parts = {
+    mode: "parts" as const,
+    parts: ["morning", "evening"] as readonly ("morning" | "day" | "evening")[],
+    parallelCapacity: 2,
+  };
+  const day = (over: Partial<DayMarks>): DayMarks => ({ whole: false, marked: [], booked: {}, ...over });
+
+  it("часть занята отметкой или договорённостями по числу мест; день — по рабочим частям", () => {
+    expect(dayLoadOf(parts, day({}))).toBe("free");
+    expect(dayLoadOf(parts, day({ booked: { morning: 1 } }))).toBe("free");
+    expect(dayLoadOf(parts, day({ booked: { morning: 2 } }))).toBe("partial");
+    expect(dayLoadOf(parts, day({ marked: ["evening"] }))).toBe("partial");
+    // занятая часть, в которой витрина не работает, день не занимает
+    expect(dayLoadOf(parts, day({ marked: ["day"] }))).toBe("free");
+    expect(dayLoadOf(parts, day({ marked: ["evening"], booked: { morning: 2 } }))).toBe("busy");
+    expect(dayLoadOf(parts, day({ whole: true }))).toBe("busy");
+    expect(partLoads(parts, day({ booked: { evening: 1 } })).find((p) => p.part === "evening")).toEqual({
+      part: "evening",
+      marked: false,
+      booked: 1,
+      full: false,
+      busy: false,
+    });
+  });
+
+  it("одно мероприятие в день: любая занятая часть — весь день", () => {
+    const whole = { ...parts, mode: "whole" as const, parallelCapacity: 1 };
+    expect(dayLoadOf(whole, day({ marked: ["day"] }))).toBe("busy");
+    expect(dayLoadOf(whole, day({ booked: { morning: 1, day: 1, evening: 1 } }))).toBe("busy");
+    expect(dayLoadOf(whole, day({}))).toBe("free");
+  });
+
+  it("свободна ли в часть дня (фильтр каталога «Время»)", () => {
+    const partial = day({ marked: ["evening"] });
+    expect(freeIn(parts, partial, "morning")).toBe(true);
+    expect(freeIn(parts, partial, "evening")).toBe(false);
+    expect(freeIn(parts, partial, "day")).toBe(false);
+    expect(freeIn(parts, partial, "whole")).toBe(false);
+    expect(freeIn(parts, day({}), "whole")).toBe(true);
+    const whole = { ...parts, mode: "whole" as const };
+    expect(freeIn(whole, day({}), "day")).toBe(true);
+  });
+});
+
+describe("поводы", () => {
+  it("коды по ограничению базы, без повторов; части по умолчанию — по одной", () => {
+    const codes = OCCASIONS.map((o) => o.code);
+    expect(new Set(codes).size).toBe(codes.length);
+    expect(codes).toEqual([
+      "toy",
+      "nahorgi_osh",
+      "nikoh",
+      "fotiha",
+      "qiz_bazmi",
+      "kelin_salom",
+      "sunnat",
+      "beshik",
+      "bd",
+      "yubiley",
+      "corp",
+      "small",
+    ]);
+    for (const o of OCCASIONS) {
+      expect(o.code).toMatch(/^[a-z_]{2,20}$/);
+      expect(o.defaultParts.length, o.code).toBe(1);
+      expect(o.name.ru.trim(), o.code).not.toBe("");
+      expect(hasNonCanonicalApostrophe(o.name.uz), o.code).toBe(false);
+    }
+    const parts = Object.fromEntries(OCCASIONS.map((o) => [o.code, o.defaultParts[0]]));
+    expect(parts).toMatchObject({
+      nahorgi_osh: "morning",
+      kelin_salom: "morning",
+      sunnat: "morning",
+      nikoh: "day",
+      fotiha: "day",
+      beshik: "day",
+      toy: "evening",
+      qiz_bazmi: "evening",
+      yubiley: "evening",
+      bd: "evening",
+      corp: "evening",
+      small: "evening",
+    });
+  });
+
+  it("повод отмечает свои части, если витрина в них работает и они свободны", () => {
+    expect(occasionParts(["morning"], ["morning", "day", "evening"])).toEqual(["morning"]);
+    expect(occasionParts(["morning"], ["day", "evening"])).toEqual([]);
+    expect(occasionParts(["morning"], ["evening"])).toEqual(["evening"]);
+    expect(occasionParts(undefined, ["day", "evening"])).toEqual([]);
   });
 });
 

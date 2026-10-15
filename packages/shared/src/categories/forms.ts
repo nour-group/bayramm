@@ -1,5 +1,6 @@
 /* Формы по конфигурации категории — общие для панели и кабинета: поля витрины (attributes),
-   ссылки на видео, услуга с опциями, показ полей заявки и предложения правки услуги.
+   ссылки на видео, услуга с опциями, показ полей заявки, предложения правки услуги и «Время
+   работы» витрины.
 
    Чистые функции без React. Значения в форме — как их держат поля ввода: числа — строками
    (человек стирает и набирает заново), галочки — да/нет, несколько вариантов — коды. Из них
@@ -10,15 +11,22 @@
 import type { ListingService, ServiceChanges, ServiceInput, ServiceOptionInput } from "../api/services";
 import { type CategoryTextKey, categoryText, categoryTexts } from "../i18n/categories";
 import type { Lang } from "../i18n/dict";
+import { dayPartWindows, toMinutes } from "./availability";
 import type { ChosenServiceSnapshot, RequestDetails } from "./details";
-import type {
-  AttributeField,
-  CategoryConfig,
-  Choice,
-  ListField,
-  ListItemField,
-  PriceUnit,
-  RequestField,
+import {
+  type AttributeField,
+  type CategoryConfig,
+  type Choice,
+  DAY_PARTS,
+  type DayPart,
+  type DayPartWindow,
+  type DayPartWindows,
+  type DaySessions,
+  type ListField,
+  type ListItemField,
+  type PartMode,
+  type PriceUnit,
+  type RequestField,
 } from "./types";
 import {
   type ListingAttributes,
@@ -604,4 +612,79 @@ export function chosenServices(
   const field = category?.requestForm.fields.find((f) => f.type === "services");
   const value = details[field?.key ?? "services"];
   return isSnapshots(value) ? value : [];
+}
+
+// ── «Время работы» витрины ──────────────────────────────────────────────────
+
+/** Время работы в форме: заказов одновременно — строкой, как в поле */
+export interface DaySessionsDraft {
+  readonly mode: PartMode;
+  readonly parts: readonly DayPart[];
+  readonly windows: DayPartWindows;
+  readonly capacity: string;
+}
+
+export function daySessionsDraft(sessions: DaySessions): DaySessionsDraft {
+  return {
+    mode: sessions.mode,
+    parts: sessions.parts,
+    windows: sessions.windows,
+    capacity: String(sessions.parallelCapacity),
+  };
+}
+
+/** Есть ли что сохранять: окна нерабочих частей не в счёт */
+export function daySessionsDirty(a: DaySessionsDraft, b: DaySessionsDraft): boolean {
+  if (a.mode !== b.mode || a.capacity !== b.capacity) return true;
+  return DAY_PARTS.some((part) => {
+    const on = a.parts.includes(part);
+    if (on !== b.parts.includes(part)) return true;
+    return on && (a.windows[part].from !== b.windows[part].from || a.windows[part].to !== b.windows[part].to);
+  });
+}
+
+/**
+ * Тело правки времени работы: части по порядку, свои окна — только у рабочих частей и только
+ * отличные от окон категории (иначе null); число, которое не разобралось, — NaN (проверка
+ * назовёт поле)
+ */
+export function daySessionsInput(
+  category: CategoryConfig,
+  draft: DaySessionsDraft,
+): {
+  readonly mode: PartMode;
+  readonly parts: DayPart[];
+  readonly windows: Partial<Record<DayPart, DayPartWindow>> | null;
+  readonly parallelCapacity: number;
+} {
+  const base = dayPartWindows(category);
+  const parts = DAY_PARTS.filter((part) => draft.parts.includes(part));
+  const windows: Partial<Record<DayPart, DayPartWindow>> = {};
+  for (const part of parts) {
+    const w = draft.windows[part];
+    if (w.from !== base[part].from || w.to !== base[part].to) windows[part] = w;
+  }
+  return {
+    mode: draft.mode,
+    parts,
+    windows: Object.keys(windows).length > 0 ? windows : null,
+    parallelCapacity: /^\d{1,2}$/.test(draft.capacity.trim()) ? Number(draft.capacity.trim()) : Number.NaN,
+  };
+}
+
+const WINDOW_STEP = 30;
+const clock = (minutes: number) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+/**
+ * Время для выбора окна части с шагом 30 минут: начало — 00:00–23:30, конец — 00:30–24:00;
+ * значение не на сетке (записано раньше) — на своём месте
+ */
+export function windowTimes(kind: "from" | "to", current: string): string[] {
+  const out: string[] = [];
+  const first = kind === "from" ? 0 : WINDOW_STEP;
+  const last = kind === "from" ? 1440 - WINDOW_STEP : 1440;
+  for (let m = first; m <= last; m += WINDOW_STEP) out.push(clock(m));
+  if (!out.includes(current)) out.push(current);
+  return out.sort((a, b) => toMinutes(a) - toMinutes(b));
 }

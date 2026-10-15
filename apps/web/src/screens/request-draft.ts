@@ -1,12 +1,15 @@
 import type { Dict } from "@bayramm/shared";
-import type { ConsentText, CreateRequest, ListingDetail, PublicService } from "@bayramm/shared/api";
+import type { ConsentText, CreateRequest, DayPart, ListingDetail, PublicService } from "@bayramm/shared/api";
 import {
   type CategoryConfig,
-  dayPartOf,
   hasDayParts,
+  inWindow,
+  isDayPart,
   MAX_CHOSEN_SERVICES,
   type RequestField,
+  sortParts,
   validateRequestDetails,
+  windowText,
 } from "@bayramm/shared/categories";
 import { addDays, formatQty, isIsoDate, isPhoneDigits, PHONE_PREFIX, phoneDigits } from "../format";
 import { sessionGetJson, sessionRemove, sessionRemovePrefix, sessionSetJson } from "../storage";
@@ -17,11 +20,14 @@ import { hasQty } from "./request-estimate";
    комментарий, не теряется при уходе на другой экран и возврате (в прототипе комментарий
    пропадал). Согласия в черновик не пишутся — их отмечают заново, осознанно.
 
-   Поля формы — общие (повод, дата, гости по правилу категории, бюджет, имя, телефон,
-   комментарий) и поля категории из её описания (requestForm.fields): время начала, часы,
+   Поля формы — общие (повод, дата, время — части дня или весь день, гости по правилу
+   категории, бюджет, имя, телефон, комментарий) и поля категории из её описания
+   (requestForm.fields): время начала, часы,
    машины, вес, количество, доставка… и выбранные услуги витрины с количеством и опциями.
    Проверка — та же, что у сервера (validateRequestDetails), плюс то, что клиент знает
-   заранее: срок заказа, занятая часть дня, минимальное количество услуги. */
+   заранее: срок заказа, занятая часть дня, время начала вне выбранного, минимальное количество
+   услуги. Части дня отмечает повод (нахорги ош — утро, свадьба — вечер), пока клиент не выбрал
+   сам. */
 
 /** Значение поля категории в черновике: число и время — строкой (как в поле), да/нет, коды */
 export type DraftValue = string | boolean | readonly string[];
@@ -42,6 +48,12 @@ export interface Draft {
   readonly name: string;
   readonly phone: string;
   readonly comment: string;
+  /** Части дня (витрина с несколькими мероприятиями в день) */
+  readonly dayParts: readonly DayPart[];
+  /** Весь день вместо частей */
+  readonly wholeDay: boolean;
+  /** Время выбрал клиент: повод его больше не меняет */
+  readonly partsTouched: boolean;
   /** Поля категории, кроме выбора услуг: ключ поля → значение */
   readonly values: Readonly<Record<string, DraftValue>>;
   readonly services: readonly DraftService[];
@@ -55,6 +67,9 @@ export const EMPTY_DRAFT: Draft = {
   name: "",
   phone: "",
   comment: "",
+  dayParts: [],
+  wholeDay: false,
+  partsTouched: false,
   values: {},
   services: [],
 };
@@ -129,7 +144,16 @@ function readDraft(value: unknown): Draft | null {
       ? Object.fromEntries(Object.entries(d.values).filter(([, v]) => isDraftValue(v)))
       : {};
   const services = Array.isArray(d.services) ? d.services.filter(isDraftService) : [];
-  return { ...(d as unknown as Draft), values, services };
+  // Черновик прежней сборки — без частей дня
+  const dayParts = Array.isArray(d.dayParts) ? sortParts(d.dayParts.filter(isDayPart)) : [];
+  return {
+    ...(d as unknown as Draft),
+    values,
+    services,
+    dayParts,
+    wholeDay: d.wholeDay === true,
+    partsTouched: d.partsTouched === true,
+  };
 }
 
 const anyJson = (value: unknown): value is unknown => value !== undefined;
@@ -180,6 +204,7 @@ export function fieldShown(field: DetailField, values: Draft["values"]): boolean
 export type Field =
   | "occasion"
   | "date"
+  | "parts"
   | "guests"
   | "name"
   | "phone"
@@ -188,11 +213,16 @@ export type Field =
   | `d.${string}`
   | `svc.${string}`;
 
+/** Выбирает ли клиент время: календарь по частям и несколько мероприятий в день */
+export const choosesParts = (category: CategoryConfig, listing: Pick<ListingDetail, "sessions">): boolean =>
+  hasDayParts(category) && listing.sessions.mode === "parts";
+
 /** Поля в порядке формы: к первой ошибке переводим фокус */
-export function fieldOrder(category: CategoryConfig, draft: Draft): Field[] {
+export function fieldOrder(category: CategoryConfig, draft: Draft, parts = false): Field[] {
   return [
     "occasion",
     "date",
+    ...(parts ? (["parts"] as const) : []),
     ...(category.requestForm.guests === "hidden" ? [] : (["guests"] as const)),
     ...detailFields(category).map((f) => `d.${f.key}` as const),
     "services",
@@ -277,7 +307,7 @@ export function toDetails(category: CategoryConfig, listing: Pick<ListingDetail,
 export type ErrorTexts = Dict;
 
 export interface ValidateContext {
-  readonly listing: Pick<ListingDetail, "capMax" | "attributes" | "services" | "busyParts">;
+  readonly listing: Pick<ListingDetail, "capMax" | "attributes" | "services" | "busyParts" | "sessions">;
   readonly category: CategoryConfig;
   readonly busy: ReadonlySet<string>;
   readonly today: string;
@@ -362,18 +392,27 @@ export function validate(
       errors[`svc.${chosen.id}`] ??= t.errMinQty(formatQty(service.priceUnit, service.minQty, t) ?? "");
   }
 
-  // Часть дня (кортеж, фото, декор): время начала попадает в занятую часть
-  const start = draft.values.start_time;
-  if (
-    hasDayParts(category) &&
-    typeof start === "string" &&
-    start &&
-    isIsoDate(draft.date) &&
-    !errors["d.start_time"]
-  ) {
-    const part = dayPartOf(category, start);
-    const busyParts = listing.busyParts.find((p) => p.date === draft.date)?.parts ?? [];
-    if (busyParts.includes(part)) errors["d.start_time"] = t.errPartBusy(t.dayPartName(part));
+  // Время (несколько мероприятий в день): части или весь день, не занятые на дату; время начала —
+  // внутри выбранного (весь день — внутри одной из рабочих частей)
+  if (choosesParts(category, listing)) {
+    const { sessions } = listing;
+    const taken = isIsoDate(draft.date)
+      ? (listing.busyParts.find((p) => p.date === draft.date)?.parts ?? []).filter((p) =>
+          sessions.parts.includes(p),
+        )
+      : [];
+    const chosen = draft.wholeDay ? sessions.parts : draft.dayParts.filter((p) => sessions.parts.includes(p));
+    if (!draft.wholeDay && chosen.length === 0) errors.parts = t.errParts;
+    else if (draft.wholeDay && taken.length > 0) errors.parts = t.errWholeBusy;
+    else {
+      const busy = chosen.filter((p) => taken.includes(p));
+      if (busy.length > 0) errors.parts = t.errPartBusy(busy.map((p) => t.dayPartName(p)).join(", "));
+    }
+    const start = draft.values.start_time;
+    if (typeof start === "string" && start && chosen.length > 0 && !errors["d.start_time"]) {
+      if (!chosen.some((p) => inWindow(sessions.windows[p], start)))
+        errors["d.start_time"] = t.errStartOutside(partsWindows(listing, chosen, t));
+    }
   }
 
   if (draft.name.trim().length === 0) errors.name = t.errRequired;
@@ -382,10 +421,19 @@ export function validate(
   return errors;
 }
 
+/** Окна частей словами: «утро 06:00–11:00, вечер 18:00–24:00» */
+export function partsWindows(
+  listing: Pick<ListingDetail, "sessions">,
+  parts: readonly DayPart[],
+  t: ErrorTexts,
+): string {
+  return parts.map((p) => `${t.dayPartName(p)} ${windowText(listing.sessions.windows[p])}`).join(", ");
+}
+
 /** Тело POST /requests из проверенного черновика */
 export function toCreateRequest(
   draft: Draft,
-  listing: Pick<ListingDetail, "id" | "services">,
+  listing: Pick<ListingDetail, "id" | "services" | "sessions">,
   category: CategoryConfig,
   consents: { readonly transfer: ConsentText; readonly notify: ConsentText | null },
 ): CreateRequest {
@@ -401,6 +449,12 @@ export function toCreateRequest(
     // Гости — по правилу формы категории: hidden не передаётся вовсе (иначе 400)
     ...(guests !== null ? { guests } : {}),
     ...(Object.keys(details).length > 0 ? { details } : {}),
+    // Время — только у витрины с несколькими мероприятиями в день; иначе заявка на весь день
+    ...(choosesParts(category, listing)
+      ? draft.wholeDay
+        ? { wholeDay: true }
+        : { dayParts: draft.dayParts.filter((p) => listing.sessions.parts.includes(p)) }
+      : {}),
     ...(budget?.min !== undefined ? { budgetMinUzs: budget.min } : {}),
     ...(budget?.max !== undefined ? { budgetMaxUzs: budget.max } : {}),
     contactName: draft.name.trim().slice(0, NAME_MAX),

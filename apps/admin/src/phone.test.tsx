@@ -87,7 +87,7 @@ const REQUEST: StaffRequestDetail = {
   occasionCode: "toy",
   eventDate: "2026-11-10",
   guests: 150,
-  dayPart: null,
+  dayParts: [],
   details: {},
   createdAt: "2026-09-28T18:00:00.000Z",
   listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },
@@ -448,7 +448,12 @@ describe("телефон: читаемость списков", () => {
     await mount("/requests");
     await click([...container.querySelectorAll("button")].find((b) => b.textContent === t.filters));
     const titles = [...(dialog()?.querySelectorAll(".sheet-group") ?? [])];
-    expect(titles.map((el) => el.textContent)).toEqual([t.colDue, t.requestStatusFilter, t.colCategory]);
+    expect(titles.map((el) => el.textContent)).toEqual([
+      t.colDue,
+      t.requestStatusFilter,
+      t.colCategory,
+      t.partFilter,
+    ]);
     for (const title of titles)
       expect(dialog()?.querySelector(`[role=radiogroup][aria-labelledby="${title.id}"]`)).not.toBeNull();
   });
@@ -601,7 +606,7 @@ describe("телефон: длинные списки, оглавление ви
     occasionCode: "toy",
     eventDate: "2026-11-10",
     guests: null,
-    dayPart: null,
+    dayParts: [],
     createdAt: "2026-09-28T18:00:00.000Z",
     contactName: null,
     listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },
@@ -661,6 +666,18 @@ describe("телефон: длинные списки, оглавление ви
       missingAttributes: [],
       videoLinks: [],
       parallelCapacity: 1,
+      daySessions: {
+        mode: "parts",
+        parts: ["morning", "day", "evening"],
+        windows: {
+          morning: { from: "05:00", to: "11:00" },
+          day: { from: "11:00", to: "17:00" },
+          evening: { from: "17:00", to: "24:00" },
+        },
+        custom: null,
+        parallelCapacity: 1,
+      },
+      calendarVersion: 0,
       services: [],
       photos: [],
       blockers: { review: [], active: [] },

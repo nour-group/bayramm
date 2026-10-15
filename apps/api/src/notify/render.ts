@@ -5,8 +5,9 @@
 
 import { type Lang, trimTrailingSlashes } from "@bayramm/shared";
 import { type CatalogLinkFilters, clientCatalogPath, clientRequestPath } from "@bayramm/shared/api";
-import { categoryConfig, detailsSummary, type RequestDetails } from "@bayramm/shared/categories";
+import { categoryConfig, detailsSummary, hasDayParts, type RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
+import { dayPartsOf } from "../calendar/sessions";
 import type { Tx } from "../db/actor";
 import { clientProfilesAs, contactChangeState, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
 import type { AppActorKind, AppStaffRole, Json } from "../db/schema.generated";
@@ -28,6 +29,7 @@ import {
   opsRevisionSubmitted,
   opsServicesSubmitted,
   opsSlaBreach,
+  partsText,
   type RequestFacts,
   SERVICE_TEXTS,
 } from "./texts";
@@ -233,6 +235,7 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
       "r.public_no",
       "r.event_date",
       "r.guests",
+      "r.day_parts",
       "r.client_id",
       "r.vendor_id",
       "r.created_at",
@@ -259,6 +262,9 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
     slaHours: Math.max(1, Math.round((row.sla_due_at.getTime() - row.created_at.getTime()) / 3_600_000)),
   };
   const category = categoryConfig(row.category_code);
+  const dayParts = dayPartsOf(row.day_parts);
+  const parts = (lang: Lang) =>
+    category !== undefined && hasDayParts(category) ? partsText(lang, dayParts) : null;
   const details = row.details as RequestDetails;
   const districts =
     category?.requestForm.fields.some((f) => f.type === "district" && typeof details[f.key] === "string") ===
@@ -274,8 +280,20 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
         });
   return {
     facts: {
-      ru: { ...base, occasion: row.name_ru, category: row.category_ru, details: summary("ru") },
-      uz: { ...base, occasion: row.name_uz, category: row.category_uz, details: summary("uz") },
+      ru: {
+        ...base,
+        parts: parts("ru"),
+        occasion: row.name_ru,
+        category: row.category_ru,
+        details: summary("ru"),
+      },
+      uz: {
+        ...base,
+        parts: parts("uz"),
+        occasion: row.name_uz,
+        category: row.category_uz,
+        details: summary("uz"),
+      },
     },
     similar: {
       category: row.category_code,

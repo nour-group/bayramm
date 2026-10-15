@@ -262,6 +262,13 @@ describe("outbox: отправка и оповещение о недоставл
        values ($1, 'vendor.request_new', 'vendor_user', $2, '{}', $3)`,
       [id, vendorUserId, `test:${id}`],
     );
+    // База общая для всех файлов: строки, которые оставили другие тесты (их порядок не задан),
+    // счёт отправки не меняют — откладываем их на час
+    await admin.query(
+      `update app.outbox set next_attempt_at = now() + interval '1 hour'
+       where id <> $1 and status in ('pending', 'failed') and next_attempt_at <= now()`,
+      [id],
+    );
     const db = createDb(apiDatabaseUrl);
     try {
       const deps = {

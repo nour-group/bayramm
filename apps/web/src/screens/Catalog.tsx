@@ -16,6 +16,7 @@ import { Icon } from "../icons";
 import { ALL_CATEGORIES, hrefFor, useNav } from "../router";
 import {
   busyLast,
+  CATALOG_PARTS,
   type CatalogFilters,
   catalogCategory,
   DATE_HORIZON_DAYS,
@@ -37,8 +38,9 @@ import { placeChoice, placeFilters } from "./catalog-place";
    переключатель разделов, фильтры, порядок и сетка карточек. Всё — в адресе. Поиск (?q=) — над
    разделами во всю ширину, вместе с разделом и фильтрами; заголовок тогда — «По запросу «…» — N»,
    пусто в разделе — ссылка на другие разделы, пусто везде — популярные разделы. Главные фильтры —
-   одной строкой пилюль над выдачей: место (город → район), дата, гости (где вместимость),
-   порядок; на телефоне строка листается вбок, каждая пилюля открывает шторку. Поля витрины
+   одной строкой пилюль над выдачей: место (город → район), дата, время на дату (утро, день,
+   вечер, весь день — где календарь), гости (где вместимость), порядок; на телефоне строка
+   листается вбок, каждая пилюля открывает шторку. Поля витрины
    раздела — кнопкой «Фильтры» (шторка) на телефоне и планшете, на компьютере — колонкой слева. */
 
 const SORT_LABEL = {
@@ -229,6 +231,10 @@ export function Catalog() {
   const capacity = category !== null && hasCapacity(category);
   const extra = attrFilterCount(filters.attrs);
   const place = placeChoice(filters, dicts.status === "ready" ? dicts.data : null, t, lang);
+  // «Время» — когда выбрана дата и у раздела есть календарь (в «Все» — тоже)
+  const timed = filters.date !== null && (category === null || hasCalendar(category));
+  const partLabel = (part: (typeof CATALOG_PARTS)[number]) =>
+    part === "whole" ? t.partWhole : t.dayPartTitle(part);
   const side = specs.length > 0;
   const filtered = hasFilters(filters);
   // Цены за гостя и за мероприятие вперемешку — объясняем, как их сравнили; у остальных
@@ -256,6 +262,9 @@ export function Catalog() {
       ? [{ key: "place", label: `${t.fPlace}: ${place.chosen}`, drop: { city: null, district: null } }]
       : []),
     ...(extra > 0 ? [{ key: "attrs", label: t.moreFiltersN(extra), drop: { attrs: {} } }] : []),
+    ...(timed && filters.part !== null
+      ? [{ key: "part", label: `${t.fTime}: ${partLabel(filters.part)}`, drop: { part: null } }]
+      : []),
   ];
   // Пусто из-за фильтров — что именно мешает и как убрать; иначе в разделе ещё никого: «скоро»
   const empty =
@@ -324,8 +333,28 @@ export function Catalog() {
             format={(date) => formatDayMonth(date, t)}
             texts={calendarTexts}
             clearLabel={t.anyDate}
-            onChange={(date) => setFilters({ date })}
+            onChange={(date) => setFilters({ date, part: date === null ? null : filters.part })}
           />
+          {timed ? (
+            <>
+              <label className="sr-only" htmlFor={`${ids}-part`}>
+                {t.fTime}
+              </label>
+              <Select
+                size="compact"
+                id={`${ids}-part`}
+                className={filters.part ? "filter-part is-set" : "filter-part"}
+                label={t.fTime}
+                icon={<Icon name="clockD" size={14} />}
+                value={filters.part ?? ""}
+                options={[
+                  { value: "", label: t.partAny },
+                  ...CATALOG_PARTS.map((part) => ({ value: part, label: partLabel(part) })),
+                ]}
+                onChange={(part) => setFilters({ part: CATALOG_PARTS.find((p) => p === part) ?? null })}
+              />
+            </>
+          ) : null}
           {capacity ? (
             <GuestsField value={filters.guests} onCommit={(guests) => setFilters({ guests })} />
           ) : null}

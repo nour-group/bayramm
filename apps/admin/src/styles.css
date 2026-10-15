@@ -2027,6 +2027,12 @@ textarea.input {
 }
 
 .cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   min-width: 0;
   min-height: var(--hit-min);
   padding: 0;
@@ -2047,11 +2053,56 @@ textarea.input {
   cursor: default;
 }
 
-.cal-today {
-  box-shadow: inset 0 0 0 2px var(--coral);
+/* Выходной — своей подложкой: та же пара токенов, что в кабинете и в ui-cal. Вес — как у одного
+   класса: занятый, частично занятый и выбранный (они ниже) его перекрывают */
+:where(.cal-day).cal-we {
+  background-color: var(--cell-wk);
+}
+
+.cal-wd.cal-we {
+  color: var(--coral-deep);
+}
+
+/* Сегодня — точка в углу, а не кольцо: кольцо значит «фокус» */
+.cal-today-dot {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-999);
+  background: var(--plum);
+}
+
+/* Рабочие части дня под числом: свободна, есть договорённость, занята */
+.cal-parts {
+  display: flex;
+  gap: 2px;
+}
+
+.cal-parts i {
+  width: 7px;
+  height: 4px;
+  border-radius: var(--r-999);
+  background: var(--muted-lt);
+  opacity: 0.35;
+}
+
+.cal-parts i.is-booked {
+  background: var(--coral);
+  opacity: 1;
+}
+
+.cal-parts i.is-busy {
+  background: var(--berry);
+  opacity: 1;
 }
 
 /* Занятый день — после прошедших и сегодняшнего: отметка видна всегда (ловушка №7) */
+.cal-busy .cal-today-dot {
+  background: var(--sel-ink);
+}
+
 .cal-busy,
 .cal-busy:disabled {
   background-color: var(--plum);
@@ -2742,7 +2793,12 @@ a.rcard-title {
 }
 
 .cal-key-today {
-  border: 2px solid var(--coral);
+  width: 6px;
+  height: 6px;
+  margin: 0 4px;
+  border: 0;
+  border-radius: var(--r-999);
+  background: var(--plum);
 }
 
 .cal-key-chosen {
@@ -3142,6 +3198,105 @@ a.rcard-title {
   flex-direction: column;
   min-width: 0;
   font-weight: 700;
+}
+
+/* Заявки дня и части — ссылками, во всю строку, 44px */
+.day-requests {
+  display: flex;
+  flex-direction: column;
+  flex-basis: 100%;
+  gap: var(--gap-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.day-request {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
+/* «Несколько дней»: дни недели и что занять или освободить */
+.cal-range {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+  margin-top: 12px;
+}
+
+.cal-range-group {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cal-range-group legend {
+  margin-bottom: 6px;
+  font-size: var(--fs-13-5);
+  font-weight: 700;
+}
+
+.cal-range-group .chip {
+  justify-content: center;
+  min-width: var(--hit-min);
+}
+
+/* «Время работы»: шторка */
+.sessions-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-12);
+}
+
+.sessions-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sessions-field legend,
+.sessions-label {
+  margin: 0 0 6px;
+  font-size: var(--fs-14);
+  font-weight: 700;
+}
+
+.sessions-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sessions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-7) var(--gap-12);
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-14);
+  background: var(--white);
+}
+
+.sessions-row .field-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.sessions-times {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-5);
 }
 
 /* Срок заказа (без календаря) */

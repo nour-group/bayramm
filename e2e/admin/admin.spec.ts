@@ -213,14 +213,18 @@ test.describe("работа сотрудника", () => {
     const api = await start(page);
     await createVitrina(page);
 
-    // «Сегодня» по Ташкенту при часах теста
-    const today = page.locator(".cal-today");
+    // «Сегодня» по Ташкенту при часах теста: нажатие открывает день — весь день и части
+    const today = page.locator(".cal-day.cal-today");
     await expect(today).toHaveAttribute("aria-pressed", "false");
     await today.click();
     await expect(today).toHaveAttribute("aria-pressed", "true");
+    const opened = page.locator(".day-parts");
+    await expect(opened.getByRole("button", { name: /^Закрыть: / })).toHaveCount(3);
+    await opened.getByRole("button", { name: t.closeWholeDay }).click();
+    await expect(today).toHaveClass(/cal-busy/);
     await expect(today).toBeEnabled();
-    await today.click();
-    await expect(today).toHaveAttribute("aria-pressed", "false");
+    await opened.getByRole("button", { name: t.openWholeDay }).click();
+    await expect(today).not.toHaveClass(/cal-busy/);
 
     // Несколько дней: занять три, освободить — через подтверждение со счётом
     await page.getByRole("button", { name: t.rangeMode }).click();

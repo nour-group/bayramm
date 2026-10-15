@@ -1,14 +1,12 @@
 /* Форма витрины (карточки): название, адрес страницы, район, тексты на двух языках, данные
-   витрины по категории, ссылки на видео, сколько заказов одновременно, телефон и Telegram для
-   клиентов.
+   витрины по категории, ссылки на видео, телефон и Telegram для клиентов. Сколько заказов
+   одновременно — в «Время работы» (WorkingTimes.tsx): это часть календаря.
    Что спрашивать — решает категория (@bayramm/shared/categories): вместимость в гостях —
-   только где она нужна (площадка), видео — где их можно (фото и видео, студия), заказы
-   одновременно — у занятости по частям дня (кортеж, фото и видео, декор).
+   только где она нужна (площадка), видео — где их можно (фото и видео, студия).
 
    Форма — не один блок, а состояние на всю страницу (ListingEditor) и её части, которые страница
    расставляет по порядку работы: «Основное» и описания (MainSection), «Данные витрины» с видео
-   (DataSection), «Контакты» (ContactsSection), «Заказов одновременно» — в шапке календаря
-   (CapacityControl), «Сохранить» — одна на всё (EditorBar). У каждой части свой <form> с тем же
+   (DataSection), «Контакты» (ContactsSection), «Сохранить» — одна на всё (EditorBar). У каждой части свой <form> с тем же
    обработчиком: между ними — фото, услуги и занятость, у которых свои формы, а форма в форме
    нельзя. Отправка одна: уходит только изменённое во всех частях сразу.
 
@@ -49,7 +47,7 @@ import {
   videoLinkErrors,
   videoLinksValue,
 } from "@bayramm/shared/categories";
-import { NumberStepper, Select, type SelectOption } from "@bayramm/ui/react";
+import { Select, type SelectOption } from "@bayramm/ui/react";
 import {
   createContext,
   type FormEvent,
@@ -79,7 +77,6 @@ interface Values {
   descriptionUz: string;
   capMin: string;
   capMax: string;
-  parallelCapacity: string;
   phone: string;
   telegram: string;
 }
@@ -93,7 +90,6 @@ const MODERATED_KEYS: ReadonlySet<string> = new Set<RevisionField>([
   "descriptionUz",
 ]);
 
-export const MAX_PARALLEL = 50;
 /** Вместимость в гостях — границы сервера (capMin, capMax) */
 export const CAPACITY = { min: 1, max: 5000 } as const;
 
@@ -102,7 +98,6 @@ export function formParts(category: CategoryConfig) {
   return {
     capacity: category.listingFields.includes("guest_capacity"),
     videos: category.maxVideoLinks > 0,
-    parallel: category.availability === "parts",
   };
 }
 
@@ -117,7 +112,6 @@ function initial(listing: ListingDetail): Values {
     descriptionUz: listing.descriptionUz ?? "",
     capMin: listing.capMin?.toString() ?? "",
     capMax: listing.capMax?.toString() ?? "",
-    parallelCapacity: String(listing.parallelCapacity),
     phone: "",
     telegram: "",
   };
@@ -186,13 +180,11 @@ export function listingBody(category: CategoryConfig, now: FormState, before: Fo
     const links = videoLinksValue(now.videos);
     if (JSON.stringify(links) !== JSON.stringify(videoLinksValue(before.videos))) body.videoLinks = links;
   }
-  if (parts.parallel && changed("parallelCapacity"))
-    body.parallelCapacity = amount(now.values.parallelCapacity);
   return body as ListingInput;
 }
 
 /** Ошибки до отправки — те же пути, что ответ 422: адрес, вместимость, данные витрины, видео,
- *  заказы одновременно, телефон и Telegram */
+ *  телефон и Telegram */
 export function formErrors(category: CategoryConfig, now: FormState): string[] {
   const parts = formParts(category);
   const errors = attributeErrors(category, now.attributes);
@@ -219,10 +211,6 @@ export function formErrors(category: CategoryConfig, now: FormState): string[] {
     const filled = now.videos.flatMap((link, index) => (link.trim() === "" ? [] : [index]));
     for (const index of videoLinkErrors(category, now.videos))
       errors.push(`videoLinks.${filled.indexOf(index)}`);
-  }
-  if (parts.parallel) {
-    const n = parseAmount(now.values.parallelCapacity);
-    if (n === null || Number.isNaN(n) || n < 1 || n > MAX_PARALLEL) errors.push("parallelCapacity");
   }
   return errors;
 }
@@ -704,39 +692,6 @@ export function DataSection() {
         ) : null}
       </section>
     </form>
-  );
-}
-
-// ── заказов одновременно: в шапке календаря ────────────────────────────────
-
-/** «Заказов одновременно» — у занятости по частям дня; правка — до «Сохранить», как вся форма */
-export function CapacityControl() {
-  const { now, put, errors, readOnly, parts } = useEditor();
-  const id = useId();
-  if (!parts.parallel) return null;
-  const error = errors.parallelCapacity ? t.parallelCapacityError : undefined;
-  return (
-    <div className={`cap-inline${error ? " field-bad" : ""}`}>
-      <label htmlFor={id}>{t.listingDataSections.occupancy}</label>
-      <NumberStepper
-        id={id}
-        value={now.values.parallelCapacity}
-        onChange={put("parallelCapacity")}
-        min={1}
-        max={MAX_PARALLEL}
-        maxLength={2}
-        disabled={readOnly}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? `${id}-error` : undefined}
-        decrementLabel={`${t.listingDataSections.occupancy} −1`}
-        incrementLabel={`${t.listingDataSections.occupancy} +1`}
-      />
-      {error ? (
-        <span id={`${id}-error`} className="field-error">
-          {error}
-        </span>
-      ) : null}
-    </div>
   );
 }
 

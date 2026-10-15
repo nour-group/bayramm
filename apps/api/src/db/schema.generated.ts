@@ -31,6 +31,8 @@ export type AppNotifyChannel = "sms" | "telegram";
 
 export type AppOutboxStatus = "dead" | "failed" | "pending" | "sending" | "sent";
 
+export type AppPartMode = "parts" | "whole";
+
 export type AppPhotoPolicy = "no_people" | "portfolio";
 
 export type AppPhotoStatus = "failed" | "processing" | "ready" | "uploading";
@@ -306,15 +308,27 @@ export interface AppListings {
   cap_min: number | null;
   category_code: string;
   created_at: Generated<Timestamp>;
+  /**
+   * Части дня, в которых витрина работает (режим parts): непустые, по порядку
+   */
+  day_parts: Generated<ArrayType<AppDayPart>>;
   description_ru: string | null;
   description_uz: string | null;
   district_code: string | null;
   id: Generated<string>;
   name: string;
   /**
-   * Сколько заказов витрина берёт одновременно (режим занятости parts): экипажи, машины
+   * Сколько заказов витрина берёт одновременно — в каждой части дня (в режиме whole — в день): залы, экипажи, машины
    */
   parallel_capacity: Generated<number>;
+  /**
+   * Время работы: whole — одно мероприятие в день (любая договорённость или отметка — весь день), parts — несколько, по частям дня
+   */
+  part_mode: Generated<AppPartMode>;
+  /**
+   * Свои окна частей дня поверх окон категории ({ часть: { from, to } }); null — окна категории (packages/shared/src/categories)
+   */
+  part_windows: Json | null;
   /**
    * Цена «от»: самая низкая цена услуг, входящих в цену «от» (app.listing_price_from). Пишет только триггер
    */
@@ -395,6 +409,10 @@ export interface AppListingStatusLog {
 
 export interface AppOccasions {
   code: string;
+  /**
+   * Части дня, которые форма заявки отмечает сама, когда выбран этот повод (клиент меняет)
+   */
+  default_parts: Generated<ArrayType<AppDayPart>>;
   name_ru: string;
   name_uz: string;
   sort: Generated<number>;
@@ -520,9 +538,9 @@ export interface AppRequests {
   consent_id: string;
   created_at: Generated<Timestamp>;
   /**
-   * Часть дня (режим занятости parts): API выводит её из времени начала в details
+   * Части дня заявки (рабочие части витрины на момент подачи); пусто — весь день
    */
-  day_part: AppDayPart | null;
+  day_parts: Generated<ArrayType<AppDayPart>>;
   decline_note: string | null;
   decline_reason: AppDeclineReason | null;
   /**
