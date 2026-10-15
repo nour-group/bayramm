@@ -10,7 +10,7 @@ import { SiteSearch } from "./components/SiteSearch";
 import { EmptyState, Loading } from "./components/States";
 import { AppProviders, type Services, useAccount, useLang, useServices } from "./context";
 import { FavoritesProvider } from "./favorites";
-import { useDocumentTitle } from "./hooks";
+import { useDocumentTitle, useStickyPanel } from "./hooks";
 import { authHref, browser } from "./hub";
 import { Icon, type IconName } from "./icons";
 import { chromeOf, sectionsOf, signInGate } from "./nav";
@@ -123,8 +123,11 @@ function Sections({
   className: "tabs" | "site-nav";
 }) {
   const { t } = useLang();
+  // Нижняя панель (телефон и планшет) прилипает к низу: её высота — в запас прокрутки
+  const nav = useRef<HTMLElement>(null);
+  useStickyPanel(nav, className === "tabs" ? "bottom" : "top");
   return (
-    <nav className={className} aria-label={t.sections}>
+    <nav className={className} aria-label={t.sections} ref={nav}>
       {tabs.map((tab) => {
         const view = TAB_VIEW[tab];
         const on = tab === current;
@@ -243,6 +246,9 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
   const chrome = chromeOf(identity, webApp !== null, deleted);
   const guest = chrome === "guest";
   const tabs = sectionsOf(chrome);
+  // Шапка и нижняя панель разделов прилипают: их высота — в запас прокрутки (фокус не под ними)
+  const top = useRef<HTMLElement>(null);
+  useStickyPanel(top, "top");
   const signInHref = authHref({ return: here });
   // Сайт (не Mini App): под экраном — подвал
   const site = webApp === null && !auth;
@@ -261,7 +267,7 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
       <a className="skip" href="#main">
         {t.skipToMain}
       </a>
-      <header className="top">
+      <header className="top" ref={top}>
         {inner && !hasNativeBack(webApp) ? (
           <button type="button" className="icon-btn back" aria-label={t.back} onClick={back}>
             <Icon name="back" size={17} />

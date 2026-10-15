@@ -24,7 +24,7 @@ import {
   metaLine,
   tashkentToday,
 } from "../format";
-import { useAsync, useDocumentTitle } from "../hooks";
+import { useAsync, useDocumentTitle, useStickyPanel } from "../hooks";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
 import { preloadScreens } from "../screens";
@@ -433,6 +433,11 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
       toggleDraftService(listing.slug, service, suggestedQty(service, loadDraft(listing.slug)?.values ?? {})),
     );
 
+  // Панель у низа экрана (телефон и планшет): её высота — в запас прокрутки, фокус не уходит под
+  // неё (на 320px с ценой отдельной строкой она выше 110px)
+  const bar = useRef<HTMLDivElement>(null);
+  useStickyPanel(bar, "bottom");
+
   // В Telegram «Оставить заявку» — его главная кнопка внизу; в браузере — своя в панели
   const nativeMain = useMainButton(webApp, {
     text: reqLabel,
@@ -586,7 +591,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
       <div className="venue-side">
         <RequestNote />
         {/* Цена целиком, без многоточия: не помещается рядом с кнопками — кнопки строкой ниже */}
-        <div className="action-bar venue-bar">
+        <div className="action-bar venue-bar" ref={bar}>
           <div className="bar-price">
             <b>{price.amount}</b>
             <span className="unit">{price.unit}</span>

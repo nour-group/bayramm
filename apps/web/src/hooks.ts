@@ -1,5 +1,5 @@
-import { useOnReconnect } from "@bayramm/ui/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type StickyEdge, stickyBar, useOnReconnect } from "@bayramm/ui/react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { isAbort, isRetryable } from "./api/errors";
 
 export type AsyncState<T> =
@@ -96,4 +96,33 @@ export function useDocumentTitle(title: string, description?: string, full = fal
   useEffect(() => {
     if (description) document.querySelector('meta[name="description"]')?.setAttribute("content", description);
   }, [description]);
+}
+
+/**
+ * Панель у края экрана, которая прилипает не во всех раскладках (панель витрины и формы заявки —
+ * на телефоне и планшете; на компьютере она в потоке страницы): её высота с безопасными зонами
+ * входит в --sticky-t / --sticky-b (stickyBar набора), пока CSS держит её sticky или fixed. По ним
+ * styles.css ставит scroll-padding: фокус с клавиатуры не уходит под панель (WCAG 2.4.11).
+ * Раскладку решает CSS — проверяем её же, на старте и при смене размера окна
+ */
+export function useStickyPanel(ref: RefObject<HTMLElement | null>, edge: StickyEdge): void {
+  useEffect(() => {
+    const bar = ref.current;
+    if (!bar) return;
+    let release: (() => void) | null = null;
+    const check = () => {
+      const stuck = /^(sticky|fixed)$/.test(getComputedStyle(bar).position);
+      if (stuck && !release) release = stickyBar(bar, edge);
+      else if (!stuck && release) {
+        release();
+        release = null;
+      }
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => {
+      window.removeEventListener("resize", check);
+      release?.();
+    };
+  }, [ref, edge]);
 }

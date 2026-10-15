@@ -394,6 +394,50 @@ test.describe("панель витрины на телефоне", () => {
   }
 });
 
+test.describe("фокус и прилипшие панели", () => {
+  for (const [what, path, barSelector] of [
+    ["витрина", PATHS.venue("oq-kortej"), ".venue-bar"],
+    ["форма заявки", PATHS.request("oq-kortej"), ".form-bar"],
+  ] as const) {
+    test(`320px, ${what}: высота панели — в запасе прокрутки, Tab не прячет фокус под неё`, async ({
+      page,
+    }) => {
+      test.slow();
+      await prepare(page);
+      await at(page, 320, 640);
+      await open(page, path, "main h1");
+      const bar = page.locator(barSelector);
+      await expect(bar).toBeInViewport();
+      const height = await bar.evaluate((el) => el.getBoundingClientRect().height);
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sticky-b")),
+          ),
+        )
+        .toBeGreaterThanOrEqual(Math.floor(height));
+      for (let i = 0; i < 40; i++) {
+        await page.keyboard.press("Tab");
+        const stop = await page.evaluate((selector) => {
+          const el = document.activeElement;
+          const panel = document.querySelector(selector);
+          if (!(el instanceof HTMLElement) || !panel || panel.contains(el) || el === document.body)
+            return null;
+          const box = el.getBoundingClientRect();
+          if (box.height === 0) return null;
+          const p = panel.getBoundingClientRect();
+          return {
+            what: `${el.tagName.toLowerCase()}.${el.className} «${(el.textContent ?? "").trim().slice(0, 30)}»`,
+            // Сколько элемента — под панелью (в конце страницы панель в потоке: подвал ниже неё — не под ней)
+            covered: Math.max(0, Math.min(box.bottom, p.bottom) - Math.max(box.top, p.top)),
+          };
+        }, barSelector);
+        if (stop) expect(stop.covered, stop.what).toBeLessThanOrEqual(1);
+      }
+    });
+  }
+});
+
 test.describe("узкие телефоны", () => {
   for (const width of [320, 360]) {
     test(`${width}px: лендинг, каталог и площадка без горизонтальной прокрутки`, async ({ page }) => {

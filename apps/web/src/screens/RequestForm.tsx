@@ -46,7 +46,7 @@ import {
   tashkentToday,
   weekdayMon,
 } from "../format";
-import { useAsync, useDocumentTitle } from "../hooks";
+import { useAsync, useDocumentTitle, useStickyPanel } from "../hooks";
 import { continueAtHub } from "../hub";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
@@ -830,6 +830,10 @@ function Form({
     }
   };
 
+  // Кнопки формы у низа экрана (телефон и планшет): фокус на полях не уходит под них
+  const formBar = useRef<HTMLDivElement>(null);
+  useStickyPanel(formBar, "bottom");
+
   // «Поделиться номером» (Mini App): узбекский номер — в поле; другой — словами, ввести руками
   const sharePhone = () =>
     requestPhone(webApp, (shared) => {
@@ -1177,7 +1181,7 @@ function Form({
       </p>
       {guest ? <BotLink slug={listing.slug} /> : null}
       {/* Отказ и отправка — одного размера (правило продукта о согласии) */}
-      <div className="action-bar form-bar">
+      <div className="action-bar form-bar" ref={formBar}>
         <button type="button" className="btn btn-secondary" onClick={back}>
           {t.back}
         </button>
