@@ -617,7 +617,9 @@ export const ru = {
   partsOn: (date: string) => `${date} по частям дня`,
   partsTaken: (parts: string) => `занято: ${parts}`,
   partsUpcoming: "Ближайшие частично занятые дни",
-  partsNote: "Заказы берут на утро, день и вечер: частично занятый день ещё можно выбрать.",
+  /** parts — части дня витрины через запятую и «и»: «утро и вечер» */
+  partsNote: (parts: string): string => `Время заказов: ${parts}. Частично занятый день ещё можно выбрать.`,
+  listAnd: " и ",
   dayPartTitle: (part: string): string => (part === "morning" ? "Утро" : part === "day" ? "День" : "Вечер"),
   partWhole: "Весь день",
   partAny: "Любое время",

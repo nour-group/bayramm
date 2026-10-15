@@ -47,6 +47,13 @@ const GALLERY_SIZES = "(min-width: 1280px) 830px, (min-width: 1024px) 60vw, (min
 /** Сколько ближайших частично занятых дней перечислить под календарём */
 const PARTIAL_LIST = 6;
 
+/** «утро, день и вечер»: через запятую, последнее — через «и» словаря */
+function joinParts(names: readonly string[], and: string): string {
+  return names.length < 2
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")}${and}${names[names.length - 1]}`;
+}
+
 function Gallery({ listing }: { listing: ListingDetail }) {
   const { t } = useLang();
   const photos = listing.photos.length > 0 ? listing.photos : [listing.cover];
@@ -308,7 +315,7 @@ function Availability({
       <p className="note">
         <Icon name="info" size={14} />
         <span>
-          {parts ? `${t.partsNote} ` : ""}
+          {parts ? `${t.partsNote(joinParts(listing.sessions.parts.map(t.dayPartName), t.listAnd))} ` : ""}
           {t.calByVendor}
         </span>
       </p>
