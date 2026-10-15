@@ -1273,6 +1273,11 @@ textarea.field-input {
   gap: var(--gap-9);
 }
 
+/* Цена опции — у правого края и перенесённая под название («за мероприятие» длинное) */
+.svc-options li > :last-child {
+  margin-left: auto;
+}
+
 .svc-pick {
   justify-self: start;
   min-height: var(--hit-min);
@@ -1407,19 +1412,24 @@ textarea.field-input {
   margin: 0;
 }
 
+/* Панель витрины на телефоне: цена — слева, «Связаться» и заявка — справа. Цена не сжимается и
+   не обрезается («от 150 000 су…» — нельзя: правило «цена обязательна»): не помещается рядом с
+   кнопками (узкий экран, длинная подпись «Заявка на другую дату», узбекский) — кнопки уходят
+   строкой ниже и растягиваются, как на 320px */
+.venue-bar {
+  flex-wrap: wrap;
+}
+
 .bar-price {
   display: flex;
-  flex: 1;
+  flex: 1 0 auto;
   flex-direction: column;
-  min-width: 0;
+  max-width: 100%;
 }
 
 .bar-price b {
   font-size: var(--fs-16);
   line-height: 1.15;
-  /* «от 180 000 сум» рядом с двумя кнопками на 360px не влезает: переносим по словам,
-     а не уводим под кнопку звонка (число — с неразрывными пробелами, не рвётся) */
-  text-wrap: balance;
 }
 
 .bar-price .unit {
@@ -1427,8 +1437,16 @@ textarea.field-input {
   white-space: nowrap;
 }
 
+.bar-actions {
+  display: flex;
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--gap-9);
+}
+
 .venue-bar .btn-primary {
-  flex: none;
+  flex: 1 0 auto;
   padding: 0 16px;
   white-space: nowrap;
 }
@@ -1446,29 +1464,15 @@ textarea.field-input {
   display: none;
 }
 
-/* Узкий телефон: рядом со звонком и «Оставить заявку» цене остаётся меньше 100px */
-@media (max-width: 389px) {
+/* Телефон до 430px: кегль цены и поля кнопки поменьше — обычная цена с «Оставить заявку»
+   помещается в одну строку и на 360px; длинная подпись или узбекская цена — две строки */
+@media (max-width: 429px) {
   .bar-price b {
     font-size: var(--fs-14);
   }
 
   .venue-bar .btn-primary {
     padding: 0 12px;
-  }
-}
-
-/* Совсем узкий (320px): цена — отдельной строкой над кнопками */
-@media (max-width: 359px) {
-  .venue-bar {
-    flex-wrap: wrap;
-  }
-
-  .venue-bar .bar-price {
-    flex-basis: 100%;
-  }
-
-  .venue-bar .btn-primary {
-    flex: 1;
   }
 }
 
@@ -3096,6 +3100,7 @@ textarea.field-input {
   .venue-bar {
     position: static;
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
     margin: 0;
     padding: 20px;
@@ -3130,7 +3135,14 @@ textarea.field-input {
     display: inline;
   }
 
+  /* Кнопки — столбиком во всю ширину карточки, под ценой */
+  .bar-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .venue-bar .btn-primary {
+    flex: none;
     padding: 0 20px;
   }
 

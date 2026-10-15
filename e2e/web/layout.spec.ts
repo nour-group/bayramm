@@ -3,7 +3,19 @@ import { addDays } from "../../apps/web/src/format";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { APPS } from "../support/account";
 import { expect, test } from "../support/offline";
-import { horizontalOverflow, open, PATHS, prepare, sections, T, TODAY, VENUE } from "../support/web";
+import {
+  ALL_LISTINGS,
+  BUSY_DAY,
+  horizontalOverflow,
+  LISTINGS,
+  open,
+  PATHS,
+  prepare,
+  sections,
+  T,
+  TODAY,
+  VENUE,
+} from "../support/web";
 
 /* Сайт на всех ширинах: лендинг для браузера, раскладка планшета (колонка по центру,
    нижняя панель) и компьютера (разделы в шапке, сетка, карточка площадки справа).
@@ -300,6 +312,7 @@ test.describe("строка фильтров каталога", () => {
       test(`${width}px ${lang}: место, дата, гости и «Фильтры» — на экране, порядок — в шторке`, async ({
         page,
       }) => {
+        test.slow();
         const t = T[lang];
         await prepare(page, { lang });
         await at(page, width, 800);
@@ -338,6 +351,47 @@ test.describe("строка фильтров каталога", () => {
     await expect(page.locator(".filters-side")).toBeVisible();
     await expectRowOnScreen(page, "1280 залы");
   });
+});
+
+test.describe("панель витрины на телефоне", () => {
+  // Занятая на дату витрина: кнопка — «Заявка на другую дату», самая длинная подпись
+  const busy = LISTINGS.find((l) => l.busyDates.includes(BUSY_DAY)) ?? VENUE;
+  const car = ALL_LISTINGS.find((l) => l.categoryCode === "car") ?? VENUE;
+
+  for (const width of [320, 360, 390]) {
+    for (const lang of ["ru", "uz"] as const) {
+      test(`${width}px ${lang}: цена целиком, кнопки рядом или строкой ниже`, async ({ page }) => {
+        test.slow();
+        await prepare(page, { lang });
+        await at(page, width, 800);
+        for (const path of [
+          PATHS.venue(VENUE.slug),
+          `${PATHS.venue(busy.slug)}?date=${BUSY_DAY}`,
+          PATHS.venue(car.slug),
+        ]) {
+          await open(page, path, ".venue-head h1", { guest: true });
+          const bar = page.locator(".venue-bar");
+          await expect(bar).toBeInViewport();
+          // Ни цена, ни её единица, ни подпись кнопки не обрезаны
+          const clipped = await bar
+            .locator(".bar-price, .bar-price b, .bar-price .unit, .btn-primary")
+            .evaluateAll((els) =>
+              els.filter((el) => el.scrollWidth > el.clientWidth + 1).map((el) => el.textContent),
+            );
+          expect(clipped, `${width} ${lang} ${path}`).toEqual([]);
+          const box = await bar.boundingBox();
+          const price = await bar.locator(".bar-price").boundingBox();
+          const button = await bar.locator(".btn-primary").boundingBox();
+          expect(box && price && button).toBeTruthy();
+          if (box && price && button) {
+            expect(price.x + price.width, path).toBeLessThanOrEqual(box.x + box.width);
+            expect(button.x + button.width, path).toBeLessThanOrEqual(box.x + box.width);
+          }
+          await expectNoOverflow(page, `${width} ${lang} ${path}`);
+        }
+      });
+    }
+  }
 });
 
 test.describe("узкие телефоны", () => {

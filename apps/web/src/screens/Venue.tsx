@@ -556,34 +556,37 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
           в карточке справа — под кнопками */}
       <div className="venue-side">
         <RequestNote />
+        {/* Цена целиком, без многоточия: не помещается рядом с кнопками — кнопки строкой ниже */}
         <div className="action-bar venue-bar">
           <div className="bar-price">
             <b>{price.amount}</b>
-            {price.unit ? <span className="unit">{price.unit}</span> : null}
+            <span className="unit">{price.unit}</span>
             {picked.length > 0 ? <span className="bar-chosen">{t.svcChosenN(picked.length)}</span> : null}
           </div>
-          <ContactButton
-            slug={listing.slug}
-            name={listing.name}
-            className="icon-btn call"
-            ariaLabel={`${t.contactBtn}: ${listing.name}`}
-          >
-            <Icon name="phone" size={20} />
-            <span className="call-label" aria-hidden="true">
-              {t.contactBtn}
-            </span>
-          </ContactButton>
-          {nativeMain ? null : (
-            <Link
-              className="btn btn-primary"
-              href={reqHref}
-              onPointerEnter={preloadRequest}
-              onTouchStart={preloadRequest}
-              onFocus={preloadRequest}
+          <div className="bar-actions">
+            <ContactButton
+              slug={listing.slug}
+              name={listing.name}
+              className="icon-btn call"
+              ariaLabel={`${t.contactBtn}: ${listing.name}`}
             >
-              {reqLabel}
-            </Link>
-          )}
+              <Icon name="phone" size={20} />
+              <span className="call-label" aria-hidden="true">
+                {t.contactBtn}
+              </span>
+            </ContactButton>
+            {nativeMain ? null : (
+              <Link
+                className="btn btn-primary"
+                href={reqHref}
+                onPointerEnter={preloadRequest}
+                onTouchStart={preloadRequest}
+                onFocus={preloadRequest}
+              >
+                {reqLabel}
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     </article>

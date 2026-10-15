@@ -118,14 +118,15 @@ async function expectContactsFirst(
   await expect(barCall).toHaveAccessibleName(`${ru.contactBtn}: ${venue.name}`);
   if (desktop) await expect(barCall).toContainText(ru.contactBtn);
   await expect(page.getByRole("button", { name: ru.contactBtn }).locator("visible=true")).toHaveCount(1);
-  // Цена в панели не уходит под кнопку: рядом с ней на телефоне, над ней — на компьютере
+  // Цена в панели не уходит под кнопку: рядом с ней или над ней (на компьютере и когда кнопки
+  // не поместились рядом — строкой ниже)
   const priceBox = await page.locator(".venue-bar .bar-price b").boundingBox();
   const callBox = await barCall.boundingBox();
   expect(priceBox && callBox).toBeTruthy();
-  if (priceBox && callBox)
-    expect(
-      desktop ? priceBox.y + priceBox.height <= callBox.y : priceBox.x + priceBox.width <= callBox.x,
-    ).toBe(true);
+  if (priceBox && callBox) {
+    const above = priceBox.y + priceBox.height <= callBox.y;
+    expect(desktop ? above : above || priceBox.x + priceBox.width <= callBox.x).toBe(true);
+  }
   expect(
     await page.locator(".venue-bar .bar-price b").evaluate((el) => el.scrollWidth <= el.clientWidth),
   ).toBe(true);
