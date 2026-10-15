@@ -121,16 +121,16 @@ export const STAFF_TEXTS: Readonly<Record<Lang, StaffTexts>> = {
       (role === "admin"
         ? "\nАдминистратору — ещё сводка каждое утро, отчёт по понедельникам и ошибки сервера."
         : "") +
-      "\n\n/stats — сводка\n/admin — панель оператора",
-    adminButton: "Панель оператора",
-    adminHint: "Панель оператора открывается прямо в Telegram:",
+      "\n\n/stats — сводка\n/admin — панель команды",
+    adminButton: "Панель команды",
+    adminHint: "Панель команды открывается прямо в Telegram:",
     stats: (s) =>
       "Bayramm — сводка\n\n" +
       `Активных залов: ${s.activeListings}\nНа проверке: ${s.reviewListings}\nПартнёров: ${s.vendors}\n\n` +
       `Заявок сегодня: ${s.requestsToday}\nЖдут ответа: ${s.awaiting}\nСрок 12 часов вышел: ${s.breached}\n\n` +
       `Недоставленных уведомлений: ${s.deadNotifications}`,
     partnerStaffHint:
-      "Вы в команде Bayramm. Чтобы проверить кабинет партнёра, добавьте в панели оператора пользователя " +
+      "Вы в команде Bayramm. Чтобы проверить кабинет партнёра, добавьте в панели команды пользователя " +
       "партнёра с этим номером и снова нажмите «Я партнёр».",
   },
   uz: {
@@ -140,16 +140,16 @@ export const STAFF_TEXTS: Readonly<Record<Lang, StaffTexts>> = {
       (role === "admin"
         ? "\nAdministratorga — yana har kuni ertalab qisqa hisobot, dushanba kunlari haftalik hisobot va server xatolari."
         : "") +
-      "\n\n/stats — qisqa hisobot\n/admin — boshqaruv paneli",
-    adminButton: "Boshqaruv paneli",
-    adminHint: "Boshqaruv paneli toʻgʻridan-toʻgʻri Telegramda ochiladi:",
+      "\n\n/stats — qisqa hisobot\n/admin — jamoa paneli",
+    adminButton: "Jamoa paneli",
+    adminHint: "Jamoa paneli toʻgʻridan-toʻgʻri Telegramda ochiladi:",
     stats: (s) =>
       "Bayramm — qisqa hisobot\n\n" +
       `Faol zallar: ${s.activeListings}\nTekshiruvda: ${s.reviewListings}\nHamkorlar: ${s.vendors}\n\n` +
       `Bugungi arizalar: ${s.requestsToday}\nJavob kutayotgan: ${s.awaiting}\n12 soat muddati oʻtgan: ${s.breached}\n\n` +
       `Yetkazilmagan xabarlar: ${s.deadNotifications}`,
     partnerStaffHint:
-      "Siz Bayramm jamoasidasiz. Hamkor kabinetini sinash uchun boshqaruv panelida shu raqam bilan hamkor " +
+      "Siz Bayramm jamoasidasiz. Hamkor kabinetini sinash uchun jamoa panelida shu raqam bilan hamkor " +
       "foydalanuvchisini qoʻshing va «Men hamkorman» tugmasini yana bosing.",
   },
 };

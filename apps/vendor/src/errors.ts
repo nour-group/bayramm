@@ -44,6 +44,7 @@ export const API_ERROR_CODES = [
   "contacts_not_live",
   "version_conflict",
   "part_in_use",
+  "undo_expired",
 ] as const;
 
 /** Текст ошибки действия: нет связи, код API или общий «не удалось» */

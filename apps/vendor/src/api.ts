@@ -217,6 +217,9 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   callAttempt: (id: string) => empty(`/vendor/requests/${encodeURIComponent(id)}/call`, { method: "POST" }),
+  /** Отменить «Я связался» в первые секунды (VENDOR_UNDO_SECONDS); позже — 409 undo_expired */
+  undoContacted: (id: string) =>
+    json<VendorRequestItem>(`/vendor/requests/${encodeURIComponent(id)}/undo`, { method: "POST" }),
 
   listing: (id: string) => json<VendorListing>(`/vendor/listings/${encodeURIComponent(id)}`),
   /** Черновик (или отклонённую) — на проверку команде: в ответе витрина уже на проверке */

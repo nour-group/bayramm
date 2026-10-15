@@ -4,6 +4,10 @@
    партнёра) и новые фото (решение — плиткой: ✓ одобрить, ✕ отклонить с причиной, «Одобрить
    все» — по карточке). Услуги и фото — у любых витрин, кроме отклонённых: партнёр видит «на
    проверке» и у черновика, поэтому у карточки очереди — статус витрины, если она не на сайте.
+   Фото: под плиткой — что отметил загрузивший («лиц нет» или «люди согласны»), над плитками —
+   правило фото категории; нажатие на плитку открывает просмотр во весь экран (листать ← →,
+   решать там же). «Одобрить все» — сразу, если каждое фото открыто, иначе — с подтверждением
+   числа. Число у очереди «Фото» — сами фото, а не витрины.
    Карточка витрины и предложения — ссылка целиком: нажатие в любом месте открывает то, по чему
    решать.
 
@@ -35,8 +39,9 @@ import type {
   ServiceQueue,
   ServiceQueueItem,
 } from "@bayramm/shared/api/staff";
-import { Dialog, RadioGroup } from "@bayramm/ui/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { categoryConfig } from "@bayramm/shared/categories";
+import { ConfirmSheet, Dialog, RadioGroup } from "@bayramm/ui/react";
+import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { type Failure, useCan, useSession } from "../api";
 import { CategoryChip, formatPrice } from "../categories";
 import { formatMoment, photoSrc, photoSrcSet, vendorLabel } from "../format";
@@ -150,12 +155,16 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
     decidesServices ? "/staff/contact-changes" : null,
   );
   const photos = useQueue<ListingListItem, ListingList>("/staff/listings?photos=pending");
+  // У очереди фото число — фото (как у остальных очередей — их предметы), а не витрины
+  const photosLoaded = photos.list.loaded;
+  const photoCount =
+    photosLoaded.state === "ready" ? (photosLoaded.data.pendingPhotosTotal ?? photos.count) : null;
   const counts: Readonly<Record<Queue, number | null>> = {
     review: review.count,
     revisions: revisions.count,
     services: services.count,
     contacts: contacts.count,
-    photos: photos.count,
+    photos: photoCount,
   };
   const loaded = {
     review: review.list.loaded,
@@ -314,7 +323,7 @@ function RevisionQueue({ items }: { items: readonly RevisionListItem[] }) {
           </p>
           <p className="rcard-meta">
             {t.queueProposer(revision.proposedBy.kind, revision.proposedBy.name)} ·{" "}
-            {revision.fields.map((field) => t.revisionFields[field] ?? field).join(", ")}
+            {t.queueChanges(revision.fields.map((field) => t.revisionFields[field] ?? field).join(", "))}
           </p>
           {revision.stale && <p className="notice notice-warn">{t.revisionStale}</p>}
         </li>
@@ -432,8 +441,9 @@ function PhotoQueueList({ state, decides, onDecided, onFocused }: PhotoQueueProp
 }
 
 /**
- * Карточка витрины в очереди фото: плитки ждущих фото (их присылает сам список), под каждой — ✓ и
- * ✕ (отказ — с причиной в шторке), и «Одобрить все» — по карточке. Решённая плитка тускнеет, пока
+ * Карточка витрины в очереди фото: правило фото категории, плитки ждущих фото (их присылает сам
+ * список) с отметкой загрузившего, под каждой — ✓ и ✕ (отказ — с причиной в шторке), и «Одобрить
+ * все» — по карточке. Плитка открывает просмотр во весь экран. Решённая плитка тускнеет, пока
  * очередь не перечитается: фокус и порядок остаются на месте
  */
 function PhotoCard({
@@ -453,10 +463,29 @@ function PhotoCard({
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [declining, setDeclining] = useState<{ photo: PendingPhoto; n: number } | null>(null);
+  // Просмотр во весь экран: какое фото открыто и какие уже открывали («Одобрить все» без вопроса)
+  const [viewing, setViewing] = useState<string | null>(null);
+  const [seen, setSeen] = useState<ReadonlySet<string>>(new Set());
+  const [confirmAll, setConfirmAll] = useState(false);
+  const title = useRef<HTMLAnchorElement>(null);
+  const allButton = useRef<HTMLButtonElement>(null);
   const base = `/staff/listings/${listing.id}/photos`;
   const open = photos.filter((photo) => !decidedIds.has(photo.id));
   const more = Math.max(0, listing.photos.pending - photos.length);
   const mark = (id: string) => setDecidedIds((prev) => new Set(prev).add(id));
+  const policy = categoryConfig(listing.categoryCode)?.photoPolicy;
+
+  const view = (id: string) => {
+    setViewing(id);
+    setSeen((prev) => new Set(prev).add(id));
+  };
+  /** После решения в просмотре — следующее нерешённое фото; кончились — просмотр закрывается */
+  const nextAfter = (id: string): string | null => {
+    const rest = photos.filter((photo) => photo.id !== id && !decidedIds.has(photo.id));
+    if (rest.length === 0) return null;
+    const at = photos.findIndex((photo) => photo.id === id);
+    return (rest.find((photo) => photos.indexOf(photo) > at) ?? rest[0] ?? null)?.id ?? null;
+  };
 
   const approve = async (photo: PendingPhoto, tile: number) => {
     setWorking(true);
@@ -468,10 +497,16 @@ function PhotoCard({
       return;
     }
     mark(photo.id);
+    if (viewing === photo.id) {
+      const next = nextAfter(photo.id);
+      if (next) view(next);
+      else setViewing(null);
+    }
     onDecided({ listing: listing.id, tile, card: index }, t.photoApprovedSaid(listing.name));
   };
 
   const approveAll = async () => {
+    setConfirmAll(false);
     setWorking(true);
     setFailure(null);
     let approved = 0;
@@ -492,6 +527,9 @@ function PhotoCard({
         t.photoApprovedAllSaid(approved, listing.name),
       );
   };
+  // Каждое фото открыто во весь экран — одобрить все сразу; иначе — подтвердить число
+  const unseen = open.filter((photo) => !seen.has(photo.id)).length;
+  const askAll = () => (unseen === 0 ? void approveAll() : setConfirmAll(true));
 
   const decline = async (reason: string): Promise<Failure | null> => {
     if (!declining) return null;
@@ -500,6 +538,11 @@ function PhotoCard({
     if (!result.ok) return result;
     mark(photo.id);
     setDeclining(null);
+    if (viewing === photo.id) {
+      const next = nextAfter(photo.id);
+      if (next) view(next);
+      else setViewing(null);
+    }
     onDecided(
       {
         listing: listing.id,
@@ -514,6 +557,9 @@ function PhotoCard({
     return null;
   };
 
+  const viewed = viewing === null ? -1 : photos.findIndex((photo) => photo.id === viewing);
+  const current = viewed === -1 ? null : (photos[viewed] ?? null);
+
   return (
     <li className="rcard photo-card" data-listing={listing.id}>
       <div className="rcard-head">
@@ -526,21 +572,32 @@ function PhotoCard({
       <p className="rcard-meta">
         {vendorLabel(listing.vendor)} · {t.pendingPhotos(listing.photos.pending)}
       </p>
+      {policy ? <p className="photo-rule">{t.photoRule[policy]}</p> : null}
       <ul className="queue-photos">
         {photos.map((photo, tile) => {
           const decidedHere = decidedIds.has(photo.id);
           return (
             <li key={photo.id} className={`queue-photo${decidedHere ? " is-decided" : ""}`}>
-              <img
-                src={photoSrc(photo.key, 640)}
-                srcSet={photoSrcSet(photo.key)}
-                sizes="(max-width: 719px) 50vw, 200px"
-                width={photo.width > 0 ? photo.width : undefined}
-                height={photo.height > 0 ? photo.height : undefined}
-                alt=""
-                loading="lazy"
-                decoding="async"
-              />
+              {/* Плитка — кнопка: фото во весь экран, листать и решать там же */}
+              <button
+                type="button"
+                className="queue-photo-open"
+                aria-label={t.photoOpen(tile + 1, listing.name)}
+                aria-haspopup="dialog"
+                onClick={() => view(photo.id)}
+              >
+                <img
+                  src={photoSrc(photo.key, 640)}
+                  srcSet={photoSrcSet(photo.key)}
+                  sizes="(max-width: 719px) 50vw, 200px"
+                  width={photo.width > 0 ? photo.width : undefined}
+                  height={photo.height > 0 ? photo.height : undefined}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
+              </button>
+              <p className="photo-claim">{t.photoAckClaim[photo.ack]}</p>
               {decides ? (
                 <div className="queue-photo-acts">
                   <button
@@ -574,11 +631,12 @@ function PhotoCard({
       {decides && open.length > 1 ? (
         <div className="rcard-actions">
           <button
+            ref={allButton}
             type="button"
             className="btn btn-primary photo-approve-all"
             aria-busy={working || undefined}
             disabled={working}
-            onClick={() => void approveAll()}
+            onClick={askAll}
           >
             {t.photoApproveAll(open.length)}
             <span className="visually-hidden">: {listing.name}</span>
@@ -586,27 +644,231 @@ function PhotoCard({
         </div>
       ) : null}
       {failure ? <ErrorText failure={failure} /> : null}
-      <Dialog
-        open={declining !== null}
-        title={`${t.declinePhotoTitle(declining?.n ?? 0)} · ${listing.name}`}
-        onClose={() => setDeclining(null)}
-      >
-        {declining ? (
-          <ConfirmForm
-            key={declining.photo.id}
-            hint={t.declinePhotoHint(declining.n)}
-            label={t.reason}
-            required
-            danger
-            presets={t.reasons.photoDecline}
-            maxLength={REASON_MAX}
-            submitLabel={t.declinePhoto}
-            onSubmit={decline}
-            onCancel={() => setDeclining(null)}
-          />
-        ) : null}
-      </Dialog>
+      <ConfirmSheet
+        open={confirmAll}
+        title={t.photoApproveAllQ(open.length)}
+        text={t.photoApproveAllText(open.length, open.length - unseen)}
+        confirmLabel={t.photoApproveAllGo}
+        cancelLabel={t.cancel}
+        returnFocus={allButton}
+        onConfirm={() => void approveAll()}
+        onCancel={() => setConfirmAll(false)}
+      />
+      {current ? (
+        <PhotoViewer
+          photos={photos}
+          at={viewed}
+          listing={listing}
+          decides={decides}
+          working={working}
+          decided={decidedIds}
+          returnFocus={title}
+          onGo={(id) => {
+            setDeclining(null);
+            view(id);
+          }}
+          onApprove={(photo, tile) => void approve(photo, tile)}
+          onDecline={(photo, tile) => {
+            setFailure(null);
+            setDeclining({ photo, n: tile + 1 });
+          }}
+          declining={declining !== null && declining.photo.id === current.id}
+          declineForm={
+            declining ? (
+              <ConfirmForm
+                key={declining.photo.id}
+                hint={t.declinePhotoHint(declining.n)}
+                label={t.reason}
+                required
+                danger
+                presets={t.reasons.photoDecline}
+                maxLength={REASON_MAX}
+                submitLabel={t.declinePhoto}
+                onSubmit={decline}
+                onCancel={() => setDeclining(null)}
+              />
+            ) : null
+          }
+          failure={failure}
+          onClose={() => {
+            setDeclining(null);
+            setViewing(null);
+          }}
+        />
+      ) : (
+        <Dialog
+          open={declining !== null}
+          title={`${t.declinePhotoTitle(declining?.n ?? 0)} · ${listing.name}`}
+          onClose={() => setDeclining(null)}
+        >
+          {declining ? (
+            <ConfirmForm
+              key={declining.photo.id}
+              hint={t.declinePhotoHint(declining.n)}
+              label={t.reason}
+              required
+              danger
+              presets={t.reasons.photoDecline}
+              maxLength={REASON_MAX}
+              submitLabel={t.declinePhoto}
+              onSubmit={decline}
+              onCancel={() => setDeclining(null)}
+            />
+          ) : null}
+        </Dialog>
+      )}
     </li>
+  );
+}
+
+interface PhotoViewerProps {
+  photos: readonly PendingPhoto[];
+  /** Какое по счёту открыто */
+  at: number;
+  listing: ListingListItem;
+  decides: boolean;
+  working: boolean;
+  decided: ReadonlySet<string>;
+  returnFocus: RefObject<HTMLElement | null>;
+  onGo: (id: string) => void;
+  onApprove: (photo: PendingPhoto, tile: number) => void;
+  onDecline: (photo: PendingPhoto, tile: number) => void;
+  /** Причина отказа открытого фото — форма прямо в просмотре */
+  declining: boolean;
+  declineForm: ReactNode;
+  failure: Failure | null;
+  onClose: () => void;
+}
+
+/**
+ * Фото во весь экран: снимок целиком (не обрезан плиткой), что отметил загрузивший и правило
+ * категории, листать — кнопками и стрелками ← →, решить — здесь же. Диалог набора: Esc и
+ * крестик закрывают, Tab ходит внутри, фокус после закрытия — на название витрины
+ */
+function PhotoViewer({
+  photos,
+  at,
+  listing,
+  decides,
+  working,
+  decided,
+  returnFocus,
+  onGo,
+  onApprove,
+  onDecline,
+  declining,
+  declineForm,
+  failure,
+  onClose,
+}: PhotoViewerProps) {
+  const photo = photos[at];
+  const total = photos.length;
+  const go = (step: number) => {
+    const next = photos[(at + step + total) % total];
+    if (next) onGo(next.id);
+  };
+  // Стрелки листают, пока не вписывают причину отказа (в поле стрелки двигают курсор)
+  const goRef = useRef(go);
+  goRef.current = go;
+  useEffect(() => {
+    if (declining || total < 2) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input, textarea, [role='radiogroup']")) return;
+      if (event.key === "ArrowLeft") goRef.current(-1);
+      else if (event.key === "ArrowRight") goRef.current(1);
+      else return;
+      event.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [declining, total]);
+  // Решили или перелистнули: кнопка «Одобрить» была недоступна, пока шёл запрос, и фокус ушёл с
+  // неё — возвращаем его в просмотр (на «Одобрить», без него — на сам диалог), иначе Esc и Tab
+  // не дошли бы до просмотра
+  const approveRef = useRef<HTMLButtonElement>(null);
+  const shownId = photo?.id;
+  useEffect(() => {
+    if (working || shownId === undefined) return;
+    const viewer = document.querySelector<HTMLElement>(".photo-viewer");
+    if (viewer?.contains(document.activeElement)) return;
+    (approveRef.current ?? viewer)?.focus({ preventScroll: true });
+  }, [working, shownId]);
+  if (!photo) return null;
+  const policy = categoryConfig(listing.categoryCode)?.photoPolicy;
+  const decidedHere = decided.has(photo.id);
+  return (
+    <Dialog
+      open
+      title={t.photoViewerTitle(at + 1, total, listing.name)}
+      onClose={onClose}
+      returnFocus={returnFocus}
+      className="photo-viewer"
+      actions={
+        <div className="viewer-actions">
+          <button
+            type="button"
+            className="btn btn-icon viewer-step"
+            disabled={total < 2}
+            onClick={() => go(-1)}
+          >
+            <Icon name="back" size={20} />
+            <span className="visually-hidden">{t.photoPrev}</span>
+          </button>
+          {decides ? (
+            <>
+              <button
+                ref={approveRef}
+                type="button"
+                className="btn btn-primary viewer-approve"
+                disabled={working || decidedHere}
+                onClick={() => onApprove(photo, at)}
+              >
+                {decidedHere ? t.photoDecidedHere : t.photoApprove}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger-fill viewer-decline"
+                disabled={working || decidedHere || declining}
+                onClick={() => onDecline(photo, at)}
+              >
+                {t.photoDecline}
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-icon viewer-step"
+            disabled={total < 2}
+            onClick={() => go(1)}
+          >
+            <Icon name="forward" size={20} />
+            <span className="visually-hidden">{t.photoNext}</span>
+          </button>
+        </div>
+      }
+    >
+      <figure className="viewer-figure">
+        <img
+          key={photo.id}
+          className="viewer-image"
+          src={photoSrc(photo.key, 1280)}
+          srcSet={photoSrcSet(photo.key, true)}
+          sizes="100vw"
+          width={photo.width > 0 ? photo.width : undefined}
+          height={photo.height > 0 ? photo.height : undefined}
+          alt=""
+          decoding="async"
+        />
+        <figcaption className="viewer-claim">
+          <span className="photo-claim">{t.photoAckClaim[photo.ack]}</span>
+          {policy ? <span className="photo-rule">{t.photoRule[policy]}</span> : null}
+          {total > 1 ? <span className="muted small viewer-keys">{t.photoViewerKeys}</span> : null}
+        </figcaption>
+      </figure>
+      {declining ? declineForm : null}
+      {failure ? <ErrorText failure={failure} /> : null}
+    </Dialog>
   );
 }
 

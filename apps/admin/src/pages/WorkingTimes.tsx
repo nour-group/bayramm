@@ -4,7 +4,7 @@
    (calendarVersion); календарь успели изменить — calendar_conflict, витрина перечитывается.
    Часть с будущими заявками не убрать (part_in_use — сколько заявок); на одно мероприятие в
    день — всегда. Без права listings.write — только показ. Шторка «Изменить»: вписанное и не
-   сохранённое — уход переспросит (useUnsaved). */
+   сохранённое — уход и «Отмена» (Esc, «×») переспросят (useUnsaved, useConfirmLeave). */
 
 import type { DaySessionsChange, ListingDetail } from "@bayramm/shared/api/staff";
 import {
@@ -26,7 +26,7 @@ import { Checkbox, Dialog, NumberStepper, RadioGroup, Select, useToast } from "@
 import { type FormEvent, useId, useRef, useState } from "react";
 import { type Failure, useCan, useSession } from "../api";
 import { apiErrorText, t } from "../texts";
-import { useUnsaved } from "../unsaved";
+import { useConfirmLeave, useUnsaved } from "../unsaved";
 
 const partTitle = (part: DayPart) => t.dayParts[part] ?? part;
 
@@ -65,6 +65,7 @@ export function WorkingTimes({
   const [busy, setBusy] = useState(false);
 
   useUnsaved(open && daySessionsDirty(draft, start));
+  const confirmLeave = useConfirmLeave();
 
   const openSheet = () => {
     const next = daySessionsDraft(sessions);
@@ -74,8 +75,9 @@ export function WorkingTimes({
     setFailure(null);
     setOpen(true);
   };
+  // Вписанное и не сохранённое — «Уйти без сохранения?»; окно закрывается следующим тактом
   const close = () => {
-    if (!busy) setOpen(false);
+    if (!busy) confirmLeave(() => queueMicrotask(() => setOpen(false)));
   };
   const update = (patch: Partial<DaySessionsDraft>) => setDraft((current) => ({ ...current, ...patch }));
   const togglePart = (part: DayPart, on: boolean) =>

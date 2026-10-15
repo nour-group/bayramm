@@ -155,20 +155,22 @@ export function VenueGroups({ listing, category, t, lang, navigate, pending, onE
               ) : null}
             </dd>
           </div>
-          <div className="price-row">
-            <dt>{t.priceLabel}</dt>
-            <dd>
-              {listing.priceFromUzs !== null
-                ? `${fill(t.priceFrom, { price: formatMoney(listing.priceFromUzs, t, lang) })} ${priceUnitLabel(
-                    lang,
-                    listing.priceUnit,
-                  )}`
-                : t.notSet}
-              <SectionLink to={{ route: "services" }} navigate={navigate} className="btn btn-ghost">
-                {t.toServices}
-              </SectionLink>
-            </dd>
-          </div>
+          {/* Цены ещё нет — о ней говорит чек-лист готовности («Добавьте услугу с ценой · К
+            услугам»): второй строкой с той же кнопкой здесь она только повторялась бы */}
+          {listing.priceFromUzs !== null ? (
+            <div className="price-row">
+              <dt>{t.priceLabel}</dt>
+              <dd>
+                {`${fill(t.priceFrom, { price: formatMoney(listing.priceFromUzs, t, lang) })} ${priceUnitLabel(
+                  lang,
+                  listing.priceUnit,
+                )}`}
+                <SectionLink to={{ route: "services" }} navigate={navigate} className="btn btn-ghost">
+                  {t.toServices}
+                </SectionLink>
+              </dd>
+            </div>
+          ) : null}
         </dl>
       </Group>
 

@@ -5,6 +5,7 @@
 
 import { compressForUpload } from "@bayramm/media/browser";
 import type { VendorContactChange, VendorListing, VendorPhoto } from "@bayramm/shared/api/vendor";
+import { UiTextsProvider } from "@bayramm/ui/react";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -118,7 +119,10 @@ async function mount(ui: ReactElement) {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
-  await act(async () => root.render(ui));
+  // Тексты набора (крестик «Закрыть» шторки) — как в корне кабинета
+  await act(async () =>
+    root.render(<UiTextsProvider texts={{ close: t.close, clear: t.clear }}>{ui}</UiTextsProvider>),
+  );
 }
 
 afterEach(() => {
@@ -224,14 +228,10 @@ describe("фото: плитки и шторка действий", () => {
     await click(label("Фото 3: действия"));
     const open = sheet();
     expect(open?.textContent).toContain("Фото 3");
-    const texts = [...(open?.querySelectorAll("button") ?? [])].map((b) => b.textContent);
-    expect(texts).toEqual([
-      "Сделать обложкой",
-      "Переместить раньше",
-      "Переместить позже",
-      "Удалить",
-      "Закрыть",
-    ]);
+    // Закрыть — крестик набора в заголовке (подпись для диктора), действия — в теле
+    expect(open?.querySelector(".ui-dialog-head button")?.getAttribute("aria-label")).toBe("Закрыть");
+    const texts = [...(open?.querySelectorAll(".ui-dialog-body button") ?? [])].map((b) => b.textContent);
+    expect(texts).toEqual(["Сделать обложкой", "Переместить раньше", "Переместить позже", "Удалить"]);
     await click(buttonIn(open as Element, "Переместить позже"));
     const [order] = calls_("PUT", `${BASE}/photos/order`);
     expect(order?.body).toEqual({
@@ -249,11 +249,10 @@ describe("фото: плитки и шторка действий", () => {
     expect(calls_("POST", `${BASE}/photos/${photo(4).id}/cover`)).toHaveLength(1);
 
     await click(label("Фото 1: действия"));
-    expect([...(sheet()?.querySelectorAll("button") ?? [])].map((b) => b.textContent)).toEqual([
-      "Удалить",
-      "Закрыть",
-    ]);
-    await click(buttonIn(sheet() as Element, "Закрыть"));
+    expect(
+      [...(sheet()?.querySelectorAll(".ui-dialog-body button") ?? [])].map((b) => b.textContent),
+    ).toEqual(["Удалить"]);
+    await click(sheet()?.querySelector('button[aria-label="Закрыть"]'));
 
     await click(label("Фото 5: действия"));
     expect(sheet()?.textContent).toContain("Порядок и обложка — у фото, которые одобрила команда.");

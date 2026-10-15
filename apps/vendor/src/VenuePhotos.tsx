@@ -316,11 +316,12 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
                   <p className="field-label" id={labelId}>
                     {t.photoKindLabel}
                   </p>
-                  {/* Ничего не выбрано заранее: без выбора файлы не выбрать */}
+                  {/* Ничего не выбрано заранее: без выбора файлы не выбрать. Два варианта столбиком:
+                    подпись «Люди согласны на публикацию» целиком и на 320px */}
                   <RadioGroup<PhotoKind>
                     value={kind}
                     onChange={setKind}
-                    variant="segmented"
+                    variant="row"
                     aria-labelledby={labelId}
                     disabled={uploading}
                     options={[
@@ -367,16 +368,6 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
               if (!busy) setOpenedId(null);
             }}
             returnFocus={focusBack}
-            actions={
-              <button
-                type="button"
-                className="ui-btn ui-btn-secondary"
-                disabled={busy}
-                onClick={() => setOpenedId(null)}
-              >
-                {t.close}
-              </button>
-            }
           >
             {opened && moves ? (
               <div className="photo-actions">

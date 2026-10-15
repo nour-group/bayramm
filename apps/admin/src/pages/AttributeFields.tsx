@@ -16,7 +16,7 @@ import {
 import { Checkbox, Select } from "@bayramm/ui/react";
 import { useId } from "react";
 import { ru } from "../categories";
-import { ChipsField, ChoiceField, NumberField } from "../fields";
+import { ChipsField, ChoiceField, LabelText, NumberField } from "../fields";
 import { t } from "../texts";
 import { Field } from "../ui";
 
@@ -62,7 +62,10 @@ export function AttributeFields({
         const path = `attributes.${field.key}`;
         const draft = drafts[field.key];
         const label = ru(field.label);
-        const hint = field.required && missing.includes(field.key) ? t.required : undefined;
+        // «обязательно / по желанию» — у подписи (как у клиента); под полем — только что его
+        // ещё нет, а без него витрину не опубликовать
+        const required = field.required;
+        const hint = field.required && missing.includes(field.key) ? t.attributeMissing : undefined;
         const error = has(path) ? errorText(field) : undefined;
         switch (field.type) {
           case "int":
@@ -72,6 +75,7 @@ export function AttributeFields({
                 key={field.key}
                 field={field}
                 label={label}
+                required={required}
                 value={typeof draft === "string" ? draft : ""}
                 error={error}
                 hint={hint}
@@ -97,6 +101,7 @@ export function AttributeFields({
               <ChipsField
                 key={field.key}
                 label={label}
+                required={required}
                 value={chosen}
                 options={field.options.map((option) => ({ value: option.code, label: ru(option.label) }))}
                 onChange={(next) => onChange(field.key, next)}
@@ -109,7 +114,7 @@ export function AttributeFields({
           case "text":
             if (!field.localized) {
               return (
-                <Field key={field.key} label={label} error={error} hint={hint}>
+                <Field key={field.key} label={label} required={required} error={error} hint={hint}>
                   {(props) => (
                     <input
                       {...props}
@@ -128,6 +133,7 @@ export function AttributeFields({
               <Localized
                 key={field.key}
                 label={label}
+                required={required}
                 maxLength={field.maxLength}
                 value={
                   typeof draft === "object" && !Array.isArray(draft)
@@ -163,6 +169,7 @@ export function AttributeFields({
 interface ScalarProps {
   field: ListItemField;
   label: string;
+  required: boolean;
   value: string;
   error: string | undefined;
   hint?: string | undefined;
@@ -171,11 +178,12 @@ interface ScalarProps {
 }
 
 /** Число, вариант или строка текста — одно поле */
-function Scalar({ field, label, value, error, hint, readOnly, onChange }: ScalarProps) {
+function Scalar({ field, label, required, value, error, hint, readOnly, onChange }: ScalarProps) {
   if (field.type === "int")
     return (
       <NumberField
         label={label}
+        required={required}
         value={value}
         onChange={onChange}
         min={field.min}
@@ -193,6 +201,7 @@ function Scalar({ field, label, value, error, hint, readOnly, onChange }: Scalar
       return (
         <ChoiceField
           label={label}
+          required={required}
           value={value === "" ? null : value}
           options={options}
           onChange={onChange}
@@ -205,7 +214,7 @@ function Scalar({ field, label, value, error, hint, readOnly, onChange }: Scalar
         />
       );
     return (
-      <Field label={label} error={error} hint={hint}>
+      <Field label={label} required={required} error={error} hint={hint}>
         {(props) => (
           <Select
             {...props}
@@ -221,7 +230,7 @@ function Scalar({ field, label, value, error, hint, readOnly, onChange }: Scalar
     );
   }
   return (
-    <Field label={label} error={error} hint={hint}>
+    <Field label={label} required={required} error={error} hint={hint}>
       {(props) => (
         <input
           {...props}
@@ -240,6 +249,7 @@ function Scalar({ field, label, value, error, hint, readOnly, onChange }: Scalar
 
 interface LocalizedProps {
   label: string;
+  required: boolean;
   value: { ru: string; uz: string };
   maxLength: number;
   error: string | undefined;
@@ -249,11 +259,17 @@ interface LocalizedProps {
 }
 
 /** Текст для клиентов на двух языках: клиент видит свой */
-function Localized({ label, value, maxLength, error, hint, readOnly, onChange }: LocalizedProps) {
+function Localized({ label, required, value, maxLength, error, hint, readOnly, onChange }: LocalizedProps) {
   return (
     <>
       {(["ru", "uz"] as const).map((lang) => (
-        <Field key={lang} label={`${label} (${lang.toUpperCase()})`} error={error} hint={hint}>
+        <Field
+          key={lang}
+          label={`${label} (${lang.toUpperCase()})`}
+          required={required}
+          error={error}
+          hint={hint}
+        >
           {(props) => (
             <textarea
               {...props}
@@ -290,7 +306,9 @@ function ListEditor({ field, label, items, errors, hint, readOnly, onChange }: L
     onChange(items.map((item, i) => (i === index ? { ...item, [key]: value } : item)));
   return (
     <fieldset className={`attr-list field-full${listError ? " field-bad" : ""}`} aria-describedby={headId}>
-      <legend>{label}</legend>
+      <legend>
+        <LabelText label={label} required={field.required} />
+      </legend>
       <p id={headId} className={listError ? "field-error" : "field-hint"}>
         {listError ? t.attributeError : (hint ?? t.listLimit(field.maxItems))}
       </p>
@@ -326,9 +344,9 @@ function ListEditor({ field, label, items, errors, hint, readOnly, onChange }: L
                     key={sub.key}
                     field={sub}
                     label={subLabel}
+                    required={sub.required}
                     value={typeof value === "string" ? value : ""}
                     error={error}
-                    hint={sub.required ? t.required : undefined}
                     readOnly={readOnly}
                     onChange={(next) => put(index, sub.key, next)}
                   />
@@ -357,7 +375,8 @@ function ListEditor({ field, label, items, errors, hint, readOnly, onChange }: L
             className="btn btn-sm"
             onClick={() => onChange([...items, emptyListItem(field)])}
           >
-            {t.listAdd}: {label.toLowerCase()}
+            {/* «Добавить машину» — подпись записи из конфигурации категории; нет — «Добавить: …» */}
+            {field.addLabel ? ru(field.addLabel) : `${t.listAdd}: ${label.toLowerCase()}`}
           </button>
         </div>
       )}

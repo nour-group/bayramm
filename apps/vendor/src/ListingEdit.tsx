@@ -50,7 +50,7 @@ import {
   videosChanges,
   videosErrors,
 } from "./listing-edit";
-import { LoadError, Loading } from "./ui";
+import { FieldMark, LoadError, Loading } from "./ui";
 import { useConfirmLeave, useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 
@@ -106,7 +106,7 @@ function DistrictField({
   return (
     <div className="form-row">
       <label className="field-label" htmlFor={id}>
-        {t.district}
+        {t.district} <FieldMark required t={t} />
       </label>
       <Select
         id={id}
@@ -320,7 +320,7 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
     label: string,
     value: string,
     set: (value: string) => void,
-    options: { multiline?: boolean; max: number; lang?: "ru" | "uz" },
+    options: { multiline?: boolean; max: number; lang?: "ru" | "uz"; required: boolean },
   ) => {
     const inputId = `${id}-${key}`;
     const common = {
@@ -335,7 +335,7 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
     return (
       <div className="form-row">
         <label className="field-label" htmlFor={inputId}>
-          {label}
+          {label} <FieldMark required={options.required} t={t} />
         </label>
         {options.multiline ? (
           <textarea {...common} rows={5} lang={options.lang} />
@@ -352,7 +352,7 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
     return (
       <div className="form-row">
         <label className="field-label" htmlFor={inputId}>
-          {label}
+          {label} <FieldMark required t={t} />
         </label>
         <NumberStepper
           id={inputId}
@@ -408,20 +408,21 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
           <>
             {text("name", t.nameLabel, basics.name, (v) => setBasics((p) => ({ ...p, name: v })), {
               max: 80,
+              required: true,
             })}
             {text(
               "descriptionRu",
               t.descriptionRuLabel,
               basics.descriptionRu,
               (v) => setBasics((p) => ({ ...p, descriptionRu: v })),
-              { multiline: true, max: DESCRIPTION_MAX, lang: "ru" },
+              { multiline: true, max: DESCRIPTION_MAX, lang: "ru", required: true },
             )}
             {text(
               "descriptionUz",
               t.descriptionUzLabel,
               basics.descriptionUz,
               (v) => setBasics((p) => ({ ...p, descriptionUz: v })),
-              { multiline: true, max: DESCRIPTION_MAX, lang: "uz" },
+              { multiline: true, max: DESCRIPTION_MAX, lang: "uz", required: true },
             )}
           </>
         ) : null}
@@ -443,20 +444,14 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
               t.addressRuLabel,
               place.addressRu,
               (v) => setPlace((p) => ({ ...p, addressRu: v })),
-              {
-                max: 300,
-                lang: "ru",
-              },
+              { max: 300, lang: "ru", required: false },
             )}
             {text(
               "addressUz",
               t.addressUzLabel,
               place.addressUz,
               (v) => setPlace((p) => ({ ...p, addressUz: v })),
-              {
-                max: 300,
-                lang: "uz",
-              },
+              { max: 300, lang: "uz", required: false },
             )}
             {hasCapacity(category) ? (
               <div className="cap-row">

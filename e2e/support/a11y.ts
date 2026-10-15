@@ -165,3 +165,59 @@ export async function smallTargets(page: Page, selector: string, min = 44): Prom
 export async function expectHitAreas(page: Page, screen: string, selector: string, min = 44): Promise<void> {
   expect(await smallTargets(page, selector, min), `${screen}: зона нажатия меньше ${min}px`).toEqual([]);
 }
+
+export interface ObscuredStop {
+  readonly element: string;
+  readonly bar: string;
+}
+
+/**
+ * WCAG 2.4.11 — фокус не закрыт: пройти экран клавишей Tab (steps шагов) и у каждого элемента
+ * в фокусе проверить, что его середина не под прилипшей панелью (bars — шапка, нижняя панель,
+ * панель действий). Браузер сам прокручивает к фокусу с учётом scroll-padding, который ставят
+ * высоты панелей (useStickyBar → --sticky-t и --sticky-b); элементы самих панелей не в счёт
+ */
+export async function expectFocusNotObscured(
+  page: Page,
+  screen: string,
+  bars: string,
+  steps = 30,
+): Promise<void> {
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    window.scrollTo(0, 0);
+  });
+  const obscured: ObscuredStop[] = [];
+  let visited = 0;
+  for (let i = 0; i < steps; i++) {
+    await page.keyboard.press("Tab");
+    const stop = await page.evaluate((barsSelector): ObscuredStop | "none" | null => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || el === document.body) return null;
+      if (el.closest(barsSelector)) return "none";
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return "none";
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      // Сам элемент сверху (ссылка «К содержимому» поверх шапки) — не закрыт
+      const top = document.elementFromPoint(cx, cy);
+      if (top && (top === el || el.contains(top))) return "none";
+      for (const bar of document.querySelectorAll<HTMLElement>(barsSelector)) {
+        const position = getComputedStyle(bar).position;
+        if (position !== "fixed" && position !== "sticky") continue;
+        const b = bar.getBoundingClientRect();
+        if (b.height === 0) continue;
+        if (cx >= b.left && cx <= b.right && cy >= b.top && cy <= b.bottom) {
+          const label = (el.getAttribute("aria-label") ?? el.textContent ?? "").trim().slice(0, 40);
+          return { element: `${el.tagName.toLowerCase()} «${label}»`, bar: bar.className };
+        }
+      }
+      return "none";
+    }, bars);
+    if (stop === null) break;
+    visited += 1;
+    if (stop !== "none") obscured.push(stop);
+  }
+  expect(visited, `${screen}: Tab ведёт по элементам`).toBeGreaterThan(0);
+  expect(obscured, `${screen}: фокус под прилипшей панелью (WCAG 2.4.11)`).toEqual([]);
+}

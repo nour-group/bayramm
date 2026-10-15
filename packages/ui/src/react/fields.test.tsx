@@ -255,6 +255,68 @@ describe("Toast вместо alert", () => {
     expect(() => render(<Saver />)).toThrow(/ToastProvider/);
     spy.mockRestore();
   });
+
+  it("тот же текст ещё раз — одно уведомление, срок заново, а не стопка", () => {
+    vi.useFakeTimers();
+    render(
+      <ToastProvider>
+        <Saver />
+      </ToastProvider>,
+    );
+    const status = document.querySelector('[role="status"]');
+    const [ok] = [...document.querySelectorAll<HTMLButtonElement>("#root button")];
+    click(ok);
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    click(ok);
+    expect(status?.querySelectorAll(".ui-toast")).toHaveLength(1);
+    act(() => {
+      vi.advanceTimersByTime(4000);
+    });
+    // Первое ушло бы через 5 с — второе показали заново, оно ещё на экране
+    expect(status?.textContent).toBe("Сохранено");
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(status?.textContent).toBe("");
+  });
+
+  it("действие («Отменить»): нажатие закрывает и выполняет; наведение держит на экране", () => {
+    vi.useFakeTimers();
+    const log: string[] = [];
+    function Undo() {
+      const toast = useToast();
+      return (
+        <button
+          type="button"
+          onClick={() =>
+            toast("Отмечено", {
+              duration: 8000,
+              action: { label: "Отменить", onClick: () => log.push("undo") },
+            })
+          }
+        >
+          mark
+        </button>
+      );
+    }
+    render(
+      <ToastProvider>
+        <Undo />
+      </ToastProvider>,
+    );
+    click(document.querySelector("#root button"));
+    const toast = document.querySelector<HTMLElement>(".ui-toast");
+    act(() => {
+      toast?.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      vi.advanceTimersByTime(20_000);
+    });
+    expect(document.querySelector(".ui-toast")).not.toBeNull();
+    click(document.querySelector(".ui-toast-action"));
+    expect(log).toEqual(["undo"]);
+    expect(document.querySelector(".ui-toast")).toBeNull();
+  });
 });
 
 describe("Tooltip вместо title", () => {

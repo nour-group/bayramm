@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { menuAction, moreButton, pick } from "../support/admin-ui";
+import { field, menuAction, moreButton, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   CAKE_LISTING_ID,
@@ -228,7 +228,7 @@ test.describe("контакты витрины для клиентов", () => {
     await expect(phoneMenu(page)).toHaveCount(0);
     // Номера нет — сразу поле «Телефон» (не «Сменить номер»): +998 у поля, маска
     await expect(page.getByLabel(t.phoneChange)).toHaveCount(0);
-    const phone = page.getByLabel(t.listingFields.phone ?? "", { exact: true });
+    const phone = field(page, t.listingFields.phone ?? "");
     await phone.fill("+998 90 111 22 33");
     await expect(phone).toHaveValue("90 111 22 33");
     await save(page).click();
@@ -245,7 +245,7 @@ test.describe("контакты витрины для клиентов", () => {
     await expect(page.getByRole("status").filter({ hasText: t.saved })).toBeVisible();
     expect(api.patches.map((body) => body.phone)).toEqual(["+998901112233", null]);
     // Телефона нет — снова поле; убирать больше нечего
-    await expect(page.getByLabel(t.listingFields.phone ?? "", { exact: true })).toBeVisible();
+    await expect(field(page, t.listingFields.phone ?? "")).toBeVisible();
     await expect(phoneMenu(page)).toHaveCount(0);
     expect(api.unexpected).toEqual([]);
   });
@@ -256,7 +256,7 @@ test.describe("контакты витрины для клиентов", () => {
     await page.goto(`/listings/${PHOTO_LISTING_ID}`);
     await expect(heading(page)).toHaveText("Kadr studio");
     // Номера нет — сразу поле (он нужен для публикации); Telegram — по «Добавить»
-    await expect(page.getByLabel(t.listingFields.phone ?? "", { exact: true })).toBeVisible();
+    await expect(field(page, t.listingFields.phone ?? "")).toBeVisible();
     await expect(contacts(page)).toContainText(t.telegramMissing);
     await expect(contacts(page).getByRole("button", { name: t.contactAdd })).toBeVisible();
     await expect(contacts(page).getByRole("button", { name: t.contactsShow })).toHaveCount(0);
@@ -264,7 +264,7 @@ test.describe("контакты витрины для клиентов", () => {
 });
 
 test.describe("метрики: контакты витрин", () => {
-  const section = (page: Page) => page.getByRole("region", { name: t.metricsContacts });
+  const section = (page: Page) => page.getByRole("region", { name: t.metricsContacts, exact: true });
 
   /** Фильтр категории метрик: список на компьютере, шторка на телефоне */
   async function chooseCategory(page: Page, name: string) {

@@ -9,12 +9,15 @@
 }
 
 /* Фокус с клавиатуры и прокрутка к элементу не прячут его под прилипшей шапкой и нижней
-   панелью (WCAG 2.4.11): запас — их высота с безопасными зонами */
+   панелью (WCAG 2.4.11): запас — их высота с безопасными зонами. Панели, которые отмечены
+   useStickyBar (@bayramm/ui/react), ставят свою высоту в --sticky-t и --sticky-b; пока панель
+   не отмечена, запас — не меньше прежних 72px */
 html {
   color-scheme: light;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  scroll-padding: calc(var(--pad-t) + 72px) 0 calc(var(--pad-b) + 72px);
+  scroll-padding: max(calc(var(--pad-t) + 72px), calc(var(--sticky-t) + 8px)) 0
+    max(calc(var(--pad-b) + 72px), calc(var(--sticky-b) + 8px));
 }
 
 body {
@@ -2461,11 +2464,6 @@ textarea.field-input {
 }
 
 /* ---------- меню сайта для гостя (шторка из шапки, components/SiteMenu.tsx) ---------- */
-
-/* Одна кнопка «Закрыть» — во всю ширину (у диалога набора колонки две) */
-.site-menu-dialog .ui-dialog-actions {
-  grid-template-columns: minmax(0, 1fr);
-}
 
 .site-menu {
   display: grid;

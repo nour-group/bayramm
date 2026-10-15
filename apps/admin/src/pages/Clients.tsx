@@ -27,6 +27,7 @@ import {
   PhoneSheet,
   Pill,
   ReasonPhoneReveal,
+  TableWrap,
   toneOf,
   useEntityTitle,
   useListSearch,
@@ -168,7 +169,7 @@ function ClientCards({ items }: { items: readonly ClientListItem[] }) {
 
 function ClientTable({ items }: { items: readonly ClientListItem[] }) {
   return (
-    <div className="table-wrap">
+    <TableWrap label={t.clients}>
       <table className="table">
         <thead>
           <tr>
@@ -203,7 +204,7 @@ function ClientTable({ items }: { items: readonly ClientListItem[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 

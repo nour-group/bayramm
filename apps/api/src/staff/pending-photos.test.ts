@@ -12,6 +12,8 @@ const row = (
   storage_key: `listings/${listing}/${n}.webp`,
   width: size[0],
   height: size[1],
+  no_faces_ack: true,
+  people_consent_ack: false,
 });
 
 describe("groupPendingPhotos", () => {
@@ -19,7 +21,9 @@ describe("groupPendingPhotos", () => {
     const map = groupPendingPhotos([row("a", 1), row("b", 1), row("a", 2)]);
     expect([...map.keys()]).toEqual(["a", "b"]);
     expect(map.get("a")?.map((p) => p.id)).toEqual(["p-a-1", "p-a-2"]);
-    expect(map.get("b")).toEqual([{ id: "p-b-1", key: "listings/b/1.webp", width: 1600, height: 1200 }]);
+    expect(map.get("b")).toEqual([
+      { id: "p-b-1", key: "listings/b/1.webp", width: 1600, height: 1200, ack: "no_faces" },
+    ]);
   });
 
   it("больше предела на карточку не отдаём: остальное — на странице витрины", () => {
@@ -34,8 +38,18 @@ describe("groupPendingPhotos", () => {
 
   it("размеров нет — нули, а не null: карточке для разметки нужны числа", () => {
     expect(groupPendingPhotos([row("a", 1, [null, null])]).get("a")).toEqual([
-      { id: "p-a-1", key: "listings/a/1.webp", width: 0, height: 0 },
+      { id: "p-a-1", key: "listings/a/1.webp", width: 0, height: 0, ack: "no_faces" },
     ]);
+  });
+
+  it("что отметил загрузивший: люди согласны — у портфолио, лиц нет — главнее", () => {
+    const consent = { ...row("a", 1), no_faces_ack: false, people_consent_ack: true };
+    const both = { ...row("a", 2), no_faces_ack: true, people_consent_ack: true };
+    expect(
+      groupPendingPhotos([consent, both])
+        .get("a")
+        ?.map((p) => p.ack),
+    ).toEqual(["people_consent", "no_faces"]);
   });
 
   it("пустых строк нет — пустая карта", () => {

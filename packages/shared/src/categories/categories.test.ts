@@ -88,6 +88,7 @@ describe("словарь категорий", () => {
         used.add(a.label);
         if (a.type === "enum" || a.type === "multi") for (const o of a.options) used.add(o.label);
         if (a.type === "list") {
+          if (a.addLabel) used.add(a.addLabel);
           for (const f of a.fields) {
             used.add(f.label);
             if (f.type === "enum") for (const o of f.options) used.add(o.label);

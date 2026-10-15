@@ -9,6 +9,13 @@ import { App } from "./App";
 import { tokenStore } from "./session";
 import { t } from "./texts";
 
+/** Подпись поля без пометки «обязательно / по желанию» (она — у подписи, как у клиента) */
+const labelText = (label: Element | null | undefined): string | undefined => {
+  const copy = label?.cloneNode(true) as Element | undefined;
+  for (const mark of copy?.querySelectorAll(".mark") ?? []) mark.remove();
+  return copy?.textContent?.trim();
+};
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const TOKEN = "T".repeat(43);
@@ -118,7 +125,8 @@ const buttonIn = (scope: ParentNode, name: string) =>
 const question = () => document.querySelector<HTMLElement>("[role=alertdialog]");
 const nameField = () =>
   [...container.querySelectorAll<HTMLInputElement>("input")].find(
-    (input) => input.labels?.[0]?.textContent === t.fields.name,
+    // У нового вендора название — компании (t.vendorNameNew), у правки — «Название»
+    (input) => [t.fields.name, t.vendorNameNew].includes(labelText(input.labels?.[0]) ?? ""),
   ) as HTMLInputElement;
 
 async function type(input: HTMLInputElement, value: string) {

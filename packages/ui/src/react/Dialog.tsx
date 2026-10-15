@@ -2,7 +2,11 @@
    вебвью iOS, а системные окна в Telegram выглядят чужими и блокируют весь клиент).
    На телефоне — шторка снизу над безопасной зоной, шире 560px — карточка по центру.
    Модальный: страница под ним inert, Tab ходит по кругу внутри, Esc и подложка закрывают,
-   фокус возвращается туда, откуда открыли, без прокрутки. */
+   фокус возвращается туда, откуда открыли, без прокрутки.
+
+   Заголовок с крестиком «Закрыть» (подпись — из UiTextsProvider) и кнопки действий стоят на
+   месте, прокручивается только тело: длинные фильтры не уводят «Показать» за край шторки.
+   У подтверждения (alertdialog) крестика нет — ответ даёт одна из двух кнопок. */
 
 import {
   type KeyboardEvent,
@@ -15,7 +19,9 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { focusQuietly, surroundings, trapTab, useModal } from "./overlay";
+import { UiIcon } from "./icons";
+import { focusables, focusQuietly, surroundings, trapTab, useModal } from "./overlay";
+import { useUiTexts } from "./texts";
 
 export interface DialogProps {
   readonly open: boolean;
@@ -31,6 +37,8 @@ export interface DialogProps {
   readonly initialFocus?: RefObject<HTMLElement | null>;
   /** Куда вернуть фокус; по умолчанию — туда, где он был при открытии */
   readonly returnFocus?: RefObject<HTMLElement | null>;
+  /** Крестик «Закрыть» в заголовке; по умолчанию — у всех, кроме alertdialog */
+  readonly closeButton?: boolean;
   readonly className?: string;
 }
 
@@ -46,10 +54,13 @@ function DialogLayer({
   role = "dialog",
   initialFocus,
   returnFocus,
+  closeButton = role !== "alertdialog",
   className,
 }: Omit<DialogProps, "open">) {
+  const texts = useUiTexts();
   const layer = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const bodyId = useId();
   const [origin] = useState(
@@ -69,6 +80,7 @@ function DialogLayer({
   useLayoutEffect(() => {
     focusQuietly(first.current?.current ?? panel.current);
   }, []);
+  useScrollableBody(body);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape" || event.key === "Esc") {
@@ -94,11 +106,23 @@ function DialogLayer({
         tabIndex={-1}
       >
         <span className="ui-sheet-grab" aria-hidden="true" />
-        <h2 className="ui-dialog-title" id={titleId}>
-          {title}
-        </h2>
+        <div className="ui-dialog-head">
+          <h2 className="ui-dialog-title" id={titleId}>
+            {title}
+          </h2>
+          {closeButton ? (
+            <button
+              type="button"
+              className="ui-icon-btn ui-dialog-close"
+              aria-label={texts.close}
+              onClick={() => close.current()}
+            >
+              <UiIcon name="close" size={14} />
+            </button>
+          ) : null}
+        </div>
         {children ? (
-          <div className="ui-dialog-body" id={bodyId}>
+          <div ref={body} className="ui-dialog-body" id={bodyId}>
             {children}
           </div>
         ) : null}
@@ -107,6 +131,31 @@ function DialogLayer({
     </div>,
     document.body,
   );
+}
+
+/**
+ * Тело выше шторки прокручивается само. Если в нём нечего выбрать с клавиатуры (только текст),
+ * прокрутить его нечем — тогда тело само встаёт в Tab (WCAG: прокручиваемая область доступна
+ * с клавиатуры). Размер меняется — пересчёт; ResizeObserver есть не везде (ловушка №5)
+ */
+function useScrollableBody(body: RefObject<HTMLDivElement | null>): void {
+  useLayoutEffect(() => {
+    const node = body.current;
+    if (!node) return;
+    const update = () => {
+      const scrolls = node.scrollHeight > node.clientHeight + 1 && focusables(node).length === 0;
+      if (scrolls) node.setAttribute("tabindex", "0");
+      else node.removeAttribute("tabindex");
+    };
+    update();
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver(update);
+      observer.observe(node);
+      return () => observer.disconnect();
+    }
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [body]);
 }
 
 export interface ConfirmSheetProps {

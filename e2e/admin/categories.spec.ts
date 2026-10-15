@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { menuAction, pick } from "../support/admin-ui";
+import { field, menuAction, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   BENTO_ID,
@@ -55,7 +55,7 @@ const save = (page: Page) => page.getByRole("button", { name: t.save, exact: tru
 test("новый вендор: без категории не создать; с ней — первая витрина этой категории", async ({ page }) => {
   const api = await start(page, {});
   await page.goto("/vendors/new");
-  await page.getByLabel(t.fields.name ?? "", { exact: true }).fill("Navruz");
+  await field(page, t.vendorNameNew).fill("Navruz");
   await page.getByRole("button", { name: t.createVendor }).click();
   await expect(page.locator(".field-error").first()).toHaveText(t.categoryRequired);
   expect(api.vendorsCreated).toEqual([]);
@@ -113,11 +113,12 @@ test("кортеж: автопарк — ошибка поля до отправ
   const api = await start(page);
   await page.goto(`/listings/${CAR_LISTING_ID}`);
   await expect(heading(page)).toHaveText("Oq kortej");
-  await page.getByRole("button", { name: `${t.listAdd}: автопарк` }).click();
+  // Подпись записи — из конфигурации категории: «Добавить машину», а не «Добавить: автопарк»
+  await page.getByRole("button", { name: "Добавить машину" }).click();
   const car = page.getByRole("region", { name: t.listItem("Автопарк", 2) });
   await car.getByLabel("Марка и модель").fill("Lexus LX");
   // Число — с «−» и «+»: буквы в поле не попадают, границы видны заранее
-  const seats = car.getByLabel("Мест", { exact: true });
+  const seats = field(car, "Мест");
   await seats.fill("семь");
   await expect(seats).toHaveValue("");
   await expect(car.getByText(t.input.range(1, 60))).toBeVisible();
@@ -164,7 +165,7 @@ test("фото и видео: чего не хватает — по полям; 
 
   await page.getByLabel(t.videoLink(1)).fill("https://youtu.be/dQw4w9WgXcQ");
   await page.getByRole("group", { name: "Команда" }).getByRole("checkbox", { name: "Фотограф" }).check();
-  await page.getByLabel("Готовый материал через, дней", { exact: true }).fill("30");
+  await field(page, "Готовый материал через, дней").fill("30");
   await save(page).click();
   await expect(page.getByText(t.saved, { exact: true })).toBeVisible();
   expect(api.patches[0]).toEqual({
@@ -199,7 +200,7 @@ test("услуги: из каталога с добавкой; правка; с�
   await expect(form.locator(".field-error")).toContainText([t.serviceErrors.priceUzs ?? ""]);
   expect(api.services.filter((c) => c.key.startsWith("POST"))).toEqual([]);
 
-  const price = form.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true });
+  const price = field(form, t.serviceFields.priceUzs ?? "");
   await price.fill("450000");
   // Разряды — узким неразрывным пробелом, «сум» — у поля
   await expect(price).toHaveValue("450\u202f000");
@@ -254,7 +255,7 @@ test("услуги: из каталога с добавкой; правка; с�
   await menuAction(page, "Машина для молодожёнов", t.serviceEdit, services);
   const edit = services.locator("form.service-form");
   // Цена услуги — первое поле «Цена, сум» формы (дальше — цены добавок)
-  const editPrice = edit.getByLabel(t.serviceFields.priceUzs ?? "", { exact: true }).first();
+  const editPrice = field(edit, t.serviceFields.priceUzs ?? "").first();
   await expect(editPrice).toHaveValue("350\u202f000");
   await editPrice.fill("380000");
   await edit.getByRole("button", { name: t.serviceSave }).click();
@@ -382,6 +383,14 @@ test("части дня: вечер — одна машина из двух и �
   await form.getByRole("checkbox", { name: "Вечер" }).uncheck();
   await form.getByRole("button", { name: t.save, exact: true }).click();
   await expect(form.getByRole("alert")).toHaveText(t.sessionsInUse("вечер", 1));
+  // Не сохранённое — «Отмена» спрашивает «Уйти без сохранения?»; «Остаться» — форма на месте
+  await form.getByRole("button", { name: t.cancel }).click();
+  await page
+    .getByRole("alertdialog", { name: t.unsavedTitle })
+    .getByRole("button", { name: t.unsavedStay })
+    .click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(form.getByRole("checkbox", { name: "Вечер" })).not.toBeChecked();
   await form.getByRole("checkbox", { name: "Вечер" }).check();
   await form.getByRole("button", { name: t.sessionsFrom("Утро") }).click();
   await page.getByRole("option", { name: "07:00", exact: true }).click();
@@ -407,6 +416,22 @@ test("части дня: вечер — одна машина из двух и �
   ]);
   await expect(sessions).toContainText("Утро 07:00–11:00");
   await expect(sessions).toContainText("3");
+
+  // Esc с вписанным — тот же вопрос; «Уйти» — шторка закрыта, ничего не ушло, страница доступна
+  await sessions.getByRole("button", { name: t.sessionsEdit }).click();
+  await form.getByRole("button", { name: `${t.listingDataSections.occupancy} +1` }).click();
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("alertdialog", { name: t.unsavedTitle })
+    .getByRole("button", { name: t.unsavedLeave })
+    .click();
+  await expect(form).toHaveCount(0);
+  expect(api.daySessions).toHaveLength(2);
+  // Ничего не меняли — «Отмена» закрывает сразу
+  await sessions.getByRole("button", { name: t.sessionsEdit }).click();
+  await form.getByRole("button", { name: t.cancel }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(api.unexpected).toEqual([]);
 });
 

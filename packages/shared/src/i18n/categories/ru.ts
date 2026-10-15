@@ -169,6 +169,7 @@ export const categoriesRu = {
   attr_entrance_arch: "Входная арка",
   attr_accessible: "Вход для людей с инвалидностью",
   attr_fleet: "Автопарк",
+  attr_fleet_add: "Добавить машину",
   attr_fleet_model: "Марка и модель",
   attr_fleet_class: "Класс",
   attr_fleet_color: "Цвет",

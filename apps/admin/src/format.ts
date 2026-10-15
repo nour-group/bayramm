@@ -127,6 +127,7 @@ export function photoSrc(key: string, width: MediaWidth = 320): string {
   return mediaUrl(key, width, mediaTarget());
 }
 
-export function photoSrcSet(key: string): string {
-  return mediaSrcSet(key, mediaTarget(), [320, 640]);
+/** Варианты для srcset: плитка — 320 и 640; просмотр во весь экран (large) — до 1920 */
+export function photoSrcSet(key: string, large = false): string {
+  return mediaSrcSet(key, mediaTarget(), large ? [640, 960, 1280, 1920] : [320, 640]);
 }

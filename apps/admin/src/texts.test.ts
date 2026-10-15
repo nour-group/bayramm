@@ -24,6 +24,8 @@ const STAFF_MODULES = [
 
 // Только клиентское приложение: заявки и согласия клиента. Панель их не получает
 const CLIENT_ONLY = new Set([
+  // кабинет партнёра: отмена «Я связался» — панели не приходит
+  "undo_expired",
   "duplicate_request",
   "daily_request_limit",
   "guests_over_capacity",

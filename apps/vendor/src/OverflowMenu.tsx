@@ -4,7 +4,6 @@
 
 import { Dialog } from "@bayramm/ui/react";
 import { useRef, useState } from "react";
-import type { VendorDict } from "./i18n";
 import { Icon } from "./icons";
 
 export interface MenuAction {
@@ -22,10 +21,20 @@ interface OverflowMenuProps {
   /** Имя кнопки для диктора */
   readonly label: string;
   readonly actions: readonly MenuAction[];
-  readonly t: VendorDict;
+  /** Идёт запрос: «⋯» недоступна */
+  readonly disabled?: boolean;
+  /** Класс кнопки «⋯»: у карточки услуги — svc-more (над растянутой ссылкой карточки) */
+  readonly className?: string;
 }
 
-export function OverflowMenu({ title, label, actions, t }: OverflowMenuProps) {
+/** Закрыть шторку — крестик набора (@bayramm/ui/react Dialog) в заголовке */
+export function OverflowMenu({
+  title,
+  label,
+  actions,
+  disabled = false,
+  className = "svc-more",
+}: OverflowMenuProps) {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   if (actions.length === 0) return null;
@@ -38,25 +47,16 @@ export function OverflowMenu({ title, label, actions, t }: OverflowMenuProps) {
       <button
         ref={button}
         type="button"
-        className="icon-btn svc-more"
+        className={`icon-btn ${className}`}
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
+        disabled={disabled}
         onClick={() => setOpen(true)}
       >
         <Icon name="more" size={20} />
       </button>
-      <Dialog
-        open={open}
-        title={title}
-        onClose={() => setOpen(false)}
-        returnFocus={button}
-        actions={
-          <button type="button" className="btn btn-ghost sheet-done" onClick={() => setOpen(false)}>
-            {t.close}
-          </button>
-        }
-      >
+      <Dialog open={open} title={title} onClose={() => setOpen(false)} returnFocus={button}>
         <ul className="menu">
           {actions.map((action) => (
             <li key={action.key}>

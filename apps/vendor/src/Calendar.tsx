@@ -54,6 +54,7 @@ import {
   partLoads,
   windowText,
 } from "@bayramm/shared/categories";
+import { requestStatusName } from "@bayramm/shared/i18n/status";
 import { ConfirmSheet, Dialog, Switch } from "@bayramm/ui/react";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
@@ -61,11 +62,12 @@ import { availabilityOf, partName } from "./category";
 import { Disclosure } from "./Disclosure";
 import { errorText } from "./errors";
 import { formatDate, tashkentToday, weekdayIndex } from "./format";
-import { fill, textOf, type VendorDict } from "./i18n";
+import { fill, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
 import { useLayout } from "./layout";
 import { type Location, type Navigate, pathOf } from "./router";
+import { TeamContactInline } from "./TeamContact";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -366,10 +368,12 @@ function RouteLink({
 function RequestLinks({
   requests,
   t,
+  lang,
   navigate,
 }: {
   requests: readonly CalendarRequest[];
   t: VendorDict;
+  lang: "ru" | "uz";
   navigate: Navigate;
 }) {
   if (requests.length === 0) return null;
@@ -378,7 +382,7 @@ function RequestLinks({
       {requests.map((r) => (
         <li key={r.id}>
           <RouteLink to={{ route: "request", id: r.id }} navigate={navigate} className="day-request">
-            {fill(t.dayRequest, { no: r.publicNo, status: textOf(t, `st_${r.status}`) })}
+            {fill(t.dayRequest, { no: r.publicNo, status: requestStatusName(lang, r.status) })}
           </RouteLink>
         </li>
       ))}
@@ -390,6 +394,7 @@ interface DayPanelProps {
   readonly calendar: VendorCalendar;
   readonly day: string;
   readonly t: VendorDict;
+  readonly lang: "ru" | "uz";
   readonly pending: ReadonlySet<string>;
   readonly navigate: Navigate;
   readonly onToggle: (day: string, part: DayPart | null, entry: BusyDay | BusyPart | undefined) => void;
@@ -399,7 +404,7 @@ interface DayPanelProps {
   readonly notice?: ReactNode;
 }
 
-function DayPanel({ calendar, day, t, pending, navigate, onToggle, titled, notice }: DayPanelProps) {
+function DayPanel({ calendar, day, t, lang, pending, navigate, onToggle, titled, notice }: DayPanelProps) {
   const view = dayView(calendar, day);
   const locked = day < calendar.today || day > calendar.maxDay;
   const capacity = calendar.sessions.parallelCapacity;
@@ -431,7 +436,7 @@ function DayPanel({ calendar, day, t, pending, navigate, onToggle, titled, notic
         >
           {view.entry ? t.openWholeDay : t.closeWholeDay}
         </button>
-        <RequestLinks requests={wholeRequests} t={t} navigate={navigate} />
+        <RequestLinks requests={wholeRequests} t={t} lang={lang} navigate={navigate} />
       </div>
       {view.parts.length > 0 ? (
         <ul className="day-parts">
@@ -461,6 +466,7 @@ function DayPanel({ calendar, day, t, pending, navigate, onToggle, titled, notic
                 <RequestLinks
                   requests={view.requests.filter((r) => r.parts.includes(info.part))}
                   t={t}
+                  lang={lang}
                   navigate={navigate}
                 />
               </li>
@@ -613,7 +619,7 @@ export function Calendar({
   return (
     <section className="page page-calendar" aria-labelledby="page-title">
       {header}
-      <CalendarMonth t={t} listing={listing} navigate={navigate} owner={role === "owner"} />
+      <CalendarMonth t={t} lang={lang} listing={listing} navigate={navigate} owner={role === "owner"} />
     </section>
   );
 }
@@ -691,11 +697,13 @@ export function sessionsLine(calendar: VendorCalendar, t: VendorDict): string {
 
 function CalendarMonth({
   t,
+  lang,
   listing,
   navigate,
   owner,
 }: {
   t: VendorDict;
+  lang: "ru" | "uz";
   listing: VendorListingRef;
   navigate: Navigate;
   owner: boolean;
@@ -896,9 +904,12 @@ function CalendarMonth({
   const openedDay = ready && opened?.startsWith(ready.month) && !ranging ? opened : null;
   const rangeParts = ready && !whole ? ready.sessions.parts : [];
   const notice = message ? (
-    <p className={message === "failed" ? "form-error" : "notice"} role="alert">
-      {message === "failed" && failure ? failure : t[MESSAGE_TEXT[message]]}
-    </p>
+    <>
+      <p className={message === "failed" ? "form-error" : "notice"} role="alert">
+        {message === "failed" && failure ? failure : t[MESSAGE_TEXT[message]]}
+      </p>
+      {message === "staff" ? <TeamContactInline t={t} /> : null}
+    </>
   ) : null;
   // Шторка дня на телефоне закрывает месяц: сообщение — в ней
   const sheetNotice = !desktop && openedDay !== null;
@@ -908,6 +919,7 @@ function CalendarMonth({
         calendar={ready}
         day={openedDay}
         t={t}
+        lang={lang}
         pending={pending}
         navigate={navigate}
         onToggle={toggle}
@@ -1080,11 +1092,6 @@ function CalendarMonth({
           title={openedDay ? formatDate(openedDay, t, true) : ""}
           onClose={() => setOpened(null)}
           className="day-sheet"
-          actions={
-            <button type="button" className="btn btn-ghost" onClick={() => setOpened(null)}>
-              {t.close}
-            </button>
-          }
         >
           {panel}
         </Dialog>

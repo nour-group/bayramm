@@ -34,6 +34,7 @@ import {
   PhoneSheet,
   Pill,
   StatusPill,
+  TableWrap,
   toneOf,
   useBreadcrumbs,
   useEntityTitle,
@@ -257,7 +258,7 @@ function RevisionView({
           ))}
         </ul>
       ) : (
-        <div className="table-wrap">
+        <TableWrap label={t.revisions}>
           <table className="table">
             <thead>
               <tr>
@@ -290,7 +291,7 @@ function RevisionView({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
 
       {/* Решить не может (менеджер) — объяснение, а не пустое место вместо кнопок */}

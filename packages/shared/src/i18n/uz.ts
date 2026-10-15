@@ -465,7 +465,7 @@ export const uz: Dict = {
   authTitle: "Bayrammga kirish",
   authLead: "Soʻrovlar, hamkor kabineti va jamoa paneli uchun bitta hisob. Parol kerak emas.",
   authForVendor: "Kirgandan keyin hamkor kabineti ochiladi.",
-  authForAdmin: "Kirgandan keyin boshqaruv paneli ochiladi.",
+  authForAdmin: "Kirgandan keyin jamoa paneli ochiladi.",
   authLinkTitle: "Telegramni ulash",
   authTelegram: "Telegram orqali",
   authTelegramOff:
@@ -504,7 +504,7 @@ export const uz: Dict = {
   accSignOut: "Chiqish",
   accRoles: "Kabinetlar",
   accVendor: "Hamkor kabineti",
-  accAdmin: "Boshqaruv paneli",
+  accAdmin: "Jamoa paneli",
   accMethods: "Kirish usullari",
   accTelegram: "Telegram",
   accPhone: "Telefon",

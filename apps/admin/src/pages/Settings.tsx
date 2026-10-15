@@ -4,14 +4,18 @@
    ещё раз база (границы и согласованность: напоминания раньше срока ответа, минимум фото
    не больше максимума). Ошибка — у той настройки, которую меняли.
    Число — в границах SETTING_LIMITS (те же у API); вне границ или напоминания не по возрастанию —
-   ошибка до запроса. */
+   ошибка до запроса. Контакт команды для партнёров (Telegram и телефон) — строкой: его видят
+   будущие партнёры на входе в кабинет и партнёры в «Аккаунте»; пусто — строки в кабинете нет. */
 
+import { normalizeTelegram, normalizeUzPhone } from "@bayramm/shared";
 import {
   SETTING_LIMITS,
   type SettingKey,
   type SettingValue,
   type StaffSetting,
   type StaffSettings,
+  TEAM_CONTACT_KEYS,
+  type TeamContactKey,
 } from "@bayramm/shared/api/staff";
 import { NumberStepper, TimeField, useToast } from "@bayramm/ui/react";
 import { type FormEvent, useId, useState } from "react";
@@ -24,6 +28,7 @@ import { useUnsaved } from "../unsaved";
 const GROUPS: readonly { readonly id: string; readonly keys: readonly SettingKey[] }[] = [
   { id: "vendor", keys: ["sla_hours", "sla_reminder_hours", "quiet_hours", "ops_reminder_pause_minutes"] },
   { id: "photos", keys: ["min_photos", "max_photos"] },
+  { id: "team", keys: ["team_telegram", "team_phone"] },
   {
     id: "data",
     keys: [
@@ -77,9 +82,13 @@ function draftOf(setting: StaffSetting): string[] {
   return [String(value)];
 }
 
+const isTeamKey = (key: SettingKey): key is TeamContactKey =>
+  (TEAM_CONTACT_KEYS as readonly string[]).includes(key);
+
 /** Поля формы → значение для API; кривое число уйдёт как есть — ответит сервер */
 function settingValue(key: SettingKey, draft: string[]): SettingValue {
   const num = (s: string) => (s.trim() === "" ? Number.NaN : Number(s));
+  if (isTeamKey(key)) return (draft[0] ?? "").trim();
   switch (key) {
     case "sla_reminder_hours":
       return draft.filter((s) => s.trim() !== "").map(num);
@@ -93,10 +102,16 @@ function settingValue(key: SettingKey, draft: string[]): SettingValue {
 type NumberKey = keyof typeof SETTING_LIMITS;
 
 const limitsOf = (key: SettingKey): readonly [number, number] | null =>
-  key === "quiet_hours" ? null : SETTING_LIMITS[key as NumberKey];
+  key === "quiet_hours" || isTeamKey(key) ? null : SETTING_LIMITS[key as NumberKey];
 
 /** Значение подходит по границам (и напоминания — по возрастанию); согласованность с другими — сервер */
 export function settingFits(key: SettingKey, value: SettingValue): boolean {
+  // Контакт команды: пусто — не указан; иначе номер Узбекистана или имя Telegram (ссылка t.me — тоже)
+  if (isTeamKey(key)) {
+    if (typeof value !== "string") return false;
+    if (value === "") return true;
+    return (key === "team_phone" ? normalizeUzPhone(value) : normalizeTelegram(value)) !== null;
+  }
   const limits = limitsOf(key);
   if (limits === null) return true;
   const [min, max] = limits;
@@ -160,9 +175,28 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
   const limits = limitsOf(setting.key);
   const unit = t.settingUnits[setting.key];
   const several = setting.key === "sla_reminder_hours" || setting.key === "quiet_hours";
-  const input = (index: number, extra: { label: string; type: "number" | "time" }) => {
+  const input = (index: number, extra: { label: string; type: "number" | "time" | "text" }) => {
     const common = { id: `${id}-${index}`, "aria-invalid": invalid, "aria-describedby": hintId };
     const name = several ? extra.label : label;
+    if (extra.type === "text")
+      return (
+        <div className="field setting-text-field" key={index}>
+          <label htmlFor={common.id} className="visually-hidden">
+            {name}
+          </label>
+          <input
+            {...common}
+            className="input"
+            value={draft[index] ?? ""}
+            onChange={(event) => change(index)(event.target.value)}
+            maxLength={setting.key === "team_phone" ? 20 : 64}
+            inputMode={setting.key === "team_phone" ? "tel" : "text"}
+            autoComplete="off"
+            enterKeyHint="done"
+            placeholder={t.settingPlaceholders[setting.key]}
+          />
+        </div>
+      );
     return (
       <div className={`field${extra.type === "number" ? " setting-num" : ""}`} key={index}>
         <label htmlFor={common.id} className={several ? undefined : "visually-hidden"}>
@@ -215,7 +249,7 @@ function SettingForm({ setting, onSaved }: { setting: StaffSetting; onSaved: (s:
             ]
           : setting.key === "quiet_hours"
             ? [input(0, { label: t.quietFrom, type: "time" }), input(1, { label: t.quietTo, type: "time" })]
-            : input(0, { label: t.settingValue, type: "number" })}
+            : input(0, { label: t.settingValue, type: isTeamKey(setting.key) ? "text" : "number" })}
         {dirty || busy ? (
           <button type="submit" className="btn btn-primary" aria-busy={busy || undefined} disabled={busy}>
             {busy ? t.saving : t.save}

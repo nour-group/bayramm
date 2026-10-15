@@ -35,7 +35,6 @@ import {
   OverflowMenu,
   PhoneReveal,
   Pill,
-  SheetClose,
   toneOf,
   useRevealErrors,
 } from "../ui";
@@ -661,13 +660,7 @@ function useInviteCopy(vendor: VendorDetail): InviteCopier {
 function CopyDialog({ text, onClose }: { text: string | null; onClose: () => void }) {
   const area = useRef<HTMLTextAreaElement>(null);
   return (
-    <Dialog
-      open={text !== null}
-      title={t.vuCopyTitle}
-      onClose={onClose}
-      initialFocus={area}
-      actions={<SheetClose onClose={onClose} />}
-    >
+    <Dialog open={text !== null} title={t.vuCopyTitle} onClose={onClose} initialFocus={area}>
       <p className="muted small">{t.vuCopyHint}</p>
       <textarea
         ref={area}

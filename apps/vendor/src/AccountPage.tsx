@@ -2,6 +2,9 @@
    «Роль: владелец», у сотрудника площадки ещё одна строка о том, что он не меняет), язык
    кабинета (после входа переключатель только здесь), другие приложения аккаунта и выход.
 
+   «Команда Bayramm» — как написать или позвонить команде (контакт — настройка панели); не указан —
+   блока нет.
+
    Ссылки на другие роли: вне Telegram — обычные ссылки (без сессии приложение само уйдёт в
    хаб входа и вернётся по ?signin=1, второй раз входить не нужно); внутри Telegram — через
    бота: приложение открывает основное Mini App (?startapp), панель — карточка ролей бота.
@@ -16,6 +19,7 @@ import { SignOutButton } from "./Account";
 import { accountMe } from "./api";
 import { authMethods, botOf, SIGNIN_PARAM } from "./hub";
 import { fill, LANG_NAMES } from "./i18n";
+import { TeamContactLinks, useTeamContact } from "./TeamContact";
 import { getWebApp, inTelegram } from "./telegram";
 import { Heading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
@@ -58,6 +62,7 @@ interface AccountPageProps extends ScreenProps {
 
 export function AccountPage({ t, lang, headingRef, me, onLang, onSwitch }: AccountPageProps) {
   const [links] = useLoad("links", loadLinks);
+  const team = useTeamContact();
   const ready = links.state === "ready" ? links.data : null;
   const telegram = inTelegram();
   const langOptions = LANGS.map((code) => ({ value: code, label: LANG_NAMES[code] }));
@@ -96,6 +101,16 @@ export function AccountPage({ t, lang, headingRef, me, onLang, onSwitch }: Accou
         />
         <p className="note">{t.languageNote}</p>
       </section>
+
+      {team ? (
+        <section className="panel" aria-labelledby="team-title">
+          <h2 className="section-title" id="team-title">
+            {t.teamTitle}
+          </h2>
+          <p className="note">{t.teamText}</p>
+          <TeamContactLinks t={t} team={team} />
+        </section>
+      ) : null}
 
       {ready ? (
         <section className="panel" aria-labelledby="apps-title">

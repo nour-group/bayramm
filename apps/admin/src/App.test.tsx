@@ -440,7 +440,7 @@ describe("оболочка панели оператора", () => {
   it("неизвестный путь — «не найдена» со ссылкой на главный раздел роли", async () => {
     await mount("/nope");
     expect(heading()).toBe("Страница не найдена");
-    expect(link(t.toSection(t.requests)).getAttribute("href")).toBe("/requests");
+    expect(link(t.toSection.requests).getAttribute("href")).toBe("/requests");
   });
 
   it("есть ссылка «К содержимому» на main", async () => {

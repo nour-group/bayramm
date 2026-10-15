@@ -642,10 +642,16 @@ describe("вендор → карточка → проверка → публи�
     const item = queue.items.find((l) => l.id === listing.id);
     expect(item?.photos.pending).toBe(1);
     // Сами фото — в том же ответе: карточка очереди решает по ним без запроса на каждую
-    expect(item?.pendingPhotos).toEqual([{ id: photoId, key: photoKey, width: 1600, height: 1200 }]);
+    // …с тем, что отметил загрузивший: модератор сверяет это с правилом фото категории
+    expect(item?.pendingPhotos).toEqual([
+      { id: photoId, key: photoKey, width: 1600, height: 1200, ack: "no_faces" },
+    ]);
+    // Число у очереди «Фото» — сами фото, а не витрины
+    expect(queue.pendingPhotosTotal).toBe(queue.items.reduce((sum, l) => sum + l.photos.pending, 0));
     // Обычный список (не очередь фото) их не несёт
     const plain = await ok<ListingList>(api("moderator", "GET", "/staff/listings?limit=100"));
     expect(plain.items.every((l) => l.pendingPhotos === undefined)).toBe(true);
+    expect(plain.pendingPhotosTotal).toBeUndefined();
     // Любые витрины, кроме отклонённых: фото черновика тоже можно одобрить до публикации
     expect(queue.items.every((l) => l.status !== "rejected" && l.photos.pending > 0)).toBe(true);
 

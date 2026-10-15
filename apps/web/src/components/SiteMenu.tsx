@@ -105,18 +105,7 @@ export function SiteMenu({ current, signInHref }: { current: Tab | null; signInH
       >
         <Icon name="list" size={20} />
       </button>
-      <Dialog
-        open={open}
-        onClose={close}
-        title={t.menu}
-        className="site-menu-dialog"
-        returnFocus={button}
-        actions={
-          <button type="button" className="ui-btn ui-btn-secondary" onClick={close}>
-            {t.infoClose}
-          </button>
-        }
-      >
+      <Dialog open={open} onClose={close} title={t.menu} className="site-menu-dialog" returnFocus={button}>
         <MenuBody current={current} signInHref={signInHref} onPick={close} />
       </Dialog>
     </>
