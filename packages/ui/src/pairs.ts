@@ -69,6 +69,7 @@ export const TEXT_PAIRS: readonly TextPair[] = [
   large("coral", "white", "иконки и крупный текст в карточках"),
   large("coral", "raise", "иконки на приподнятом"),
   large("btnInk", "coral", "иконка на коралловой заливке"),
+  large("plum", "line", "значок подсказки поиска (раздел, район) на подложке"),
   // смысловые
   small("teal", "paper", "«Проверено», «свободно»"),
   small("teal", "white", "«Проверено» в карточке"),

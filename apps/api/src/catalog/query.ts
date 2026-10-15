@@ -1,13 +1,20 @@
 // Параметры каталога и курсор выдачи: разбор и проверка до базы.
 //
 // Курсор — непрозрачная строка для клиента: base64url от JSON-массива
-// [версия, сортировка, дата, гости, занята, ключ, id] последней карточки страницы.
+// [версия, сортировка, дата, гости, занята, ключ, id] последней карточки страницы, с поиском —
+// ещё отпечаток запроса (не сам текст: курсор не носит запрос дальше адреса).
 // Выдача упорядочена по (занята, ключ сортировки, id) — ключ у каждой
 // сортировки свой (сравнимая цена, минус она, минус вместимость; сравнимая цена
 // зависит от числа гостей), поэтому страница продолжается строго после курсора
 // без смещений. Курсор от другой сортировки, даты или числа гостей не подходит —
 // 400 invalid_cursor: ключи там другие. Фильтры по полям витрины (a.*) ключ не
-// меняют — курсор от выдачи без них продолжает и выдачу с ними.
+// меняют — курсор от выдачи без них продолжает и выдачу с ними. Курсор другого запроса поиска —
+// 400 invalid_cursor: и подходящие, и ключи «по похожести» там другие.
+//
+// q — поиск (@bayramm/shared/search): короче SEARCH_MIN_LENGTH после нормализации — не поиск (q
+// не учитывается, как пустой: так поле, пока в нём одна буква, не ломает выдачу); длиннее
+// SEARCH_MAX_LENGTH или сырой строки больше SEARCH_RAW_MAX_LENGTH — 400 invalid_request. С q
+// порядок по умолчанию — relevance; relevance без q — порядок по умолчанию (price_asc).
 //
 // Без category — залы (hall), как в v0.1 (старые сборки клиента). category=all — все включённые
 // категории одной выдачей (раздел «Все»): цены разных единиц сравниваются как есть. Фильтры
@@ -16,11 +23,25 @@
 
 import type { CatalogSort } from "@bayramm/shared/api";
 import { type AttributeFilter, categoryConfig, parseAttributeFilters } from "@bayramm/shared/categories";
+import {
+  SEARCH_MAX_LENGTH,
+  SEARCH_RAW_MAX_LENGTH,
+  type SearchQuery,
+  searchNorm,
+  searchQuery,
+} from "@bayramm/shared/search";
 import { ApiError } from "../errors";
 import { isIsoDate } from "../time";
 
-export const CATALOG_SORTS: readonly CatalogSort[] = ["price_asc", "price_desc", "capacity_desc"];
+export const CATALOG_SORTS: readonly CatalogSort[] = [
+  "price_asc",
+  "price_desc",
+  "capacity_desc",
+  "relevance",
+];
 export const DEFAULT_SORT: CatalogSort = "price_asc";
+/** Порядок по умолчанию с поиском */
+export const SEARCH_SORT: CatalogSort = "relevance";
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 50;
 export const MAX_GUESTS = 5000;
@@ -45,10 +66,14 @@ export interface CatalogCursor {
   /** Ключ сортировки: сравнимая цена, минус она или минус вместимость (целое) */
   readonly key: number;
   readonly id: string;
+  /** Отпечаток запроса поиска (queryPrint); без поиска — null */
+  readonly print: number | null;
 }
 
 export interface CatalogParams {
   readonly category: string;
+  /** Поиск: нормализованный запрос и его слова; null — без поиска */
+  readonly q: SearchQuery | null;
   /** Фильтры по полям витрины категории */
   readonly filters: readonly AttributeFilter[];
   /** Город: его районы и витрины без района (выездные) */
@@ -114,6 +139,33 @@ export function dateParam(query: QueryValues, bad: string[]): string | null {
   return value;
 }
 
+/**
+ * Параметр q (выдача и подсказки): запрос поиска; null — не поиск (нет, пусто, короче
+ * SEARCH_MIN_LENGTH после нормализации). Длиннее пределов — имя в bad
+ */
+export function searchParam(query: QueryValues, bad: string[]): SearchQuery | null {
+  const raw = single(query, "q", bad);
+  if (raw === null) return null;
+  if (raw.length > SEARCH_RAW_MAX_LENGTH || searchNorm(raw).length > SEARCH_MAX_LENGTH) {
+    bad.push("q");
+    return null;
+  }
+  return searchQuery(raw);
+}
+
+/**
+ * Отпечаток запроса для курсора: FNV-1a (32 бита) нормализованного текста. Не секрет и не
+ * хранилище — только «курсор от того же запроса»
+ */
+export function queryPrint(q: SearchQuery): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < q.text.length; i++) {
+    hash ^= q.text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+}
+
 /** GET /catalog/listings: всё проверено, неверное — 400 со списком параметров */
 export function parseCatalogQuery(query: QueryValues): CatalogParams {
   const bad: string[] = [];
@@ -133,13 +185,16 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
   const date = dateParam(query, bad);
   const guests = int(query, "guests", MAX_GUESTS, bad);
   const limit = int(query, "limit", MAX_LIMIT, bad) ?? DEFAULT_LIMIT;
+  const q = searchParam(query, bad);
 
   const sortValue = single(query, "sort", bad);
-  let sort = DEFAULT_SORT;
+  let sort = q === null ? DEFAULT_SORT : SEARCH_SORT;
   if (sortValue !== null) {
     if ((CATALOG_SORTS as readonly string[]).includes(sortValue)) sort = sortValue as CatalogSort;
     else bad.push("sort");
   }
+  // «По похожести» без запроса — не о чем: как без sort
+  if (sort === "relevance" && q === null) sort = DEFAULT_SORT;
 
   const cursorValue = single(query, "cursor", bad);
   if (bad.length > 0) throw invalidRequest(bad, "Invalid query parameters");
@@ -147,11 +202,17 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
   let after: CatalogCursor | null = null;
   if (cursorValue !== null) {
     after = decodeCursor(cursorValue);
-    // Курсор другой сортировки, даты или числа гостей указывает в другую выдачу
-    if (after === null || after.sort !== sort || after.date !== date || after.guests !== guests)
+    // Курсор другой сортировки, даты, числа гостей или запроса указывает в другую выдачу
+    if (
+      after === null ||
+      after.sort !== sort ||
+      after.date !== date ||
+      after.guests !== guests ||
+      after.print !== (q === null ? null : queryPrint(q))
+    )
       throw invalidCursor();
   }
-  return { category, filters, city, district, date, guests, sort, limit, after };
+  return { category, q, filters, city, district, date, guests, sort, limit, after };
 }
 
 // ── курсор ─────────────────────────────────────────────────────────────────
@@ -171,17 +232,18 @@ function fromBase64Url(value: string): string | null {
 
 export function encodeCursor(cursor: CatalogCursor): string {
   // В курсоре только ASCII: коды, дата, число, uuid — btoa хватает
-  return toBase64Url(
-    JSON.stringify([
-      CURSOR_VERSION,
-      cursor.sort,
-      cursor.date,
-      cursor.guests,
-      cursor.busy ? 1 : 0,
-      cursor.key,
-      cursor.id,
-    ]),
-  );
+  const fields: unknown[] = [
+    CURSOR_VERSION,
+    cursor.sort,
+    cursor.date,
+    cursor.guests,
+    cursor.busy ? 1 : 0,
+    cursor.key,
+    cursor.id,
+  ];
+  // Без поиска — как раньше (семь полей): курсоры старых страниц остаются верными
+  if (cursor.print !== null) fields.push(cursor.print);
+  return toBase64Url(JSON.stringify(fields));
 }
 
 /** Разбор курсора; всё, что не собрано encodeCursor, — null */
@@ -194,8 +256,8 @@ export function decodeCursor(value: string): CatalogCursor | null {
   } catch {
     return null;
   }
-  if (!Array.isArray(parsed) || parsed.length !== 7) return null;
-  const [version, sort, date, guests, busy, key, id] = parsed as unknown[];
+  if (!Array.isArray(parsed) || (parsed.length !== 7 && parsed.length !== 8)) return null;
+  const [version, sort, date, guests, busy, key, id, print = null] = parsed as unknown[];
   if (version !== CURSOR_VERSION) return null;
   if (typeof sort !== "string" || !(CATALOG_SORTS as readonly string[]).includes(sort)) return null;
   if (date !== null && (typeof date !== "string" || !isIsoDate(date))) return null;
@@ -205,5 +267,15 @@ export function decodeCursor(value: string): CatalogCursor | null {
   if (busy !== 0 && busy !== 1) return null;
   if (typeof key !== "number" || !Number.isSafeInteger(key)) return null;
   if (typeof id !== "string" || !UUID_RE.test(id)) return null;
-  return { sort: sort as CatalogSort, date, guests: guests as number | null, busy: busy === 1, key, id };
+  const printOk = typeof print === "number" && Number.isInteger(print) && print >= 0 && print <= 0xffffffff;
+  if (parsed.length === 8 && !printOk) return null;
+  return {
+    sort: sort as CatalogSort,
+    date,
+    guests: guests as number | null,
+    busy: busy === 1,
+    key,
+    id,
+    print: parsed.length === 8 ? (print as number) : null,
+  };
 }

@@ -1,4 +1,5 @@
 import type { CatalogQuery, CatalogSort, ListingCard } from "@bayramm/shared/api";
+import { SEARCH_MAX_LENGTH, searchNorm, searchQuery } from "@bayramm/shared/search";
 import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAbort } from "../api/errors";
@@ -8,16 +9,23 @@ import { addDays, isIsoDate } from "../format";
 import { ALL_CATEGORIES } from "../routes";
 import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
 
-/* Фильтры каталога живут в адресе (?category=&city=&district=&date=&guests=&sort=&a.<поле>=):
+/* Фильтры каталога живут в адресе (?category=&q=&city=&district=&date=&guests=&sort=&a.<поле>=):
    ссылка «похожие» из «Моих заявок», кнопки бота и «назад» из карточки возвращают ту же
    выдачу. Без category — все разделы одной выдачей («Все»). Место — везде, и в «Все»: город
    (его районы и выездные витрины без района) или район (только он; город — его). Гости —
-   только где вместимость (залы, рестораны), порядок «вместительнее» — там же. */
+   только где вместимость (залы, рестораны), порядок «вместительнее» — там же. Поиск (q) — вместе
+   с разделом и фильтрами; с ним порядок по умолчанию — «сначала подходящие» (relevance). */
 
 export const SORTS = ["price_asc", "price_desc", "capacity_desc"] as const satisfies readonly CatalogSort[];
 
 /** Порядок, если sort не передан: так же решает сервер. В адресе его не пишем */
 export const DEFAULT_SORT = "price_asc" satisfies CatalogSort;
+/** Порядок по умолчанию с поиском */
+export const SEARCH_SORT = "relevance" satisfies CatalogSort;
+
+/** Порядок по умолчанию этих фильтров: с поиском — «сначала подходящие» */
+export const defaultSortOf = (filters: Pick<CatalogFilters, "q">): CatalogSort =>
+  filters.q === null ? DEFAULT_SORT : SEARCH_SORT;
 
 export const MAX_GUESTS = 5000;
 /** Насколько вперёд можно выбрать дату */
@@ -27,6 +35,8 @@ export const PAGE_SIZE = 20;
 export interface CatalogFilters {
   /** Код категории каталога; ALL_CATEGORIES — все разделы (по умолчанию) */
   readonly category: string;
+  /** Поиск — текст как ввели (не короче двух символов после нормализации); null — без поиска */
+  readonly q: string | null;
   readonly date: string | null;
   readonly guests: number | null;
   /** Город целиком; с районом не пишется — район уже говорит, какой город */
@@ -39,6 +49,7 @@ export interface CatalogFilters {
 
 export const NO_FILTERS: CatalogFilters = {
   category: ALL_CATEGORIES,
+  q: null,
   date: null,
   guests: null,
   city: null,
@@ -47,18 +58,34 @@ export const NO_FILTERS: CatalogFilters = {
   attrs: NO_ATTRS,
 };
 
-/** Без фильтров, но в той же категории (сброс фильтров) */
-export const noFiltersIn = (category: string): CatalogFilters => ({ ...NO_FILTERS, category });
+/** Без фильтров, но в той же категории и с тем же поиском (сброс фильтров) */
+export const noFiltersIn = (category: string, q: string | null = null): CatalogFilters => ({
+  ...NO_FILTERS,
+  category,
+  q,
+});
 
 /** Раздел каталога по коду; «все» и неизвестный — null */
 export const catalogCategory = (code: string | null | undefined) =>
   CLIENT_CATEGORIES.find((c) => c.code === code) ?? null;
 
-/** Порядки выдачи категории: «вместительнее» — только где есть вместимость */
-export const sortsOf = (category: string): readonly CatalogSort[] => {
+/** Порядки выдачи категории: «вместительнее» — только где есть вместимость; с поиском — и «подходящие» */
+export const sortsOf = (category: string, searching = false): readonly CatalogSort[] => {
   const config = catalogCategory(category);
-  return config && hasCapacity(config) ? SORTS : SORTS.filter((s) => s !== "capacity_desc");
+  const sorts = config && hasCapacity(config) ? SORTS : SORTS.filter((s) => s !== "capacity_desc");
+  return searching ? [SEARCH_SORT, ...sorts] : sorts;
 };
+
+/**
+ * Запрос поиска из адреса или поля: без пробелов по краям; не поиск (короче двух символов после
+ * нормализации) — null; длиннее, чем принимает API, — обрезан (кириллица после нормализации
+ * длиннее: «щ» — «sh»)
+ */
+export function searchText(raw: string | null | undefined): string | null {
+  let text = (raw ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  while (text !== "" && searchNorm(text).length > SEARCH_MAX_LENGTH) text = text.slice(0, -1).trimEnd();
+  return searchQuery(text) === null ? null : text;
+}
 
 /** Код города и района — как в справочнике (app.cities, app.districts) */
 const PLACE_CODE = /^[a-z_]{2,30}$/;
@@ -81,14 +108,16 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
   const city = query.get("city");
   const district = query.get("district");
   const sort = query.get("sort");
+  const q = searchText(query.get("q"));
   return {
     category: code,
+    q,
     date: isIsoDate(date) && date >= today && date <= addDays(today, DATE_HORIZON_DAYS) ? date : null,
     guests: category && hasCapacity(category) ? parseGuests(query.get("guests")) : null,
     // Коды города и района — как проверяет API: иначе 400 вместо выдачи
     city: city && PLACE_CODE.test(city) ? city : null,
     district: district && PLACE_CODE.test(district) ? district : null,
-    sort: sortsOf(code).find((s) => s === sort && s !== DEFAULT_SORT) ?? null,
+    sort: sortsOf(code, q !== null).find((s) => s === sort && s !== defaultSortOf({ q })) ?? null,
     attrs: category ? readAttrFilters(category, query) : NO_ATTRS,
   };
 }
@@ -97,6 +126,7 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
 export function filtersQuery(filters: CatalogFilters): Record<string, string | number | null> {
   return {
     category: filters.category === ALL_CATEGORIES ? null : filters.category,
+    q: filters.q,
     date: filters.date,
     guests: filters.guests,
     city: filters.city,
@@ -128,6 +158,8 @@ type FeedStatus = "loading" | "error" | "ready" | "more" | "more-error";
 
 export interface Feed {
   readonly items: readonly ListingCard[];
+  /** Сколько нашлось всего — с поиском (первая страница ответа); иначе null */
+  readonly total: number | null;
   readonly status: FeedStatus;
   readonly hasMore: boolean;
   readonly retry: () => void;
@@ -143,6 +175,7 @@ interface Snapshot {
   readonly at: number;
   readonly items: readonly ListingCard[];
   readonly cursor: string | null;
+  readonly total: number | null;
 }
 
 const snapshots = new WeakMap<ClientApi, Map<string, Snapshot>>();
@@ -152,15 +185,23 @@ function restoredFeed(api: ClientApi, key: string, query: CatalogQuery): Snapsho
   const snapshot = snapshots.get(api)?.get(key);
   if (snapshot && Date.now() - snapshot.at <= SNAPSHOT_TTL_MS) return snapshot;
   const page = api.peek.catalog(query);
-  return page ? { at: Date.now(), items: page.items, cursor: page.nextCursor } : null;
+  return page
+    ? { at: Date.now(), items: page.items, cursor: page.nextCursor, total: page.total ?? null }
+    : null;
 }
 
-function keepSnapshot(api: ClientApi, key: string, items: readonly ListingCard[], cursor: string | null) {
+function keepSnapshot(
+  api: ClientApi,
+  key: string,
+  items: readonly ListingCard[],
+  cursor: string | null,
+  total: number | null,
+) {
   if (!api.peek) return;
   const byKey = snapshots.get(api) ?? new Map<string, Snapshot>();
   snapshots.set(api, byKey);
   byKey.delete(key);
-  byKey.set(key, { at: Date.now(), items, cursor });
+  byKey.set(key, { at: Date.now(), items, cursor, total });
   // Последние десять выдач хватит на «назад»
   if (byKey.size > 10) byKey.delete(byKey.keys().next().value as string);
 }
@@ -170,6 +211,7 @@ export function catalogQuery(filters: CatalogFilters): CatalogQuery {
   return {
     // Раздел — всегда явно (у API без него — залы, для старых сборок); весь каталог — all
     category: filters.category,
+    q: filters.q ?? undefined,
     filters: Object.keys(filters.attrs).length > 0 ? filters.attrs : undefined,
     date: filters.date ?? undefined,
     guests: filters.guests ?? undefined,
@@ -187,6 +229,7 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
   const [initial] = useState(() => restoredFeed(api, key, query));
   const [items, setItems] = useState<readonly ListingCard[]>(initial?.items ?? []);
   const [cursor, setCursor] = useState<string | null>(initial?.cursor ?? null);
+  const [total, setTotal] = useState<number | null>(initial?.total ?? null);
   const [status, setStatus] = useState<FeedStatus>(initial ? "ready" : "loading");
   const [attempt, setAttempt] = useState(0);
   // Поколение запроса: ответ по старым фильтрам не допишется в новую выдачу
@@ -201,8 +244,8 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
 
   // Снимок для «назад»: каждый раз, когда выдача этих фильтров готова
   useEffect(() => {
-    if (status === "ready" && shownKey.current === key) keepSnapshot(api, key, items, cursor);
-  }, [api, key, items, cursor, status]);
+    if (status === "ready" && shownKey.current === key) keepSnapshot(api, key, items, cursor, total);
+  }, [api, key, items, cursor, total, status]);
 
   useEffect(() => {
     if (restored.current === key && attempt === 0) return;
@@ -214,12 +257,14 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
     setStatus("loading");
     setItems([]);
     setCursor(null);
+    setTotal(null);
     api.catalog(queryRef.current, controller.signal).then(
       (page) => {
         if (current !== generation.current) return;
         shownKey.current = key;
         setItems(page.items);
         setCursor(page.nextCursor);
+        setTotal(page.total ?? null);
         setStatus("ready");
       },
       (error: unknown) => {
@@ -259,5 +304,5 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
     else if (status === "more-error") loadMore();
   });
 
-  return { items, status, hasMore: cursor !== null, retry, loadMore };
+  return { items, total, status, hasMore: cursor !== null, retry, loadMore };
 }

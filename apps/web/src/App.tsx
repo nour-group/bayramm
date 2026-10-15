@@ -6,6 +6,7 @@ import { LangSwitch } from "./components/LangSwitch";
 import { Link } from "./components/Link";
 import { SiteFooter } from "./components/SiteFooter";
 import { SiteMenu } from "./components/SiteMenu";
+import { SiteSearch } from "./components/SiteSearch";
 import { EmptyState, Loading } from "./components/States";
 import { AppProviders, type Services, useAccount, useLang, useServices } from "./context";
 import { FavoritesProvider } from "./favorites";
@@ -201,6 +202,9 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
     if (restore !== null && area) stopScroll = scrollWhenReady(restore, area);
     else window.scrollTo?.(0, 0);
     if (!area) return stopScroll;
+    // Экран сам поставил фокус внутрь себя (поле поиска, открытое значком в шапке) — не отбираем
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && focused !== area && area.contains(focused)) return stopScroll;
     const focusHeading = () => {
       const heading = area.querySelector<HTMLElement>("h1");
       heading?.focus({ preventScroll: true });
@@ -269,6 +273,8 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
           Bayramm
         </Link>
         {auth ? null : <Sections tabs={tabs} current={tabOf(match)} className="site-nav" />}
+        {/* Поиск в шапке — у сайта; на каталоге его поле уже есть, в Telegram — во вкладке каталога */}
+        {webApp === null && !auth && match?.name !== "catalog" ? <SiteSearch /> : null}
         <LangSwitch />
         {guest && !auth ? (
           <>

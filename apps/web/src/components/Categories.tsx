@@ -33,9 +33,9 @@ export function listingsIn(
   return item ? item.listings > 0 : false;
 }
 
-/** Адрес каталога категории (весь каталог — без параметра); дата — та же, что выбрана */
-export function categoryHref(code: string, date: string | null = null): string {
-  return hrefFor({ name: "catalog" }, { category: code === ALL_CATEGORIES ? null : code, date });
+/** Адрес каталога категории (весь каталог — без параметра); дата и поиск — те же, что выбраны */
+export function categoryHref(code: string, date: string | null = null, q: string | null = null): string {
+  return hrefFor({ name: "catalog" }, { category: code === ALL_CATEGORIES ? null : code, q, date });
 }
 
 /**
@@ -43,7 +43,15 @@ export function categoryHref(code: string, date: string | null = null): string {
  * телефоне. Категории без витрин не показываются (кроме открытой — по ссылке в неё можно
  * попасть); пока список не пришёл — все включённые
  */
-export function CategorySwitch({ current, date }: { current: string; date: string | null }) {
+export function CategorySwitch({
+  current,
+  date,
+  q = null,
+}: {
+  current: string;
+  date: string | null;
+  q?: string | null;
+}) {
   const { t, lang } = useLang();
   const state = useCatalogCategories();
   const shown = CLIENT_CATEGORIES.filter((c) => c.code === current || listingsIn(state, c.code) !== false);
@@ -65,7 +73,7 @@ export function CategorySwitch({ current, date }: { current: string; date: strin
         <li>
           <Link
             className="cat-chip"
-            href={categoryHref(ALL_CATEGORIES, date)}
+            href={categoryHref(ALL_CATEGORIES, date, q)}
             aria-current={current === ALL_CATEGORIES ? "page" : undefined}
           >
             <Icon name="list" size={17} className="cat-chip-ico" />
@@ -76,7 +84,7 @@ export function CategorySwitch({ current, date }: { current: string; date: strin
           <li key={category.code}>
             <Link
               className="cat-chip"
-              href={categoryHref(category.code, date)}
+              href={categoryHref(category.code, date, q)}
               aria-current={category.code === current ? "page" : undefined}
             >
               <Icon name={categoryIcon(category.code)} size={17} className="cat-chip-ico" />
