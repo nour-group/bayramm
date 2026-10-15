@@ -9,11 +9,16 @@ import type { Dictionaries } from "@bayramm/shared/api";
 import type { Me } from "@bayramm/shared/api/me";
 import type {
   DayPart,
+  DaySessionsChange,
+  DaySessionsInput,
   ListingRevisionPayload,
   ListingService,
   ListingServices,
+  PartInUse,
   ServiceInput,
   VendorCalendar,
+  VendorCalendarBatch,
+  VendorCalendarBatchResult,
   VendorCalendarChange,
   VendorCapacityChange,
   VendorContactsInput,
@@ -74,13 +79,21 @@ export class ApiFailure extends Error {
   readonly status: number;
   readonly code: string;
   readonly details: readonly string[];
+  /** Части дня с будущими заявками (409 part_in_use): сколько заявок в каждой */
+  readonly inUse: readonly PartInUse[];
 
-  constructor(status: number, code: string, details: readonly string[] = []) {
+  constructor(
+    status: number,
+    code: string,
+    details: readonly string[] = [],
+    inUse: readonly PartInUse[] = [],
+  ) {
     super(`${status} ${code}`);
     this.name = "ApiFailure";
     this.status = status;
     this.code = code;
     this.details = details;
+    this.inUse = inUse;
   }
 }
 
@@ -110,12 +123,19 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 async function failure(res: Response): Promise<ApiFailure> {
   const body = (await res.json().catch(() => null)) as {
     error?: { code?: unknown; details?: unknown };
+    inUse?: unknown;
   } | null;
   const code = typeof body?.error?.code === "string" ? body.error.code : "unknown";
   const details = Array.isArray(body?.error?.details)
     ? body.error.details.filter((d): d is string => typeof d === "string")
     : [];
-  return new ApiFailure(res.status, code, details);
+  const inUse = Array.isArray(body?.inUse)
+    ? body.inUse.filter(
+        (p): p is PartInUse =>
+          typeof p === "object" && p !== null && typeof p.part === "string" && typeof p.count === "number",
+      )
+    : [];
+  return new ApiFailure(res.status, code, details, inUse);
 }
 
 async function checked(path: string, init?: RequestInit): Promise<Response> {
@@ -259,6 +279,23 @@ export const api = {
     json<VendorCalendarChange>(dayPath(listingId, day, part), {
       method: "DELETE",
       headers: { [CALENDAR_VERSION_HEADER]: String(version) },
+    }),
+  /** Несколько дней одной правкой (закрыть или открыть день или часть) — от версии календаря */
+  markMany: (listingId: string, batch: VendorCalendarBatch, version: number) =>
+    json<VendorCalendarBatchResult>(`${listingPath(listingId)}/calendar`, {
+      method: "PUT",
+      headers: { [CALENDAR_VERSION_HEADER]: String(version) },
+      body: JSON.stringify(batch),
+    }),
+  /**
+   * Время работы витрины (только владелец) — от версии календаря: часть с будущими заявками —
+   * 409 part_in_use { inUse }
+   */
+  setDaySessions: (listingId: string, input: DaySessionsInput, version: number) =>
+    json<DaySessionsChange>(`${listingPath(listingId)}/day-sessions`, {
+      method: "PUT",
+      headers: { [CALENDAR_VERSION_HEADER]: String(version) },
+      body: JSON.stringify(input),
     }),
   /** Сколько заказов витрина берёт одновременно — тоже от версии календаря */
   setCapacity: (listingId: string, parallelCapacity: number, version: number) =>

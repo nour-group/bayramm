@@ -4,16 +4,17 @@ import type {
   ListingAttributes,
   ListingDetail,
   Localized,
+  PartMode,
   PriceUnit,
   PublicService,
 } from "@bayramm/shared/api";
-import { categoryConfig, categoryTexts, serviceType } from "@bayramm/shared/categories";
+import { categoryConfig, categoryTexts, defaultDaySessions, serviceType } from "@bayramm/shared/categories";
 import { addDays } from "../format";
 
 /* Демо-витрины категорий кроме залов — для `pnpm dev:web` и тестов (через api/mock.ts).
    По три на категорию: поля витрины, услуги с опциями, видео у фото и студий, занятость
-   по модели категории (части дня у кортежа, фото и декора; срок заказа у цветов, тортов и
-   подарков). Названия вымышленные, телефоны — в несуществующем коде +998 00. Цены «от»
+   по модели категории (части дня — у всех с календарём, у части витрин — одно мероприятие в
+   день или не все части; срок заказа у цветов, тортов и подарков). Названия вымышленные, телефоны — в несуществующем коде +998 00. Цены «от»
    считаются так же, как у сервера: самая низкая цена услуг, входящих в цену «от». */
 
 /**
@@ -61,6 +62,10 @@ interface VitrinaSpec {
   readonly busy?: readonly number[];
   /** Частично занятые дни: смещение от «сегодня» и занятые части */
   readonly parts?: readonly (readonly [number, readonly DayPart[]])[];
+  /** Время работы: одно мероприятие в день; по умолчанию — несколько */
+  readonly mode?: PartMode;
+  /** Рабочие части; по умолчанию — все три */
+  readonly dayParts?: readonly DayPart[];
 }
 
 const SPECS: readonly VitrinaSpec[] = [
@@ -928,6 +933,7 @@ export function demoVitrinas(today: string): DemoListing[] {
       date: addDays(today, offset),
       parts,
     }));
+    const sessions = defaultDaySessions(category);
     return {
       id,
       slug: spec.slug,
@@ -948,6 +954,11 @@ export function demoVitrinas(today: string): DemoListing[] {
       videoLinks: spec.videoLinks ?? [],
       services,
       parallelCapacity: spec.parallelCapacity ?? 1,
+      sessions: {
+        mode: spec.mode ?? sessions.mode,
+        parts: spec.dayParts ?? sessions.parts,
+        windows: sessions.windows,
+      },
       photos,
       contactChannels: demoTelegram(spec.slug, n) ? ["phone", "telegram"] : ["phone"],
       phone: `+998000000${String(n).padStart(3, "0")}`,

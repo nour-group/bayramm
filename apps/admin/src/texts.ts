@@ -165,6 +165,7 @@ export const t = {
     revision_pending:
       "У витрины уже есть предложение изменений, которое ждёт решения модератора. Пока по нему не решат, название и описания не изменить — ничего не сохранено.",
     calendar_conflict: "Календарь изменили — показали актуальный. Отметьте день ещё раз.",
+    part_in_use: "На эту часть дня есть будущие заявки — её нельзя убрать.",
     date_out_of_range: "Прошедший день не отметить и не снять. Если страница открыта давно — обновите её.",
     version_required: "Календарь устарел. Обновите страницу и отметьте день ещё раз.",
     client_blocked: "Клиент заблокирован.",
@@ -1234,8 +1235,38 @@ export const t = {
   dayParts: { morning: "Утро", day: "День", evening: "Вечер" } as Record<string, string>,
   wholeDay: "Весь день",
   markBusy: "Занять",
-  partState: { free: "свободно", busy: "занято", full: "все места заняты" } as Record<string, string>,
-  partBookings: (count: number, capacity: number) => `договорённостей: ${count} из ${capacity}`,
+  partState: { free: "свободно", busy: "занято", covered: "весь день занят" } as Record<string, string>,
+  partSeats: (count: number, capacity: number) =>
+    `Занято ${count} из ${capacity} ${capacity === 1 ? "места" : "мест"}`,
+  wholePartial: "частично занят",
+  closeWholeDay: "Закрыть весь день",
+  openWholeDay: "Открыть весь день",
+  closePart: "Закрыть",
+  openPart: "Открыть",
+  dayRequest: (no: number, status: string) => `Заявка №${no} · ${status}`,
+  rangeWeekdays: "Только эти дни недели",
+  rangeWhat: "Что занять или освободить",
+  weekdaysLong: ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"],
+  // время работы витрины
+  sessionsTitle: "Время работы",
+  sessionsEdit: "Изменить",
+  sessionsLead: "Как витрина работает в течение дня. Меняется сразу, без модерации.",
+  sessionsMode: "Сколько мероприятий в день",
+  sessionsModeWhole: "Одно мероприятие в день",
+  sessionsModeWholeHint: "Любая договорённость или отметка занимает весь день",
+  sessionsModeParts: "Несколько мероприятий в день",
+  sessionsModePartsHint: "Утром, днём и вечером — отдельно",
+  sessionsParts: "Части дня",
+  sessionsFrom: (part: string) => `${part}: с`,
+  sessionsTo: (part: string) => `${part}: до`,
+  sessionsDefault: "Время категории",
+  sessionsSaved: "Время работы сохранено.",
+  sessionsPartsRequired: "Отметьте хотя бы одну часть дня.",
+  sessionsWindowInvalid: "Начало — раньше конца, без пересечения с соседней частью.",
+  sessionsInUse: (part: string, n: number) =>
+    `Убрать «${part}» нельзя: на эту часть ${n} ${n % 10 === 1 && n % 100 !== 11 ? "будущая заявка" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "будущие заявки" : "будущих заявок"}.`,
+  sessionsCapacityLead:
+    "Сколько заказов витрина берёт в одну часть дня (в день — у одного мероприятия): залы, машины, экипажи.",
   dayLoad: { free: "свободно", partial: "занято частично", busy: "занято" } as Record<string, string>,
   legendPartial: "занято частично",
   pickedDay: (day: string) => `День: ${day}`,
@@ -1245,7 +1276,9 @@ export const t = {
   leadServices: (list: string) => `Свой срок у услуг: ${list}`,
 
   // заявки по категориям
-  dayPart: "Часть дня",
+  dayPart: "Время",
+  partFilter: "Время",
+  allParts: "Любое время",
   requestServices: "Выбранные услуги",
 
   // ── поля форм и подтверждения (fields.tsx, reason.tsx) ───────────────────

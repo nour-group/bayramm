@@ -43,6 +43,7 @@ export const API_ERROR_CODES = [
   "contact_change_not_pending",
   "contacts_not_live",
   "version_conflict",
+  "part_in_use",
 ] as const;
 
 /** Текст ошибки действия: нет связи, код API или общий «не удалось» */

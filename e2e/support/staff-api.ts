@@ -41,11 +41,12 @@ import type {
   VendorUser,
 } from "@bayramm/shared/api/staff";
 import { PENDING_PHOTOS_CAP } from "@bayramm/shared/api/staff";
-import { categoryConfig } from "@bayramm/shared/categories";
+import { type CategoryConfig, categoryConfig, defaultDaySessions } from "@bayramm/shared/categories";
 import type { Page, Route } from "@playwright/test";
 import { accountMe, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from "./account";
 import {
   applyAvailability,
+  applyDaySessions,
   availabilityOf,
   CAR_CONTACTS,
   CAR_LISTING_ID,
@@ -277,6 +278,8 @@ function newListing(input: ListingInput): ListingDetail {
     missingAttributes: [],
     videoLinks: [],
     parallelCapacity: 1,
+    daySessions: defaultDaySessions(categoryConfig(input.categoryCode ?? "hall") as CategoryConfig),
+    calendarVersion: 0,
     services: [],
     photos: [],
     blockers: { review: REVIEW_BLOCKERS, active: ACTIVE_BLOCKERS },
@@ -342,7 +345,7 @@ const REQUEST: StaffRequestDetail = {
   occasionCode: "toy",
   eventDate: "2026-10-24",
   guests: 180,
-  dayPart: null,
+  dayParts: [],
   details: {},
   createdAt: new Date(NOW.getTime() - 15 * 3_600_000).toISOString(),
   listing: { id: LISTING_ID, name: "Lola zali", categoryCode: "hall" },
@@ -772,6 +775,8 @@ export interface StaffApi {
   readonly actions: string[];
   /** Правки занятых дней: тело PUT …/availability (с версией календаря) */
   readonly calendar: AvailabilityInput[];
+  /** Правки «Время работы»: тело PUT …/day-sessions (с версией календаря) */
+  readonly daySessions: Record<string, unknown>[];
   /** Решения по фото: POST …/photos/:id/moderation — какое фото и тело (отказ — с причиной) */
   readonly photoDecisions: { readonly listingId: string; readonly photoId: string; readonly body: unknown }[];
   /** Входы: как Mini App (initData) и повышения сессии аккаунта до сотрудника */
@@ -883,6 +888,7 @@ export async function mockStaffApi(
     reveals: [],
     actions: [],
     calendar: [],
+    daySessions: [],
     photoDecisions: [],
     webapp: [],
     get elevated() {
@@ -943,6 +949,8 @@ export async function mockStaffApi(
   const view = <T extends ListingDetail>(listing: T): T => ({
     ...listing,
     deleteBlocker: blockerOf(listing),
+    // Версия календаря — живая: правка времени работы идёт от неё
+    calendarVersion: calendarOf(listing.id).version,
   });
   const vendorBlocker = (): DeleteBlocker | null =>
     listings.map(blockerOf).find((b) => b === "requests") ??
@@ -1332,7 +1340,7 @@ export async function mockStaffApi(
           : { total: 0, items: [] };
       return json(route, 200, list);
     }
-    const listingMatch = /^\/staff\/listings\/([0-9a-f-]{36})(?:\/(\w+))?$/.exec(path);
+    const listingMatch = /^\/staff\/listings\/([0-9a-f-]{36})(?:\/([\w-]+))?$/.exec(path);
     if (listingMatch?.[1]) {
       const listing = listings.find((l) => l.id === listingMatch[1]);
       if (!listing) return fail(route, 404, "not_found");
@@ -1395,6 +1403,12 @@ export async function mockStaffApi(
           ...listing,
           categoryCode: code,
           attributes: {},
+          // Окна частей — новой категории; рабочие части и места — как были
+          daySessions: {
+            ...listing.daySessions,
+            windows: defaultDaySessions(categoryConfig(code) as CategoryConfig).windows,
+            custom: null,
+          },
           version: listing.version + 1,
         });
         return json(route, 200, view(next));
@@ -1417,6 +1431,26 @@ export async function mockStaffApi(
         const to = applied.days.at(-1) ?? from;
         return json(route, 200, availabilityOf(listing, calendar, from, to));
       }
+      if (action === "day-sessions" && method === "PUT") {
+        const input = request.postDataJSON() as Record<string, unknown>;
+        state.daySessions.push(input);
+        const applied = applyDaySessions(
+          listing,
+          calendarOf(listing.id),
+          input,
+          NOW.toISOString().slice(0, 10),
+        );
+        if (!applied.ok) {
+          if (applied.code === "part_in_use")
+            return json(route, 409, {
+              error: { code: "part_in_use", message: "part_in_use" },
+              inUse: applied.inUse,
+            });
+          return fail(route, applied.code === "calendar_conflict" ? 409 : 422, applied.code, applied.details);
+        }
+        replace(applied.listing);
+        return json(route, 200, applied.change);
+      }
       if (action === "phone" && method === "POST") {
         // Телефон и Telegram одним чтением; у витрины без номера в тесте — условный
         state.reveals.push(listing.id);
@@ -1438,12 +1472,17 @@ export async function mockStaffApi(
       const params = url.searchParams;
       const category = params.get("category");
       const sla = params.get("sla");
+      const part = params.get("part");
       const q = params.get("q")?.toLowerCase() ?? "";
-      // Те же фильтры, что у API: категория, срок (late — просроченные и нарушенные), статус,
-      // одна витрина, поиск по номеру, витрине и вендору
+      // Те же фильтры, что у API: категория, часть дня (whole — без частей), срок (late —
+      // просроченные и нарушенные), статус, одна витрина, поиск по номеру, витрине и вендору
       const items = requests.filter(
         (r) =>
           (!category || r.listing.categoryCode === category) &&
+          (!part ||
+            (part === "whole"
+              ? r.dayParts.length === 0
+              : (r.dayParts as readonly string[]).includes(part))) &&
           (!sla || (sla === "late" ? r.sla === "overdue" || r.sla === "breached" : r.sla === sla)) &&
           (!params.get("status") || r.status === params.get("status")) &&
           (!params.get("listingId") || r.listing.id === params.get("listingId")) &&

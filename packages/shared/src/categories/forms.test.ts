@@ -9,6 +9,10 @@ import {
   type CategoryConfig,
   categoryConfig,
   chosenServices,
+  daySessionsDirty,
+  daySessionsDraft,
+  daySessionsInput,
+  defaultDaySessions,
   detailRows,
   draftValue,
   emptyListItem,
@@ -23,8 +27,10 @@ import {
   serviceDraftOf,
   serviceErrors,
   serviceInput,
+  validateDaySessions,
   videoLinkErrors,
   videoLinksValue,
+  windowTimes,
 } from "./index";
 
 const cfg = (code: string): CategoryConfig => {
@@ -302,5 +308,73 @@ describe("поля заявки для показа", () => {
 
   it("единица цены словами", () => {
     expect(priceUnitLabel("ru", "per_kg")).toBe("за кг");
+  });
+});
+
+describe("время работы витрины в форме", () => {
+  const hall = cfg("hall");
+  const base = daySessionsDraft(defaultDaySessions(hall));
+
+  it("черновик из сохранённого и обратно: без своих окон — windows null", () => {
+    expect(base).toMatchObject({ mode: "parts", parts: ["morning", "day", "evening"], capacity: "1" });
+    expect(daySessionsInput(hall, base)).toEqual({
+      mode: "parts",
+      parts: ["morning", "day", "evening"],
+      windows: null,
+      parallelCapacity: 1,
+    });
+  });
+
+  it("свои окна — только у рабочих частей и только отличные от категории; части — по порядку дня", () => {
+    const draft = {
+      ...base,
+      parts: ["evening", "morning"] as const,
+      windows: {
+        ...base.windows,
+        morning: { from: "07:00", to: "11:00" },
+        day: { from: "12:30", to: "17:00" },
+      },
+      capacity: " 2 ",
+    };
+    const input = daySessionsInput(hall, draft);
+    expect(input).toEqual({
+      mode: "parts",
+      parts: ["morning", "evening"],
+      windows: { morning: { from: "07:00", to: "11:00" } },
+      parallelCapacity: 2,
+    });
+    expect(validateDaySessions(hall, input)).toMatchObject({ ok: true });
+    // Не число — NaN: проверка назовёт поле
+    expect(daySessionsInput(hall, { ...base, capacity: "два" }).parallelCapacity).toBeNaN();
+    expect(validateDaySessions(hall, daySessionsInput(hall, { ...base, capacity: "" }))).toMatchObject({
+      ok: false,
+      errors: ["parallelCapacity"],
+    });
+  });
+
+  it("есть что сохранять: режим, части, места; окно нерабочей части — не в счёт", () => {
+    expect(daySessionsDirty(base, base)).toBe(false);
+    expect(daySessionsDirty(base, { ...base, mode: "whole" })).toBe(true);
+    expect(daySessionsDirty(base, { ...base, capacity: "2" })).toBe(true);
+    expect(daySessionsDirty(base, { ...base, parts: ["morning", "evening"] })).toBe(true);
+    const noDay = { ...base, parts: ["morning", "evening"] as const };
+    const movedDay = { ...noDay, windows: { ...base.windows, day: { from: "13:00", to: "17:00" } } };
+    expect(daySessionsDirty(noDay, movedDay)).toBe(false);
+    const movedMorning = { ...noDay, windows: { ...base.windows, morning: { from: "07:00", to: "11:00" } } };
+    expect(daySessionsDirty(noDay, movedMorning)).toBe(true);
+  });
+
+  it("время окна — шаг 30 минут; начало до 23:30, конец до 24:00; старое значение не теряется", () => {
+    const from = windowTimes("from", "06:00");
+    expect(from[0]).toBe("00:00");
+    expect(from.at(-1)).toBe("23:30");
+    expect(from).toHaveLength(48);
+    const to = windowTimes("to", "24:00");
+    expect(to[0]).toBe("00:30");
+    expect(to.at(-1)).toBe("24:00");
+    expect(windowTimes("from", "06:15")).toContain("06:15");
+    expect(windowTimes("from", "06:15").indexOf("06:15")).toBe(
+      windowTimes("from", "06:15").indexOf("06:00") + 1,
+    );
   });
 });

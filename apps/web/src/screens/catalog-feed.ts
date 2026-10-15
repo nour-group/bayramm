@@ -1,4 +1,4 @@
-import type { CatalogQuery, CatalogSort, ListingCard } from "@bayramm/shared/api";
+import type { CatalogPart, CatalogQuery, CatalogSort, ListingCard } from "@bayramm/shared/api";
 import { SEARCH_MAX_LENGTH, searchNorm, searchQuery } from "@bayramm/shared/search";
 import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -9,12 +9,14 @@ import { addDays, isIsoDate } from "../format";
 import { ALL_CATEGORIES } from "../routes";
 import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
 
-/* Фильтры каталога живут в адресе (?category=&q=&city=&district=&date=&guests=&sort=&a.<поле>=):
-   ссылка «похожие» из «Моих заявок», кнопки бота и «назад» из карточки возвращают ту же
-   выдачу. Без category — все разделы одной выдачей («Все»). Место — везде, и в «Все»: город
-   (его районы и выездные витрины без района) или район (только он; город — его). Гости —
-   только где вместимость (залы, рестораны), порядок «вместительнее» — там же. Поиск (q) — вместе
-   с разделом и фильтрами; с ним порядок по умолчанию — «сначала подходящие» (relevance). */
+/* Фильтры каталога живут в адресе
+   (?category=&q=&city=&district=&date=&part=&guests=&sort=&a.<поле>=): ссылка «похожие» из «Моих
+   заявок», кнопки бота и «назад» из карточки возвращают ту же выдачу. Без category — все разделы
+   одной выдачей («Все»). Место — везде, и в «Все»: город (его районы и выездные витрины без
+   района) или район (только он; город — его). Гости — только где вместимость (залы, рестораны),
+   порядок «вместительнее» — там же. Время (part) — только вместе с датой: свободные в эту часть
+   дня или весь день. Поиск (q) — вместе с разделом и фильтрами; с ним порядок по умолчанию —
+   «сначала подходящие» (relevance). */
 
 export const SORTS = ["price_asc", "price_desc", "capacity_desc"] as const satisfies readonly CatalogSort[];
 
@@ -31,6 +33,8 @@ export const MAX_GUESTS = 5000;
 /** Насколько вперёд можно выбрать дату */
 export const DATE_HORIZON_DAYS = 365;
 export const PAGE_SIZE = 20;
+/** Фильтр «Время» на дату */
+export const CATALOG_PARTS = ["morning", "day", "evening", "whole"] as const satisfies readonly CatalogPart[];
 
 export interface CatalogFilters {
   /** Код категории каталога; ALL_CATEGORIES — все разделы (по умолчанию) */
@@ -38,6 +42,8 @@ export interface CatalogFilters {
   /** Поиск — текст как ввели (не короче двух символов после нормализации); null — без поиска */
   readonly q: string | null;
   readonly date: string | null;
+  /** Время на дату: свободные в эту часть дня (или весь день); без даты — null */
+  readonly part: CatalogPart | null;
   readonly guests: number | null;
   /** Город целиком; с районом не пишется — район уже говорит, какой город */
   readonly city: string | null;
@@ -51,6 +57,7 @@ export const NO_FILTERS: CatalogFilters = {
   category: ALL_CATEGORIES,
   q: null,
   date: null,
+  part: null,
   guests: null,
   city: null,
   district: null,
@@ -105,14 +112,17 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
   const category = catalogCategory(query.get("category"));
   const code = category?.code ?? ALL_CATEGORIES;
   const date = query.get("date");
+  const part = query.get("part");
   const city = query.get("city");
   const district = query.get("district");
   const sort = query.get("sort");
+  const day = isIsoDate(date) && date >= today && date <= addDays(today, DATE_HORIZON_DAYS) ? date : null;
   const q = searchText(query.get("q"));
   return {
     category: code,
     q,
-    date: isIsoDate(date) && date >= today && date <= addDays(today, DATE_HORIZON_DAYS) ? date : null,
+    date: day,
+    part: day === null ? null : (CATALOG_PARTS.find((p) => p === part) ?? null),
     guests: category && hasCapacity(category) ? parseGuests(query.get("guests")) : null,
     // Коды города и района — как проверяет API: иначе 400 вместо выдачи
     city: city && PLACE_CODE.test(city) ? city : null,
@@ -128,6 +138,7 @@ export function filtersQuery(filters: CatalogFilters): Record<string, string | n
     category: filters.category === ALL_CATEGORIES ? null : filters.category,
     q: filters.q,
     date: filters.date,
+    part: filters.date === null ? null : filters.part,
     guests: filters.guests,
     city: filters.city,
     district: filters.district,
@@ -214,6 +225,7 @@ export function catalogQuery(filters: CatalogFilters): CatalogQuery {
     q: filters.q ?? undefined,
     filters: Object.keys(filters.attrs).length > 0 ? filters.attrs : undefined,
     date: filters.date ?? undefined,
+    part: filters.date !== null && filters.part !== null ? filters.part : undefined,
     guests: filters.guests ?? undefined,
     city: filters.city ?? undefined,
     district: filters.district ?? undefined,

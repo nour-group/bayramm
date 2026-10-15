@@ -12,7 +12,9 @@
 //     jsonb_path_exists);
 //   · guests отсекает витрины, где cap_max меньше (у категорий без вместимости — нет);
 //     date не отсекает — занятые в этот день целиком идут в конце при любой сортировке,
-//     частично занятые (режим parts) — среди свободных, с пометкой;
+//     частично занятые (заняты не все рабочие части) — среди свободных, с пометкой; part вместе
+//     с date оставляет свободных в эту часть дня (или весь день) — по тем же правилам и тем же
+//     запросом загрузки (app.catalog_day_load отдаёт занятые рабочие части);
 //   · порядок — по цене, вместимости или (с поиском q) похожести, затем по id. Оплата, премиум и
 //     продвижение на порядок не влияют (их и нет);
 //   · q — поиск: app.catalog_search (документ витрины, триграммы) отбирает подходящие активные
@@ -30,6 +32,7 @@ import type {
   BusyParts,
   CatalogCategories,
   CatalogPage,
+  CatalogPart,
   CatalogSort,
   CatalogSuggest,
   ClientConsentPurpose,
@@ -49,6 +52,7 @@ import { FEATURED_LISTINGS, pickFeatured, SUGGEST_LISTINGS } from "@bayramm/shar
 import { type AttributeFilter, categoryConfig, readAttributes } from "@bayramm/shared/categories";
 import { matchPlaces, type SearchQuery, SUGGEST_DISTRICTS, suggestPlaces } from "@bayramm/shared/search";
 import { type RawBuilder, sql } from "kysely";
+import { dayPartsOf, sessionsOfRow } from "../calendar/sessions";
 import { GUEST, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { type ListingContactValues, listingContactKinds, revealListingContacts } from "../db/pii";
@@ -98,7 +102,7 @@ export async function getDictionaries(db: Db): Promise<Dictionaries> {
       .execute();
     const occasions = await trx
       .selectFrom("app.occasions")
-      .select(["code", "name_ru", "name_uz"])
+      .select(["code", "name_ru", "name_uz", "default_parts"])
       .orderBy("sort")
       .orderBy("code")
       .execute();
@@ -110,7 +114,7 @@ export async function getDictionaries(db: Db): Promise<Dictionaries> {
       categories: categories.map(item),
       cities: cities.map(item),
       districts: districts.map((d) => ({ ...item(d), city: d.city_code })),
-      occasions: occasions.map(item),
+      occasions: occasions.map((o) => ({ ...item(o), defaultParts: dayPartsOf(o.default_parts) })),
     } satisfies Dictionaries;
   });
 }
@@ -203,6 +207,8 @@ const NO_DATE: DayLoadSource = { date: null };
 interface DayLoadRow {
   listing_id: string;
   load: DateLoad;
+  /** Занятые рабочие части (у busy — все рабочие) */
+  parts: string | null;
 }
 
 /**
@@ -211,9 +217,9 @@ interface DayLoadRow {
  */
 function dayLoadRelation(source: DayLoadSource): RawBuilder<DayLoadRow> {
   if (source.date === null || source.category === null)
-    return sql<DayLoadRow>`(select null::uuid as listing_id, null::text as load where false)`;
+    return sql<DayLoadRow>`(select null::uuid as listing_id, null::text as load, null::app.day_part[] as parts where false)`;
   if (source.category === ALL_CATEGORIES)
-    return sql<DayLoadRow>`(select d.listing_id, d.load from app.categories c
+    return sql<DayLoadRow>`(select d.listing_id, d.load, d.parts from app.categories c
       cross join lateral app.catalog_day_load(c.code, ${source.date}::date) d where c.enabled)`;
   return sql<DayLoadRow>`app.catalog_day_load(${source.category}, ${source.date}::date)`;
 }
@@ -230,6 +236,18 @@ function busyOn(source: DayLoadSource): RawBuilder<boolean> {
   if (source.category === null)
     return sql<boolean>`(app.listing_day_load(l.id, ${source.date}::date) = 'busy')`;
   return sql<boolean>`coalesce(dl.load = 'busy', false)`;
+}
+
+/**
+ * Фильтр «Время» на дату выдачи: свободна в эту часть дня (витрина в ней работает — или берёт одно
+ * мероприятие в день — и она не занята) или весь день. У категорий без календаря не отсекает.
+ * Только при загрузке на дату (соединение dl)
+ */
+export function freeInPart(part: CatalogPart): RawBuilder<boolean> {
+  if (part === "whole") return sql<boolean>`(cat.availability_mode <> 'parts' or dl.listing_id is null)`;
+  return sql<boolean>`(cat.availability_mode <> 'parts' or case when l.part_mode = 'whole' then dl.listing_id is null
+    else ${part}::app.day_part = any (l.day_parts)
+         and not coalesce(dl.parts @> array[${part}::app.day_part], false) end)`;
 }
 
 /**
@@ -383,7 +401,7 @@ export function attributeFilter(filter: AttributeFilter): RawBuilder<boolean> {
 
 /** GET /catalog/listings: страница выдачи и курсор следующей (null — последняя) */
 export async function listCatalog(db: Db, params: CatalogParams): Promise<CatalogPage> {
-  const { category, q, filters, city, district, date, guests, sort, limit, after } = params;
+  const { category, q, filters, city, district, date, part, guests, sort, limit, after } = params;
   const key = sortKey(sort, guests);
   const source: DayLoadSource = date === null ? NO_DATE : { date, category };
   const busy = busyOn(source);
@@ -413,6 +431,7 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
       .$if(filters.length > 0, (qb) =>
         qb.where(sql<boolean>`(${sql.join(filters.map(attributeFilter), sql` and `)})`),
       )
+      .$if(part !== null && date !== null, (qb) => qb.where(freeInPart(part as CatalogPart)))
       .$if(after !== null, (qb) => qb.where(afterCursor(busy, key, after as CatalogCursor)))
       .orderBy(busy)
       .orderBy(key)
@@ -690,6 +709,9 @@ export async function getListingDetail(
         "l.attributes",
         "l.video_links",
         "l.parallel_capacity",
+        "l.part_mode",
+        "l.day_parts",
+        "l.part_windows",
         // Какие контакты есть — без самих значений: они по «Связаться» (POST …/contact)
         listingContactKinds("l.id").as("contact_channels"),
       ])
@@ -717,6 +739,7 @@ export async function getListingDetail(
       .orderBy("id")
       .execute();
     const busy = await busyCalendar(trx, row.id, today, addDays(today, BUSY_DAYS_AHEAD));
+    const sessions = sessionsOfRow(row);
 
     return {
       ...toCard(row, date),
@@ -726,6 +749,7 @@ export async function getListingDetail(
       videoLinks: row.video_links,
       services,
       parallelCapacity: row.parallel_capacity,
+      sessions: { mode: sessions.mode, parts: sessions.parts, windows: sessions.windows },
       photos: photos.flatMap((p) => photo(p.storage_key, p.width, p.height) ?? []),
       contactChannels: row.contact_channels,
       busyDates: busy.busyDates,

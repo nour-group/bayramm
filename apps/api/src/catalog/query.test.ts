@@ -37,6 +37,7 @@ describe("parseCatalogQuery", () => {
       city: null,
       district: null,
       date: null,
+      part: null,
       guests: null,
       sort: "price_asc",
       limit: 20,
@@ -52,6 +53,7 @@ describe("parseCatalogQuery", () => {
           city: "tashkent",
           district: "mirzo_ulugbek",
           date: "2026-10-03",
+          part: "evening",
           guests: "250",
           sort: "capacity_desc",
           limit: "50",
@@ -64,11 +66,21 @@ describe("parseCatalogQuery", () => {
       city: "tashkent",
       district: "mirzo_ulugbek",
       date: "2026-10-03",
+      part: "evening",
       guests: 250,
       sort: "capacity_desc",
       limit: 50,
       after: null,
     });
+  });
+
+  it("время: часть дня или весь день — только вместе с датой; неизвестное — 400", () => {
+    expect(parseCatalogQuery(q({ date: "2026-10-03", part: "whole" })).part).toBe("whole");
+    expect(parseCatalogQuery(q({ date: "2026-10-03", part: "morning" })).part).toBe("morning");
+    expect(parseCatalogQuery(q({ part: "morning" })).part).toBeNull();
+    expect(() => parseCatalogQuery(q({ date: "2026-10-03", part: "night" }))).toThrow(
+      expect.objectContaining({ code: "invalid_request", details: ["part"] }),
+    );
   });
 
   it("пустое значение — как отсутствующее; неизвестные параметры не мешают", () => {

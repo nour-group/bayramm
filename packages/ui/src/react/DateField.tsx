@@ -14,6 +14,8 @@ export interface DateFieldProps {
   readonly min: string;
   readonly max: string;
   readonly busy?: ReadonlySet<string>;
+  /** Частично занятые дни: дата → что занято («вечер») — пометка и имя дня для диктора */
+  readonly partial?: ReadonlyMap<string, string>;
   /** Название поля: имя кнопки для диктора (вместе со значением), заголовок шторки */
   readonly label: string;
   /** Текст, пока дата не выбрана */
@@ -44,6 +46,7 @@ export function DateField({
   min,
   max,
   busy,
+  partial,
   label,
   placeholder,
   format,
@@ -136,6 +139,7 @@ export function DateField({
               min={min}
               max={max}
               busy={busy}
+              partial={partial}
               selected={value}
               onSelect={pick}
               label={label}

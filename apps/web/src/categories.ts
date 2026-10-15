@@ -1,5 +1,4 @@
 import type { Lang } from "@bayramm/shared";
-import type { DayPart } from "@bayramm/shared/api";
 import {
   CATEGORIES,
   type CategoryConfig,
@@ -63,6 +62,3 @@ export const hasDistrict = (category: CategoryConfig): boolean => category.listi
 
 /** Календарь занятости: у всех, кроме «заказ за N дней» (цветы, торты, подарки) */
 export const hasCalendar = (category: CategoryConfig): boolean => category.availability !== "lead";
-
-/** Порядок частей дня — как в DAY_PARTS */
-export const DAY_PART_ORDER: readonly DayPart[] = ["morning", "day", "evening"];

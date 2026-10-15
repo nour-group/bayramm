@@ -1,8 +1,8 @@
 import type { DayPart, ListingDetail, PublicService } from "@bayramm/shared/api";
-import { type CategoryConfig, categoryConfig, hasDayParts } from "@bayramm/shared/categories";
+import { type CategoryConfig, categoryConfig, hasDayParts, windowText } from "@bayramm/shared/categories";
 import { type UIEvent, useEffect, useMemo, useRef, useState } from "react";
 import { isNotFound } from "../api/errors";
-import { categoryIcon, categoryName, clientCategory, DAY_PART_ORDER, hasCalendar } from "../categories";
+import { categoryIcon, categoryName, clientCategory, hasCalendar } from "../categories";
 import { Calendar } from "../components/Calendar";
 import { categoryHref } from "../components/Categories";
 import { ContactButton } from "../components/ContactSheet";
@@ -39,7 +39,7 @@ import {
   toggleDraftService,
 } from "./request-draft";
 import { suggestedQty } from "./request-estimate";
-import { attributeView, dayPartWindow, listingLeadDays, safeVideoLinks } from "./venue-attributes";
+import { attributeView, listingLeadDays, safeVideoLinks } from "./venue-attributes";
 
 /** Ширина главного фото: на компьютере — левая колонка рядом с карточкой связи (styles.css, .venue) */
 const GALLERY_SIZES = "(min-width: 1280px) 830px, (min-width: 1024px) 60vw, (min-width: 768px) 720px, 100vw";
@@ -173,33 +173,38 @@ function ServiceItem({
 }
 
 /**
- * Занятость по модели категории: календарь дня, части дня, слот или срок заказа. День в
- * календаре выбирается: он становится датой страницы (?date=) и уходит в заявку
+ * Занятость: календарь по рабочим частям витрины или срок заказа. День в календаре выбирается:
+ * он становится датой страницы (?date=) и уходит в заявку. На выбранную дату — части дня
+ * витрины с окнами: свободная — ссылкой в форму заявки с этой частью; у одного мероприятия в
+ * день — одна строка «на весь день»
  */
 function Availability({
   listing,
   category,
   filterDate,
   today,
+  guests,
   onPick,
 }: {
   listing: ListingDetail;
   category: CategoryConfig;
   filterDate: string | null;
   today: string;
+  guests: number | null;
   onPick: (date: string) => void;
 }) {
   const { t } = useLang();
   const busy = useMemo(() => new Set(listing.busyDates), [listing.busyDates]);
-  const partName = (part: DayPart) => t.dayPartName(part);
+  // Частично занятые дни — по рабочим частям витрины
   const partial = useMemo(
     () =>
       new Map(
         listing.busyParts
-          .filter((p) => p.parts.length > 0 && !busy.has(p.date))
-          .map((p) => [p.date, p.parts.map((part) => t.dayPartName(part)).join(", ")]),
+          .map((p) => [p.date, p.parts.filter((part) => listing.sessions.parts.includes(part))] as const)
+          .filter(([date, taken]) => taken.length > 0 && !busy.has(date))
+          .map(([date, taken]) => [date, taken.map((part) => t.dayPartName(part)).join(", ")]),
       ),
-    [listing.busyParts, busy, t],
+    [listing.busyParts, listing.sessions.parts, busy, t],
   );
 
   if (!hasCalendar(category)) {
@@ -221,12 +226,17 @@ function Availability({
     );
   }
 
-  const parts = hasDayParts(category);
+  const parts = hasDayParts(category) && listing.sessions.mode === "parts";
   const onDate = filterDate ? (listing.busyParts.find((p) => p.date === filterDate)?.parts ?? []) : [];
-  const upcoming = [...partial.entries()].filter(([date]) => date >= today).slice(0, PARTIAL_LIST);
+  // Ближайшие частично занятые — без выбранного дня: он и так расписан частями выше
+  const upcoming = [...partial.entries()]
+    .filter(([date]) => date >= today && date !== filterDate)
+    .slice(0, PARTIAL_LIST);
+  const partHref = (part: DayPart) =>
+    hrefFor({ name: "request", slug: listing.slug }, { date: filterDate, part, guests });
 
   return (
-    <section className="section" aria-labelledby="venue-calendar">
+    <section className="section venue-calendar" aria-labelledby="venue-calendar">
       <h2 className="section-title" id="venue-calendar">
         {t.pfCal}
       </h2>
@@ -239,24 +249,48 @@ function Availability({
         busy={busy}
         partial={parts ? partial : undefined}
         selected={filterDate}
+        today={today}
         onSelect={onPick}
       />
-      {parts && filterDate && !busy.has(filterDate) ? (
+      {filterDate && !busy.has(filterDate) ? (
         <div className="parts-day">
           <h3 className="sub-title">{t.partsOn(formatDayMonth(filterDate, t))}</h3>
-          <ul className="parts">
-            {DAY_PART_ORDER.map((part) => {
-              const taken = onDate.includes(part);
-              return (
-                <li key={part} className={taken ? "part busy" : "part"}>
-                  <span>
-                    {partName(part)} <span className="muted">{dayPartWindow(category, part)}</span>
-                  </span>
-                  <b className="part-state">{taken ? t.legBusy : t.legFree}</b>
-                </li>
-              );
-            })}
-          </ul>
+          {parts ? (
+            <ul className="parts">
+              {listing.sessions.parts.map((part) => {
+                const taken = onDate.includes(part);
+                const window = windowText(listing.sessions.windows[part]);
+                const name = t.dayPartTitle(part);
+                return (
+                  <li key={part} className={taken ? "part busy" : "part"}>
+                    {taken ? (
+                      <span className="part-row">
+                        <span>
+                          {name} <span className="muted">{window}</span>
+                        </span>
+                        <b className="part-state">{t.legBusy}</b>
+                      </span>
+                    ) : (
+                      // Свободная часть — сразу в заявку с ней
+                      <Link
+                        className="part-row part-link"
+                        href={partHref(part)}
+                        aria-label={t.partFreeAsk(`${name} ${window}`)}
+                      >
+                        <span>
+                          {name} <span className="muted">{window}</span>
+                        </span>
+                        <b className="part-state">{t.legFree}</b>
+                        <Icon name="next" size={14} />
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="note">{t.partsWholeOnly}</p>
+          )}
         </div>
       ) : null}
       {parts && upcoming.length > 0 ? (
@@ -275,9 +309,6 @@ function Availability({
         <Icon name="info" size={14} />
         <span>
           {parts ? `${t.partsNote} ` : ""}
-          {category.availability === "slot"
-            ? `${category.requestForm.fields.some((f) => f.key === "hours") ? t.slotNote : t.slotTimeNote} `
-            : ""}
           {t.calByVendor}
         </span>
       </p>
@@ -382,15 +413,12 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
   const description = pick(listing.description, lang);
   const view = attributeView(category, listing.attributes, lang, listing.services);
   const videos = safeVideoLinks(listing.videoLinks);
+  // Загрузка выбранной даты — по рабочим частям: busyDates уже включает занятые целиком
   const load = (() => {
     if (!filterDate || !hasCalendar(category)) return null;
     if (listing.busyDates.includes(filterDate)) return "busy" as const;
     const parts = listing.busyParts.find((p) => p.date === filterDate)?.parts ?? [];
-    return parts.length >= 3
-      ? ("busy" as const)
-      : parts.length > 0
-        ? ("partial" as const)
-        : ("free" as const);
+    return parts.length > 0 ? ("partial" as const) : ("free" as const);
   })();
   // Занятый день — не пометкой, а блоком с другими днями (BusyDay); свободный и частично — пометкой
   const busyDay = load === "busy" ? filterDate : null;
@@ -543,6 +571,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         category={category}
         filterDate={filterDate}
         today={today}
+        guests={guests}
         onPick={(day) =>
           navigate(hrefFor({ name: "venue", slug: listing.slug }, { date: day, guests }), { replace: true })
         }

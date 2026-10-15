@@ -1,6 +1,5 @@
 import type { Lang } from "@bayramm/shared";
 import type {
-  DayPart,
   ListingAttributes,
   ListingDetail,
   Localized,
@@ -12,7 +11,6 @@ import {
   type CategoryConfig,
   type Choice,
   categoryText,
-  dayPartWindows,
   type ListItemField,
   normalizeVideoLink,
 } from "@bayramm/shared/categories";
@@ -152,12 +150,6 @@ export function attributeView(
 export function listingLeadDays(listing: Pick<ListingDetail, "attributes">): number | null {
   const value = listing.attributes.lead_days;
   return typeof value === "number" && value > 0 ? value : null;
-}
-
-/** Окно части дня категории: «05:00–11:00» */
-export function dayPartWindow(category: CategoryConfig, part: DayPart): string {
-  const { from, to } = dayPartWindows(category)[part];
-  return `${from}–${to}`;
 }
 
 /** Ссылки на видео — только канонические YouTube и Instagram: чужой адрес не показываем */

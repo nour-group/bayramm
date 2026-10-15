@@ -57,7 +57,7 @@ function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
     occasionCode: "toy",
     eventDate: "2026-11-14",
     guests: 200,
-    dayPart: null,
+    dayParts: [],
     details: {},
     budgetMinUzs: 40_000_000,
     budgetMaxUzs: 60_000_000,
@@ -368,7 +368,7 @@ describe("заявки", () => {
     const card = container.querySelector(".rq");
     expect(card?.getAttribute("href")).toBe(`/requests/${REQUEST_ID}`);
     expect(card?.textContent).toContain("Dilnoza");
-    expect(card?.textContent).toContain("Свадьба · 14 ноября, сб");
+    expect(card?.textContent).toContain("14 ноября, сб · Весь день · Свадьба");
     expect(card?.textContent).toContain("200 гостей");
     expect(card?.textContent).toContain("40–60 млн сум");
     expect(card?.textContent).toMatch(/Осталось 1[01] ч/);
@@ -469,7 +469,7 @@ describe("заявки", () => {
     // Первым — клиент (имя и телефон), под ним две строки о заявке вместо четырёх плиток
     expect(container.querySelector(".client .client-name")?.textContent).toBe("Dilnoza");
     expect(container.querySelector(".client .btn-phone")).toBe(phone);
-    expect(container.querySelector(".req-when")?.textContent).toBe("14 ноября, сб");
+    expect(container.querySelector(".req-when")?.textContent).toBe("14 ноября, сб · Весь день");
     expect(container.querySelector(".req-what")?.textContent).toBe("200 гостей · 40–60 млн сум · Свадьба");
     expect(container.querySelector(".facts")).toBeNull();
     // Про согласие клиента — только здесь, не в списке
@@ -588,6 +588,17 @@ describe("заявки", () => {
 describe("календарь", () => {
   const today = tashkentToday();
   const month = today.slice(0, 7);
+  const sessions = {
+    mode: "parts" as const,
+    parts: ["morning", "day", "evening"] as const,
+    windows: {
+      morning: { from: "06:00", to: "11:00" },
+      day: { from: "12:00", to: "17:00" },
+      evening: { from: "18:00", to: "24:00" },
+    },
+    custom: null,
+    parallelCapacity: 1,
+  };
   const calendar = (): VendorCalendar => ({
     listingId: LISTING_ID,
     month,
@@ -595,9 +606,11 @@ describe("календарь", () => {
     maxDay: "2099-12-31",
     busy: [],
     requestDays: [],
+    requests: [],
     version: 7,
-    mode: "day",
+    mode: "parts",
     parallelCapacity: 1,
+    sessions: { ...sessions, parts: [...sessions.parts] },
     parts: [],
     bookings: [],
   });
@@ -607,6 +620,13 @@ describe("календарь", () => {
       .filter((c) => (c.method === "PUT" || c.method === "DELETE") && c.path.startsWith(`${calendarPath}/`))
       .map((c) => `${c.method} ${c.path.slice(-10)} ${c.headers.get("If-Match")}`);
   const days = () => [...container.querySelectorAll<HTMLButtonElement>(".cal-day")];
+  const busy = (el: Element | undefined | null) => el?.classList.contains("cal-busy") ?? false;
+  const whole = () => container.querySelector<HTMLButtonElement>(".day-whole button") ?? undefined;
+  /** Открыть день и нажать «Закрыть весь день» / «Открыть весь день» */
+  const toggleDay = async (day: Element | undefined | null) => {
+    await click(day ?? undefined);
+    await click(whole());
+  };
 
   /**
    * Календарь «как в базе»: версия растёт на каждой правке; правка не от текущей версии —
@@ -643,43 +663,112 @@ describe("календарь", () => {
 
   beforeEach(() => {
     insideTelegram();
+    // Компьютер: открытый день — в колонке справа (на телефоне — шторка, categories.test.tsx)
+    resize(1280);
     routes[`GET ${calendarPath}`] = () => ({ body: calendar() });
     routes[`PUT ${calendarPath}/${today}`] = () => ({
       body: { day: today, busy: { day: today, source: "vendor", requestId: null }, version: 8 },
     });
   });
 
-  it("месяц по Ташкенту; нажатие на сегодня — день занят (PUT от версии календаря), прошлое неактивно", async () => {
+  it("месяц по Ташкенту; день открывается рядом с месяцем; «Закрыть весь день» — PUT от версии", async () => {
     await mount("/calendar");
     expect(heading()).toBe("Календарь");
     expect(calls.find((c) => c.path.includes("/calendar"))?.path).toBe(`${calendarPath}?month=${month}`);
+    // Одна строка — как закрыть день или часть
+    expect(container.querySelector(".cal-hint")?.textContent).toContain("закрыть его целиком или по частям");
     const day = container.querySelector<HTMLButtonElement>(".cal-today");
-    expect(day?.getAttribute("aria-pressed")).toBe("false");
+    expect(day?.querySelector(".cal-parts i")).not.toBeNull();
     await click(day ?? undefined);
+    expect(day?.getAttribute("aria-pressed")).toBe("true");
+    // Компьютер: день — в колонке справа, а не под месяцем
+    expect(container.querySelector(".cal-aside .day-panel")).not.toBeNull();
+    expect(container.querySelector(".day-whole")?.textContent).toContain("Весь день");
+    expect([...container.querySelectorAll(".day-part strong")].map((n) => n.textContent)).toEqual([
+      "Утро 06:00–11:00",
+      "День 12:00–17:00",
+      "Вечер 18:00–24:00",
+    ]);
+    await click(whole());
     expect(writes()).toEqual([`PUT ${today} 7`]);
-    expect(container.querySelector(".cal-today")?.getAttribute("aria-pressed")).toBe("true");
+    expect(busy(container.querySelector(".cal-today"))).toBe(true);
+    expect(whole()?.textContent).toBe("Открыть весь день");
     if (Number(today.slice(8)) > 1) {
       expect(container.querySelector<HTMLButtonElement>(".cal-day")?.disabled).toBe(true);
     }
   });
 
+  it("часть дня занята договорённостью: «Весь день: частично занят», «Занято 1 из 2 мест»", async () => {
+    routes[`GET ${calendarPath}`] = () => ({
+      body: {
+        ...calendar(),
+        parallelCapacity: 2,
+        sessions: { ...sessions, parts: [...sessions.parts], parallelCapacity: 2 },
+        bookings: [
+          { day: today, part: "morning", count: 2 },
+          { day: today, part: "evening", count: 1 },
+        ],
+        requests: [
+          {
+            id: REQUEST_ID,
+            publicNo: 1042,
+            day: today,
+            parts: ["evening"],
+            status: "deal",
+          },
+        ],
+        requestDays: [today],
+      } satisfies VendorCalendar,
+    });
+    await mount("/calendar");
+    const day = container.querySelector(".cal-today");
+    expect(day?.classList.contains("cal-partial")).toBe(true);
+    await click(day ?? undefined);
+    expect(container.querySelector(".day-whole")?.textContent).toContain("частично занят");
+    const states = [...container.querySelectorAll(".day-part .day-part-state")].map((n) => n.textContent);
+    expect(states).toEqual(["Занято 2 из 2 мест", "свободно", "Занято 1 из 2 мест"]);
+    // Заявка на вечер — ссылкой из вечера
+    const evening = container.querySelectorAll(".day-part")[2];
+    expect(evening?.querySelector("a")?.getAttribute("href")).toBe(`/requests/${REQUEST_ID}`);
+    expect(evening?.querySelector("a")?.textContent).toBe("Заявка №1042 · Договорились");
+  });
+
+  it("одно мероприятие в день: частей нет — только день целиком", async () => {
+    routes[`GET ${calendarPath}`] = () => ({
+      body: { ...calendar(), sessions: { ...sessions, parts: [...sessions.parts], mode: "whole" } },
+    });
+    await mount("/calendar");
+    expect(container.querySelector(".cal-hint")?.textContent).toContain("закрыть или открыть");
+    const day = container.querySelector(".cal-today");
+    expect(day?.querySelector(".cal-parts")).toBeNull();
+    await click(day ?? undefined);
+    expect(container.querySelectorAll(".day-part")).toHaveLength(0);
+    expect(whole()?.textContent).toBe("Закрыть весь день");
+  });
+
   it("правки подряд уходят по очереди: каждая — от версии из прошлого ответа", async () => {
     const server = serverCalendar();
     await mount("/calendar");
-    // Два нажатия, не дожидаясь ответа на первое
+    // Два дня подряд, не дожидаясь ответа на первый
     await act(async () => {
       days()[0]?.click();
+    });
+    await act(async () => {
+      whole()?.click();
       days()[1]?.click();
+    });
+    await act(async () => {
+      whole()?.click();
     });
     await flush();
     expect(writes()).toEqual([`PUT ${month}-01 7`, `PUT ${month}-02 8`]);
     expect(server.version).toBe(9);
-    expect(days()[0]?.getAttribute("aria-pressed")).toBe("true");
-    expect(days()[1]?.getAttribute("aria-pressed")).toBe("true");
+    expect(busy(days()[0])).toBe(true);
+    expect(busy(days()[1])).toBe(true);
     // Освободить — тоже от последней версии
-    await click(days()[0]);
+    await toggleDay(days()[0]);
     expect(writes().at(-1)).toBe(`DELETE ${month}-01 9`);
-    expect(days()[0]?.getAttribute("aria-pressed")).toBe("false");
+    expect(busy(days()[0])).toBe(false);
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -693,7 +782,7 @@ describe("календарь", () => {
     const reads = () => calls.filter((c) => c.method === "GET" && c.path.startsWith(`${calendarPath}?`));
     expect(reads()).toHaveLength(1);
 
-    await click(days()[0]);
+    await toggleDay(days()[0]);
     await flush();
     expect(writes()).toEqual([`PUT ${month}-01 7`]);
     expect(reads()).toHaveLength(2);
@@ -701,23 +790,24 @@ describe("календарь", () => {
       "Календарь изменили — обновили. Проверьте и отметьте ещё раз.",
     );
     // На экране — как в базе: своя отметка не прошла, чужая видна
-    expect(days()[0]?.getAttribute("aria-pressed")).toBe("false");
-    expect(days()[2]?.getAttribute("aria-pressed")).toBe("true");
+    expect(busy(days()[0])).toBe(false);
+    expect(busy(days()[2])).toBe(true);
 
-    await click(days()[0]);
+    await click(whole());
     expect(writes().at(-1)).toBe(`PUT ${month}-01 12`);
-    expect(days()[0]?.getAttribute("aria-pressed")).toBe("true");
+    expect(busy(days()[0])).toBe(true);
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it("день, закрытый менеджером, не освобождается — подсказка", async () => {
+  it("день, закрытый менеджером, не освобождается — кнопка неактивна", async () => {
     routes[`GET /api/vendor/listings/${LISTING_ID}/calendar`] = () => ({
       body: { ...calendar(), busy: [{ day: today, source: "staff", requestId: null }] },
     });
     await mount("/calendar");
     await click(container.querySelector(".cal-today") ?? undefined);
+    expect(whole()?.disabled).toBe(true);
+    expect(container.querySelector(".day-whole")?.textContent).toContain("закрыл менеджер");
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
-    expect(container.textContent).toContain("Этот день закрыл менеджер");
   });
 
   it("не сохранилось — день возвращается как был, причина — словами по коду ответа", async () => {
@@ -726,8 +816,8 @@ describe("календарь", () => {
       body: { error: { code: "service_unavailable", message: "x" } },
     });
     await mount("/calendar");
-    await click(container.querySelector(".cal-today") ?? undefined);
-    expect(container.querySelector(".cal-today")?.getAttribute("aria-pressed")).toBe("false");
+    await toggleDay(container.querySelector(".cal-today"));
+    expect(busy(container.querySelector(".cal-today"))).toBe(false);
     expect(container.textContent).toContain("Сервер временно недоступен. Попробуйте через минуту.");
   });
 
@@ -737,8 +827,43 @@ describe("календарь", () => {
       body: { error: { code: "date_out_of_range", message: "x" } },
     });
     await mount("/calendar");
-    await click(container.querySelector(".cal-today") ?? undefined);
+    await toggleDay(container.querySelector(".cal-today"));
     expect(container.textContent).toContain("Прошедший день не изменить");
+  });
+
+  it("несколько дней: начало и конец, только субботы, вечер — одной правкой от версии", async () => {
+    let batch: unknown = null;
+    routes[`PUT ${calendarPath}`] = (init) => {
+      batch = JSON.parse(String(init.body));
+      return {
+        body: {
+          from: today,
+          to: today,
+          busy: [],
+          parts: [],
+          bookings: [],
+          skipped: 0,
+          version: 9,
+        },
+      };
+    };
+    await mount("/calendar");
+    await click(byText("button", "Несколько дней"));
+    const open = days().filter((d) => !d.disabled);
+    await click(open[0]);
+    await click(open.at(-1));
+    await click(container.querySelector('.range-weekdays button[aria-label="суббота"]') ?? undefined);
+    await click(byText(".range-what button", "Вечер"));
+    const close = container.querySelector<HTMLButtonElement>(".range-acts .btn-dark");
+    expect(close?.textContent).toMatch(/^Закрыть · \d+$/);
+    await click(close ?? undefined);
+    const sent = batch as { busyParts?: { day: string; part: string }[] } | null;
+    expect(sent?.busyParts?.length).toBeGreaterThan(0);
+    expect(
+      sent?.busyParts?.every((p) => p.part === "evening" && new Date(`${p.day}T00:00:00Z`).getUTCDay() === 6),
+    ).toBe(true);
+    const put = calls.find((c) => c.method === "PUT" && c.path === calendarPath);
+    expect(put?.headers.get("If-Match")).toBe("7");
   });
 });
 
@@ -768,6 +893,18 @@ const LISTING: VendorListing = {
   missingAttributes: [],
   videoLinks: [],
   parallelCapacity: 1,
+  daySessions: {
+    mode: "parts",
+    parts: ["morning", "day", "evening"],
+    windows: {
+      morning: { from: "06:00", to: "11:00" },
+      day: { from: "12:00", to: "17:00" },
+      evening: { from: "18:00", to: "24:00" },
+    },
+    custom: null,
+    parallelCapacity: 1,
+  },
+  calendarVersion: 0,
   services: [],
 };
 
@@ -1486,9 +1623,21 @@ describe("календарь: подписи дней", () => {
           { day: other, source: "request_decline", requestId: REQUEST_ID },
         ],
         requestDays: [other],
+        requests: [{ id: REQUEST_ID, publicNo: 1042, day: other, parts: [], status: "new" }],
         version: 1,
-        mode: "day",
+        mode: "parts",
         parallelCapacity: 1,
+        sessions: {
+          mode: "whole",
+          parts: ["morning", "day", "evening"],
+          windows: {
+            morning: { from: "06:00", to: "11:00" },
+            day: { from: "12:00", to: "17:00" },
+            evening: { from: "18:00", to: "24:00" },
+          },
+          custom: null,
+          parallelCapacity: 1,
+        },
         parts: [],
         bookings: [],
       } satisfies VendorCalendar,
@@ -1497,7 +1646,7 @@ describe("календарь: подписи дней", () => {
     const label = (day: string) =>
       container.querySelector(`.cal-day[aria-label^="${Number(day.slice(8))} "]`)?.getAttribute("aria-label");
     expect(label(today)).toMatch(/, закрыл менеджер, сегодня$/);
-    expect(label(other)).toMatch(/, занято отказом, есть заявка$/);
+    expect(label(other)).toMatch(/, занято \(вы отказали: дата занята\), есть заявка$/);
     expect(container.querySelector(".cal-today")?.getAttribute("aria-current")).toBe("date");
     expect(container.querySelector(".cal-aside")?.textContent).toContain("Обозначения");
   });

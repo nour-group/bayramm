@@ -18,7 +18,7 @@
 //
 // Узбекский — латиница: ʻ (U+02BB) после o/g, ʼ (U+02BC) — tutuq belgisi.
 
-import type { DayPart, PriceUnit } from "@bayramm/shared/api";
+import type { DayPart, PartMode, PriceUnit } from "@bayramm/shared/api";
 import type { CategoryCode, ListingAttributes } from "@bayramm/shared/categories";
 
 /** Начало id всех демо-строк; тот же литерал — в app.demo_purge() */
@@ -72,13 +72,17 @@ export interface DemoVenue {
   /** Вместимость в гостях — у залов */
   readonly capMin: number | null;
   readonly capMax: number | null;
-  /** Сколько заказов одновременно (режим parts) */
+  /** Сколько заказов одновременно */
   readonly parallelCapacity: number;
+  /** Время работы: одно мероприятие в день или несколько (по умолчанию — несколько) */
+  readonly partMode?: PartMode;
+  /** Рабочие части (по умолчанию — все три) */
+  readonly dayParts?: readonly DayPart[];
   readonly attributes: ListingAttributes;
   readonly services: readonly DemoService[];
   /** Занятые дни — через столько дней от сегодняшнего (по Ташкенту) */
   readonly busyDays: readonly number[];
-  /** Занятые части дня (режим parts): через столько дней, какая часть */
+  /** Занятые части дня (только рабочие, если мероприятий несколько): через столько дней, какая часть */
   readonly busyParts: readonly { readonly offset: number; readonly part: DayPart }[];
 }
 
@@ -152,7 +156,12 @@ export const DEMO_VENUES: readonly DemoVenue[] = [
       banquet("banquet_weekend", 220_000, "per_guest", BANQUET_MENU),
     ],
     busyDays: [3, 10, 11, 24, 38, 52],
-    busyParts: [],
+    // Несколько мероприятий в день: утром нахорги ош, вечером свадьба — день частично занят
+    busyParts: [
+      { offset: 6, part: "morning" },
+      { offset: 6, part: "evening" },
+      { offset: 16, part: "evening" },
+    ],
   },
   {
     ...base(2),
@@ -187,8 +196,13 @@ Toʻy va nahorgi osh uchun 100–500 mehmonga moʻljallangan katta zal. Ikki qav
         },
       },
     ],
+    // Утренний плов и вечерние свадьбы: днём зал не работает
+    dayParts: ["morning", "evening"],
     busyDays: [4, 5, 18, 19, 33, 47],
-    busyParts: [],
+    busyParts: [
+      { offset: 8, part: "morning" },
+      { offset: 15, part: "evening" },
+    ],
   },
   {
     ...base(3),
@@ -220,6 +234,8 @@ Tugʻilgan kun, beshik toʻyi va korporativlar uchun 30–150 mehmonga moʻljall
         uz: "Zal, xizmat koʻrsatish, bezak va 30 mehmonga menyu",
       }),
     ],
+    // Камерный зал: одно мероприятие в день
+    partMode: "whole",
     busyDays: [6, 13, 20, 27, 41, 55],
     busyParts: [],
   },

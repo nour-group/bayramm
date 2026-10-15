@@ -158,6 +158,8 @@ async function ensureListing(trx: Tx, venue: DemoVenue): Promise<boolean> {
       cap_min: venue.capMin,
       cap_max: venue.capMax,
       parallel_capacity: venue.parallelCapacity,
+      part_mode: venue.partMode ?? "parts",
+      day_parts: [...(venue.dayParts ?? ["morning", "day", "evening"])],
       attributes: JSON.stringify(venue.attributes),
     })
     .execute();

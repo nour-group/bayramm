@@ -9,10 +9,10 @@
    Персональных данных вендоров, кроме публичного телефона площадки, здесь нет. */
 
 import type { RequestDetails } from "../categories/details";
-import type { DayPart, PriceUnit } from "../categories/types";
+import type { DayPart, DayPartWindows, PartMode, PriceUnit } from "../categories/types";
 import type { ListingAttributes } from "../categories/validate";
 
-export type { DayPart, ListingAttributes, PriceUnit, RequestDetails };
+export type { DayPart, DayPartWindows, ListingAttributes, PartMode, PriceUnit, RequestDetails };
 
 export type Locale = "ru" | "uz";
 
@@ -82,6 +82,11 @@ export interface DictItem {
   readonly name: Localized;
 }
 
+/** Повод заявки: какие части дня форма отмечает сама (клиент меняет) */
+export interface OccasionItem extends DictItem {
+  readonly defaultParts: readonly DayPart[];
+}
+
 /** Район — в городе (city — код из cities) */
 export interface DistrictItem extends DictItem {
   readonly city: string;
@@ -97,7 +102,7 @@ export interface Dictionaries {
   /** Города; районы — внутри города (фильтр каталога «город → район») */
   readonly cities: readonly DictItem[];
   readonly districts: readonly DistrictItem[];
-  readonly occasions: readonly DictItem[];
+  readonly occasions: readonly OccasionItem[];
 }
 
 // ── каталог ────────────────────────────────────────────────────────────────
@@ -138,8 +143,11 @@ export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc" | "releva
  * как везде; цены разных единиц сравниваются как есть, подпись единицы — у каждой карточки.
  * guests — отсекает витрины с вместимостью в гостях (cap_max) меньше; у категорий без
  * вместимости не отсекает. date — не отсекает, а опускает занятые в этот день целиком в конец
- * выдачи (при любой сортировке); частично занятые (режим parts: занята часть дня) — среди
- * свободных, с dateLoad = partial. Оплата на порядок не влияет.
+ * выдачи (при любой сортировке); частично занятые (занята часть рабочих частей дня) — среди
+ * свободных, с dateLoad = partial. part (только вместе с date; без даты не действует) — оставляет
+ * свободных в эту часть дня: morning | day | evening — витрина в ней работает (или берёт одно
+ * мероприятие в день) и она не занята; whole — свободен весь день. У категорий без календаря
+ * (срок заказа) part не отсекает. Оплата на порядок не влияет.
  * Фильтры по полям витрины категории — параметры «a.<поле>» и «a.<список>.<поле>»
  * (categoryFilters в @bayramm/shared/categories): bool — 1|true, enum/multi — коды через
  * запятую, int — число. Неизвестный фильтр категории — 400 invalid_request.
@@ -166,6 +174,8 @@ export interface CatalogQuery {
   /** Район: только витрины в нём */
   readonly district?: string;
   readonly date?: string;
+  /** Время на дату: свободные в эту часть дня или весь день */
+  readonly part?: CatalogPart;
   readonly guests?: number;
   readonly sort?: CatalogSort;
   /** Непрозрачный курсор из nextCursor */
@@ -174,7 +184,10 @@ export interface CatalogQuery {
   readonly limit?: number;
 }
 
-/** Загрузка витрины на дату: свободна, занята часть дня (режим parts) или занята целиком */
+/** Фильтр каталога «Время»: часть дня или весь день */
+export type CatalogPart = DayPart | "whole";
+
+/** Загрузка витрины на дату: свободна, занята часть рабочих частей дня или занята целиком */
 export type DateLoad = "free" | "partial" | "busy";
 
 /**
@@ -351,7 +364,7 @@ export interface PublicService {
   readonly options: readonly ServiceOption[];
 }
 
-/** Частично занятая дата (режим parts): какие части дня заняты */
+/** Частично занятая дата: какие из рабочих частей витрины заняты */
 export interface BusyParts {
   readonly date: string;
   readonly parts: readonly DayPart[];
@@ -370,8 +383,13 @@ export interface ListingDetail extends ListingCard {
   readonly videoLinks: readonly string[];
   /** Одобренные услуги витрины по порядку */
   readonly services: readonly PublicService[];
-  /** Сколько заказов витрина берёт одновременно (режим parts) */
+  /** Сколько заказов витрина берёт одновременно */
   readonly parallelCapacity: number;
+  /**
+   * Время работы: одно мероприятие в день (whole — заявка на весь день, выбора частей нет) или
+   * несколько (parts — в этих частях, с этими окнами). У категорий без календаря не используется
+   */
+  readonly sessions: PublicDaySessions;
   /** Готовые и одобренные фото; обложка первой */
   readonly photos: readonly Photo[];
   /**
@@ -381,8 +399,17 @@ export interface ListingDetail extends ListingCard {
   readonly contactChannels: readonly ContactChannel[];
   /** Занятые целиком даты на весь срок выбора даты (366 дней), по возрастанию */
   readonly busyDates: readonly string[];
-  /** Частично занятые даты на тот же срок (режим parts), по возрастанию */
+  /** Частично занятые даты на тот же срок (заняты не все рабочие части), по возрастанию */
   readonly busyParts: readonly BusyParts[];
+}
+
+/** Время работы витрины для клиента */
+export interface PublicDaySessions {
+  readonly mode: PartMode;
+  /** Рабочие части по порядку */
+  readonly parts: readonly DayPart[];
+  /** Окна частей: свои у витрины или окна категории */
+  readonly windows: DayPartWindows;
 }
 
 // ── контакты витрины ───────────────────────────────────────────────────────
@@ -457,8 +484,12 @@ export type RequestDetailsInput = Readonly<Record<string, unknown>>;
  * notifyConsentId — если клиент отдельно разрешил уведомления в боте.
  * guests — по форме категории (requestForm.guests): required — обязательно, optional — можно
  * не указывать, hidden — не передавать (иначе 400 invalid_request ["guests"]).
- * details — поля категории; у режима parts время начала (details.start_time) обязательно:
- * по нему сервер выбирает часть дня. Выбранные услуги — только активные услуги этой витрины,
+ * dayParts — части дня (рабочие части витрины, без повторов) или wholeDay: true — весь день; у
+ * витрины с одним мероприятием в день (sessions.mode = whole) заявка всегда на весь день, выбор
+ * не нужен. Время начала (details.start_time, где оно есть в форме категории) — внутри выбранной
+ * части (весь день — внутри одной из рабочих), иначе 400 ["details.start_time"]. Занята выбранная
+ * часть — 409 date_busy ["dayParts"], весь день — ["eventDate"].
+ * details — поля категории. Выбранные услуги — только активные услуги этой витрины,
  * опции — только этих услуг; названия и цены сервер сохраняет в заявке как есть сейчас.
  * Срок подготовки (поле витрины lead_days, срок выбранных услуг) — 422 lead_time_too_short.
  * 409 duplicate_request — уже есть активная заявка на этот листинг и дату: { error, existingId }.
@@ -469,6 +500,10 @@ export interface CreateRequest {
   readonly eventDate: string;
   readonly guests?: number | null;
   readonly details?: RequestDetailsInput;
+  /** Части дня заявки; без них и без wholeDay — по времени начала (старые сборки) */
+  readonly dayParts?: readonly DayPart[];
+  /** Заявка на весь день */
+  readonly wholeDay?: boolean;
   readonly budgetMinUzs?: number;
   readonly budgetMaxUzs?: number;
   readonly contactName: string;
@@ -495,8 +530,8 @@ export interface ClientRequest {
   readonly eventDate: string;
   /** Число гостей; null — категория его не спрашивает или клиент не указал */
   readonly guests: number | null;
-  /** Часть дня (режим parts); null — у категории её нет */
-  readonly dayPart: DayPart | null;
+  /** Части дня заявки; пусто — весь день (у категорий без календаря — не про время) */
+  readonly dayParts: readonly DayPart[];
   /** Поля заявки категории (выбранные услуги — как были при подаче) */
   readonly details: RequestDetails;
   readonly occasionCode: string;

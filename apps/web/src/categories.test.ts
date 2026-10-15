@@ -28,7 +28,7 @@ import {
   validate,
 } from "./screens/request-draft";
 import { estimate, hasQty, lineTotal, suggestedQty } from "./screens/request-estimate";
-import { attributeView, dayPartWindow, listingLeadDays, safeVideoLinks } from "./screens/venue-attributes";
+import { attributeView, listingLeadDays, safeVideoLinks } from "./screens/venue-attributes";
 
 /* Категории в клиенте без экранов: фильтры из описания категории, примерная сумма заявки,
    проверка и тело заявки по форме категории, поля витрины, единицы цены, демо-API */
@@ -250,6 +250,7 @@ describe("форма заявки по категории", () => {
     ...EMPTY_DRAFT,
     occasion: "toy",
     date: "2026-10-20",
+    dayParts: ["evening"],
     name: "Азиза",
     phone: "90 123 45 67",
   };
@@ -274,7 +275,21 @@ describe("форма заявки по категории", () => {
     const body = toCreateRequest(filled, oq, config("car"), consents);
     expect(body).not.toHaveProperty("guests");
     expect(body.details).toEqual({ start_time: "17:30", hours: 5, cars_count: 2 });
-    expect(fieldOrder(config("car"), filled)).not.toContain("guests");
+    expect(body.dayParts).toEqual(["evening"]);
+    expect(fieldOrder(config("car"), filled, true)).not.toContain("guests");
+    expect(fieldOrder(config("car"), filled, true).slice(0, 3)).toEqual(["occasion", "date", "parts"]);
+  });
+
+  it("время: части или весь день обязательны; время начала — внутри выбранного", () => {
+    const oq = by("oq-kortej");
+    const values = { start_time: "17:30", hours: "5", cars_count: "2" };
+    expect(validate({ ...base, dayParts: [], values }, context(oq), ru).parts).toBe(ru.errParts);
+    const whole = { ...base, dayParts: [], wholeDay: true, values };
+    expect(validate(whole, context(oq), ru)).toEqual({});
+    expect(toCreateRequest(whole, oq, config("car"), consents)).toMatchObject({ wholeDay: true });
+    expect(validate({ ...base, dayParts: ["morning"], values }, context(oq), ru)["d.start_time"]).toBe(
+      ru.errStartOutside("утро 05:00–11:00"),
+    );
   });
 
   it("часть дня: время начала в занятой части — ошибка у поля времени", () => {
@@ -285,10 +300,15 @@ describe("форма заявки по категории", () => {
       date: "2026-10-08",
       values: { start_time: "18:00", hours: "4", cars_count: "1" },
     };
-    expect(validate(draft, context(oq), ru)["d.start_time"]).toBe(ru.errPartBusy("вечер"));
-    expect(validate({ ...draft, values: { ...draft.values, start_time: "09:00" } }, context(oq), ru)).toEqual(
-      {},
-    );
+    expect(validate(draft, context(oq), ru).parts).toBe(ru.errPartBusy("вечер"));
+    expect(validate({ ...draft, dayParts: [], wholeDay: true }, context(oq), ru).parts).toBe(ru.errWholeBusy);
+    expect(
+      validate(
+        { ...draft, dayParts: ["morning"], values: { ...draft.values, start_time: "09:00" } },
+        context(oq),
+        ru,
+      ),
+    ).toEqual({});
   });
 
   it("услуги: количество не меньше минимального, опции — только этой услуги; уходят снимком id", () => {
@@ -296,6 +316,7 @@ describe("форма заявки по категории", () => {
     const bride = service(oq, "bride_car");
     const draft: Draft = {
       ...base,
+      dayParts: ["morning"],
       values: { start_time: "10:00", hours: "4", cars_count: "1" },
       services: [{ id: bride.id, qty: "2", options: [bride.options[0]?.id ?? ""] }],
     };
@@ -422,11 +443,6 @@ describe("поля витрины на странице", () => {
       { href: "https://www.instagram.com/reel/demoKadrReel/", host: "Instagram" },
     ]);
   });
-
-  it("окна частей дня категории", () => {
-    expect(dayPartWindow(config("photo"), "morning")).toBe("05:00–11:00");
-    expect(dayPartWindow(config("car"), "evening")).toBe("17:00–24:00");
-  });
 });
 
 describe("демо-API по контракту категорий", () => {
@@ -476,6 +492,32 @@ describe("демо-API по контракту категорий", () => {
     ]);
   });
 
+  it("время на дату: свободные в эту часть дня; весь день — только свободные целиком", async () => {
+    const api = createMockApi({ now, listings: ALL });
+    const slugs = async (part?: "morning" | "day" | "evening" | "whole") =>
+      (
+        await api.catalog({ category: "car", date: "2026-10-08", limit: 50, ...(part ? { part } : {}) })
+      ).items.map((c) => c.slug);
+    // 8 октября у «Oq Kortej» занят вечер, «Limuzin Lux» занят целиком
+    expect(await slugs("morning")).toEqual(["oq-kortej", "retro-avto"]);
+    expect(await slugs("evening")).toEqual(["retro-avto"]);
+    expect(await slugs("whole")).toEqual(["retro-avto"]);
+    // Без даты время не отбирает
+    const any = await api.catalog({ category: "car", part: "evening", limit: 50 });
+    expect(any.items).toHaveLength(3);
+  });
+
+  it("залы: несколько мероприятий в день, одно в день и две части", async () => {
+    const lola = by("lola-zali");
+    expect(lola.sessions).toMatchObject({ mode: "parts", parts: ["morning", "day", "evening"] });
+    expect(lola.sessions.windows.morning).toEqual({ from: "06:00", to: "11:00" });
+    // 6 октября — утро и вечер (нахорги ош и свадьба), день свободен
+    expect(lola.busyParts.find((p) => p.date === "2026-10-06")?.parts).toEqual(["morning", "evening"]);
+    expect(demoDayLoad(lola, "2026-10-06")).toBe("partial");
+    expect(by("nilufar-zali").sessions.mode).toBe("whole");
+    expect(by("bahor-zali").sessions.parts).toEqual(["morning", "evening"]);
+  });
+
   it("заявка по форме категории: гости, поля, услуги, срок заказа; часть дня и снимок услуг", async () => {
     const api = createMockApi({ now, listings: ALL });
     const oq = by("oq-kortej");
@@ -510,7 +552,7 @@ describe("демо-API по контракту категорий", () => {
       },
     });
     const [request] = (await api.myRequests()).items;
-    expect(request?.dayPart).toBe("evening");
+    expect(request?.dayParts).toEqual(["evening"]);
     expect(request?.guests).toBeNull();
     expect(request?.details.services).toEqual([
       expect.objectContaining({

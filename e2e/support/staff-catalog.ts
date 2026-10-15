@@ -3,10 +3,13 @@ import type {
   AvailabilityInput,
   BusyDay,
   BusyPart,
+  CalendarRequest,
   DayPartRef,
+  DaySessionsChange,
   ListingDetail,
   ListingService,
   PartBookings,
+  PartInUse,
   PublishBlocker,
   ServiceQueue,
   ServiceQueueItem,
@@ -18,12 +21,15 @@ import {
   type CategoryConfig,
   categoryConfig,
   categoryTexts,
+  daySessionsOf,
+  defaultDaySessions,
   mergeAttributes,
   missingAttributes,
   readAttributes,
   type ServiceOptionValue,
   serviceType,
   validateAttributePatch,
+  validateDaySessions,
   validateServiceInput,
   validateVideoLinks,
 } from "@bayramm/shared/categories";
@@ -149,6 +155,8 @@ export function emptyListing(id: string, categoryCode: string, name: string, slu
     missingAttributes: [],
     videoLinks: [],
     parallelCapacity: 1,
+    daySessions: defaultDaySessions(category(categoryCode)),
+    calendarVersion: 0,
     services: [],
     photos: [],
     blockers: { review: [], active: [] },
@@ -225,6 +233,7 @@ export function seededListings({ draftService = false } = {}): ListingDetail[] {
       hasPhone: true,
       hasTelegram: true,
       parallelCapacity: 2,
+      daySessions: { ...car.daySessions, parallelCapacity: 2 },
       attributes: {
         fleet: [{ model: "Chevrolet Malibu", class: "sedan", color: "white", seats: 4 }],
         service_area: "tashkent",
@@ -296,7 +305,7 @@ export function carRequest(base: StaffRequestDetail): StaffRequestDetail {
     publicNo: 1052,
     sla: "waiting",
     guests: null,
-    dayPart: "evening",
+    dayParts: ["evening"],
     eventDate: BOOKED_DAY,
     listing: { id: CAR_LISTING_ID, name: "Oq kortej", categoryCode: "car" },
     details: {
@@ -487,15 +496,21 @@ export interface Calendar {
   readonly busy: Map<string, BusyDay>;
   readonly parts: Map<string, BusyPart>;
   readonly bookings: readonly PartBookings[];
+  /** Открытые заявки и договорённости на дни календаря (ссылки из дня) */
+  readonly requests: readonly CalendarRequest[];
   version: number;
 }
 
 export function newCalendar(listingId: string): Calendar {
+  const car = listingId === CAR_LISTING_ID;
   return {
     busy: new Map(),
     parts: new Map(),
     // У кортежа — одна договорённость на вечер: занята одна из двух машин
-    bookings: listingId === CAR_LISTING_ID ? [{ day: BOOKED_DAY, part: "evening", count: 1 }] : [],
+    bookings: car ? [{ day: BOOKED_DAY, part: "evening", count: 1 }] : [],
+    requests: car
+      ? [{ id: CAR_REQUEST_ID, publicNo: 1052, day: BOOKED_DAY, parts: ["evening"], status: "deal" }]
+      : [],
     version: 0,
   };
 }
@@ -515,14 +530,16 @@ export function availabilityOf(
     to,
     mode: config.availability,
     parallelCapacity: listing.parallelCapacity,
+    sessions: listing.daySessions,
     busy: [...cal.busy.values()].filter(inRange),
     parts: [...cal.parts.values()].filter(inRange),
     bookings: cal.bookings.filter(inRange),
+    requests: cal.requests.filter(inRange),
     version: cal.version,
   };
 }
 
-/** Правка занятости: дни целиком и части дня (только у режима parts) */
+/** Правка занятости: дни целиком и рабочие части дня (у витрины с несколькими мероприятиями в день) */
 export function applyAvailability(
   listing: ListingDetail,
   cal: Calendar,
@@ -532,7 +549,8 @@ export function applyAvailability(
   | { readonly ok: false; readonly code: string; readonly details?: string[] } {
   if (input.version !== cal.version) return { ok: false, code: "calendar_conflict" };
   const parts = [...(input.busyParts ?? []), ...(input.freeParts ?? [])];
-  if (parts.length > 0 && category(listing.categoryCode).availability !== "parts")
+  const sessions = listing.daySessions;
+  if (parts.some((p) => sessions.mode === "whole" || !sessions.parts.includes(p.part)))
     return { ok: false, code: "invalid_input", details: ["busyParts"] };
   for (const day of input.busy ?? []) cal.busy.set(day, { day, source: "staff" });
   for (const day of input.free ?? []) cal.busy.delete(day);
@@ -542,6 +560,43 @@ export function applyAvailability(
   return {
     ok: true,
     days: [...(input.busy ?? []), ...(input.free ?? []), ...parts.map((p) => p.day)].sort(),
+  };
+}
+
+/**
+ * «Время работы» витрины (PUT …/day-sessions): от версии календаря, проверка — как у сервера;
+ * убрать часть с будущими заявками нельзя (part_in_use), на одно мероприятие в день — можно
+ */
+export function applyDaySessions(
+  listing: ListingDetail,
+  cal: Calendar,
+  input: Readonly<Record<string, unknown>>,
+  today: string,
+):
+  | { readonly ok: true; readonly listing: ListingDetail; readonly change: DaySessionsChange }
+  | { readonly ok: false; readonly code: string; readonly details?: string[]; readonly inUse?: PartInUse[] } {
+  const { version, ...body } = input;
+  if (version !== cal.version) return { ok: false, code: "calendar_conflict" };
+  const config = category(listing.categoryCode);
+  const parsed = validateDaySessions(config, body);
+  if (!parsed.ok) return { ok: false, code: "invalid_input", details: parsed.errors };
+  const value = parsed.value;
+  if (value.mode === "parts") {
+    const removed = listing.daySessions.parts.filter((p) => !value.parts.includes(p));
+    const inUse = removed
+      .map((part) => ({
+        part,
+        count: cal.requests.filter((r) => r.day >= today && r.parts.includes(part)).length,
+      }))
+      .filter((p) => p.count > 0);
+    if (inUse.length > 0) return { ok: false, code: "part_in_use", inUse };
+  }
+  const sessions = daySessionsOf(config, value);
+  cal.version++;
+  return {
+    ok: true,
+    listing: { ...listing, daySessions: sessions, parallelCapacity: sessions.parallelCapacity },
+    change: { sessions, version: cal.version },
   };
 }
 
