@@ -1277,7 +1277,7 @@ button.ui-cal-day.is-partial:not(.is-out):not(.is-busy) {
   .ui-icon-btn:not(:disabled):hover,
   .ui-option:not([aria-disabled="true"]):hover,
   .ui-radio:not(.is-disabled):hover,
-  button.ui-cal-day:not([aria-disabled="true"]):hover {
+  button.ui-cal-day:not([aria-disabled="true"]):not(.is-selected):hover {
     background: var(--lilac);
   }
 
@@ -1325,6 +1325,13 @@ button.ui-cal-day.is-partial:not(.is-out):not(.is-busy) {
   background: var(--plum);
   color: var(--sel-ink);
   text-decoration: none;
+}
+
+/* Выбранный частично занятый: у частично занятого фон-градиент с весом выше, и число цвета
+   --sel-ink пропадало на светлой половине. Заливка выбора, полоска занятости снизу */
+button.ui-cal-day.is-selected.is-partial:not(.is-out):not(.is-busy) {
+  background: var(--plum);
+  box-shadow: inset 0 -3px 0 var(--busy);
 }
 
 /* ---------- фокус ---------- */
