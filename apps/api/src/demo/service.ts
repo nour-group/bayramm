@@ -30,13 +30,13 @@ import { ApiError, toApiError } from "../errors";
 import { addListingPhoto } from "../photos/service";
 import { applyListingAction } from "../staff/listings";
 import { CHECKLIST_ITEMS, setChecklistItem } from "../staff/vendors";
-import { type ObjectStorage, StorageError } from "../storage/supabase";
+import { MAX_REMOVE_BATCH, type ObjectStorage, type ObjectSweeper, StorageError } from "../storage/supabase";
 import { addDays, tashkentToday } from "../time";
 import { DEMO_ID_PREFIX, DEMO_PHOTOS_PER_VENUE, DEMO_VENUES, type DemoVenue, demoContacts } from "./venues";
 
 export interface DemoDeps {
   readonly db: Db;
-  readonly storage: ObjectStorage;
+  readonly storage: ObjectStorage & Pick<ObjectSweeper, "removeMany">;
   /** «Сегодня» по Ташкенту; по умолчанию — сейчас */
   readonly today?: string;
 }
@@ -410,9 +410,12 @@ export async function resetDemo(deps: DemoDeps): Promise<DemoResetSummary> {
       .execute(),
   );
 
-  for (const { storage_key } of keys) {
+  // Пачками, а не по одному: у воркера ограничено число подзапросов на запрос, а демо-фото
+  // десятки
+  const storageKeys = keys.map(({ storage_key }) => storage_key);
+  for (let i = 0; i < storageKeys.length; i += MAX_REMOVE_BATCH) {
     try {
-      await deps.storage.remove(storage_key);
+      await deps.storage.removeMany(storageKeys.slice(i, i + MAX_REMOVE_BATCH));
     } catch (err) {
       console.error("demo.reset: storage failed", err instanceof StorageError ? err.reason : "unknown");
       throw new ApiError(503, "storage_unavailable", "Photo storage is temporarily unavailable");
