@@ -5,6 +5,7 @@ import { requestStatusName } from "@bayramm/shared/i18n/status";
 import { useEffect, useRef, useState } from "react";
 import { isApiError } from "../api/errors";
 import { categoryName } from "../categories";
+import { ContactButton } from "../components/ContactSheet";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { EmptyState, ErrorState, Loading } from "../components/States";
@@ -117,9 +118,15 @@ function RequestItem({
         <div className="req-main">
           {/* Название и статус — строкой; подробности ниже во всю ширину, а не узкой колонкой */}
           <div className="req-top">
+            {/* Название — ссылкой на витрину: подчёркнуто и со стрелкой, зона нажатия 44px */}
             <h2 className="req-name">
-              <Link href={hrefFor({ name: "venue", slug: request.listing.slug })}>
-                {request.listing.name}
+              <Link
+                className="req-link"
+                href={hrefFor({ name: "venue", slug: request.listing.slug })}
+                aria-label={t.toVendorOf(request.listing.name)}
+              >
+                <span>{request.listing.name}</span>
+                <Icon name="next" size={14} />
               </Link>
             </h2>
             <span className={`status status-${STATUS_TONE[request.status]}`}>
@@ -183,34 +190,42 @@ function RequestItem({
         <p className="req-declined">{t.declinedBecause(t[DECLINE_TEXT[request.declineReason]])}</p>
       ) : null}
 
-      {WITHDRAWABLE.includes(request.status) ? (
-        confirming ? (
-          <fieldset className="confirm">
-            <legend>{t.withdrawQ}</legend>
-            <div className="two-buttons">
-              <button type="button" className="btn btn-secondary" disabled={busy} onClick={withdraw}>
-                {t.withdraw}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={busy}
-                onClick={() => setConfirming(false)}
-              >
-                {t.withdrawKeep}
-              </button>
-            </div>
-            {error ? (
-              <p className="fld-error" role="alert">
-                {t.errWithdraw}
-              </p>
-            ) : null}
-          </fieldset>
-        ) : (
+      {/* «Связаться» — как на витрине: после заявки звонят исполнителю отсюда же */}
+      <div className="req-actions">
+        <ContactButton
+          slug={request.listing.slug}
+          name={request.listing.name}
+          ariaLabel={`${t.contactBtn}: ${request.listing.name}`}
+        />
+        {WITHDRAWABLE.includes(request.status) && !confirming ? (
           <button type="button" className="link-btn" onClick={() => setConfirming(true)}>
             {t.withdraw}
           </button>
-        )
+        ) : null}
+      </div>
+
+      {WITHDRAWABLE.includes(request.status) && confirming ? (
+        <fieldset className="confirm">
+          <legend>{t.withdrawQ}</legend>
+          <div className="two-buttons">
+            <button type="button" className="btn btn-secondary" disabled={busy} onClick={withdraw}>
+              {t.withdraw}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() => setConfirming(false)}
+            >
+              {t.withdrawKeep}
+            </button>
+          </div>
+          {error ? (
+            <p className="fld-error" role="alert">
+              {t.errWithdraw}
+            </p>
+          ) : null}
+        </fieldset>
       ) : null}
     </li>
   );

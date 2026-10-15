@@ -73,6 +73,14 @@ export interface WebAppHapticFeedback {
   selectionChanged?(): void;
 }
 
+/** Ответ на requestContact: номер — в responseUnsafe (подпись проверяет только сервер) */
+export interface WebAppContactResponse {
+  readonly status?: "sent" | "cancelled";
+  readonly responseUnsafe?: {
+    readonly contact?: { readonly phone_number?: string };
+  };
+}
+
 /** Нужная нам часть SDK. Расширять по мере надобности — только необязательными методами */
 export interface TelegramWebApp {
   /** Подписанная строка для POST /auth/telegram; вне Telegram — пустая */
@@ -106,6 +114,11 @@ export interface TelegramWebApp {
   openTelegramLink?(url: string): void;
   /** Спросить разрешение боту писать пользователю первым (с версии 6.9) */
   requestWriteAccess?(callback?: (granted: boolean) => void): void;
+  /**
+   * Попросить номер телефона пользователя (с версии 6.9). Второй аргумент обратного вызова —
+   * у новых клиентов: поделился — контакт в responseUnsafe, иначе — отказ
+   */
+  requestContact?(callback?: (shared: boolean, response?: WebAppContactResponse) => void): void;
   onEvent?(event: string, handler: () => void): void;
   offEvent?(event: string, handler: () => void): void;
 }

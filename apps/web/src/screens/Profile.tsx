@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { Documents } from "../components/Documents";
 import { LangSwitch } from "../components/LangSwitch";
-import { Link } from "../components/Link";
 import { RichText } from "../components/RichText";
 import { canSignIn, useAccount, useLang, useServices } from "../context";
 import { tashkentToday } from "../format";
 import { useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
-import { hrefFor } from "../router";
 import { haptic } from "../telegram";
 import { AccountSection } from "./AccountSection";
 import { clearDrafts } from "./request-draft";
@@ -231,16 +229,8 @@ export function Profile() {
         <LangSwitch className="lang lang-wide" />
       </section>
 
+      {/* «Мои заявки» — своя вкладка (и раздел шапки): здесь второй ссылки на них нет */}
       <AccountSection />
-
-      <Link className="row-link" href={hrefFor({ name: "requests" })}>
-        <Icon name="notepad" size={20} />
-        <span>
-          <b>{t.mrTitle}</b>
-          <span className="muted small">{t.mrSub}</span>
-        </span>
-        <Icon name="caret" size={14} />
-      </Link>
 
       {canSignIn(identity) ? (
         <section className="section" aria-labelledby="profile-data">
@@ -262,11 +252,7 @@ export function Profile() {
         <h2 className="section-title" id="profile-about">
           {t.meAbout}
         </h2>
-        <h3 className="sub-title">{t.i_book_h}</h3>
-        <RichText blocks={t.i_book_b} />
-        <h3 className="sub-title">{t.i_city_h}</h3>
-        <RichText blocks={t.i_city_b} />
-        <RichText blocks={t.i_d3_b} />
+        <RichText blocks={t.aboutRules} />
       </section>
     </div>
   );

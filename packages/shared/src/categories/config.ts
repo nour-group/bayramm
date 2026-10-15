@@ -184,7 +184,7 @@ const hall: CategoryConfig = {
   code: "hall",
   label: "cat_hall",
   enabled: true,
-  sort: 2,
+  sort: 1,
   // Утром — нахорги ош, днём — фотиха и небольшие торжества, вечером — свадьба; перерыв между
   // ними — на уборку зала
   availability: "parts",
@@ -788,7 +788,7 @@ const zags: CategoryConfig = {
   code: "zags",
   label: "cat_zags",
   enabled: true,
-  sort: 1,
+  sort: 2,
   // Церемонии идут по времени: утром, днём и вечером; время — в заявке
   availability: "parts",
   photoPolicy: "no_people",

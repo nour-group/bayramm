@@ -3,7 +3,19 @@ import { addDays } from "../../apps/web/src/format";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { APPS } from "../support/account";
 import { expect, test } from "../support/offline";
-import { horizontalOverflow, open, PATHS, prepare, sections, T, TODAY, VENUE } from "../support/web";
+import {
+  ALL_LISTINGS,
+  BUSY_DAY,
+  horizontalOverflow,
+  LISTINGS,
+  open,
+  PATHS,
+  prepare,
+  sections,
+  T,
+  TODAY,
+  VENUE,
+} from "../support/web";
 
 /* Сайт на всех ширинах: лендинг для браузера, раскладка планшета (колонка по центру,
    нижняя панель) и компьютера (разделы в шапке, сетка, карточка площадки справа).
@@ -264,11 +276,166 @@ test.describe("планшет (768)", () => {
 
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1");
     await expect(page.getByRole("button", { name: ru.galleryNext })).toBeVisible();
-    // Панель с заявкой — у низа экрана, «Связаться» — и в разделе контактов
+    // Панель с заявкой и «Связаться» — у низа экрана; второй кнопки в описании нет
     await expect(page.locator(".venue-bar")).toBeInViewport();
-    await expect(page.locator(".contact").getByRole("button", { name: ru.contactBtn })).toBeVisible();
+    await expect(page.locator(".venue-bar").getByRole("button", { name: ru.contactBtn })).toBeVisible();
+    await expect(page.locator(".venue .contact")).toHaveCount(0);
     await expectNoOverflow(page, "площадка 768");
   });
+});
+
+test.describe("строка фильтров каталога", () => {
+  /** Каждый видимый контрол строки — целиком на экране: ни за краем, ни под прокруткой вбок */
+  async function expectRowOnScreen(page: Page, what: string) {
+    const width = page.viewportSize()?.width ?? 0;
+    const row = page.locator(".filter-row");
+    expect(
+      await row.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      `${what}: строка не листается вбок`,
+    ).toBe(true);
+    const boxes = await row.evaluate((el) =>
+      [...el.children]
+        .filter((child) => !child.classList.contains("sr-only"))
+        .map((child) => child.getBoundingClientRect())
+        .filter((box) => box.width > 0 && box.height > 0)
+        .map((box) => ({ left: box.left, right: box.right })),
+    );
+    expect(boxes.length, `${what}: пилюли`).toBeGreaterThan(1);
+    for (const box of boxes) {
+      expect(box.left, what).toBeGreaterThanOrEqual(0);
+      expect(box.right, what).toBeLessThanOrEqual(width);
+    }
+  }
+
+  for (const width of [320, 390, 768]) {
+    for (const lang of ["ru", "uz"] as const) {
+      test(`${width}px ${lang}: место, дата, гости и «Фильтры» — на экране, порядок — в шторке`, async ({
+        page,
+      }) => {
+        test.slow();
+        const t = T[lang];
+        await prepare(page, { lang });
+        await at(page, width, 800);
+        await open(page, PATHS.category("hall"), ".card", { guest: true });
+        await expectRowOnScreen(page, `${width} ${lang} залы`);
+        const row = page.locator(".filter-row");
+        await expect(row.getByRole("spinbutton", { name: t.fGuests })).toBeVisible();
+        // Порядок у раздела с полями витрины — в шторке «Фильтры», вместе с ними
+        await expect(row.locator(".sort")).toBeHidden();
+        await row.locator(".filters-open").click();
+        const sheet = page.getByRole("dialog", { name: t.moreFilters });
+        await expect(sheet.getByRole("radio", { name: t.s_rich })).toBeVisible();
+        await sheet.getByRole("radio", { name: t.s_rich }).check();
+        await expect(page).toHaveURL(/sort=price_desc/);
+        await page.keyboard.press("Escape");
+        await expect(row.locator(".filters-open")).toHaveText(t.moreFiltersN(1));
+
+        // Раздел без полей витрины («Все») и кортеж на дату — тоже без ленты вбок
+        await open(page, PATHS.catalog, ".card", { guest: true });
+        await expectRowOnScreen(page, `${width} ${lang} все`);
+        await expect(row.locator(".sort")).toBeVisible();
+        await open(page, `${PATHS.category("car")}&date=${addDays(TODAY, 7)}`, ".card", { guest: true });
+        await expectRowOnScreen(page, `${width} ${lang} кортежи на дату`);
+        await expectNoOverflow(page, `${width} ${lang} каталог`);
+      });
+    }
+  }
+
+  test("1280px: порядок — в конце строки, поля витрины — колонкой, шторки нет", async ({ page }) => {
+    await prepare(page);
+    await at(page, 1280);
+    await open(page, PATHS.category("hall"), ".card", { guest: true });
+    const row = page.locator(".filter-row");
+    await expect(row.locator(".sort")).toBeVisible();
+    await expect(row.locator(".filters-open")).toBeHidden();
+    await expect(page.locator(".filters-side")).toBeVisible();
+    await expectRowOnScreen(page, "1280 залы");
+  });
+});
+
+test.describe("панель витрины на телефоне", () => {
+  // Занятая на дату витрина: кнопка — «Заявка на другую дату», самая длинная подпись
+  const busy = LISTINGS.find((l) => l.busyDates.includes(BUSY_DAY)) ?? VENUE;
+  const car = ALL_LISTINGS.find((l) => l.categoryCode === "car") ?? VENUE;
+
+  for (const width of [320, 360, 390]) {
+    for (const lang of ["ru", "uz"] as const) {
+      test(`${width}px ${lang}: цена целиком, кнопки рядом или строкой ниже`, async ({ page }) => {
+        test.slow();
+        await prepare(page, { lang });
+        await at(page, width, 800);
+        for (const path of [
+          PATHS.venue(VENUE.slug),
+          `${PATHS.venue(busy.slug)}?date=${BUSY_DAY}`,
+          PATHS.venue(car.slug),
+        ]) {
+          await open(page, path, ".venue-head h1", { guest: true });
+          const bar = page.locator(".venue-bar");
+          await expect(bar).toBeInViewport();
+          // Ни цена, ни её единица, ни подпись кнопки не обрезаны
+          const clipped = await bar
+            .locator(".bar-price, .bar-price b, .bar-price .unit, .btn-primary")
+            .evaluateAll((els) =>
+              els.filter((el) => el.scrollWidth > el.clientWidth + 1).map((el) => el.textContent),
+            );
+          expect(clipped, `${width} ${lang} ${path}`).toEqual([]);
+          const box = await bar.boundingBox();
+          const price = await bar.locator(".bar-price").boundingBox();
+          const button = await bar.locator(".btn-primary").boundingBox();
+          expect(box && price && button).toBeTruthy();
+          if (box && price && button) {
+            expect(price.x + price.width, path).toBeLessThanOrEqual(box.x + box.width);
+            expect(button.x + button.width, path).toBeLessThanOrEqual(box.x + box.width);
+          }
+          await expectNoOverflow(page, `${width} ${lang} ${path}`);
+        }
+      });
+    }
+  }
+});
+
+test.describe("фокус и прилипшие панели", () => {
+  for (const [what, path, barSelector] of [
+    ["витрина", PATHS.venue("oq-kortej"), ".venue-bar"],
+    ["форма заявки", PATHS.request("oq-kortej"), ".form-bar"],
+  ] as const) {
+    test(`320px, ${what}: высота панели — в запасе прокрутки, Tab не прячет фокус под неё`, async ({
+      page,
+    }) => {
+      test.slow();
+      await prepare(page);
+      await at(page, 320, 640);
+      await open(page, path, "main h1");
+      const bar = page.locator(barSelector);
+      await expect(bar).toBeInViewport();
+      const height = await bar.evaluate((el) => el.getBoundingClientRect().height);
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sticky-b")),
+          ),
+        )
+        .toBeGreaterThanOrEqual(Math.floor(height));
+      for (let i = 0; i < 40; i++) {
+        await page.keyboard.press("Tab");
+        const stop = await page.evaluate((selector) => {
+          const el = document.activeElement;
+          const panel = document.querySelector(selector);
+          if (!(el instanceof HTMLElement) || !panel || panel.contains(el) || el === document.body)
+            return null;
+          const box = el.getBoundingClientRect();
+          if (box.height === 0) return null;
+          const p = panel.getBoundingClientRect();
+          return {
+            what: `${el.tagName.toLowerCase()}.${el.className} «${(el.textContent ?? "").trim().slice(0, 30)}»`,
+            // Сколько элемента — под панелью (в конце страницы панель в потоке: подвал ниже неё — не под ней)
+            covered: Math.max(0, Math.min(box.bottom, p.bottom) - Math.max(box.top, p.top)),
+          };
+        }, barSelector);
+        if (stop) expect(stop.covered, stop.what).toBeLessThanOrEqual(1);
+      }
+    });
+  }
 });
 
 test.describe("узкие телефоны", () => {

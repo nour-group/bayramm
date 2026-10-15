@@ -1,8 +1,9 @@
 /* Поводы заявки (app.occasions): код, названия, порядок показа и части дня по умолчанию.
-   Тот же набор сеет миграция 20261015100000_day_sessions.sql (интеграционный тест API сверяет
-   базу с этим списком). Повод подсказывает время: нахорги ош — утром, никах — днём, свадьба —
-   вечером; форма заявки отмечает эти части сама, клиент меняет. Код повода после выпуска не
-   меняется: на него ссылаются заявки. */
+   Тот же набор сеет миграция 20261015100000_day_sessions.sql, название «small» —
+   20261015160000_launch_category_first.sql (интеграционный тест API сверяет базу с этим
+   списком). Повод подсказывает время: нахорги ош — утром, никах — днём, свадьба — вечером;
+   форма заявки отмечает эти части сама, клиент меняет. Код повода после выпуска не меняется: на
+   него ссылаются заявки. */
 
 import { sortParts } from "./availability";
 import type { DayPart } from "./types";
@@ -28,7 +29,7 @@ export const OCCASIONS: readonly OccasionSpec[] = [
   { code: "bd", name: { ru: "День рождения", uz: "Tugʻilgan kun" }, defaultParts: ["evening"] },
   { code: "yubiley", name: { ru: "Юбилей", uz: "Yubiley" }, defaultParts: ["evening"] },
   { code: "corp", name: { ru: "Корпоратив", uz: "Korporativ" }, defaultParts: ["evening"] },
-  { code: "small", name: { ru: "Частное", uz: "Yopiq davra" }, defaultParts: ["evening"] },
+  { code: "small", name: { ru: "Камерный вечер", uz: "Tor davradagi bazm" }, defaultParts: ["evening"] },
 ];
 
 /**

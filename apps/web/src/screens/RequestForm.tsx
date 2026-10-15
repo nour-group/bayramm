@@ -28,7 +28,7 @@ import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
 import { EmptyState, ErrorState, Loading } from "../components/States";
-import { TelegramCta } from "../components/TelegramCta";
+import { BotLink } from "../components/TelegramCta";
 import { canSignIn, pick, useDictionaries, useLang, useServices } from "../context";
 import {
   addDays,
@@ -37,6 +37,7 @@ import {
   formatPrice,
   formatPriceFrom,
   isIsoDate,
+  isPhoneDigits,
   maskPhoneDigits,
   metaLine,
   PHONE_PREFIX,
@@ -45,10 +46,11 @@ import {
   tashkentToday,
   weekdayMon,
 } from "../format";
-import { useAsync, useDocumentTitle } from "../hooks";
+import { useAsync, useDocumentTitle, useStickyPanel } from "../hooks";
+import { continueAtHub } from "../hub";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
-import { haptic, requestWriteAccess } from "../telegram";
+import { canRequestPhone, haptic, requestPhone, requestWriteAccess } from "../telegram";
 import { MAX_GUESTS, parseGuests } from "./catalog-feed";
 import {
   budgetScale,
@@ -60,7 +62,6 @@ import {
   type DraftService,
   type DraftValue,
   detailFields,
-  draftServiceIds,
   EMPTY_DRAFT,
   EVENT_MAX_DAYS_AHEAD,
   type Field,
@@ -78,6 +79,12 @@ import {
   validate,
 } from "./request-draft";
 import { estimate, hasQty, suggestedQty } from "./request-estimate";
+import {
+  lastRequest,
+  markSendAfterSignIn,
+  rememberLastRequest,
+  takeSendAfterSignIn,
+} from "./request-prefill";
 
 const GUESTS_STEP = 20;
 
@@ -209,6 +216,7 @@ function Consent({
   id,
   text,
   label,
+  required,
   checked,
   onChange,
   error,
@@ -216,6 +224,8 @@ function Consent({
   id: string;
   text: ConsentText;
   label: string;
+  /** Без него заявку не отправить: пометка «обязательно», как у полей; иначе — «по желанию» */
+  required: boolean;
   checked: boolean;
   onChange: (checked: boolean) => void;
   error?: string;
@@ -232,7 +242,7 @@ function Consent({
         aria-describedby={error ? `${id}-error` : undefined}
         onChange={onChange}
       >
-        {label}
+        {label} <em className={required ? "mark-req" : "mark-opt"}>{required ? t.rqReq : t.rqOpt}</em>
       </Checkbox>
       <button
         type="button"
@@ -535,6 +545,12 @@ interface FormProps {
   readonly onConsentsOutdated: () => void;
 }
 
+/** Ошибки формы без согласия: гостю его спросим после входа */
+function withoutConsent(errors: Partial<Record<Field, string>>): Partial<Record<Field, string>> {
+  const { consent: _skipped, ...rest } = errors;
+  return rest;
+}
+
 /** В черновике есть что-то кроме услуг, отмеченных на витрине: его заполняли в форме */
 const touched = (draft: Draft): boolean =>
   draft.occasion !== null ||
@@ -543,13 +559,19 @@ const touched = (draft: Draft): boolean =>
   [draft.guests, draft.name, draft.phone, draft.comment].some((v) => v.trim() !== "") ||
   Object.keys(draft.values).length > 0;
 
+/**
+ * Черновик формы: сохранённый в этой вкладке — как есть; иначе дата и гости — из адреса (каталог →
+ * витрина → форма), имя, телефон и повод — из прошлой заявки этой вкладки (request-prefill.ts),
+ * имя без неё — из Telegram. Согласия здесь не бывает: их отмечают каждый раз
+ */
 function initialDraft(
   listing: ListingDetail,
   category: CategoryConfig,
+  occasions: readonly OccasionItem[],
   query: URLSearchParams,
   today: string,
   telegramName: string,
-): Draft {
+): { readonly draft: Draft; readonly prefilled: boolean } {
   const saved = loadDraft(listing.slug);
   const date = query.get("date");
   const guests = parseGuests(query.get("guests"));
@@ -563,19 +585,41 @@ function initialDraft(
     !takenOnDate.includes(part);
   const parts = asked ? { dayParts: [part], wholeDay: false, partsTouched: true } : {};
   // Черновик с формой: в нём уже всё; с витрины — только отмеченные услуги: дополняем
-  if (saved && touched(saved)) return { ...saved, ...parts };
+  if (saved && touched(saved)) return { draft: { ...saved, ...parts }, prefilled: false };
   const lead = leadDaysOf(listing, saved?.services.map((s) => s.id) ?? []);
+  const day =
+    isIsoDate(date) && date >= firstDate(today, lead) && !listing.busyDates.includes(date) ? date : null;
+  // Прошлая заявка вкладки: повод — если он есть в списке; его части дня — как при выборе повода
+  const last = lastRequest();
+  const occasion = occasions.find((o) => o.code === last?.occasion) ?? null;
+  const takenOnDay = listing.busyParts.find((p) => p.date === day)?.parts ?? [];
+  const occasionTime =
+    occasion && !asked && choosesParts(category, listing)
+      ? {
+          dayParts: occasionParts(occasion.defaultParts, listing.sessions.parts).filter(
+            (p) => !takenOnDay.includes(p),
+          ),
+          wholeDay: false,
+        }
+      : {};
+  const phone = last && isPhoneDigits(last.phone) ? maskPhoneDigits(last.phone) : "";
+  const name = last?.name || telegramName;
   return {
-    ...EMPTY_DRAFT,
-    ...parts,
-    services: saved?.services ?? [],
-    date:
-      isIsoDate(date) && date >= firstDate(today, lead) && !listing.busyDates.includes(date) ? date : null,
-    guests:
-      guests === null || category.requestForm.guests === "hidden"
-        ? ""
-        : String(Math.min(guests, listing.capMax ?? MAX_GUESTS)),
-    name: telegramName,
+    draft: {
+      ...EMPTY_DRAFT,
+      ...parts,
+      ...occasionTime,
+      services: saved?.services ?? [],
+      date: day,
+      guests:
+        guests === null || category.requestForm.guests === "hidden"
+          ? ""
+          : String(Math.min(guests, listing.capMax ?? MAX_GUESTS)),
+      occasion: occasion?.code ?? null,
+      name,
+      phone,
+    },
+    prefilled: last !== null && (phone !== "" || last.name !== "" || occasion !== null),
   };
 }
 
@@ -588,17 +632,24 @@ function Form({
   onCreated,
   onConsentsOutdated,
 }: FormProps) {
-  const { api, webApp, now } = useServices();
+  const { api, webApp, identity, now } = useServices();
   const { t, lang } = useLang();
   const { query, navigate, back } = useNav();
   const today = tashkentToday(now());
+  // Гость сайта заполняет форму до входа: «Отправить» проверит поля и уведёт во вход
+  const guest = !canSignIn(identity);
   // Занятые дни витрины и те, что сервер назвал занятыми при отправке (витрина во вкладке устарела)
   const [lateBusy, setLateBusy] = useState<readonly string[]>([]);
   const busy = useMemo(() => new Set([...listing.busyDates, ...lateBusy]), [listing.busyDates, lateBusy]);
   const user = webApp?.initDataUnsafe.user;
   const telegramName = user ? [user.first_name, user.last_name].filter(Boolean).join(" ") : "";
-  const [draft, setDraft] = useState<Draft>(() =>
-    initialDraft(listing, category, query, today, telegramName),
+  const [start] = useState(() => initialDraft(listing, category, occasions, query, today, telegramName));
+  const [draft, setDraft] = useState<Draft>(start.draft);
+  // Вернулись из входа, куда увело «Отправить» гостя: остался один шаг — согласие
+  const [backFromSignIn] = useState(() => !guest && takeSendAfterSignIn(listing.slug));
+  const [phoneNote, setPhoneNote] = useState<string | null>(null);
+  const methods = useAsync(guest ? "auth-methods" : "auth-methods:skip", (signal) =>
+    guest ? api.authMethods(signal) : Promise.resolve(null),
   );
   const [transfer, setTransfer] = useState(false);
   const [notify, setNotify] = useState(false);
@@ -676,7 +727,9 @@ function Form({
     });
   const toggleWholeDay = (on: boolean) =>
     update({ wholeDay: on, dayParts: on ? [] : draft.dayParts, partsTouched: true });
-  const errors = submitted ? { ...serverErrors, ...validate(draft, context, t) } : serverErrors;
+  const checked = submitted ? { ...serverErrors, ...validate(draft, context, t) } : serverErrors;
+  // Гостю согласие спросим после входа — ошибки «не отмечено» до него нет
+  const errors = guest ? withoutConsent(checked) : checked;
   const guests = parseGuests(draft.guests);
   const price = formatPriceFrom(listing.priceFromUzs, listing.priceUnit, t);
   const guestsMode = category.requestForm.guests;
@@ -732,8 +785,15 @@ function Form({
     setSubmitted(true);
     setSendError(null);
     setServerErrors({});
-    const found = validate(draft, context, t);
+    // Гостю согласие — после входа: проверяем остальное и уводим во вход, черновик — во вкладке
+    const found = guest ? withoutConsent(validate(draft, context, t)) : validate(draft, context, t);
     const first = fieldOrder(category, draft, parts).find((field) => found[field]);
+    if (guest && !first) {
+      saveDraft(listing.slug, draft);
+      markSendAfterSignIn(listing.slug);
+      continueAtHub();
+      return;
+    }
     if (first || !transferText) {
       haptic(webApp, "error");
       if (first) document.getElementById(fieldId(first))?.focus({ preventScroll: false });
@@ -747,6 +807,8 @@ function Form({
       });
       const result = await api.createRequest(body);
       clearDraft(listing.slug);
+      // Следующей заявке в этой вкладке — те же контакты и повод (согласия — нет)
+      rememberLastRequest({ name: draft.name, phone: draft.phone, occasion: draft.occasion });
       haptic(webApp, "success");
       onCreated(result);
     } catch (error) {
@@ -767,6 +829,34 @@ function Form({
       setSending(false);
     }
   };
+
+  // Кнопки формы у низа экрана (телефон и планшет): фокус на полях не уходит под них
+  const formBar = useRef<HTMLDivElement>(null);
+  useStickyPanel(formBar, "bottom");
+
+  // «Поделиться номером» (Mini App): узбекский номер — в поле; другой — словами, ввести руками
+  const sharePhone = () =>
+    requestPhone(webApp, (shared) => {
+      if (shared === null) return;
+      const digits = shared.replace(/\D/g, "");
+      if (digits.length === 12 && digits.startsWith("998")) {
+        setPhoneNote(null);
+        update({ phone: maskPhoneDigits(phoneDigits(digits)) });
+      } else setPhoneNote(t.authErrPhone);
+    });
+
+  // Вернулись из входа: фокус — на согласие, единственное, что осталось (после фокуса оболочки на
+  // заголовке нового экрана — поэтому на следующем кадре)
+  const consentId = fieldId("consent");
+  useEffect(() => {
+    if (!backFromSignIn) return;
+    const timer = setTimeout(() => {
+      const box = document.getElementById(consentId);
+      box?.scrollIntoView?.({ block: "center" });
+      box?.focus({ preventScroll: true });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [backFromSignIn, consentId]);
 
   const dateLabel = (date: string) => `${formatDayMonth(date, t)}, ${t.weekdaysMon[weekdayMon(date)] ?? ""}`;
   // Подсказка у даты: срок заказа или что в этот день уже занято по частям
@@ -806,6 +896,12 @@ function Form({
           </span>
         </p>
       </div>
+      {start.prefilled ? (
+        <div className="callout">
+          <Icon name="info" size={17} />
+          <span>{t.rqPrefilled}</span>
+        </div>
+      ) : null}
 
       <Fld id={fieldId("occasion")} label={t.fOcc} required error={errors.occasion} group>
         <RadioGroup
@@ -993,6 +1089,18 @@ function Form({
             onChange={(event) => update({ phone: maskPhoneDigits(phoneDigits(event.target.value)) })}
           />
         </div>
+        {/* В Mini App номер можно не набирать: Telegram спросит человека сам */}
+        {canRequestPhone(webApp) ? (
+          <button type="button" className="btn btn-secondary share-phone" onClick={sharePhone}>
+            <Icon name="tg" size={17} />
+            {t.rqSharePhone}
+          </button>
+        ) : null}
+        {phoneNote ? (
+          <p className="fld-error" role="alert">
+            {phoneNote}
+          </p>
+        ) : null}
       </Fld>
 
       <Fld id={fieldId("comment")} label={t.rqCom} required={false} error={undefined}>
@@ -1007,13 +1115,23 @@ function Form({
         />
       </Fld>
 
+      {backFromSignIn ? (
+        <div className="callout" role="status">
+          <Icon name="checkFill" size={17} />
+          <span>{t.rqSignedIn}</span>
+        </div>
+      ) : null}
       <fieldset className="fld consents">
         <legend className="fld-label">{t.consentsTitle}</legend>
-        {transferText ? (
+        {/* Гостю согласие — после входа, перед отправкой: заранее не спрашиваем и не отмечаем */}
+        {guest ? (
+          <p className="muted small">{t.rqConsentAfterSignIn}</p>
+        ) : transferText ? (
           <Consent
             id={fieldId("consent")}
             text={transferText}
             label={t.consentTransfer(listing.name)}
+            required
             checked={transfer}
             onChange={setTransfer}
             error={errors.consent}
@@ -1023,11 +1141,12 @@ function Form({
             {t.consentMissing}
           </p>
         )}
-        {notifyText ? (
+        {notifyText && !guest ? (
           <Consent
             id={`${id}-notify`}
             text={notifyText}
             label={t.consentNotify}
+            required={false}
             checked={notify}
             onChange={(checked) => {
               setNotify(checked);
@@ -1053,85 +1172,29 @@ function Form({
         </p>
       ) : null}
 
-      {/* Над кнопками: на телефоне панель прилипает к низу, пометка — в конце формы */}
-      <p className="bar-note">{t.requestNote}</p>
+      {/* Над кнопками: на телефоне панель прилипает к низу, пометка — в конце формы. Гостю — что
+          заявка уйдёт после входа и чем войти (телефон — если вход по нему включён) */}
+      <p className="bar-note">
+        {guest
+          ? t.rqGuestSend(methods.status === "ready" && methods.data !== null && methods.data.phone)
+          : t.requestNote}
+      </p>
+      {guest ? <BotLink slug={listing.slug} /> : null}
       {/* Отказ и отправка — одного размера (правило продукта о согласии) */}
-      <div className="action-bar form-bar">
+      <div className="action-bar form-bar" ref={formBar}>
         <button type="button" className="btn btn-secondary" onClick={back}>
-          {t.permCancel}
+          {t.back}
         </button>
         <button
           type="submit"
           className="btn btn-primary"
-          disabled={sending || !transferText}
+          disabled={sending || (!guest && !transferText)}
           aria-busy={sending}
         >
           {sending ? t.sending : t.rqSend}
         </button>
       </div>
     </form>
-  );
-}
-
-/**
- * Гость ещё не вошёл: что уже выбрано — услуги с витрины, дата и гости из адреса. Войдёт на сайте
- * в этой вкладке (хаб вернёт сюда же) — всё это будет в форме: черновик живёт во вкладке
- */
-function DraftSummary({ listing }: { listing: ListingDetail }) {
-  const { now } = useServices();
-  const { t, lang } = useLang();
-  const { query } = useNav();
-  const today = tashkentToday(now());
-  const category = categoryConfig(listing.categoryCode) ?? clientCategory(listing.categoryCode);
-  const date = query.get("date");
-  const day = isIsoDate(date) && date > today && !listing.busyDates.includes(date) ? date : null;
-  const guests = category.requestForm.guests === "hidden" ? null : parseGuests(query.get("guests"));
-  const ids = draftServiceIds(listing.slug);
-  const services = listing.services.filter((service) => ids.includes(service.id));
-  if (day === null && guests === null && services.length === 0) return null;
-  return (
-    <section className="section" aria-labelledby="rq-draft">
-      <h2 className="section-title" id="rq-draft">
-        {t.rqDraftH}
-      </h2>
-      <dl className="facts">
-        {day ? (
-          <div>
-            <dt>{t.rqDate}</dt>
-            <dd>{formatDayMonth(day, t)}</dd>
-          </div>
-        ) : null}
-        {guests !== null ? (
-          <div>
-            <dt>{t.rqG}</dt>
-            <dd>{guests}</dd>
-          </div>
-        ) : null}
-        {services.length > 0 ? (
-          <div>
-            <dt>{t.svcTitle}</dt>
-            <dd>{services.map((service) => pick(service.name, lang)).join(", ")}</dd>
-          </div>
-        ) : null}
-      </dl>
-      <p className="muted small">{t.rqDraftNote}</p>
-    </section>
-  );
-}
-
-/** Гостю без входа: связаться с исполнителем можно и так — контакты без заявки */
-function ContactCard({ listing }: { listing: ListingDetail }) {
-  const { t } = useLang();
-  return (
-    <section className="section contact" aria-labelledby="guest-venue">
-      <h2 className="section-title" id="guest-venue">
-        {listing.name}
-      </h2>
-      <div className="contact-row">
-        <p className="muted small">{t.callNote}</p>
-        <ContactButton slug={listing.slug} name={listing.name} />
-      </div>
-    </section>
   );
 }
 
@@ -1148,7 +1211,8 @@ export function RequestForm({ slug }: { slug: string }) {
   const [created, setCreated] = useState<RequestCreated | null>(null);
   const lastConsents = useRef<readonly ConsentText[] | null>(null);
   const signedIn = canSignIn(identity);
-  // Тексты согласий витрина уже попросила заранее (кэш вкладки) — форма без заглушки
+  // Тексты согласий витрина уже попросила заранее (кэш вкладки) — форма без заглушки. Гость
+  // сайта видит форму без согласий: их спросим после входа, перед отправкой
   const consents = useAsync(
     `consents:${lang}:${signedIn}`,
     (signal) => (signedIn ? api.consentTexts(lang, signal) : Promise.resolve({ items: [] })),
@@ -1159,17 +1223,8 @@ export function RequestForm({ slug }: { slug: string }) {
     api.peek?.forgetConsentTexts();
     consents.reload();
   };
-  useDocumentTitle(t.rqTitle);
-
-  // Вне Telegram заявку не отправить: объясняем и ведём в бота, телефон площадки — сразу
-  if (!signedIn)
-    return (
-      <div className="screen">
-        <TelegramCta slug={slug} headingLevel={1} />
-        {listing.status === "ready" ? <DraftSummary listing={listing.data} /> : null}
-        {listing.status === "ready" ? <ContactCard listing={listing.data} /> : null}
-      </div>
-    );
+  // Вкладку называем по витрине: «Заявка: Lola zali · Bayramm» (так же — разметка воркера)
+  useDocumentTitle(listing.status === "ready" ? `${t.rqTitle}: ${listing.data.name}` : t.rqTitle);
 
   if (created && listing.status === "ready") return <Sent listing={listing.data} created={created} />;
   if (listing.status === "error")

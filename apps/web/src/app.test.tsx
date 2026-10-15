@@ -161,8 +161,19 @@ describe("каталог", () => {
 
     await mount({ path: "/catalog?category=hall" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
-    expect(document.querySelector(".card-estimate")).toBeNull();
-    expect(document.querySelector(".sort-hint")?.textContent).toContain("делим на вместимость");
+    // У цены за гостя примерной суммы нет — гостей не указали
+    const perGuestCard = [...document.querySelectorAll(".card")].find((c) =>
+      c.querySelector(".card-price")?.textContent?.includes("за гостя"),
+    );
+    expect(perGuestCard?.querySelector(".card-estimate")).toBeNull();
+    expect(document.querySelector(".sort-hint")?.textContent).toContain("на одного гостя при полном зале");
+    // У цены за мероприятие — сколько это на гостя: по ней сортирует «Сначала дешевле»
+    const perEventCard = [...document.querySelectorAll(".card")].find((c) =>
+      c.querySelector(".card-price")?.textContent?.includes("за мероприятие"),
+    );
+    expect(perEventCard?.querySelector(".card-estimate")?.textContent).toMatch(
+      /^≈ [\d\s,]+(млн\s)?сум за гостя$/,
+    );
     cleanup();
 
     await mount({ path: "/catalog?category=hall&sort=capacity_desc" });
@@ -300,6 +311,31 @@ describe("мои заявки", () => {
     expect(first?.querySelector(".confirm")).toBeNull();
   });
 
+  it("в каждой заявке — «Связаться», как на витрине; название — ссылкой на витрину", async () => {
+    const { api } = await mount({ path: "/requests", mock: { requests } });
+    await waitFor(() => document.querySelectorAll(".req").length === requests.length, "заявки");
+    const first = document.querySelector(".req");
+    const target = requests[0];
+    if (!target) throw new Error("нет демо-заявки");
+    const link = first?.querySelector<HTMLAnchorElement>(".req-name a.req-link");
+    expect(link?.getAttribute("href")).toBe(`/venue/${target.listing.slug}`);
+    expect(link?.getAttribute("aria-label")).toBe(`${target.listing.name} — к исполнителю`);
+    expect(link?.querySelector("svg")).not.toBeNull();
+    // Все заявки, и отозванные с отказами тоже: позвонить исполнителю можно из любой
+    expect(document.querySelectorAll(".req .req-actions button[aria-haspopup=dialog]")).toHaveLength(
+      requests.length,
+    );
+    const call = first?.querySelector<HTMLButtonElement>(".req-actions button[aria-haspopup=dialog]");
+    expect(call?.getAttribute("aria-label")).toBe(`Связаться: ${target.listing.name}`);
+    await click(call);
+    await waitFor(() => document.querySelector('[role="dialog"] a[href^="tel:"]'), "телефон в окне");
+    expect((api as ReturnType<typeof createMockApi>).contactEvents.at(-1)).toEqual({
+      slug: target.listing.slug,
+      action: "open",
+      signedIn: true,
+    });
+  });
+
   it("ссылка из бота ?open=<id> раскрывает заявку — без пометки о повторе", async () => {
     const target = requests[2];
     await mount({ path: `/requests?open=${target?.id}`, mock: { requests } });
@@ -331,7 +367,9 @@ describe("язык и оболочка", () => {
   it("RU/UZ: тексты, lang документа; выбор — во вкладке и между визитами (только язык)", async () => {
     await mount({ path: "/profile" });
     expect(document.documentElement.lang).toBe("ru");
-    await click(document.querySelector('.top button[lang="uz"]'));
+    // В профиле язык — своим разделом; в шапке второго переключателя нет
+    expect(document.querySelector(".top .lang")).toBeNull();
+    await click(document.querySelector('.profile button[lang="uz"]'));
     expect(document.documentElement.lang).toBe("uz");
     expect(document.querySelector("h1")?.textContent).toBe("Profil");
     expect(window.sessionStorage.getItem(LANG_KEY)).toBe("uz");
@@ -365,7 +403,7 @@ describe("язык и оболочка", () => {
   it("язык сохраняется в профиле: по нему пишет бот", async () => {
     const api = createMockApi({ now: () => NOW, listings: LISTINGS, me: { locale: "ru" } });
     await mount({ path: "/profile", api });
-    await click(document.querySelector('.top button[lang="uz"]'));
+    await click(document.querySelector('.profile button[lang="uz"]'));
     await waitFor(() => api.profile().locale === "uz", "язык в профиле");
   });
 
@@ -410,7 +448,7 @@ describe("язык и оболочка", () => {
   it("вкладки: текущая помечена; на внутренних экранах панели нет", async () => {
     await mount({ path: "/requests", mock: { requests: [] } });
     expect(byText("nav.tabs a", "Заявки")?.getAttribute("aria-current")).toBe("page");
-    // На сайте первая вкладка — «Каталог» (главная сайта — лендинг), в Telegram — «Главная»
+    // Первая вкладка — «Каталог» и на сайте, и в Telegram
     await click(byText("nav.tabs a", "Каталог"));
     expect(window.location.pathname).toBe("/catalog");
     const card = await waitFor(() => document.querySelector<HTMLAnchorElement>(".card-link"), "карточка");
@@ -424,6 +462,16 @@ describe("язык и оболочка", () => {
   it("неизвестный адрес — «страница не найдена»", async () => {
     await mount({ path: "/nope" });
     expect(document.querySelector("h1")?.textContent).toBe("Страница не найдена");
+  });
+
+  it("профиль: без второй ссылки на «Мои заявки»; «О площадке» — правила для клиента", async () => {
+    await mount({ path: "/profile" });
+    await waitFor(() => document.querySelector(".docs"), "профиль");
+    expect(byText("a", /Мои заявки/)).toBeNull();
+    const about = document.querySelector('[aria-labelledby="profile-about"]');
+    expect(about?.querySelectorAll("li").length).toBeGreaterThanOrEqual(4);
+    expect(about?.textContent).toContain("12 часов");
+    expect(about?.textContent).not.toMatch(/Пустой каталог|подписк|оферт/i);
   });
 
   it("профиль: тексты согласий из API раскрываются", async () => {
@@ -498,7 +546,9 @@ describe("мои данные", () => {
     expect(document.querySelector("nav.tabs")).toBeNull();
     expect(document.querySelector(".top-signin")).not.toBeNull();
 
-    await click(byText("a.row-link", /Мои заявки/));
+    // «Моих заявок» в профиле нет (это вкладка) — переходим адресом
+    window.history.pushState({}, "", "/requests");
+    window.dispatchEvent(new PopStateEvent("popstate"));
     await waitFor(() => byText("h2", "Аккаунт удалён"), "в «Моих заявках» — тоже");
     expect(document.querySelectorAll(".req")).toHaveLength(0);
   });

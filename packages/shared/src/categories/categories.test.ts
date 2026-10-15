@@ -132,13 +132,13 @@ describe("конфигурация категорий", () => {
       expect(c.services.map((s) => s.code)).toEqual(["other"]);
   });
 
-  it("порядок показа — путь пары: ЗАГС, тойхона, кортеж, фото и видео, студия, ресторан, цветы…", () => {
+  it("порядок показа: тойхона — категория запуска — первой, дальше путь пары: ЗАГС, кортеж, фото…", () => {
     const shown = CATEGORIES.filter((c) => c.enabled)
       .sort((a, b) => a.sort - b.sort)
       .map((c) => c.code);
     expect(shown).toEqual([
-      "zags",
       "hall",
+      "zags",
       "car",
       "photo",
       "studio",

@@ -117,6 +117,13 @@ describe("избранное вошедшего", () => {
     await waitFor(() => toast().includes("во вкладке «Сохранённое»"), "уведомление про вкладку");
   });
 
+  it("пусто у вошедшего — без «входить не нужно»: список хранит аккаунт", async () => {
+    await mount({ path: "/favorites", api: createMockApi({ now: () => NOW, listings: LISTINGS }) });
+    await waitFor(() => document.querySelector(".state-empty"), "пусто");
+    expect(text()).toContain("останется в вашем аккаунте");
+    expect(text()).not.toContain("Входить не нужно");
+  });
+
   it("в «Сохранённом» у карточек разных категорий подписана категория", async () => {
     const car = allDemoListings("2026-10-01").find((l) => l.categoryCode === "car");
     if (!car) throw new Error("нет демо-кортежа");

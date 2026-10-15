@@ -23,6 +23,8 @@ export interface FakeTelegramOptions {
   readonly safeArea?: Partial<Insets>;
   /** Кнопки клиента Telegram поверх приложения */
   readonly contentSafeArea?: Partial<Insets>;
+  /** Что ответит «Поделиться номером» (requestContact): номер или отказ (null) */
+  readonly contactPhone?: string | null;
 }
 
 export interface TelegramCall {
@@ -167,6 +169,12 @@ export async function fakeTelegram(page: Page, options: FakeTelegramOptions = {}
             requestWriteAccess: (callback?: (granted: boolean) => void) => {
               record("requestWriteAccess");
               callback?.(true);
+            },
+            requestContact: (callback?: (shared: boolean, response?: unknown) => void) => {
+              record("requestContact");
+              const phone = options.contactPhone === undefined ? "998901234567" : options.contactPhone;
+              if (phone === null) callback?.(false, { status: "cancelled" });
+              else callback?.(true, { status: "sent", responseUnsafe: { contact: { phone_number: phone } } });
             },
             onEvent: () => {},
             offEvent: () => {},

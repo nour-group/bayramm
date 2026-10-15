@@ -1,7 +1,15 @@
 import type { TelegramWebApp } from "@bayramm/tg/webapp";
 import { base } from "@bayramm/ui";
 import { describe, expect, it } from "vitest";
-import { haptic, hasNativeBack, hasNativeMainButton, initTelegram, supports } from "./telegram";
+import {
+  canRequestPhone,
+  haptic,
+  hasNativeBack,
+  hasNativeMainButton,
+  initTelegram,
+  requestPhone,
+  supports,
+} from "./telegram";
 
 function recorder(version: string | null) {
   const calls: string[] = [];
@@ -61,5 +69,36 @@ describe("SDK Telegram", () => {
       },
     };
     expect(supports(throwing, "6.1")).toBe(false);
+  });
+});
+
+describe("«Поделиться номером» (requestContact)", () => {
+  type Answer = Parameters<Parameters<NonNullable<TelegramWebApp["requestContact"]>>[0] & {}>;
+  const withContact = (version: string, answer: Answer): TelegramWebApp => ({
+    ...recorder(version).webApp,
+    requestContact: (callback) => callback?.(...answer),
+  });
+
+  it("поделился — номер как его отдал Telegram; отказал или номера нет — null", () => {
+    const got: (string | null)[] = [];
+    const ok = withContact("7.0", [
+      true,
+      { status: "sent", responseUnsafe: { contact: { phone_number: "998901234567" } } },
+    ]);
+    expect(canRequestPhone(ok)).toBe(true);
+    requestPhone(ok, (phone) => got.push(phone));
+    requestPhone(withContact("7.0", [false, { status: "cancelled" }]), (phone) => got.push(phone));
+    requestPhone(withContact("7.0", [true]), (phone) => got.push(phone));
+    expect(got).toEqual(["998901234567", null, null]);
+  });
+
+  it("клиент старше 6.9 или без метода — кнопки нет, вызова нет", () => {
+    const old = withContact("6.1", [true]);
+    expect(canRequestPhone(old)).toBe(false);
+    expect(canRequestPhone(recorder("8.0").webApp)).toBe(false);
+    expect(canRequestPhone(null)).toBe(false);
+    const got: (string | null)[] = [];
+    requestPhone(old, (phone) => got.push(phone));
+    expect(got).toEqual([]);
   });
 });

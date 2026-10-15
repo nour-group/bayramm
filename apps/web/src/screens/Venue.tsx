@@ -24,7 +24,7 @@ import {
   metaLine,
   tashkentToday,
 } from "../format";
-import { useAsync, useDocumentTitle } from "../hooks";
+import { useAsync, useDocumentTitle, useStickyPanel } from "../hooks";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
 import { preloadScreens } from "../screens";
@@ -411,7 +411,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         : t.people(listing.capMax);
   const address = pick(listing.address, lang);
   const description = pick(listing.description, lang);
-  const view = attributeView(category, listing.attributes, lang);
+  const view = attributeView(category, listing.attributes, lang, listing.services);
   const videos = safeVideoLinks(listing.videoLinks);
   // Загрузка выбранной даты — по рабочим частям: busyDates уже включает занятые целиком
   const load = (() => {
@@ -432,6 +432,11 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
     setPicked(
       toggleDraftService(listing.slug, service, suggestedQty(service, loadDraft(listing.slug)?.values ?? {})),
     );
+
+  // Панель у низа экрана (телефон и планшет): её высота — в запас прокрутки, фокус не уходит под
+  // неё (на 320px с ценой отдельной строкой она выше 110px)
+  const bar = useRef<HTMLDivElement>(null);
+  useStickyPanel(bar, "bottom");
 
   // В Telegram «Оставить заявку» — его главная кнопка внизу; в браузере — своя в панели
   const nativeMain = useMainButton(webApp, {
@@ -468,18 +473,6 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         {chip ? <p className={chip.tone}>{chip.text}</p> : null}
       </div>
       {busyDay ? <BusyDay listing={listing} day={busyDay} today={today} guests={guests} /> : null}
-
-      {/* Контакты — до заявки и без входа, по «Связаться» (правило продукта): телефон и
-          Telegram в окне, открытия считает сервер */}
-      <section className="section contact" aria-labelledby="venue-contact">
-        <h2 className="section-title" id="venue-contact">
-          {t.contactH}
-        </h2>
-        <div className="contact-row">
-          <p className="muted small">{t.callNote}</p>
-          <ContactButton slug={listing.slug} name={listing.name} />
-        </div>
-      </section>
 
       {listing.services.length > 0 ? (
         <section className="section" aria-labelledby="venue-services">
@@ -590,39 +583,44 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
       />
 
       {/* Цена, «Связаться» и заявка: на телефоне — панель внизу экрана, на компьютере — карточка
-          справа, прилипает при прокрутке. Контакты — в одно нажатие, до заявки. Пометка
+          справа, прилипает при прокрутке. Контакты — до заявки и без входа, в одно нажатие
+          (правило продукта): телефон и Telegram — в окне «Связаться», открытия считает сервер.
+          Второй кнопки «Связаться» в описании нет — панель видна с первого экрана. Пометка
           о заявке — над панелью (на телефоне она прилипает к низу, пометка — в конце страницы),
           в карточке справа — под кнопками */}
       <div className="venue-side">
         <RequestNote />
-        <div className="action-bar venue-bar">
+        {/* Цена целиком, без многоточия: не помещается рядом с кнопками — кнопки строкой ниже */}
+        <div className="action-bar venue-bar" ref={bar}>
           <div className="bar-price">
             <b>{price.amount}</b>
-            {price.unit ? <span className="unit">{price.unit}</span> : null}
+            <span className="unit">{price.unit}</span>
             {picked.length > 0 ? <span className="bar-chosen">{t.svcChosenN(picked.length)}</span> : null}
           </div>
-          <ContactButton
-            slug={listing.slug}
-            name={listing.name}
-            className="icon-btn call"
-            ariaLabel={`${t.contactBtn}: ${listing.name}`}
-          >
-            <Icon name="phone" size={20} />
-            <span className="call-label" aria-hidden="true">
-              {t.contactBtn}
-            </span>
-          </ContactButton>
-          {nativeMain ? null : (
-            <Link
-              className="btn btn-primary"
-              href={reqHref}
-              onPointerEnter={preloadRequest}
-              onTouchStart={preloadRequest}
-              onFocus={preloadRequest}
+          <div className="bar-actions">
+            <ContactButton
+              slug={listing.slug}
+              name={listing.name}
+              className="icon-btn call"
+              ariaLabel={`${t.contactBtn}: ${listing.name}`}
             >
-              {reqLabel}
-            </Link>
-          )}
+              <Icon name="phone" size={20} />
+              <span className="call-label" aria-hidden="true">
+                {t.contactBtn}
+              </span>
+            </ContactButton>
+            {nativeMain ? null : (
+              <Link
+                className="btn btn-primary"
+                href={reqHref}
+                onPointerEnter={preloadRequest}
+                onTouchStart={preloadRequest}
+                onFocus={preloadRequest}
+              >
+                {reqLabel}
+              </Link>
+            )}
+          </div>
         </div>
       </div>
     </article>

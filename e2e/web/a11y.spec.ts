@@ -81,7 +81,7 @@ const SCREENS: readonly Screen[] = [
     path: `${PATHS.catalog}?date=${BUSY_DAY}`,
     ready: ".card .chip",
     setup: async (page) => {
-      await page.locator(".filter-row button[aria-haspopup=dialog]").click();
+      await page.locator(".filter-row button.ui-date").click();
       await page.locator(".ui-layer .ui-cal").waitFor();
     },
   },
@@ -176,7 +176,12 @@ const SCREENS: readonly Screen[] = [
       await page.getByRole("heading", { level: 1, name: t.sentH }).waitFor();
     },
   },
-  { name: "заявка из браузера", path: PATHS.request(VENUE.slug), ready: ".tg-cta .btn", guest: true },
+  {
+    name: "заявка из браузера",
+    path: PATHS.request(VENUE.slug),
+    ready: "form.request .bot-link",
+    guest: true,
+  },
   {
     name: "мои заявки",
     path: PATHS.requests,
@@ -277,7 +282,7 @@ test.describe("доступность", () => {
     await expect(page).toHaveURL(/[?&]district=chilonzor/);
 
     // Дата: Enter открывает календарь с фокусом на дне, стрелка — следующий день, Enter — выбор
-    const date = page.locator(".filter-row button[aria-haspopup=dialog]");
+    const date = page.locator(".filter-row button.ui-date");
     await date.focus();
     await page.keyboard.press("Enter");
     const focusedDay = page.locator(".ui-layer button.ui-cal-day:focus");

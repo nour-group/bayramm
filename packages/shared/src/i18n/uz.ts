@@ -310,7 +310,6 @@ export const uz: Dict = {
   saved: "Saqlandi. Roʻyxat «Saqlanganlar» boʻlimida — kirish shart emas.",
   req: (n: string) => `Soʻrov «${n}»ga ketadi. Joy hali biriktirilmagan — hamkor oʻzi tasdiqlaydi.`,
   // ── тексты приложения: правятся здесь, перенос из прототипа их сохраняет ──
-  navHome: "Asosiy",
   navRequests: "Soʻrovlar",
   navProfile: "Profil",
   sections: "Boʻlimlar",
@@ -374,7 +373,6 @@ export const uz: Dict = {
   photoOf: (name: string, n: number, total: number) => `${name}, ${total} tadan ${n}-surat`,
   address: "Manzil",
   capacity: "Sigʻim",
-  callNote: "Telefon va Telegram — bir bosishda, soʻrovsiz va kirishsiz.",
   rqName: "Sizga qanday murojaat qilaylik",
   rqPhoneHint: "+998 dan keyin 9 ta raqam",
   errRequired: "Bu maydonni toʻldiring",
@@ -398,11 +396,7 @@ export const uz: Dict = {
   errBlocked: "Bu hisobdan soʻrov yuborish cheklangan. Bizga yozing.",
   errDailyLimit: "Bugun bu hisobdan juda koʻp soʻrov yuborildi. Ertaga urinib koʻring.",
   errConsentOutdated: "Rozilik matni yangilandi. Uni oʻqib, qayta belgilang.",
-  tgOnlyH: "Soʻrov — kirgandan keyin",
-  tgOnlyP:
-    "Hamkor sizga javob berishi va soʻrov holatini koʻrishingiz uchun kiring. Eng qulayi — Telegramda: hisobingiz orqali, parolsiz.",
   openInTg: "Telegramda ochish",
-  tgUnavailable: "Bot havolasini olib boʻlmadi. Keyinroq urinib koʻring.",
   signInFailed: "Telegram orqali kirib boʻlmadi. Ilovani yopib, qayta oching.",
   toMyRequests: "Soʻrovlarimga",
   requestNo: (n: number) => `${n}-soʻrov`,
@@ -431,9 +425,19 @@ export const uz: Dict = {
   cp_bot_notifications: "Telegram-botdagi bildirishnomalar",
   consentVersion: (v: number) => `${v}-versiya`,
   docsEmpty: "Hujjatlar hali eʼlon qilinmagan.",
+  aboutRules: [
+    list(
+      "Siz uchun Bayramm bepul: komissiya ham, soʻrov uchun toʻlov ham yoʻq. Pul biz orqali oʻtmaydi.",
+      "Hamkorning boshlangʻich narxi va telefoni darhol koʻrinadi — soʻrovsiz va kirishsiz.",
+      "Soʻrov sanani biriktirmaydi: uni hamkor qoʻngʻiroq yoki yozishmada tasdiqlaydi.",
+      "Hamkor 12 soatda javob bermasa — shu sanaga oʻxshashlarini koʻrsatamiz.",
+      "Hozircha faqat Toshkentda ishlaymiz.",
+    ),
+  ],
   estimateFor: (amount: string, guests: number) => `${guests} mehmonga taxminan ${amount}`,
   sortHintPerGuest:
-    "Tadbir narxini zal sigʻimiga boʻlamiz. Mehmonlar sonini kiriting — summalarni solishtiramiz.",
+    "Tadbir narxi toʻla zal hisobida bir mehmonga qayta hisoblandi. Mehmonlar sonini kiriting — umumiy summalarni solishtiramiz.",
+  perGuestApprox: (amount: string) => `≈ ${amount} mehmon boshiga`,
   sortHintTotal: (guests: number) => `${guests} mehmon uchun taxminiy summa solishtiriladi.`,
   myData: "Mening maʼlumotlarim",
   myDataLead:
@@ -463,7 +467,7 @@ export const uz: Dict = {
   accountDeletedP: "Profil va kontaktlar oʻchirildi. Qaytadan boshlash uchun Bayrammni yopib, qayta oching.",
   // ── вход и аккаунт (хаб /auth, профиль) ─────────────────────────────────
   authTitle: "Bayrammga kirish",
-  authLead: "Soʻrovlar, hamkor kabineti va jamoa paneli uchun bitta hisob. Parol kerak emas.",
+  authLead: "Soʻrov yuborish va javoblarni koʻrish uchun kiring. Parol kerak emas.",
   authForVendor: "Kirgandan keyin hamkor kabineti ochiladi.",
   authForAdmin: "Kirgandan keyin jamoa paneli ochiladi.",
   authLinkTitle: "Telegramni ulash",
@@ -515,7 +519,6 @@ export const uz: Dict = {
   accErrTaken:
     "Bu kirish usuli boshqa Bayramm hisobida. Oʻsha usul bilan kiring va ortiqcha hisobni oʻchiring yoki bizga yozing.",
   accErrKindTaken: "Hisobda bunday kirish usuli allaqachon bor.",
-  ctaSignIn: "Saytda kirish",
   // избранное (подписи к текстам прототипа sv*)
   favToggle: (name: string) => `Saqlash: ${name}`,
   favFull:
@@ -607,8 +610,8 @@ export const uz: Dict = {
   moreFilters: "Filtrlar",
   moreFiltersN: (n: number) => `Filtrlar · ${n}`,
   filtersApply: "Koʻrsatish",
-  filterAtLeast: "kamida",
-  filterAtMost: "koʻpi bilan",
+  filterAtLeast: (label: string) => `${label}, kamida`,
+  filterAtMost: (label: string) => `${label}, koʻpi bilan`,
   filterAll: "Belgilanganlarning hammasi bor hamkorlarni koʻrsatamiz.",
   sortHintUnits: "Hamkorlarda narx birligi har xil — summa yonidagi yozuvga qarang.",
   emptyHintCat: "Quyidagi filtrlardan birini olib tashlang — natija darhol yangilanadi.",
@@ -677,6 +680,7 @@ export const uz: Dict = {
     `Bu vaqt (${part}) hamkorda band — boshqasini tanlang yoki qoʻngʻiroq qiling.`,
   savedApp: "Saqlandi. Roʻyxat — «Saqlanganlar» boʻlimida.",
   savedGuest: "Saqlandi. Roʻyxat — sahifa tepasidagi «Saqlanganlar» boʻlimida, kirish shart emas.",
+  svEmptyPSigned: "Kartochkalardagi yurakchani bosing — roʻyxat shu yerda yigʻiladi va hisobingizda qoladi.",
   lnCatsH: "Nimalarni topish mumkin",
   metaCatDesc: (name: string, what: string) =>
     `${what}. ${name} — Toshkent: boshlangʻich narxlar, boʻsh sanalar va hamkorlar kontaktlari, soʻrov bepul.`,
@@ -735,8 +739,15 @@ export const uz: Dict = {
     phone
       ? "Soʻrov bepul. Uni kirgandan keyin yuborasiz — Telegram yoki telefon raqami orqali: shunda hamkor sizga javob bera oladi."
       : "Soʻrov bepul. Uni Telegram orqali kirgandan keyin yuborasiz: shunda hamkor sizga javob bera oladi.",
-  rqDraftH: "Soʻrovga nima ketadi",
-  rqDraftNote: "Shu varaqda saytga kirsangiz, tanlaganlaringiz shaklda qoladi.",
+  rqGuestSend: (phone: boolean): string =>
+    phone
+      ? "Kirgandan keyin yuboramiz — Telegram yoki telefon raqami orqali. Toʻldirilganlar shaklda qoladi."
+      : "Telegram orqali kirgandan keyin yuboramiz. Toʻldirilganlar shaklda qoladi.",
+  rqConsentAfterSignIn:
+    "Maʼlumotlarni hamkorga berishga rozilikni kirgandan keyin — yuborishdan oldin belgilaysiz.",
+  rqSignedIn: "Kirdingiz, toʻldirilganlar joyida. Rozilikni belgilang va soʻrovni yuboring.",
+  rqPrefilled: "Ism, telefon va sabab — oldingi soʻrovdan. Yuborishdan oldin tekshiring.",
+  rqSharePhone: "Raqamni ulashish",
   // пустая выдача: что именно её отсекает
   emptyGuestsH: (n: number) => `${n} mehmon uchun hech kim topilmadi`,
   emptyActive: "Natijani hozir cheklayapti:",
@@ -748,6 +759,7 @@ export const uz: Dict = {
   contactCall: "Qoʻngʻiroq qilish",
   contactTg: "Telegramda yozish",
   contactErr: "Kontaktlarni olib boʻlmadi. Qayta urinib koʻring.",
+  toVendorOf: (name: string) => `${name} — hamkor sahifasi`,
   // календарь витрины: выбранный день уходит в заявку
   calPickHint: "Taqvimda kunni tanlang — u soʻrovga oʻtadi.",
   // раздел каталога «Все»

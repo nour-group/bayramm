@@ -50,6 +50,28 @@ export function requestWriteAccess(
   }
 }
 
+/** Можно попросить номер у Telegram: клиент 6.9+ с requestContact */
+export function canRequestPhone(webApp: TelegramWebApp | null): boolean {
+  return supports(webApp, "6.9") && typeof webApp?.requestContact === "function";
+}
+
+/**
+ * «Поделиться номером»: Telegram спрашивает человека сам; поделился — номер как его отдал
+ * клиент («998…» или «+998…»), отказал или клиент не прислал номер — null. Только для
+ * подстановки в поле: номер всё равно проверяет форма, а заявку — сервер
+ */
+export function requestPhone(webApp: TelegramWebApp | null, onResult: (phone: string | null) => void): void {
+  if (!canRequestPhone(webApp)) return;
+  try {
+    webApp?.requestContact?.((shared, response) => {
+      const phone = response?.responseUnsafe?.contact?.phone_number;
+      onResult(shared && typeof phone === "string" && phone.length > 0 ? phone : null);
+    });
+  } catch {
+    // урезанный клиент: номер введут руками
+  }
+}
+
 /** Кнопка «назад» Telegram есть (6.1+) — тогда своя в шапке не нужна */
 export function hasNativeBack(webApp: TelegramWebApp | null): boolean {
   return supports(webApp, "6.1") && typeof webApp?.BackButton?.show === "function";

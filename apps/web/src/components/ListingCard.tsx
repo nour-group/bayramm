@@ -1,5 +1,10 @@
 import type { Dict } from "@bayramm/shared";
-import { type ListingCard as Card, type DateLoad, estimatedTotalUzs } from "@bayramm/shared/api";
+import {
+  type ListingCard as Card,
+  comparablePriceUzs,
+  type DateLoad,
+  estimatedTotalUzs,
+} from "@bayramm/shared/api";
 import { memo } from "react";
 import type { ClientApi } from "../api/types";
 import { categoryName, clientCategory, hasCalendar } from "../categories";
@@ -27,6 +32,11 @@ interface ListingCardProps {
   readonly headingLevel?: 2 | 3;
   /** Подписать категорию: в списке из разных категорий («Сохранённое») */
   readonly showCategory?: boolean;
+  /**
+   * Выдача по цене, где рядом цены за гостя и за мероприятие (залы без числа гостей): у цены за
+   * мероприятие — «≈ N сум за гостя», по которой каталог и сортирует
+   */
+  readonly perGuest?: boolean;
 }
 
 /**
@@ -71,7 +81,8 @@ export function dayLoadChip(load: DateLoad, date: string, t: Dict): { text: stri
  * Занятая на дату не прячется и не бледнеет текстом: отметка «занято» и приглушённое фото;
  * занятая частью дня (кортеж, фото, декор) — «частично занято». У категорий без календаря
  * (заказ за N дней) отметки на дату нет. С числом гостей у цены за гостя — примерная сумма
- * на них: по ней и сортирует каталог
+ * на них: по ней и сортирует каталог; без гостей у цены за мероприятие — сколько это на гостя
+ * при полном зале (perGuest)
  */
 export const ListingCard = memo(function ListingCard({
   card,
@@ -82,6 +93,7 @@ export const ListingCard = memo(function ListingCard({
   sizes = CARD_PHOTO_SIZES,
   headingLevel = 2,
   showCategory = false,
+  perGuest = false,
 }: ListingCardProps) {
   const { api } = useServices();
   const { t, lang } = useLang();
@@ -97,7 +109,9 @@ export const ListingCard = memo(function ListingCard({
   const estimate =
     guests !== null && card.priceUnit === "per_guest"
       ? t.estimateFor(formatMoney(estimatedTotalUzs(card, guests), t), guests)
-      : null;
+      : perGuest && guests === null && card.priceUnit === "per_event" && card.capMax !== null
+        ? t.perGuestApprox(formatMoney(comparablePriceUzs(card, null), t))
+        : null;
   const href = hrefFor({ name: "venue", slug: card.slug }, { date, guests });
   const Name = headingLevel === 3 ? "h3" : "h2";
   const meta = [
@@ -126,8 +140,8 @@ export const ListingCard = memo(function ListingCard({
           </div>
           {meta.length > 0 ? <p className="card-meta">{metaLine(meta)}</p> : null}
           <p className="card-price">
-            <b>{price.amount}</b>
-            {price.unit ? <span className="unit"> {price.unit}</span> : null}
+            {/* Пробел — между суммой и единицей, а не внутри неразрывной единицы: строка переносится */}
+            <b>{price.amount}</b> <span className="unit">{price.unit}</span>
           </p>
           {estimate ? <p className="card-estimate">{estimate}</p> : null}
         </div>

@@ -55,10 +55,10 @@ const service = (listing: ListingDetail, type: string): PublicService => {
 };
 
 describe("категории клиента", () => {
-  it("в каталоге — включённые по порядку показа (путь пары); неизвестная и выключенная — залы", () => {
+  it("в каталоге — включённые по порядку показа (залы — первыми, дальше путь пары); неизвестная и выключенная — залы", () => {
     expect(CLIENT_CATEGORIES.map((c) => c.code)).toEqual([
-      "zags",
       "hall",
+      "zags",
       "car",
       "photo",
       "studio",
@@ -78,8 +78,8 @@ describe("категории клиента", () => {
   it("вместимость — у залов и ресторанов, район — где к ним едут, календаря нет у срока заказа", () => {
     expect(CLIENT_CATEGORIES.filter(hasCapacity).map((c) => c.code)).toEqual(["hall", "restaurant"]);
     expect(CLIENT_CATEGORIES.filter(hasDistrict).map((c) => c.code)).toEqual([
-      "zags",
       "hall",
+      "zags",
       "studio",
       "restaurant",
       "attire",
@@ -94,7 +94,7 @@ describe("категории клиента", () => {
 });
 
 describe("единицы цены", () => {
-  it("цена «от» — с единицей категории; за мероприятие — без подписи", () => {
+  it("цена «от» — всегда с единицей, и за мероприятие тоже", () => {
     expect(plain(formatPriceFrom(300_000, "per_hour", ru))).toEqual({
       amount: "от 300 000 сум",
       unit: "за час",
@@ -104,9 +104,9 @@ describe("единицы цены", () => {
     expect(formatPriceFrom(900_000, "per_set", ru).unit).toBe("за комплект");
     expect(formatPriceFrom(350_000, "per_table", ru).unit).toBe("за стол");
     expect(formatPriceFrom(150_000, "per_guest", ru).unit).toBe("за гостя");
-    expect(formatPriceFrom(25_000_000, "per_event", ru).unit).toBeNull();
+    expect(formatPriceFrom(25_000_000, "per_event", ru).unit).toBe("за мероприятие");
     expect(plain(formatPrice(350_000, "per_hour", ru))).toBe("350 000 сум за час");
-    expect(plain(formatPrice(2_500_000, "per_event", ru))).toBe("2,5 млн сум");
+    expect(plain(formatPrice(2_500_000, "per_event", ru))).toBe("2,5 млн сум за мероприятие");
     expect(plain(formatPriceFrom(300_000, "per_hour", dictionaries.uz))).toEqual({
       amount: "300 000 soʻmdan",
       unit: "soatiga",
@@ -397,6 +397,30 @@ describe("поля витрины на странице", () => {
     expect(cake.facts.map((f) => f.label)).not.toContain("Заказ не позже чем за, дней");
   });
 
+  it("что уже сказано услугой, в «Об исполнителе» не повторяется", () => {
+    const car = by("oq-kortej");
+    const service = (type: string, priceUnit: "per_hour" | "per_item", minQty: number | null) => ({
+      type,
+      priceUnit,
+      minQty,
+    });
+    // Услуга «Украшение машины» и минимум часов у каждой почасовой услуги — отметки и поля нет
+    const both = attributeView(config("car"), car.attributes, "ru", [
+      service("bride_car", "per_hour", 3),
+      service("limousine", "per_hour", 3),
+      service("car_decor", "per_item", null),
+    ]);
+    expect(both.features).toEqual([]);
+    expect(both.facts.map((f) => f.label)).toEqual(["Где работает"]);
+    // Минимум стоит не у всех почасовых услуг — поле витрины остаётся: оно про остальные
+    const some = attributeView(config("car"), car.attributes, "ru", [
+      service("bride_car", "per_hour", 3),
+      service("limousine", "per_hour", null),
+    ]);
+    expect(some.features).toEqual(["Украшение машины"]);
+    expect(some.facts.map((f) => f.label)).toContain("Минимальный заказ, часов");
+  });
+
   it("студия: текст на двух языках, числа", () => {
     const uz = attributeView(config("studio"), by("oydin-studio").attributes, "uz");
     expect(uz.facts).toContainEqual({
@@ -428,8 +452,8 @@ describe("демо-API по контракту категорий", () => {
     const api = createMockApi({ now, listings: ALL });
     const categories = await api.catalogCategories();
     expect(categories.items.map((c) => [c.code, c.listings])).toEqual([
-      ["zags", 3],
       ["hall", 24],
+      ["zags", 3],
       ["car", 3],
       ["photo", 3],
       ["studio", 3],

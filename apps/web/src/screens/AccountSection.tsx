@@ -8,6 +8,7 @@ import { authHref, browser } from "../hub";
 import { Icon } from "../icons";
 import { hrefFor } from "../router";
 import { haptic } from "../telegram";
+import { clearDrafts } from "./request-draft";
 
 /* Профиль → «Аккаунт»: один аккаунт на все роли.
      · кнопки «Кабинет партнёра» и «Панель команды» — только если роль есть. Это обычные
@@ -156,8 +157,9 @@ export function AccountSection() {
     try {
       await api.signOut();
     } finally {
-      // Токен вкладки забыт в любом случае; страница — заново, уже гостем: на главную
-      // (профиль гостю не показывается — он увёл бы прямо во вход)
+      // Токен вкладки забыт в любом случае, черновики заявок с именем и телефоном — тоже; страница
+      // — заново, уже гостем: на главную (профиль гостю не показывается — он увёл бы во вход)
+      clearDrafts();
       browser.replace(hrefFor({ name: "home" }));
     }
   };

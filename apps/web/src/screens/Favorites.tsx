@@ -37,7 +37,8 @@ export function Favorites() {
       {list.status === "ready" && items.length === 0 ? (
         <EmptyState
           title={t.svEmptyH}
-          text={t.svEmptyP}
+          // «Входить не нужно» — только гостю: вошедшему список хранит аккаунт
+          text={mode === "account" ? t.svEmptyPSigned : t.svEmptyP}
           action={
             <Link className="btn btn-secondary" href={hrefFor({ name: "catalog" })}>
               {t.svGo}

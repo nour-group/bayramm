@@ -110,15 +110,15 @@ describe("styles.css клиента", () => {
     expect(hover).toMatch(/:hover/);
   });
 
-  it("фильтры каталога — одной строкой: на телефоне и планшете лента вбок (обе оси) и гаснет у края", () => {
+  it("фильтры каталога переносятся, а не листаются вбок: каждая пилюля на виду и на 320px", () => {
     const row = declarationsOf(".filter-row");
-    expect(row).toMatch(/overflow-x: auto/);
-    expect(row).toMatch(/overflow-y: hidden/);
-    expect(row).toMatch(/(^|;)\s*mask-image: linear-gradient/);
+    expect(row).toMatch(/flex-wrap: wrap/);
+    expect(row).not.toMatch(/overflow-x: auto/);
+    expect(row).not.toMatch(/mask-image/);
+    // Порядок у раздела с полями витрины — в шторке «Фильтры» до компьютера, на компьютере — в строке
+    expect(declarationsOf(".filter-row .sort.in-sheet")).toMatch(/display: none/);
     const desktop = atRuleBody(/@media \(min-width: 1024px\)/);
-    expect(desktop).toMatch(
-      /\.filter-row \{[^}]*flex-wrap: wrap;[^}]*overflow: visible;[^}]*mask-image: none;/,
-    );
+    expect(desktop).toMatch(/\.filter-row \.sort\.in-sheet \{[^}]*display: inline-flex;/);
   });
 
   it.each([

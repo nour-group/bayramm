@@ -96,8 +96,8 @@ export function screenOf(match: Match | null, inTelegram: boolean): Match | null
  * оболочка и воркер, описание категорий с подписями ей не нужно. Сверяет categories.test.ts
  */
 export const CATEGORY_CODES = [
-  "zags",
   "hall",
+  "zags",
   "car",
   "photo",
   "studio",
