@@ -47,13 +47,7 @@ import type {
 } from "@bayramm/shared/api";
 import { FEATURED_LISTINGS, pickFeatured, SUGGEST_LISTINGS } from "@bayramm/shared/api";
 import { type AttributeFilter, categoryConfig, readAttributes } from "@bayramm/shared/categories";
-import {
-  type SearchQuery,
-  searchNorm,
-  startsWord,
-  tokenMatches,
-  tokenSimilarity,
-} from "@bayramm/shared/search";
+import { matchPlaces, type SearchQuery, SUGGEST_DISTRICTS, suggestPlaces } from "@bayramm/shared/search";
 import { type RawBuilder, sql } from "kysely";
 import { GUEST, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
@@ -474,68 +468,41 @@ function afterCursor(busy: RawBuilder<boolean>, key: RawBuilder<string>, c: Cata
 
 // ── подсказки поиска ───────────────────────────────────────────────────────
 
-/** Сколько разделов и районов в подсказках */
-export const SUGGEST_CATEGORIES = 3;
-export const SUGGEST_DISTRICTS = 2;
-/** Сколько строк «район — раздел» */
-export const SUGGEST_DISTRICT_ROWS = 4;
-
-interface NamedRow {
-  code: string;
-  name_ru: string;
-  name_uz: string;
-}
-
 /**
- * Насколько справочное название подходит запросу: лучшее слово запроса (похожесть, +1 — если
- * слово начинает слово названия); null — ни одно слово не подходит. Названия короткие — их
- * сравнивает TS (@bayramm/shared/search) по тем же правилам, что база витрины
- */
-export function nameScore(q: SearchQuery, row: Pick<NamedRow, "name_ru" | "name_uz">): number | null {
-  const name = searchNorm(`${row.name_ru} ${row.name_uz}`);
-  let best: number | null = null;
-  for (const token of q.tokens) {
-    if (!tokenMatches(token, name)) continue;
-    const score = tokenSimilarity(token, name) + (startsWord(token, name) ? 1 : 0);
-    if (best === null || score > best) best = score;
-  }
-  return best;
-}
-
-/** Подходящие справочные записи по оценке (выше — раньше), при равной — в порядке справочника */
-function matched<T extends NamedRow>(q: SearchQuery, rows: readonly T[]): T[] {
-  return rows
-    .map((row, index) => ({ row, index, score: nameScore(q, row) }))
-    .filter((hit): hit is { row: T; index: number; score: number } => hit.score !== null)
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .map((hit) => hit.row);
-}
-
-/**
- * GET /catalog/suggest: разделы и районы, чьи названия подходят запросу (только где есть витрины),
- * район — в паре с разделом («Чиланзар — тойханы»: подошедший раздел, а без него — разделы, где в
- * районе есть витрины, сначала больше), и до SUGGEST_LISTINGS витрин по похожести. Всё — под
- * гостем, по тем же правилам выдачи, что каталог
+ * GET /catalog/suggest: разделы и районы, чьи названия подходят запросу (только где есть
+ * витрины), район — в паре с разделом («Чиланзар — тойханы»), и до SUGGEST_LISTINGS витрин по
+ * похожести. Правила подбора разделов и районов — suggestPlaces (общие с демо-API); витрины — по
+ * тем же правилам выдачи, что каталог. Всё — под гостем
  */
 export async function catalogSuggest(db: Db, q: SearchQuery): Promise<CatalogSuggest> {
   return withActor(db, GUEST, async (trx) => {
-    const categories = await trx
-      .selectFrom("app.categories")
-      .select(["code", "name_ru", "name_uz"])
-      .where("enabled", "=", true)
-      .orderBy("sort")
-      .orderBy("code")
-      .execute();
-    const districts = await trx
-      .selectFrom("app.districts")
-      .select(["code", "name_ru", "name_uz"])
-      .orderBy("sort")
-      .orderBy("code")
-      .execute();
-    const categoryHits = matched(q, categories);
-    const districtHits = matched(q, districts).slice(0, SUGGEST_DISTRICTS);
+    const named = (r: { code: string; name_ru: string; name_uz: string }) => ({
+      code: r.code,
+      name: { ru: r.name_ru, uz: r.name_uz },
+    });
+    const categories = (
+      await trx
+        .selectFrom("app.categories")
+        .select(["code", "name_ru", "name_uz"])
+        .where("enabled", "=", true)
+        .orderBy("sort")
+        .orderBy("code")
+        .execute()
+    ).map(named);
+    const districts = (
+      await trx
+        .selectFrom("app.districts")
+        .select(["code", "name_ru", "name_uz"])
+        .orderBy("sort")
+        .orderBy("code")
+        .execute()
+    ).map(named);
+    const categoryHits = matchPlaces(q, categories).map((c) => c.code);
+    const districtHits = matchPlaces(q, districts)
+      .slice(0, SUGGEST_DISTRICTS)
+      .map((d) => d.code);
 
-    // Витрин в разделах и районах, что подошли, — только если что-то подошло
+    // Витрин в подошедших разделах и районах — только если что-то подошло
     const counts =
       categoryHits.length === 0 && districtHits.length === 0
         ? []
@@ -544,54 +511,18 @@ export async function catalogSuggest(db: Db, q: SearchQuery): Promise<CatalogSug
             .select(["pl.category_code", "pl.district_code", sql<number>`count(*)::int`.as("n")])
             .where((eb) =>
               eb.or([
-                ...(categoryHits.length > 0
-                  ? [
-                      eb(
-                        "pl.category_code",
-                        "in",
-                        categoryHits.map((c) => c.code),
-                      ),
-                    ]
-                  : []),
-                ...(districtHits.length > 0
-                  ? [
-                      eb(
-                        "pl.district_code",
-                        "in",
-                        districtHits.map((d) => d.code),
-                      ),
-                    ]
-                  : []),
+                ...(categoryHits.length > 0 ? [eb("pl.category_code", "in", categoryHits)] : []),
+                ...(districtHits.length > 0 ? [eb("pl.district_code", "in", districtHits)] : []),
               ]),
             )
             .groupBy(["pl.category_code", "pl.district_code"])
             .execute();
-    const inCategory = (code: string) =>
-      counts.filter((c) => c.category_code === code).reduce((sum, c) => sum + c.n, 0);
-    const order = new Map(categories.map((c, index) => [c.code, index]));
-
-    const suggestedCategories = categoryHits
-      .map((c) => ({ code: c.code, name: { ru: c.name_ru, uz: c.name_uz }, listings: inCategory(c.code) }))
-      .filter((c) => c.listings > 0)
-      .slice(0, SUGGEST_CATEGORIES);
-
-    const suggestedDistricts = districtHits
-      .flatMap((d) => {
-        const here = counts.filter((c) => c.district_code === d.code);
-        const pairs =
-          categoryHits.length > 0
-            ? categoryHits.flatMap((c) => here.filter((h) => h.category_code === c.code))
-            : [...here].sort(
-                (a, b) => b.n - a.n || (order.get(a.category_code) ?? 0) - (order.get(b.category_code) ?? 0),
-              );
-        return pairs.map((h) => ({
-          code: d.code,
-          name: { ru: d.name_ru, uz: d.name_uz },
-          category: h.category_code,
-          listings: h.n,
-        }));
-      })
-      .slice(0, SUGGEST_DISTRICT_ROWS);
+    const places = suggestPlaces(
+      q,
+      categories,
+      districts,
+      counts.map((c) => ({ category: c.category_code, district: c.district_code, listings: c.n })),
+    );
 
     const listings = await publicListings(trx, NO_DATE)
       .innerJoin(searchRelation(q, null).as("sr"), (j) => j.onRef("sr.listing_id", "=", "l.id"))
@@ -601,8 +532,7 @@ export async function catalogSuggest(db: Db, q: SearchQuery): Promise<CatalogSug
       .execute();
 
     return {
-      categories: suggestedCategories,
-      districts: suggestedDistricts,
+      ...places,
       listings: listings.map((row) => {
         const card = toCard(row, null);
         return {

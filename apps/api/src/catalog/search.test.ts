@@ -1,11 +1,11 @@
 // Поиск в выдаче (q) и подсказки без базы: что уходит в SQL, порядок, total, курсор, подсказки
 // разделов и районов. С настоящим Postgres — test/integration/client-api.test.ts и pgTAP
 // (supabase/tests/32_catalog_search.test.sql)
-import { type SearchQuery, searchQuery } from "@bayramm/shared/search";
+import { placeScore, type SearchQuery, searchQuery } from "@bayramm/shared/search";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
 import { decodeCursor, parseCatalogQuery } from "./query";
-import { catalogSuggest, listCatalog, nameScore } from "./service";
+import { catalogSuggest, listCatalog } from "./service";
 
 const ID = (n: number) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
@@ -195,11 +195,12 @@ describe("подсказки", () => {
   });
 
   it("оценка названия: начало слова — выше похожего; не подходит — null", () => {
-    const prefix = nameScore(query("kor"), { name_ru: "Кортеж", name_uz: "Kortej" });
-    const typo = nameScore(query("kartej"), { name_ru: "Кортеж", name_uz: "Kortej" });
+    const car = { ru: "Кортеж", uz: "Kortej" };
+    const prefix = placeScore(query("kor"), car);
+    const typo = placeScore(query("kartej"), car);
     expect(prefix).not.toBeNull();
     expect(typo).not.toBeNull();
     expect(prefix as number).toBeGreaterThan(typo as number);
-    expect(nameScore(query("kor"), { name_ru: "Цветы", name_uz: "Gul doʻkoni" })).toBeNull();
+    expect(placeScore(query("kor"), { ru: "Цветы", uz: "Gul doʻkoni" })).toBeNull();
   });
 });

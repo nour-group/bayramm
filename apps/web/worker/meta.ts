@@ -4,7 +4,14 @@ import type { ListingDetail } from "@bayramm/shared/api";
 import { categoryDesc, categoryName } from "../src/category-names";
 import { formatPriceFrom } from "../src/format";
 import { mediaEnvFor } from "../src/media";
-import { canonicalHref, isCategoryParam, isIndexable, type Match, matchRoute } from "../src/routes";
+import {
+  canonicalHref,
+  isCategoryParam,
+  isIndexable,
+  isSearchResults,
+  type Match,
+  matchRoute,
+} from "../src/routes";
 
 /* Разметка страницы для поисковиков и превью ссылок (Telegram, соцсети): заголовок,
    описание, canonical, языковые версии, Open Graph — на сервере, в HTML первой загрузки.
@@ -179,8 +186,14 @@ export function pageMeta(
     match === null || ((match.name === "venue" || match.name === "request") && venue === "missing");
   const status = missing ? 404 : 200;
   const { title, description } = texts(match, t, lang, venue, url.searchParams.get("category"));
-  const index = indexing && url.hostname === PRODUCTION_HOST && status === 200 && isIndexable(match);
-  // Адрес без фильтров; у каталога — с категорией (canonicalHref)
+  // Выдача поиска (?q=) — noindex: запросов бесконечно много, canonical — каталог без запроса
+  const index =
+    indexing &&
+    url.hostname === PRODUCTION_HOST &&
+    status === 200 &&
+    isIndexable(match) &&
+    !isSearchResults(match, url.searchParams);
+  // Адрес без фильтров и запроса; у каталога — с категорией (canonicalHref)
   const base = match && !missing ? `${url.origin}${canonicalHref(match, url.searchParams)}` : null;
   const withLang = (code: Lang) => `${base}${base?.includes("?") ? "&" : "?"}lang=${code}`;
   return {

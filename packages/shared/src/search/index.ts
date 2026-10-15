@@ -5,6 +5,7 @@
      trigram.ts    — similarity и word_similarity как у pg_trgm (для TS без базы);
      rank.ts       — совпадение и порядок (= app.catalog_search), документ витрины;
      attributes.ts — текстовые поля витрины в документе (= app.listing_attrs_text);
+     suggest.ts    — подсказки: разделы и районы по названию (API и демо-API);
      vectors.ts    — общие тест-векторы TS и pgTAP;
      sql.ts        — SQL функций и векторов (pnpm --filter @bayramm/shared search:sql).
    Запросы поиска нигде не сохраняются и не пишутся в лог: в них бывают имя или телефон. */
@@ -44,5 +45,15 @@ export {
   searchVectorsCount,
   searchVectorsSql,
 } from "./sql";
+export {
+  matchPlaces,
+  type PlaceCount,
+  type PlaceName,
+  placeScore,
+  SUGGEST_CATEGORIES,
+  SUGGEST_DISTRICT_ROWS,
+  SUGGEST_DISTRICTS,
+  suggestPlaces,
+} from "./suggest";
 export { similarity, wordSimilarity } from "./trigram";
 export { MATCH_VECTORS, MISMATCH_VECTORS, NORM_VECTORS } from "./vectors";

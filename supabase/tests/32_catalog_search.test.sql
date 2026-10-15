@@ -25,13 +25,15 @@ begin
   update app.listings set status = 'active' where id = p_listing;
 end $$;
 
--- Слаги найденного по порядку оценки
+-- Слаги найденного по порядку оценки — только витрины фикстур (вендоры A и B): в базе бывают и
+-- чужие данные
 create function pg_temp.found(p_query text, p_category text default null)
 returns text[]
 language sql
 as $$
   select coalesce(array_agg(l.slug order by s.score desc, l.slug), '{}')
   from app.catalog_search(p_query, p_category) s join app.listings l on l.id = s.listing_id
+  where l.vendor_id in ('aaaaaaaa-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001')
 $$;
 
 -- ── расширение, функции, права ──────────────────────────────────────────────
@@ -98,7 +100,9 @@ select ok(not app.search_matches('kortej mercedes', 'Kortej'), 'не подхо�
 -- search-vectors:end
 
 -- ── документ витрины ────────────────────────────────────────────────────────
-select is((select count(*)::int from app.listing_search), (select count(*)::int from app.listings),
+select is_empty(
+  $$select l.id from app.listings l left join app.listing_search s on s.listing_id = l.id
+    where s.listing_id is null$$,
   'документ есть у каждой витрины');
 select ok(
   (select s.doc ~ 'test hall a1' and s.doc ~ 'toyxona' and s.doc ~ 'yunusabad' and s.doc ~ 'yunusobod'
@@ -229,7 +233,7 @@ reset enable_seqscan;
 set local role bayramm_api;
 select pg_temp.as_actor(null);
 select throws_ok($$select * from app.listing_search$$, '42501', null, 'гость документы напрямую не читает');
-select ok((select count(*) from app.catalog_search('chilonzor')) = 4, 'гость ищет функцией');
+select ok(array_length(pg_temp.found('chilonzor'), 1) = 4, 'гость ищет функцией');
 reset role;
 
 select * from finish();

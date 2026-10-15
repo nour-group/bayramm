@@ -11,12 +11,14 @@
    Витрина подходит, если подходят все слова запроса: почти точное — в названии, разделе, районе,
    услугах, полях витрины и описании; с опечаткой — во всём, кроме описания.
 
-   Порядок по похожести: у каждого слова —
-     3 + word_similarity — слово начинает слово названия;
-     2 + большая из двух похожестей — похоже на название;
-     1 + word_similarity — раздел, район, услуги, поля витрины;
-         word_similarity — только описание;
-   среднее по словам, и ещё 1 — если с запроса начинается название целиком. Оплата, премиум и
+   Порядок по похожести: у каждого слова (ws — word_similarity, sws — strict_word_similarity) —
+     3 + ws — слово начинает слово названия;
+     2 + ws — почти точно в названии;
+     1 + ws — почти точно в разделе, районе, услугах, полях витрины;
+     0,5 + ws / 2 — почти точно только в описании;
+     sws — с опечаткой в названии; sws / 2 — с опечаткой в остальном
+   (опечатка — ниже любого почти точного совпадения); среднее по словам, и ещё 1 — если с
+   запроса начинается название целиком. Оплата, премиум и
    продвижение в порядке не участвуют (правило продукта «место в выдаче не продаётся»). */
 
 import { type SearchQuery, searchNorm } from "./normalize";
@@ -96,12 +98,15 @@ export function searchScore(doc: SearchDoc, query: SearchQuery): number | null {
   const matches = (token: string) =>
     wordSimilarity(token, body) >= SEARCH_WORD_SIMILARITY || fuzzy(token, doc.doc);
   if (!query.tokens.every(matches)) return null;
+  const near = (token: string, text: string) => wordSimilarity(token, text) >= SEARCH_WORD_SIMILARITY;
   let sum = 0;
   for (const token of query.tokens) {
     if (startsWord(token, doc.name)) sum += 3 + wordSimilarity(token, doc.name);
-    else if (tokenMatches(token, doc.name)) sum += 2 + tokenSimilarity(token, doc.name);
-    else if (tokenMatches(token, doc.doc)) sum += 1 + wordSimilarity(token, doc.doc);
-    else sum += wordSimilarity(token, doc.descr);
+    else if (near(token, doc.name)) sum += 2 + wordSimilarity(token, doc.name);
+    else if (near(token, doc.doc)) sum += 1 + wordSimilarity(token, doc.doc);
+    else if (near(token, doc.descr)) sum += 0.5 + wordSimilarity(token, doc.descr) / 2;
+    else if (fuzzy(token, doc.name)) sum += wordSimilarity(token, doc.name, true);
+    else if (fuzzy(token, doc.doc)) sum += wordSimilarity(token, doc.doc, true) / 2;
   }
   const prefix = doc.name.startsWith(query.text) ? 1 : 0;
   return Math.fround(sum / query.tokens.length + prefix);

@@ -22,8 +22,8 @@
 --     запроса подходит, если word_similarity ≥ 0,6 (начало слова, почти точное) или — у слов от
 --     четырёх букв — похоже на слово документа: similarity ≥ 0,3 («kartej» → «kortej»); витрина —
 --     если подходят все слова. Оценка: слово начинает слово названия > похоже на название > раздел,
---     район, услуги, поля > описание; среднее по словам и +1, если название начинается с запроса.
---     Оплата в ней не участвует. Остальные правила выдачи (фото, цена, RLS) — у запроса каталога:
+--     район, услуги, поля > описание > с опечаткой (в названии, затем в остальном); среднее по
+--     словам и +1, если название начинается с запроса. Оплата в ней не участвует. Остальные правила выдачи (фото, цена, RLS) — у запроса каталога:
 --     функция только сужает и упорядочивает;
 --   · запрос поиска нигде не сохраняется и не пишется: в SQL он приходит параметром.
 --
@@ -280,7 +280,12 @@ begin
     v_fuzzy := '';
     -- От четырёх букв — и с опечаткой: похожие слова документов, каждое — условием по индексу
     if length(v_tokens[i]) >= 4 then
-      v_fuzzy := format(' or %%s operator(extensions.%%%%>>) $1[%s]', i);
+      v_fuzzy := format(
+        $f$
+            when s.name operator(extensions.%%>>) $1[%1$s]
+              then extensions.strict_word_similarity($1[%1$s], s.name)
+            when s.doc operator(extensions.%%>>) $1[%1$s]
+              then extensions.strict_word_similarity($1[%1$s], s.doc) / 2$f$, i);
       for v_word in
         select w.word from app.search_words w
         where w.word operator(extensions.%) v_tokens[i] and w.word <> v_tokens[i]
@@ -292,18 +297,21 @@ begin
       end loop;
     end if;
     v_match := v_match || ('(' || v_cond || ')');
+    -- Оценка слова: почти точное — по месту (начало слова названия, название, doc, описание),
+    -- с опечаткой — ниже любого почти точного (название, затем doc)
     v_score := v_score || format(
       $f$(case
             when (' ' || s.name) like ('%% ' || $1[%1$s] || '%%')
               then 3 + extensions.word_similarity($1[%1$s], s.name)
-            when s.name operator(extensions.%%>) $1[%1$s]%2$s
-              then 2 + greatest(extensions.word_similarity($1[%1$s], s.name),
-                                extensions.strict_word_similarity($1[%1$s], s.name))
-            when s.doc operator(extensions.%%>) $1[%1$s]%3$s
+            when s.name operator(extensions.%%>) $1[%1$s]
+              then 2 + extensions.word_similarity($1[%1$s], s.name)
+            when s.doc operator(extensions.%%>) $1[%1$s]
               then 1 + extensions.word_similarity($1[%1$s], s.doc)
-            else extensions.word_similarity($1[%1$s], s.descr)
+            when s.descr operator(extensions.%%>) $1[%1$s]
+              then 0.5 + extensions.word_similarity($1[%1$s], s.descr) / 2%2$s
+            else 0
           end)$f$,
-      i, format(v_fuzzy, 's.name'), format(v_fuzzy, 's.doc'));
+      i, v_fuzzy);
   end loop;
 
   return query execute format(
