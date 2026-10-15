@@ -2952,7 +2952,7 @@ body {
      без прокрутки под месяц */
   .cal-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr) 280px;
     align-items: start;
     gap: 24px;
   }
@@ -3203,4 +3203,11 @@ body {
   display: flex;
   align-items: center;
   gap: var(--gap-5);
+}
+
+/* Шире 1280px — колонка дня просторнее; на 1024px месяц оставляет дням не меньше 44px */
+@media (min-width: 1280px) {
+  .cal-layout {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
 }

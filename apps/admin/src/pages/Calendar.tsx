@@ -578,7 +578,6 @@ export function Calendar({
                     <button
                       type="button"
                       className="btn btn-sm"
-                      aria-pressed={openedState.entry !== undefined}
                       disabled={pending !== null}
                       onClick={() => toggle(opened, openedState.entry, availability)}
                     >
@@ -600,15 +599,15 @@ export function Calendar({
                           <span className="sub">{windowText(availability.sessions.windows[state.part])}</span>
                           <span className="sub">{partWord(state, capacity, whole)}</span>
                         </span>
+                        {/* Подпись меняется («Закрыть» / «Открыть») — aria-pressed не нужен; часть — в имени */}
                         <button
                           type="button"
                           className="btn btn-sm"
-                          aria-pressed={state.mark !== undefined}
+                          aria-label={`${state.mark ? t.openPart : t.closePart}: ${name}`}
                           disabled={pending !== null || whole || (state.full && !state.mark)}
                           onClick={() => togglePart(opened, state, availability)}
                         >
                           {state.mark ? t.openPart : t.closePart}
-                          <span className="visually-hidden">: {name}</span>
                         </button>
                         <RequestLinks requests={state.requests} />
                       </div>

@@ -149,8 +149,16 @@ test.describe("календарь на 320px", () => {
     const overflow = await horizontalOverflow(page);
     expect(overflow.scrollWidth).toBeLessThanOrEqual(320);
     await expectHitAreas(page, "календарь 320px", ".cal-day");
-    await page.locator(".cal-today").click();
-    await expect(page.locator(".cal-today")).toHaveAttribute("aria-pressed", "true");
+    // День открывается под месяцем: «Закрыть весь день» на экране, без прокрутки вбок
+    const today = page.locator(".cal-day.cal-today");
+    await today.click();
+    await expect(today).toHaveAttribute("aria-pressed", "true");
+    const close = page.locator(".day-parts").getByRole("button", { name: t.closeWholeDay });
+    await expect(close).toBeInViewport();
+    await expectHitAreas(page, "календарь 320px: день", ".day-parts .btn");
+    expect((await horizontalOverflow(page)).scrollWidth).toBeLessThanOrEqual(320);
+    await close.click();
+    await expect(today).toHaveClass(/cal-busy/);
     expect(api.calendar).toEqual([{ version: 0, busy: ["2026-10-01"] }]);
   });
 });

@@ -83,12 +83,11 @@ test("вторая витрина в другой категории: катег
   expect(api.vitrinas).toEqual([{ categoryCode: "photo" }]);
   await expect(page.locator(".listing-top .cat-chip")).toHaveText("Фото и видео");
   await expect(page.getByRole("heading", { name: t.listingDataSections.videos })).toBeVisible();
-  // «Заказов одновременно» — в шапке календаря, у занятости по частям дня
-  await expect(
-    page.getByRole("region", { name: t.availability }).getByRole("spinbutton", {
-      name: t.listingDataSections.occupancy,
-    }),
-  ).toBeVisible();
+  // «Заказов одновременно», части и окна — в «Времени работы» рядом с календарём
+  const sessions = page.getByRole("region", { name: t.sessionsTitle });
+  await expect(sessions).toContainText(t.listingDataSections.occupancy);
+  await expect(sessions).toContainText("Утро 05:00–11:00");
+  await expect(page.getByRole("region", { name: t.availability })).toBeVisible();
   // Портфолио: правило и согласие людей на фото (или «лиц нет») — при загрузке, ничего не отмечено заранее
   await expect(page.getByRole("radiogroup", { name: t.photoAckLabel })).toHaveCount(0);
   await page.getByRole("button", { name: t.photosAdd }).click();

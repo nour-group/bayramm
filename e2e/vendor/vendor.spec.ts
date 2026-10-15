@@ -838,7 +838,7 @@ test.describe("витрины в разных категориях", () => {
     await expect(page.locator(".rq-list .rq")).toHaveCount(2);
     const car = page.locator(".rq-list .rq").filter({ hasText: "Дильноза" });
     await expect(car.locator(".rq-vitrina")).toHaveText("Кортеж · Kortej Premium");
-    await expect(car.locator(".rq-meta")).toContainText(t.part_evening.toLowerCase());
+    await expect(car.locator(".rq-meta")).toContainText(` · ${t.part_evening} · `);
     // Одно поле заявки, а не весь «Начало · Часы · Машины · Класс · Услуги»
     await expect(car.locator(".rq-details")).toHaveText("Начало: 18:00");
     await expectNoAxeViolations(page, "входящие: витрины");
@@ -855,9 +855,8 @@ test.describe("витрины в разных категориях", () => {
     await expect(requestTitle(page)).toContainText("1060");
     await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
     const details = page.locator(".request-details");
-    await expect(page.locator(".request .req-when")).toContainText(
-      `${t.part_evening.toLowerCase()} 17:00–24:00`,
-    );
+    // Когда: дата и части дня заявки
+    await expect(page.locator(".request .req-when")).toHaveText(`24 октября, сб · ${t.part_evening}`);
     await expect(page.locator(".request .detail-vitrina")).toHaveText("Кортеж · Kortej Premium");
     await expect(details.locator(".detail-rows")).toContainText("Класс машины");
     await expect(details.locator(".detail-rows")).toContainText("Премиум");

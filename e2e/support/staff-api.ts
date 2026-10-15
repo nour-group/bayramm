@@ -1340,7 +1340,7 @@ export async function mockStaffApi(
           : { total: 0, items: [] };
       return json(route, 200, list);
     }
-    const listingMatch = /^\/staff\/listings\/([0-9a-f-]{36})(?:\/(\w+))?$/.exec(path);
+    const listingMatch = /^\/staff\/listings\/([0-9a-f-]{36})(?:\/([\w-]+))?$/.exec(path);
     if (listingMatch?.[1]) {
       const listing = listings.find((l) => l.id === listingMatch[1]);
       if (!listing) return fail(route, 404, "not_found");
