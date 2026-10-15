@@ -18,9 +18,9 @@
     "@bayramm/media": "workspace:*",
     "@bayramm/shared": "workspace:*",
     "@bayramm/tg": "workspace:*",
-    "hono": "^4.13.9",
+    "hono": "^4.13.13",
     "kysely": "^0.29.6",
-    "pg": "^8.23.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",
