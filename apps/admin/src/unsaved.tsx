@@ -6,7 +6,8 @@
        возвращается в историю (router.ts, useRoute), уйти — по «Уйти»;
      · перезагрузка и закрытие вкладки — beforeunload (браузер спросит своим окном);
      · закрытие Mini App — подтверждение Telegram (enableClosingConfirmation, с 6.2).
-   Нечего терять (ничего не меняли или только что сохранили) — уход без вопросов. */
+   Нечего терять (ничего не меняли или только что сохранили) — уход без вопросов.
+   Шторка с формой («Время работы») закрывается через useConfirmLeave — тот же вопрос. */
 
 import type { TelegramWebApp } from "@bayramm/tg/webapp";
 import { ConfirmSheet } from "@bayramm/ui/react";
@@ -29,6 +30,8 @@ import { t } from "./texts";
 export interface UnsavedRegistry {
   /** Форма id изменена (true) или как сохранена (false) */
   mark(id: string, dirty: boolean): void;
+  /** Уйти (закрыть шторку с формой): сразу, если терять нечего, иначе — после «Уйти» */
+  confirmLeave(leave: () => void): void;
 }
 
 export const UnsavedContext = createContext<UnsavedRegistry | null>(null);
@@ -41,6 +44,13 @@ export function useUnsaved(dirty: boolean): void {
     registry?.mark(id, dirty);
   }, [registry, id, dirty]);
   useEffect(() => () => registry?.mark(id, false), [registry, id]);
+}
+
+/** Закрыть шторку с вписанным: «Уйти без сохранения?»; терять нечего — сразу. Окно закрывать
+   следующим тактом (queueMicrotask): две шторки, закрытые одним обновлением, оставляют страницу inert */
+export function useConfirmLeave(): (leave: () => void) => void {
+  const registry = useContext(UnsavedContext);
+  return useCallback((leave: () => void) => (registry ? registry.confirmLeave(leave) : leave()), [registry]);
 }
 
 export interface Unsaved {
@@ -62,6 +72,13 @@ export function useUnsavedGuard(webApp: TelegramWebApp | null): Unsaved {
   const [any, setAny] = useState(false);
   const [asking, setAsking] = useState<{ leave: () => void } | null>(null);
 
+  const guard = useRef<LeaveGuard>({
+    holding: () => (dirty.current.size > 0 ? held.current : null),
+    // Вопрос — после текущего нажатия: шторка «Ещё», из которой ушли, успеет закрыться и
+    // вернуть фокус на свою кнопку, а подтверждение откроется уже от неё
+    ask: (leave) => setTimeout(() => setAsking({ leave }), 0),
+  });
+
   const registry = useMemo<UnsavedRegistry>(
     () => ({
       mark(id, isDirty) {
@@ -77,21 +94,15 @@ export function useUnsavedGuard(webApp: TelegramWebApp | null): Unsaved {
         if (!after) held.current = null;
         if (after !== before) setAny(after);
       },
+      confirmLeave(leave) {
+        if (guard.current.holding()) guard.current.ask(leave);
+        else leave();
+      },
     }),
     [],
   );
 
-  const guard = useRef<LeaveGuard>({
-    holding: () => (dirty.current.size > 0 ? held.current : null),
-    // Вопрос — после текущего нажатия: шторка «Ещё», из которой ушли, успеет закрыться и
-    // вернуть фокус на свою кнопку, а подтверждение откроется уже от неё
-    ask: (leave) => setTimeout(() => setAsking({ leave }), 0),
-  });
-
-  const confirmLeave = useCallback((leave: () => void) => {
-    if (guard.current.holding()) guard.current.ask(leave);
-    else leave();
-  }, []);
+  const confirmLeave = registry.confirmLeave;
 
   // Перезагрузка и закрытие вкладки: браузер спрашивает своим окном (текст — его). Есть ли что
   // терять — по реестру в момент ухода, а не по отрисовке: стёрли поле и сразу обновили

@@ -383,6 +383,14 @@ test("части дня: вечер — одна машина из двух и �
   await form.getByRole("checkbox", { name: "Вечер" }).uncheck();
   await form.getByRole("button", { name: t.save, exact: true }).click();
   await expect(form.getByRole("alert")).toHaveText(t.sessionsInUse("вечер", 1));
+  // Не сохранённое — «Отмена» спрашивает «Уйти без сохранения?»; «Остаться» — форма на месте
+  await form.getByRole("button", { name: t.cancel }).click();
+  await page
+    .getByRole("alertdialog", { name: t.unsavedTitle })
+    .getByRole("button", { name: t.unsavedStay })
+    .click();
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(form.getByRole("checkbox", { name: "Вечер" })).not.toBeChecked();
   await form.getByRole("checkbox", { name: "Вечер" }).check();
   await form.getByRole("button", { name: t.sessionsFrom("Утро") }).click();
   await page.getByRole("option", { name: "07:00", exact: true }).click();
@@ -408,6 +416,22 @@ test("части дня: вечер — одна машина из двух и �
   ]);
   await expect(sessions).toContainText("Утро 07:00–11:00");
   await expect(sessions).toContainText("3");
+
+  // Esc с вписанным — тот же вопрос; «Уйти» — шторка закрыта, ничего не ушло, страница доступна
+  await sessions.getByRole("button", { name: t.sessionsEdit }).click();
+  await form.getByRole("button", { name: `${t.listingDataSections.occupancy} +1` }).click();
+  await page.keyboard.press("Escape");
+  await page
+    .getByRole("alertdialog", { name: t.unsavedTitle })
+    .getByRole("button", { name: t.unsavedLeave })
+    .click();
+  await expect(form).toHaveCount(0);
+  expect(api.daySessions).toHaveLength(2);
+  // Ничего не меняли — «Отмена» закрывает сразу
+  await sessions.getByRole("button", { name: t.sessionsEdit }).click();
+  await form.getByRole("button", { name: t.cancel }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   expect(api.unexpected).toEqual([]);
 });
 

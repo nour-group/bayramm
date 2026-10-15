@@ -1170,9 +1170,8 @@ describe("календарь по модели занятости", () => {
     const sheet = document.querySelector('[role="dialog"]');
     expect(sheet?.querySelector(".day-part")).not.toBeNull();
     expect(container.querySelector(".cal-aside .day-panel")).toBeNull();
-    await click(
-      [...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent === "Закрыть"),
-    );
+    // Закрыть — «×» в шапке шторки (второй кнопки внизу нет)
+    await click(document.querySelector('[role="dialog"] .ui-dialog-head button[aria-label="Закрыть"]'));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
