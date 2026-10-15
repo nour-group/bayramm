@@ -22,7 +22,7 @@ import { createDb, type Db } from "../../src/db/client";
 import { type DemoDeps, resetDemo, seedDemo } from "../../src/demo/service";
 import { DEMO_ID_PREFIX, DEMO_PHOTO_COUNT, DEMO_PHOTOS_PER_VENUE, DEMO_VENUES } from "../../src/demo/venues";
 import app from "../../src/index";
-import { type ObjectStorage, StorageError } from "../../src/storage/supabase";
+import { StorageError } from "../../src/storage/supabase";
 import { addDays, tashkentToday } from "../../src/time";
 import { adminClient, apiDatabaseUrl, call, cleanup, loginToken, makeEnv, newTelegramUser } from "./helpers";
 
@@ -34,13 +34,18 @@ const IN_RANGE = `${DEMO_ID_PREFIX}%`;
 /** Хранилище в памяти: что положили, то и лежит */
 function memoryStorage() {
   const objects = new Map<string, Uint8Array>();
-  const storage: ObjectStorage = {
+  const storage: DemoDeps["storage"] = {
     async put(key, body) {
       if (objects.has(key)) throw new StorageError("exists", 409, "exists");
       objects.set(key, body);
     },
     async remove(key) {
       objects.delete(key);
+    },
+    async removeMany(keys) {
+      let removed = 0;
+      for (const key of keys) if (objects.delete(key)) removed++;
+      return removed;
     },
   };
   return { storage, objects };
