@@ -2,7 +2,7 @@ import { HUB_APPS, type HubApp, isCodeChallenge, isHubState } from "@bayramm/sha
 import { ROUTES } from "./router";
 import { sessionGet, sessionGetJson, sessionRemove, sessionSet, sessionSetJson } from "./storage";
 
-/* Хаб входа (/auth) — сайт клиента. Кабинет партнёра и панель оператора присылают сюда
+/* Хаб входа (/auth) — сайт клиента. Кабинет партнёра и панель команды присылают сюда
    человека с app, state и challenge (PKCE S256): после входа хаб просит у API
    одноразовый код и ведёт браузер на <приложение>/auth/callback?code=…&state=…
    (адрес строит сервер). Без app — обычный вход на сайт: потом — назад, откуда пришли.

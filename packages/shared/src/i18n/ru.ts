@@ -466,7 +466,7 @@ export const ru = {
   authTitle: "Вход в Bayramm",
   authLead: "Вход нужен, чтобы отправлять заявки и видеть ответы. Пароль не нужен.",
   authForVendor: "После входа откроется кабинет партнёра.",
-  authForAdmin: "После входа откроется панель оператора.",
+  authForAdmin: "После входа откроется панель команды.",
   authLinkTitle: "Подключить Telegram",
   authTelegram: "Через Telegram",
   authTelegramOff:
@@ -506,7 +506,7 @@ export const ru = {
   accSignOut: "Выйти",
   accRoles: "Кабинеты",
   accVendor: "Кабинет партнёра",
-  accAdmin: "Панель оператора",
+  accAdmin: "Панель команды",
   accMethods: "Способы входа",
   accTelegram: "Telegram",
   accPhone: "Телефон",

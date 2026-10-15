@@ -149,6 +149,8 @@ export interface VendorApi {
   readonly serviceWrites: { readonly key: string; readonly body: unknown }[];
   /** Какие запросы входящих пришли: tab и listingId */
   readonly inboxQueries: { readonly tab: string; readonly listingId: string | null }[];
+  /** Отменённые отметки «связались» (POST …/undo): id заявок */
+  readonly undos: string[];
   /** Чем входили: тело POST /auth/telegram */
   readonly signIns: unknown[];
   /** Запросы, которым API отказало по роли (vendor_owner_required) */
@@ -604,6 +606,7 @@ export async function mockVendorApi(
     services: new Map([[LISTING_ID, [...HALL_SERVICES]]]),
     serviceWrites: [],
     inboxQueries: [],
+    undos: [],
     signIns: [],
     ownerOnly: [],
     submits: [],
@@ -1015,21 +1018,45 @@ export async function mockVendorApi(
       return json(route, 200, vendorMe(locale, role, listingMode, attentionOf, statusOf));
     }
     if (key === "GET /vendor/requests") {
-      const tab = (url.searchParams.get("tab") ?? "new") as RequestTab;
+      const tab = (url.searchParams.get("tab") ?? "waiting") as RequestTab;
       const listingId = url.searchParams.get("listingId");
       state.inboxQueries.push({ tab, listingId });
       // Чужая или несуществующая витрина — пустой список, как у API
       const all = [...requests.values()].filter((r) => listingId === null || r.listing.id === listingId);
-      const counts = { new: 0, active: 0, closed: 0 };
+      const counts = { waiting: 0, active: 0, closed: 0 };
       for (const r of all) counts[tabOf(r.status)]++;
+      // Просрочено — ждут первого ответа, срок вышел; по всем вкладкам, как у API
+      const overdue = all.filter(
+        (r) =>
+          (r.status === "new" || r.status === "viewed") &&
+          r.sla.firstResponseAt === null &&
+          Date.parse(r.sla.dueAt) <= NOW.getTime(),
+      ).length;
       const items = all.filter((r) => tabOf(r.status) === tab).map(listItem);
-      return json(route, 200, { items, nextCursor: null, counts });
+      return json(route, 200, { items, nextCursor: null, counts, overdue });
     }
-    const requestMatch = /^\/vendor\/requests\/([0-9a-f-]{36})(\/call)?$/.exec(path);
+    const requestMatch = /^\/vendor\/requests\/([0-9a-f-]{36})(\/call|\/undo)?$/.exec(path);
     if (requestMatch?.[1]) {
       const id = requestMatch[1];
       const current = requests.get(id);
       if (!current) return fail(route, 404, "not_found");
+      // «Я связался» по ошибке — отмена: прежний статус, отметки в истории нет (как API)
+      if (requestMatch[2] === "/undo" && method === "POST") {
+        const last = current.history.at(-1);
+        const before = current.history.at(-2);
+        if (current.status !== "contacted" || last?.status !== "contacted" || !before)
+          return fail(route, 409, "undo_expired");
+        state.undos.push(id);
+        const back: VendorRequestDetail = {
+          ...current,
+          status: before.status,
+          sla: { ...current.sla, firstResponseAt: null },
+          firstResponseBy: null,
+          history: current.history.slice(0, -1),
+        };
+        requests.set(id, back);
+        return json(route, 200, listItem(back));
+      }
       if (requestMatch[2] && method === "POST") {
         state.calls.push(id);
         return route.fulfill({ status: 204 });

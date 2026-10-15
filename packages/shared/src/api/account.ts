@@ -145,6 +145,12 @@ export interface AuthMethods {
   readonly turnstileSiteKey: string | null;
   /** Адреса приложений окружения, без завершающего «/» */
   readonly apps: Readonly<Record<AppCode, string>>;
+  /**
+   * Контакт команды Bayramm для партнёров (настройки team_telegram и team_phone в панели):
+   * имя в Telegram без «@» и телефон +998XXXXXXXXX; null — не указан (строку кабинет не
+   * показывает). Контакт компании, не ПДн
+   */
+  readonly team: { readonly telegram: string | null; readonly phone: string | null };
 }
 
 // ── свой аккаунт ───────────────────────────────────────────────────────────

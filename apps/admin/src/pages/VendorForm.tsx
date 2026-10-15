@@ -135,9 +135,9 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel }: Vend
 
   const text = (
     key: Exclude<(typeof TEXT_KEYS)[number], "telegramUsername" | "stir" | "legalAddress">,
-    extra: { maxLength: number },
+    extra: { maxLength: number; label?: string },
   ) => (
-    <Field label={t.fields[key] ?? key} error={errors[key]}>
+    <Field label={extra.label ?? t.fields[key] ?? key} required={key === "name"} error={errors[key]}>
       {(props) => (
         <input
           {...props}
@@ -157,6 +157,7 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel }: Vend
   const phone = (key: "phone" | "phoneAlt") => (
     <PhoneField
       label={t.fields[key] ?? key}
+      required={false}
       value={values[key]}
       onChange={put(key)}
       error={errors[key]}
@@ -185,7 +186,7 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel }: Vend
         // Четыре поля: остальное — «Реквизиты» на странице вендора
         <section className="fs">
           <div className="fields">
-            <Field label={t.categoryFirst} error={errors.categoryCode}>
+            <Field label={t.categoryFirst} required error={errors.categoryCode} hint={t.categoryFirstHint}>
               {(props) => (
                 <Select
                   {...props}
@@ -201,7 +202,8 @@ export function VendorForm({ vendor, dictionaries, onSubmit, submitLabel }: Vend
                 />
               )}
             </Field>
-            {text("name", { maxLength: 120 })}
+            {/* Название — компании: у витрины своё, его меняют на странице витрины */}
+            {text("name", { maxLength: 120, label: t.vendorNameNew })}
             {text("contactPerson", { maxLength: 120 })}
             {phone("phone")}
           </div>

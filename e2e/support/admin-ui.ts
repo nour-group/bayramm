@@ -1,6 +1,12 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
+import { labelled } from "./field-name";
 import { LISTING_ID, VENDOR_ID } from "./staff-api";
+
+/** Имя поля целиком: подпись и пометка «обязательно / по желанию» у неё (как у клиента) */
+/** Поле по подписи (с пометкой «обязательно / по желанию» у неё или без) */
+export const field = (scope: Page | Locator, label: string): Locator =>
+  labelled(scope, label, [t.required, t.optional]);
 
 /* Действия в панели, которые нужны многим проверкам: выбрать вариант своего списка (Select
    из @bayramm/ui/react), пункт шторки «…», пункт шторки фото и завести вендору витрину в категории. */
@@ -42,7 +48,7 @@ export async function photoAction(page: Page, n: number, action: string) {
 export async function createVitrina(page: Page, { category = "Тойхона", name = "Navruz zali" } = {}) {
   await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
   await pick(page, t.categoryFirst, category);
-  await page.getByLabel(t.vitrinaName, { exact: true }).fill(name);
+  await field(page, t.vitrinaName).fill(name);
   await page.getByRole("button", { name: t.createVitrina }).click();
   await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
 }

@@ -167,6 +167,8 @@ export type ListItemField = IntField | BoolField | EnumField | (TextField & { re
 export interface ListField extends FieldBase {
   readonly type: "list";
   readonly maxItems: number;
+  /** Подпись кнопки новой записи — целиком, своя в каждом языке: «Добавить машину» */
+  readonly addLabel?: CategoryTextKey;
   readonly fields: readonly ListItemField[];
 }
 

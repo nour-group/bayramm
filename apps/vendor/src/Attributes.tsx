@@ -25,11 +25,20 @@ import {
 } from "@bayramm/shared/categories";
 import { Checkbox, NumberStepper, Select } from "@bayramm/ui/react";
 import { fill, type VendorDict } from "./i18n";
+import { FieldMark } from "./ui";
 
-/** Подпись поля; обязательное — с пометкой */
-function labelOf(field: AttributeField | ListItemField, t: VendorDict, lang: Lang): string {
-  const label = categoryText(lang, field.label);
-  return field.required ? `${label} (${t.required})` : label;
+/** Подпись поля (для диктора у кнопок — без пометки) */
+function labelOf(field: AttributeField | ListItemField, lang: Lang): string {
+  return categoryText(lang, field.label);
+}
+
+/** Видимая подпись: текст и пометка «обязательно / по желанию», как у клиента */
+function Label({ field, t, lang }: { field: AttributeField | ListItemField; t: VendorDict; lang: Lang }) {
+  return (
+    <>
+      {labelOf(field, lang)} <FieldMark required={field.required} t={t} />
+    </>
+  );
 }
 
 /** Длина числа в поле: по верхней границе */
@@ -50,7 +59,7 @@ interface ScalarProps {
 
 /** Одно значение: число, да/нет, вариант, строка */
 function Scalar({ field, value, onChange, id, invalid, errorId, t, lang, suffix }: ScalarProps) {
-  const label = labelOf(field, t, lang);
+  const label = labelOf(field, lang);
   const spoken = suffix ? `${label}, ${suffix}` : label;
   switch (field.type) {
     case "bool":
@@ -69,7 +78,7 @@ function Scalar({ field, value, onChange, id, invalid, errorId, t, lang, suffix 
       return (
         <div className="form-row">
           <label className="field-label" htmlFor={id}>
-            {label}
+            <Label field={field} t={t} lang={lang} />
           </label>
           <NumberStepper
             id={id}
@@ -89,7 +98,7 @@ function Scalar({ field, value, onChange, id, invalid, errorId, t, lang, suffix 
       return (
         <div className="form-row">
           <label className="field-label" htmlFor={id}>
-            {label}
+            <Label field={field} t={t} lang={lang} />
           </label>
           <Select
             id={id}
@@ -114,7 +123,7 @@ function Scalar({ field, value, onChange, id, invalid, errorId, t, lang, suffix 
       return (
         <div className="form-row">
           <label className="field-label" htmlFor={id}>
-            {label}
+            <Label field={field} t={t} lang={lang} />
           </label>
           <input
             id={id}
@@ -169,7 +178,9 @@ export function AttributesForm({
       );
     return (
       <fieldset key={field.key} className="choices attr-list" aria-describedby={errorId(path)}>
-        <legend className="panel-title">{labelOf(field, t, lang)}</legend>
+        <legend className="panel-title">
+          <Label field={field} t={t} lang={lang} />
+        </legend>
         {items.map((item, index) => {
           const rowPath = `${path}.${index}`;
           const n = fill(t.listItemTitle, { n: index + 1 });
@@ -221,7 +232,7 @@ export function AttributesForm({
             className="btn btn-ghost attr-add"
             onClick={() => onChange(field.key, [...items, emptyListItem(field)])}
           >
-            {t.listAdd}: {categoryText(lang, field.label)}
+            {field.addLabel ? categoryText(lang, field.addLabel) : `${t.listAdd}: ${labelOf(field, lang)}`}
           </button>
         ) : null}
       </fieldset>
@@ -239,7 +250,9 @@ export function AttributesForm({
           const chosen = new Set(Array.isArray(draft) ? (draft as string[]) : []);
           return (
             <fieldset key={field.key} className="choices attr-multi" aria-describedby={errorId(path)}>
-              <legend className="field-label">{labelOf(field, t, lang)}</legend>
+              <legend className="field-label">
+                <Label field={field} t={t} lang={lang} />
+              </legend>
               <div className="attr-checks">
                 {field.options.map((option) => (
                   <Checkbox
@@ -286,8 +299,8 @@ export function AttributesForm({
             return (
               <div className="form-row">
                 <label className="field-label" htmlFor={props.id}>
-                  {fill(which === "ru" ? t.textRu : t.textUz, { label })}
-                  {field.required ? ` (${t.required})` : ""}
+                  {fill(which === "ru" ? t.textRu : t.textUz, { label })}{" "}
+                  <FieldMark required={field.required} t={t} />
                 </label>
                 {area ? <textarea {...props} rows={3} /> : <input {...props} autoComplete="off" />}
               </div>

@@ -1,7 +1,8 @@
 import type { VendorRole } from "@bayramm/shared/api/vendor";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { fill, vendorDict } from "../../apps/vendor/src/i18n";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
+import { labelled } from "../support/field-name";
 import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
 import { mockVendorApi, NOW, PHOTO_ID } from "../support/vendor-api";
@@ -11,6 +12,9 @@ import { mockVendorApi, NOW, PHOTO_ID } from "../support/vendor-api";
    контакты — сразу на черновике и запросом на проверку на сайте; сотрудник площадки только смотрит. */
 
 const t = vendorDict.ru;
+
+/** Поле по подписи (с пометкой «обязательно / по желанию» у неё или без) */
+const field = (scope: Page | Locator, label: string) => labelled(scope, label, [t.required, t.optionalPh]);
 const CONTROLS = [
   ".btn",
   ".pill",
@@ -67,12 +71,13 @@ test.describe("фото: порядок и обложка", () => {
     await tile(page, 2).click();
     const sheet = page.getByRole("dialog");
     await expect(sheet.getByRole("heading", { name: fill(t.photoSheetTitle, { n: 2 }) })).toBeVisible();
-    await expect(sheet.getByRole("button")).toHaveText([
+    // Действия — в теле шторки; «Закрыть» — крестик набора в заголовке
+    await expect(sheet.locator(".ui-dialog-body").getByRole("button")).toHaveText([
       t.photoMakeCover,
       t.photoLater,
       t.photoDelete,
-      t.close,
     ]);
+    await expect(sheet.locator(".ui-dialog-head").getByRole("button", { name: t.close })).toBeVisible();
     await expectNoAxeViolations(page, "фото: шторка действий");
     await expectHitAreas(page, "фото: шторка действий", CONTROLS);
 
@@ -86,11 +91,10 @@ test.describe("фото: порядок и обложка", () => {
 
     // Третье — обложкой: оно первое по порядку и с меткой «обложка»
     await tile(page, 3).click();
-    await expect(page.getByRole("dialog").getByRole("button")).toHaveText([
+    await expect(page.getByRole("dialog").locator(".ui-dialog-body").getByRole("button")).toHaveText([
       t.photoMakeCover,
       t.photoEarlier,
       t.photoDelete,
-      t.close,
     ]);
     await page.getByRole("dialog").getByRole("button", { name: t.photoMakeCover }).click();
     await expect.poll(() => order(page)).toEqual(["2", "1", "3", "4"]);
@@ -103,7 +107,9 @@ test.describe("фото: порядок и обложка", () => {
     await start(page);
     await page.goto("/card");
     await tile(page, 1).click();
-    await expect(page.getByRole("dialog").getByRole("button")).toHaveText([t.photoDelete, t.close]);
+    await expect(page.getByRole("dialog").locator(".ui-dialog-body").getByRole("button")).toHaveText([
+      t.photoDelete,
+    ]);
     await page.getByRole("button", { name: t.close }).click();
     await tile(page, 4).click();
     const sheet = page.getByRole("dialog");
@@ -237,7 +243,7 @@ test.describe("контакты витрины", () => {
     await expectNoAxeViolations(page, "контакты: шторка");
     await expectHitAreas(page, "контакты: шторка", CONTROLS);
 
-    const phone = sheet.getByLabel(t.contactsPhone, { exact: true });
+    const phone = field(sheet, t.contactsPhone);
     await expect(phone).toHaveValue("00 000 00 01");
     await phone.fill("");
     await phone.pressSequentially("912223344");

@@ -981,6 +981,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         phone: options.phone ?? true,
         turnstileSiteKey: options.turnstileSiteKey ?? null,
         apps,
+        team: { telegram: null, phone: null },
       })),
 
     signInWidget: () => respond("signInWidget", undefined, demoSession),

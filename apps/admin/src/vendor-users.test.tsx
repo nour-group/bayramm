@@ -12,6 +12,13 @@ import { App } from "./App";
 import { tokenStore } from "./session";
 import { apiErrorText, t } from "./texts";
 
+/** Подпись поля без пометки «обязательно / по желанию» (она — у подписи, как у клиента) */
+const labelText = (label: Element | null | undefined): string | undefined => {
+  const copy = label?.cloneNode(true) as Element | undefined;
+  for (const mark of copy?.querySelectorAll(".mark") ?? []) mark.remove();
+  return copy?.textContent?.trim();
+};
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const TOKEN = "T".repeat(43);
@@ -43,6 +50,7 @@ const METHODS: AuthMethods = {
   phone: true,
   turnstileSiteKey: null,
   apps: { web: "https://web.example", vendor: "https://vendor.example", admin: "https://admin.example" },
+  team: { telegram: null, phone: null },
 };
 
 const user = (patch: Partial<VendorUser> = {}): VendorUser => ({
@@ -147,7 +155,8 @@ const text = () => panel().textContent ?? "";
 // У «Изменить» подпись дополнена скрытым «: имя» — имя кнопки начинается с её слова
 const buttons = (scope: ParentNode, name: string) =>
   [...scope.querySelectorAll("button")].filter((b) => {
-    const label = b.textContent?.trim() ?? "";
+    // Крестик шторки — без текста, имя у него в aria-label
+    const label = b.textContent?.trim() || b.getAttribute("aria-label") || "";
     return label === name || label.startsWith(`${name}:`);
   });
 const button = (scope: ParentNode, name: string) => buttons(scope, name)[0];
@@ -166,7 +175,7 @@ async function menuAction(card: Element, label: string) {
   await click(item);
 }
 const inputLabelled = (scope: ParentNode, label: string) =>
-  [...scope.querySelectorAll<HTMLInputElement>("input")].find((i) => i.labels?.[0]?.textContent === label);
+  [...scope.querySelectorAll<HTMLInputElement>("input")].find((i) => labelText(i.labels?.[0]) === label);
 
 async function click(element: Element | null | undefined) {
   await act(async () => (element as HTMLElement | null | undefined)?.click());

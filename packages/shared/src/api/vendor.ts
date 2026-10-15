@@ -135,13 +135,17 @@ export interface VendorMePatch {
 
 // ── заявки ─────────────────────────────────────────────────────────────────
 
-/** Вкладки входящих: новые · в работе · закрытые */
-export const REQUEST_TABS = ["new", "active", "closed"] as const;
+/**
+ * Вкладки входящих: ждут ответа · в работе · закрытые. «Ждут ответа» — и новые, и уже
+ * открытые (просмотренные): открыть заявку — не ответить, она остаётся там, пока партнёр не
+ * связался или не отказал. Прежнее имя вкладки new API ещё принимает (старые сборки кабинета)
+ */
+export const REQUEST_TABS = ["waiting", "active", "closed"] as const;
 export type RequestTab = (typeof REQUEST_TABS)[number];
 
 export const TAB_STATUSES: Readonly<Record<RequestTab, readonly RequestStatus[]>> = {
-  new: ["new"],
-  active: ["viewed", "contacted"],
+  waiting: ["new", "viewed"],
+  active: ["contacted"],
   closed: ["deal", "declined", "withdrawn", "expired"],
 };
 
@@ -188,17 +192,20 @@ export interface VendorRequestItem {
 }
 
 /**
- * GET /vendor/requests?tab=new&cursor=…&limit=…&listingId=… → 200. listingId — только заявки
+ * GET /vendor/requests?tab=waiting&cursor=…&limit=…&listingId=… → 200. listingId — только заявки
  * этой витрины (чужая или несуществующая — пустой список).
- * Порядок: «Новые» и «В работе» — сначала ждущие ответа, по сроку ответа (ближайший и
+ * Порядок: «Ждут ответа» и «В работе» — сначала ждущие ответа, по сроку ответа (ближайший и
  * просроченный сверху), затем ответившие; «Закрытые» — новые сверху.
  * cursor — непрозрачная строка из nextCursor той же вкладки.
- * counts — сколько заявок в каждой вкладке (для подписей вкладок).
+ * counts — сколько заявок в каждой вкладке (подписи вкладок и значок раздела «Заявки»);
+ * overdue — сколько из ждущих ответа уже без ответа дольше срока: по всем вкладкам, а не по
+ * открытой (плашка «больше 12 часов без ответа» над любой вкладкой).
  */
 export interface VendorRequestPage {
   readonly items: readonly VendorRequestItem[];
   readonly nextCursor: string | null;
   readonly counts: Readonly<Record<RequestTab, number>>;
+  readonly overdue: number;
 }
 
 export type HistoryActor = "client" | "vendor_user" | "staff" | "system";
@@ -250,6 +257,15 @@ export interface VendorRequestPatch {
 
 /* POST /vendor/requests/:id/call → 204: вендор нажал на телефон клиента.
    Пишется в журнал действий, статус не меняет. */
+
+/**
+ * POST /vendor/requests/:id/undo → 200 VendorRequestItem: отменить «Я связался с клиентом»,
+ * нажатое по ошибке. Только в первые VENDOR_UNDO_SECONDS после отметки и только тот же
+ * пользователь кабинета: заявка возвращается в прежний статус (новая или просмотренная),
+ * срок ответа снова идёт, сообщение клиенту (оно ждёт конца этого окна) не уходит, в метриках
+ * отменённая отметка ответом не считается. Иначе — 409 undo_expired
+ */
+export const VENDOR_UNDO_SECONDS = 30;
 
 // ── календарь ──────────────────────────────────────────────────────────────
 

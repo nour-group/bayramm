@@ -59,6 +59,7 @@ import {
   PhoneSheet,
   Pill,
   ReasonPhoneReveal,
+  TableWrap,
   toneOf,
   useEntityTitle,
   useListSearch,
@@ -443,7 +444,7 @@ function RequestCards({ items, dictionaries, category }: RowsProps) {
 
 function RequestTable({ items, dictionaries, category }: RowsProps) {
   return (
-    <div className="table-wrap">
+    <TableWrap label={t.requests}>
       <table className="table">
         <thead>
           <tr>
@@ -490,7 +491,7 @@ function RequestTable({ items, dictionaries, category }: RowsProps) {
           })}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 

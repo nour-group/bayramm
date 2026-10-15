@@ -23,9 +23,13 @@ import {
   useState,
 } from "react";
 import type { VendorDict } from "./i18n";
+import { FieldMark } from "./ui";
 
 interface FrameProps {
   readonly label: string;
+  /** Пометка у подписи: «обязательно» или «по желанию» */
+  readonly required: boolean;
+  readonly t: VendorDict;
   readonly error?: string | undefined;
   readonly children: (props: {
     id: string;
@@ -35,13 +39,13 @@ interface FrameProps {
 }
 
 /** Подпись, поле и ошибка: id и aria-* связаны */
-function Frame({ label, error, children }: FrameProps) {
+function Frame({ label, required, t, error, children }: FrameProps) {
   const id = useId();
   const errorId = `${id}-error`;
   return (
     <div className="form-row">
       <label className="field-label" htmlFor={id}>
-        {label}
+        {label} <FieldMark required={required} t={t} />
       </label>
       {children({ id, "aria-invalid": Boolean(error), ...(error ? { "aria-describedby": errorId } : {}) })}
       {error ? (
@@ -124,7 +128,7 @@ export function PhoneField({ label, t, value, onChange, error, disabled }: Phone
 
   const own = problem === "foreign" ? t.phoneForeign : problem === "short" ? t.phoneShort : undefined;
   return (
-    <Frame label={label} error={error ?? own}>
+    <Frame label={label} required t={t} error={error ?? own}>
       {(props) => (
         <span
           className={`affix${props["aria-invalid"] ? " affix-bad" : ""}${disabled ? " is-disabled" : ""}`}
@@ -178,7 +182,7 @@ export interface TelegramFieldProps {
 export function TelegramField({ label, t, value, onChange, error, disabled }: TelegramFieldProps) {
   const [finished, setFinished] = useState(false);
   return (
-    <Frame label={label} error={error ?? telegramProblem(value, finished, t)}>
+    <Frame label={label} required={false} t={t} error={error ?? telegramProblem(value, finished, t)}>
       {(props) => (
         <span
           className={`affix${props["aria-invalid"] ? " affix-bad" : ""}${disabled ? " is-disabled" : ""}`}

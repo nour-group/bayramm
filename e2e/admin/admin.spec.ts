@@ -2,7 +2,7 @@ import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
 import { BOT } from "../support/account";
-import { createVitrina, pick } from "../support/admin-ui";
+import { createVitrina, field, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   CLIENT_ID,
@@ -122,7 +122,7 @@ test.describe("работа сотрудника", () => {
     await expect(page.locator(".field-error")).toHaveText(t.categoryRequired);
     expect(api.vitrinas).toEqual([]);
     await pick(page, t.categoryFirst, "Тойхона");
-    await page.getByLabel(t.vitrinaName, { exact: true }).fill("Navruz zali");
+    await field(page, t.vitrinaName).fill("Navruz zali");
     await page.getByRole("button", { name: t.createVitrina }).click();
     await expect(page).toHaveURL(`/listings/${LISTING_ID}`);
     expect(api.vitrinas).toEqual([{ categoryCode: "hall", name: "Navruz zali" }]);
@@ -189,14 +189,15 @@ test.describe("работа сотрудника", () => {
     const tabs = page.getByRole("radiogroup", { name: t.moderation });
     await expect(tabs.locator(".ui-radio")).toHaveText([
       `${t.queueTabs.revisions} 1`,
-      `${t.queueTabs.photos} 1`,
+      // Число у очереди фото — сами фото (два), а не витрины
+      `${t.queueTabs.photos} 2`,
     ]);
     await expect(page.getByRole("region", { name: t.revisions })).toContainText(
       t.queueProposer("partner", null),
     );
     await expect(page.getByRole("region", { name: t.photoQueue })).toHaveCount(0);
 
-    await tabs.getByRole("radio", { name: `${t.queueTabs.photos} 1` }).check();
+    await tabs.getByRole("radio", { name: `${t.queueTabs.photos} 2` }).check();
     await expect(page).toHaveURL("/moderation?queue=photos");
     const photos = page.getByRole("region", { name: t.photoQueue });
     // Витрина — сразу на блоке фото

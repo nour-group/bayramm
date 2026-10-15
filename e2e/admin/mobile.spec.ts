@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
-import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { createVitrina } from "../support/admin-ui";
+import { expectFocusNotObscured, expectHitAreas, expectNoAxeViolations } from "../support/a11y";
+import { createVitrina, field } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   CAKE_LISTING_ID,
@@ -239,7 +239,7 @@ test.describe("навигация на телефоне", () => {
   }) => {
     await start(page);
     await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    const name = page.getByLabel(t.vitrinaName, { exact: true });
+    const name = field(page, t.vitrinaName);
     await name.fill("Navruz zali");
     await name.blur();
     const more = tabbar(page).getByRole("button", { name: t.more });
@@ -293,6 +293,36 @@ test.describe("навигация на телефоне", () => {
     await sheet.getByRole("button", { name: t.cancel }).click();
     await expect(sheet).toBeHidden();
     await expect(bar.getByRole("button", { name: t.markContacted })).toBeFocused();
+  });
+
+  test("фокус не уходит под шапку, панель действий и нижнюю панель (WCAG 2.4.11)", async ({ page }) => {
+    await start(page);
+    const bars = ".appbar, .tabbar, .actionbar-slot, .net-slot";
+    await page.goto(`/requests/${REQUEST_ID}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectFocusNotObscured(page, "заявка", bars);
+    await page.goto(`/listings/${CAR_LISTING_ID}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expectFocusNotObscured(page, "витрина: кортеж", bars, 40);
+  });
+
+  test("короткая страница: панель действий — у низа над нижней панелью, а не посреди экрана", async ({
+    page,
+  }) => {
+    await start(page);
+    await page.goto("/vendors/new");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const name = page.getByLabel(t.vendorNameNew);
+    await name.fill("Navruz");
+    // Клавиатура закрыта (поле без фокуса): нижняя панель на месте
+    await name.blur();
+    await expect(tabbar(page)).toBeVisible();
+    const bar = page.locator(".actionbar");
+    await expect(bar).toBeVisible();
+    const box = await bar.boundingBox();
+    const tabs = await tabbar(page).boundingBox();
+    // Вплотную к нижней панели: ни щели, ни перекрытия
+    expect(Math.abs((box?.y ?? 0) + (box?.height ?? 0) - (tabs?.y ?? 0))).toBeLessThanOrEqual(1);
   });
 
   test("заявки: фильтры — в шторке, кнопка говорит, сколько выбрано", async ({ page }) => {
@@ -361,7 +391,7 @@ test.describe("Telegram на телефоне", () => {
     await start(page);
     await fakeTelegram(page);
     await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    const name = page.getByLabel(t.vitrinaName, { exact: true });
+    const name = field(page, t.vitrinaName);
     await name.fill("Navruz zali");
     await name.blur();
     await expect

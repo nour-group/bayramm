@@ -3,17 +3,18 @@
 // Postgres — test/integration/demo.test.ts
 import { describe, expect, it, vi } from "vitest";
 import { toApiError } from "../errors";
-import { type ObjectStorage, StorageError } from "../storage/supabase";
+import { type ObjectStorage, type ObjectSweeper, StorageError } from "../storage/supabase";
 import { fakeDb, type RecordedQuery } from "../testing/fake-db";
 import { resetDemo, seedDemo } from "./service";
 import { DEMO_VENUES } from "./venues";
 
 const TODAY = "2026-10-03";
 
-function spyStorage(remove: ObjectStorage["remove"] = async () => {}) {
+function spyStorage(removeMany: ObjectSweeper["removeMany"] = async (keys) => keys.length) {
   return {
     put: vi.fn<ObjectStorage["put"]>(async () => {}),
-    remove: vi.fn<ObjectStorage["remove"]>(remove),
+    remove: vi.fn<ObjectStorage["remove"]>(async () => {}),
+    removeMany: vi.fn<ObjectSweeper["removeMany"]>(removeMany),
   };
 }
 
@@ -116,7 +117,9 @@ describe("resetDemo", () => {
     const summary = await resetDemo({ db, storage });
 
     expect(summary).toEqual({ mode: "reset", removed: PURGED, storageObjects: 2 });
-    expect(storage.remove.mock.calls.map(([key]) => key)).toEqual(KEYS);
+    // Одним удалением пачкой, а не запросом на каждое фото (лимит подзапросов воркера)
+    expect(storage.removeMany.mock.calls).toEqual([[KEYS]]);
+    expect(storage.remove).not.toHaveBeenCalled();
     // Фото ищутся по диапазону демо-вендоров, а не по списку id
     const select = queries.find((q) => q.sql.includes('from "app"."photos"'));
     expect(select?.sql).toContain('"l"."vendor_id"::text like $1');
@@ -132,7 +135,7 @@ describe("resetDemo", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { db, log } = demoDb();
     const storage = spyStorage(async () => {
-      throw new StorageError("unavailable", 0, "storage remove: нет ответа");
+      throw new StorageError("unavailable", 0, "storage remove many: нет ответа");
     });
 
     const err = await resetDemo({ db, storage }).catch(toApiError);

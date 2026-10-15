@@ -1,9 +1,10 @@
 /* Общие куски экранов: заголовок, загрузка, ошибка с повтором, пустое состояние, чип статуса. */
 
 import type { RequestStatus } from "@bayramm/shared/api/vendor";
+import { requestStatusName } from "@bayramm/shared/i18n/status";
 import type { ReactNode, Ref } from "react";
 import { errorText, isRetryable } from "./errors";
-import { textOf, type VendorDict } from "./i18n";
+import type { VendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
 
 export interface ScreenProps {
@@ -90,6 +91,16 @@ export function Empty({ icon, title, text }: { icon: IconName; title: string; te
   );
 }
 
+/**
+ * Пометка у подписи поля — как в форме заявки клиента: «обязательно» или «по желанию». У подписи,
+ * а не под полем: видно до того, как поле заполнили
+ */
+export function FieldMark({ required, t }: { required: boolean; t: VendorDict }) {
+  return (
+    <em className={required ? "mark mark-req" : "mark mark-opt"}>{required ? t.required : t.optionalPh}</em>
+  );
+}
+
 /** Цвет чипа по смыслу статуса: ждёт — нейтральный, сделка — успех, отказ и конец — приглушённый */
 const CHIP_TONE: Readonly<Record<RequestStatus, "wait" | "work" | "done" | "off">> = {
   new: "wait",
@@ -101,7 +112,18 @@ const CHIP_TONE: Readonly<Record<RequestStatus, "wait" | "work" | "done" | "off"
   expired: "off",
 };
 
-export function StatusChip({ status, late, t }: { status: RequestStatus; late: boolean; t: VendorDict }) {
+/** Статус — словом из общего словаря (то же видят клиент и команда); просрочено — своим */
+export function StatusChip({
+  status,
+  late,
+  t,
+  lang,
+}: {
+  status: RequestStatus;
+  late: boolean;
+  t: VendorDict;
+  lang: "ru" | "uz";
+}) {
   if (late) return <span className="chip chip-late">{t.late}</span>;
-  return <span className={`chip chip-${CHIP_TONE[status]}`}>{textOf(t, `st_${status}`)}</span>;
+  return <span className={`chip chip-${CHIP_TONE[status]}`}>{requestStatusName(lang, status)}</span>;
 }

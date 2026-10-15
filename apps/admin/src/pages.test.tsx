@@ -21,6 +21,13 @@ import { monthGrid, tashkentToday } from "./pages/Calendar";
 import { tokenStore } from "./session";
 import { t } from "./texts";
 
+/** Подпись поля без пометки «обязательно / по желанию» (она — у подписи, как у клиента) */
+const labelText = (label: Element | null | undefined): string | undefined => {
+  const copy = label?.cloneNode(true) as Element | undefined;
+  for (const mark of copy?.querySelectorAll(".mark") ?? []) mark.remove();
+  return copy?.textContent?.trim();
+};
+
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 const TOKEN = "T".repeat(43);
@@ -386,10 +393,12 @@ describe("вендоры", () => {
       [`GET /api/staff/vendors/${VENDOR_ID}`]: json(VENDOR),
     });
     await mount("/vendors/new");
+    // Название — компании: витрина в выбранной категории заводится сразу, о ней — подсказка
     const name = [...container.querySelectorAll<HTMLInputElement>("input")].find(
-      (input) => input.labels?.[0]?.textContent === t.fields.name,
+      (input) => labelText(input.labels?.[0]) === t.vendorNameNew,
     );
     if (!name) throw new Error("нет поля названия");
+    expect(text()).toContain(t.categoryFirstHint);
     await type(name, "Navruz");
     await act(async () => button(t.createVendor)?.click());
     await settle();
@@ -416,8 +425,8 @@ describe("вендоры", () => {
     });
     await mount("/vendors/new");
     const form = container.querySelector<HTMLFormElement>("form.form") as HTMLFormElement;
-    const labels = [...form.querySelectorAll("label")].map((label) => label.textContent?.trim());
-    for (const field of [t.fields.name, t.fields.contactPerson, t.fields.phone]) {
+    const labels = [...form.querySelectorAll("label")].map((label) => labelText(label));
+    for (const field of [t.vendorNameNew, t.fields.contactPerson, t.fields.phone]) {
       expect(labels).toContain(field);
     }
     // Остального — формы, юрназвания, СТИР, договора, менеджера, должности, второго телефона, Telegram — нет
@@ -438,8 +447,8 @@ describe("вендоры", () => {
     expect(form.querySelectorAll("p.muted, .fs-head")).toHaveLength(0);
 
     const input = (label: string) =>
-      [...form.querySelectorAll<HTMLInputElement>("input")].find((i) => i.labels?.[0]?.textContent === label);
-    await type(input(t.fields.name ?? "") as HTMLInputElement, "Navruz");
+      [...form.querySelectorAll<HTMLInputElement>("input")].find((i) => labelText(i.labels?.[0]) === label);
+    await type(input(t.vendorNameNew) as HTMLInputElement, "Navruz");
     await type(input(t.fields.contactPerson ?? "") as HTMLInputElement, "Шахло Каримова");
     await type(input(t.fields.phone ?? "") as HTMLInputElement, "90 111 22 33");
     await act(async () => container.querySelector<HTMLElement>("button[aria-haspopup=listbox]")?.click());
@@ -998,7 +1007,7 @@ describe("карточка: телефон и Telegram для клиентов",
   const day = json({ from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 });
   const field = (label: string) =>
     [...container.querySelectorAll<HTMLInputElement>("input")].find(
-      (input) => input.labels?.[0]?.textContent === label,
+      (input) => labelText(input.labels?.[0]) === label,
     );
   const base = (listing = LISTING) => ({
     [`GET /api/staff/listings/${LISTING_ID}`]: json(listing),
@@ -1338,7 +1347,7 @@ describe("карточка: убрать телефон", () => {
   const removePhone = () => rowMenu(t.listingFields.phone ?? "");
   const field = (label: string) =>
     [...container.querySelectorAll<HTMLInputElement>("input")].find(
-      (input) => input.labels?.[0]?.textContent === label,
+      (input) => labelText(input.labels?.[0]) === label,
     );
 
   it("черновик: phone: null в теле, Telegram уходит вместе с ним — поля на это время закрыты", async () => {
@@ -1604,7 +1613,7 @@ describe("карточка: правка опубликованной менед
 
   /** Поле формы по подписи */
   const field = (label: string) => {
-    const id = [...container.querySelectorAll("label")].find((l) => l.textContent === label)?.htmlFor;
+    const id = [...container.querySelectorAll("label")].find((l) => labelText(l) === label)?.htmlFor;
     return (id ? document.getElementById(id) : null) as HTMLInputElement | null;
   };
 
@@ -1791,7 +1800,7 @@ describe("формы: поля и подтверждения", () => {
   const day = json({ ...DAY_MODE, from: "2026-09-01", to: "2026-09-30", busy: [], version: 1 });
   const labelled = (label: string, scope: ParentNode = container) =>
     [...scope.querySelectorAll<HTMLInputElement>("input, textarea")].find(
-      (input) => input.labels?.[0]?.textContent === label,
+      (input) => labelText(input.labels?.[0]) === label,
     );
   const alert = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
   const inAlert = (name: string) =>
@@ -2344,7 +2353,7 @@ describe("переходы между объектами", () => {
     await act(async () => button(t.vuEdit)?.click());
     await settle();
     const contract = [...container.querySelectorAll<HTMLInputElement>("form.form input")].find(
-      (i) => i.labels?.[0]?.textContent === t.fields.contractNo,
+      (i) => labelText(i.labels?.[0]) === t.fields.contractNo,
     );
     if (!contract) throw new Error("нет поля договора");
     await type(contract, "17");

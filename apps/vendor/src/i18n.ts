@@ -61,7 +61,7 @@ const ru = {
   account: "Аккаунт",
   switchVendor: "Другой кабинет",
   toClientApp: "Bayramm для клиентов",
-  toAdmin: "Панель оператора",
+  toAdmin: "Панель команды",
   signOut: "Выйти",
   // аккаунт: кто вошёл и в какой кабинет
   cabinetLabel: "Кабинет",
@@ -75,21 +75,30 @@ const ru = {
   welcomeTitle: "Кабинет партнёров Bayramm",
   welcomeLead: "Здесь партнёры Bayramm отвечают на заявки клиентов, ведут календарь занятости и витрину.",
   welcomeNoAccess: "Нет доступа? Менеджер Bayramm подключит вас.",
+  // контакт команды (настройка панели, GET /auth/methods → team): будущему партнёру и в «Аккаунте»
+  welcomeJoinTitle: "Стать партнёром",
+  welcomeJoinText:
+    "Площадки на Bayramm подключает команда. Напишите или позвоните — расскажем, что нужно, и откроем вам кабинет.",
+  teamTitle: "Команда Bayramm",
+  teamText: "Вопросы о витрине, календаре и заявках — напишите или позвоните команде.",
+  teamWrite: "Написать в Telegram",
+  teamCall: "Позвонить: {phone}",
 
   // входящие
-  tabNew: "Новые",
+  tabWaiting: "Ждут ответа",
   tabActive: "В работе",
   tabClosed: "Закрытые",
   inboxLate: "Есть заявки без ответа больше 12 часов — клиент уже видит похожие витрины.",
-  emptyNew: "Новых заявок нет",
-  emptyNewText: "Когда клиент отправит заявку, она появится здесь и придёт вам в Telegram.",
+  emptyWaiting: "Заявок без ответа нет",
+  emptyWaitingText:
+    "Новая заявка появится здесь и придёт вам в Telegram. Открытая остаётся здесь, пока вы не ответите.",
   emptyActive: "Нет заявок в работе",
-  emptyActiveText: "Здесь будут заявки, которые вы открыли, но ещё не закрыли.",
+  emptyActiveText: "Здесь будут заявки, по которым вы связались с клиентом.",
   emptyClosed: "Закрытых заявок пока нет",
   emptyClosedText: "Здесь будут сделки, отказы и заявки, отозванные клиентами.",
   loadMore: "Показать ещё",
-  // счётчик новых у раздела «Заявки» — для диктора
-  newCount: "новых: {n}",
+  // счётчик у раздела «Заявки» (ждут ответа) — для диктора
+  waitingCount: "ждут ответа: {n}",
   // значок у разделов «Витрина» и «Услуги» (и у витрины в выборе): отказы команды, которые ждут партнёра
   attentionCount: "требует внимания: {n}",
   // компьютер: список и карточка рядом, заявка ещё не выбрана
@@ -120,14 +129,7 @@ const ru = {
   answeredLate: "Ответ после срока",
   contactHidden: "Клиент отозвал согласие — контакты скрыты",
 
-  // статусы заявки
-  st_new: "Новая",
-  st_viewed: "Ждёт ответа",
-  st_contacted: "Вы связались",
-  st_deal: "Договорились",
-  st_declined: "Отказ",
-  st_withdrawn: "Клиент отозвал",
-  st_expired: "Дата прошла",
+  // статусы заявки — общие у клиента, кабинета и панели (@bayramm/shared/i18n/status)
   late: "Просрочено",
 
   // карточка заявки
@@ -137,6 +139,10 @@ const ru = {
   call: "Позвонить",
   consentNote: "Клиент дал согласие ровно на это: имя, телефон, дата, гости, бюджет, комментарий.",
   actContacted: "Я связался с клиентом",
+  // «Я связался» нажали: уведомление с отменой (30 секунд на стороне API)
+  markedContacted: "Отмечено: вы связались с клиентом",
+  undo: "Отменить",
+  undone: "Отметку отменили — заявка снова ждёт ответа",
   actDecline: "Отказать",
   actDeal: "Договорились",
   actNoDeal: "Не подошло",
@@ -156,8 +162,6 @@ const ru = {
   by_vendor_user: "вы",
   by_staff: "менеджер",
   by_system: "система",
-  // в истории заявка «Ждёт ответа» (st_viewed) читалась бы как действие того, кто её открыл
-  histViewed: "Просмотрена",
   // первым на заявку ответил менеджер Bayramm: «связались» отметил он, а не партнёр
   firstByStaff: "Первым ответил менеджер Bayramm",
   actionFailed: "Не удалось сохранить. Попробуйте ещё раз.",
@@ -195,6 +199,7 @@ const ru = {
   err_contacts_require_review: "Витрина на проверке или на сайте: контакты меняются запросом на проверку.",
   err_contact_change_not_pending: "Запроса на проверке уже нет — показываем, как сейчас.",
   err_contacts_not_live: "Статус витрины изменился — обновили. Отправьте контакты ещё раз.",
+  err_undo_expired: "Отменить уже нельзя: с отметки прошло больше 30 секунд.",
   err_version_conflict: "Витрину уже изменили — показали, как сейчас. Проверьте поля и сохраните ещё раз.",
   err_part_in_use: "На эту часть дня есть будущие заявки — её нельзя убрать.",
   doneWithdrawn: "Клиент отозвал заявку — отвечать не нужно.",
@@ -213,7 +218,7 @@ const ru = {
   dayBusyStaff: "{date}, закрыл менеджер",
   legendToday: "сегодня",
   legendTitle: "Обозначения",
-  staffLocked: "Этот день закрыл менеджер. Чтобы освободить его, свяжитесь с ним.",
+  staffLocked: "Этот день закрыл менеджер Bayramm. Чтобы освободить его, напишите команде.",
   calendarSaveFailed: "Не удалось сохранить день. Попробуйте ещё раз.",
   // правку отклонили: календарь с тех пор изменил кто-то другой (коллега, менеджер, отказ «занято»)
   calendarConflict: "Календарь изменили — обновили. Проверьте и отметьте ещё раз.",
@@ -357,7 +362,7 @@ const ru = {
   contactsTelegram: "Telegram",
   contactsEdit: "Изменить",
   contactsSheetTitle: "Контакты витрины",
-  contactsTelegramLabel: "Telegram (по желанию)",
+  contactsTelegramLabel: "Telegram",
   contactsLiveNote: "Клиенты увидят новые контакты после проверки командой Bayramm.",
   contactsSave: "Сохранить",
   contactsSend: "Отправить изменения",
@@ -377,7 +382,7 @@ const ru = {
   todoServices: "Добавьте обязательные услуги: {list}",
   todoPhotos: "Загрузите фото: есть {n} из {min}",
   todoDescriptions: "Напишите описание на русском и узбекском",
-  todoAttributes: "Заполните данные витрины: {list}",
+  todoAttribute: "Заполните поле «{label}»",
   todoCapacity: "Укажите вместимость: от скольки и до скольки гостей",
   todoDistrict: "Выберите район",
   todoTeam: "Сделает команда Bayramm: {list}",
@@ -476,7 +481,7 @@ const ru = {
   // витрины: у вендора их может быть несколько, в разных категориях
   vitrinas: "Витрины",
   allListings: "Все витрины",
-  inboxFilter: "Заявки какой витрины",
+  inboxFilter: "Витрина",
   category: "Категория",
 
   // заявка: часть дня и поля категории
@@ -514,6 +519,8 @@ const ru = {
   optionAddFrom: "Добавить: {name}",
   optionRemove: "Убрать дополнение {n}",
   serviceSaveDraft: "Сохранить черновик",
+  // «⋯» у формы услуги: черновик и отмена
+  svcEditorMore: "Другие действия с услугой",
   serviceSave: "Сохранить",
   serviceProposalNote:
     "Услуга уже на витрине: изменения уйдут на проверку, клиенты до решения видят прежние цену и описание.",
@@ -699,7 +706,7 @@ const uz: VendorDict = {
   account: "Hisob",
   switchVendor: "Boshqa kabinet",
   toClientApp: "Mijozlar uchun Bayramm",
-  toAdmin: "Boshqaruv paneli",
+  toAdmin: "Jamoa paneli",
   signOut: "Chiqish",
   cabinetLabel: "Kabinet",
   roleOwner: "Rol: kabinet egasi",
@@ -712,19 +719,27 @@ const uz: VendorDict = {
   welcomeLead:
     "Bu yerda Bayramm hamkorlari mijozlar soʻrovlariga javob beradi, bandlik taqvimi va vitrinani yuritadi.",
   welcomeNoAccess: "Kirish yoʻqmi? Bayramm menejeri sizni ulaydi.",
+  welcomeJoinTitle: "Hamkor boʻlish",
+  welcomeJoinText:
+    "Bayrammda maydonlarni jamoa ulaydi. Yozing yoki qoʻngʻiroq qiling — nima kerakligini aytamiz va kabinetingizni ochamiz.",
+  teamTitle: "Bayramm jamoasi",
+  teamText: "Vitrina, taqvim va soʻrovlar boʻyicha savollar — jamoaga yozing yoki qoʻngʻiroq qiling.",
+  teamWrite: "Telegramda yozish",
+  teamCall: "Qoʻngʻiroq qilish: {phone}",
 
-  tabNew: "Yangi",
+  tabWaiting: "Javob kutmoqda",
   tabActive: "Jarayonda",
   tabClosed: "Yopilgan",
   inboxLate: "12 soatdan ortiq javobsiz soʻrovlar bor — mijoz allaqachon oʻxshash vitrinalarni koʻrmoqda.",
-  emptyNew: "Yangi soʻrov yoʻq",
-  emptyNewText: "Mijoz soʻrov yuborganda u shu yerda paydo boʻladi va sizga Telegramda keladi.",
+  emptyWaiting: "Javobsiz soʻrov yoʻq",
+  emptyWaitingText:
+    "Yangi soʻrov shu yerda paydo boʻladi va sizga Telegramda keladi. Ochilgan soʻrov siz javob bermaguningizcha shu yerda qoladi.",
   emptyActive: "Jarayondagi soʻrov yoʻq",
-  emptyActiveText: "Bu yerda siz ochgan, lekin hali yopmagan soʻrovlar boʻladi.",
+  emptyActiveText: "Bu yerda mijoz bilan bogʻlangan soʻrovlaringiz boʻladi.",
   emptyClosed: "Yopilgan soʻrov hali yoʻq",
   emptyClosedText: "Bu yerda kelishuvlar, rad etilgan va mijoz qaytarib olgan soʻrovlar boʻladi.",
   loadMore: "Yana koʻrsatish",
-  newCount: "yangi: {n}",
+  waitingCount: "javob kutmoqda: {n}",
   attentionCount: "eʼtibor talab qiladi: {n}",
   pickRequest: "Soʻrovni tanlang",
   pickRequestText: "U shu yerda ochiladi: mijoz telefoni, tafsilotlar va nima javob berish.",
@@ -739,7 +754,7 @@ const uz: VendorDict = {
   guestsFew: "{n} mehmon",
   guestsMany: "{n} mehmon",
   budgetRange: "{min}–{max}",
-  budgetFrom: "{min} dan",
+  budgetFrom: "{min}dan",
   budgetTo: "{max} gacha",
   budgetNone: "byudjet koʻrsatilmagan",
   moneyMln: "{n} mln soʻm",
@@ -753,13 +768,6 @@ const uz: VendorDict = {
   answeredLate: "Muddatdan keyin javob berilgan",
   contactHidden: "Mijoz roziligini qaytarib oldi — kontaktlar yashirilgan",
 
-  st_new: "Yangi",
-  st_viewed: "Javob kutmoqda",
-  st_contacted: "Bogʻlandingiz",
-  st_deal: "Kelishildi",
-  st_declined: "Rad etildi",
-  st_withdrawn: "Mijoz qaytarib oldi",
-  st_expired: "Sana oʻtdi",
   late: "Muddati oʻtgan",
 
   requestNotFound: "Soʻrov topilmadi",
@@ -767,7 +775,10 @@ const uz: VendorDict = {
   commentLabel: "Mijoz izohi",
   call: "Qoʻngʻiroq qilish",
   consentNote: "Mijoz roziligi aynan shunga: ism, telefon, sana, mehmonlar, byudjet, izoh.",
-  actContacted: "Mijoz bilan bogʻlandim",
+  actContacted: "Bogʻlandim",
+  markedContacted: "Belgilandi: mijoz bilan bogʻlandingiz",
+  undo: "Bekor qilish",
+  undone: "Belgi bekor qilindi — soʻrov yana javob kutmoqda",
   actDecline: "Rad etish",
   actDeal: "Kelishdik",
   actNoDeal: "Toʻgʻri kelmadi",
@@ -787,7 +798,6 @@ const uz: VendorDict = {
   by_vendor_user: "siz",
   by_staff: "menejer",
   by_system: "tizim",
-  histViewed: "Koʻrildi",
   firstByStaff: "Birinchi boʻlib Bayramm menejeri javob berdi",
   actionFailed: "Saqlab boʻlmadi. Qayta urinib koʻring.",
   staleStatus: "Soʻrov holati allaqachon oʻzgargan — joriy holatini koʻrsatyapmiz.",
@@ -826,6 +836,7 @@ const uz: VendorDict = {
     "Vitrina tekshiruvda yoki saytda: kontaktlar tekshiruv soʻrovi orqali oʻzgaradi.",
   err_contact_change_not_pending: "Tekshiruvdagi soʻrov endi yoʻq — hozirgi holatini koʻrsatyapmiz.",
   err_contacts_not_live: "Vitrina holati oʻzgardi — yangiladik. Kontaktlarni qayta yuboring.",
+  err_undo_expired: "Endi bekor qilib boʻlmaydi: belgidan 30 soniyadan koʻp vaqt oʻtdi.",
   err_version_conflict:
     "Vitrina allaqachon oʻzgartirilgan — hozirgi holatini koʻrsatdik. Maydonlarni tekshiring va qayta saqlang.",
   err_part_in_use: "Kunning bu qismiga kelgusi soʻrovlar bor — uni olib tashlab boʻlmaydi.",
@@ -844,7 +855,7 @@ const uz: VendorDict = {
   dayBusyStaff: "{date}, menejer yopgan",
   legendToday: "bugun",
   legendTitle: "Belgilar",
-  staffLocked: "Bu kunni menejer yopgan. Boʻshatish uchun u bilan bogʻlaning.",
+  staffLocked: "Bu kunni Bayramm menejeri yopgan. Boʻshatish uchun jamoaga yozing.",
   calendarSaveFailed: "Kunni saqlab boʻlmadi. Qayta urinib koʻring.",
   calendarConflict: "Taqvim oʻzgartirildi — yangiladik. Tekshiring va qayta belgilang.",
   pickListing: "Vitrinani tanlang",
@@ -886,7 +897,7 @@ const uz: VendorDict = {
     "Mijozlar vitrinani shunday koʻradi. Uni va xizmatlarni faqat kabinet egasi oʻzgartira oladi.",
   vendorCode: "Menejer uchun kodingiz: {code}",
   priceLabel: "Narx",
-  priceFrom: "{price} dan",
+  priceFrom: "{price}dan",
   capacity: "Sigʻim",
   capRange: "{min}–{max} mehmon",
   capUpTo: "{max} mehmongacha",
@@ -980,7 +991,7 @@ const uz: VendorDict = {
   contactsTelegram: "Telegram",
   contactsEdit: "Oʻzgartirish",
   contactsSheetTitle: "Vitrina kontaktlari",
-  contactsTelegramLabel: "Telegram (ixtiyoriy)",
+  contactsTelegramLabel: "Telegram",
   contactsLiveNote: "Mijozlar yangi kontaktlarni Bayramm jamoasi tekshirgandan keyin koʻradi.",
   contactsSave: "Saqlash",
   contactsSend: "Oʻzgarishlarni yuborish",
@@ -1000,7 +1011,7 @@ const uz: VendorDict = {
   todoServices: "Majburiy xizmatlarni qoʻshing: {list}",
   todoPhotos: "Foto yuklang: {min} tadan {n} ta bor",
   todoDescriptions: "Rus va oʻzbek tillarida tavsif yozing",
-  todoAttributes: "Vitrina maʼlumotlarini toʻldiring: {list}",
+  todoAttribute: "«{label}» maydonini toʻldiring",
   todoCapacity: "Sigʻimni kiriting: eng kami va eng koʻpi bilan nechta mehmon",
   todoDistrict: "Tumanni tanlang",
   todoTeam: "Bayramm jamoasi bajaradi: {list}",
@@ -1094,7 +1105,7 @@ const uz: VendorDict = {
 
   vitrinas: "Vitrinalar",
   allListings: "Barcha vitrinalar",
-  inboxFilter: "Qaysi vitrina soʻrovlari",
+  inboxFilter: "Vitrina",
   category: "Kategoriya",
 
   part_morning: "Ertalab",
@@ -1130,6 +1141,7 @@ const uz: VendorDict = {
   optionAddFrom: "Qoʻshish: {name}",
   optionRemove: "{n}-qoʻshimchani olib tashlash",
   serviceSaveDraft: "Qoralama sifatida saqlash",
+  svcEditorMore: "Xizmat bilan boshqa amallar",
   serviceSave: "Saqlash",
   serviceProposalNote:
     "Xizmat allaqachon vitrinada: oʻzgarishlar tekshiruvga ketadi, qarorgacha mijozlar avvalgi narx va tavsifni koʻradi.",

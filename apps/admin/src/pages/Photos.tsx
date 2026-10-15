@@ -24,7 +24,7 @@ import { type Failure, type Result, useCan, useSession } from "../api";
 import { photoSrc, photoSrcSet } from "../format";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
-import { ConfirmForm, ErrorText, PhoneSheet, Pill, SheetClose, toneOf } from "../ui";
+import { ConfirmForm, ErrorText, PhoneSheet, Pill, toneOf } from "../ui";
 
 /** Форматы фото; на телефоне — любое фото: так точно предлагают и камеру, и галерею (HEIC — по расширению) */
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
@@ -336,7 +336,6 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
         title={t.photoN(sheetIndex + 1)}
         onClose={closeSheet}
         returnFocus={sheetReturn}
-        actions={<SheetClose onClose={closeSheet} />}
       >
         {sheetPhoto ? (
           <>

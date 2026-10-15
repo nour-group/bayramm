@@ -89,9 +89,10 @@ describe("styles.css клиента", () => {
     expect(css).not.toMatch(/--sa-t\)|--sa-b\)/);
   });
 
-  it("фокус не уходит под шапку и нижнюю панель: запас прокрутки с обеими зонами", () => {
-    expect(declarationsOf("html")).toMatch(
-      /scroll-padding:\s*calc\(var\(--pad-t\) \+ \d+px\) 0 calc\(var\(--pad-b\) \+ \d+px\)/,
+  it("фокус не уходит под шапку и нижнюю панель: запас прокрутки с обеими зонами и прилипшими панелями", () => {
+    const html = declarationsOf("html").replace(/\s+/g, " ");
+    expect(html).toMatch(
+      /scroll-padding: max\(calc\(var\(--pad-t\) \+ \d+px\), calc\(var\(--sticky-t\) \+ \d+px\)\) 0 max\(calc\(var\(--pad-b\) \+ \d+px\), calc\(var\(--sticky-b\) \+ \d+px\)\)/,
     );
   });
 

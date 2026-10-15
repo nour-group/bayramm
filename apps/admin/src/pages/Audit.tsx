@@ -38,7 +38,7 @@ import { formatDay, formatMoment, vendorLabel } from "../format";
 import { useLayout } from "../layout";
 import { type View, writeQuery } from "../router";
 import { t } from "../texts";
-import { EmptyList, FilterButton, Link, LoadedView, Pager } from "../ui";
+import { EmptyList, FilterButton, Link, LoadedView, Pager, TableWrap } from "../ui";
 import { monthTitle, tashkentToday } from "./Calendar";
 
 type Tab = "actions" | "pii";
@@ -648,7 +648,7 @@ function ActionList({ path, offset, onPage, cards, onReset, onLabels }: ListProp
           </>
         ) : (
           <>
-            <div className="table-wrap">
+            <TableWrap label={t.auditTabs.actions}>
               <table className="table audit-table">
                 <thead>
                   <tr>
@@ -678,7 +678,7 @@ function ActionList({ path, offset, onPage, cards, onReset, onLabels }: ListProp
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
             <JournalPager total={list.total} offset={offset} onPage={onPage} />
           </>
         )
@@ -721,7 +721,7 @@ function PiiList({ path, offset, onPage, cards, onReset, onLabels }: ListProps) 
           </>
         ) : (
           <>
-            <div className="table-wrap">
+            <TableWrap label={t.auditTabs.pii}>
               <table className="table audit-table">
                 <thead>
                   <tr>
@@ -751,7 +751,7 @@ function PiiList({ path, offset, onPage, cards, onReset, onLabels }: ListProps) 
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableWrap>
             <JournalPager total={list.total} offset={offset} onPage={onPage} />
           </>
         )

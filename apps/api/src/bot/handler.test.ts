@@ -166,7 +166,7 @@ describe("handleUpdate: /start", () => {
         text: STAFF_TEXTS.uz.staffCard("admin"),
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Boshqaruv paneli", web_app: { url: "https://admin.example" } }],
+            [{ text: "Jamoa paneli", web_app: { url: "https://admin.example" } }],
             [{ text: BOT_TEXTS.uz.openApp, web_app: { url: "https://app.example" } }],
           ],
         },
@@ -197,7 +197,7 @@ describe("handleUpdate: /start", () => {
         text: STAFF_TEXTS.ru.staffCard("manager"),
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Панель оператора", web_app: { url: "https://admin.example" } }],
+            [{ text: "Панель команды", web_app: { url: "https://admin.example" } }],
             [{ text: "Открыть кабинет", web_app: { url: "https://vendor.example" } }],
             [{ text: BOT_TEXTS.ru.openApp, web_app: { url: "https://app.example" } }],
           ],
@@ -280,7 +280,7 @@ describe("handleUpdate: команды команды Bayramm", () => {
     expect(replies[0]?.text).toContain("Ждут ответа: 5");
     expect(replies[0]?.reply_markup).toMatchObject({
       inline_keyboard: [
-        [{ text: "Панель оператора", web_app: { url: "https://admin.example" } }],
+        [{ text: "Панель команды", web_app: { url: "https://admin.example" } }],
         expect.anything(),
       ],
     });

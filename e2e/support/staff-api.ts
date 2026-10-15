@@ -319,6 +319,8 @@ const photoQueuePhoto = (n: number): PendingPhoto => ({
   key: `listings/${PHOTO_QUEUE_LISTING_ID}/${photoQueueId(n)}.webp`,
   width: 1600,
   height: 1200,
+  // Что отметил загрузивший: у зала — «лиц нет»
+  ack: "no_faces",
 });
 
 /** PATCH карточки: поля, которые заглушка переносит в карточку */
@@ -662,6 +664,8 @@ const SETTINGS: StaffSettings = {
     { key: "quiet_hours", value: { from: "22:00", to: "08:00" }, updatedAt: iso, updatedBy: null },
     { key: "ops_reminder_pause_minutes", value: 30, updatedAt: iso, updatedBy: null },
     { key: "min_photos", value: 3, updatedAt: iso, updatedBy: STAFF.displayName },
+    { key: "team_telegram", value: "bayramm_team", updatedAt: iso, updatedBy: null },
+    { key: "team_phone", value: "", updatedAt: iso, updatedBy: null },
   ],
 };
 
@@ -1206,6 +1210,8 @@ export async function mockStaffApi(
         total: queued.length,
         items: queued,
         counts: { lead: 0, draft: listings.length, review: 0, active: 1, suspended: 0, rejected: 0 },
+        // Число у очереди «Фото» — сами фото
+        ...(photos ? { pendingPhotosTotal: queuePhotos.length } : {}),
       };
       return json(route, 200, list);
     }

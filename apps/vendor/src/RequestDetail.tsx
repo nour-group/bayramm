@@ -5,7 +5,9 @@
      new/viewed → «Я связался» | «Отказать»;  contacted → «Договорились» | «Не подошло»;
      deal/declined → «Вернуть в активные». Отказ — причина чипами, комментарий — только у
    «Другой причины»; «занято» занимает дату. На телефоне кнопки действий прилипают к низу над
-   нижней панелью: видны, сколько ни листай.
+   нижней панелью: видны, сколько ни листай (и у короткой заявки — внизу, а не посреди экрана).
+   «Я связался» по ошибке — уведомление «Отмечено · Отменить» на 8 секунд: отмена возвращает
+   заявку, пока API её принимает (VENDOR_UNDO_SECONDS, тот же партнёр).
 
    Что нужно клиенту — по форме заявки категории: часть дня (модель parts), поля категории
    (detailRows: часы, машины, кг…) и выбранные услуги с количеством и дополнениями — названия
@@ -24,7 +26,8 @@ import {
   type VendorRequestPatch,
 } from "@bayramm/shared/api/vendor";
 import { categoryConfig, chosenServices, detailRows } from "@bayramm/shared/categories";
-import { RadioGroup } from "@bayramm/ui/react";
+import { requestStatusName } from "@bayramm/shared/i18n/status";
+import { RadioGroup, useStickyBar, useToast } from "@bayramm/ui/react";
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { categoryName, partsLabel, priceText } from "./category";
@@ -32,6 +35,7 @@ import { errorText } from "./errors";
 import { formatBudget, formatDate, formatGuests, formatMoment, formatPhone, slaView } from "./format";
 import { fill, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
+import { useLayout } from "./layout";
 import { awaitsAnswer, SlaTimer } from "./Requests";
 import type { Navigate } from "./router";
 import { useBackButton } from "./telegram";
@@ -133,6 +137,8 @@ export function RequestDetail({
   const [notice, setNotice] = useState<Notice>(null);
   const titleId = split ? "request-title" : "page-title";
   const level = split ? 2 : 1;
+  const toast = useToast();
+  const phone = useLayout() === "phone";
 
   // Открытие новой заявки делает её просмотренной: список рядом должен это показать
   const reported = useRef(false);
@@ -148,17 +154,23 @@ export function RequestDetail({
   // фокус не теряется в body: он переходит на первое поле или кнопку нового блока
   const actionsRef = useRef<HTMLDivElement>(null);
   const refocus = useRef(false);
+  // Панель действий прилипла к низу (телефон, открытая заявка): её высота — в запас прокрутки
+  const shown = ready?.status;
+  useStickyBar(
+    actionsRef,
+    "bottom",
+    phone && !declining && (shown === "new" || shown === "viewed" || shown === "contacted"),
+  );
   const decline = useCallback((open: boolean) => {
     refocus.current = true;
     setDeclining(open);
   }, []);
-  const shownStatus = ready?.status;
   // biome-ignore lint/correctness/useExhaustiveDependencies: перенос фокуса — после смены формы или статуса
   useEffect(() => {
     if (!refocus.current) return;
     refocus.current = false;
     actionsRef.current?.querySelector<HTMLElement>("input, button:not(:disabled)")?.focus();
-  }, [declining, shownStatus]);
+  }, [declining, shown]);
 
   const back = useCallback(() => navigate({ route: "requests" }), [navigate]);
   const nativeBack = useBackButton(back);
@@ -168,11 +180,35 @@ export function RequestDetail({
     back();
   };
 
+  // «Я связался» нажали по ошибке: вернуть заявку, пока API это принимает
+  const undo = async () => {
+    try {
+      const item = await api.undoContacted(id);
+      setDetail((current) => ({
+        ...current,
+        ...item,
+        // Отметка и её отмена — не шаг заявки: в истории их нет
+        history:
+          current.history.at(-1)?.status === "contacted" ? current.history.slice(0, -1) : current.history,
+      }));
+      refocus.current = true;
+      onChanged?.();
+      toast(t.undone);
+    } catch (err) {
+      toast(errorText(err, t), { tone: "error" });
+    }
+  };
+
   const act = async (patch: VendorRequestPatch) => {
     setPending(true);
     setNotice(null);
+    const answered =
+      detail.state === "ready" && (detail.data.status === "new" || detail.data.status === "viewed");
     try {
       const item = await api.updateRequest(id, patch);
+      if (patch.status === "contacted" && answered && item.status === "contacted") {
+        toast(t.markedContacted, { duration: 8000, action: { label: t.undo, onClick: () => void undo() } });
+      }
       // Без повторного GET: он заново прочёл бы телефон клиента (и записал бы это в журнал)
       setDetail((current) => ({
         ...current,
@@ -260,8 +296,7 @@ export function RequestDetail({
     .join(" · ");
   // Прилипает к низу (телефон) панель с двумя действиями: открытая заявка, не форма отказа
   const sticky = (status === "new" || status === "viewed" || status === "contacted") && !declining;
-  const stepName = (entry: (typeof request.history)[number]) =>
-    entry.status === "viewed" ? t.histViewed : textOf(t, `st_${entry.status}`);
+  const stepName = (entry: (typeof request.history)[number]) => requestStatusName(lang, entry.status);
   const lastStep = request.history.at(-1);
 
   return (
@@ -271,7 +306,7 @@ export function RequestDetail({
         <Heading headingRef={headingRef} level={level} id={titleId}>
           {fill(t.requestNo, { n: request.publicNo })}
         </Heading>
-        <StatusChip status={status} late={late} t={t} />
+        <StatusChip status={status} late={late} t={t} lang={lang} />
       </div>
       {showListing ? (
         <p className="detail-vitrina">

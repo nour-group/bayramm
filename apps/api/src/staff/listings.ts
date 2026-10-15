@@ -346,7 +346,33 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
       .select(["status", sql<number>`count(*)::int`.as("n")])
       .groupBy("status")
       .execute();
-    return { rows, counts, pending };
+    // Число у очереди «Фото» — сами фото (total — карточки): те же условия, что у очереди
+    const photosTotal = pendingPhotos
+      ? await trx
+          .selectFrom("app.photos as p")
+          .innerJoin("app.listings as l", "l.id", "p.listing_id")
+          .innerJoin("app.vendor_accounts as v", "v.id", "l.vendor_id")
+          .select(sql<number>`count(*)::int`.as("n"))
+          .where("p.deleted_at", "is", null)
+          .where("p.status", "=", "ready")
+          .where("p.moderation", "=", "pending")
+          .where("l.status", "<>", "rejected")
+          .$if(vendorId !== undefined, (qb) => qb.where("l.vendor_id", "=", vendorId as string))
+          .$if(category !== undefined, (qb) => qb.where("l.category_code", "=", category as string))
+          .$if(q !== "", (qb) => {
+            const pattern = likePattern(q);
+            return qb.where((eb) =>
+              eb.or([
+                eb("l.name", "ilike", pattern),
+                eb("l.slug", "ilike", pattern),
+                eb("v.name", "ilike", pattern),
+                eb("v.public_code", "ilike", pattern),
+              ]),
+            );
+          })
+          .executeTakeFirst()
+      : undefined;
+    return { rows, counts, pending, photosTotal: photosTotal?.n };
   });
 
   const counts = Object.fromEntries(LISTING_STATUSES.map((s) => [s, 0])) as Record<ListingStatus, number>;
@@ -355,6 +381,7 @@ listings.get("/", requirePermission("catalog.read"), async (c) => {
   const body: ListingList = {
     total: result.rows[0]?.total ?? 0,
     counts,
+    ...(result.photosTotal === undefined ? {} : { pendingPhotosTotal: Number(result.photosTotal) }),
     items: result.rows.map((row) => ({
       id: row.id,
       name: row.name,

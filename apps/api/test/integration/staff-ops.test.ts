@@ -7,6 +7,7 @@
 // них история в журналах только на добавление). Настройки возвращаются как были.
 
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
+import type { AuthMethods } from "@bayramm/shared/api/account";
 import type {
   AuditList,
   ClientDetail,
@@ -950,5 +951,32 @@ describe("настройки", () => {
 
     const audit = await ok<AuditList>(api("admin", "GET", "/staff/audit?type=setting&object=sla_hours"));
     expect(audit.items[0]).toMatchObject({ action: "settings.update", detail: { to: 24 } });
+  });
+
+  it("контакт команды: как вписали — к одному виду; пусто — не указан; виден в GET /auth/methods", async () => {
+    const telegram = await ok<StaffSettings>(
+      api("admin", "PUT", "/staff/settings/team_telegram", { value: " https://t.me/bayramm_team " }),
+    );
+    expect(telegram.items.find((s) => s.key === "team_telegram")?.value).toBe("bayramm_team");
+    const phone = await ok<StaffSettings>(
+      api("admin", "PUT", "/staff/settings/team_phone", { value: "+998 90 111-22-33" }),
+    );
+    expect(phone.items.find((s) => s.key === "team_phone")?.value).toBe("+998901112233");
+    expect(await error(api("admin", "PUT", "/staff/settings/team_phone", { value: "12345" }))).toMatchObject({
+      status: 422,
+      details: ["team_phone"],
+    });
+    expect(await error(api("admin", "PUT", "/staff/settings/team_telegram", { value: 5 }))).toMatchObject({
+      status: 422,
+      details: ["team_telegram"],
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
+    const methods = (await (await call("/auth/methods")).json()) as AuthMethods;
+    expect(methods.team).toEqual({ telegram: "bayramm_team", phone: "+998901112233" });
+    vi.restoreAllMocks();
+    // Убрали — не указан
+    await ok<StaffSettings>(api("admin", "PUT", "/staff/settings/team_telegram", { value: "" }));
+    await ok<StaffSettings>(api("admin", "PUT", "/staff/settings/team_phone", { value: "" }));
   });
 });

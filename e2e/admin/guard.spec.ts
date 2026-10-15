@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectNoAxeViolations } from "../support/a11y";
-import { pick } from "../support/admin-ui";
+import { field, pick } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import { LISTING_ID, mockStaffApi, NOW, REQUEST_ID, REVISION_ID, VENDOR_ID } from "../support/staff-api";
 
@@ -22,8 +22,8 @@ const section = (page: Page, name: string) =>
 const question = (page: Page) => page.getByRole("alertdialog", { name: t.unsavedTitle });
 
 /** Название: на странице новой витрины — её поле, на странице витрины — поле формы */
-const nameField = (page: Page) => page.getByLabel(t.vitrinaName, { exact: true });
-const listingName = (page: Page) => page.getByLabel(t.listingFields.name ?? "", { exact: true });
+const nameField = (page: Page) => field(page, t.vitrinaName);
+const listingName = (page: Page) => field(page, t.listingFields.name ?? "");
 
 test("ничего не вписали — переход по разделу без вопроса", async ({ page }) => {
   await start(page);

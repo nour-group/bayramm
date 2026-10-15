@@ -1,5 +1,5 @@
 import { getWebApp, loadTelegramWebApp, type TelegramWebApp } from "@bayramm/tg/webapp";
-import { ConnectivityProvider, OfflineBanner, UiTextsProvider } from "@bayramm/ui/react";
+import { ConnectivityProvider, OfflineBanner, UiTextsProvider, useStickyBar } from "@bayramm/ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Session, SessionContext } from "./api";
 import { Login } from "./Login";
@@ -191,6 +191,8 @@ const NET_H = "--net-h";
  */
 function NetSlot() {
   const slot = useRef<HTMLDivElement>(null);
+  // Полоса прилипла к верху над шапкой: её высота — тоже в запас прокрутки у верхнего края
+  useStickyBar(slot, "top");
   useEffect(() => {
     const node = slot.current;
     const root = document.documentElement;

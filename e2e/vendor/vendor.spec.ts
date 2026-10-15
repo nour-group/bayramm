@@ -1,7 +1,14 @@
 import type { VendorRole } from "@bayramm/shared/api/vendor";
-import type { Page } from "@playwright/test";
+import { REQUEST_STATUS_NAMES } from "@bayramm/shared/i18n/status";
+import type { Locator, Page } from "@playwright/test";
 import { fill, LANG_NAMES, vendorDict } from "../../apps/vendor/src/i18n";
-import { expectHitAreas, expectNoAxeViolations, expectVisibleFocus } from "../support/a11y";
+import {
+  expectFocusNotObscured,
+  expectHitAreas,
+  expectNoAxeViolations,
+  expectVisibleFocus,
+} from "../support/a11y";
+import { labelled, spinbutton } from "../support/field-name";
 import { expect, test } from "../support/offline";
 import { clickBackButton, fakeTelegram } from "../support/telegram";
 import {
@@ -31,7 +38,14 @@ import {
    по проекту (isDesktop); остальное одно на оба. */
 
 const t = vendorDict.ru;
+
+/** Поле по подписи (с пометкой «обязательно / по желанию» у неё или без) */
+const field = (scope: Page | Locator, label: string) => labelled(scope, label, [t.required, t.optionalPh]);
+const spin = (scope: Page | Locator, label: string) => spinbutton(scope, label, [t.required, t.optionalPh]);
+const st = REQUEST_STATUS_NAMES.ru;
 const BOT = "https://t.me/bayramm_demo_bot?start=partner";
+/** Прилипшие панели кабинета: шапка, нижняя панель, панель действий заявки */
+const BARS = ".top, .tabbar, .request-actions.is-bar";
 const CONTROLS = [
   ".btn",
   ".pill",
@@ -43,6 +57,7 @@ const CONTROLS = [
   ".icon-btn",
   ".back-link",
   ".rq",
+  ".photo-x",
   "label.ui-radio",
   "label.ui-check",
   ".ui-drop-face",
@@ -142,15 +157,25 @@ test.describe("до входа", () => {
     const api = await start(page, { telegram: false });
     await page.goto("/");
     await expect(heading(page)).toHaveText(t.welcomeTitle);
-    // Один заголовок, одно предложение, вход, бот и строка «Нет доступа?» — рассказа о кабинете нет
-    await expect(page.getByText(t.welcomeNoAccess)).toBeVisible();
+    // Один заголовок, одно предложение, вход, бот — рассказа о кабинете нет. Будущему партнёру —
+    // «Стать партнёром»: написать команде или позвонить (контакт команды — настройка панели)
+    const join = page.getByRole("region", { name: t.welcomeJoinTitle });
+    await expect(join).toBeVisible();
+    await expect(join.getByRole("link", { name: t.teamWrite })).toHaveAttribute(
+      "href",
+      "https://t.me/bayramm_team",
+    );
+    await expect(join.getByRole("link", { name: /Позвонить/ })).toHaveAttribute("href", "tel:+998901112233");
+    // Контакт указан — тупиковой строки «менеджер подключит» нет
+    await expect(page.getByText(t.welcomeNoAccess)).toHaveCount(0);
     await expect(page.locator(".welcome-points")).toHaveCount(0);
     await expect(page.getByRole("button", { name: t.signIn, exact: true })).toBeVisible();
     const bot = page.getByRole("link", { name: t.openBot });
     await expect(bot).toHaveAttribute("href", BOT);
     // Чисел о площадке и партнёрах нет
     const text = await page.locator(".welcome").innerText();
-    expect(text.match(/\d+/g)).toBeNull();
+    // (кроме номера телефона команды)
+    expect(text.replace(/\+998[\d\s]+/g, "").match(/\d+/g)).toBeNull();
     // До входа язык переключается в шапке
     await expect(page.locator(".top .lang")).toBeVisible();
     // Кабинета без входа нет: ни разделов, ни заявок
@@ -200,20 +225,21 @@ test.describe("кабинет", () => {
     await expect(heading(page)).toHaveText(t.requests);
     await expect(page).toHaveURL("/requests");
 
+    // «Ждут ответа» — и новая, и открытая без ответа (просроченная): обе на первом экране
     const tabs = page.locator(".pills .pill");
-    await expect(tabs.nth(0)).toContainText(`${t.tabNew}1`);
+    await expect(tabs.nth(0)).toContainText(`${t.tabWaiting}2`);
     const cards = page.locator(".rq-list .rq");
-    await expect(cards).toHaveCount(1);
-    await expect(cards.first()).toContainText("Азиза");
+    await expect(cards).toHaveCount(2);
+    const aziza = cards.filter({ hasText: "Азиза" });
     // Телефона клиента в списке нет — только в карточке
     await expect(page.locator(".rq-list a[href^='tel:']")).toHaveCount(0);
-    // Витрина одна — заявка не называет ни её, ни категорию; плашки про 12 часов нет, пока всё в срок
+    // Витрина одна — заявка не называет ни её, ни категорию; просроченная есть — плашка сразу
     await expect(page.locator(".rq-list .rq-vitrina, .rq-list .chip-cat")).toHaveCount(0);
-    await expect(page.locator(".promise")).toHaveCount(0);
+    await expect(page.locator(".promise-late")).toHaveText(t.inboxLate);
     await expectNoAxeViolations(page, "входящие");
     await expectHitAreas(page, "входящие", CONTROLS);
 
-    await cards.first().click();
+    await aziza.click();
     await expect(page).toHaveURL(`/requests/${REQUEST_NEW}`);
     await expect(requestTitle(page)).toContainText("1051");
     const phone = page.locator("a.btn-phone");
@@ -224,14 +250,19 @@ test.describe("кабинет", () => {
     await expect(page.locator(".request .client-name")).toHaveText("Азиза");
     await expect(page.locator(".request .req-summary")).toContainText("24 октября, сб");
     await expect(page.locator(".request .facts")).toHaveCount(0);
-    // Открытие заявки в истории — «Просмотрена», а не название статуса «Ждёт ответа»
-    await expect(page.locator(".history-status")).toHaveText([t.st_new, t.histViewed]);
+    // Статус — одним словом и в истории, и у заголовка (как у клиента и команды)
+    await expect(page.locator(".history-status")).toHaveText([st.new, st.viewed]);
+    await expect(page.locator(".detail-top .chip")).toHaveText(st.viewed);
     await expectNoAxeViolations(page, "карточка заявки");
     await expectHitAreas(page, "карточка заявки", CONTROLS);
 
     await page.getByRole("button", { name: t.actContacted }).click();
-    await expect(page.locator(".detail-top .chip")).toHaveText(t.st_contacted);
+    await expect(page.locator(".detail-top .chip")).toHaveText(st.contacted);
     expect(api.patches).toEqual([{ id: REQUEST_NEW, body: { status: "contacted" } }]);
+    // «Отмечено · Отменить» — несколько секунд; закрыли — не мешает форме ниже
+    const marked = page.locator(".ui-toast").filter({ hasText: t.markedContacted });
+    await expect(marked).toBeVisible();
+    await marked.getByRole("button", { name: t.close }).click();
 
     // Отказ: форма с причинами, «Отмена» возвращает действия
     await page.getByRole("button", { name: t.actNoDeal }).click();
@@ -242,9 +273,56 @@ test.describe("кабинет", () => {
 
     await clickBackButton(page);
     await expect(page).toHaveURL("/requests");
+    // Связались — «В работе»; во «Ждут ответа» осталась просроченная
+    await expect(page.locator(".pills .pill").nth(0)).toContainText(`${t.tabWaiting}1`);
     await page.locator(".pills .pill").nth(1).click();
-    await expect(page.locator(".rq-list .rq")).toHaveCount(2);
+    await expect(page.locator(".rq-list .rq")).toHaveCount(1);
     expect(api.unexpected).toEqual([]);
+  });
+
+  test("«Я связался» по ошибке: «Отмечено · Отменить» — заявка снова ждёт ответа", async ({ page }) => {
+    const api = await start(page);
+    await page.goto(`/requests/${REQUEST_NEW}`);
+    await expect(requestTitle(page)).toContainText("1051");
+    await page.getByRole("button", { name: t.actContacted }).click();
+    const toast = page.locator(".ui-toast").filter({ hasText: t.markedContacted });
+    await expect(toast).toBeVisible();
+    await expectNoAxeViolations(page, "отметка: уведомление с отменой");
+    await toast.getByRole("button", { name: t.undo }).click();
+    await expect(page.locator(".detail-top .chip")).toHaveText(st.viewed);
+    await expect(page.getByRole("button", { name: t.actContacted })).toBeVisible();
+    await expect(page.locator(".history-status")).toHaveText([st.new, st.viewed]);
+    expect(api.undos).toEqual([REQUEST_NEW]);
+    expect(api.unexpected).toEqual([]);
+  });
+
+  test("вкладки входящих: «Ждут ответа» — новые и открытые; просрочка видна над любой вкладкой", async ({
+    page,
+  }) => {
+    const api = await start(page);
+    await page.goto("/requests");
+    const tabs = page.locator(".pills .pill");
+    await expect(tabs).toHaveText([`${t.tabWaiting}2`, `${t.tabActive}0`, `${t.tabClosed}0`]);
+    // Значок раздела — сколько ждут ответа (все витрины): новая и открытая без ответа
+    if (!isDesktop(page)) await expect(page.locator(".tabbar .nav-count").first()).toHaveText("2");
+    await tabs.nth(2).click();
+    await expect(page.locator(".rq-list .rq")).toHaveCount(0);
+    // Открыта «Закрытые», а просроченная — во «Ждут ответа»: плашка по счётчику API всё равно есть
+    await expect(page.locator(".promise-late")).toHaveText(t.inboxLate);
+    expect([...new Set(api.inboxQueries.map((q) => q.tab))]).toEqual(["waiting", "closed"]);
+  });
+
+  test("фокус не уходит под прилипшие панели: Tab по входящим, заявке и витрине", async ({ page }) => {
+    await start(page);
+    await page.goto("/requests");
+    await expect(heading(page)).toHaveText(t.requests);
+    await expectFocusNotObscured(page, "входящие", BARS);
+    await page.goto(`/requests/${REQUEST_LATE}`);
+    await expect(requestTitle(page)).toContainText("1047");
+    await expectFocusNotObscured(page, "заявка", BARS);
+    await page.goto("/card");
+    await expect(heading(page)).toHaveText(t.card);
+    await expectFocusNotObscured(page, "витрина", BARS, 40);
   });
 
   test("компьютер: список и карточка заявки рядом; заявка сама не открывается", async ({ page }) => {
@@ -268,16 +346,17 @@ test.describe("кабинет", () => {
     await expect(page.getByRole("heading", { level: 2, name: fill(t.requestNo, { n: 1051 }) })).toBeFocused();
     await expect(page.locator("a.btn-phone")).toBeVisible();
     await expect(page.getByRole("link", { name: t.back })).toHaveCount(0);
-    // Открытая стала просмотренной и ушла во «В работе»: список перечитан, вкладка — та же
-    await expect(page.locator(".pills .pill").nth(0)).toContainText(`${t.tabNew}0`);
-    await expect(page.locator(".pills .pill").nth(1)).toContainText(`${t.tabActive}2`);
+    // Открытая стала просмотренной, но ответа ещё нет — осталась во «Ждут ответа»
+    await expect(page.locator(".pills .pill").nth(0)).toContainText(`${t.tabWaiting}2`);
+    await expect(page.locator(".pills .pill").nth(1)).toContainText(`${t.tabActive}0`);
     await expectNoAxeViolations(page, "компьютер: заявка рядом со списком");
     await expectNoOverflow(page, "компьютер: заявка рядом со списком");
 
     await page.getByRole("button", { name: t.actContacted }).click();
-    await expect(page.locator(".detail-top .chip")).toHaveText(t.st_contacted);
+    await expect(page.locator(".detail-top .chip")).toHaveText(st.contacted);
+    await expect(page.locator(".pills .pill").nth(1)).toContainText(`${t.tabActive}1`);
     await page.locator(".pills .pill").nth(1).click();
-    await expect(page.locator(".rq-list .rq[aria-current='page']")).toContainText(t.st_contacted);
+    await expect(page.locator(".rq-list .rq[aria-current='page']")).toContainText(st.contacted);
     expect(api.unexpected).toEqual([]);
   });
 
@@ -287,9 +366,9 @@ test.describe("кабинет", () => {
     await expect(requestTitle(page)).toContainText("1047");
     await expect(page.locator(".detail-top .chip")).toHaveText(t.late);
     await expect(page.locator(".request .sla-late")).toBeVisible();
-    // В списке — плашка про 12 часов: она появляется, только когда что-то просрочено
+    // В списке — плашка про 12 часов: она появляется, только когда что-то просрочено; открытая без
+    // ответа заявка — во «Ждут ответа», первой вкладке
     await page.goto("/requests");
-    await page.locator(".pills .pill", { hasText: t.tabActive }).click();
     await expect(page.locator(".rq-late")).toHaveCount(1);
     await expect(page.locator(".promise-late")).toHaveText(t.inboxLate);
     await expectNoAxeViolations(page, "входящие: просрочена");
@@ -325,7 +404,7 @@ test.describe("кабинет", () => {
     await expectHitAreas(page, "отказ: другая причина", CONTROLS);
     await form.locator("textarea").fill("Только по Ташкенту");
     await form.getByRole("button", { name: t.declineConfirm }).click();
-    await expect(page.locator(".detail-top .chip")).toHaveText(t.st_declined);
+    await expect(page.locator(".detail-top .chip")).toHaveText(st.declined);
     expect(api.patches).toEqual([
       {
         id: REQUEST_NEW,
@@ -539,7 +618,7 @@ test.describe("кабинет", () => {
     await expectHitAreas(page, "изменения карточки: окно", CONTROLS);
     await expectNoOverflow(page, "изменения карточки: окно");
 
-    await dialog.getByLabel(t.nameLabel, { exact: true }).fill("Lola zali Grand");
+    await field(dialog, t.nameLabel).fill("Lola zali Grand");
     await dialog.getByRole("button", { name: t.editSend }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText(t.proposalSent)).toBeVisible();
@@ -569,24 +648,21 @@ test.describe("кабинет", () => {
     await page.goto("/card");
     await editButton(page, t.groupPlace).click();
     const dialog = sheet(page, t.groupPlace);
-    await expect(dialog.getByRole("spinbutton", { name: t.capMinLabel, exact: true })).toHaveValue("80");
-    await expect(dialog.getByRole("spinbutton", { name: t.capMaxLabel, exact: true })).toHaveValue("300");
+    await expect(spin(dialog, t.capMinLabel)).toHaveValue("80");
+    await expect(spin(dialog, t.capMaxLabel)).toHaveValue("300");
     await expectNoAxeViolations(page, "место: окно");
     await expectHitAreas(page, "место: окно", CONTROLS);
     await expectNoOverflow(page, "место: окно");
 
     // «До» меньше «от» — ошибка у поля, запроса нет
-    await dialog.getByRole("spinbutton", { name: t.capMinLabel, exact: true }).fill("400");
+    await spin(dialog, t.capMinLabel).fill("400");
     await dialog.getByRole("button", { name: t.editSend }).click();
     await expect(dialog.getByText(t.capErrOrder)).toBeVisible();
-    await expect(dialog.getByRole("spinbutton", { name: t.capMaxLabel, exact: true })).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
+    await expect(spin(dialog, t.capMaxLabel)).toHaveAttribute("aria-invalid", "true");
     expect(api.saves).toEqual([]);
 
-    await dialog.getByRole("spinbutton", { name: t.capMinLabel, exact: true }).fill("100");
-    await dialog.getByRole("spinbutton", { name: t.capMaxLabel, exact: true }).fill("350");
+    await spin(dialog, t.capMinLabel).fill("100");
+    await spin(dialog, t.capMaxLabel).fill("350");
     await dialog.getByRole("button", { name: t.editSend }).click();
     await expect(dialog).toHaveCount(0);
     expect(api.saves.map((save) => save.body)).toEqual([{ version: 3, capMin: 100, capMax: 350 }]);
@@ -618,12 +694,12 @@ test.describe("кабинет", () => {
     // Витрины нет на сайте: «Сохранить», про проверку командой — ни слова
     await expect(dialog.getByText(t.liveSaveNote)).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: t.editSend })).toHaveCount(0);
-    await dialog.getByRole("spinbutton", { name: t.capMinLabel, exact: true }).fill("80");
-    await dialog.getByRole("spinbutton", { name: t.capMaxLabel, exact: true }).fill("300");
+    await spin(dialog, t.capMinLabel).fill("80");
+    await spin(dialog, t.capMaxLabel).fill("300");
     await dialog.getByRole("button", { name: new RegExp(t.district) }).click();
     await expect(page.getByRole("option", { name: "Ташкент" })).toHaveAttribute("aria-disabled", "true");
     await page.getByRole("option", { name: "Чиланзар" }).click();
-    await dialog.getByLabel(t.addressRuLabel, { exact: true }).fill("ул. Навои, 1");
+    await field(dialog, t.addressRuLabel).fill("ул. Навои, 1");
     await expectNoAxeViolations(page, "место: черновик");
     await dialog.getByRole("button", { name: t.editSave }).click();
 
@@ -653,13 +729,13 @@ test.describe("кабинет", () => {
     await editButton(page, t.attributesTitle).click();
     const dialog = sheet(page, t.attributesTitle);
     // Цены здесь нет: она — из услуг; поля витрины зала — из конфигурации категории
-    await expect(dialog.getByLabel("Мест на парковке", { exact: true })).toHaveValue("80");
-    await dialog.getByLabel("Сколько залов", { exact: true }).fill("50");
+    await expect(field(dialog, "Мест на парковке")).toHaveValue("80");
+    await field(dialog, "Сколько залов").fill("50");
     await dialog.getByRole("button", { name: t.editSend }).click();
-    await expect(dialog.getByLabel("Сколько залов", { exact: true })).toHaveAttribute("aria-invalid", "true");
+    await expect(field(dialog, "Сколько залов")).toHaveAttribute("aria-invalid", "true");
     expect(api.saves).toEqual([]);
-    await dialog.getByLabel("Сколько залов", { exact: true }).fill("3");
-    await dialog.getByLabel("Мест на парковке", { exact: true }).fill("120");
+    await field(dialog, "Сколько залов").fill("3");
+    await field(dialog, "Мест на парковке").fill("120");
     await expectNoAxeViolations(page, "данные витрины: окно");
     await dialog.getByRole("button", { name: t.editSend }).click();
     await expect(dialog).toHaveCount(0);
@@ -674,13 +750,13 @@ test.describe("кабинет", () => {
     await page.goto("/card");
     await editButton(page, t.groupBasics).click();
     const dialog = sheet(page, t.groupBasics);
-    await dialog.getByLabel(t.nameLabel, { exact: true }).fill("Lola zali Grand");
+    await field(dialog, t.nameLabel).fill("Lola zali Grand");
     await dialog.getByRole("button", { name: t.cancel }).click();
     const question = page.getByRole("alertdialog");
     await expect(question).toContainText(t.unsavedTitle);
     await expectNoAxeViolations(page, "окно: уйти без сохранения");
     await question.getByRole("button", { name: t.unsavedStay }).click();
-    await expect(dialog.getByLabel(t.nameLabel, { exact: true })).toHaveValue("Lola zali Grand");
+    await expect(field(dialog, t.nameLabel)).toHaveValue("Lola zali Grand");
     await dialog.getByRole("button", { name: t.cancel }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: t.unsavedLeave }).click();
     await expect(dialog).toHaveCount(0);
@@ -712,7 +788,8 @@ test.describe("кабинет", () => {
     const nav = sections(page);
     await expect(nav.getByRole("link")).toHaveCount(5);
     await expect(nav.getByRole("link", { name: t.requests })).toHaveAttribute("aria-current", "page");
-    await expect(nav.locator(".nav-count")).toHaveText("1");
+    // Сколько ждут ответа: новая и открытая без ответа
+    await expect(nav.locator(".nav-count")).toHaveText("2");
     for (const [name, title] of [
       [t.calendar, t.calendar],
       [t.card, t.card],
@@ -833,9 +910,10 @@ test.describe("витрины в разных категориях", () => {
       ).toHaveAttribute("aria-pressed", "true");
       // Подписи над пилюлями нет — имя группы только для диктора
       await expect(page.locator("main .vitrina-pills")).toHaveAccessibleName(t.inboxFilter);
-      await expect(page.getByText(t.inboxFilter, { exact: true })).toHaveCount(0);
+      await expect(page.locator("main").getByText(t.inboxFilter, { exact: true })).toHaveCount(0);
     }
-    await expect(page.locator(".rq-list .rq")).toHaveCount(2);
+    // «Ждут ответа» — новые обеих витрин и открытая без ответа
+    await expect(page.locator(".rq-list .rq")).toHaveCount(3);
     const car = page.locator(".rq-list .rq").filter({ hasText: "Дильноза" });
     await expect(car.locator(".rq-vitrina")).toHaveText("Кортеж · Kortej Premium");
     await expect(car.locator(".rq-meta")).toContainText(` · ${t.part_evening} · `);
@@ -847,9 +925,9 @@ test.describe("витрины в разных категориях", () => {
 
     await chooseVitrina(page, "Kortej Premium");
     await expect(page.locator(".rq-list .rq")).toHaveCount(1);
-    await expect.poll(() => api.inboxQueries.at(-1)).toEqual({ tab: "new", listingId: CAR_ID });
-    // Значок у раздела — новые всех витрин
-    await expect(sections(page).locator(".nav-count")).toHaveText("2");
+    await expect.poll(() => api.inboxQueries.at(-1)).toEqual({ tab: "waiting", listingId: CAR_ID });
+    // Значок у раздела — ждут ответа по всем витринам
+    await expect(sections(page).locator(".nav-count")).toHaveText("3");
 
     await car.click();
     await expect(requestTitle(page)).toContainText("1060");
@@ -890,7 +968,7 @@ test.describe("витрины в разных категориях", () => {
     // «Данные витрины» — открывается окно этой карточки (витрина не на сайте — «Сохранить»)
     await ready
       .locator(".todo-item")
-      .filter({ hasText: /Заполните данные витрины/ })
+      .filter({ hasText: /Заполните поле/ })
       .getByRole("button", { name: t.toFill })
       .click();
     const attributes = sheet(page, t.attributesTitle);
@@ -975,8 +1053,8 @@ test.describe("витрины в разных категориях", () => {
     await editor.getByRole("button", { name: t.serviceType }).click();
     await page.getByRole("option", { name: /Лимузин/ }).click();
     // Цена — с разрядами и «сум» у поля; минимум, срок и «что входит» — под «Условиями», свёрнуты
-    await editor.getByLabel(t.packagePrice, { exact: true }).fill("1200000");
-    await expect(editor.getByLabel(t.packagePrice, { exact: true })).toHaveValue("1\u202f200\u202f000");
+    await field(editor, t.packagePrice).fill("1200000");
+    await expect(field(editor, t.packagePrice)).toHaveValue("1\u202f200\u202f000");
     await expect(editor.locator(".money-post")).toHaveText(t.sumSuffix);
     await expect(editor.getByRole("spinbutton", { name: t.serviceMinQty })).toHaveCount(0);
     await expect(editor.getByRole("button", { name: t.serviceConditions })).toHaveAttribute(
@@ -984,7 +1062,7 @@ test.describe("витрины в разных категориях", () => {
       "false",
     );
     await editor.getByRole("button", { name: "Добавить: Остановки для фотосессии" }).click();
-    await editor.locator(".package-row").getByLabel(t.packagePrice, { exact: true }).fill("200000");
+    await field(editor.locator(".package-row"), t.packagePrice).fill("200000");
     await expectNoAxeViolations(page, "услуги: новая");
     await expectHitAreas(page, "услуги: новая", CONTROLS);
     await expectNoOverflow(page, "услуги: новая");
@@ -1004,7 +1082,7 @@ test.describe("витрины в разных категориях", () => {
     await card.getByRole("button", { name: t.svcEdit }).click();
     await expect(page.getByText(t.serviceProposalNote)).toBeVisible();
     await expect(editor.getByRole("spinbutton", { name: t.serviceMinQty })).toBeVisible();
-    await editor.getByLabel(t.packagePrice, { exact: true }).first().fill("350000");
+    await field(editor, t.packagePrice).first().fill("350000");
     await editor.getByRole("button", { name: t.proposalStart }).click();
     await expect(card.locator(".svc-proposal")).toContainText(t.svcProposal);
     await expect(card.locator(".changes")).toContainText("350");
@@ -1036,7 +1114,7 @@ test.describe("витрины в разных категориях", () => {
     await chooseVitrina(page, "Kortej Premium");
     const card = page.locator(".svc").filter({ hasText: "Машина для молодожёнов" });
     await card.getByRole("button", { name: t.svcEdit }).click();
-    const price = page.locator(".svc-editor").getByLabel(t.packagePrice, { exact: true }).first();
+    const price = field(page.locator(".svc-editor"), t.packagePrice).first();
     await price.fill("350000");
     // «Назад» Telegram в форме — не явная «Отмена»: с правками — вопрос
     await clickBackButton(page);
@@ -1078,7 +1156,7 @@ test.describe("витрины в разных категориях", () => {
       ).toHaveAttribute("aria-pressed", "true");
     await editButton(page, t.attributesTitle).click();
     const form = sheet(page, t.attributesTitle);
-    await form.getByRole("button", { name: `${t.listAdd}: Автопарк` }).click();
+    await form.getByRole("button", { name: "Добавить машину" }).click();
     const rows = form.locator(".attr-list .package-row");
     await expect(rows).toHaveCount(2);
     await rows.nth(1).locator("input.field").first().fill("Lincoln Town Car");
@@ -1444,7 +1522,7 @@ test.describe("что ждёт партнёра после решений ком
     // Новое предложение — прежний отказ ждать больше не нужно
     await editButton(page, t.groupBasics).click();
     const form = sheet(page, t.groupBasics);
-    await form.getByLabel(t.nameLabel, { exact: true }).fill("Lola zali Grand");
+    await field(form, t.nameLabel).fill("Lola zali Grand");
     await form.getByRole("button", { name: t.editSend }).click();
     await expect(page.getByText(t.proposalSent)).toBeVisible();
     await expect(badge(page, t.card)).toHaveCount(0);
@@ -1545,8 +1623,8 @@ test.describe("что ждёт партнёра после решений ком
     await expect(requestTitle(page)).toContainText("1040");
     const note = page.locator(".staff-reply");
     await expect(note).toContainText(t.firstByStaff);
-    // Два перехода — одной строкой: «История: Новая → Вы связались»
-    await expect(page.locator(".history-line")).toContainText(`${t.st_new} → ${t.st_contacted}`);
+    // Два перехода — одной строкой: «История: Новая → Связались»
+    await expect(page.locator(".history-line")).toContainText(`${st.new} → ${st.contacted}`);
     await expectNoAxeViolations(page, "заявка: ответил менеджер");
     await expectHitAreas(page, "заявка: ответил менеджер", CONTROLS);
     // Партнёр продолжил работу — первый ответ остаётся за менеджером

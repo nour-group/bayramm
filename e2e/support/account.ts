@@ -27,6 +27,8 @@ export const METHODS: AuthMethods = {
   phone: false,
   turnstileSiteKey: null,
   apps: APPS,
+  // Контакт команды для партнёров (настройка панели): «Стать партнёром», «Команда Bayramm»
+  team: { telegram: "bayramm_team", phone: "+998901112233" },
 };
 
 /** /api своего приложения: подмена кабинета не должна отвечать за панель и наоборот */

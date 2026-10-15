@@ -54,7 +54,18 @@ describe("настройки", () => {
 
   it("каждый изменяемый ключ разбирается; числовые — все с границами", () => {
     for (const key of Object.keys(INT_SETTINGS)) expect(SETTING_KEYS).toContain(key);
-    expect(SETTING_KEYS).toHaveLength(Object.keys(INT_SETTINGS).length + 2);
+    // Кроме чисел: напоминания, тихие часы и контакт команды (Telegram, телефон)
+    expect(SETTING_KEYS).toHaveLength(Object.keys(INT_SETTINGS).length + 4);
+  });
+
+  it("контакт команды: как вписали — к одному виду; пусто — не указан; кривое — нет", () => {
+    expect(parseSettingValue("team_telegram", " @bayramm_team ")).toBe("bayramm_team");
+    expect(parseSettingValue("team_telegram", "https://t.me/bayramm_team")).toBe("bayramm_team");
+    expect(parseSettingValue("team_telegram", "")).toBe("");
+    expect(parseSettingValue("team_telegram", "ab")).toBeUndefined();
+    expect(parseSettingValue("team_phone", "+998 90 111-22-33")).toBe("+998901112233");
+    expect(parseSettingValue("team_phone", "12345")).toBeUndefined();
+    expect(parseSettingValue("team_phone", 998901112233)).toBeUndefined();
   });
 });
 

@@ -58,7 +58,7 @@ import { ListingPicker } from "./ListingPicker";
 import { MoneyInput } from "./MoneyInput";
 import { type MenuAction, OverflowMenu } from "./OverflowMenu";
 import { useBackButton } from "./telegram";
-import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
+import { Empty, FieldMark, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useConfirmLeave, useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 
@@ -211,7 +211,7 @@ function ServiceCard({
     <li className={`svc${owner ? " svc-tap" : ""}`} data-service={service.id}>
       <div className="svc-top">
         <div className="svc-title">
-          <h3 className="svc-name" id={`svc-${service.id}`} tabIndex={-1}>
+          <h2 className="svc-name" id={`svc-${service.id}`} tabIndex={-1}>
             {owner ? (
               // Нажатие в любом месте карточки — правка: кнопка растянута на всю карточку (styles.css)
               <button
@@ -226,12 +226,12 @@ function ServiceCard({
             ) : (
               name
             )}
-          </h3>
+          </h2>
           {service.customName ? <p className="svc-type">{typeLabel}</p> : null}
         </div>
         <div className="svc-side">
           <span className={`chip ${STATUS_TONE[status]}`}>{t[`svcSt_${status}`]}</span>
-          <OverflowMenu title={name} label={fill(t.svcMore, { name })} actions={menu} t={t} />
+          <OverflowMenu title={name} label={fill(t.svcMore, { name })} actions={menu} />
         </div>
       </div>
       <p className="svc-facts">{facts.join(" · ")}</p>
@@ -412,6 +412,8 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
     path: string,
     multiline: boolean,
   ) => {
+    // Название «другой услуги» нужно на обоих языках; что входит — по желанию
+    const required = key === "nameRu" || key === "nameUz";
     if (!draft) return null;
     const common = {
       id: `${id}-${key}`,
@@ -425,7 +427,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
     return (
       <div className="form-row">
         <label className="field-label" htmlFor={common.id}>
-          {label}
+          {label} <FieldMark required={required} t={t} />
         </label>
         {multiline ? (
           <textarea {...common} rows={2} maxLength={SERVICE_LIMITS.includesMax} placeholder={t.optionalPh} />
@@ -478,7 +480,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
         {create ? (
           <div className="form-row">
             <label className="field-label" htmlFor={`${id}-type`}>
-              {t.serviceType}
+              {t.serviceType} <FieldMark required t={t} />
             </label>
             <Select
               id={`${id}-type`}
@@ -521,7 +523,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
 
             <div className="form-row">
               <label className="field-label" htmlFor={`${id}-price`}>
-                {t.packagePrice}
+                {t.packagePrice} <FieldMark required t={t} />
               </label>
               <MoneyInput
                 id={`${id}-price`}
@@ -535,7 +537,9 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
               {errorOf("priceUzs", t.svcPriceInvalid)}
             </div>
             <fieldset className="choices">
-              <legend className="field-label">{t.priceUnitLabel}</legend>
+              <legend className="field-label">
+                {t.priceUnitLabel} <FieldMark required t={t} />
+              </legend>
               {unitControl(type.units, draft.priceUnit, (unit) => set({ priceUnit: unit }), "priceUnit")}
               {errorOf("priceUnit", t.fieldInvalid)}
             </fieldset>
@@ -545,7 +549,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                 <div className="form-grid">
                   <div className="form-row">
                     <label className="field-label" htmlFor={`${id}-min`}>
-                      {t.serviceMinQty}
+                      {t.serviceMinQty} <FieldMark required={false} t={t} />
                     </label>
                     <NumberStepper
                       id={`${id}-min`}
@@ -563,7 +567,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                   </div>
                   <div className="form-row">
                     <label className="field-label" htmlFor={`${id}-lead`}>
-                      {t.serviceLeadDays}
+                      {t.serviceLeadDays} <FieldMark required={false} t={t} />
                     </label>
                     <NumberStepper
                       id={`${id}-lead`}
@@ -603,7 +607,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                     <div className="form-grid">
                       <div className="form-row">
                         <label className="field-label" htmlFor={`${rowId}-ru`}>
-                          {t.packageNameRu}
+                          {t.packageNameRu} <FieldMark required t={t} />
                         </label>
                         <input
                           id={`${rowId}-ru`}
@@ -617,7 +621,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                       </div>
                       <div className="form-row">
                         <label className="field-label" htmlFor={`${rowId}-uz`}>
-                          {t.packageNameUz}
+                          {t.packageNameUz} <FieldMark required t={t} />
                         </label>
                         <input
                           id={`${rowId}-uz`}
@@ -631,7 +635,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                       </div>
                       <div className="form-row">
                         <label className="field-label" htmlFor={`${rowId}-price`}>
-                          {t.packagePrice}
+                          {t.packagePrice} <FieldMark required t={t} />
                         </label>
                         <MoneyInput
                           id={`${rowId}-price`}
@@ -711,7 +715,8 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
             {notices[notice]}
           </p>
         ) : null}
-        <div className="actions">
+        {/* Одна главная кнопка; черновик и отмена — в «⋯» (три широкие кнопки подряд спорили) */}
+        <div className="actions svc-editor-actions">
           <button type="submit" className="btn btn-dark" disabled={busy}>
             {byProposal
               ? t.proposalStart
@@ -719,14 +724,18 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                 ? t.serviceSave
                 : t.proposalSubmit}
           </button>
-          {draftable ? (
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void send(false)}>
-              {t.serviceSaveDraft}
-            </button>
-          ) : null}
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={onCancel}>
-            {t.cancel}
-          </button>
+          <OverflowMenu
+            title={create ? t.serviceNew : t.serviceEditTitle}
+            label={t.svcEditorMore}
+            actions={[
+              ...(draftable
+                ? [{ key: "draft", label: t.serviceSaveDraft, run: () => void send(false) }]
+                : []),
+              { key: "cancel", label: t.cancel, run: () => onCancel() },
+            ]}
+            disabled={busy}
+            className="svc-editor-more"
+          />
         </div>
       </form>
     </section>

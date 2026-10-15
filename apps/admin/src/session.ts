@@ -1,6 +1,6 @@
 /* Вход сотрудника. Сотрудник — роль на аккаунте Bayramm; сессия сотрудника (12 часов)
    выдаётся только по свежему входу:
-     · панель как Mini App (кнопка «Панель оператора» в боте): initData → POST /auth/staff/webapp;
+     · панель как Mini App (кнопка «Панель команды» в боте): initData → POST /auth/staff/webapp;
      · в браузере — хаб входа на сайте Bayramm: панель создаёт verifier и state (PKCE S256),
        хаб после входа возвращает на /auth/callback?code=…&state=…, код + verifier меняются на
        сессию аккаунта (POST /auth/hub/exchange), она — на сессию сотрудника

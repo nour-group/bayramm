@@ -66,6 +66,7 @@ import { database } from "../db/middleware";
 import type { AppEnv } from "../env";
 import { ApiError, unauthorized } from "../errors";
 import { allowed, rateLimited } from "../ratelimit";
+import { readTeamContact } from "../staff/settings";
 import { BOT_USERNAME_RE, botUsername, defaultCache } from "../telegram/bot-info";
 import { telegramClient } from "../telegram/client";
 
@@ -101,7 +102,7 @@ auth.use(async (c, next) => {
 
 // ── чем можно войти ─────────────────────────────────────────────────────────
 
-auth.get("/methods", async (c) => {
+auth.get("/methods", database, async (c) => {
   const token = c.env.TELEGRAM_BOT_TOKEN;
   let bot: string | null = null;
   try {
@@ -119,6 +120,8 @@ auth.get("/methods", async (c) => {
     console.warn("auth.methods: bot username unavailable", err instanceof Error ? err.name : typeof err);
   }
   const loginDomain = (c.env.TELEGRAM_LOGIN_DOMAIN as string) || null;
+  // Контакт команды для будущих партнёров (кабинет: «Стать партнёром», «Команда Bayramm»)
+  const team = await readTeamContact(c.var.db);
   return c.json(
     {
       telegram: { bot, loginDomain },
@@ -129,6 +132,7 @@ auth.get("/methods", async (c) => {
         vendor: httpUrl("VENDOR_APP_URL", c.env.VENDOR_APP_URL),
         admin: httpUrl("ADMIN_APP_URL", c.env.ADMIN_APP_URL),
       },
+      team,
     },
     200,
     { "Cache-Control": "public, max-age=300" },

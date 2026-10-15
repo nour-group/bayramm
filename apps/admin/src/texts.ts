@@ -1,7 +1,9 @@
-/* Тексты панели оператора. Панель только на русском: ею пользуется команда, не клиенты.
+/* Тексты панели команды. Панель только на русском: ею пользуется команда, не клиенты.
    Узбекские здесь — только подписи полей, куда вписывают текст для клиентов на узбекском. */
+import { REQUEST_STATUS_NAMES } from "@bayramm/shared/i18n/status";
+
 export const t = {
-  area: "панель оператора",
+  area: "панель команды",
   skip: "К содержимому",
   sections: "Разделы панели",
   vendors: "Вендоры",
@@ -16,7 +18,18 @@ export const t = {
   noAccess: "У вашей роли нет доступа к этому разделу.",
   notFound: "Страница не найдена",
   notFoundLead: "Проверьте адрес или откройте главный раздел.",
-  toSection: (section: string) => `Открыть «${section}»`,
+  // Ссылка на главный раздел роли — «К модерации», а не «Открыть «Модерация»»: падеж согласован
+  toSection: {
+    vendors: "К вендорам",
+    moderation: "К модерации",
+    requests: "К заявкам",
+    clients: "К клиентам",
+    notifications: "К уведомлениям",
+    audit: "К журналу",
+    team: "К команде",
+    settings: "К настройкам",
+    metrics: "К метрикам",
+  },
 
   // несохранённые правки: уход со страницы
   unsavedTitle: "Уйти без сохранения?",
@@ -34,7 +47,7 @@ export const t = {
   loginChecking: "Проверяем вход…",
   loginHub: "Войти через Bayramm",
   loginStarting: "Переходим ко входу…",
-  loginMiniApp: "В Telegram панель открывается кнопкой «Панель оператора» в боте.",
+  loginMiniApp: "В Telegram панель открывается кнопкой «Панель команды» в боте.",
   loginOpenBot: "Открыть бота",
   toClientApp: "Приложение Bayramm",
   toCabinet: "Кабинет партнёра",
@@ -88,6 +101,8 @@ export const t = {
   notSet: "не указан",
   more: "Ещё",
   optional: "по желанию",
+  // Рамка таблицы, которая прокручивается вбок: имя области — не то же, что у раздела над ней
+  tableOf: (title: string) => `Таблица: ${title.toLowerCase()}`,
 
   // телефон и планшет: шапка, нижняя панель, шторки
   account: "Аккаунт",
@@ -357,9 +372,9 @@ export const t = {
     slug: "Адрес страницы (латиница)",
     districtCode: "Район",
     addressRu: "Адрес (RU)",
-    addressUz: "Manzil (UZ)",
+    addressUz: "Адрес (UZ)",
     descriptionRu: "Описание (RU)",
-    descriptionUz: "Tavsif (UZ)",
+    descriptionUz: "Описание (UZ)",
     capMin: "Гостей от",
     capMax: "Гостей до",
     phone: "Телефон",
@@ -515,9 +530,12 @@ export const t = {
   contactQueue: "Смена контактов",
   // «Не хватает: 2» — вместо списка пунктов: что именно, видно на странице витрины
   missingN: (n: number) => `Не хватает: ${n}`,
-  // Кто предложил — одним словом в карточке очереди (на странице предложения — полной фразой)
+  // Кто предложил — в карточке очереди (на странице предложения — полной фразой). «Партнёр» — человек
+  // в кабинете; рядом с названием витрины и вендора он читался как название, поэтому — откуда пришло
   queueProposer: (kind: "partner" | "staff", name: string | null) =>
-    kind === "partner" ? "партнёр" : `сотрудник${name ? ` · ${name}` : ""}`,
+    kind === "partner" ? "Из кабинета вендора" : `Сотрудник${name ? ` ${name}` : ""}`,
+  // Что меняет предложение: «Меняет: Название, Описание (RU)»
+  queueChanges: (fields: string) => `меняет: ${fields}`,
   submittedAt: "Отправлена",
   photosCount: (ready: number, approved: number) => `фото: ${ready}, одобрено: ${approved}`,
   listingsInReview: "Витрины на проверке",
@@ -525,13 +543,13 @@ export const t = {
   revisionFields: {
     name: "Название",
     descriptionRu: "Описание (RU)",
-    descriptionUz: "Tavsif (UZ)",
+    descriptionUz: "Описание (UZ)",
     attributes: "Данные витрины",
     videoLinks: "Видео",
     capacity: "Вместимость",
     districtCode: "Район",
     addressRu: "Адрес (RU)",
-    addressUz: "Manzil (UZ)",
+    addressUz: "Адрес (UZ)",
   } as Record<string, string>,
   // Вместимость в правке: «80–300 гостей», «до 300 гостей», «от 80 гостей»
   revisionCapacity: (min: number | null, max: number | null) =>
@@ -585,6 +603,28 @@ export const t = {
   openListing: "К витрине",
   photoQueue: "Новые фото",
   pendingPhotos: (n: number) => `ждут решения: ${n}`,
+  // Что отметил загрузивший и правило фото категории — рядом, чтобы сверить
+  photoAckClaim: { no_faces: "Отмечено: лиц нет", people_consent: "Отмечено: люди согласны на публикацию" },
+  photoRule: {
+    no_people: "Правило категории: фото без людей и лиц",
+    portfolio: "Правило категории: люди — только с их согласия",
+  },
+  // Просмотр фото во весь экран: листать и решать там же
+  photoViewerTitle: (n: number, total: number, listing: string) => `Фото ${n} из ${total} · ${listing}`,
+  photoOpen: (n: number, listing: string) => `Открыть фото ${n}: ${listing}`,
+  photoPrev: "Предыдущее фото",
+  photoNext: "Следующее фото",
+  photoApprove: "Одобрить",
+  photoDecline: "Отклонить",
+  photoDecidedHere: "Решено",
+  photoViewerKeys: "← → — листать",
+  // «Одобрить все» — после того как каждое фото открыто, или с подтверждением числа
+  photoApproveAllQ: (n: number) => `Одобрить ${n} фото, не открывая?`,
+  photoApproveAllText: (n: number, seen: number) =>
+    seen === 0
+      ? `Ни одно из ${n} фото не открыто во весь экран. Одобрить все сразу?`
+      : `Открыто ${seen} из ${n}. Остальные одобрятся, не открытые во весь экран.`,
+  photoApproveAllGo: "Одобрить все",
   // Очередь фото: решение — по плитке (✓ и ✕), «Одобрить все» — по карточке
   photoApproveOne: (n: number, listing: string) => `Одобрить фото ${n}: ${listing}`,
   photoDeclineOne: (n: number, listing: string) => `Отклонить фото ${n}: ${listing}`,
@@ -612,15 +652,8 @@ export const t = {
   // Плашка срока в строке заявки: когда ответ ждут и сколько уже просрочена
   slaUntil: (time: string) => `Ответ до ${time}`,
   slaOverdue: (span: string) => `Просрочена ${span}`,
-  requestStatus: {
-    new: "Новая",
-    viewed: "Просмотрена",
-    contacted: "Вендор связался",
-    deal: "Договорились",
-    declined: "Отказ вендора",
-    withdrawn: "Отозвана клиентом",
-    expired: "Истекла",
-  } as Record<string, string>,
+  // Статусы заявки — общий словарь клиента, кабинета и панели: одно слово на статус
+  requestStatus: REQUEST_STATUS_NAMES.ru as Record<string, string>,
   declineReasons: {
     busy: "Занято",
     format: "Не наш формат",
@@ -650,7 +683,7 @@ export const t = {
     web: "Сайт",
     vendor_cabinet: "Кабинет партнёра",
     partner_bot: "Бот партнёра",
-    admin: "Панель оператора",
+    admin: "Панель команды",
     offline: "Не из приложения",
     system: "Система",
   } as Record<string, string>,
@@ -661,9 +694,9 @@ export const t = {
   remindUnreachable: "У вендора никто не привязал Telegram — напоминание не дойдёт. Позвоните.",
   remindAgainAt: (at: string) => `Следующее напоминание — после ${at}`,
   remindSent: "Напоминание отправлено",
-  markContacted: "Связались",
+  markContacted: "Связались с площадкой",
   markContactedHint:
-    "Отметка оператора: связь с клиентом состоялась. В ответы вендора она не засчитывается; клиенту уйдёт то же сообщение, что при ответе вендора.",
+    "Отметьте, когда команда дозвонилась до площадки и та знает о заявке. Клиенту уйдёт: «Команда Bayramm связалась с площадкой… она свяжется с вами сама». Ответом площадки в метриках это не считается.",
   notAwaiting: "Заявка уже не ждёт первого ответа вендора.",
   requestWhatWhen: "Что и когда",
   requestCourse: "Ход заявки",
@@ -1008,7 +1041,12 @@ export const t = {
   } as Record<string, string>,
 
   // настройки
-  settingGroups: { vendor: "Ответ вендора", photos: "Фото", data: "Данные" } as Record<string, string>,
+  settingGroups: {
+    vendor: "Ответ вендора",
+    photos: "Фото",
+    team: "Контакт команды для партнёров",
+    data: "Данные",
+  } as Record<string, string>,
   settingsLabels: {
     sla_hours: "Срок ответа вендора",
     sla_reminder_hours: "Напоминания вендору через",
@@ -1020,6 +1058,8 @@ export const t = {
     request_contact_retention_days: "Хранить контакты из заявки после события",
     session_retention_days: "Хранить истёкшие сессии",
     otp_retention_hours: "Хранить коды входа",
+    team_telegram: "Telegram команды",
+    team_phone: "Телефон команды",
   } as Record<string, string>,
   // Границы значения — вместо абзацев: новое значение сервер проверит ещё раз
   settingsHints: {
@@ -1033,7 +1073,13 @@ export const t = {
     request_contact_retention_days: "1–3650 дн.",
     session_retention_days: "1–365 дн.",
     otp_retention_hours: "1–720 ч",
+    team_telegram: "имя или ссылка t.me · видят партнёры в кабинете · пусто — не показывать",
+    team_phone: "+998 и 9 цифр · видят партнёры в кабинете · пусто — не показывать",
   } as Record<string, string>,
+  settingPlaceholders: { team_telegram: "bayramm_team", team_phone: "+998 90 123 45 67" } as Record<
+    string,
+    string
+  >,
   settingInvalid: "Значение не подходит: проверьте границы и согласованность с другими настройками.",
   settingValue: "Значение",
   reminderFirst: "Первое",
@@ -1095,6 +1141,9 @@ export const t = {
   colBreaches: "Срок сорван",
   weekNow: "идёт",
   answeredOf: (answered: number, measurable: number) => `${answered} из ${measurable}`,
+  // Текущая неделя: доли ещё нет, но сколько уже ответили в срок — видно
+  weekInProgress: (answered: number, measurable: number) =>
+    `идёт неделя · ${answered} из ${measurable} ответили в срок`,
   medianTime: (median: string) => `медиана ${median}`,
   sortAsc: "по возрастанию",
   sortDesc: "по убыванию",
@@ -1112,6 +1161,10 @@ export const t = {
   colCategory: "Категория",
   allCategories: "Все категории",
   categoryFirst: "Категория витрины",
+  // Новый вендор: название — компании, первая витрина заводится сразу в выбранной категории
+  vendorNameNew: "Название компании (вендора)",
+  categoryFirstHint:
+    "В этой категории сразу появится первая витрина вендора — черновиком, с названием компании. Другие — на странице вендора.",
   categoryRequired: "Выберите категорию",
   addVitrina: "+ Витрина",
   addVitrinaLead:
@@ -1131,6 +1184,7 @@ export const t = {
     videos: "Видео",
   },
   attributeError: "Проверьте значение",
+  attributeMissing: "Не заполнено — без этого витрину не опубликовать",
   attributeIntError: (min: number, max: number) => `Целое число от ${min} до ${max}`,
   listAdd: "Добавить",
   listRemove: "Убрать",

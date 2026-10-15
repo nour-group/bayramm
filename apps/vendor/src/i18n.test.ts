@@ -44,7 +44,6 @@ const SERVICE_CHANGE_FIELDS = Object.keys({
 
 // Коды, из которых экраны собирают ключи (st_ + статус и т. д.): у каждого — текст
 const CODES = {
-  st: ["new", "viewed", "contacted", "deal", "declined", "withdrawn", "expired"],
   reason: DECLINE_REASONS,
   by: ["client", "vendor_user", "staff", "system"],
   ls: ["lead", "draft", "review", "active", "suspended", "rejected"],
