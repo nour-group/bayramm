@@ -7,7 +7,8 @@
 //     услуги (менеджер — на проверку, модератор — сразу), публикация, очередь
 //     модерации, решения, смена категории (пока нет заявок);
 //   · кабинет: витрины с категориями, услуги и предложения правок, части дня и
-//     одновременные заказы;
+//     одновременные заказы; время работы (несколько мероприятий в день, рабочие части, окна) —
+//     от версии календаря, часть с будущими заявками не убрать; несколько дней одной правкой;
 //   · клиент: категории каталога, фильтры по полям витрины, карточка с услугами,
 //     заявка с полями категории (часть дня, выбранные услуги — снимком, срок подготовки).
 //
@@ -32,7 +33,14 @@ import type {
   VendorDetail,
   VendorList,
 } from "@bayramm/shared/api/staff";
-import type { VendorCalendar, VendorListing, VendorMe, VendorRequestPage } from "@bayramm/shared/api/vendor";
+import type {
+  DaySessionsChange,
+  VendorCalendar,
+  VendorCalendarBatchResult,
+  VendorListing,
+  VendorMe,
+  VendorRequestPage,
+} from "@bayramm/shared/api/vendor";
 import { CATEGORIES, categoriesRu, categoriesUz, requiredAttributeKeys } from "@bayramm/shared/categories";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -576,7 +584,7 @@ describe("клиент: категории, фильтры, карточка, з
     requestId = created.id;
     const mine = await ok<ClientRequests>(request(clientToken, "GET", "/requests"));
     const item = mine.items.find((r) => r.id === created.id);
-    expect(item).toMatchObject({ guests: null, dayPart: "evening", listing: { categoryCode: "car" } });
+    expect(item).toMatchObject({ guests: null, dayParts: ["evening"], listing: { categoryCode: "car" } });
     expect(item?.details).toMatchObject({
       start_time: "18:30",
       hours: 4,
@@ -664,7 +672,11 @@ describe("кабинет: витрины, услуги, предложения, 
       call(`/vendor/requests?tab=new&listingId=${car.id}`, bearer(vendorToken)),
     );
     expect(forCar.items.map((r) => r.listing.categoryCode)).toEqual(["car"]);
-    expect(forCar.items[0]).toMatchObject({ guests: null, dayPart: "evening", details: { cars_count: 2 } });
+    expect(forCar.items[0]).toMatchObject({
+      guests: null,
+      dayParts: ["evening"],
+      details: { cars_count: 2 },
+    });
     const forPhoto = await ok<VendorRequestPage>(
       call(`/vendor/requests?tab=new&listingId=${photo.id}`, bearer(vendorToken)),
     );
@@ -784,7 +796,7 @@ describe("кабинет: витрины, услуги, предложения, 
           details: { start_time: "19:00", hours: 3, cars_count: 1 },
         }),
       ),
-    ).toEqual({ status: 409, code: "date_busy", details: ["details.start_time"] });
+    ).toEqual({ status: 409, code: "date_busy", details: ["dayParts"] });
 
     const capacity = await call(`/vendor/listings/${car.id}/calendar/capacity`, {
       method: "PUT",
@@ -798,7 +810,7 @@ describe("кабинет: витрины, услуги, предложения, 
     expect(capacity.status).toBe(200);
     expect(await capacity.json()).toEqual({ parallelCapacity: 3, version: change.version + 1 });
 
-    // У зала частей дня нет
+    // Такой части дня нет
     const hall = await call(`/vendor/listings/${car.id}/calendar/${target}?part=noon`, {
       method: "PUT",
       headers: { Authorization: `Bearer ${vendorToken}`, "If-Match": String(change.version + 1) },
@@ -855,5 +867,212 @@ describe("кабинет: витрины, услуги, предложения, 
       }),
     );
     expect(saved).toMatchObject({ status: "draft", priceUzs: 550_000, decision: null });
+  });
+});
+
+describe("время работы и несколько частей дня", () => {
+  const sessions = (version: number, body: unknown) =>
+    call(`/vendor/listings/${car.id}/day-sessions`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${vendorToken}`,
+        "If-Match": String(version),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  const calendarVersion = async () =>
+    (await ok<VendorCalendar>(call(`/vendor/listings/${car.id}/calendar`, bearer(vendorToken)))).version;
+  const send = (eventDate: string, body: Record<string, unknown>) =>
+    request(clientToken, "POST", "/requests", {
+      listingId: car.id,
+      occasionCode: "nahorgi_osh",
+      eventDate,
+      contactName: "Тест",
+      contactPhone: "+998000000123",
+      requestTransferConsentId: transferText,
+      ...body,
+    });
+  const ids = async (query: string) =>
+    (await ok<CatalogPage>(call(`/catalog/listings?category=car&${query}&limit=50`))).items.map((i) => i.id);
+
+  it("по умолчанию — несколько мероприятий, все части, окна категории; у витрины в каталоге — тоже", async () => {
+    const listing = await ok<VendorListing>(call(`/vendor/listings/${car.id}`, bearer(vendorToken)));
+    expect(listing.daySessions).toEqual({
+      mode: "parts",
+      parts: ["morning", "day", "evening"],
+      windows: {
+        morning: { from: "05:00", to: "11:00" },
+        day: { from: "11:00", to: "17:00" },
+        evening: { from: "17:00", to: "24:00" },
+      },
+      custom: null,
+      parallelCapacity: 3,
+    });
+    const card = await ok<PublicListing>(call(`/catalog/listings/${car.slug}`));
+    expect(card.sessions).toEqual({
+      mode: "parts",
+      parts: ["morning", "day", "evening"],
+      windows: listing.daySessions.windows,
+    });
+  });
+
+  it("заявка на две части; время начала — внутри выбранной; часть с будущей заявкой не убрать", async () => {
+    const details = { start_time: "07:00", hours: 2, cars_count: 1 };
+    expect(await error(send(day(30), { dayParts: ["evening"], details }))).toEqual({
+      status: 400,
+      code: "invalid_request",
+      details: ["details.start_time"],
+    });
+    const created = await ok<RequestCreated>(
+      send(day(30), { dayParts: ["evening", "morning"], details }),
+      201,
+    );
+    const mine = await ok<ClientRequests>(request(clientToken, "GET", "/requests"));
+    expect(mine.items.find((r) => r.id === created.id)?.dayParts).toEqual(["morning", "evening"]);
+
+    const version = await calendarVersion();
+    expect(
+      (await call(`/vendor/listings/${car.id}/day-sessions`, { method: "PUT", ...bearer(vendorToken) }))
+        .status,
+    ).toBe(428);
+    const inUse = await sessions(version, {
+      mode: "parts",
+      parts: ["morning", "day"],
+      windows: null,
+      parallelCapacity: 3,
+    });
+    expect(inUse.status).toBe(409);
+    expect(await inUse.json()).toMatchObject({
+      error: { code: "part_in_use", details: ["evening"] },
+      inUse: [{ part: "evening" }],
+    });
+    expect(
+      (await sessions(version - 1, { mode: "whole", parts: ["morning"], windows: null, parallelCapacity: 3 }))
+        .status,
+    ).toBe(409);
+  });
+
+  it("одно мероприятие в день — всегда можно; заявка — на весь день; обратно — свои окна", async () => {
+    const version = await calendarVersion();
+    const whole = await ok<DaySessionsChange>(
+      sessions(version, { mode: "whole", parts: ["morning", "evening"], windows: null, parallelCapacity: 3 }),
+    );
+    expect(whole).toMatchObject({
+      version: version + 1,
+      sessions: { mode: "whole", parts: ["morning", "evening"] },
+    });
+    const created = await ok<RequestCreated>(
+      send(day(31), { dayParts: ["morning"], details: { start_time: "14:00", hours: 2, cars_count: 1 } }),
+      201,
+    );
+    const { rows } = await admin.query("select day_parts::text from app.requests where id = $1", [
+      created.id,
+    ]);
+    expect(rows[0]?.day_parts).toBe("{}");
+
+    const back = await ok<DaySessionsChange>(
+      sessions(whole.version, {
+        mode: "parts",
+        parts: ["morning", "evening"],
+        windows: { evening: { from: "18:00", to: "23:00" } },
+        parallelCapacity: 3,
+      }),
+    );
+    expect(back.sessions).toMatchObject({
+      mode: "parts",
+      custom: { evening: { from: "18:00", to: "23:00" } },
+      windows: { evening: { from: "18:00", to: "23:00" } },
+    });
+    expect(
+      await error(
+        sessions(back.version, {
+          mode: "parts",
+          parts: ["morning", "evening"],
+          windows: { morning: { from: "06:00", to: "19:00" } },
+          parallelCapacity: 3,
+        }),
+      ),
+    ).toEqual({ status: 422, code: "invalid_input", details: ["windows.evening"] });
+  });
+
+  it("каталог «Время»: свободные в часть дня на дату; без даты — не действует", async () => {
+    // day(12): вечер отмечен занятым (тест частей дня выше); днём витрина больше не работает
+    expect(await ids(`date=${day(12)}&part=morning`)).toContain(car.id);
+    expect(await ids(`date=${day(12)}&part=evening`)).not.toContain(car.id);
+    expect(await ids(`date=${day(12)}&part=day`)).not.toContain(car.id);
+    expect(await ids(`date=${day(12)}&part=whole`)).not.toContain(car.id);
+    expect(await ids(`date=${day(13)}&part=whole`)).toContain(car.id);
+    expect(await ids("part=evening")).toContain(car.id);
+    expect(await error(call(`/catalog/listings?category=car&date=${day(12)}&part=noon`))).toEqual({
+      status: 400,
+      code: "invalid_request",
+      details: ["part"],
+    });
+  });
+
+  it("несколько дней одной правкой: вечера двух суббот — от версии; часть вне работы — 422", async () => {
+    const version = await calendarVersion();
+    const batch = (body: unknown, v = version) =>
+      call(`/vendor/listings/${car.id}/calendar`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${vendorToken}`,
+          "If-Match": String(v),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    const result = await ok<VendorCalendarBatchResult>(
+      batch({
+        busyParts: [
+          { day: day(40), part: "evening" },
+          { day: day(47), part: "evening" },
+        ],
+      }),
+    );
+    expect(result).toMatchObject({ from: day(40), to: day(47), skipped: 0, version: version + 2 });
+    expect(result.parts.map((p) => [p.day, p.part])).toEqual([
+      [day(40), "evening"],
+      [day(47), "evening"],
+    ]);
+    expect(await error(batch({ busyParts: [{ day: day(41), part: "day" }] }, result.version))).toEqual({
+      status: 422,
+      code: "invalid_input",
+      details: ["busyParts"],
+    });
+    expect((await batch({ freeParts: [{ day: day(40), part: "evening" }] })).status).toBe(409);
+  });
+
+  it("панель: время работы от версии календаря; без права правки — 403", async () => {
+    const availability = await ok<{ version: number }>(
+      api("manager", "GET", `/staff/listings/${car.id}/availability`),
+    );
+    const change = await ok<DaySessionsChange>(
+      api("manager", "PUT", `/staff/listings/${car.id}/day-sessions`, {
+        version: availability.version,
+        mode: "parts",
+        parts: ["morning", "evening"],
+        windows: null,
+        parallelCapacity: 2,
+      }),
+    );
+    expect(change).toMatchObject({
+      version: availability.version + 1,
+      sessions: { parallelCapacity: 2, custom: null },
+    });
+    expect(
+      await error(
+        api("manager", "PUT", `/staff/listings/${car.id}/day-sessions`, {
+          version: availability.version,
+          mode: "parts",
+          parts: ["morning", "evening"],
+          windows: null,
+          parallelCapacity: 3,
+        }),
+      ),
+    ).toMatchObject({ status: 409, code: "calendar_conflict" });
+    const detail = await ok<ListingDetail>(api("manager", "GET", `/staff/listings/${car.id}`));
+    expect(detail.daySessions).toMatchObject({ parts: ["morning", "evening"], parallelCapacity: 2 });
   });
 });
