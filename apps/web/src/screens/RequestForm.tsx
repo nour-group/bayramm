@@ -47,7 +47,7 @@ import {
   weekdayMon,
 } from "../format";
 import { useAsync, useDocumentTitle } from "../hooks";
-import { authHref, browser } from "../hub";
+import { continueAtHub } from "../hub";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
 import { canRequestPhone, haptic, requestPhone, requestWriteAccess } from "../telegram";
@@ -791,7 +791,7 @@ function Form({
     if (guest && !first) {
       saveDraft(listing.slug, draft);
       markSendAfterSignIn(listing.slug);
-      browser.replace(authHref({ return: `${window.location.pathname}${window.location.search}` }));
+      continueAtHub();
       return;
     }
     if (first || !transferText) {

@@ -144,8 +144,8 @@ describe("GET /staff/me и справочники", () => {
     expect((dict.cities ?? []).map((c) => c.code)).toContain("tashkent");
     expect(dict.districts.every((d) => d.city === "tashkent")).toBe(true);
     expect(dict.categories.filter((c) => c.enabled).map((c) => c.code)).toEqual([
-      "zags",
       "hall",
+      "zags",
       "car",
       "photo",
       "studio",

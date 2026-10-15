@@ -121,6 +121,15 @@ export function authHref(
   return search ? `${AUTH_PATH}?${search}` : AUTH_PATH;
 }
 
+/**
+ * Во вход с возвратом на этот же экран (гость нажал «Отправить» в форме заявки): хаб — полной
+ * загрузкой, путь возврата он проверит сам (safeReturn). Отправку проверяет сервер: без сессии
+ * POST /requests не примет, это лишь переход к странице входа
+ */
+export function continueAtHub(): void {
+  browser.replace(authHref({ return: `${window.location.pathname}${window.location.search}` }));
+}
+
 /** Поля виджета из адреса возврата (data-auth-url): id, first_name, …, auth_date, hash */
 export function readWidgetFields(search: string): Record<string, string> | null {
   const params = new URLSearchParams(search);
