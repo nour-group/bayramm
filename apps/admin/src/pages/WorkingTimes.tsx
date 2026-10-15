@@ -40,10 +40,13 @@ export function sessionsFailureText(failure: Failure): string {
 export function WorkingTimes({
   listing,
   category,
+  version,
   onSaved,
 }: {
   listing: ListingDetail;
   category: CategoryConfig;
+  /** Версия календаря: последняя известная (календарь рядом мог её поднять после загрузки витрины) */
+  version: number;
   /** Сохранили или календарь изменили: перечитать витрину (и календарь) */
   onSaved: () => void;
 }) {
@@ -97,7 +100,7 @@ export function WorkingTimes({
     setFailure(null);
     setBusy(true);
     const result = await api.put<DaySessionsChange>(`/staff/listings/${listing.id}/day-sessions`, {
-      version: listing.calendarVersion,
+      version,
       ...input,
     });
     setBusy(false);

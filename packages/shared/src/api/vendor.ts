@@ -398,7 +398,7 @@ export interface VendorCapacityChange {
  * PUT /vendor/listings/:id/day-sessions DaySessionsInput, If-Match: <версия календаря> → 200
  * DaySessionsChange. «Время работы» витрины: одно мероприятие в день или несколько, рабочие
  * части, свои окна и заказов одновременно — сразу, без модерации, как календарь. Меняет только
- * владелец кабинета (сотрудник площадки — 403 forbidden_for_actor). Ошибки полей — 422
+ * владелец кабинета (сотрудник площадки — 403 vendor_owner_required). Ошибки полей — 422
  * invalid_input (details — mode, parts, windows.<часть>, parallelCapacity). Убрать часть, на
  * которую есть будущие заявки (новые, в работе, договорённости), нельзя — 409 part_in_use
  * { inUse: [{ part, count }] }; перейти на одно мероприятие в день можно всегда

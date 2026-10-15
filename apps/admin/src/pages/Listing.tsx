@@ -336,6 +336,8 @@ function CategoryListing({
   const [decided, setDecided] = useState(false);
   // Удалить — из «…» и из «Служебного»: подтверждение одно
   const [deleting, setDeleting] = useState(false);
+  // Версия календаря из его последнего ответа: правка дней поднимает её, витрина об этом не знает
+  const [calendarSeen, setCalendarSeen] = useState(0);
   const layout = useLayout();
   const desktop = layout === "desktop";
   const phone = usePhone();
@@ -492,9 +494,10 @@ function CategoryListing({
             ) : (
               <>
                 <WorkingTimes
-                  key={`sessions-${listing.id}:${listing.calendarVersion}`}
+                  key={`sessions-${listing.id}`}
                   listing={listing}
                   category={category}
+                  version={Math.max(listing.calendarVersion, calendarSeen)}
                   onSaved={onReload}
                 />
                 <Calendar
@@ -502,6 +505,7 @@ function CategoryListing({
                   listingId={listing.id}
                   category={category}
                   revision={listing.calendarVersion}
+                  onVersion={setCalendarSeen}
                 />
               </>
             )}

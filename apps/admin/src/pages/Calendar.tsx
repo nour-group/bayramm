@@ -261,6 +261,7 @@ export function Calendar({
   listingId,
   revision,
   headerExtra,
+  onVersion,
 }: {
   listingId: string;
   category: CategoryConfig;
@@ -268,6 +269,8 @@ export function Calendar({
   revision?: number;
   /** Справа в шапке блока */
   headerExtra?: ReactNode;
+  /** Версия календаря из последнего ответа: «Время работы» сохраняет от неё */
+  onVersion?: (version: number) => void;
 }) {
   const { api } = useSession();
   const can = useCan();
@@ -307,6 +310,10 @@ export function Calendar({
   useEffect(() => setWaiting(false), [loaded]);
   const editable = can("listings.write");
   const selected = range ? rangeDays(range.start, range.end ?? range.start, today, weekdays) : [];
+  const seen = loaded.state === "ready" ? loaded.data.version : null;
+  useEffect(() => {
+    if (seen !== null) onVersion?.(seen);
+  }, [seen, onVersion]);
   // Время работы сохранили — части дня и занятость считаются по-новому
   const lastRevision = useRef(revision);
   useEffect(() => {
@@ -563,7 +570,7 @@ export function Calendar({
                       <span className="sub">
                         {openedState.entry
                           ? `${t.partState.busy} · ${t.busySources[openedState.entry.source] ?? ""}`
-                          : openedState.load === "partial"
+                          : openedState.load === "partial" || openedState.parts.some((p) => p.booked > 0)
                             ? t.wholePartial
                             : (t.partState[openedState.load === "busy" ? "busy" : "free"] ?? "")}
                       </span>

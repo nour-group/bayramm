@@ -169,11 +169,11 @@ export function partStateText(
   return t.partFree;
 }
 
-/** «Весь день»: занят (кем), частично занят, свободен */
+/** «Весь день»: занят (кем), частично занят (и когда есть договорённость, а места остались), свободен */
 export function wholeStateText(t: VendorDict, view: DayView): string {
   if (view.entry) return markText(t, view.entry.source);
   if (view.load === "busy") return t.partBusy;
-  if (view.load === "partial") return t.wholePartial;
+  if (view.load === "partial" || view.parts.some((p) => p.booked > 0)) return t.wholePartial;
   return t.partFree;
 }
 
@@ -395,9 +395,11 @@ interface DayPanelProps {
   readonly onToggle: (day: string, part: DayPart | null, entry: BusyDay | BusyPart | undefined) => void;
   /** Заголовок дня — у колонки справа; в шторке его пишет сама шторка */
   readonly titled: boolean;
+  /** Сообщение о правке (изменили, закрыл менеджер) — в шторке, иначе его не видно под ней */
+  readonly notice?: ReactNode;
 }
 
-function DayPanel({ calendar, day, t, pending, navigate, onToggle, titled }: DayPanelProps) {
+function DayPanel({ calendar, day, t, pending, navigate, onToggle, titled, notice }: DayPanelProps) {
   const view = dayView(calendar, day);
   const locked = day < calendar.today || day > calendar.maxDay;
   const capacity = calendar.sessions.parallelCapacity;
@@ -412,6 +414,7 @@ function DayPanel({ calendar, day, t, pending, navigate, onToggle, titled }: Day
           {formatDate(day, t, true)}
         </h2>
       ) : null}
+      {notice}
       <div className={view.load === "busy" ? "day-whole is-busy" : "day-whole"}>
         <p className="day-whole-name">
           <strong>{t.wholeDay}</strong>
@@ -892,6 +895,13 @@ function CalendarMonth({
   const legend = ready ? legendOf(ready) : [];
   const openedDay = ready && opened?.startsWith(ready.month) && !ranging ? opened : null;
   const rangeParts = ready && !whole ? ready.sessions.parts : [];
+  const notice = message ? (
+    <p className={message === "failed" ? "form-error" : "notice"} role="alert">
+      {message === "failed" && failure ? failure : t[MESSAGE_TEXT[message]]}
+    </p>
+  ) : null;
+  // Шторка дня на телефоне закрывает месяц: сообщение — в ней
+  const sheetNotice = !desktop && openedDay !== null;
   const panel =
     ready && openedDay ? (
       <DayPanel
@@ -902,6 +912,7 @@ function CalendarMonth({
         navigate={navigate}
         onToggle={toggle}
         titled={desktop}
+        notice={sheetNotice ? notice : null}
       />
     ) : null;
 
@@ -954,11 +965,7 @@ function CalendarMonth({
               />
             ) : null}
             {/* Сообщение — у самого месяца: на компьютере обозначения сбоку, низ страницы далеко */}
-            {message ? (
-              <p className={message === "failed" ? "form-error" : "notice"} role="alert">
-                {message === "failed" && failure ? failure : t[MESSAGE_TEXT[message]]}
-              </p>
-            ) : null}
+            {sheetNotice ? null : notice}
           </div>
           {ranging && ready ? (
             <section className="panel range-panel" aria-label={t.rangeMode}>

@@ -34,7 +34,7 @@ import { ApiFailure, api } from "./api";
 import { partName } from "./category";
 import { errorText } from "./errors";
 import { fill, type VendorDict } from "./i18n";
-import { useUnsaved } from "./unsaved";
+import { useConfirmLeave, useUnsaved } from "./unsaved";
 
 interface Props {
   readonly listing: VendorListing;
@@ -68,6 +68,7 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
   const [done, setDone] = useState(false);
 
   useUnsaved(open && daySessionsDirty(draft, start));
+  const confirmLeave = useConfirmLeave();
 
   const openSheet = () => {
     const next = daySessionsDraft(listing.daySessions);
@@ -78,8 +79,9 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
     setDone(false);
     setOpen(true);
   };
+  // Вписанное и не сохранённое — «Уйти без сохранения?»; окно закрывается следующим тактом
   const close = () => {
-    if (!busy) setOpen(false);
+    if (!busy) confirmLeave(() => queueMicrotask(() => setOpen(false)));
   };
   const update = (patch: Partial<Draft>) => setDraft((current) => ({ ...current, ...patch }));
   const togglePart = (part: DayPart, on: boolean) =>
