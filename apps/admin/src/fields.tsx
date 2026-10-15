@@ -34,6 +34,20 @@ import {
 } from "react";
 import { t } from "./texts";
 
+/**
+ * Подпись поля с пометкой «обязательно» или «по желанию» — как в форме заявки клиента и в кабинете.
+ * required не задан — подпись как есть (поля, где пометка ничего не добавляет)
+ */
+export function LabelText({ label, required }: { label: string; required?: boolean | undefined }) {
+  if (required === undefined) return <>{label}</>;
+  return (
+    <>
+      {label}{" "}
+      <em className={required ? "mark mark-req" : "mark mark-opt"}>{required ? t.required : t.optional}</em>
+    </>
+  );
+}
+
 type FrameProps = {
   readonly id: string;
   readonly "aria-invalid": boolean;
@@ -42,6 +56,7 @@ type FrameProps = {
 
 interface FieldFrameProps {
   readonly label: string;
+  readonly required?: boolean | undefined;
   readonly error?: string | undefined;
   readonly hint?: string | undefined;
   readonly full?: boolean | undefined;
@@ -50,7 +65,7 @@ interface FieldFrameProps {
 }
 
 /** Подпись, поле, подсказка или ошибка — как Field в ui.tsx */
-function FieldFrame({ label, error, hint, full, className, children }: FieldFrameProps) {
+function FieldFrame({ label, required, error, hint, full, className, children }: FieldFrameProps) {
   const id = useId();
   const noteId = `${id}-note`;
   const note = error ?? hint;
@@ -60,7 +75,9 @@ function FieldFrame({ label, error, hint, full, className, children }: FieldFram
         .filter(Boolean)
         .join(" ")}
     >
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id}>
+        <LabelText label={label} required={required} />
+      </label>
       {children({ id, "aria-invalid": Boolean(error), ...(note ? { "aria-describedby": noteId } : {}) })}
       {note ? (
         <span id={noteId} className={error ? "field-error" : "field-hint"}>
@@ -137,6 +154,8 @@ export function formatPhone(digits: string): string {
 
 export interface PhoneFieldProps {
   readonly label: string;
+  /** Пометка у подписи: «обязательно» (true) или «по желанию» (false); не задано — без пометки */
+  readonly required?: boolean | undefined;
   /** Номер в любой записи; в поле — 9 цифр после +998 */
   readonly value: string;
   /** Только цифры после +998 («901112233»); пусто — номера нет */
@@ -158,6 +177,7 @@ export interface PhoneFieldProps {
  */
 export function PhoneField({
   label,
+  required,
   value,
   onChange,
   error,
@@ -203,7 +223,7 @@ export function PhoneField({
   const ownError =
     problem === "foreign" ? t.input.phoneForeign : problem === "short" ? t.input.phoneShort : undefined;
   return (
-    <FieldFrame label={label} error={error ?? ownError} hint={hint} full={full}>
+    <FieldFrame label={label} required={required} error={error ?? ownError} hint={hint} full={full}>
       {(props) => (
         <span className={`affix${disabled ? " is-disabled" : ""}`}>
           <span className="affix-pre" aria-hidden="true">
@@ -240,6 +260,8 @@ export function PhoneField({
 
 export interface TelegramFieldProps {
   readonly label: string;
+  /** Пометка у подписи: «обязательно» (true) или «по желанию» (false); не задано — без пометки */
+  readonly required?: boolean | undefined;
   /** Имя без «@» (ссылку и «@» поле снимает само) */
   readonly value: string;
   readonly onChange: (name: string) => void;
@@ -266,6 +288,7 @@ export function telegramProblem(name: string, finished: boolean): string | undef
  */
 export function TelegramField({
   label,
+  required,
   value,
   onChange,
   error,
@@ -278,7 +301,7 @@ export function TelegramField({
   const [finished, setFinished] = useState(false);
   const problem = telegramProblem(value, finished);
   return (
-    <FieldFrame label={label} error={error ?? problem} hint={hint} full={full}>
+    <FieldFrame label={label} required={required} error={error ?? problem} hint={hint} full={full}>
       {(props) => (
         <span className={`affix${disabled ? " is-disabled" : ""}`}>
           <span className="affix-pre" aria-hidden="true">
@@ -318,6 +341,8 @@ export const formatMoney = groupDigits;
 
 export interface MoneyFieldProps {
   readonly label: string;
+  /** Пометка у подписи: «обязательно» (true) или «по желанию» (false); не задано — без пометки */
+  readonly required?: boolean | undefined;
   /** Сумма в сумах: цифры (пробелы и разряды допустимы — поле их уберёт) */
   readonly value: string;
   /** Только цифры: «1500000» */
@@ -330,7 +355,17 @@ export interface MoneyFieldProps {
 }
 
 /** Цена в сумах: только цифры, разряды — по мере набора, «сум» — у поля, не больше max */
-export function MoneyField({ label, value, onChange, max, error, hint, full, disabled }: MoneyFieldProps) {
+export function MoneyField({
+  label,
+  required,
+  value,
+  onChange,
+  max,
+  error,
+  hint,
+  full,
+  disabled,
+}: MoneyFieldProps) {
   const input = useRef<HTMLInputElement>(null);
   const maxDigits = String(max).length;
   const digits = moneyDigits(value, maxDigits);
@@ -338,7 +373,7 @@ export function MoneyField({ label, value, onChange, max, error, hint, full, dis
   const keepCaret = useDigitCaret(input, display);
   const over = digits !== "" && Number(digits) > max ? t.input.moneyMax(formatMoney(String(max))) : undefined;
   return (
-    <FieldFrame label={label} error={error ?? over} hint={hint} full={full}>
+    <FieldFrame label={label} required={required} error={error ?? over} hint={hint} full={full}>
       {(props) => (
         <span className={`affix${disabled ? " is-disabled" : ""}`}>
           <input
@@ -442,6 +477,8 @@ export const digitsOf = (n: number): number => String(Math.max(0, Math.trunc(n))
 
 export interface NumberFieldProps {
   readonly label: string;
+  /** Пометка у подписи: «обязательно» (true) или «по желанию» (false); не задано — без пометки */
+  readonly required?: boolean | undefined;
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly min: number;
@@ -463,6 +500,7 @@ export interface NumberFieldProps {
  */
 export function NumberField({
   label,
+  required,
   value,
   onChange,
   min,
@@ -479,6 +517,7 @@ export function NumberField({
   return (
     <FieldFrame
       label={label}
+      required={required}
       error={error}
       hint={hint ? `${range} · ${hint}` : range}
       full={full}
@@ -513,6 +552,8 @@ export function NumberField({
 
 export interface ChoiceFieldProps<V extends string> {
   readonly label: string;
+  /** Пометка у подписи: «обязательно» (true) или «по желанию» (false); не задано — без пометки */
+  readonly required?: boolean | undefined;
   readonly value: V | null;
   readonly options: readonly RadioOption<V>[];
   readonly onChange: (value: V) => void;
@@ -529,6 +570,7 @@ export interface ChoiceFieldProps<V extends string> {
 /** Один из вариантов — сразу на виду, без списка: подпись, варианты, подсказка или ошибка */
 export function ChoiceField<V extends string>({
   label,
+  required,
   value,
   options,
   onChange,
@@ -547,7 +589,9 @@ export function ChoiceField<V extends string>({
         .filter(Boolean)
         .join(" ")}
     >
-      <span id={`${id}-label`}>{label}</span>
+      <span id={`${id}-label`}>
+        <LabelText label={label} required={required} />
+      </span>
       <RadioGroup
         variant={variant}
         className={`choice choice-${variant}`}
@@ -573,6 +617,8 @@ export function ChoiceField<V extends string>({
 
 export interface ChipsFieldProps {
   readonly label: string;
+  /** Пометка у подписи: «обязательно» (true) или «по желанию» (false); не задано — без пометки */
+  readonly required?: boolean | undefined;
   readonly options: readonly { readonly value: string; readonly label: string }[];
   readonly value: readonly string[];
   readonly onChange: (value: string[]) => void;
@@ -585,7 +631,16 @@ export interface ChipsFieldProps {
  * Несколько вариантов — чипами: под рисунком настоящая галочка (Checkbox набора), выбранный
  * чип залит. Порядок выбранных — как в списке вариантов, а не как нажимали
  */
-export function ChipsField({ label, options, value, onChange, hint, error, disabled }: ChipsFieldProps) {
+export function ChipsField({
+  label,
+  required,
+  options,
+  value,
+  onChange,
+  hint,
+  error,
+  disabled,
+}: ChipsFieldProps) {
   const noteId = useId();
   const note = error ?? hint;
   const toggle = (code: string, on: boolean) =>
@@ -595,7 +650,9 @@ export function ChipsField({ label, options, value, onChange, hint, error, disab
       className={`chips-field field-full${error ? " field-bad" : ""}`}
       aria-describedby={note ? noteId : undefined}
     >
-      <legend>{label}</legend>
+      <legend>
+        <LabelText label={label} required={required} />
+      </legend>
       {note ? (
         <p id={noteId} className={error ? "field-error" : "field-hint"}>
           {note}

@@ -1,5 +1,6 @@
 import type { ClientRequest, DeclineReason, RequestStatus } from "@bayramm/shared/api";
 import { categoryConfig, detailsSummary } from "@bayramm/shared/categories";
+import { requestStatusName } from "@bayramm/shared/i18n/status";
 import { useEffect, useRef, useState } from "react";
 import { isApiError } from "../api/errors";
 import { categoryName } from "../categories";
@@ -13,16 +14,8 @@ import { Icon } from "../icons";
 import { DEFAULT_CATEGORY, hrefFor, useNav } from "../router";
 import { haptic } from "../telegram";
 
-/* Статус → текст чипа и его вид. «contacted» — вендор связался: для клиента «ответили» */
-const STATUS_TEXT = {
-  new: "st_new",
-  viewed: "st_viewed",
-  contacted: "st_ans",
-  deal: "st_deal",
-  declined: "st_declined",
-  withdrawn: "st_withdrawn",
-  expired: "st_expired",
-} as const satisfies Record<RequestStatus, string>;
+/* Статус — словом из общего словаря (@bayramm/shared/i18n/status): то же видят исполнитель в
+   кабинете и команда; вид чипа — по смыслу */
 
 const STATUS_TONE: Readonly<Record<RequestStatus, "wait" | "answer" | "deal" | "stop" | "closed">> = {
   new: "wait",
@@ -129,7 +122,7 @@ function RequestItem({
               </Link>
             </h2>
             <span className={`status status-${STATUS_TONE[request.status]}`}>
-              {t[STATUS_TEXT[request.status]]}
+              {requestStatusName(lang, request.status)}
             </span>
           </div>
           <p className="muted small">

@@ -114,7 +114,8 @@ test("кортеж: автопарк — ошибка поля до отправ
   const api = await start(page);
   await page.goto(`/listings/${CAR_LISTING_ID}`);
   await expect(heading(page)).toHaveText("Oq kortej");
-  await page.getByRole("button", { name: `${t.listAdd}: автопарк` }).click();
+  // Подпись записи — из конфигурации категории: «Добавить машину», а не «Добавить: автопарк»
+  await page.getByRole("button", { name: "Добавить машину" }).click();
   const car = page.getByRole("region", { name: t.listItem("Автопарк", 2) });
   await car.getByLabel("Марка и модель").fill("Lexus LX");
   // Число — с «−» и «+»: буквы в поле не попадают, границы видны заранее

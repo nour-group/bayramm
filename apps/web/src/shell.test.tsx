@@ -84,7 +84,8 @@ describe("гость в браузере", () => {
     await click(menuButton());
     await waitFor(() => dialog()?.textContent?.includes("Войдите через Telegram"), "только Telegram");
     expect(dialog()?.textContent).not.toContain("по номеру телефона");
-    await click(byText('[role="dialog"] button', "Закрыть"));
+    // «Закрыть» — крестик набора в заголовке шторки (имя — для диктора)
+    await click(document.querySelector('[role="dialog"] button[aria-label="Закрыть"]') ?? undefined);
     expect(dialog()).toBeNull();
 
     await click(menuButton());

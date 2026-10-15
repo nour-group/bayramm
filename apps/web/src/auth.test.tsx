@@ -246,14 +246,14 @@ describe("профиль: аккаунт", () => {
     });
     await waitFor(() => byText("a", /Кабинет партнёра/), "кнопка кабинета");
     expect(byText("a", /Кабинет партнёра/)?.getAttribute("href")).toBe(`${APPS.vendor}/?signin=1&lang=ru`);
-    expect(byText("a", /Панель оператора/)?.getAttribute("href")).toBe(`${APPS.admin}/?signin=1`);
+    expect(byText("a", /Панель команды/)?.getAttribute("href")).toBe(`${APPS.admin}/?signin=1`);
   });
 
   it("без ролей партнёра и сотрудника — кнопок нет", async () => {
     await mount({ path: "/profile", api: api() });
     await waitFor(() => text().includes("Способы входа"), "способы входа");
     expect(byText("a", /Кабинет партнёра/)).toBeNull();
-    expect(byText("a", /Панель оператора/)).toBeNull();
+    expect(byText("a", /Панель команды/)).toBeNull();
   });
 
   it("добавить телефон кодом из сообщения", async () => {

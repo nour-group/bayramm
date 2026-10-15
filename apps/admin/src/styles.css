@@ -464,7 +464,11 @@ html.in-telegram body {
   white-space: nowrap;
 }
 
+/* Телефон: страница не короче экрана (колонка flex, страница растёт) — на короткой панель
+   действий стоит у низа над нижней панелью (ActionBar), а не посреди экрана */
 .app-phone .main {
+  display: flex;
+  flex-direction: column;
   /* Место под нижней панелью — и пока её прячет клавиатура: иначе страница укорачивается под
      пальцем, и кнопка у низа уезжает под вернувшуюся панель между нажатием и отпусканием */
   padding: 16px calc(var(--sa-r) + 16px) calc(var(--tabbar-full) + var(--pad-b) + 24px)
@@ -582,6 +586,17 @@ html.in-telegram body {
 /* Разделы со списками и страницы объектов — во всю ширину; вводный текст — узкой колонкой */
 .page {
   min-width: 0;
+}
+
+/* Телефон: страница растёт на весь экран, содержимое — тоже; место панели действий — последним */
+.app-phone .main > .page {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+.app-phone .page-body {
+  flex: 1 0 auto;
 }
 
 .page-title {
@@ -1053,6 +1068,32 @@ textarea.input {
   font-weight: 700;
 }
 
+/* Рамка таблицы в Tab (прокрутка вбок с клавиатуры): кольцо фокуса — внутрь, рамка его не режет */
+.table-wrap:focus-visible {
+  outline-offset: -3px;
+}
+
+/* Строка таблицы на компьютере — целиком ссылка: невидимый слой первой ссылки накрывает строку
+   (как карточка на телефоне); другие ссылки и кнопки в строке — поверх слоя */
+.app-desktop .table tbody tr {
+  position: relative;
+}
+
+.app-desktop .table .row-link::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+.app-desktop .table tbody a:not(.row-link),
+.app-desktop .table tbody button {
+  position: relative;
+  z-index: 1;
+}
+
 .plain {
   display: flex;
   flex-direction: column;
@@ -1340,6 +1381,21 @@ textarea.input {
   grid-column: 1 / -1;
 }
 
+/* Пометка у подписи поля — как в форме заявки клиента и в кабинете: «обязательно» акцентом,
+   «по желанию» — приглушённо; не курсивом и не жирнее подписи */
+.mark {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.mark-req {
+  color: var(--coral-deep);
+}
+
+.mark-opt {
+  color: var(--muted);
+}
+
 .field-bad .input {
   border-color: var(--berry);
 }
@@ -1600,6 +1656,12 @@ textarea.input {
 .setting-controls .field.setting-num {
   flex: 0 1 auto;
   width: auto;
+}
+
+/* Контакт команды — строкой: имя в Telegram или номер, поле не во всю ширину */
+.setting-controls .field.setting-text-field {
+  flex: 1 1 220px;
+  max-width: 320px;
 }
 
 /* Единица цены одна — словами, на высоте поля рядом */
@@ -2527,6 +2589,30 @@ a.rcard-title {
   min-width: 0;
 }
 
+/* Плитка — кнопка: фото во весь экран. Кольцо фокуса — вокруг снимка */
+.queue-photo-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-8);
+  background: transparent;
+  cursor: zoom-in;
+}
+
+/* Что отметил загрузивший — под снимком; правило категории — над плитками */
+.photo-claim,
+.photo-rule {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+}
+
+.photo-rule {
+  color: var(--ink);
+}
+
 .queue-photo img {
   display: block;
   width: 100%;
@@ -2547,6 +2633,79 @@ a.rcard-title {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--gap-5);
+}
+
+/* Просмотр фото — на весь экран и на телефоне, и на компьютере: снимок целиком, решение внизу */
+.ui-dialog.photo-viewer {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  padding: calc(var(--pad-t) + 8px) calc(var(--sa-r) + 16px) calc(var(--pad-b) + 16px)
+    calc(var(--sa-l) + 16px);
+  border-radius: 0;
+  transform: none;
+  animation: none;
+}
+
+.photo-viewer .ui-sheet-grab {
+  display: none;
+}
+
+.photo-viewer .ui-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-9);
+}
+
+.viewer-figure {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--gap-7);
+  min-height: 0;
+  margin: 0;
+}
+
+.viewer-image {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  max-height: 70vh;
+  border-radius: var(--r-8);
+  background: var(--plum-deep);
+  object-fit: contain;
+}
+
+.viewer-claim {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-5) var(--gap-12);
+}
+
+/* Внизу: ‹ одобрить отклонить › — главное посередине, листать — по краям */
+.photo-viewer .ui-dialog-actions {
+  display: block;
+}
+
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.viewer-actions .viewer-approve,
+.viewer-actions .viewer-decline {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.viewer-step {
+  flex: none;
 }
 
 @media (max-width: 719px) {
@@ -2841,11 +3000,6 @@ a.rcard-title {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* Одна кнопка внизу шторки — во всю ширину */
-.sheet-done {
-  grid-column: 1 / -1;
-}
-
 /* ── панель действий экрана (телефон) ────────────────────────────────────── */
 
 /* Место под панель — последним в странице: прилипает к низу над нижней навигацией и
@@ -2855,6 +3009,8 @@ a.rcard-title {
   position: sticky;
   bottom: calc(var(--tabbar-h) + var(--pad-b));
   z-index: 2;
+  /* В конце страницы — вплотную к нижней панели: запас страницы под ней (24px) панель забирает */
+  margin-bottom: -24px;
 }
 
 /* Клавиатура открыта — панель не липнет, а стоит в конце страницы */

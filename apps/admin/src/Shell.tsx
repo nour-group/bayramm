@@ -10,7 +10,7 @@
 
 import type { OpsQueues, StaffDictionaries, StaffPermission, StaffQueues } from "@bayramm/shared/api/staff";
 import { getWebApp } from "@bayramm/tg/webapp";
-import { Dialog, ToastProvider, useOnReconnect } from "@bayramm/ui/react";
+import { Dialog, stickyBar, ToastProvider, useOnReconnect, useStickyBar } from "@bayramm/ui/react";
 import {
   Fragment,
   type ReactNode,
@@ -68,7 +68,6 @@ import {
   CrumbsContext,
   Link,
   NavigateContext,
-  SheetClose,
   Skeleton,
   TitleContext,
 } from "./ui";
@@ -139,6 +138,7 @@ function Breadcrumbs({ crumbs }: { crumbs: readonly Crumb[] }) {
 function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, seq }: PageProps) {
   // Место под панель действий — последним в странице (ActionBar на телефоне)
   const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  useStickySlot(slot);
   const heading = (
     <h1 id="page-title" className="page-title" ref={headingRef} tabIndex={-1}>
       {title}
@@ -150,7 +150,7 @@ function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, s
         {heading}
         <p className="lead">{t.notFoundLead}</p>
         <Link to={{ name: home }} className="action">
-          {t.toSection(t[home])}
+          {t.toSection[home]}
         </Link>
       </section>
     );
@@ -161,7 +161,7 @@ function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, s
         {heading}
         <p className="lead">{t.noAccess}</p>
         <Link to={{ name: home }} className="action">
-          {t.toSection(t[home])}
+          {t.toSection[home]}
         </Link>
       </section>
     );
@@ -222,18 +222,28 @@ function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, s
   const nested = view.name !== sectionOf(view);
   return (
     <section className={`page${nested ? " page-wide" : ""}`} aria-labelledby="page-title">
-      <Breadcrumbs crumbs={crumbs} />
-      {heading}
-      <ActionSlotContext.Provider value={slot}>
-        {/* Кусок экрана ещё грузится (первый заход в раздел) — заготовка его формы. Каждый
-            переход — экран заново: фильтры и страница списка читаются из адреса */}
-        <Suspense fallback={<Skeleton kind={nested ? "detail" : "list"} />}>
-          <Fragment key={seq}>{content}</Fragment>
-        </Suspense>
-      </ActionSlotContext.Provider>
+      {/* Содержимое растёт на весь экран: на короткой странице панель действий — у низа, над
+          нижней панелью, а не посреди экрана с обрывающейся белой полосой */}
+      <div className="page-body">
+        <Breadcrumbs crumbs={crumbs} />
+        {heading}
+        <ActionSlotContext.Provider value={slot}>
+          {/* Кусок экрана ещё грузится (первый заход в раздел) — заготовка его формы. Каждый
+              переход — экран заново: фильтры и страница списка читаются из адреса */}
+          <Suspense fallback={<Skeleton kind={nested ? "detail" : "list"} />}>
+            <Fragment key={seq}>{content}</Fragment>
+          </Suspense>
+        </ActionSlotContext.Provider>
+      </div>
       <div ref={setSlot} className="actionbar-slot" />
     </section>
   );
+}
+
+/** Место панели действий прилипло к низу (телефон): его высота — в запас прокрутки (scroll-padding) */
+function useStickySlot(slot: HTMLElement | null): void {
+  const phone = useLayout() === "phone";
+  useEffect(() => (slot && phone ? stickyBar(slot, "bottom") : undefined), [slot, phone]);
 }
 
 // ── другие приложения аккаунта ─────────────────────────────────────────────
@@ -331,9 +341,6 @@ export function badgesOf(queues: OpsQueues, permissions: readonly StaffPermissio
     notifications: queues.deadTotal,
   };
 }
-
-/** Высота нижней панели телефона без безопасной зоны, px — как --tabbar-full в styles.css */
-const TABBAR_H = 61;
 
 /** Раз в минуту, не чаще: при смене раздела и когда вернулась связь. Без права метрик — нет */
 const BADGES_TTL_MS = 60_000;
@@ -531,8 +538,11 @@ function TopBar({
   const section = view ? sectionOf(view) : null;
   // Экран объекта, пока его заголовок на виду, — название раздела; ушёл под шапку — сам заголовок
   const barTitle = showTitle ? title : view && isNested(view) && section ? t[section] : null;
+  // Шапка прилипла к верху: фокус и прокрутка к полю не уходят под неё
+  const bar = useRef<HTMLElement>(null);
+  useStickyBar(bar, "top");
   return (
-    <header className="appbar">
+    <header ref={bar} className="appbar">
       {onBack ? (
         <button type="button" className="appbar-btn" aria-label={t.back} onClick={onBack}>
           <Icon name="back" size={24} />
@@ -605,13 +615,31 @@ interface TabBarProps extends NavProps {
   onMore: () => void;
 }
 
+/** Шапка компьютера с разделами — тоже прилипает к верху */
+function DesktopTop({ children }: { children: ReactNode }) {
+  const bar = useRef<HTMLElement>(null);
+  useStickyBar(bar, "top");
+  return (
+    <header ref={bar} className="top">
+      {children}
+    </header>
+  );
+}
+
 /** Нижняя панель телефона: частые разделы роли и «Ещё» с остальными */
 function TabBar({ sections, current, badges, moreRef, moreOpen, onMore }: TabBarProps) {
   const { tabs, more } = tabsFor(sections);
   const inMore = current !== null && more.includes(current);
   const moreCount = more.reduce((sum, section) => sum + (badges[section] ?? 0), 0);
+  // Нижняя панель прилипла к низу: Tab и прокрутка к полю останавливаются над ней
+  const bar = useRef<HTMLElement>(null);
+  useStickyBar(bar, "bottom");
   return (
-    <nav className={`tabbar tabbar-${tabs.length + (more.length > 0 ? 1 : 0)}`} aria-label={t.sections}>
+    <nav
+      ref={bar}
+      className={`tabbar tabbar-${tabs.length + (more.length > 0 ? 1 : 0)}`}
+      aria-label={t.sections}
+    >
       {tabs.map((section) => {
         const on = current === section;
         return (
@@ -757,8 +785,8 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
 
   return (
     <NavigateContext.Provider value={navigate}>
-      {/* Уведомления о сделанном — над нижней панелью телефона, шире — у низа окна */}
-      <ToastProvider offset={layout === "phone" ? TABBAR_H + 12 : 16}>
+      {/* Уведомления о сделанном — над прилипшими панелями низа (нижняя, панель действий) */}
+      <ToastProvider offset="bars">
         <div className={`app app-${layout}${typing ? " app-typing" : ""}`}>
           <a className="skip" href="#main">
             {t.skip}
@@ -776,7 +804,7 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
               onAccount={() => setSheet("account")}
             />
           ) : (
-            <header className="top">
+            <DesktopTop>
               <Link to={{ name: home }} className="brand">
                 Bayramm <span className="brand-area">{t.area}</span>
               </Link>
@@ -806,7 +834,7 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
                   {initialsOf(staff.displayName)}
                 </span>
               </button>
-            </header>
+            </DesktopTop>
           )}
           {layout === "tablet" ? <Rail sections={sections} current={current} badges={badges} /> : null}
           <main id="main" className="main" tabIndex={-1}>
@@ -843,7 +871,6 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
             title={t.moreSections}
             onClose={closeSheet}
             returnFocus={moreButton}
-            actions={<SheetClose onClose={closeSheet} />}
           >
             <nav aria-label={t.moreSections}>
               <ul className="menu">
@@ -872,7 +899,6 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
             title={t.account}
             onClose={closeSheet}
             returnFocus={accountButton}
-            actions={<SheetClose onClose={closeSheet} />}
           >
             <div className="who who-sheet">
               <span className="avatar avatar-lg" aria-hidden="true">

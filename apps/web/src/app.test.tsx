@@ -270,7 +270,8 @@ describe("мои заявки", () => {
     await mount({ path: "/requests", mock: { requests } });
     await waitFor(() => document.querySelectorAll(".req").length === requests.length, "заявки");
     const items = [...document.querySelectorAll(".req")];
-    expect(items[0]?.textContent).toContain("ждём ответа");
+    // Статус — общим словом (так же — у исполнителя и команды); что ждём ответа — строкой срока
+    expect(items[0]?.querySelector(".status")?.textContent).toBe("Новая");
     expect(items[0]?.textContent).toMatch(/ответ до 1 окт, 21:00 · осталось 9 ч/);
     // Просрочка — одной строкой, без второго «ждём дольше 12 ч» рядом
     expect(items[1]?.querySelector(".req-breached")?.textContent).toBe(
@@ -295,7 +296,7 @@ describe("мои заявки", () => {
     const buttons = [...(confirm?.querySelectorAll("button") ?? [])];
     expect(buttons.map((b) => b.className)).toEqual(["btn btn-secondary", "btn btn-secondary"]);
     await click(buttons[0]);
-    await waitFor(() => first?.querySelector(".status")?.textContent === "отозвана", "статус «отозвана»");
+    await waitFor(() => first?.querySelector(".status")?.textContent === "Отозвана", "статус «Отозвана»");
     expect(first?.querySelector(".confirm")).toBeNull();
   });
 

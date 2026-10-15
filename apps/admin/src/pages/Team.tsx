@@ -30,6 +30,7 @@ import {
   OverflowMenu,
   PhoneSheet,
   Pill,
+  TableWrap,
   toneOf,
   useRevealErrors,
 } from "../ui";
@@ -262,7 +263,7 @@ function Members({ list, onChange }: { list: TeamList; onChange: (list: TeamList
       </ul>
     );
   return (
-    <div className="table-wrap">
+    <TableWrap label={t.team}>
       <table className="table">
         <thead>
           <tr>
@@ -280,7 +281,7 @@ function Members({ list, onChange }: { list: TeamList; onChange: (list: TeamList
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 

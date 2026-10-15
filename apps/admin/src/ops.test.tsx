@@ -1388,7 +1388,7 @@ describe("команда", () => {
       if (!row?.querySelector("button.btn-more")) return false;
       await rowMenu(row);
       const found = menuItem(t.inviteRevoke) !== undefined;
-      await click(document.querySelector<HTMLElement>("[role=dialog] .sheet-done") as HTMLElement);
+      await click(document.querySelector<HTMLElement>("[role=dialog] .ui-dialog-close") as HTMLElement);
       return found;
     };
     expect([await revokeIn(rows()[0]), await revokeIn(rows()[1]), await revokeIn(rows()[2])]).toEqual([
@@ -1614,6 +1614,7 @@ describe("правки карточек", () => {
       key: `listings/${PHOTO_LISTING_ID}/${photoId(i + 1)}.webp`,
       width: 1600,
       height: 1200,
+      ack: "no_faces",
     }));
   const photoQueue = (n: number): ListingList => ({
     total: n === 0 ? 0 : 1,
@@ -1622,6 +1623,7 @@ describe("правки карточек", () => {
         ? []
         : [{ ...PHOTO_ITEM, photos: { ready: 4 + n, approved: 4, pending: n }, pendingPhotos: pendingOf(n) }],
     counts: EMPTY_LISTINGS.counts,
+    pendingPhotosTotal: n,
   });
   /** Подписи сегментов очередей: «Услуги 3» */
   const queueTabs = () =>
@@ -1665,8 +1667,9 @@ describe("правки карточек", () => {
     expect(text()).toContain(t.revisionStale);
     // Две строки: кто и когда прислал, кто предложил и что меняют
     expect(container.querySelector(".rcard")?.querySelectorAll(".rcard-meta")).toHaveLength(2);
+    // «Партнёр» — человек в кабинете: рядом с названием он читался как имя; здесь — откуда пришло
     expect(text()).toContain(
-      `${t.queueProposer("partner", null)} · ${t.revisionFields.name}, ${t.revisionFields.videoLinks}`,
+      `${t.queueProposer("partner", null)} · ${t.queueChanges(`${t.revisionFields.name}, ${t.revisionFields.videoLinks}`)}`,
     );
     // Пустые очереди не показываются и ничего о себе не говорят: в сегментах — только эта
     expect(queueTabs()).toEqual([`${t.queueTabs.revisions} 1`]);
@@ -1726,7 +1729,7 @@ describe("правки карточек", () => {
     mockApi(staff("moderator", MODERATOR), handlers);
     await mount("/moderation");
     // Витрин на проверке нет — первая непустая: предложения; фото — второй сегмент
-    expect(queueTabs()).toEqual([`${t.queueTabs.revisions} 1`, `${t.queueTabs.photos} 1`]);
+    expect(queueTabs()).toEqual([`${t.queueTabs.revisions} 1`, `${t.queueTabs.photos} 2`]);
     expect(radio(`${t.queueTabs.revisions} 1`)?.checked).toBe(true);
     expect(container.querySelector("section.queue")?.getAttribute("aria-labelledby")).toBe(
       "queue-revisions-title",
@@ -1737,7 +1740,7 @@ describe("правки карточек", () => {
     // Ссылка из метрик на фото — открывает фото
     mockApi(staff("moderator", MODERATOR), handlers);
     await mount("/moderation?queue=photos");
-    expect(radio(`${t.queueTabs.photos} 1`)?.checked).toBe(true);
+    expect(radio(`${t.queueTabs.photos} 2`)?.checked).toBe(true);
     expect(container.querySelector("section.queue")?.getAttribute("aria-labelledby")).toBe(
       "queue-photos-title",
     );
@@ -1749,7 +1752,7 @@ describe("правки карточек", () => {
     await mount("/moderation?queue=review");
     expect(radio(`${t.queueTabs.revisions} 1`)?.checked).toBe(true);
     // Сегмент переключает очередь, адрес запоминает её
-    await click(radio(`${t.queueTabs.photos} 1`));
+    await click(radio(`${t.queueTabs.photos} 2`));
     expect(window.location.search).toBe("?queue=photos");
     expect(container.querySelector("section.queue")?.getAttribute("aria-labelledby")).toBe(
       "queue-photos-title",
@@ -1855,19 +1858,25 @@ describe("правки карточек", () => {
     });
     await mount("/moderation");
     expect(calls.some((c) => c.url === "/api/staff/listings?photos=pending&limit=20&offset=0")).toBe(true);
-    // Единственная непустая очередь — открыта; в сегментах — она одна, с числом карточек
-    expect(queueTabs()).toEqual([`${t.queueTabs.photos} 1`]);
+    // Единственная непустая очередь — открыта; в сегментах — она одна, с числом фото (не витрин)
+    expect(queueTabs()).toEqual([`${t.queueTabs.photos} 2`]);
     const section = container.querySelector("section[aria-labelledby=queue-photos-title]");
-    expect(section?.querySelector("h2")?.textContent).toBe(`${t.photoQueue} 1`);
+    expect(section?.querySelector("h2")?.textContent).toBe(`${t.photoQueue} 2`);
     // Витрина — сразу на блоке фото (?focus=photos): целиком посмотреть и решить там
     expect(section?.querySelector(`a[href="/listings/${PHOTO_LISTING_ID}?focus=photos"]`)?.textContent).toBe(
       "Lola zali",
     );
     expect(section?.textContent).toContain(`Lola · V102 · ${t.pendingPhotos(2)}`);
-    // Две плитки, под каждой ✓ и ✕; запросов за фото карточки по одной — нет
+    // Две плитки: снимок — кнопка (во весь экран), под ним — что отметил загрузивший, ✓ и ✕;
+    // над плитками — правило фото категории; запросов за фото карточки по одной — нет
     const tiles = [...(section?.querySelectorAll(".queue-photo") ?? [])];
     expect(tiles).toHaveLength(2);
-    expect(tiles.map((tile) => tile.querySelectorAll("button").length)).toEqual([2, 2]);
+    expect(tiles.map((tile) => tile.querySelectorAll("button").length)).toEqual([3, 3]);
+    expect(tiles[0]?.querySelector(".queue-photo-open")?.getAttribute("aria-label")).toBe(
+      t.photoOpen(1, "Lola zali"),
+    );
+    expect(tiles[0]?.querySelector(".photo-claim")?.textContent).toBe(t.photoAckClaim.no_faces);
+    expect(section?.querySelector(".photo-rule")?.textContent).toBe(t.photoRule.no_people);
     expect(tiles[0]?.querySelector("img")?.getAttribute("src")).toContain(
       `listings/${PHOTO_LISTING_ID}/${photoId(1)}.webp`,
     );
@@ -1957,7 +1966,14 @@ describe("правки карточек", () => {
       ...decide(3),
     });
     await mount("/moderation");
+    // Ни одно фото не открыто во весь экран — сначала подтвердить число
     await click(container.querySelector(".photo-approve-all") ?? undefined);
+    const confirm = document.querySelector('[role="alertdialog"]');
+    expect(confirm?.textContent).toContain(t.photoApproveAllQ(3));
+    expect(approved).toEqual([]);
+    await click(
+      [...(confirm?.querySelectorAll("button") ?? [])].find((b) => b.textContent === t.photoApproveAllGo),
+    );
     expect(approved).toEqual([photoId(1), photoId(2), photoId(3)]);
     expect(
       calls
@@ -1977,8 +1993,65 @@ describe("правки карточек", () => {
     });
     await mount("/moderation");
     expect(container.querySelectorAll(".queue-photo")).toHaveLength(2);
-    expect(container.querySelector(".queue-photo button")).toBeNull();
+    // Смотреть — можно (снимок во весь экран), решать — нет
+    expect(container.querySelector(".queue-photo .queue-photo-acts")).toBeNull();
     expect(container.querySelector(".photo-approve-all")).toBeNull();
+    await click(container.querySelector(".queue-photo-open") ?? undefined);
+    expect(document.querySelector(".photo-viewer .viewer-approve")).toBeNull();
+  });
+
+  it("новые фото: просмотр во весь экран — листать стрелками, решить там же; всё открыто — «Одобрить все» без вопроса", async () => {
+    let queue = photoQueue(3);
+    const approved: string[] = [];
+    const decide = (n: number) => ({
+      [`POST /api/staff/listings/${PHOTO_LISTING_ID}/photos/${photoId(n)}/moderation`]: () => {
+        approved.push(photoId(n));
+        if (approved.length === 3) queue = photoQueue(0);
+        return new Response("[]", { status: 200, headers: { "content-type": "application/json" } });
+      },
+    });
+    mockApi(staff("moderator", MODERATOR), {
+      "GET /api/staff/listings?photos=pending&limit=20&offset=0": () =>
+        new Response(JSON.stringify(queue), { status: 200, headers: { "content-type": "application/json" } }),
+      "GET /api/staff/listings": json(EMPTY_LISTINGS),
+      "GET /api/staff/revisions": json({ total: 0, items: [] } satisfies RevisionList),
+      "GET /api/staff/services": json({ total: 0, items: [] }),
+      ...decide(1),
+      ...decide(2),
+      ...decide(3),
+    });
+    await mount("/moderation");
+    await click(container.querySelector(".queue-photo-open") ?? undefined);
+    const viewer = () => document.querySelector<HTMLElement>(".photo-viewer");
+    const title = () => viewer()?.querySelector(".ui-dialog-title")?.textContent;
+    expect(title()).toBe(t.photoViewerTitle(1, 3, "Lola zali"));
+    expect(viewer()?.querySelector(".viewer-claim")?.textContent).toContain(t.photoAckClaim.no_faces);
+    expect(viewer()?.querySelector("img")?.getAttribute("src")).toContain(`${photoId(1)}.webp`);
+    // ← → листают по кругу
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(title()).toBe(t.photoViewerTitle(2, 3, "Lola zali"));
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    });
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true }));
+    });
+    expect(title()).toBe(t.photoViewerTitle(3, 3, "Lola zali"));
+    // Одобрить в просмотре — и сразу следующее нерешённое
+    await click(viewer()?.querySelector(".viewer-approve") ?? undefined);
+    expect(approved).toEqual([photoId(3)]);
+    expect(viewer()?.querySelector("img")?.getAttribute("src")).toContain(`${photoId(1)}.webp`);
+    // Закрыли — открыты все три: «Одобрить все» без подтверждения
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    await click(viewer()?.querySelector(".ui-dialog-close") ?? undefined);
+    expect(viewer()).toBeNull();
+    await click(container.querySelector(".photo-approve-all") ?? undefined);
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(approved).toEqual([photoId(3), photoId(1), photoId(2)]);
   });
 
   it("сравнение «сейчас / предлагает»; отклонить — только с причиной", async () => {

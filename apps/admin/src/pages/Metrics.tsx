@@ -25,10 +25,10 @@ import { useState } from "react";
 import { useLoad } from "../api";
 import { CategoryChip, categoryName, categoryOptions, knownCategory } from "../categories";
 import { formatDuration, formatPercent, formatWeek, vendorLabel, weekNumber } from "../format";
-import { usePhone } from "../layout";
+import { useLayout, usePhone } from "../layout";
 import { useQueryState } from "../router";
 import { t } from "../texts";
-import { ActiveFilter, EmptyList, FilterButton, Link, LoadedView, Pill, SheetClose, StatusPill } from "../ui";
+import { ActiveFilter, EmptyList, FilterButton, Link, LoadedView, Pill, StatusPill, TableWrap } from "../ui";
 
 /** Меньше половины заявок отвечено в срок — полоса коралловая */
 const RATE_LOW = 50;
@@ -78,12 +78,7 @@ function HowWeCount({ slaHours }: { slaHours: number | undefined }) {
       <button type="button" className="btn btn-sm" aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {t.metricsHow}
       </button>
-      <Dialog
-        open={open}
-        title={t.metricsHow}
-        onClose={() => setOpen(false)}
-        actions={<SheetClose onClose={() => setOpen(false)} />}
-      >
+      <Dialog open={open} title={t.metricsHow} onClose={() => setOpen(false)}>
         <dl className="how-we-count">
           {t.metricsHowItems(slaHours).map((item) => (
             <div key={item.term}>
@@ -128,7 +123,7 @@ function CategoryFilter({
         title={t.filters}
         onClose={() => setOpen(false)}
         actions={
-          <button type="button" className="ui-btn ui-btn-primary sheet-done" onClick={() => setOpen(false)}>
+          <button type="button" className="ui-btn ui-btn-primary" onClick={() => setOpen(false)}>
             {t.done}
           </button>
         }
@@ -211,7 +206,16 @@ export function barClass(rate: number | null): string {
 }
 
 /** Доля ответов в срок: полоса (для глаза), процент и «a из b» (для чтения) */
-function Rate({ stats }: { stats: Pick<ResponseStats, "answeredRate" | "answeredInTime" | "measurable"> }) {
+function Rate({
+  stats,
+  partial = false,
+}: {
+  stats: Pick<ResponseStats, "answeredRate" | "answeredInTime" | "measurable">;
+  /** Неделя ещё идёт: доли нет — сколько уже ответили в срок, словами */
+  partial?: boolean;
+}) {
+  if (partial && stats.answeredRate === null)
+    return <span className="sub">{t.weekInProgress(stats.answeredInTime, stats.measurable)}</span>;
   return (
     <div className="rate">
       <span className="bar" aria-hidden="true">
@@ -223,16 +227,22 @@ function Rate({ stats }: { stats: Pick<ResponseStats, "answeredRate" | "answered
   );
 }
 
-type Numbers = Pick<ResponseStats, "requests" | "answeredRate" | "medianResponseMinutes" | "slaBreaches">;
+type Numbers = Pick<
+  ResponseStats,
+  "requests" | "answeredRate" | "medianResponseMinutes" | "slaBreaches" | "answeredInTime" | "measurable"
+>;
 
 /**
  * Главные числа одной строкой: заявок · в срок · медиана ответа (и «срок сорван», когда он был).
  * Карточка телефона и страница вендора — таблицы там не нужны
  */
-export function statLine(stats: Numbers): string {
+export function statLine(stats: Numbers, partial = false): string {
   return [
     t.requestsOf(stats.requests),
-    t.inTimeShort(formatPercent(stats.answeredRate)),
+    // Неделя идёт и доли ещё нет — не «в срок —», а сколько уже ответили
+    partial && stats.answeredRate === null
+      ? t.weekInProgress(stats.answeredInTime, stats.measurable)
+      : t.inTimeShort(formatPercent(stats.answeredRate)),
     t.medianTime(formatDuration(stats.medianResponseMinutes)),
     stats.slaBreaches > 0 ? t.breachesShort(stats.slaBreaches) : "",
   ]
@@ -243,7 +253,8 @@ export function statLine(stats: Numbers): string {
 // ── по неделям ─────────────────────────────────────────────────────────────
 
 function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
-  const phone = usePhone();
+  // Уже компьютера таблица шире экрана — карточками, как на телефоне
+  const phone = useLayout() !== "desktop";
   if (phone)
     return (
       <ul className="rcards">
@@ -253,13 +264,13 @@ function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
               <p className="rcard-title">{formatWeek(week.weekStart)}</p>
               {week.partial && <Pill tone="outline">{t.weekNow}</Pill>}
             </div>
-            <p className="rcard-meta">{statLine(week)}</p>
+            <p className="rcard-meta">{statLine(week, week.partial)}</p>
           </li>
         ))}
       </ul>
     );
   return (
-    <div className="table-wrap">
+    <TableWrap label={t.metricsWeekly}>
       <table className="table">
         <thead>
           <tr>
@@ -281,7 +292,7 @@ function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
               </th>
               <td>{week.requests}</td>
               <td>
-                <Rate stats={week} />
+                <Rate stats={week} partial={week.partial} />
               </td>
               <td>{formatDuration(week.medianResponseMinutes)}</td>
               <td>{week.slaBreaches}</td>
@@ -289,14 +300,15 @@ function WeeklyTable({ weeks }: { weeks: readonly WeeklyMetrics[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 
 // ── по категориям ──────────────────────────────────────────────────────────
 
 function CategoryTable({ items }: { items: readonly CategoryMetrics[] }) {
-  const phone = usePhone();
+  // Уже компьютера таблица шире экрана — карточками, как на телефоне
+  const phone = useLayout() !== "desktop";
   if (phone)
     return (
       <ul className="rcards">
@@ -314,7 +326,7 @@ function CategoryTable({ items }: { items: readonly CategoryMetrics[] }) {
       </ul>
     );
   return (
-    <div className="table-wrap">
+    <TableWrap label={t.metricsCategories}>
       <table className="table">
         <thead>
           <tr>
@@ -344,7 +356,7 @@ function CategoryTable({ items }: { items: readonly CategoryMetrics[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 
@@ -442,7 +454,7 @@ function VendorCards({
         title={t.sort}
         onClose={() => setOpen(false)}
         actions={
-          <button type="button" className="ui-btn ui-btn-primary sheet-done" onClick={() => setOpen(false)}>
+          <button type="button" className="ui-btn ui-btn-primary" onClick={() => setOpen(false)}>
             {t.done}
           </button>
         }
@@ -476,12 +488,13 @@ function VendorCards({
 }
 
 function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
-  const phone = usePhone();
+  // Уже компьютера таблица шире экрана — карточками, как на телефоне
+  const phone = useLayout() !== "desktop";
   const [sort, setSort] = useState<Sort>({ key: "rate", dir: "asc" });
   const rows = sortVendors(items, sort);
   if (phone) return <VendorCards rows={rows} sort={sort} onSort={setSort} />;
   return (
-    <div className="table-wrap">
+    <TableWrap label={t.metricsVendors}>
       <table className="table">
         <thead>
           <tr>
@@ -511,7 +524,7 @@ function VendorTable({ items }: { items: readonly VendorMetrics[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 
@@ -556,7 +569,8 @@ function OpensChange({ row, days }: { row: ContactRow; days: number }) {
 }
 
 function ContactTable({ items, days }: { items: readonly ContactRow[]; days: number }) {
-  const phone = usePhone();
+  // Уже компьютера таблица шире экрана — карточками, как на телефоне
+  const phone = useLayout() !== "desktop";
   if (phone)
     return (
       <ul className="rcards">
@@ -587,7 +601,7 @@ function ContactTable({ items, days }: { items: readonly ContactRow[]; days: num
       </ul>
     );
   return (
-    <div className="table-wrap">
+    <TableWrap label={t.metricsContacts}>
       <table className="table">
         <thead>
           <tr>
@@ -620,7 +634,7 @@ function ContactTable({ items, days }: { items: readonly ContactRow[]; days: num
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 

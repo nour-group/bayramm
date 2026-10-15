@@ -9,7 +9,7 @@ import { type Failure, useCan, useLoad, useSession } from "../api";
 import { formatMoment } from "../format";
 import { useLayout } from "../layout";
 import { t } from "../texts";
-import { ErrorText, Link, LoadedView } from "../ui";
+import { ErrorText, Link, LoadedView, TableWrap } from "../ui";
 
 const COUNTS: readonly OutboxStatus[] = ["pending", "sending", "failed", "dead", "sent"];
 
@@ -158,7 +158,7 @@ function DeadTable({
   return (
     <div className="stack">
       {failure && <ErrorText failure={failure} />}
-      <div className="table-wrap">
+      <TableWrap label={t.notifications}>
         <table className="table">
           <thead>
             <tr>
@@ -215,7 +215,7 @@ function DeadTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
     </div>
   );
 }

@@ -56,11 +56,32 @@ const listing = (categoryCode: string, extra: Partial<ListingDetail> = {}): List
 });
 
 describe("что спрашивает форма витрины", () => {
-  it("площадка — вместимость; фото — видео и заказы одновременно; торты — ничего лишнего", () => {
-    expect(formParts(cfg("hall"))).toEqual({ capacity: true, videos: false, parallel: false });
-    expect(formParts(cfg("photo"))).toEqual({ capacity: false, videos: true, parallel: true });
-    expect(formParts(cfg("car"))).toEqual({ capacity: false, videos: false, parallel: true });
-    expect(formParts(cfg("cake"))).toEqual({ capacity: false, videos: false, parallel: false });
+  it("площадка — вместимость и район; фото — видео и заказы одновременно; торты — ничего лишнего", () => {
+    expect(formParts(cfg("hall"))).toEqual({
+      district: true,
+      capacity: true,
+      videos: false,
+      parallel: false,
+    });
+    expect(formParts(cfg("photo"))).toEqual({
+      district: false,
+      capacity: false,
+      videos: true,
+      parallel: true,
+    });
+    // У кортежа района нет: машина едет по всему городу
+    expect(formParts(cfg("car"))).toEqual({
+      district: false,
+      capacity: false,
+      videos: false,
+      parallel: true,
+    });
+    expect(formParts(cfg("cake"))).toEqual({
+      district: false,
+      capacity: false,
+      videos: false,
+      parallel: false,
+    });
   });
 
   it("видео: сохранённые ссылки и пустое поле для новой, пока можно добавить", () => {

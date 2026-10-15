@@ -19,6 +19,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { type Failure, type Loaded, type Result, useLoad, useSession } from "./api";
+import { LabelText } from "./fields";
 import { Icon, type IconName } from "./icons";
 import { usePhone } from "./layout";
 import { ReasonField } from "./reason";
@@ -493,6 +494,8 @@ export function busyLabel(label: string, busy: boolean): string {
 
 interface FieldProps {
   label: string;
+  /** Пометка у подписи: «обязательно» (true) или «по желанию» (false); не задано — без пометки */
+  required?: boolean | undefined;
   error?: string | undefined;
   hint?: string | undefined;
   full?: boolean;
@@ -500,13 +503,15 @@ interface FieldProps {
 }
 
 /** Поле с подписью, подсказкой и ошибкой; id и aria-* связывает само */
-export function Field({ label, error, hint, full, children }: FieldProps) {
+export function Field({ label, required, error, hint, full, children }: FieldProps) {
   const id = useId();
   const noteId = `${id}-note`;
   const note = error ?? hint;
   return (
     <div className={`field${full ? " field-full" : ""}${error ? " field-bad" : ""}`}>
-      <label htmlFor={id}>{label}</label>
+      <label htmlFor={id}>
+        <LabelText label={label} required={required} />
+      </label>
       {children({ id, "aria-invalid": Boolean(error), ...(note ? { "aria-describedby": noteId } : {}) })}
       {note && (
         <span id={noteId} className={error ? "field-error" : "field-hint"}>
@@ -1055,13 +1060,8 @@ export function OverflowMenu({
           {context ? <span className="visually-hidden">: {context}</span> : null}
         </span>
       </button>
-      <Dialog
-        open={open}
-        title={title}
-        onClose={() => setOpen(false)}
-        returnFocus={button}
-        actions={<SheetClose onClose={() => setOpen(false)} />}
-      >
+      {/* Закрыть — крестик набора в заголовке шторки */}
+      <Dialog open={open} title={title} onClose={() => setOpen(false)} returnFocus={button}>
         <ul className="menu">
           {actions.map((action) => (
             <li key={action.key}>
@@ -1102,14 +1102,15 @@ export function OverflowMenu({
 }
 
 /**
- * «Закрыть» внизу шторки со списком: закрыть можно и подложкой, и Esc, но диктору на телефоне
- * нужна кнопка
+ * Таблица, которая шире экрана, прокручивается вбок в своей рамке. Рамка — область с именем и в
+ * Tab (tabindex 0): прокрутить её можно и с клавиатуры (стрелками), диктор называет, что в ней
  */
-export function SheetClose({ onClose }: { onClose: () => void }) {
+export function TableWrap({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <button type="button" className="ui-btn ui-btn-secondary sheet-done" onClick={onClose}>
-      {t.close}
-    </button>
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: прокручиваемая область — в Tab, иначе её не прокрутить с клавиатуры
+    <section className="table-wrap" aria-label={label} tabIndex={0}>
+      {children}
+    </section>
   );
 }
 

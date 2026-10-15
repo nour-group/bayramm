@@ -98,7 +98,7 @@ test("модератор: заявки по ссылке — «нет досту
   await expect(page.getByText(t.noAccess)).toBeVisible();
   await expect(page.getByRole("button", { name: t.retry })).toHaveCount(0);
   // Путь — в главный раздел роли: у модератора это «Модерация»
-  await page.getByRole("link", { name: t.toSection(t.moderation) }).click();
+  await page.getByRole("link", { name: t.toSection.moderation }).click();
   await expect(page).toHaveURL("/moderation");
   expect(asked).toEqual([]);
   await page.goto("/team");

@@ -305,7 +305,7 @@ describe("раздел «Метрики»", () => {
     expect(container.querySelector("p.muted")).toBeNull();
     await click(button(t.metricsHow));
     expect(document.querySelector("[role=dialog]")?.textContent).toContain(t.metricsHowItems(12)[0]?.text);
-    await click(document.querySelector<HTMLElement>("[role=dialog] .sheet-done") ?? undefined);
+    await click(document.querySelector<HTMLElement>("[role=dialog] .ui-dialog-close") ?? undefined);
 
     await click(radio(t.metricsTabs.vendors));
     expect(window.location.search).toBe("?tab=vendors");

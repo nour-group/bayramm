@@ -13,7 +13,7 @@ import { Dialog, RadioGroup, type RadioOption, SearchField, Select } from "@bayr
 import { useState } from "react";
 import { useCan } from "../api";
 import { CategoryChip, categoryName, categoryOptions, knownCategory } from "../categories";
-import { usePhone } from "../layout";
+import { useLayout, usePhone } from "../layout";
 import { useQueryState } from "../router";
 import { t } from "../texts";
 import {
@@ -27,6 +27,7 @@ import {
   offsetOf,
   Pill,
   StatusPill,
+  TableWrap,
   useListSearch,
   usePagedList,
 } from "../ui";
@@ -50,6 +51,8 @@ const statusOptions = (): RadioOption<ListingStatus | "all">[] => [
 export function VendorsPage() {
   const can = useCan();
   const phone = usePhone();
+  // Уже компьютера таблица не помещается — карточками, как на телефоне
+  const cards = useLayout() !== "desktop";
   const [query, setQuery] = useQueryState(KEYS);
   // Поиск — в адрес, когда перестали печатать; новый поиск — с первой страницы
   const [q, setQ] = useListSearch(query.q ?? "", (search) => setQuery({ q: search, page: null }));
@@ -180,7 +183,7 @@ export function VendorsPage() {
             )
           ) : (
             <>
-              {phone ? <VendorCards items={list.items} /> : <VendorTable items={list.items} />}
+              {cards ? <VendorCards items={list.items} /> : <VendorTable items={list.items} />}
               <ListFooter list={list} offset={offset} size={PAGE} onPage={onPage} />
             </>
           )
@@ -263,7 +266,7 @@ function VendorCards({ items }: { items: readonly VendorListItem[] }) {
 
 function VendorTable({ items }: { items: readonly VendorListItem[] }) {
   return (
-    <div className="table-wrap">
+    <TableWrap label={t.vendors}>
       <table className="table">
         <thead>
           <tr>
@@ -315,6 +318,6 @@ function VendorTable({ items }: { items: readonly VendorListItem[] }) {
           })}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }

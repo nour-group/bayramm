@@ -100,6 +100,8 @@ export const CAPACITY = { min: 1, max: 5000 } as const;
 /** Что спрашивает форма у этой категории */
 export function formParts(category: CategoryConfig) {
   return {
+    // Район — только у категорий, где он есть (зал, студия): у кортежа и тортов его нет
+    district: category.listingFields.includes("district"),
     capacity: category.listingFields.includes("guest_capacity"),
     videos: category.maxVideoLinks > 0,
     parallel: category.availability === "parts",
@@ -485,10 +487,11 @@ function SlugLine() {
 
 /** «Основное» и «Описание и адрес» — одна карточка: название, район, адрес страницы, адреса и описания */
 export function MainSection() {
-  const { now, put, set, errors, readOnly, moderatedHint, dictionaries, submit, formId } = useEditor();
+  const { now, put, set, errors, readOnly, moderatedHint, dictionaries, submit, formId, parts } = useEditor();
 
+  // Пометки у подписи — как у клиента и в кабинете: описания для публикации нужны, адрес — нет
   const textarea = (key: "descriptionRu" | "descriptionUz", lang: "ru" | "uz") => (
-    <Field label={t.listingFields[key] ?? key} error={errors[key]} hint={moderatedHint} full>
+    <Field label={t.listingFields[key] ?? key} required error={errors[key]} hint={moderatedHint} full>
       {(props) => (
         <textarea
           {...props}
@@ -506,7 +509,7 @@ export function MainSection() {
 
   // Адрес — улица, дом и ориентир: в две-три строки, а не в одну узкую
   const address = (key: "addressRu" | "addressUz", lang: "ru" | "uz") => (
-    <Field label={t.listingFields[key] ?? key} error={errors[key]}>
+    <Field label={t.listingFields[key] ?? key} required={false} error={errors[key]}>
       {(props) => (
         <textarea
           {...props}
@@ -534,7 +537,7 @@ export function MainSection() {
           </h2>
         </div>
         <div className="fields">
-          <Field label={t.listingFields.name ?? ""} error={errors.name} hint={moderatedHint}>
+          <Field label={t.listingFields.name ?? ""} required error={errors.name} hint={moderatedHint}>
             {(props) => (
               <input
                 {...props}
@@ -549,19 +552,21 @@ export function MainSection() {
               />
             )}
           </Field>
-          <Field label={t.listingFields.districtCode ?? ""} error={errors.districtCode}>
-            {(props) => (
-              <Select
-                {...props}
-                className="input"
-                label={t.listingFields.districtCode ?? ""}
-                value={now.values.districtCode}
-                onChange={put("districtCode")}
-                disabled={readOnly}
-                options={districtChoices(dictionaries)}
-              />
-            )}
-          </Field>
+          {parts.district ? (
+            <Field label={t.listingFields.districtCode ?? ""} required error={errors.districtCode}>
+              {(props) => (
+                <Select
+                  {...props}
+                  className="input"
+                  label={t.listingFields.districtCode ?? ""}
+                  value={now.values.districtCode}
+                  onChange={put("districtCode")}
+                  disabled={readOnly}
+                  options={districtChoices(dictionaries)}
+                />
+              )}
+            </Field>
+          ) : null}
           <SlugLine />
         </div>
         <div className="fs-head fs-sub">

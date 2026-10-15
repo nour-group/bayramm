@@ -5,7 +5,7 @@ import { mediaImageOrigins } from "@bayramm/media";
 const dev = import.meta.env?.DEV === true;
 
 /* Панель оператора: /api/* → API, остальное — SPA. Вход — через хаб входа на сайте
-   (одноразовый код и PKCE, виджета здесь нет) или Mini App: кнопка «Панель оператора» в
+   (одноразовый код и PKCE, виджета здесь нет) или Mini App: кнопка «Панель команды» в
    боте открывает панель в Telegram — SDK telegram-web-app.js (telegramWebApp), встраивать
    разрешено только Telegram Web. Права проверяет API: ручки панели — за сессией
    сотрудника (requireStaff), до входа доступна только статика. */

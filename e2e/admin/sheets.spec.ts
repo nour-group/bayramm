@@ -109,3 +109,42 @@ test("метрики: «Как считаем» — лист с определе
   await sheet.getByRole("button", { name: t.close }).click();
   await expect(sheet).toHaveCount(0);
 });
+
+test("шторка набора: заголовок с «Закрыть» и кнопки действий на месте, прокручивается только тело", async ({
+  page,
+}) => {
+  test.skip(!isPhone(page), "шторка снизу — на телефоне");
+  await start(page);
+  // Низкий экран: определений больше, чем помещается
+  await page.setViewportSize({ width: 390, height: 480 });
+  await page.goto("/metrics");
+  await page.getByRole("button", { name: t.metricsHow }).click();
+  const sheet = page.getByRole("dialog", { name: t.metricsHow });
+  const close = sheet.locator(".ui-dialog-head").getByRole("button", { name: t.close });
+  await expect(close).toBeVisible();
+  const body = sheet.locator(".ui-dialog-body");
+  const sizes = await body.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight }));
+  expect(sizes.scroll).toBeGreaterThan(sizes.client);
+  // Текст без полей прокручивается с клавиатуры: тело — в Tab
+  await expect(body).toHaveAttribute("tabindex", "0");
+  const before = await close.boundingBox();
+  await body.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  const after = await close.boundingBox();
+  expect(after?.y).toBe(before?.y);
+  await expect(close).toBeInViewport();
+  await expectNoAxeViolations(page, "шторка: длинное тело");
+  await close.click();
+  await expect(sheet).toHaveCount(0);
+
+  // Кнопки действий — под телом, на виду и до прокрутки: «Готово» сортировки вендоров
+  await page.getByRole("radio", { name: t.metricsTabs.vendors }).check();
+  await page.getByRole("button", { name: new RegExp(`^${t.sort}`) }).click();
+  const sort = page.getByRole("dialog", { name: t.sort });
+  const done = sort.locator(".ui-dialog-actions").getByRole("button", { name: t.done });
+  await expect(done).toBeInViewport();
+  const box = await sort.boundingBox();
+  const action = await done.boundingBox();
+  expect((action?.y ?? 0) + (action?.height ?? 0)).toBeLessThanOrEqual((box?.y ?? 0) + (box?.height ?? 0));
+  await done.click();
+  await expect(sort).toHaveCount(0);
+});

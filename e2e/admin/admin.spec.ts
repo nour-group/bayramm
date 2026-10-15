@@ -189,14 +189,15 @@ test.describe("работа сотрудника", () => {
     const tabs = page.getByRole("radiogroup", { name: t.moderation });
     await expect(tabs.locator(".ui-radio")).toHaveText([
       `${t.queueTabs.revisions} 1`,
-      `${t.queueTabs.photos} 1`,
+      // Число у очереди фото — сами фото (два), а не витрины
+      `${t.queueTabs.photos} 2`,
     ]);
     await expect(page.getByRole("region", { name: t.revisions })).toContainText(
       t.queueProposer("partner", null),
     );
     await expect(page.getByRole("region", { name: t.photoQueue })).toHaveCount(0);
 
-    await tabs.getByRole("radio", { name: `${t.queueTabs.photos} 1` }).check();
+    await tabs.getByRole("radio", { name: `${t.queueTabs.photos} 2` }).check();
     await expect(page).toHaveURL("/moderation?queue=photos");
     const photos = page.getByRole("region", { name: t.photoQueue });
     // Витрина — сразу на блоке фото
