@@ -203,6 +203,7 @@ describe("listCatalog", () => {
       busy: false,
       key: 200_000,
       id: ID(2),
+      print: null,
     });
   });
 
@@ -222,6 +223,7 @@ describe("listCatalog", () => {
       busy: true,
       key: -500_000,
       id: ID(5),
+      print: null,
     });
     await listCatalog(
       fake.db,

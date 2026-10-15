@@ -1,0 +1,47 @@
+/* Поиск по каталогу — @bayramm/shared/search.
+
+   Что где:
+     normalize.ts  — searchNorm (= app.search_norm), слова запроса, пределы длины;
+     trigram.ts    — similarity и word_similarity как у pg_trgm (для TS без базы);
+     rank.ts       — совпадение и порядок (= app.catalog_search), документ витрины;
+     attributes.ts — текстовые поля витрины в документе (= app.listing_attrs_text);
+     vectors.ts    — общие тест-векторы TS и pgTAP;
+     sql.ts        — SQL функций и векторов (pnpm --filter @bayramm/shared search:sql).
+   Запросы поиска нигде не сохраняются и не пишутся в лог: в них бывают имя или телефон. */
+
+export { attrTextJsonPath, attrTextPaths, listingAttrText } from "./attributes";
+export {
+  SEARCH_APOSTROPHES,
+  SEARCH_MAX_LENGTH,
+  SEARCH_MAX_TOKENS,
+  SEARCH_MIN_LENGTH,
+  SEARCH_RAW_MAX_LENGTH,
+  type SearchQuery,
+  searchNorm,
+  searchQuery,
+  searchTokens,
+} from "./normalize";
+export {
+  relevanceKey,
+  SEARCH_FUZZY_SIMILARITY,
+  SEARCH_WORD_SIMILARITY,
+  type SearchDoc,
+  type SearchSource,
+  searchDoc,
+  searchMatches,
+  searchScore,
+  startsWord,
+  tokenMatches,
+  tokenSimilarity,
+} from "./rank";
+export {
+  SEARCH_SQL_BEGIN,
+  SEARCH_SQL_END,
+  SEARCH_VECTORS_BEGIN,
+  SEARCH_VECTORS_END,
+  searchSql,
+  searchVectorsCount,
+  searchVectorsSql,
+} from "./sql";
+export { similarity, wordSimilarity } from "./trigram";
+export { MATCH_VECTORS, MISMATCH_VECTORS, NORM_VECTORS } from "./vectors";

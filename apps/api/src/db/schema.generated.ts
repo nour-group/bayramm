@@ -333,6 +333,26 @@ export interface AppListings {
   video_links: Generated<string[]>;
 }
 
+export interface AppListingSearch {
+  /**
+   * doc и descr вместе — по нему совпадение (индекс триграмм)
+   */
+  body: Generated<string | null>;
+  /**
+   * Описания ru и uz — меньший вес в порядке
+   */
+  descr: string;
+  /**
+   * Название, раздел ru/uz, район ru/uz, названия активных услуг, текстовые поля витрины
+   */
+  doc: string;
+  listing_id: string;
+  /**
+   * Название
+   */
+  name: string;
+}
+
 export interface AppListingServices {
   category_code: string;
   created_at: Generated<Timestamp>;
@@ -765,6 +785,7 @@ export interface DB {
   "app.hub_codes": AppHubCodes;
   "app.legal_entities": AppLegalEntities;
   "app.listing_revisions": AppListingRevisions;
+  "app.listing_search": AppListingSearch;
   "app.listing_services": AppListingServices;
   "app.listing_status_log": AppListingStatusLog;
   "app.listings": AppListings;

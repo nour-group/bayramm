@@ -2,7 +2,8 @@
 //
 //   GET /catalog/categories                                            → 200 CatalogCategories
 //   GET /catalog/featured                                              → 200 ListingCards (витрины лендинга)
-//   GET /catalog/listings?category&district&date&guests&sort&cursor&limit&a.* → 200 CatalogPage
+//   GET /catalog/listings?category&q&district&date&guests&sort&cursor&limit&a.* → 200 CatalogPage
+//   GET /catalog/suggest?q                                             → 200 CatalogSuggest
 //   GET /catalog/listings/:slug[?date]                                 → 200 ListingDetail | 404
 //   GET /catalog/cards?ids=<uuid>,…                                    → 200 ListingCards (избранное гостя)
 //   POST /catalog/listings/:slug/contact { action, signedIn }          → 200 ListingContacts | 204 | 404
@@ -15,8 +16,13 @@
 // Параметры проверяются до базы: неверный — 400 invalid_request (details —
 // имена), чужой или испорченный курсор — 400 invalid_cursor. Контракт —
 // @bayramm/shared/api; правила выдачи — catalog/service.ts.
+//
+// Поиск (q): запрос не пишется в лог и не сохраняется — ни здесь, ни в базе (туда он уходит
+// параметром). Ответы с q публичные и одинаковые для всех — кэшируются, как выдача: ключ кэша
+// края — полный адрес, q в нём есть (packages/edge api-cache.ts).
 
 import {
+  type CatalogSuggest,
   CLIENT_SOURCE_HEADER,
   type ContactAction,
   type ListingCards,
@@ -24,8 +30,9 @@ import {
 } from "@bayramm/shared/api";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { dateParam, invalidRequest, parseCatalogQuery, single } from "../catalog/query";
+import { dateParam, invalidRequest, parseCatalogQuery, searchParam, single } from "../catalog/query";
 import {
+  catalogSuggest,
   getListingCards,
   getListingDetail,
   listCatalog,
@@ -76,6 +83,18 @@ catalog.get("/listings", async (c) => {
   const page = await listCatalog(c.var.db, params);
   c.header("Cache-Control", CATALOG_CACHE_CONTROL);
   return c.json(page);
+});
+
+// Подсказки поиска, пока человек печатает: разделы, районы, до пяти витрин. Не поиск (q короче
+// двух символов после нормализации) — пусто, без базы
+catalog.get("/suggest", async (c) => {
+  const bad: string[] = [];
+  const q = searchParam(c.req.queries(), bad);
+  if (bad.length > 0) throw invalidRequest(bad, "Invalid query parameters");
+  const body: CatalogSuggest =
+    q === null ? { categories: [], districts: [], listings: [] } : await catalogSuggest(c.var.db, q);
+  c.header("Cache-Control", CATALOG_CACHE_CONTROL);
+  return c.json(body);
 });
 
 // Избранное гостя: id хранит браузер, карточки — отсюда. Снятые с публикации в ответ не
