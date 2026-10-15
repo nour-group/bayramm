@@ -8,6 +8,7 @@ import {
   expectNoAxeViolations,
   expectVisibleFocus,
 } from "../support/a11y";
+import { fieldName } from "../support/field-name";
 import { expect, test } from "../support/offline";
 import { clickBackButton, fakeTelegram } from "../support/telegram";
 import {
@@ -39,8 +40,7 @@ import {
 const t = vendorDict.ru;
 
 /** Имя поля целиком: подпись и пометка «обязательно / по желанию» у неё (как у клиента) */
-const named = (label: string) =>
-  new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?: (?:${t.required}|${t.optionalPh}))?$`);
+const named = (label: string) => fieldName(label, [t.required, t.optionalPh]);
 const st = REQUEST_STATUS_NAMES.ru;
 const BOT = "https://t.me/bayramm_demo_bot?start=partner";
 /** Прилипшие панели кабинета: шапка, нижняя панель, панель действий заявки */

@@ -2,6 +2,7 @@ import type { VendorRole } from "@bayramm/shared/api/vendor";
 import type { Page } from "@playwright/test";
 import { fill, vendorDict } from "../../apps/vendor/src/i18n";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
+import { fieldName } from "../support/field-name";
 import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
 import { mockVendorApi, NOW, PHOTO_ID } from "../support/vendor-api";
@@ -13,8 +14,7 @@ import { mockVendorApi, NOW, PHOTO_ID } from "../support/vendor-api";
 const t = vendorDict.ru;
 
 /** Имя поля целиком: подпись и пометка «обязательно / по желанию» у неё (как у клиента) */
-const named = (label: string) =>
-  new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?: (?:${t.required}|${t.optionalPh}))?$`);
+const named = (label: string) => fieldName(label, [t.required, t.optionalPh]);
 const CONTROLS = [
   ".btn",
   ".pill",

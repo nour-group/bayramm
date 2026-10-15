@@ -1,10 +1,10 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
+import { fieldName } from "./field-name";
 import { LISTING_ID, VENDOR_ID } from "./staff-api";
 
 /** Имя поля целиком: подпись и пометка «обязательно / по желанию» у неё (как у клиента) */
-export const named = (label: string): RegExp =>
-  new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?: (?:${t.required}|${t.optional}))?$`);
+export const named = (label: string): RegExp => fieldName(label, [t.required, t.optional]);
 
 /* Действия в панели, которые нужны многим проверкам: выбрать вариант своего списка (Select
    из @bayramm/ui/react), пункт шторки «…», пункт шторки фото и завести вендору витрину в категории. */
