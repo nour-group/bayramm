@@ -462,6 +462,7 @@ html.ui-lock {
 }
 
 .ui-cal-day {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -481,8 +482,25 @@ button.ui-cal-day {
   cursor: pointer;
 }
 
+/* Выходной — своей подложкой (та же пара токенов, что в календаре кабинета); у каждого дня,
+   который можно выбрать, — рамка: на белой карточке белые будни не пропадают */
 .ui-cal-day.is-weekend {
   background: var(--cell-wk);
+}
+
+button.ui-cal-day:not(.is-out):not(.is-busy) {
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+/* Сегодня — точка в углу, а не кольцо: кольцо значит «фокус» */
+.ui-cal-today {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-999);
+  background: var(--plum);
 }
 
 /* Прошедшие и дальние дни: выбрать нельзя */
@@ -507,9 +525,12 @@ button.ui-cal-day {
 
 /* Частично занятый день (заняты не все части дня): нижняя половина клетки — цветом
    занятого, число — в полном контрасте (пары ink/cell и ink/busy). Выбрать можно */
-.ui-cal-day.is-partial {
+.ui-cal-day.is-partial,
+button.ui-cal-day.is-partial:not(.is-out):not(.is-busy) {
   background: linear-gradient(to top, var(--busy) 50%, var(--cell) 50%);
-  box-shadow: inset 0 -3px 0 var(--busy-ink);
+  box-shadow:
+    inset 0 -3px 0 var(--busy-ink),
+    inset 0 0 0 1px var(--rule);
 }
 
 .ui-cal-day[aria-disabled="true"] {
@@ -551,6 +572,14 @@ button.ui-cal-day {
 
 .ui-leg-sel::before {
   background: var(--plum);
+}
+
+.ui-leg-today::before {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-999);
+  background: var(--plum);
+  vertical-align: 1px;
 }
 
 /* ---------- галочка и переключатель ---------- */
@@ -618,24 +647,27 @@ button.ui-cal-day {
   cursor: pointer;
 }
 
+/* Выключено — светлая дорожка с рамкой и тёмный кружок; включено — заливка и белый кружок:
+   «выкл» не похоже на «вкл» */
 .ui-switch-track {
   position: relative;
   flex: none;
   width: 44px;
   height: 24px;
   border-radius: var(--r-999);
-  background: var(--muted-lt);
+  background: var(--white);
+  box-shadow: inset 0 0 0 2px var(--muted-lt);
   transition: background-color var(--t2) var(--ease);
 }
 
 .ui-switch-thumb {
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
   border-radius: var(--r-999);
-  background: var(--white);
+  background: var(--muted-lt);
   transition: transform var(--t2) var(--ease);
 }
 
@@ -645,14 +677,21 @@ button.ui-cal-day {
 
 .ui-native:checked + .ui-switch-track {
   background: var(--teal);
+  box-shadow: none;
 }
 
 .ui-native:checked + .ui-switch-track .ui-switch-thumb {
+  background: var(--white);
   transform: translateX(20px);
 }
 
 .ui-native:disabled + .ui-switch-track {
   background: var(--rule);
+  box-shadow: none;
+}
+
+.ui-native:disabled + .ui-switch-track .ui-switch-thumb {
+  background: var(--white);
 }
 
 .ui-switch.is-disabled {

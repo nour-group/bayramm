@@ -65,6 +65,8 @@ export interface CalendarTexts {
   readonly selected: string;
   /** Итог месяца под названием: «занято 3 дня», «весь месяц свободен» */
   readonly summary?: (busyDays: number) => string;
+  /** «сегодня» — в имени дня и в легенде (календарь с today) */
+  readonly today?: string;
 }
 
 export interface CalendarProps {
@@ -90,6 +92,8 @@ export interface CalendarProps {
   readonly autoFocus?: boolean;
   /** Какой месяц показать без выбранной даты; по умолчанию — месяц min */
   readonly defaultMonth?: string;
+  /** Сегодня (по Ташкенту): точка в углу клетки, не рамка — рамка у фокуса */
+  readonly today?: string;
 }
 
 const NO_BUSY: ReadonlySet<string> = new Set();
@@ -107,6 +111,7 @@ export function Calendar({
   legend = true,
   autoFocus = false,
   defaultMonth,
+  today,
 }: CalendarProps) {
   const base = useId();
   const [month, setMonth] = useState(() =>
@@ -233,6 +238,7 @@ export function Calendar({
             isBusy ? "is-busy" : "",
             parts !== undefined ? "is-partial" : "",
             isSelected ? "is-selected" : "",
+            day === today ? "is-today" : "",
           ]
             .filter(Boolean)
             .join(" ");
@@ -243,10 +249,13 @@ export function Calendar({
               : parts !== undefined
                 ? `${texts.partial ?? texts.free}: ${parts}`
                 : texts.free;
-          const name = status ? `${texts.dayLabel(day)}, ${status}` : texts.dayLabel(day);
+          const named = status ? `${texts.dayLabel(day)}, ${status}` : texts.dayLabel(day);
+          const name = day === today && texts.today ? `${named}, ${texts.today}` : named;
+          const dot = day === today ? <span className="ui-cal-today" aria-hidden="true" /> : null;
           if (!onSelect)
             return (
               <span key={day} className={classes}>
+                {dot}
                 <span aria-hidden="true">{i + 1}</span>
                 <span className="ui-sr-only">{name}</span>
               </span>
@@ -267,6 +276,7 @@ export function Calendar({
                 if (pickable(day)) onSelect(day);
               }}
             >
+              {dot}
               {i + 1}
             </button>
           );
@@ -280,6 +290,9 @@ export function Calendar({
           ) : null}
           <span className="ui-leg ui-leg-busy">{texts.busy}</span>
           {selected ? <span className="ui-leg ui-leg-sel">{texts.selected}</span> : null}
+          {today && texts.today && monthOf(today) === month ? (
+            <span className="ui-leg ui-leg-today">{texts.today}</span>
+          ) : null}
         </p>
       ) : null}
     </div>

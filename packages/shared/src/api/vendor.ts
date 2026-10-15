@@ -570,6 +570,8 @@ export interface VendorListing {
   readonly parallelCapacity: number;
   /** Время работы витрины (режим, рабочие части, окна, заказов одновременно) */
   readonly daySessions: DaySessions;
+  /** Версия календаря витрины: правка времени работы идёт от неё (If-Match) */
+  readonly calendarVersion: number;
   /** Услуги витрины по порядку — все статусы */
   readonly services: readonly ListingService[];
   readonly photos: readonly VendorPhoto[];

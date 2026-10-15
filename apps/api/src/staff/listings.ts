@@ -43,6 +43,7 @@ import { Hono } from "hono";
 import { sql } from "kysely";
 import { staffOf } from "../auth/session";
 import { sessionsOfRow } from "../calendar/sessions";
+import { calendarVersion } from "../calendar/version";
 import { roleActorKind, type Tx, withActor } from "../db/actor";
 import {
   listingContactKinds,
@@ -205,6 +206,7 @@ export async function loadListing(trx: Tx, id: string): Promise<ListingDetail> {
     videoLinks: row.video_links,
     parallelCapacity: row.parallel_capacity,
     daySessions: sessionsOfRow(row),
+    calendarVersion: await calendarVersion(trx, id),
     services: await listServices(trx, id),
     submittedAt: iso(row.submitted_at),
     publishedAt: iso(row.published_at),

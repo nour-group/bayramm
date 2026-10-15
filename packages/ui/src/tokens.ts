@@ -80,7 +80,8 @@ export const base: Palette = {
   tealSoft: "#E2F1EF",
   berry: "#A82F52",
   cell: "#FFFFFF",
-  cellWk: "#FBF6F1",
+  // Выходной — заметно тёплый: на телефоне не путается с прошедшим днём (тот без подложки)
+  cellWk: "#F4EADF",
   busy: "#FBEEF1",
   busyInk: "#B57C90",
 };
@@ -114,7 +115,7 @@ export const lux: Palette = {
   tealSoft: "#E4EDE8",
   berry: "#7A1E1A",
   cell: "#F4EEE4",
-  cellWk: "#EFE3D8",
+  cellWk: "#E6D6C8",
   busy: "#FFFDF8",
   busyInk: "#9E9384",
 };

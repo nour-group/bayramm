@@ -18,6 +18,7 @@ import type {
 import { categoryConfig, missingAttributes, readAttributes } from "@bayramm/shared/categories";
 import { sql } from "kysely";
 import { sessionsOfRow } from "../calendar/sessions";
+import { calendarVersion } from "../calendar/version";
 import { type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import {
@@ -278,6 +279,7 @@ export async function readListing(
     videoLinks: listing.video_links,
     parallelCapacity: listing.parallel_capacity,
     daySessions: sessionsOfRow(listing),
+    calendarVersion: await calendarVersion(trx, listingId),
     services,
     photos,
     phone: contacts.phone,

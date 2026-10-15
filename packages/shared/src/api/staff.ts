@@ -447,6 +447,8 @@ export interface ListingDetail {
   readonly parallelCapacity: number;
   /** Время работы витрины (режим, рабочие части, окна, заказов одновременно) */
   readonly daySessions: DaySessions;
+  /** Версия календаря витрины: правка времени работы идёт от неё */
+  readonly calendarVersion: number;
   /** Услуги витрины по порядку — все статусы */
   readonly services: readonly ListingService[];
   readonly submittedAt: string | null;
