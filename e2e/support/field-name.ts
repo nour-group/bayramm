@@ -1,9 +1,23 @@
-/** Имя поля целиком: подпись и, если есть, пометка у неё («обязательно», «по желанию») — для
-   getByLabel и `name` у getByRole. Подпись и пометки — из словарей приложений, спецсимволы
-   экранированы. */
-export function fieldName(label: string, marks: readonly string[]): RegExp {
-  const literal = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const source = `^${literal(label)}(?: (?:${marks.map(literal).join("|")}))?$`;
-  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
-  return new RegExp(source);
+import type { Locator, Page } from "@playwright/test";
+
+/* Поле по подписи. У подписи бывает пометка («обязательно», «по желанию»): имя поля — подпись
+   целиком или подпись с одной из пометок. Точные строки, а не регулярное выражение из текста. */
+
+const names = (label: string, marks: readonly string[]) => [
+  label,
+  ...marks.map((mark) => `${label} ${mark}`),
+];
+
+/** Поле с подписью label (getByLabel) */
+export function labelled(scope: Page | Locator, label: string, marks: readonly string[]): Locator {
+  const [first, ...rest] = names(label, marks).map((name) => scope.getByLabel(name, { exact: true }));
+  return rest.reduce((all, one) => all.or(one), first as Locator);
+}
+
+/** Числовое поле с подписью label (getByRole spinbutton) */
+export function spinbutton(scope: Page | Locator, label: string, marks: readonly string[]): Locator {
+  const [first, ...rest] = names(label, marks).map((name) =>
+    scope.getByRole("spinbutton", { name, exact: true }),
+  );
+  return rest.reduce((all, one) => all.or(one), first as Locator);
 }

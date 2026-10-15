@@ -1,8 +1,8 @@
 import type { VendorRole } from "@bayramm/shared/api/vendor";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { fill, vendorDict } from "../../apps/vendor/src/i18n";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { fieldName } from "../support/field-name";
+import { labelled } from "../support/field-name";
 import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
 import { mockVendorApi, NOW, PHOTO_ID } from "../support/vendor-api";
@@ -13,8 +13,8 @@ import { mockVendorApi, NOW, PHOTO_ID } from "../support/vendor-api";
 
 const t = vendorDict.ru;
 
-/** Имя поля целиком: подпись и пометка «обязательно / по желанию» у неё (как у клиента) */
-const named = (label: string) => fieldName(label, [t.required, t.optionalPh]);
+/** Поле по подписи (с пометкой «обязательно / по желанию» у неё или без) */
+const field = (scope: Page | Locator, label: string) => labelled(scope, label, [t.required, t.optionalPh]);
 const CONTROLS = [
   ".btn",
   ".pill",
@@ -243,7 +243,7 @@ test.describe("контакты витрины", () => {
     await expectNoAxeViolations(page, "контакты: шторка");
     await expectHitAreas(page, "контакты: шторка", CONTROLS);
 
-    const phone = sheet.getByLabel(named(t.contactsPhone));
+    const phone = field(sheet, t.contactsPhone);
     await expect(phone).toHaveValue("00 000 00 01");
     await phone.fill("");
     await phone.pressSequentially("912223344");

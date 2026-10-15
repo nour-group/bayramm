@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectFocusNotObscured, expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { createVitrina, named } from "../support/admin-ui";
+import { createVitrina, field } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   CAKE_LISTING_ID,
@@ -239,7 +239,7 @@ test.describe("навигация на телефоне", () => {
   }) => {
     await start(page);
     await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    const name = page.getByLabel(named(t.vitrinaName));
+    const name = field(page, t.vitrinaName);
     await name.fill("Navruz zali");
     await name.blur();
     const more = tabbar(page).getByRole("button", { name: t.more });
@@ -391,7 +391,7 @@ test.describe("Telegram на телефоне", () => {
     await start(page);
     await fakeTelegram(page);
     await page.goto(`/vendors/${VENDOR_ID}/listings/new`);
-    const name = page.getByLabel(named(t.vitrinaName));
+    const name = field(page, t.vitrinaName);
     await name.fill("Navruz zali");
     await name.blur();
     await expect

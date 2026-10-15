@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 import { t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
-import { named } from "../support/admin-ui";
+import { field } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import {
   LISTING_ID,
@@ -174,7 +174,7 @@ test.describe("фото: отказ с причиной", () => {
 
     const form = await startDecline(page, 1);
     await expect(form).toContainText(t.declinePhotoHint(1));
-    const reason = form.getByLabel(named(t.reason));
+    const reason = field(form, t.reason);
     const submit = form.getByRole("button", { name: t.declinePhoto, exact: true });
     await expect(submit).toBeDisabled();
     await reason.fill("   ");
@@ -209,13 +209,13 @@ test.describe("фото: отказ с причиной", () => {
     const api = await start(page);
     await page.goto(`/listings/${PHOTO_LISTING_ID}`);
     const first = await startDecline(page, 2);
-    await first.getByLabel(named(t.reason)).fill("Передумали");
+    await field(first, t.reason).fill("Передумали");
     await first.getByRole("button", { name: t.cancel }).click();
     await expect(first).toHaveCount(0);
     expect(api.photoDecisions).toEqual([]);
     const again = await startDecline(page, 2);
     // Поле снова пустое: прежний текст не остался
-    await expect(again.getByLabel(named(t.reason))).toHaveValue("");
+    await expect(field(again, t.reason)).toHaveValue("");
   });
 });
 

@@ -2,7 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 import { apiErrorText, t } from "../../apps/admin/src/texts";
 import { expectHitAreas, expectNoAxeViolations } from "../support/a11y";
 import { APPS, BOT } from "../support/account";
-import { named } from "../support/admin-ui";
+import { field } from "../support/admin-ui";
 import { expect, test } from "../support/offline";
 import { CABINET_OWNER, mockStaffApi, NOW, VENDOR_ID } from "../support/staff-api";
 import { horizontalOverflow } from "../support/web";
@@ -62,7 +62,7 @@ test("пригласить сотрудника площадки в шторке
   await usersPanel(page).getByRole("button", { name: t.vuInviteOpen }).click();
   const sheet = page.getByRole("dialog", { name: t.vuInviteTitle });
   const form = sheet.locator(".vuser-invite");
-  await form.getByLabel(named(t.userName)).fill("Дильшод");
+  await field(form, t.userName).fill("Дильшод");
   await form.getByLabel(t.userPhone).fill("90 111 22 33");
   // Роль — явно: без неё приглашения нет
   await form.getByRole("button", { name: t.vuInvite }).click();

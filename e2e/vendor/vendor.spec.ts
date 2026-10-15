@@ -1,6 +1,6 @@
 import type { VendorRole } from "@bayramm/shared/api/vendor";
 import { REQUEST_STATUS_NAMES } from "@bayramm/shared/i18n/status";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { fill, LANG_NAMES, vendorDict } from "../../apps/vendor/src/i18n";
 import {
   expectFocusNotObscured,
@@ -8,7 +8,7 @@ import {
   expectNoAxeViolations,
   expectVisibleFocus,
 } from "../support/a11y";
-import { fieldName } from "../support/field-name";
+import { labelled, spinbutton } from "../support/field-name";
 import { expect, test } from "../support/offline";
 import { clickBackButton, fakeTelegram } from "../support/telegram";
 import {
@@ -39,8 +39,9 @@ import {
 
 const t = vendorDict.ru;
 
-/** Имя поля целиком: подпись и пометка «обязательно / по желанию» у неё (как у клиента) */
-const named = (label: string) => fieldName(label, [t.required, t.optionalPh]);
+/** Поле по подписи (с пометкой «обязательно / по желанию» у неё или без) */
+const field = (scope: Page | Locator, label: string) => labelled(scope, label, [t.required, t.optionalPh]);
+const spin = (scope: Page | Locator, label: string) => spinbutton(scope, label, [t.required, t.optionalPh]);
 const st = REQUEST_STATUS_NAMES.ru;
 const BOT = "https://t.me/bayramm_demo_bot?start=partner";
 /** Прилипшие панели кабинета: шапка, нижняя панель, панель действий заявки */
@@ -617,7 +618,7 @@ test.describe("кабинет", () => {
     await expectHitAreas(page, "изменения карточки: окно", CONTROLS);
     await expectNoOverflow(page, "изменения карточки: окно");
 
-    await dialog.getByLabel(named(t.nameLabel)).fill("Lola zali Grand");
+    await field(dialog, t.nameLabel).fill("Lola zali Grand");
     await dialog.getByRole("button", { name: t.editSend }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByText(t.proposalSent)).toBeVisible();
@@ -647,24 +648,21 @@ test.describe("кабинет", () => {
     await page.goto("/card");
     await editButton(page, t.groupPlace).click();
     const dialog = sheet(page, t.groupPlace);
-    await expect(dialog.getByRole("spinbutton", { name: named(t.capMinLabel) })).toHaveValue("80");
-    await expect(dialog.getByRole("spinbutton", { name: named(t.capMaxLabel) })).toHaveValue("300");
+    await expect(spin(dialog, t.capMinLabel)).toHaveValue("80");
+    await expect(spin(dialog, t.capMaxLabel)).toHaveValue("300");
     await expectNoAxeViolations(page, "место: окно");
     await expectHitAreas(page, "место: окно", CONTROLS);
     await expectNoOverflow(page, "место: окно");
 
     // «До» меньше «от» — ошибка у поля, запроса нет
-    await dialog.getByRole("spinbutton", { name: named(t.capMinLabel) }).fill("400");
+    await spin(dialog, t.capMinLabel).fill("400");
     await dialog.getByRole("button", { name: t.editSend }).click();
     await expect(dialog.getByText(t.capErrOrder)).toBeVisible();
-    await expect(dialog.getByRole("spinbutton", { name: named(t.capMaxLabel) })).toHaveAttribute(
-      "aria-invalid",
-      "true",
-    );
+    await expect(spin(dialog, t.capMaxLabel)).toHaveAttribute("aria-invalid", "true");
     expect(api.saves).toEqual([]);
 
-    await dialog.getByRole("spinbutton", { name: named(t.capMinLabel) }).fill("100");
-    await dialog.getByRole("spinbutton", { name: named(t.capMaxLabel) }).fill("350");
+    await spin(dialog, t.capMinLabel).fill("100");
+    await spin(dialog, t.capMaxLabel).fill("350");
     await dialog.getByRole("button", { name: t.editSend }).click();
     await expect(dialog).toHaveCount(0);
     expect(api.saves.map((save) => save.body)).toEqual([{ version: 3, capMin: 100, capMax: 350 }]);
@@ -696,12 +694,12 @@ test.describe("кабинет", () => {
     // Витрины нет на сайте: «Сохранить», про проверку командой — ни слова
     await expect(dialog.getByText(t.liveSaveNote)).toHaveCount(0);
     await expect(dialog.getByRole("button", { name: t.editSend })).toHaveCount(0);
-    await dialog.getByRole("spinbutton", { name: named(t.capMinLabel) }).fill("80");
-    await dialog.getByRole("spinbutton", { name: named(t.capMaxLabel) }).fill("300");
+    await spin(dialog, t.capMinLabel).fill("80");
+    await spin(dialog, t.capMaxLabel).fill("300");
     await dialog.getByRole("button", { name: new RegExp(t.district) }).click();
     await expect(page.getByRole("option", { name: "Ташкент" })).toHaveAttribute("aria-disabled", "true");
     await page.getByRole("option", { name: "Чиланзар" }).click();
-    await dialog.getByLabel(named(t.addressRuLabel)).fill("ул. Навои, 1");
+    await field(dialog, t.addressRuLabel).fill("ул. Навои, 1");
     await expectNoAxeViolations(page, "место: черновик");
     await dialog.getByRole("button", { name: t.editSave }).click();
 
@@ -731,13 +729,13 @@ test.describe("кабинет", () => {
     await editButton(page, t.attributesTitle).click();
     const dialog = sheet(page, t.attributesTitle);
     // Цены здесь нет: она — из услуг; поля витрины зала — из конфигурации категории
-    await expect(dialog.getByLabel(named("Мест на парковке"))).toHaveValue("80");
-    await dialog.getByLabel(named("Сколько залов")).fill("50");
+    await expect(field(dialog, "Мест на парковке")).toHaveValue("80");
+    await field(dialog, "Сколько залов").fill("50");
     await dialog.getByRole("button", { name: t.editSend }).click();
-    await expect(dialog.getByLabel(named("Сколько залов"))).toHaveAttribute("aria-invalid", "true");
+    await expect(field(dialog, "Сколько залов")).toHaveAttribute("aria-invalid", "true");
     expect(api.saves).toEqual([]);
-    await dialog.getByLabel(named("Сколько залов")).fill("3");
-    await dialog.getByLabel(named("Мест на парковке")).fill("120");
+    await field(dialog, "Сколько залов").fill("3");
+    await field(dialog, "Мест на парковке").fill("120");
     await expectNoAxeViolations(page, "данные витрины: окно");
     await dialog.getByRole("button", { name: t.editSend }).click();
     await expect(dialog).toHaveCount(0);
@@ -752,13 +750,13 @@ test.describe("кабинет", () => {
     await page.goto("/card");
     await editButton(page, t.groupBasics).click();
     const dialog = sheet(page, t.groupBasics);
-    await dialog.getByLabel(named(t.nameLabel)).fill("Lola zali Grand");
+    await field(dialog, t.nameLabel).fill("Lola zali Grand");
     await dialog.getByRole("button", { name: t.cancel }).click();
     const question = page.getByRole("alertdialog");
     await expect(question).toContainText(t.unsavedTitle);
     await expectNoAxeViolations(page, "окно: уйти без сохранения");
     await question.getByRole("button", { name: t.unsavedStay }).click();
-    await expect(dialog.getByLabel(named(t.nameLabel))).toHaveValue("Lola zali Grand");
+    await expect(field(dialog, t.nameLabel)).toHaveValue("Lola zali Grand");
     await dialog.getByRole("button", { name: t.cancel }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: t.unsavedLeave }).click();
     await expect(dialog).toHaveCount(0);
@@ -1055,8 +1053,8 @@ test.describe("витрины в разных категориях", () => {
     await editor.getByRole("button", { name: t.serviceType }).click();
     await page.getByRole("option", { name: /Лимузин/ }).click();
     // Цена — с разрядами и «сум» у поля; минимум, срок и «что входит» — под «Условиями», свёрнуты
-    await editor.getByLabel(named(t.packagePrice)).fill("1200000");
-    await expect(editor.getByLabel(named(t.packagePrice))).toHaveValue("1\u202f200\u202f000");
+    await field(editor, t.packagePrice).fill("1200000");
+    await expect(field(editor, t.packagePrice)).toHaveValue("1\u202f200\u202f000");
     await expect(editor.locator(".money-post")).toHaveText(t.sumSuffix);
     await expect(editor.getByRole("spinbutton", { name: t.serviceMinQty })).toHaveCount(0);
     await expect(editor.getByRole("button", { name: t.serviceConditions })).toHaveAttribute(
@@ -1064,7 +1062,7 @@ test.describe("витрины в разных категориях", () => {
       "false",
     );
     await editor.getByRole("button", { name: "Добавить: Остановки для фотосессии" }).click();
-    await editor.locator(".package-row").getByLabel(named(t.packagePrice)).fill("200000");
+    await field(editor.locator(".package-row"), t.packagePrice).fill("200000");
     await expectNoAxeViolations(page, "услуги: новая");
     await expectHitAreas(page, "услуги: новая", CONTROLS);
     await expectNoOverflow(page, "услуги: новая");
@@ -1084,7 +1082,7 @@ test.describe("витрины в разных категориях", () => {
     await card.getByRole("button", { name: t.svcEdit }).click();
     await expect(page.getByText(t.serviceProposalNote)).toBeVisible();
     await expect(editor.getByRole("spinbutton", { name: t.serviceMinQty })).toBeVisible();
-    await editor.getByLabel(named(t.packagePrice)).first().fill("350000");
+    await field(editor, t.packagePrice).first().fill("350000");
     await editor.getByRole("button", { name: t.proposalStart }).click();
     await expect(card.locator(".svc-proposal")).toContainText(t.svcProposal);
     await expect(card.locator(".changes")).toContainText("350");
@@ -1116,7 +1114,7 @@ test.describe("витрины в разных категориях", () => {
     await chooseVitrina(page, "Kortej Premium");
     const card = page.locator(".svc").filter({ hasText: "Машина для молодожёнов" });
     await card.getByRole("button", { name: t.svcEdit }).click();
-    const price = page.locator(".svc-editor").getByLabel(named(t.packagePrice)).first();
+    const price = field(page.locator(".svc-editor"), t.packagePrice).first();
     await price.fill("350000");
     // «Назад» Telegram в форме — не явная «Отмена»: с правками — вопрос
     await clickBackButton(page);
@@ -1524,7 +1522,7 @@ test.describe("что ждёт партнёра после решений ком
     // Новое предложение — прежний отказ ждать больше не нужно
     await editButton(page, t.groupBasics).click();
     const form = sheet(page, t.groupBasics);
-    await form.getByLabel(named(t.nameLabel)).fill("Lola zali Grand");
+    await field(form, t.nameLabel).fill("Lola zali Grand");
     await form.getByRole("button", { name: t.editSend }).click();
     await expect(page.getByText(t.proposalSent)).toBeVisible();
     await expect(badge(page, t.card)).toHaveCount(0);
