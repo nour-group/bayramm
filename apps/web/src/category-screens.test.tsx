@@ -371,7 +371,7 @@ describe("заявка по форме категории", () => {
     await mount({ path: "/venue/oq-kortej/request", mock: { listings: ALL } });
     await waitFor(() => transferCheckbox(), "форма");
     await type(field("Комментарий"), "Маршрут: ЗАГС → парк → зал");
-    await click(byText("button", "Не сейчас"));
+    await click(byText(".form-bar button", "Назад"));
     await waitFor(() => document.querySelector(".svc-pick"), "витрина");
     await click(document.querySelector(".svc-pick"));
     await click(byText(".venue-bar a", "Оставить заявку"));

@@ -1,7 +1,7 @@
 import { GLOSSARY_FORBIDDEN, LANGS } from "@bayramm/shared";
 import { comparablePriceUzs, type ListingDetail } from "@bayramm/shared/api";
 import type { Locator, Page } from "@playwright/test";
-import { formatDayMonth, formatPhone, formatPriceFrom } from "../../apps/web/src/format";
+import { addDays, formatDayMonth, formatPhone, formatPriceFrom } from "../../apps/web/src/format";
 import { expectHitAreas } from "../support/a11y";
 import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
@@ -18,6 +18,7 @@ import {
   prepare,
   SCREENS,
   T,
+  TODAY,
   VENUE,
 } from "../support/web";
 
@@ -168,8 +169,8 @@ test.describe("тексты экранов", () => {
       // Каталог с выбранной датой: отметки «занято/свободно»
       await open(page, `${PATHS.catalog}?date=${BUSY_DAY}`, ".card .chip");
       await check("каталог на дату");
-      // Вне Telegram без входа форма ведёт в бота и во вход («Мои заявки» — сразу во вход)
-      await open(page, PATHS.request(VENUE.slug), ".tg-cta", { guest: true });
+      // Вне Telegram без входа — та же форма, без согласий: они после входа («Мои заявки» — сразу во вход)
+      await open(page, PATHS.request(VENUE.slug), "form.request .bot-link", { guest: true });
       await check("заявка из браузера");
       // Экран после отправки
       await open(page, PATHS.request(VENUE.slug), "form.request .consents");
@@ -246,7 +247,7 @@ test.describe("согласие", () => {
     expect(first).not.toEqual(second);
 
     // Отказ и отправка — одного размера
-    const cancel = page.locator(".form-bar").getByRole("button", { name: ru.permCancel });
+    const cancel = page.locator(".form-bar").getByRole("button", { name: ru.back });
     const send = page.locator(".form-bar").getByRole("button", { name: ru.rqSend });
     const [a, b] = [await cancel.boundingBox(), await send.boundingBox()];
     expect(a && b).toBeTruthy();
@@ -280,7 +281,7 @@ test.describe("согласие в форме каждой категории", 
         await expect(box, name).not.toBeChecked();
         expect(await box.evaluate((el: HTMLInputElement) => el.defaultChecked), name).toBe(false);
       }
-      const cancel = page.locator(".form-bar").getByRole("button", { name: ru.permCancel });
+      const cancel = page.locator(".form-bar").getByRole("button", { name: ru.back });
       const send = page.locator(".form-bar").getByRole("button", { name: ru.rqSend });
       const [a, b] = [await cancel.boundingBox(), await send.boundingBox()];
       expect(a && b, name).toBeTruthy();
@@ -373,6 +374,43 @@ test.describe("занятые на дату", () => {
   }
 });
 
+test.describe("следующая заявка", () => {
+  test("контакты и повод — из прошлой заявки вкладки, дата и гости — из каталога, согласие — заново", async ({
+    page,
+  }) => {
+    const [, first, , , second] = LISTINGS;
+    if (!first || !second) throw new Error("мало демо-залов");
+    let day = addDays(TODAY, 20);
+    while (first.busyDates.includes(day) || second.busyDates.includes(day)) day = addDays(day, 1);
+    await prepare(page);
+
+    // Первая заявка — с датой и гостями из каталога
+    await open(page, `${PATHS.request(first.slug)}?date=${day}&guests=100`, "form.request .consents");
+    const form = page.locator("form.request");
+    await form.locator("label.ui-radio").first().click();
+    await form.locator('input[autocomplete="name"]').fill("Азиза");
+    await form.locator('input[type="tel"]').fill("90 123 45 67");
+    await form.getByRole("checkbox", { name: new RegExp(ru.consentTransfer(first.name)) }).check();
+    await form.getByRole("button", { name: ru.rqSend }).click();
+    await expect(page.getByRole("heading", { level: 1, name: ru.sentH })).toBeVisible();
+
+    // Вторая — из того же каталога: дата и гости — из фильтров, контакты и повод — из прошлой
+    await open(page, `${PATHS.category("hall")}&date=${day}&guests=100`, ".card");
+    await page.locator(".card-link", { hasText: second.name }).click();
+    await page.locator(".venue-bar").getByRole("link", { name: ru.pfReq }).click();
+    await expect(form.locator(".consents input[type=checkbox]").first()).toBeVisible();
+    await expect(form).toContainText(ru.rqPrefilled);
+    await expect(form.locator('input[autocomplete="name"]')).toHaveValue("Азиза");
+    await expect(form.locator('input[type="tel"]')).toHaveValue("90 123 45 67");
+    await expect(form.locator("label.ui-radio").first().locator("input")).toBeChecked();
+    await expect(form).toContainText(formatDayMonth(day, ru));
+    await expect(form.getByRole("spinbutton", { name: ru.rqG })).toHaveValue("100");
+    // Согласия — никогда не подставляются
+    for (const box of await form.locator(".consents input[type=checkbox]").all())
+      await expect(box).not.toBeChecked();
+  });
+});
+
 test.describe("черновик заявки", () => {
   test("комментарий переживает уход с формы, возврат и перезагрузку", async ({ page }) => {
     const comment = "Нужен детский стол на 20 мест и пандус";
@@ -382,8 +420,8 @@ test.describe("черновик заявки", () => {
     const field = page.getByLabel(ru.rqCom, { exact: false });
     await field.fill(comment);
 
-    // «Не сейчас» — назад к площадке, потом снова к форме
-    await page.locator(".form-bar").getByRole("button", { name: ru.permCancel }).click();
+    // «Назад» — к площадке, потом снова к форме
+    await page.locator(".form-bar").getByRole("button", { name: ru.back }).click();
     await expect(page.locator(".venue-head h1")).toHaveText(VENUE.name);
     await page.locator(".venue-bar").getByRole("link", { name: ru.pfReq }).click();
     await expect(field).toHaveValue(comment);

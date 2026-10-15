@@ -216,7 +216,7 @@ test.describe("гость и вход", () => {
     await expect(page.locator(".top-signin, .top-menu")).toHaveCount(0);
   });
 
-  test("заявка гостя: о входе — до кнопки; вход кодом возвращает в форму с датой, гостями и услугой", async ({
+  test("заявка гостя: форма до входа, вход — на «Отправить»; после входа всё на месте, осталось согласие", async ({
     page,
   }) => {
     await prepare(page);
@@ -238,16 +238,31 @@ test.describe("гость и вход", () => {
     await expect(page.locator(".venue-side .bar-note")).toHaveText(ru.reqGuestNote(true));
     await page.locator(".svc-pick").first().click();
     await page.locator(".venue-bar").getByRole("link", { name: ru.pfReq }).click();
-    await expect(page.getByRole("heading", { level: 1, name: ru.tgOnlyH })).toBeVisible();
-    const draft = page.locator("section", { has: page.getByRole("heading", { name: ru.rqDraftH }) });
-    await expect(draft).toContainText(service.name.ru);
-    await expect(draft).toContainText(formatDayMonth(day, ru));
 
-    // Путь возврата хаб держит во вкладке, а не в адресе
+    // Форма — гостю тоже: дата, гости и услуга с витрины уже в ней; согласия — после входа
+    const form = page.locator("form.request");
+    await expect(form).toBeVisible();
+    await expect(form).toContainText(formatDayMonth(day, ru));
+    await expect(form.getByRole("spinbutton", { name: ru.rqG })).toHaveValue("120");
+    await expect(form.getByRole("checkbox", { name: new RegExp(service.name.ru) })).toBeChecked();
+    await expect(form.locator(".consents input[type=checkbox]")).toHaveCount(0);
+    await expect(page.locator(".bar-note")).toHaveText(ru.rqGuestSend(true));
+
+    // «Отправить» с пустыми полями — ошибки здесь же, во вход не уводит
+    await form.getByRole("button", { name: ru.rqSend }).click();
+    await expect(form.getByText(ru.errOcc)).toBeVisible();
+    await expect(page).toHaveURL((url) => url.pathname === PATHS.request(VENUE.slug));
+
+    await form.locator("label.ui-radio").first().click();
+    await form.locator('input[autocomplete="name"]').fill("Азиза");
+    await form.locator('input[type="tel"]').fill("90 123 45 67");
+    await form.locator("textarea").fill("Нужен детский стол");
+
+    // Всё заполнено — «Отправить» уводит во вход; путь возврата хаб держит во вкладке
     const hub = page.waitForRequest(
       (request) => request.isNavigationRequest() && new URL(request.url()).pathname === "/auth",
     );
-    await page.getByRole("link", { name: ru.ctaSignIn }).click();
+    await form.getByRole("button", { name: ru.rqSend }).click();
     expect(new URL((await hub).url()).searchParams.get("return")).toBe(requestPath);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.authTitle);
     expect(new URL(page.url()).search).toBe("");
@@ -257,13 +272,22 @@ test.describe("гость и вход", () => {
     await page.getByLabel(ru.authCodeLabel).fill(DEMO_OTP_CODE);
     await page.getByRole("button", { name: ru.authSignIn, exact: true }).click();
 
-    // Назад — в форму заявки этой площадки, всё выбранное на месте
+    // Назад — в форму этой площадки: всё введённое на месте, остался шаг — согласие
     await expect(page).toHaveURL((url) => `${url.pathname}${url.search}` === requestPath);
-    const form = page.locator("form.request");
-    await expect(form.locator(".consents")).toBeVisible();
+    await expect(form.getByRole("status")).toHaveText(ru.rqSignedIn);
+    const transfer = form.getByRole("checkbox", { name: new RegExp(ru.consentTransfer(VENUE.name)) });
+    await expect(transfer).not.toBeChecked();
+    await expect(transfer).toBeFocused();
     await expect(form).toContainText(formatDayMonth(day, ru));
     await expect(form.getByRole("spinbutton", { name: ru.rqG })).toHaveValue("120");
     await expect(form.getByRole("checkbox", { name: new RegExp(service.name.ru) })).toBeChecked();
+    await expect(form.locator('input[autocomplete="name"]')).toHaveValue("Азиза");
+    await expect(form.locator('input[type="tel"]')).toHaveValue("90 123 45 67");
+    await expect(form.locator("textarea")).toHaveValue("Нужен детский стол");
+
+    await transfer.check();
+    await form.getByRole("button", { name: ru.rqSend }).click();
+    await expect(page.getByRole("heading", { level: 1, name: ru.sentH })).toBeVisible();
   });
 
   test("«Войти» в шапке гостя ведёт в хаб и обратно на этот же экран", async ({ page }) => {

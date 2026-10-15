@@ -176,7 +176,12 @@ const SCREENS: readonly Screen[] = [
       await page.getByRole("heading", { level: 1, name: t.sentH }).waitFor();
     },
   },
-  { name: "заявка из браузера", path: PATHS.request(VENUE.slug), ready: ".tg-cta .btn", guest: true },
+  {
+    name: "заявка из браузера",
+    path: PATHS.request(VENUE.slug),
+    ready: "form.request .bot-link",
+    guest: true,
+  },
   {
     name: "мои заявки",
     path: PATHS.requests,

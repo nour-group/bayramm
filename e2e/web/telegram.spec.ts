@@ -105,21 +105,48 @@ test.describe("внутри Telegram", () => {
 });
 
 test.describe("вне Telegram", () => {
-  test("заявка ведёт в бота на эту же площадку, «Связаться» остаётся на экране", async ({ page }) => {
+  test("гостю — форма заявки без согласий и ссылка в бота на эту же площадку", async ({ page }) => {
     await prepare(page);
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1", { guest: true });
     // SDK нет — своя кнопка заявки на месте
     await page.locator(".venue-bar").getByRole("link", { name: ru.pfReq }).click();
     await expect(page).toHaveURL((url) => url.pathname === PATHS.request(VENUE.slug));
 
-    await expect(page.getByRole("heading", { level: 1, name: ru.tgOnlyH })).toBeVisible();
+    const form = page.locator("form.request");
+    await expect(form).toBeVisible();
+    await expect(form.locator(".consents")).toContainText(ru.rqConsentAfterSignIn);
+    await expect(form.locator(".consents input[type=checkbox]")).toHaveCount(0);
     const bot = page.getByRole("link", { name: ru.openInTg });
     await expect(bot).toHaveAttribute("href", `https://t.me/${DEMO_BOT}?startapp=vendor_${VENUE.slug}`);
     await expect(bot).toHaveAttribute("target", "_blank");
     await expect(bot).toHaveAttribute("rel", /noopener/);
-    // Формы и согласий без входа нет; связаться можно
-    await expect(page.locator("form.request")).toHaveCount(0);
-    const contacts = await openContacts(page);
-    await expect(contacts.locator(`a[href="tel:${VENUE.phone}"]`)).toBeVisible();
+    // «Поделиться номером» — только в Mini App
+    await expect(form.getByRole("button", { name: ru.rqSharePhone })).toHaveCount(0);
+  });
+});
+
+test.describe("номер из Telegram", () => {
+  test("«Поделиться номером» в форме заявки: узбекский номер — в поле; другой — словами", async ({
+    page,
+  }) => {
+    await prepare(page);
+    await fakeTelegram(page);
+    await open(page, PATHS.request(VENUE.slug), "form.request .consents");
+    const form = page.locator("form.request");
+    const phone = form.locator('input[type="tel"]');
+    await expect(phone).toHaveValue("");
+    await form.getByRole("button", { name: ru.rqSharePhone }).click();
+    await expect(phone).toHaveValue("90 123 45 67");
+    expect((await telegramState(page)).calls.map((c) => c.name)).toContain("requestContact");
+  });
+
+  test("номер не узбекский — поле не трогаем, объясняем", async ({ page }) => {
+    await prepare(page);
+    await fakeTelegram(page, { contactPhone: "+79161234567" });
+    await open(page, PATHS.request(VENUE.slug), "form.request .consents");
+    const form = page.locator("form.request");
+    await form.getByRole("button", { name: ru.rqSharePhone }).click();
+    await expect(form.locator('input[type="tel"]')).toHaveValue("");
+    await expect(form.getByRole("alert")).toHaveText(ru.authErrPhone);
   });
 });

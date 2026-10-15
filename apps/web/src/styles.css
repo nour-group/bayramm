@@ -1551,6 +1551,22 @@ textarea.field-input {
   color: var(--muted);
 }
 
+/* Пометка у согласия — как у полей: «обязательно» / «по желанию» после текста галочки */
+.consent-check em {
+  font-size: var(--fs-12-5);
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.consent-check .mark-req {
+  color: var(--coral-deep);
+}
+
+.consent-check .mark-opt {
+  color: var(--muted);
+}
+
 .fld-hint {
   margin-top: 6px;
   color: var(--muted);
@@ -1573,6 +1589,11 @@ textarea.field-input {
 .phone-input > span {
   flex: none;
   font-weight: 700;
+}
+
+/* «Поделиться номером» (Mini App) — под полем телефона */
+.share-phone {
+  margin-top: 8px;
 }
 
 .consents .consent {
@@ -2041,37 +2062,17 @@ textarea.field-input {
   margin-top: 4px;
 }
 
-.tg-cta {
+/* Гостю в форме заявки — та же витрина в Telegram, ссылкой под пометкой о входе */
+.bot-link {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--gap-12);
-  margin-top: 16px;
-  padding: 20px 16px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-22);
-  background: var(--white);
-}
-
-.tg-cta-icon {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: var(--r-14);
-  background: var(--lilac);
-  color: var(--plum);
+  width: fit-content;
+  gap: var(--gap-7);
+  margin: 4px auto 0;
 }
 
-.tg-cta .section-title {
-  margin: 0;
-  color: var(--plum);
-  font-family: var(--font-display);
-  font-size: var(--fs-19);
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
+.bot-link + .action-bar {
+  margin-top: 8px;
 }
 
 /* ---------- лендинг (/ в браузере) ---------- */

@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { dictionaries, LANGS } from "@bayramm/shared";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "./api/errors";
 import { createMockApi } from "./api/mock";
 import { LANG_KEY } from "./context";
+import { browser } from "./hub";
 import {
   allHumanText,
   byText,
@@ -163,7 +164,7 @@ describe("правила продукта", () => {
 
     const bar = document.querySelector(".form-bar");
     const buttons = [...(bar?.querySelectorAll("button") ?? [])];
-    expect(buttons.map((b) => b.textContent)).toEqual(["Не сейчас", "Отправить заявку"]);
+    expect(buttons.map((b) => b.textContent)).toEqual(["Назад", "Отправить заявку"]);
     // Размер задаёт один класс .btn и сетка 1fr 1fr у .form-bar (styles.test.ts)
     expect(buttons.every((b) => b.classList.contains("btn"))).toBe(true);
 
@@ -200,7 +201,7 @@ describe("заявка от начала до конца", () => {
     await fillForm("Нужен детский стол и сцена");
 
     // Ушли на площадку и вернулись — всё на месте
-    await click(byText("button", "Не сейчас"));
+    await click(byText(".form-bar button", "Назад"));
     await waitFor(() => document.querySelector("h1")?.textContent === VENUE.name, "карточка площадки");
     await click(byText("a", "Оставить заявку"));
     await waitFor(() => transferCheckbox(), "форма заявки");
@@ -308,7 +309,7 @@ describe("заявка от начала до конца", () => {
     expect(api.created).toHaveLength(1);
   });
 
-  it("вне Telegram — понятная ссылка в бота на эту площадку, контакты на месте", async () => {
+  it("вне Telegram гостю — форма без согласий и ссылка в бота на эту площадку", async () => {
     await mount({ path: FORM_PATH, identity: "guest" });
     const link = await waitFor(
       () => document.querySelector<HTMLAnchorElement>('a[href^="https://t.me/"]'),
@@ -316,8 +317,10 @@ describe("заявка от начала до конца", () => {
     );
     expect(link.getAttribute("href")).toBe(`https://t.me/bayramm_demo_bot?startapp=vendor_${VENUE.slug}`);
     expect(link.textContent).toContain("Открыть в Telegram");
-    expect(document.querySelector("form")).toBeNull();
-    await waitFor(() => byText(".contact button", "Связаться"), "контакты площадки");
+    expect(document.querySelector("form.request")).not.toBeNull();
+    // Согласия гостю — после входа: ни галочек, ни «не отмечено»
+    expect(document.querySelectorAll(".consents input[type=checkbox]")).toHaveLength(0);
+    expect(text()).toContain("отметите после входа");
   });
 });
 
@@ -409,16 +412,73 @@ describe("вход перед заявкой — до кнопки, а не по
     );
   });
 
-  it("гость на форме заявки видит, что уже выбрано: дата, гости, услуги", async () => {
+  it("гость заполняет форму до входа: «Отправить» проверяет поля и уводит во вход, черновик — во вкладке", async () => {
     const service = VENUE?.services[0];
     if (!service) throw new Error("у демо-площадки нет услуг");
-    await mount({ path: `${VENUE_PATH}?date=2026-10-15&guests=120`, identity: "guest" });
-    await click(await waitFor(() => document.querySelector(".svc-pick"), "услуга «в заявку»"));
+    const replace = vi.spyOn(browser, "replace").mockImplementation(() => {});
+    try {
+      await mount({ path: `${VENUE_PATH}?date=2026-10-15&guests=120`, identity: "guest" });
+      await click(await waitFor(() => document.querySelector(".svc-pick"), "услуга «в заявку»"));
+      cleanup();
+      const { api } = await mount({ path: `${FORM_PATH}?date=2026-10-15&guests=120`, identity: "guest" });
+      await waitFor(() => document.querySelector("form.request"), "форма гостю");
+      // Что уже выбрано — в полях: дата, гости, услуга с витрины
+      expect(document.querySelector("form.request")?.textContent).toContain("15 окт");
+      expect(field("Гостей")?.value).toBe("120");
+      expect(
+        byText<HTMLLabelElement>("label", new RegExp(service.name.ru))?.querySelector("input")?.checked,
+      ).toBe(true);
+      expect(document.querySelector(".bar-note")?.textContent).toContain("Отправим после входа");
+
+      // Не всё заполнено — во вход не уводим, ошибки у полей
+      await click(byText(".form-bar button", "Отправить заявку"));
+      expect(replace).not.toHaveBeenCalled();
+      expect(text()).toContain("Выберите повод");
+
+      await click(byText("label.ui-radio", "Свадьба"));
+      await type(field("Как к вам обращаться"), "Азиза");
+      await type(field("Телефон"), "00 123 45 67");
+      await click(byText(".form-bar button", "Отправить заявку"));
+      expect(replace).toHaveBeenCalledWith(
+        `/auth?return=${encodeURIComponent(`${FORM_PATH}?date=2026-10-15&guests=120`)}`,
+      );
+      expect((api as ReturnType<typeof createMockApi>).created).toHaveLength(0);
+      // Черновик — во вкладке, со всем введённым; согласий в нём нет
+      const saved = JSON.parse(window.sessionStorage.getItem(`bayramm.web.draft.${VENUE.slug}`) ?? "{}");
+      expect(saved).toMatchObject({ occasion: "toy", name: "Азиза", phone: "00 123 45 67", guests: "120" });
+      expect(JSON.stringify(saved)).not.toMatch(/consent/i);
+      cleanup();
+
+      // Вернулись из входа: всё на месте, остался шаг — согласие (не отмечено), фокус на нём
+      await mount({ path: `${FORM_PATH}?date=2026-10-15&guests=120` });
+      const consent = await waitFor(() => transferCheckbox(), "согласие после входа");
+      expect(consent.checked).toBe(false);
+      expect(text()).toContain("Отметьте согласие и отправьте заявку");
+      expect(field("Как к вам обращаться")?.value).toBe("Азиза");
+      await waitFor(() => document.activeElement === consent, "фокус на согласии");
+    } finally {
+      replace.mockRestore();
+    }
+  });
+
+  it("следующая заявка: имя, телефон и повод — из прошлой в этой вкладке; согласия — нет", async () => {
+    const { api } = await mount({ path: FORM_PATH });
+    await waitFor(() => transferCheckbox(), "форма заявки");
+    await fillForm();
+    await click(transferCheckbox());
+    await click(byText("button", "Отправить заявку"));
+    await waitFor(() => (api as ReturnType<typeof createMockApi>).created.length === 1, "заявка ушла");
     cleanup();
-    await mount({ path: `${FORM_PATH}?date=2026-10-15&guests=120`, identity: "guest" });
-    const summary = await waitFor(() => byText("section", /Что уйдёт в заявку/), "что уйдёт в заявку");
-    expect(summary.textContent).toContain("15 окт");
-    expect(summary.textContent).toContain("120");
-    expect(summary.textContent).toContain(service.name.ru);
+
+    const other = LISTINGS[2];
+    if (!other) throw new Error("нет третьей демо-площадки");
+    await mount({ path: `/venue/${other.slug}/request?guests=80` });
+    const consent = await waitFor(() => transferCheckbox(), "вторая форма");
+    expect(text()).toContain("из прошлой заявки");
+    expect(field("Как к вам обращаться")?.value).toBe("Азиза");
+    expect(field("Телефон")?.value).toBe("00 123 45 67");
+    expect(byText<HTMLLabelElement>("label.ui-radio", "Свадьба")?.querySelector("input")?.checked).toBe(true);
+    expect(field("Гостей")?.value).toBe("80");
+    expect(consent.checked).toBe(false);
   });
 });

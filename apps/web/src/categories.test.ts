@@ -55,10 +55,10 @@ const service = (listing: ListingDetail, type: string): PublicService => {
 };
 
 describe("категории клиента", () => {
-  it("в каталоге — включённые по порядку показа (путь пары); неизвестная и выключенная — залы", () => {
+  it("в каталоге — включённые по порядку показа (залы — первыми, дальше путь пары); неизвестная и выключенная — залы", () => {
     expect(CLIENT_CATEGORIES.map((c) => c.code)).toEqual([
-      "zags",
       "hall",
+      "zags",
       "car",
       "photo",
       "studio",
@@ -78,8 +78,8 @@ describe("категории клиента", () => {
   it("вместимость — у залов и ресторанов, район — где к ним едут, календаря нет у срока заказа", () => {
     expect(CLIENT_CATEGORIES.filter(hasCapacity).map((c) => c.code)).toEqual(["hall", "restaurant"]);
     expect(CLIENT_CATEGORIES.filter(hasDistrict).map((c) => c.code)).toEqual([
-      "zags",
       "hall",
+      "zags",
       "studio",
       "restaurant",
       "attire",
@@ -452,8 +452,8 @@ describe("демо-API по контракту категорий", () => {
     const api = createMockApi({ now, listings: ALL });
     const categories = await api.catalogCategories();
     expect(categories.items.map((c) => [c.code, c.listings])).toEqual([
-      ["zags", 3],
       ["hall", 24],
+      ["zags", 3],
       ["car", 3],
       ["photo", 3],
       ["studio", 3],

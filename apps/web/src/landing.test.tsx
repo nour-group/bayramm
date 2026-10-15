@@ -74,10 +74,10 @@ describe("лендинг (/ в браузере)", () => {
     await waitFor(() => document.querySelectorAll(".cat-soon").length > 0, "категории из API");
     const tiles = [...document.querySelectorAll<HTMLAnchorElement>(".cat-tile")];
     // Названия — короткие, из глоссария клиента (без косых черт)
-    // Путь пары: ЗАГС, тойхона, кортеж, фото и видео, студия, ресторан…
+    // Тойханы — категория запуска — первыми, дальше путь пары: ЗАГС, кортеж, фото и видео…
     expect(tiles.map((a) => a.querySelector(".cat-tile-name")?.textContent)).toEqual([
-      "ЗАГС",
       "Тойханы",
+      "ЗАГС",
       "Кортежи",
       "Фото и видео",
       "Студии",
@@ -91,9 +91,9 @@ describe("лендинг (/ в браузере)", () => {
     ]);
     expect(tiles.map((a) => a.getAttribute("href"))[2]).toBe("/catalog?category=car");
     // Залы — раздел, как остальные: каталог без раздела — «Все»
-    expect(tiles[1]?.getAttribute("href")).toBe("/catalog?category=hall");
+    expect(tiles[0]?.getAttribute("href")).toBe("/catalog?category=hall");
     // Что в разделе — строкой у плитки (видна с планшета)
-    expect(tiles[0]?.querySelector(".cat-tile-desc")?.textContent).toBe(
+    expect(tiles[1]?.querySelector(".cat-tile-desc")?.textContent).toBe(
       "Регистрация брака: запись на дату, документы, зал для торжественной церемонии",
     );
     const soon = tiles
@@ -122,7 +122,7 @@ describe("лендинг (/ в браузере)", () => {
     const categories = [...document.querySelectorAll(".ln-cards .card")].map(
       (card) => card.querySelector(".card-meta")?.textContent?.split("\u00a0· ")[0],
     );
-    expect(categories).toEqual(["ЗАГС", "Тойханы", "Кортежи", "Фото и видео"]);
+    expect(categories).toEqual(["Тойханы", "ЗАГС", "Кортежи", "Фото и видео"]);
     for (const name of cards()) expect(all.map((l) => l.name)).toContain(name);
     // Разделы на лендинге перечислены один раз — сеткой; у витрин ни переключателя, ни «весь раздел»
     expect(document.querySelectorAll(".ln-venues .cat-chip, .ln-venues .ln-head-link")).toHaveLength(0);

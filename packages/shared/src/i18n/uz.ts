@@ -373,7 +373,6 @@ export const uz: Dict = {
   photoOf: (name: string, n: number, total: number) => `${name}, ${total} tadan ${n}-surat`,
   address: "Manzil",
   capacity: "Sigʻim",
-  callNote: "Telefon va Telegram — bir bosishda, soʻrovsiz va kirishsiz.",
   rqName: "Sizga qanday murojaat qilaylik",
   rqPhoneHint: "+998 dan keyin 9 ta raqam",
   errRequired: "Bu maydonni toʻldiring",
@@ -397,11 +396,7 @@ export const uz: Dict = {
   errBlocked: "Bu hisobdan soʻrov yuborish cheklangan. Bizga yozing.",
   errDailyLimit: "Bugun bu hisobdan juda koʻp soʻrov yuborildi. Ertaga urinib koʻring.",
   errConsentOutdated: "Rozilik matni yangilandi. Uni oʻqib, qayta belgilang.",
-  tgOnlyH: "Soʻrov — kirgandan keyin",
-  tgOnlyP:
-    "Hamkor sizga javob berishi va soʻrov holatini koʻrishingiz uchun kiring. Eng qulayi — Telegramda: hisobingiz orqali, parolsiz.",
   openInTg: "Telegramda ochish",
-  tgUnavailable: "Bot havolasini olib boʻlmadi. Keyinroq urinib koʻring.",
   signInFailed: "Telegram orqali kirib boʻlmadi. Ilovani yopib, qayta oching.",
   toMyRequests: "Soʻrovlarimga",
   requestNo: (n: number) => `${n}-soʻrov`,
@@ -524,7 +519,6 @@ export const uz: Dict = {
   accErrTaken:
     "Bu kirish usuli boshqa Bayramm hisobida. Oʻsha usul bilan kiring va ortiqcha hisobni oʻchiring yoki bizga yozing.",
   accErrKindTaken: "Hisobda bunday kirish usuli allaqachon bor.",
-  ctaSignIn: "Saytda kirish",
   // избранное (подписи к текстам прототипа sv*)
   favToggle: (name: string) => `Saqlash: ${name}`,
   favFull:
@@ -745,8 +739,15 @@ export const uz: Dict = {
     phone
       ? "Soʻrov bepul. Uni kirgandan keyin yuborasiz — Telegram yoki telefon raqami orqali: shunda hamkor sizga javob bera oladi."
       : "Soʻrov bepul. Uni Telegram orqali kirgandan keyin yuborasiz: shunda hamkor sizga javob bera oladi.",
-  rqDraftH: "Soʻrovga nima ketadi",
-  rqDraftNote: "Shu varaqda saytga kirsangiz, tanlaganlaringiz shaklda qoladi.",
+  rqGuestSend: (phone: boolean): string =>
+    phone
+      ? "Kirgandan keyin yuboramiz — Telegram yoki telefon raqami orqali. Toʻldirilganlar shaklda qoladi."
+      : "Telegram orqali kirgandan keyin yuboramiz. Toʻldirilganlar shaklda qoladi.",
+  rqConsentAfterSignIn:
+    "Maʼlumotlarni hamkorga berishga rozilikni kirgandan keyin — yuborishdan oldin belgilaysiz.",
+  rqSignedIn: "Kirdingiz, toʻldirilganlar joyida. Rozilikni belgilang va soʻrovni yuboring.",
+  rqPrefilled: "Ism, telefon va sabab — oldingi soʻrovdan. Yuborishdan oldin tekshiring.",
+  rqSharePhone: "Raqamni ulashish",
   // пустая выдача: что именно её отсекает
   emptyGuestsH: (n: number) => `${n} mehmon uchun hech kim topilmadi`,
   emptyActive: "Natijani hozir cheklayapti:",
