@@ -1,5 +1,12 @@
 import type { Lang } from "@bayramm/shared";
-import type { DayPart, ListingAttributes, ListingDetail, Localized } from "@bayramm/shared/api";
+import type {
+  DayPart,
+  ListingAttributes,
+  ListingDetail,
+  Localized,
+  PriceUnit,
+  PublicService,
+} from "@bayramm/shared/api";
 import {
   type AttributeField,
   type CategoryConfig,
@@ -12,7 +19,9 @@ import {
 
 /* Поля витрины для страницы: строки «подпись — значение», особенности (да/нет — только «да»)
    и списки (автопарк). По описанию категории: неизвестные поля не показываются, порядок —
-   как в описании. Срок заказа (lead_days) — в разделе «Сроки заказа», не здесь. Модуль без
+   как в описании. Срок заказа (lead_days) — в разделе «Сроки заказа», не здесь. Что уже
+   сказано услугой витрины, второй раз не пишем: отметку «Украшение машины» при услуге
+   «Украшение машины», минимум часов, когда он стоит у каждой почасовой услуги. Модуль без
    React: его проверяют тесты. */
 
 export interface AttributeView {
@@ -25,6 +34,37 @@ export interface AttributeView {
 }
 
 const SKIP = new Set(["lead_days"]);
+
+/** Отметка «да/нет», которую называет услуга этого типа: при такой услуге отметку не пишем */
+const FEATURE_SERVICES: Readonly<Record<string, readonly string[]>> = {
+  decoration: ["car_decor"],
+  tasting: ["tasting"],
+  offsite: ["offsite_ceremony"],
+  document_help: ["documents_help"],
+  foreign_citizens: ["foreign_registration"],
+  waiters: ["waiter_service"],
+  national_dress: ["national_outfit"],
+};
+
+/** Минимальный заказ витрины в единице цены: его пишет «минимум …» у услуг этой единицы */
+const MINIMUM_UNITS: Readonly<Record<string, PriceUnit>> = {
+  min_order_hours: "per_hour",
+  min_guests: "per_guest",
+  min_batch: "per_item",
+  min_weight_kg: "per_kg",
+};
+
+type ServiceFacts = Pick<PublicService, "type" | "priceUnit" | "minQty">;
+
+/** Поле витрины уже видно у услуг: услуга того же названия или минимум у каждой услуги единицы */
+function shownByServices(key: string, services: readonly ServiceFacts[]): boolean {
+  const types = FEATURE_SERVICES[key];
+  if (types) return services.some((s) => types.includes(s.type));
+  const unit = MINIMUM_UNITS[key];
+  if (!unit) return false;
+  const priced = services.filter((s) => s.priceUnit === unit);
+  return priced.length > 0 && priced.every((s) => s.minQty !== null);
+}
 
 const choice = (lang: Lang, options: readonly Choice[], code: unknown): string | null => {
   const option = options.find((o) => o.code === code);
@@ -73,12 +113,13 @@ export function attributeView(
   category: CategoryConfig,
   attributes: ListingAttributes,
   lang: Lang,
+  services: readonly ServiceFacts[] = [],
 ): AttributeView {
   const facts: { label: string; value: string }[] = [];
   const features: string[] = [];
   const lists: { label: string; items: string[] }[] = [];
   for (const field of category.attributes) {
-    if (SKIP.has(field.key)) continue;
+    if (SKIP.has(field.key) || shownByServices(field.key, services)) continue;
     const value: unknown = attributes[field.key];
     if (value === undefined || value === null) continue;
     const label = categoryText(lang, field.label);

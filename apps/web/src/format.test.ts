@@ -90,12 +90,16 @@ describe("деньги", () => {
     expect(formatMoney(45_000_000, uz)).toBe(`45${NBSP}mln${NBSP}soʻm`);
   });
 
-  it("цена «от»: по-русски впереди, по-узбекски — окончание -dan", () => {
+  it("цена «от»: по-русски впереди, по-узбекски — окончание -dan слитно; единица — всегда", () => {
     expect(formatPriceFrom(60_000_000, "per_event", ru)).toEqual({
       amount: `от 60${NBSP}млн${NBSP}сум`,
-      unit: null,
+      unit: "за мероприятие",
     });
-    expect(formatPriceFrom(60_000_000, "per_event", uz).amount).toBe(`60${NBSP}mln${NBSP}soʻmdan`);
+    expect(formatPriceFrom(60_000_000, "per_event", uz)).toEqual({
+      amount: `60${NBSP}mln${NBSP}soʻmdan`,
+      unit: "tadbir uchun",
+    });
+    expect(formatPriceFrom(150_000, "per_guest", uz).amount).toBe(`150${NBSP}000${NBSP}soʻmdan`);
     expect(formatPriceFrom(150_000, "per_guest", ru).unit).toBe("за гостя");
     // Глоссарий: за гостя — «mehmon boshiga», как в кабинете и панели
     expect(formatPrice(150_000, "per_guest", uz)).toBe(`150${NBSP}000${NBSP}soʻm mehmon boshiga`);

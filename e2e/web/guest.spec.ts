@@ -277,7 +277,7 @@ test.describe("гость и вход", () => {
     await expect(page.locator(".top-signin, .top-menu")).toHaveCount(0);
   });
 
-  test("Telegram — как раньше: каталог в корне, вкладки, без «Войти», меню сайта и подвала", async ({
+  test("Telegram: каталог в корне, вкладки (первая — «Каталог»), без «Войти», меню сайта и подвала", async ({
     page,
   }) => {
     await prepare(page);
@@ -285,7 +285,7 @@ test.describe("гость и вход", () => {
     await page.goto(PATHS.home);
     await page.locator(".catalog .card").first().waitFor();
     await expect(sections(page).getByRole("link")).toHaveText([
-      ru.navHome,
+      ru.navCatalog,
       ru.svTitle,
       ru.navRequests,
       ru.navProfile,

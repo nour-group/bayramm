@@ -1,5 +1,5 @@
 import type { CatalogSort } from "@bayramm/shared/api";
-import { DateField, Dialog, NumberStepper, Select } from "@bayramm/ui/react";
+import { DateField, Dialog, NumberStepper, RadioGroup, Select } from "@bayramm/ui/react";
 import { useEffect, useId, useRef, useState } from "react";
 import { CLIENT_CATEGORIES, categoryDesc, categoryName, hasCalendar, hasCapacity } from "../categories";
 import { AttrFiltersForm } from "../components/AttrFilters";
@@ -37,9 +37,10 @@ import { placeChoice, placeFilters } from "./catalog-place";
    переключатель разделов, фильтры, порядок и сетка карточек. Всё — в адресе. Поиск (?q=) — над
    разделами во всю ширину, вместе с разделом и фильтрами; заголовок тогда — «По запросу «…» — N»,
    пусто в разделе — ссылка на другие разделы, пусто везде — популярные разделы. Главные фильтры —
-   одной строкой пилюль над выдачей: место (город → район), дата, гости (где вместимость),
-   порядок; на телефоне строка листается вбок, каждая пилюля открывает шторку. Поля витрины
-   раздела — кнопкой «Фильтры» (шторка) на телефоне и планшете, на компьютере — колонкой слева. */
+   пилюлями над выдачей: место (город → район), дата, гости (где вместимость); строка переносится,
+   а не листается вбок — каждая пилюля на виду и на телефоне. Поля витрины раздела и порядок — на
+   телефоне и планшете одной кнопкой «Фильтры · n» (шторка), на компьютере поля — колонкой слева,
+   порядок — в конце строки. У раздела без полей витрины порядок — пилюлей в строке везде. */
 
 const SORT_LABEL = {
   price_asc: "s_cheap",
@@ -230,10 +231,14 @@ export function Catalog() {
   const extra = attrFilterCount(filters.attrs);
   const place = placeChoice(filters, dicts.status === "ready" ? dicts.data : null, t, lang);
   const side = specs.length > 0;
+  // Шторка «Фильтры» на телефоне и планшете: поля витрины и порядок; число — что из них задано
+  const sheetCount = extra + (filters.sort === null ? 0 : 1);
   const filtered = hasFilters(filters);
-  // Цены за гостя и за мероприятие вперемешку — объясняем, как их сравнили; у остальных
-  // категорий единицы разные (за час и за мероприятие) — просим смотреть на подпись
-  const priceSort = filters.sort !== "capacity_desc";
+  // Цены за гостя и за мероприятие вперемешку — объясняем, как их сравнили (у карточки с ценой за
+  // мероприятие — «≈ N за гостя»); у остальных категорий единицы разные (за час и за
+  // мероприятие) — просим смотреть на подпись
+  const sortNow = filters.sort ?? defaultSort;
+  const priceSort = sortNow === "price_asc" || sortNow === "price_desc";
   const units = new Set(items.map((i) => i.priceUnit));
   // В «Все» единицы разных разделов — только подпись у суммы
   const hallUnits = category !== null && units.has("per_guest") && units.has("per_event");
@@ -332,15 +337,17 @@ export function Catalog() {
           {side ? (
             <button
               type="button"
-              className={extra > 0 ? "filter-pill filters-open is-on" : "filter-pill filters-open"}
+              className={sheetCount > 0 ? "filter-pill filters-open is-on" : "filter-pill filters-open"}
               ref={filtersButton}
+              aria-haspopup="dialog"
               onClick={() => setSheet(true)}
             >
               <Icon name="sliders" size={14} />
-              {extra > 0 ? t.moreFiltersN(extra) : t.moreFilters}
+              {sheetCount > 0 ? t.moreFiltersN(sheetCount) : t.moreFilters}
             </button>
           ) : null}
-          <div className="sort">
+          {/* Порядок: у раздела с полями витрины на телефоне и планшете — в шторке «Фильтры» */}
+          <div className={side ? "sort in-sheet" : "sort"}>
             <Select
               size="compact"
               label={t.sortBy}
@@ -454,6 +461,7 @@ export function Catalog() {
                     priority={i === 0}
                     sizes={side ? CARD_PHOTO_SIZES_SIDE : CARD_PHOTO_SIZES}
                     showCategory={category === null}
+                    perGuest={priceSort && hallUnits}
                   />
                 </li>
               ))}
@@ -471,7 +479,7 @@ export function Catalog() {
         </div>
       </div>
 
-      {/* Поля витрины на телефоне и планшете — шторкой; выдача за ней меняется сразу */}
+      {/* Порядок и поля витрины на телефоне и планшете — шторкой; выдача за ней меняется сразу */}
       <Dialog
         open={sheet}
         onClose={() => setSheet(false)}
@@ -483,8 +491,8 @@ export function Catalog() {
             <button
               type="button"
               className="btn btn-secondary"
-              disabled={extra === 0}
-              onClick={() => setFilters({ attrs: {} })}
+              disabled={sheetCount === 0}
+              onClick={() => setFilters({ attrs: {}, sort: null })}
             >
               {t.resetFilters}
             </button>
@@ -494,13 +502,24 @@ export function Catalog() {
           </>
         }
       >
-        {category ? (
-          <AttrFiltersForm
-            category={category}
-            attrs={filters.attrs}
-            onChange={(attrs) => setFilters({ attrs })}
-          />
-        ) : null}
+        <div className="sheet-filters">
+          <fieldset className="filter-group sheet-sort">
+            <legend className="field-label">{t.sortBy}</legend>
+            <RadioGroup
+              variant="row"
+              value={filters.sort ?? defaultSort}
+              options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
+              onChange={(sort) => setFilters({ sort: sort === defaultSort ? null : sort })}
+            />
+          </fieldset>
+          {category ? (
+            <AttrFiltersForm
+              category={category}
+              attrs={filters.attrs}
+              onChange={(attrs) => setFilters({ attrs })}
+            />
+          ) : null}
+        </div>
       </Dialog>
     </div>
   );

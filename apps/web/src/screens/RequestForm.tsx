@@ -1061,7 +1061,8 @@ export function RequestForm({ slug }: { slug: string }) {
     api.peek?.forgetConsentTexts();
     consents.reload();
   };
-  useDocumentTitle(t.rqTitle);
+  // Вкладку называем по витрине: «Заявка: Lola zali · Bayramm» (так же — разметка воркера)
+  useDocumentTitle(listing.status === "ready" ? `${t.rqTitle}: ${listing.data.name}` : t.rqTitle);
 
   // Вне Telegram заявку не отправить: объясняем и ведём в бота, телефон площадки — сразу
   if (!signedIn)

@@ -81,7 +81,7 @@ const SCREENS: readonly Screen[] = [
     path: `${PATHS.catalog}?date=${BUSY_DAY}`,
     ready: ".card .chip",
     setup: async (page) => {
-      await page.locator(".filter-row button[aria-haspopup=dialog]").click();
+      await page.locator(".filter-row button.ui-date").click();
       await page.locator(".ui-layer .ui-cal").waitFor();
     },
   },
@@ -277,7 +277,7 @@ test.describe("доступность", () => {
     await expect(page).toHaveURL(/[?&]district=chilonzor/);
 
     // Дата: Enter открывает календарь с фокусом на дне, стрелка — следующий день, Enter — выбор
-    const date = page.locator(".filter-row button[aria-haspopup=dialog]");
+    const date = page.locator(".filter-row button.ui-date");
     await date.focus();
     await page.keyboard.press("Enter");
     const focusedDay = page.locator(".ui-layer button.ui-cal-day:focus");

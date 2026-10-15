@@ -2,6 +2,7 @@ import { GLOSSARY_FORBIDDEN, LANGS } from "@bayramm/shared";
 import { comparablePriceUzs, type ListingDetail } from "@bayramm/shared/api";
 import type { Locator, Page } from "@playwright/test";
 import { formatDayMonth, formatPhone, formatPriceFrom } from "../../apps/web/src/format";
+import { expectHitAreas } from "../support/a11y";
 import { expect, test } from "../support/offline";
 import { fakeTelegram } from "../support/telegram";
 import {
@@ -65,6 +66,28 @@ test.describe("контакты до заявки", () => {
   });
 });
 
+test("мои заявки: «Связаться» в карточке заявки — номер в одно нажатие, как на витрине", async ({ page }) => {
+  await prepare(page);
+  await open(page, PATHS.requests, ".reqs");
+  const first = page.locator(".req").first();
+  const name = await first.locator(".req-link span").innerText();
+  const venue = ALL_LISTINGS.find((l) => l.name === name);
+  expect(venue, name).toBeTruthy();
+  // Название — ссылкой на витрину, зона нажатия не меньше 44px (невидимым слоем)
+  const link = first.locator(".req-link");
+  await expect(link).toHaveAccessibleName(ru.toVendorOf(name));
+  await expectHitAreas(page, "мои заявки", ".req-link, .req-actions .btn, .req-actions .link-btn");
+  // «Связаться» — у каждой заявки
+  await expect(page.locator(".req .req-actions").getByRole("button", { name: ru.contactBtn })).toHaveCount(
+    await page.locator(".req").count(),
+  );
+  await first.getByRole("button", { name: `${ru.contactBtn}: ${name}` }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.locator(`a[href="tel:${venue?.phone}"]`)).toContainText(ru.contactCall);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+});
+
 /** Страницы, где часы и Telegram уже подготовлены (prepare — один раз на страницу) */
 const prepared = new WeakSet<Page>();
 
@@ -87,18 +110,14 @@ async function expectContactsFirst(
   const desktop = isDesktop(page);
   // Номера в карточке нет: он — в окне «Связаться»
   await expect(page.locator(`a[href="tel:${venue.phone}"]`)).toHaveCount(0);
-  // Кнопка: на телефоне — раздел контактов под названием и иконка в панели внизу, на компьютере —
-  // карточка справа; везде — на экране без прокрутки
+  // Кнопка — одна: на телефоне — значок в панели внизу, на компьютере — в карточке справа;
+  // везде — на экране без прокрутки
   const barCall = page.locator(".venue-bar button.call");
   await expect(barCall).toBeVisible();
   await expect(barCall).toBeInViewport();
   await expect(barCall).toHaveAccessibleName(`${ru.contactBtn}: ${venue.name}`);
   if (desktop) await expect(barCall).toContainText(ru.contactBtn);
-  else {
-    const section = page.locator(".contact").getByRole("button", { name: ru.contactBtn });
-    await expect(section).toBeVisible();
-    await expect(section).toBeInViewport();
-  }
+  await expect(page.getByRole("button", { name: ru.contactBtn }).locator("visible=true")).toHaveCount(1);
   // Цена в панели не уходит под кнопку: рядом с ней на телефоне, над ней — на компьютере
   const priceBox = await page.locator(".venue-bar .bar-price b").boundingBox();
   const callBox = await barCall.boundingBox();

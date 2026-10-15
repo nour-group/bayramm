@@ -59,12 +59,13 @@ describe("правила продукта", () => {
     const { api } = await mount({ path: VENUE_PATH, identity: "guest" });
     const mock = api as ReturnType<typeof createMockApi>;
     await waitFor(() => document.querySelector("h1")?.textContent === VENUE.name, "карточка площадки");
-    // Номер в карточке не лежит: его отдаёт окно «Связаться» — в блоке контактов и в панели
+    // Номер в карточке не лежит: его отдаёт окно «Связаться» — одна кнопка, в панели с ценой
     expect(document.querySelector(`a[href="tel:${VENUE.phone}"]`)).toBeNull();
     const buttons = [
       ...document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="dialog"]'),
     ].filter((b) => /Связаться/.test(b.textContent ?? ""));
-    expect(buttons.length).toBeGreaterThanOrEqual(2);
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]?.closest(".venue-bar")).not.toBeNull();
     await click(buttons[0] ?? null);
     const call = await waitFor(
       () => document.querySelector<HTMLAnchorElement>(`[role="dialog"] a[href="tel:${VENUE.phone}"]`),
@@ -83,7 +84,7 @@ describe("правила продукта", () => {
     if (!venue) throw new Error("нет демо-витрины с Telegram");
     const { api } = await mount({ path: `/venue/${venue.slug}` });
     await waitFor(() => document.querySelector("h1")?.textContent === venue.name, "карточка площадки");
-    await click(document.querySelector(".contact button"));
+    await click(document.querySelector(".venue-bar button.call"));
     const tg = await waitFor(
       () => document.querySelector<HTMLAnchorElement>('[role="dialog"] a[href^="https://t.me/"]'),
       "Telegram в окне",

@@ -47,15 +47,14 @@ import { scrollWhenReady } from "./scroll";
 import { hasNativeBack, useBackButton } from "./telegram";
 
 /* Вкладки: подпись и иконки (обычная и активная) — в одной карте с маршрутами (ловушка №9).
-   Первая вкладка в Telegram — «Главная» (стартовый экран Mini App — каталог), на сайте —
-   «Каталог»: главная сайта — лендинг, на неё ведёт логотип */
+   Первая вкладка — «Каталог» и в Telegram, и на сайте: так называется и её экран */
 const TAB_VIEW = {
-  catalog: { label: "navHome", site: "navCatalog", icon: "home", active: "homeFill" },
+  catalog: { label: "navCatalog", icon: "home", active: "homeFill" },
   // Подпись — как у экрана и уведомления «Список во вкладке «Сохранённое»» (прототип)
-  favorites: { label: "svTitle", site: "svTitle", icon: "heart", active: "heartFill" },
-  requests: { label: "navRequests", site: "navRequests", icon: "notepad", active: "notepadFill" },
-  profile: { label: "navProfile", site: "navProfile", icon: "user", active: "userFill" },
-} as const satisfies Record<Tab, { label: string; site: string; icon: IconName; active: IconName }>;
+  favorites: { label: "svTitle", icon: "heart", active: "heartFill" },
+  requests: { label: "navRequests", icon: "notepad", active: "notepadFill" },
+  profile: { label: "navProfile", icon: "user", active: "userFill" },
+} as const satisfies Record<Tab, { label: string; icon: IconName; active: IconName }>;
 
 /** Уведомления — над нижней панелью вкладок (её высота с запасом), px */
 const TABS_HEIGHT = 80;
@@ -123,7 +122,6 @@ function Sections({
   current: Tab | null;
   className: "tabs" | "site-nav";
 }) {
-  const { webApp } = useServices();
   const { t } = useLang();
   return (
     <nav className={className} aria-label={t.sections}>
@@ -133,7 +131,7 @@ function Sections({
         return (
           <Link key={tab} href={hrefFor({ name: tab })} aria-current={on ? "page" : undefined}>
             <Icon name={on ? view.active : view.icon} size={20} />
-            <span>{t[webApp ? view.label : view.site]}</span>
+            <span>{t[view.label]}</span>
           </Link>
         );
       })}
@@ -275,7 +273,8 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
         {auth ? null : <Sections tabs={tabs} current={tabOf(match)} className="site-nav" />}
         {/* Поиск в шапке — у сайта; на каталоге его поле уже есть, в Telegram — во вкладке каталога */}
         {webApp === null && !auth && match?.name !== "catalog" ? <SiteSearch /> : null}
-        <LangSwitch />
+        {/* Язык — в шапке; в профиле он своим разделом (и в подвале сайта) — третий раз не нужен */}
+        {match?.name === "profile" ? null : <LangSwitch />}
         {guest && !auth ? (
           <>
             <a className="btn btn-secondary top-signin" href={signInHref}>

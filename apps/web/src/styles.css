@@ -657,11 +657,10 @@ textarea.field-input {
   gap: var(--gap-7);
 }
 
-/* Главные фильтры — строкой пилюль над выдачей: место (город → район), дата, гости (где
-   вместимость), «Фильтры» (поля витрины — шторкой) и порядок. На телефоне строка листается
-   вбок (обе оси явно, ловушка №2) и гаснет у правого края — видно, что дальше ещё; с планшета
-   пилюли переносятся (ниже, @media 768px). Кольцо фокуса — внутри: снаружи его обрезал бы
-   край ленты */
+/* Главные фильтры — пилюлями над выдачей: место (город → район), дата, гости (где
+   вместимость), «Фильтры» (поля витрины и порядок — шторкой) или порядок. Строка переносится,
+   а не листается вбок: на телефоне каждая пилюля на виду, и на 320px тоже. Порядок у раздела
+   с полями витрины до компьютера — в шторке «Фильтры» (.sort.in-sheet) */
 .filters-panel {
   min-width: 0;
   margin-bottom: 16px;
@@ -669,29 +668,31 @@ textarea.field-input {
 
 .filter-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-7);
-  margin: 0 calc(-1 * (var(--sa-r) + 16px)) 0 calc(-1 * (var(--sa-l) + 16px));
-  padding: 2px calc(var(--sa-r) + 16px) 6px calc(var(--sa-l) + 16px);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(to left, transparent, black 32px);
-  mask-image: linear-gradient(to left, transparent, black 32px);
+  min-width: 0;
 }
 
 .filter-row > * {
   flex: none;
-}
-
-.filter-row .ui-select:focus-visible,
-.filter-row .filter-pill:focus-visible,
-.filter-row .ui-number-input:focus-visible {
-  outline-offset: -3px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .filter-row .ui-select-compact {
   max-width: 260px;
+}
+
+/* Порядок — в шторке «Фильтры» до компьютера (там же поля витрины) */
+.filter-row .sort.in-sheet {
+  display: none;
+}
+
+/* В шторке «Фильтры»: порядок, затем поля витрины */
+.sheet-filters {
+  display: grid;
+  gap: var(--gap-12);
 }
 
 /* «Фильтры» (поля витрины) — пилюля того же вида, что списки строки */
@@ -869,11 +870,10 @@ textarea.field-input {
   margin-bottom: 16px;
 }
 
-/* Порядок — в конце строки фильтров */
+/* Порядок — в конце строки фильтров; с планшета — у правого края (ниже, @media 768px) */
 .sort {
   display: inline-flex;
   align-items: center;
-  margin-left: auto;
   gap: var(--gap-5);
   color: var(--coral);
 }
@@ -984,9 +984,11 @@ textarea.field-input {
   font-weight: 600;
 }
 
+/* Единица цены («за мероприятие», «за гостя») не рвётся: переносится целиком под сумму */
 .unit {
   color: var(--muted);
   font-size: var(--fs-13-5);
+  white-space: nowrap;
 }
 
 /* Сердечко «Сохранить»: кнопка 44px в углу фото — и видимая, и зона нажатия (на фото её ищут
@@ -1438,8 +1440,8 @@ textarea.field-input {
   display: contents;
 }
 
-/* Подпись «Связаться» в панели — только в карточке на компьютере: на телефоне — кнопка-иконка,
-   раздел «Связаться» — выше */
+/* Подпись «Связаться» в панели — только в карточке на компьютере: на телефоне — кнопка-иконка
+   (её имя для диктора — «Связаться: <витрина>»; второй кнопки на витрине нет) */
 .call-label {
   display: none;
 }
@@ -1756,9 +1758,48 @@ textarea.field-input {
   line-height: 1.3;
 }
 
-.req-name a {
-  color: var(--ink);
-  text-decoration: none;
+/* Название — ссылкой на витрину: видно, что нажимается (подчёркнуто, со стрелкой); зона
+   нажатия — 44px невидимым слоем, рисунок строки не растёт */
+.req-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-3);
+  color: var(--plum);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.req-link::after {
+  position: absolute;
+  top: calc(50% - 22px);
+  right: -6px;
+  bottom: calc(50% - 22px);
+  left: -6px;
+  content: "";
+}
+
+.req-link svg {
+  flex: none;
+  color: var(--coral);
+}
+
+/* «Связаться» и «Отозвать» — строкой внизу карточки */
+.req-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9) var(--gap-12);
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* Под просрочкой («Показать похожие») черта уже есть — вторая не нужна */
+.req-breached + .req-actions {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .req-main .muted {
@@ -2516,7 +2557,7 @@ textarea.field-input {
 
   .card-link:hover .card-name,
   .cat-tile:hover .cat-tile-name,
-  .req-name a:hover {
+  .req-link:hover {
     color: var(--coral-deep);
   }
 
@@ -2791,6 +2832,11 @@ textarea.field-input {
 /* ---------- планшет: колонка 720px по центру (.main), нижняя панель на месте ---------- */
 
 @media (min-width: 768px) {
+  /* Порядок — у правого края строки фильтров */
+  .sort {
+    margin-left: auto;
+  }
+
   /* У плитки раздела — что в нём; плитка выравнивается по верху */
   .cat-tile {
     align-items: start;
@@ -2879,20 +2925,10 @@ textarea.field-input {
 /* ---------- компьютер: шапка с разделами, сетка до 1280px, без нижней панели ---------- */
 
 @media (min-width: 1024px) {
-  /* Пилюли фильтров на компьютере помещаются строкой: без ленты и затухания, лишнее переносится */
-  .filter-row {
-    flex-wrap: wrap;
-    margin: 0;
-    padding: 0;
-    overflow: visible;
-    -webkit-mask-image: none;
-    mask-image: none;
-  }
-
-  .filter-row .ui-select:focus-visible,
-  .filter-row .filter-pill:focus-visible,
-  .filter-row .ui-number-input:focus-visible {
-    outline-offset: 2px;
+  /* Порядок на компьютере — в конце строки фильтров и у раздела с полями витрины: поля — в
+     колонке слева, шторки «Фильтры» нет */
+  .filter-row .sort.in-sheet {
+    display: inline-flex;
   }
 
   .top {
@@ -3055,11 +3091,6 @@ textarea.field-input {
   .venue-side .bar-note {
     order: 1;
     margin-top: 8px;
-  }
-
-  /* «Связаться» — в карточке справа: второй раз в описании он не нужен */
-  .venue .contact {
-    display: none;
   }
 
   .venue-bar {

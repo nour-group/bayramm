@@ -203,9 +203,9 @@ describe("корень в Telegram и документы", () => {
     expect(document.querySelector(".landing")).toBeNull();
     expect(document.querySelector(".site-footer")).toBeNull();
     expect(document.querySelector(".top-signin")).toBeNull();
-    // Первая вкладка в Mini App — «Главная», и она текущая
+    // Первая вкладка в Mini App — «Каталог» (как и экран), и она текущая
     const first = document.querySelector("nav.tabs a");
-    expect(first?.textContent).toBe("Главная");
+    expect(first?.textContent).toBe("Каталог");
     expect(first?.getAttribute("aria-current")).toBe("page");
   });
 

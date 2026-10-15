@@ -112,21 +112,16 @@ export function unitText(unit: PriceUnit, t: Dict): string {
 }
 
 /**
- * Цена «от» с единицей: «за гостя», «за час», «за кг»…; за мероприятие — без подписи
- * (цена за всё — так и читается)
+ * Цена «от» с единицей — всегда, и у цены за мероприятие: рядом стоят цены за гостя и за час,
+ * без подписи «от 30 млн сум» не сравнить. По-узбекски «dan» — слитно с суммой: «30 mln soʻmdan»
  */
-export function formatPriceFrom(
-  uzs: number,
-  unit: PriceUnit,
-  t: Dict,
-): { amount: string; unit: string | null } {
-  return { amount: t.priceFrom(formatMoney(uzs, t)), unit: unit === "per_event" ? null : unitText(unit, t) };
+export function formatPriceFrom(uzs: number, unit: PriceUnit, t: Dict): { amount: string; unit: string } {
+  return { amount: t.priceFrom(formatMoney(uzs, t)), unit: unitText(unit, t) };
 }
 
-/** Цена с единицей, без «от»: за мероприятие — без подписи */
+/** Цена с единицей, без «от»: «2,5 млн сум за мероприятие», «350 000 сум за час» */
 export function formatPrice(uzs: number, unit: PriceUnit, t: Dict): string {
-  const money = formatMoney(uzs, t);
-  return unit === "per_event" ? money : `${money} ${unitText(unit, t)}`;
+  return `${formatMoney(uzs, t)} ${unitText(unit, t)}`;
 }
 
 /** Подпись поля количества услуги: «Сколько часов», «Сколько кг»…; у цены за гостя и за

@@ -81,7 +81,8 @@ describe("каталог категории", () => {
       [...screen.querySelectorAll("*")].indexOf(screen.querySelector(selector) as Element),
     );
     expect(order).toEqual([...order].sort((a, b) => a - b));
-    // Главные фильтры — одной строкой пилюль: место, дата, «Фильтры» (поля витрины), порядок
+    // Главные фильтры — пилюлями (строка переносится): место, дата, «Фильтры» (поля витрины и
+    // порядок — шторкой до компьютера), порядок (на компьютере — в строке)
     const panel = document.querySelector(".filters-panel") as HTMLElement;
     expect(panel.getAttribute("aria-label")).toBe("Фильтры");
     const row = panel.querySelector(".filter-row") as HTMLElement;
@@ -192,6 +193,41 @@ describe("каталог категории", () => {
     expect(cardNames()).toEqual(["Kadr Media"]);
   });
 
+  it("шторка «Фильтры» — и порядок: выбор уходит в адрес и в число на кнопке, сброс снимает и его", async () => {
+    await mount({ path: "/catalog?category=car", mock: { listings: ALL } });
+    await waitFor(() => cardNames().length === 3, "кортежи");
+    // Порядок в строке — только для компьютера (на телефоне он в шторке)
+    expect(document.querySelector(".filter-row .sort")?.classList.contains("in-sheet")).toBe(true);
+    await click(document.querySelector(".filters-open"));
+    const sheet = document.querySelector('[role="dialog"]') as HTMLElement;
+    const order = sheet.querySelector(".sheet-sort");
+    expect(order?.querySelector("legend")?.textContent).toBe("Порядок");
+    const radios = [...(order?.querySelectorAll<HTMLInputElement>("input[type=radio]") ?? [])];
+    expect(radios.map((r) => r.closest("label")?.textContent)).toEqual(["Сначала дешевле", "Сначала дороже"]);
+    expect(radios[0]?.checked).toBe(true);
+    await click(radios[1]);
+    await waitFor(() => window.location.search === "?category=car&sort=price_desc", "порядок в адресе");
+    expect(document.querySelector(".filters-open")?.textContent).toBe("Фильтры · 1");
+    await click(byText('[role="dialog"] button', "Сбросить фильтры"));
+    await waitFor(() => window.location.search === "?category=car", "порядок снят");
+    expect(document.querySelector(".filters-open")?.textContent).toBe("Фильтры");
+  });
+
+  it("у раздела без полей витрины порядок — пилюлей в строке, шторки нет", async () => {
+    await mount({ path: "/catalog", mock: { listings: ALL } });
+    await waitFor(() => cardNames().length > 0, "все разделы");
+    expect(document.querySelector(".filters-open")).toBeNull();
+    const sort = document.querySelector(".filter-row .sort");
+    expect(sort?.classList.contains("in-sheet")).toBe(false);
+  });
+
+  it("числовой фильтр: «не меньше» — в подписи поля, а не под ним", async () => {
+    await mount({ path: "/catalog?category=hall" });
+    await waitFor(() => cardNames().length > 0, "залы");
+    expect(field("Мест на парковке, не меньше")).not.toBeNull();
+    expect(side().querySelector(".fld-hint")).toBeNull();
+  });
+
   it("категория без витрин — честно «скоро», а не «под эти условия никого»", async () => {
     await mount({
       path: "/catalog?category=gifts",
@@ -297,7 +333,7 @@ describe("витрина категории", () => {
       await waitFor(() => document.querySelector("h1")?.textContent === listing.name, listing.slug);
       // В карточке номера нет — он в окне «Связаться»
       expect(document.querySelector(`a[href="tel:${listing.phone}"]`), category.code).toBeNull();
-      await click(document.querySelector(".contact button"));
+      await click(document.querySelector(".venue-bar button.call"));
       await waitFor(
         () => document.querySelector(`[role="dialog"] a[href="tel:${listing.phone}"]`),
         category.code,

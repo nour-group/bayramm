@@ -14,7 +14,7 @@ import {
 } from "../screens/catalog-filters";
 
 /* Фильтры по полям витрины категории — из её описания (categoryFilters): галочка у «да/нет»,
-   галочки вариантов у списков, число «не меньше / не больше» у чисел. Одна и та же форма —
+   галочки вариантов у списков, число «не меньше / не больше» у чисел (это — в подписи поля). Одна и та же форма —
    в колонке слева на компьютере и в шторке «Фильтры» на телефоне и планшете (id у каждой
    свои: useId). Каждое изменение сразу уходит в адрес и в выдачу. */
 
@@ -59,10 +59,11 @@ function IntFilter({
   }, [text, value, spec]);
 
   if (!field) return null;
+  // «не меньше / не больше» — в подписи: смысл поля ясен до ввода, а не после
   return (
     <div className="field">
       <label className="field-label" htmlFor={id}>
-        {label}
+        {field.filter === "max" ? t.filterAtMost(label) : t.filterAtLeast(label)}
       </label>
       <NumberStepper
         id={id}
@@ -71,16 +72,12 @@ function IntFilter({
         placeholder={t.anyGuestV}
         value={text}
         maxLength={String(field.max).length}
-        aria-describedby={`${id}-hint`}
         onChange={setText}
         onBlur={() => {
           const parsed = parseFilterInt(spec, text);
           if (parsed !== value) onCommit(parsed);
         }}
       />
-      <p className="fld-hint" id={`${id}-hint`}>
-        {field.filter === "max" ? t.filterAtMost : t.filterAtLeast}
-      </p>
     </div>
   );
 }

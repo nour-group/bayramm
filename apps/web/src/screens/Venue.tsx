@@ -380,7 +380,7 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         : t.people(listing.capMax);
   const address = pick(listing.address, lang);
   const description = pick(listing.description, lang);
-  const view = attributeView(category, listing.attributes, lang);
+  const view = attributeView(category, listing.attributes, lang, listing.services);
   const videos = safeVideoLinks(listing.videoLinks);
   const load = (() => {
     if (!filterDate || !hasCalendar(category)) return null;
@@ -440,18 +440,6 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
         {chip ? <p className={chip.tone}>{chip.text}</p> : null}
       </div>
       {busyDay ? <BusyDay listing={listing} day={busyDay} today={today} guests={guests} /> : null}
-
-      {/* Контакты — до заявки и без входа, по «Связаться» (правило продукта): телефон и
-          Telegram в окне, открытия считает сервер */}
-      <section className="section contact" aria-labelledby="venue-contact">
-        <h2 className="section-title" id="venue-contact">
-          {t.contactH}
-        </h2>
-        <div className="contact-row">
-          <p className="muted small">{t.callNote}</p>
-          <ContactButton slug={listing.slug} name={listing.name} />
-        </div>
-      </section>
 
       {listing.services.length > 0 ? (
         <section className="section" aria-labelledby="venue-services">
@@ -561,7 +549,9 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
       />
 
       {/* Цена, «Связаться» и заявка: на телефоне — панель внизу экрана, на компьютере — карточка
-          справа, прилипает при прокрутке. Контакты — в одно нажатие, до заявки. Пометка
+          справа, прилипает при прокрутке. Контакты — до заявки и без входа, в одно нажатие
+          (правило продукта): телефон и Telegram — в окне «Связаться», открытия считает сервер.
+          Второй кнопки «Связаться» в описании нет — панель видна с первого экрана. Пометка
           о заявке — над панелью (на телефоне она прилипает к низу, пометка — в конце страницы),
           в карточке справа — под кнопками */}
       <div className="venue-side">

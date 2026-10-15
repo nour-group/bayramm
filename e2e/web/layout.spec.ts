@@ -264,10 +264,79 @@ test.describe("планшет (768)", () => {
 
     await open(page, PATHS.venue(VENUE.slug), ".venue-head h1");
     await expect(page.getByRole("button", { name: ru.galleryNext })).toBeVisible();
-    // Панель с заявкой — у низа экрана, «Связаться» — и в разделе контактов
+    // Панель с заявкой и «Связаться» — у низа экрана; второй кнопки в описании нет
     await expect(page.locator(".venue-bar")).toBeInViewport();
-    await expect(page.locator(".contact").getByRole("button", { name: ru.contactBtn })).toBeVisible();
+    await expect(page.locator(".venue-bar").getByRole("button", { name: ru.contactBtn })).toBeVisible();
+    await expect(page.locator(".venue .contact")).toHaveCount(0);
     await expectNoOverflow(page, "площадка 768");
+  });
+});
+
+test.describe("строка фильтров каталога", () => {
+  /** Каждый видимый контрол строки — целиком на экране: ни за краем, ни под прокруткой вбок */
+  async function expectRowOnScreen(page: Page, what: string) {
+    const width = page.viewportSize()?.width ?? 0;
+    const row = page.locator(".filter-row");
+    expect(
+      await row.evaluate((el) => el.scrollWidth <= el.clientWidth),
+      `${what}: строка не листается вбок`,
+    ).toBe(true);
+    const boxes = await row.evaluate((el) =>
+      [...el.children]
+        .filter((child) => !child.classList.contains("sr-only"))
+        .map((child) => child.getBoundingClientRect())
+        .filter((box) => box.width > 0 && box.height > 0)
+        .map((box) => ({ left: box.left, right: box.right })),
+    );
+    expect(boxes.length, `${what}: пилюли`).toBeGreaterThan(1);
+    for (const box of boxes) {
+      expect(box.left, what).toBeGreaterThanOrEqual(0);
+      expect(box.right, what).toBeLessThanOrEqual(width);
+    }
+  }
+
+  for (const width of [320, 390, 768]) {
+    for (const lang of ["ru", "uz"] as const) {
+      test(`${width}px ${lang}: место, дата, гости и «Фильтры» — на экране, порядок — в шторке`, async ({
+        page,
+      }) => {
+        const t = T[lang];
+        await prepare(page, { lang });
+        await at(page, width, 800);
+        await open(page, PATHS.category("hall"), ".card", { guest: true });
+        await expectRowOnScreen(page, `${width} ${lang} залы`);
+        const row = page.locator(".filter-row");
+        await expect(row.getByRole("spinbutton", { name: t.fGuests })).toBeVisible();
+        // Порядок у раздела с полями витрины — в шторке «Фильтры», вместе с ними
+        await expect(row.locator(".sort")).toBeHidden();
+        await row.locator(".filters-open").click();
+        const sheet = page.getByRole("dialog", { name: t.moreFilters });
+        await expect(sheet.getByRole("radio", { name: t.s_rich })).toBeVisible();
+        await sheet.getByRole("radio", { name: t.s_rich }).check();
+        await expect(page).toHaveURL(/sort=price_desc/);
+        await page.keyboard.press("Escape");
+        await expect(row.locator(".filters-open")).toHaveText(t.moreFiltersN(1));
+
+        // Раздел без полей витрины («Все») и кортеж на дату — тоже без ленты вбок
+        await open(page, PATHS.catalog, ".card", { guest: true });
+        await expectRowOnScreen(page, `${width} ${lang} все`);
+        await expect(row.locator(".sort")).toBeVisible();
+        await open(page, `${PATHS.category("car")}&date=${addDays(TODAY, 7)}`, ".card", { guest: true });
+        await expectRowOnScreen(page, `${width} ${lang} кортежи на дату`);
+        await expectNoOverflow(page, `${width} ${lang} каталог`);
+      });
+    }
+  }
+
+  test("1280px: порядок — в конце строки, поля витрины — колонкой, шторки нет", async ({ page }) => {
+    await prepare(page);
+    await at(page, 1280);
+    await open(page, PATHS.category("hall"), ".card", { guest: true });
+    const row = page.locator(".filter-row");
+    await expect(row.locator(".sort")).toBeVisible();
+    await expect(row.locator(".filters-open")).toBeHidden();
+    await expect(page.locator(".filters-side")).toBeVisible();
+    await expectRowOnScreen(page, "1280 залы");
   });
 });
 

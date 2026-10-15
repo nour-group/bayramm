@@ -125,10 +125,10 @@ describe("после входа", () => {
     expect(replaced).toEqual([]);
   });
 
-  it("Telegram: как раньше — вкладки, первая «Главная», без входа и меню сайта", async () => {
+  it("Telegram: вкладки, первая «Каталог» (как на сайте), без входа и меню сайта", async () => {
     const { webApp } = fakeWebApp();
     await mount({ path: "/", identity: "telegram", webApp });
-    expect(tabs()).toEqual(["Главная", "Сохранённое", "Заявки", "Профиль"]);
+    expect(tabs()).toEqual(["Каталог", "Сохранённое", "Заявки", "Профиль"]);
     expect(document.querySelector(".top-signin")).toBeNull();
     expect(menuButton()).toBeNull();
     expect(document.querySelector(".site-footer")).toBeNull();
