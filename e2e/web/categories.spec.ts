@@ -75,7 +75,7 @@ async function chooseIn(page: Page, label: string, option: string) {
 }
 
 /** Пилюля времени в форме заявки: «Утро 06:00–11:00», «Весь день» */
-const partChip = (page: Page, name: string) => check(fieldOf(page, ru.fTime), new RegExp(`^${name}`));
+const partChip = (page: Page, name: RegExp) => check(fieldOf(page, ru.fTime), name);
 
 /** Имя, телефон, согласие на передачу — и отправить */
 async function finishAndSend(page: Page) {
@@ -199,13 +199,13 @@ test.describe("заявка по категории", () => {
     await expect(page.locator("form.request .fld-label", { hasText: ru.rqG })).toHaveCount(0);
     // Свадьба — вечер: повод отметил его сам
     await page.locator("form.request label.ui-radio").first().click();
-    await expect(partChip(page, "Вечер").locator("input")).toBeChecked();
+    await expect(partChip(page, /^Вечер/).locator("input")).toBeChecked();
     // На эту дату вечер занят: отметка снялась, вечер недоступен и подписан
     await pickDay(page, BUSY_DAY);
     await expect(fieldOf(page, ru.rqDate)).toContainText(ru.partsTaken("вечер"));
-    await expect(partChip(page, "Вечер")).toContainText(ru.legBusy);
-    await expect(partChip(page, "Вечер").locator("input")).toBeDisabled();
-    await expect(partChip(page, "Вечер").locator("input")).not.toBeChecked();
+    await expect(partChip(page, /^Вечер/)).toContainText(ru.legBusy);
+    await expect(partChip(page, /^Вечер/).locator("input")).toBeDisabled();
+    await expect(partChip(page, /^Вечер/).locator("input")).not.toBeChecked();
     await chooseIn(page, "Начало", "17:30");
     await fieldOf(page, "Сколько часов").getByRole("spinbutton").fill("5");
     await fieldOf(page, "Сколько машин").getByRole("spinbutton").fill("2");
@@ -219,7 +219,7 @@ test.describe("заявка по категории", () => {
     await finishAndSend(page);
     // Время не выбрано: ошибка у поля «Время», заявка не ушла
     await expect(fieldOf(page, ru.fTime).locator(".fld-error")).toHaveText(ru.errParts);
-    await partChip(page, "Утро").click();
+    await partChip(page, /^Утро/).click();
     await page.getByRole("button", { name: ru.rqSend }).click();
     // Начало 17:30 — не утром
     await expect(fieldOf(page, "Начало").locator(".fld-error")).toHaveText(
@@ -263,8 +263,8 @@ test.describe("заявка по категории", () => {
     await page.locator("form.request label.ui-radio").first().click();
     await pickDay(page, addDays(TODAY, 19));
     // Снимать с утра: вместо вечера, который отметил повод
-    await partChip(page, "Вечер").click();
-    await partChip(page, "Утро").click();
+    await partChip(page, /^Вечер/).click();
+    await partChip(page, /^Утро/).click();
     await chooseIn(page, "Начало", "10:00");
     await check(fieldOf(page, "Что снимать"), "Фото").click();
     await check(fieldOf(page, "Что снимать"), "Видео").click();
@@ -327,7 +327,7 @@ test.describe("заявка по категории", () => {
     await fieldOf(page, "Сколько часов").getByRole("spinbutton").fill("2");
     await fieldOf(page, "Сколько человек").getByRole("spinbutton").fill("4");
     // Две части: день и вечер (повод отметил вечер, начало — днём)
-    await partChip(page, "День").click();
+    await partChip(page, /^День/).click();
     await page.getByRole("button", { name: ru.rqSend }).click();
     await expect(page.getByRole("heading", { level: 1, name: ru.sentH })).toBeVisible();
     await page.getByRole("link", { name: ru.toMyRequests }).click();
@@ -371,21 +371,21 @@ test.describe("несколько мероприятий в день", () => {
     await expect(page).toHaveURL(
       (url) => url.pathname === PATHS.request(VENUE.slug) && url.searchParams.get("part") === "day",
     );
-    await expect(partChip(page, "День").locator("input")).toBeChecked();
-    await expect(partChip(page, "Утро").locator("input")).toBeDisabled();
-    await expect(partChip(page, ru.partWhole)).toContainText(ru.legPartial);
-    await expect(partChip(page, ru.partWhole).locator("input")).toBeDisabled();
+    await expect(partChip(page, /^День/).locator("input")).toBeChecked();
+    await expect(partChip(page, /^Утро/).locator("input")).toBeDisabled();
+    await expect(partChip(page, /^Весь день/)).toContainText(ru.legPartial);
+    await expect(partChip(page, /^Весь день/).locator("input")).toBeDisabled();
     await expectNoAxeViolations(page, "форма: время");
     await expectHitAreas(page, "форма: время", CONTROLS);
     await expectNoOverflow(page, "форма: время");
     // Другой день — свободный целиком: утро и день одной заявкой
     await pickDay(page, addDays(TODAY, 19));
-    await partChip(page, "Утро").click();
+    await partChip(page, /^Утро/).click();
     // Время выбрано: повод его не меняет
     await page.locator("form.request label.ui-radio").first().click();
-    await expect(partChip(page, "Утро").locator("input")).toBeChecked();
-    await expect(partChip(page, "День").locator("input")).toBeChecked();
-    await expect(partChip(page, "Вечер").locator("input")).not.toBeChecked();
+    await expect(partChip(page, /^Утро/).locator("input")).toBeChecked();
+    await expect(partChip(page, /^День/).locator("input")).toBeChecked();
+    await expect(partChip(page, /^Вечер/).locator("input")).not.toBeChecked();
     await fieldOf(page, ru.rqG).getByRole("spinbutton").fill("120");
     await finishAndSend(page);
     await expect(page.getByRole("heading", { level: 1, name: ru.sentH })).toBeVisible();

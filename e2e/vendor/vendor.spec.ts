@@ -1195,8 +1195,8 @@ test.describe("витрины в разных категориях", () => {
     // Весь день — «частично занят», а не «свободно»
     await expect(panel.locator(".day-whole")).toContainText(`${t.wholeDay}${t.wholePartial}`);
     // Части с окнами: утро закрыто, вечер — одна договорённость из двух мест и ссылка на заявку
-    const morning = panel.getByRole("switch", { name: new RegExp(`^${t.part_morning}`) });
-    const evening = panel.getByRole("switch", { name: new RegExp(`^${t.part_evening}`) });
+    const morning = panel.getByRole("switch", { name: /^Утро/ });
+    const evening = panel.getByRole("switch", { name: /^Вечер/ });
     await expect(morning).toBeChecked();
     await expect(evening).not.toBeChecked();
     const rows = panel.locator(".day-part");
@@ -1212,7 +1212,7 @@ test.describe("витрины в разных категориях", () => {
     await expect.poll(() => api.calendarWrites).toEqual(["PUT 2026-10-24?part=evening If-Match: 1"]);
     // Заявка из дня — ссылкой на карточку заявки
     await rows.nth(2).locator(".day-request").click();
-    await expect(page).toHaveURL(new RegExp(`/requests/${REQUEST_CAR}$`));
+    await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
     await page.goBack();
     await chooseVitrina(page, "Kortej Premium");
 
