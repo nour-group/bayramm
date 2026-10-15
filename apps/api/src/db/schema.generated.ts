@@ -565,6 +565,10 @@ export interface AppRequestTransitions {
   to_status: AppRequestStatus;
 }
 
+export interface AppSearchWords {
+  word: string;
+}
+
 export interface AppServiceTypes {
   category_code: string;
   code: string;
@@ -799,6 +803,7 @@ export interface DB {
   "app.request_status_log": AppRequestStatusLog;
   "app.request_transitions": AppRequestTransitions;
   "app.requests": AppRequests;
+  "app.search_words": AppSearchWords;
   "app.service_types": AppServiceTypes;
   "app.sessions": AppSessions;
   "app.settings": AppSettings;

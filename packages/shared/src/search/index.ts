@@ -23,6 +23,7 @@ export {
 } from "./normalize";
 export {
   relevanceKey,
+  SEARCH_FUZZY_MIN_LENGTH,
   SEARCH_FUZZY_SIMILARITY,
   SEARCH_WORD_SIMILARITY,
   type SearchDoc,

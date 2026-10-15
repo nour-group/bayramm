@@ -4,16 +4,18 @@
    Слово запроса подходит тексту, если
      · word_similarity(слово, текст) ≥ SEARCH_WORD_SIMILARITY — начало слова, почти точное
        совпадение («kor» → «kortej»), или
-     · strict_word_similarity(слово, текст) ≥ SEARCH_FUZZY_SIMILARITY — целое слово с опечаткой
-       или в другой записи («kartej» → «kortej», «Шайхантахур» → «Shayxontohur»).
-   Витрина подходит, если подходят все слова запроса (название, раздел, район, услуги, поля
-   витрины и описание вместе).
+     · у слова от SEARCH_FUZZY_MIN_LENGTH букв — strict_word_similarity(слово, текст) ≥
+       SEARCH_FUZZY_SIMILARITY: целое слово с опечаткой или в другой записи («kartej» → «kortej»,
+       «Шайхантахур» → «Shayxontohur»). В базе то же — через словарь слов документов
+       (app.search_words: similarity слова запроса и слова витрины), чтобы искать по индексу.
+   Витрина подходит, если подходят все слова запроса: почти точное — в названии, разделе, районе,
+   услугах, полях витрины и описании; с опечаткой — во всём, кроме описания.
 
    Порядок по похожести: у каждого слова —
-     3 + похожесть — слово начинает слово названия;
-     2 + похожесть — похоже на название;
-     1 + похожесть — раздел, район, услуги, поля витрины;
-         похожесть — только описание;
+     3 + word_similarity — слово начинает слово названия;
+     2 + большая из двух похожестей — похоже на название;
+     1 + word_similarity — раздел, район, услуги, поля витрины;
+         word_similarity — только описание;
    среднее по словам, и ещё 1 — если с запроса начинается название целиком. Оплата, премиум и
    продвижение в порядке не участвуют (правило продукта «место в выдаче не продаётся»). */
 
@@ -22,15 +24,17 @@ import { wordSimilarity } from "./trigram";
 
 /** Порог word_similarity (pg_trgm.word_similarity_threshold в app.catalog_search) */
 export const SEARCH_WORD_SIMILARITY = 0.6;
-/** Порог strict_word_similarity (pg_trgm.strict_word_similarity_threshold) */
+/** Порог похожести слова с опечаткой (pg_trgm.strict_word_similarity_threshold и similarity_threshold) */
 export const SEARCH_FUZZY_SIMILARITY = 0.3;
+/** С опечаткой ищутся слова запроса от стольких букв: короче похожих слов слишком много */
+export const SEARCH_FUZZY_MIN_LENGTH = 4;
+
+const fuzzy = (token: string, text: string) =>
+  token.length >= SEARCH_FUZZY_MIN_LENGTH && wordSimilarity(token, text, true) >= SEARCH_FUZZY_SIMILARITY;
 
 /** Подходит ли слово запроса тексту (оба — после searchNorm) */
 export function tokenMatches(token: string, text: string): boolean {
-  return (
-    wordSimilarity(token, text) >= SEARCH_WORD_SIMILARITY ||
-    wordSimilarity(token, text, true) >= SEARCH_FUZZY_SIMILARITY
-  );
+  return wordSimilarity(token, text) >= SEARCH_WORD_SIMILARITY || fuzzy(token, text);
 }
 
 /** Насколько слово похоже на текст: большее из двух похожестей */
@@ -89,13 +93,15 @@ export function searchDoc(source: SearchSource): SearchDoc {
  */
 export function searchScore(doc: SearchDoc, query: SearchQuery): number | null {
   const body = join([doc.doc, doc.descr]);
-  if (!searchMatches(query, body)) return null;
+  const matches = (token: string) =>
+    wordSimilarity(token, body) >= SEARCH_WORD_SIMILARITY || fuzzy(token, doc.doc);
+  if (!query.tokens.every(matches)) return null;
   let sum = 0;
   for (const token of query.tokens) {
     if (startsWord(token, doc.name)) sum += 3 + wordSimilarity(token, doc.name);
     else if (tokenMatches(token, doc.name)) sum += 2 + tokenSimilarity(token, doc.name);
-    else if (tokenMatches(token, doc.doc)) sum += 1 + tokenSimilarity(token, doc.doc);
-    else sum += tokenSimilarity(token, doc.descr);
+    else if (tokenMatches(token, doc.doc)) sum += 1 + wordSimilarity(token, doc.doc);
+    else sum += wordSimilarity(token, doc.descr);
   }
   const prefix = doc.name.startsWith(query.text) ? 1 : 0;
   return Math.fround(sum / query.tokens.length + prefix);

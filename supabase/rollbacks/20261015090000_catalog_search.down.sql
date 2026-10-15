@@ -13,6 +13,7 @@ drop function app.listing_search_on_service();
 drop function app.listing_search_on_listing();
 drop function app.listing_search_refresh(uuid[]);
 
+drop table app.search_words;
 drop table app.listing_search;
 
 drop function app.search_matches(text, text);

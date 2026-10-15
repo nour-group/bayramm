@@ -15,19 +15,26 @@
 --     своё) и поля витрины; descr — описания ru и uz (меньший вес); body = doc + descr — по нему
 --     совпадение, индекс GIN (триграммы). Поддерживают триггеры витрины, услуг, каталога услуг,
 --     разделов и районов. Таблицу читают только функции поиска: у роли API прав на неё нет;
+--   · app.search_words — словарь слов документов (doc, от четырёх букв): по нему слово запроса с
+--     опечаткой или в другой записи находит слова витрин (similarity ≥ 0,3), а витрины с ними — уже
+--     по индексу. Слова не удаляются: лишнее слово ничего не находит;
 --   · app.catalog_search(запрос, раздел) — подходящие витрины (активные) и их оценка. Слово
---     запроса подходит, если word_similarity ≥ 0,6 (начало слова, почти точное) или
---     strict_word_similarity ≥ 0,3 (слово с опечаткой, другая запись); витрина — если подходят все
---     слова. Оценка: слово начинает слово названия > похоже на название > раздел, район, услуги,
---     поля > описание; среднее по словам и +1, если название начинается с запроса. Оплата в ней не
---     участвует. Остальные правила выдачи (фото, цена, RLS) — у запроса каталога: функция только
---     сужает и упорядочивает;
+--     запроса подходит, если word_similarity ≥ 0,6 (начало слова, почти точное) или — у слов от
+--     четырёх букв — похоже на слово документа: similarity ≥ 0,3 («kartej» → «kortej»); витрина —
+--     если подходят все слова. Оценка: слово начинает слово названия > похоже на название > раздел,
+--     район, услуги, поля > описание; среднее по словам и +1, если название начинается с запроса.
+--     Оплата в ней не участвует. Остальные правила выдачи (фото, цена, RLS) — у запроса каталога:
+--     функция только сужает и упорядочивает;
 --   · запрос поиска нигде не сохраняется и не пишется: в SQL он приходит параметром.
 --
 -- Откат: supabase/rollbacks/20261015090000_catalog_search.down.sql
 -- ════════════════════════════════════════════════════════════════════════════
 
 create extension if not exists pg_trgm with schema extensions;
+-- Функции ниже задают пороги pg_trgm (SET pg_trgm.*): параметр должен быть уже известен сессии,
+-- иначе роль без суперпользователя (postgres у Supabase) его не задаст. Расширение могло быть
+-- включено и раньше — тогда create extension его не загрузил: загружаем вызовом
+do $$ begin perform extensions.similarity('', ''); end $$;
 
 -- ── нормализация и поля витрины (из TS) ─────────────────────────────────────
 -- search-sql:begin (pnpm --filter @bayramm/shared search:sql)
@@ -74,7 +81,7 @@ set pg_trgm.word_similarity_threshold = '0.6'
 set pg_trgm.strict_word_similarity_threshold = '0.3'
 as $$
   select coalesce(bool_and(
-           b.body operator(extensions.%>) t or b.body operator(extensions.%>>) t), false)
+           b.body operator(extensions.%>) t or (length(t) >= 4 and b.body operator(extensions.%>>) t)), false)
   from (select app.search_norm(p_text) as body) b,
        unnest(string_to_array(app.search_norm(p_query), ' ')) t
   where length(t) >= 2
@@ -104,6 +111,17 @@ comment on column app.listing_search.body is 'doc и descr вместе — по
 
 create index listing_search_body on app.listing_search using gin (body extensions.gin_trgm_ops);
 
+create table app.search_words (
+  word text primary key check (word ~ '^[a-z0-9]{4,40}$')
+);
+
+alter table app.search_words enable row level security;
+
+comment on table app.search_words is
+  'Слова документов поиска (doc, 4–40 знаков): по ним app.catalog_search находит слово с опечаткой. У роли API прав нет';
+
+create index search_words_trgm on app.search_words using gin (word extensions.gin_trgm_ops);
+
 -- Пересобрать документы витрин; неизменившиеся не перезаписываются
 create function app.listing_search_refresh(p_ids uuid[])
 returns void
@@ -130,11 +148,18 @@ as $$
   where l.id = any (p_ids)
   on conflict (listing_id) do update
     set name = excluded.name, doc = excluded.doc, descr = excluded.descr
-    where (ls.name, ls.doc, ls.descr) is distinct from (excluded.name, excluded.doc, excluded.descr)
+    where (ls.name, ls.doc, ls.descr) is distinct from (excluded.name, excluded.doc, excluded.descr);
+
+  insert into app.search_words (word)
+  select distinct w.word
+  from app.listing_search s
+  cross join lateral unnest(string_to_array(s.doc, ' ')) as w(word)
+  where s.listing_id = any (p_ids) and w.word ~ '^[a-z0-9]{4,40}$' and w.word !~ '^[0-9]+$'
+  on conflict (word) do nothing;
 $$;
 
 comment on function app.listing_search_refresh(uuid[]) is
-  'Пересобрать документы поиска витрин (app.listing_search); зовут триггеры';
+  'Пересобрать документы поиска витрин (app.listing_search) и дополнить словарь слов; зовут триггеры';
 
 -- Витрина: название, раздел, район, поля, описания
 create function app.listing_search_on_listing()
@@ -205,19 +230,36 @@ do $$ begin perform app.listing_search_refresh(array(select l.id from app.listin
 
 -- ── поиск ───────────────────────────────────────────────────────────────────
 -- Подходящие активные витрины (раздел: null или 'all' — все) и оценка (больше — выше). Слова —
--- различные, от двух символов, первые шесть. Условие по каждому слову — по индексу
--- listing_search_body; слова — параметрами ($1[i]), а не текстом запроса
+-- различные, от двух символов, первые шесть; в SQL — параметрами ($1[i], похожие слова — $4[k]),
+-- а не текстом запроса.
+--
+-- Каждое условие — по индексу listing_search_body: слово (word_similarity) или похожее слово из
+-- словаря. Похожесть на длинный документ стоит десятки микросекунд на строку, а планировщик
+-- считает операторы pg_trgm дешёвыми (их стоимость задаёт расширение) и выбирает перебор таблицы
+-- или первичного ключа с фильтром: на 2000 витрин — 130–200 мс против единиц мс по индексу.
+-- Поэтому внутри функции — только битовые карты индексов (enable_seqscan, enable_indexscan,
+-- enable_indexonlyscan = off): к документам — по триграммам, к витринам — по своим индексам. Оценка
+-- — сначала дешёвое (короткое название), длинные doc и descr — по одной похожести и только если
+-- до них дошло
 create function app.catalog_search(p_query text, p_category text default null)
 returns table (listing_id uuid, score real)
 language plpgsql stable security definer set search_path = ''
 set pg_trgm.word_similarity_threshold = '0.6'
 set pg_trgm.strict_word_similarity_threshold = '0.3'
+set pg_trgm.similarity_threshold = '0.3'
+set enable_seqscan = off
+set enable_indexscan = off
+set enable_indexonlyscan = off
 as $$
 declare
   v_text text := app.search_norm(left(p_query, 200));
   v_tokens text[];
-  v_match text;
-  v_score text;
+  v_alts text[] := '{}';
+  v_match text[] := '{}';
+  v_score text[] := '{}';
+  v_cond text;
+  v_fuzzy text;
+  v_word text;
 begin
   if v_text is null or length(v_text) < 2 then
     return;
@@ -233,25 +275,36 @@ begin
     return;
   end if;
 
-  select string_agg(format(
-           '(s.body operator(extensions.%%>) $1[%1$s] or s.body operator(extensions.%%>>) $1[%1$s])', i),
-           ' and '),
-         string_agg(format(
-           $f$(case
-                 when (' ' || s.name) like ('%% ' || $1[%1$s] || '%%')
-                   then 3 + extensions.word_similarity($1[%1$s], s.name)
-                 when s.name operator(extensions.%%>) $1[%1$s] or s.name operator(extensions.%%>>) $1[%1$s]
-                   then 2 + greatest(extensions.word_similarity($1[%1$s], s.name),
-                                     extensions.strict_word_similarity($1[%1$s], s.name))
-                 when s.doc operator(extensions.%%>) $1[%1$s] or s.doc operator(extensions.%%>>) $1[%1$s]
-                   then 1 + greatest(extensions.word_similarity($1[%1$s], s.doc),
-                                     extensions.strict_word_similarity($1[%1$s], s.doc))
-                 else greatest(extensions.word_similarity($1[%1$s], s.descr),
-                               extensions.strict_word_similarity($1[%1$s], s.descr))
-               end)$f$, i),
-           ' + ')
-    into v_match, v_score
-  from generate_subscripts(v_tokens, 1) as i;
+  for i in 1 .. array_length(v_tokens, 1) loop
+    v_cond := format('s.body operator(extensions.%%>) $1[%s]', i);
+    v_fuzzy := '';
+    -- От четырёх букв — и с опечаткой: похожие слова документов, каждое — условием по индексу
+    if length(v_tokens[i]) >= 4 then
+      v_fuzzy := format(' or %%s operator(extensions.%%%%>>) $1[%s]', i);
+      for v_word in
+        select w.word from app.search_words w
+        where w.word operator(extensions.%) v_tokens[i] and w.word <> v_tokens[i]
+        order by extensions.similarity(w.word, v_tokens[i]) desc, w.word
+        limit 8
+      loop
+        v_alts := v_alts || v_word;
+        v_cond := v_cond || format(' or s.body operator(extensions.%%>) $4[%s]', array_length(v_alts, 1));
+      end loop;
+    end if;
+    v_match := v_match || ('(' || v_cond || ')');
+    v_score := v_score || format(
+      $f$(case
+            when (' ' || s.name) like ('%% ' || $1[%1$s] || '%%')
+              then 3 + extensions.word_similarity($1[%1$s], s.name)
+            when s.name operator(extensions.%%>) $1[%1$s]%2$s
+              then 2 + greatest(extensions.word_similarity($1[%1$s], s.name),
+                                extensions.strict_word_similarity($1[%1$s], s.name))
+            when s.doc operator(extensions.%%>) $1[%1$s]%3$s
+              then 1 + extensions.word_similarity($1[%1$s], s.doc)
+            else extensions.word_similarity($1[%1$s], s.descr)
+          end)$f$,
+      i, format(v_fuzzy, 's.name'), format(v_fuzzy, 's.doc'));
+  end loop;
 
   return query execute format(
     $q$select s.listing_id,
@@ -261,8 +314,8 @@ begin
        where l.status = 'active'
          and ($3::text is null or $3 = 'all' or l.category_code = $3)
          and %3$s$q$,
-    v_score, array_length(v_tokens, 1), v_match)
-  using v_tokens, v_text, p_category;
+    array_to_string(v_score, ' + '), array_length(v_tokens, 1), array_to_string(v_match, ' and '))
+  using v_tokens, v_text, p_category, v_alts;
 end $$;
 
 comment on function app.catalog_search(text, text) is

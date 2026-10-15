@@ -4,7 +4,7 @@
 -- > название > раздел, район, услуги > описание
 begin;
 \ir _fixtures.psql
-select plan(78);
+select plan(81);
 
 -- Опубликовать зал, как в фикстурах: контакты, банкеты, три готовых фото, проверка → каталог
 create function pg_temp.publish(p_listing uuid)
@@ -47,6 +47,9 @@ select ok(has_function_privilege('bayramm_api', 'app.catalog_search(text, text)'
   'API ищет функцией');
 select ok(not has_function_privilege('bayramm_api', 'app.listing_search_refresh(uuid[])', 'EXECUTE'),
   'документы пересобирают только триггеры');
+select ok((select relrowsecurity from pg_class where oid = 'app.search_words'::regclass)
+          and not has_table_privilege('bayramm_api', 'app.search_words', 'SELECT'),
+  'словарь слов: RLS, у API прав нет');
 
 -- ── общие векторы TS и SQL ──────────────────────────────────────────────────
 -- search-vectors:begin (pnpm --filter @bayramm/shared search:sql)
@@ -176,6 +179,11 @@ select is(pg_temp.found('chilonzor'), array['chilonzor-palace', 'test-b1', 'vers
 select is(pg_temp.found('Чиланзар'), array['test-b1', 'versal', 'grand'],
   'кириллицей — по русскому названию района и описанию (название латиницей «Chilonzor» — другое слово)');
 select is(pg_temp.found('versl'), array['versal'], 'опечатка: «versl» → Versal');
+select ok(exists (select 1 from app.search_words where word = 'versal')
+          and not exists (select 1 from app.search_words where length(word) < 4),
+  'слова документов от четырёх букв — в словаре');
+select ok(pg_temp.found('toyhona') @> array['versal', 'grand', 'test-a1'],
+  'опечатка через словарь: «toyhona» → все тойханы');
 select is(pg_temp.found('Версаль'), array['versal'], 'кириллицей: «Версаль» → Versal');
 select is(pg_temp.found('versal chilonzor'), array['versal'], 'нужны все слова: название и район');
 select is(pg_temp.found('Яккасарай'), '{}'::text[], 'в районе никого — пусто');
