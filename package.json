@@ -18,6 +18,6 @@
     "dev:api": "pnpm --filter @bayramm/api dev"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14"
+    "@biomejs/biome": "^2.5.15"
   }
 }
