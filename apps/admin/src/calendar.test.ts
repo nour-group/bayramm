@@ -1,6 +1,18 @@
 import type { Availability } from "@bayramm/shared/api/staff";
 import { describe, expect, it } from "vitest";
-import { dayState, mergeBusy, rangeDays } from "./pages/Calendar";
+import { dayState, freeCount, mergeBusy, rangeDays, rangeInput, withDefaults } from "./pages/Calendar";
+
+const SESSIONS: Availability["sessions"] = {
+  mode: "parts",
+  parts: ["morning", "day", "evening"],
+  windows: {
+    morning: { from: "05:00", to: "11:00" },
+    day: { from: "11:00", to: "17:00" },
+    evening: { from: "17:00", to: "24:00" },
+  },
+  custom: null,
+  parallelCapacity: 1,
+};
 
 describe("несколько дней календаря", () => {
   it("дни от раннего к позднему, концы — в любом порядке, через границу месяца", () => {
@@ -28,8 +40,10 @@ describe("несколько дней календаря", () => {
 
   it("ответ правки вливается в месяц: на его отрезке — как у сервера, вне — как было", () => {
     const month: Availability = {
-      mode: "day",
+      mode: "parts",
       parallelCapacity: 1,
+      sessions: SESSIONS,
+      requests: [],
       parts: [],
       bookings: [],
       from: "2026-10-01",
@@ -42,8 +56,10 @@ describe("несколько дней календаря", () => {
       ],
     };
     const result: Availability = {
-      mode: "day",
+      mode: "parts",
       parallelCapacity: 1,
+      sessions: SESSIONS,
+      requests: [],
       parts: [],
       bookings: [],
       from: "2026-10-09",
@@ -71,6 +87,16 @@ describe("части дня (кортеж, фото и видео, декор)",
   const month: Availability = {
     mode: "parts",
     parallelCapacity: 2,
+    sessions: { ...SESSIONS, parallelCapacity: 2 },
+    requests: [
+      {
+        id: "eeeeeeee-0000-0000-0000-000000000001",
+        publicNo: 1001,
+        day: "2026-10-10",
+        parts: ["evening"],
+        status: "deal",
+      },
+    ],
     from: "2026-10-01",
     to: "2026-10-31",
     version: 7,
@@ -85,7 +111,7 @@ describe("части дня (кортеж, фото и видео, декор)",
   it("часть занята отметкой или когда мест не осталось; день — когда занят целиком или все части", () => {
     const tenth = dayState(month, "2026-10-10");
     expect(tenth.load).toBe("partial");
-    expect(tenth.parts.map((p) => [p.part, p.busy, p.count])).toEqual([
+    expect(tenth.parts.map((p) => [p.part, p.busy, p.booked])).toEqual([
       ["morning", true, 0],
       ["day", false, 0],
       ["evening", false, 1],
@@ -105,6 +131,41 @@ describe("части дня (кортеж, фото и видео, декор)",
       })),
     };
     expect(dayState(full, "2026-10-05").load).toBe("busy");
+    // заявка на вечер — у вечера
+    expect(tenth.parts.find((p) => p.part === "evening")?.requests.map((r) => r.publicNo)).toEqual([1001]);
+  });
+
+  it("рабочие части: нерабочая часть не в счёт; одно мероприятие в день — частей нет, занятая часть — весь день", () => {
+    const two = {
+      ...month,
+      sessions: { ...month.sessions, parts: ["morning", "evening"] as ("morning" | "evening")[] },
+    };
+    expect(dayState(two, "2026-10-12").load).toBe("free");
+    expect(dayState(two, "2026-10-12").parts.map((p) => p.part)).toEqual(["morning", "evening"]);
+    const whole = { ...month, sessions: { ...month.sessions, mode: "whole" as const } };
+    expect(dayState(whole, "2026-10-10").parts).toEqual([]);
+    expect(dayState(whole, "2026-10-10").load).toBe("busy");
+  });
+
+  it("несколько дней: только эти дни недели; часть — busyParts/freeParts; счёт по части", () => {
+    const saturdays = rangeDays("2026-10-01", "2026-10-31", "2026-10-01", new Set([5]));
+    expect(saturdays).toEqual(["2026-10-03", "2026-10-10", "2026-10-17", "2026-10-24", "2026-10-31"]);
+    expect(rangeInput(7, ["2026-10-03"], "evening", "busy")).toEqual({
+      version: 7,
+      busyParts: [{ day: "2026-10-03", part: "evening" }],
+    });
+    expect(rangeInput(7, ["2026-10-03"], "whole", "free")).toEqual({ version: 7, free: ["2026-10-03"] });
+    expect(freeCount(["2026-10-10", "2026-10-11"], month, "morning")).toEqual({
+      days: 2,
+      marked: 1,
+      byVendor: 0,
+    });
+  });
+
+  it("ответ старого API без времени работы — как витрина по умолчанию", () => {
+    const { sessions: _s, requests: _r, ...old } = month;
+    expect(withDefaults(old as Availability).sessions.parts).toEqual(["morning", "day", "evening"]);
+    expect(withDefaults(old as Availability).requests).toEqual([]);
   });
 
   it("ответ правки части дня вливается вместе с договорённостями и местами", () => {

@@ -1362,18 +1362,33 @@ textarea.field-input {
 }
 
 .part {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--gap-9);
-  padding: 8px 12px;
   border: 1px solid var(--rule);
   border-radius: var(--r-11);
   background: var(--white);
 }
 
+/* Строка части дня: занятая — текстом, свободная — ссылкой в форму заявки с этой частью */
+.part-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-9);
+  min-height: var(--hit-min);
+  padding: 4px 12px;
+  color: inherit;
+}
+
+.part-link {
+  text-decoration: none;
+}
+
 .part-state {
   color: var(--teal);
+}
+
+.part-link .part-state {
+  margin-left: auto;
 }
 
 .part.busy .part-state {
@@ -2592,7 +2607,8 @@ textarea.field-input {
   color: var(--peach);
 }
 
-/* Включённый фильтр — пилюлей цвета сливы, как выбранный раздел: место, дата, поля витрины */
+/* Включённый фильтр — пилюлей цвета сливы, как выбранный раздел: место, дата, время, поля витрины */
+.filter-row .filter-part.is-set,
 .filter-row .filter-place.is-set,
 .filter-row .ui-date.has-value,
 .filter-pill.is-on {
@@ -2601,6 +2617,8 @@ textarea.field-input {
   color: var(--sel-ink);
 }
 
+.filter-row .filter-part.is-set .ui-select-icon,
+.filter-row .filter-part.is-set .ui-select-caret,
 .filter-row .filter-place.is-set .ui-select-icon,
 .filter-row .filter-place.is-set .ui-select-caret,
 .filter-row .ui-date.has-value .ui-select-icon,
@@ -3180,5 +3198,35 @@ textarea.field-input {
 
   .has-side .cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Время в форме заявки: части дня и «Весь день» — галочки-пилюли в строку */
+.part-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-7);
+}
+
+.part-chips .chip-check {
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  background: var(--white);
+}
+
+.part-chips .chip-check:has(.ui-native:checked) {
+  border-color: var(--plum);
+  background: var(--lilac);
+}
+
+.fld-note {
+  margin: 0;
+}
+
+/* Календарь витрины на компьютере — не во всю колонку: дни не растягиваются до 110px */
+@media (min-width: 1024px) {
+  .venue-calendar .ui-cal {
+    max-width: 480px;
   }
 }

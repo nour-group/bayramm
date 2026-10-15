@@ -17,6 +17,8 @@
    там же (VenueWithdraw.tsx). Новый партнёр попадает сюда из входящих (строка «что дальше»).
 
    Фото — свой блок, VenuePhotos.tsx (загрузка по правилу категории, порядок, обложка, удаление).
+   «Время работы» (одно мероприятие в день или несколько, части дня, окна, заказов одновременно) —
+   WorkingTimes.tsx, у категорий с календарём: меняется сразу, без проверки.
 
    Порядок: чек-лист (если витрина не на сайте), состояние предложения (на проверке, отказ с
    причиной), затем фото и карточки-группы. На компьютере — две колонки: фото слева, карточки
@@ -34,6 +36,7 @@ import {
   attributeLabel,
   type CategoryConfig,
   categoryConfig,
+  hasDayParts,
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
 import { useEffect, useRef, useState } from "react";
@@ -53,6 +56,7 @@ import { VenueContacts } from "./VenueContacts";
 import { VenueGroups } from "./VenueGroups";
 import { VenuePhotos } from "./VenuePhotos";
 import { WithdrawAction } from "./VenueWithdraw";
+import { WorkingTimes } from "./WorkingTimes";
 
 /** Пункт чек-листа готовности: что сделать и кнопка туда, где это делается */
 export interface Todo {
@@ -563,6 +567,16 @@ function VenueCard({
             onEdit={canEdit ? open : undefined}
           />
           <VenueContacts listing={listing} t={t} owner={owner} onChanged={onChanged} />
+          {category !== undefined && hasDayParts(category) ? (
+            <WorkingTimes
+              key={`sessions-${listing.id}`}
+              listing={listing}
+              t={t}
+              lang={lang}
+              owner={owner}
+              onChanged={onChanged}
+            />
+          ) : null}
         </div>
       </div>
 

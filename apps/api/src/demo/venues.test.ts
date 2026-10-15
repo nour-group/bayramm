@@ -7,6 +7,7 @@ import { hasNonCanonicalApostrophe, isUzPhone, normalizeUz } from "@bayramm/shar
 import {
   CATEGORIES,
   categoryConfig,
+  DAY_PARTS,
   missingAttributes,
   validateAttributePatch,
   validateServiceInput,
@@ -219,12 +220,25 @@ describe("демо-витрины: как витрина из панели", () 
         expect(day).toBeGreaterThanOrEqual(1);
         expect(day).toBeLessThanOrEqual(DEMO_BUSY_HORIZON_DAYS);
       }
-      if (config(venue).availability !== "parts") expect(venue.busyParts).toEqual([]);
+      if (config(venue).availability !== "parts" || venue.partMode === "whole")
+        expect(venue.busyParts).toEqual([]);
+      for (const p of venue.busyParts) expect(venue.dayParts ?? DAY_PARTS, venue.slug).toContain(p.part);
       if (config(venue).availability === "lead") expect(venue.busyDays).toEqual([]);
       const parts = venue.busyParts.map((p) => `${p.offset}/${p.part}`);
       expect(new Set(parts).size).toBe(parts.length);
     }
     expect(DEMO_VENUES.filter((v) => v.category === "hall").every((v) => v.busyDays.length >= 3)).toBe(true);
+  });
+
+  it("залы: несколько мероприятий в день с занятым утром и вечером, утро и вечер без дня, одно мероприятие", () => {
+    const halls = DEMO_VENUES.filter((v) => v.category === "hall");
+    const morningAndEvening = halls.some((v) => {
+      const days = v.busyParts.filter((p) => p.part === "morning").map((p) => p.offset);
+      return v.busyParts.some((p) => p.part === "evening" && days.includes(p.offset));
+    });
+    expect(morningAndEvening).toBe(true);
+    expect(halls.some((v) => v.dayParts !== undefined && !v.dayParts.includes("day"))).toBe(true);
+    expect(halls.some((v) => v.partMode === "whole")).toBe(true);
   });
 
   it("фото: по три на витрину — минимум для публикации", () => {

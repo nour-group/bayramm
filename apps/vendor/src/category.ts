@@ -1,17 +1,15 @@
 /* Категория витрины глазами кабинета: подпись, модель занятости, части дня, цена услуги
    словами. Всё — из @bayramm/shared/categories (CATEGORIES и тексты категорий); здесь только
    то, что кабинет показывает одинаково на разных экранах. Неизвестная категория (новая в
-   базе, а сборка старая) не ломает экран: подпись — код, занятость — день целиком. */
+   базе, а сборка старая) не ломает экран: подпись — код, занятость — календарь по частям. */
 
 import type { Lang } from "@bayramm/shared";
 import {
   type AvailabilityMode,
-  type CategoryConfig,
   categoryConfig,
   categoryText,
   type DayPart,
-  DEFAULT_DAY_PARTS,
-  dayPartWindows,
+  hasDayParts,
   type PriceUnit,
   priceUnitLabel,
 } from "@bayramm/shared/categories";
@@ -24,9 +22,9 @@ export function categoryName(lang: Lang, code: string): string {
   return config === undefined ? code : categoryText(lang, config.label);
 }
 
-/** Модель занятости категории; неизвестная — день целиком, как у залов */
+/** Модель занятости категории; неизвестная — календарь по частям дня */
 export function availabilityOf(code: string): AvailabilityMode {
-  return categoryConfig(code)?.availability ?? "day";
+  return categoryConfig(code)?.availability ?? "parts";
 }
 
 /** Часть дня словами: «Вечер» */
@@ -34,10 +32,15 @@ export function partName(t: VendorDict, part: DayPart): string {
   return t[`part_${part}`];
 }
 
-/** Окно части дня категории: «17:00–24:00» */
-export function partWindow(category: CategoryConfig | undefined, part: DayPart): string {
-  const window = (category === undefined ? DEFAULT_DAY_PARTS : dayPartWindows(category))[part];
-  return `${window.from}–${window.to}`;
+/**
+ * Части дня заявки словами: «Утро, вечер»; пусто — «Весь день». У категории без календаря
+ * (срок заказа) — null: время дня там ни при чём
+ */
+export function partsLabel(t: VendorDict, categoryCode: string, parts: readonly DayPart[]): string | null {
+  const category = categoryConfig(categoryCode);
+  if (category !== undefined && !hasDayParts(category)) return null;
+  if (parts.length === 0) return t.wholeDay;
+  return parts.map((part, i) => (i === 0 ? partName(t, part) : partName(t, part).toLowerCase())).join(", ");
 }
 
 /** Цена услуги или опции: «150 000 сум за час», «2,5 млн сум за мероприятие» */

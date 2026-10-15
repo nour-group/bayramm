@@ -1,7 +1,7 @@
 import type { ImageErrorCode } from "@bayramm/media";
 import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { DECLINE_REASONS, SERVICE_STATUSES } from "@bayramm/shared/api/vendor";
-import { DAY_PARTS, type ServiceChangeField } from "@bayramm/shared/categories";
+import { DAY_PARTS, OCCASIONS, type ServiceChangeField } from "@bayramm/shared/categories";
 import { describe, expect, it } from "vitest";
 import { API_ERROR_CODES } from "./errors";
 import { fill, LANG_NAMES, textOf, vendorDict } from "./i18n";
@@ -81,8 +81,8 @@ const CODES = {
   svcSt: SERVICE_STATUSES,
   part: DAY_PARTS,
   svcField: SERVICE_CHANGE_FIELDS,
-  // справочники из миграции foundation
-  occ: ["toy", "beshik", "bd", "corp", "small"],
+  // справочники: поводы — как @bayramm/shared/categories (их сеет миграция), районы — из foundation
+  occ: OCCASIONS.map((o) => o.code),
   dist: [
     "yunusobod",
     "mirzo_ulugbek",

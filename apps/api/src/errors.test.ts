@@ -86,6 +86,7 @@ describe("toApiError: коды Postgres", () => {
     expect(mapped(pgError("BR036"))).toMatchObject({ status: 409, code: "contacts_require_review" });
     expect(mapped(pgError("BR037"))).toMatchObject({ status: 409, code: "contact_change_not_pending" });
     expect(mapped(pgError("BR038"))).toMatchObject({ status: 409, code: "contacts_not_live" });
+    expect(mapped(pgError("BR039"))).toMatchObject({ status: 409, code: "part_in_use" });
   });
 
   it("каждое правило — 4xx", () => {

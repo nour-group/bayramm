@@ -1,10 +1,13 @@
 // Занятые дни карточки: сотрудник помогает вендору заполнить календарь при
 // подключении. Строка app.availability — день занят; нет строки — свободен. У витрин с
-// режимом parts — ещё части дня (app.availability_parts) и договорённости по ним.
+// календарём — ещё части дня (app.availability_parts), договорённости по ним и заявки дня;
+// отмечать части можно рабочие, если витрина берёт несколько мероприятий в день.
 //
 //   GET /staff/listings/:id/availability?from=YYYY-MM-DD&to=YYYY-MM-DD
 //   PUT /staff/listings/:id/availability  { version, busy: [дни], free: [дни],
 //                                           busyParts: [{ day, part }], freeParts: [...] }
+//   PUT /staff/listings/:id/day-sessions  { version, mode, parts, windows, parallelCapacity }
+//                                         — время работы витрины (calendar/sessions.ts)
 //
 // Отметка сотрудника — source = staff. Снять можно любую отметку, в том числе
 // вендора: сотрудник правит календарь по его просьбе. Прошедшие дни (по Ташкенту)
@@ -12,10 +15,17 @@
 // Календарь ведут и партнёр, и сотрудник: правка — только от версии, которую видел
 // сотрудник (calendar/version.ts), иначе 409 calendar_conflict — перечитать.
 
-import type { Availability, BusyDay, DayPartRef } from "@bayramm/shared/api/staff";
+import type { Availability, BusyDay, DayPartRef, DaySessions } from "@bayramm/shared/api/staff";
 import { DAY_PARTS, type DayPart } from "@bayramm/shared/categories";
 import { Hono } from "hono";
 import { staffOf } from "../auth/session";
+import {
+  assertMarkablePart,
+  availabilityModeOf,
+  calendarRequests,
+  saveDaySessions,
+  sessionsOfRow,
+} from "../calendar/sessions";
 import { calendarVersion, lockCalendar, MAX_VERSION } from "../calendar/version";
 import { type Tx, withActor } from "../db/actor";
 import type { AppEnv } from "../env";
@@ -65,35 +75,55 @@ async function readAvailability(
     .where("day", "<=", to)
     .orderBy("day")
     .execute();
-  const parts =
-    listing.mode === "parts" ? await partsCalendar(trx, listing.id, from, to) : { parts: [], bookings: [] };
+  const calendar = listing.mode === "parts";
+  const parts = calendar
+    ? await partsCalendar(trx, listing.id, from, to, listing.sessions)
+    : { parts: [], bookings: [] };
   return {
     from,
     to,
     mode: listing.mode,
-    parallelCapacity: listing.parallelCapacity,
+    parallelCapacity: listing.sessions.parallelCapacity,
+    sessions: listing.sessions,
     busy: rows.map((row) => ({ day: row.day, source: sourceOf(row.source) })),
     parts: parts.parts.map((p) => ({ day: p.day, part: p.part, source: sourceOf(p.source) })),
     bookings: parts.bookings,
+    requests: calendar ? await calendarRequests(trx, listing.id, from, to) : [],
     version: await calendarVersion(trx, listing.id),
   };
 }
 
 interface ListingCalendar {
   readonly id: string;
+  readonly categoryCode: string;
   readonly mode: Availability["mode"];
-  readonly parallelCapacity: number;
+  readonly sessions: DaySessions;
+  readonly dayParts: unknown;
 }
 
 async function listingCalendar(trx: Tx, id: string): Promise<ListingCalendar> {
   const found = await trx
     .selectFrom("app.listings as l")
     .innerJoin("app.categories as c", "c.code", "l.category_code")
-    .select(["l.id", "l.parallel_capacity", "c.availability_mode"])
+    .select([
+      "l.id",
+      "l.category_code",
+      "l.parallel_capacity",
+      "l.part_mode",
+      "l.day_parts",
+      "l.part_windows",
+      "c.availability_mode",
+    ])
     .where("l.id", "=", id)
     .executeTakeFirst();
   if (!found) throw notFound();
-  return { id: found.id, mode: found.availability_mode, parallelCapacity: found.parallel_capacity };
+  return {
+    id: found.id,
+    categoryCode: found.category_code,
+    mode: availabilityModeOf(found.availability_mode),
+    sessions: sessionsOfRow(found),
+    dayParts: found.day_parts,
+  };
 }
 
 availability.get("/:id/availability", requirePermission("catalog.read"), async (c) => {
@@ -162,6 +192,8 @@ availability.put("/:id/availability", requirePermission("listings.write"), limit
     if ((busyParts.length > 0 || freeParts.length > 0) && listing.mode !== "parts") {
       throw invalidInput(busyParts.length > 0 ? ["busyParts"] : ["freeParts"]);
     }
+    // Закрыть можно рабочую часть витрины с несколькими мероприятиями; снять — любую отметку
+    for (const ref of busyParts) assertMarkablePart(listing.sessions, ref.part, "busyParts");
     await lockCalendar(trx, id, version);
     if (busy.length > 0) {
       await trx
@@ -198,4 +230,25 @@ availability.put("/:id/availability", requirePermission("listings.write"), limit
   });
   const response: Availability = result;
   return c.json(response);
+});
+
+// Время работы витрины: сразу, без модерации, от версии календаря (как отметки)
+availability.put("/:id/day-sessions", requirePermission("listings.write"), limitJson, async (c) => {
+  const id = pathId(c.req.param("id"));
+  const body = await readBody(c.req.raw);
+  const version = new Input(body).int("version", { min: 0, max: MAX_VERSION, required: true });
+  if (typeof version !== "number") throw invalidInput(["version"]);
+  const { version: _version, ...input } = body;
+  const change = await withActor(c.var.db, staffOf(c), async (trx) => {
+    const listing = await listingCalendar(trx, id);
+    if (listing.mode !== "parts") throw notFound();
+    return saveDaySessions(
+      trx,
+      { id: listing.id, category_code: listing.categoryCode, day_parts: listing.dayParts },
+      input,
+      version,
+      tashkentToday(),
+    );
+  });
+  return c.json(change);
 });

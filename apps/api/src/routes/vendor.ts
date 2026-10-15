@@ -18,7 +18,11 @@
 //                                                  (вне сайта — сразу, иначе запросом на проверку)
 //   POST   /vendor/listings/:id/contact-change/withdraw → 200 VendorListing (отозвать запрос)
 //   GET    /vendor/listings/:id/calendar?month=    → 200 VendorCalendar (+ ETag версии)
+//   PUT    /vendor/listings/:id/calendar           If-Match: <версия> { busy, free, busyParts, freeParts }
+//                                                  → 200 VendorCalendarBatchResult (несколько дней сразу)
 //   PUT    /vendor/listings/:id/calendar/capacity  If-Match: <версия> { parallelCapacity } → 200
+//   PUT    /vendor/listings/:id/day-sessions       If-Match: <версия> DaySessionsInput → 200 DaySessionsChange
+//                                                  (время работы витрины — только владелец)
 //   PUT    /vendor/listings/:id/calendar/:day[?part=] If-Match: <версия> → 200 VendorCalendarChange
 //   DELETE /vendor/listings/:id/calendar/:day[?part=] If-Match: <версия> → 200 VendorCalendarChange
 //   POST   /vendor/listings/:id/photos             файл, X-No-Faces: 1 | X-Photo-Consent: 1 → 201 VendorPhoto
@@ -37,8 +41,9 @@
 // Чужая заявка или листинг — 404, как несуществующие. Клиент или сотрудник с
 // сессией — 403, без сессии — 401. Фото, изменения витрины и предложения правок — только владелец
 // кабинета (vendor/access.ts): сотруднику площадки — 403 vendor_owner_required. Услуги,
-// отправка витрины на проверку и её отзыв, порядок и обложка фото, публичные контакты — тоже
-// только владелец; календарь и сколько заказов одновременно — любой пользователь.
+// отправка витрины на проверку и её отзыв, порядок и обложка фото, публичные контакты, время
+// работы витрины — тоже только владелец; календарь и сколько заказов одновременно — любой
+// пользователь.
 
 import { MAX_UPLOAD_BYTES } from "@bayramm/media";
 import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
@@ -55,13 +60,16 @@ import { invalidInput, isUuid } from "../staff/input";
 import { listingPhotoStorage } from "../storage/supabase";
 import { assertVendorCan } from "../vendor/access";
 import {
+  applyBatch,
   getCalendar,
   markBusy,
   markFree,
+  parseBatch,
   parseCapacity,
   parseDay,
   parsePart,
   setCapacity,
+  setDaySessions,
 } from "../vendor/calendar";
 import { parseContacts, saveContacts, withdrawContacts } from "../vendor/contacts";
 import { patchListing } from "../vendor/listing";
@@ -91,6 +99,11 @@ import { submitListing, withdrawListing } from "../vendor/submit";
 // Тела здесь крошечные: статус с причиной, язык
 const limitBody = bodyLimit({
   maxSize: 4 * 1024,
+  onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),
+});
+// Несколько дней календаря сразу: до 400 отметок «день · часть»
+const limitBatch = bodyLimit({
+  maxSize: 32 * 1024,
   onError: (c) => c.json(new ApiError(413, "payload_too_large", "Request body is too large").toBody(), 413),
 });
 // Кроме правки карточки: два описания по 4000 символов и поля витрины — как в панели
@@ -208,6 +221,26 @@ vendor.get("/listings/:id/calendar", async (c) => {
   const calendar = await getCalendar(c.var.db, vendorOf(c), id, c.req.query("month"));
   c.header("ETag", calendarEtag(calendar.version));
   return c.json(calendar);
+});
+
+// Несколько дней сразу (закрыть или открыть день или часть) — от версии (If-Match)
+vendor.put("/listings/:id/calendar", limitBatch, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const version = versionFromIfMatch(c.req.header("If-Match"));
+  const batch = parseBatch(await readJson(c.req.raw));
+  const result = await applyBatch(c.var.db, vendorOf(c), id, batch, version);
+  c.header("ETag", calendarEtag(result.version));
+  return c.json(result);
+});
+
+// Время работы витрины (одно мероприятие в день или несколько, части, окна, заказов
+// одновременно) — часть календаря: от версии (If-Match), только владелец
+vendor.put("/listings/:id/day-sessions", limitBody, async (c) => {
+  const id = idOrNotFound(c.req.param("id"));
+  const version = versionFromIfMatch(c.req.header("If-Match"));
+  const change = await setDaySessions(c.var.db, vendorOf(c), id, await readJson(c.req.raw), version);
+  c.header("ETag", calendarEtag(change.version));
+  return c.json(change);
 });
 
 // Сколько заказов витрина берёт одновременно — часть календаря: от версии (If-Match)

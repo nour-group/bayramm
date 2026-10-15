@@ -16,6 +16,7 @@ export function calendarTexts(t: Dict): CalendarTexts {
     busy: t.legBusy,
     partial: t.legPartial,
     selected: t.legSel,
+    today: t.today,
     summary: (busyDays) => (busyDays ? t.calBusyN(busyDays) : t.calAllFree),
   };
 }

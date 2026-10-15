@@ -135,6 +135,18 @@ const LISTING: ListingDetail = {
   missingAttributes: [],
   videoLinks: [],
   parallelCapacity: 1,
+  daySessions: {
+    mode: "parts",
+    parts: ["morning", "day", "evening"],
+    windows: {
+      morning: { from: "05:00", to: "11:00" },
+      day: { from: "11:00", to: "17:00" },
+      evening: { from: "17:00", to: "24:00" },
+    },
+    custom: null,
+    parallelCapacity: 1,
+  },
+  calendarVersion: 0,
   services: [],
   photos: [],
   blockers: { review: [], active: [] },
@@ -1384,14 +1396,38 @@ describe("карточка: убрать телефон", () => {
   });
 });
 
-/** Занятость витрины с режимом «день целиком» (зал): частей дня и договорённостей нет */
-const DAY_MODE = { mode: "day", parallelCapacity: 1, parts: [], bookings: [] } as const;
+/** Занятость зала: несколько мероприятий в день, отметок частей и договорённостей нет */
+const DAY_MODE = {
+  mode: "parts",
+  parallelCapacity: 1,
+  sessions: {
+    mode: "parts",
+    parts: ["morning", "day", "evening"],
+    windows: {
+      morning: { from: "06:00", to: "11:00" },
+      day: { from: "12:00", to: "17:00" },
+      evening: { from: "18:00", to: "24:00" },
+    },
+    custom: null,
+    parallelCapacity: 1,
+  },
+  parts: [],
+  bookings: [],
+  requests: [],
+} as const;
 
 describe("карточка: занятые дни", () => {
   const MANAGER: StaffMe["permissions"] = ["catalog.read", "listings.write", "listings.submit"];
   const AVAILABILITY = `/api/staff/listings/${LISTING_ID}/availability`;
   const todayButton = () => container.querySelector<HTMLButtonElement>(".cal-today");
   const puts = () => calls.filter((c) => c.method === "PUT" && c.url === AVAILABILITY);
+  const busy = (el: Element | null | undefined) => el?.classList.contains("cal-busy") ?? false;
+  /** Открыть день (если ещё не открыт) и нажать «Закрыть / Открыть весь день» */
+  const toggleToday = async () => {
+    if (todayButton()?.getAttribute("aria-pressed") !== "true") await act(async () => todayButton()?.click());
+    await act(async () => container.querySelector<HTMLButtonElement>(".day-part-row button")?.click());
+    await settle();
+  };
 
   it("отметка уходит с версией календаря; следующая — с версией из ответа", async () => {
     mockApi(staff("manager", MANAGER), {
@@ -1416,18 +1452,20 @@ describe("карточка: занятые дни", () => {
       },
     });
     await mount(`/listings/${LISTING_ID}`);
-    expect(todayButton()?.getAttribute("aria-pressed")).toBe("false");
-
+    expect(busy(todayButton())).toBe(false);
+    // День открывается: «Весь день» и рабочие части с окнами
     await act(async () => todayButton()?.click());
-    await settle();
+    expect(text()).toContain(t.closeWholeDay);
+    expect(text()).toContain("Утро 06:00–11:00");
+
+    await toggleToday();
     expect(puts()[0]?.body).toEqual({ version: 4, busy: [tashkentToday()] });
-    expect(todayButton()?.getAttribute("aria-pressed")).toBe("true");
+    expect(busy(todayButton())).toBe(true);
 
     // Снять отметку: версия — из ответа на первую правку
-    await act(async () => todayButton()?.click());
-    await settle();
+    await toggleToday();
     expect(puts()[1]?.body).toEqual({ version: 5, free: [tashkentToday()] });
-    expect(todayButton()?.getAttribute("aria-pressed")).toBe("false");
+    expect(busy(todayButton())).toBe(false);
     expect(container.querySelector("[role=alert]")).toBeNull();
   });
 
@@ -1466,8 +1504,8 @@ describe("карточка: занятые дни", () => {
     await settle();
     expect(puts()[0]?.body).toMatchObject({ version: 4 });
     expect((puts()[0]?.body as { busy?: string[] } | undefined)?.busy).toHaveLength(3);
-    expect(first?.getAttribute("aria-pressed")).toBe("true");
-    expect(third?.getAttribute("aria-pressed")).toBe("true");
+    expect(busy(first)).toBe(true);
+    expect(busy(third)).toBe(true);
     // Выбор закончен — снова обычный режим
     expect(container.querySelector(".cal-chosen")).toBeNull();
   });
@@ -1493,18 +1531,71 @@ describe("карточка: занятые дни", () => {
       ),
     });
     await mount(`/listings/${LISTING_ID}`);
-    await act(async () => todayButton()?.click());
-    await settle();
+    await toggleToday();
     expect(puts()[0]?.body).toMatchObject({ version: 4 });
     expect(reads).toBe(2);
     expect(container.querySelector("[role=alert]")?.textContent).toBe(t.api.calendar_conflict);
     // Показан актуальный месяц: день занят вендором. Дни снова активны — снять можно
     // заново, уже от новой версии
-    expect(todayButton()?.getAttribute("aria-pressed")).toBe("true");
+    expect(busy(todayButton())).toBe(true);
     expect(todayButton()?.disabled).toBe(false);
-    await act(async () => todayButton()?.click());
-    await settle();
+    await toggleToday();
     expect(puts()[1]?.body).toEqual({ version: 9, free: [tashkentToday()] });
+  });
+});
+
+describe("карточка: время работы", () => {
+  const MANAGER: StaffMe["permissions"] = ["catalog.read", "listings.write", "listings.submit"];
+  const AVAILABILITY = `/api/staff/listings/${LISTING_ID}/availability`;
+  const SESSIONS = `/api/staff/listings/${LISTING_ID}/day-sessions`;
+  const dialogButton = (name: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+      (b) => b.textContent?.trim() === name,
+    );
+  const rowLabel = (name: string) =>
+    [...document.querySelectorAll<HTMLLabelElement>('[role="dialog"] .sessions-row label')].find(
+      (l) => l.textContent?.trim() === name,
+    );
+
+  it("сразу, от версии календаря: части дня и окна; часть с заявками — словами, сколько их", async () => {
+    let answer = 0;
+    mockApi(staff("manager", MANAGER), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({ ...LISTING, calendarVersion: 6 }),
+      [`GET ${AVAILABILITY}`]: json({
+        ...DAY_MODE,
+        from: "2026-09-01",
+        to: "2026-09-30",
+        busy: [],
+        version: 6,
+      }),
+      [`PUT ${SESSIONS}`]: (body) =>
+        answer++ === 0
+          ? json(
+              {
+                error: { code: "part_in_use", message: "x", details: ["day"] },
+                inUse: [{ part: "day", count: 3 }],
+              },
+              409,
+            )(body)
+          : json({ sessions: LISTING.daySessions, version: 7 })(body),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(container.querySelector('[aria-labelledby="sessions-title"]')?.textContent).toContain(
+      t.sessionsModeParts,
+    );
+    await act(async () => button(t.sessionsEdit)?.click());
+    await act(async () => rowLabel("День")?.click());
+    await act(async () => dialogButton(t.save)?.click());
+    await settle();
+    const puts = calls.filter((c) => c.method === "PUT" && c.url === SESSIONS);
+    expect(puts[0]?.body).toMatchObject({ version: 6, mode: "parts", parts: ["morning", "evening"] });
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe(
+      "Убрать «день» нельзя: на эту часть 3 будущие заявки.",
+    );
+    await act(async () => rowLabel("День")?.click());
+    await act(async () => dialogButton(t.save)?.click());
+    await settle();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 });
 
@@ -1631,7 +1722,7 @@ describe("заявки", () => {
     occasionCode: "toy",
     eventDate: "2026-11-10",
     guests: 150,
-    dayPart: null,
+    dayParts: [],
     details: {},
     createdAt: "2026-09-28T18:00:00.000Z",
     listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },
@@ -2021,7 +2112,7 @@ describe("переходы между объектами", () => {
     occasionCode: "toy",
     eventDate: "2026-11-10",
     guests: 150,
-    dayPart: null,
+    dayParts: [],
     details: {},
     createdAt: "2026-09-28T18:00:00.000Z",
     listing: { id: LISTING_ID, name: "Oqsaroy Hall", categoryCode: "hall" },

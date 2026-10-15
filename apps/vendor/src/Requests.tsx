@@ -27,7 +27,7 @@ import {
 import { categoryConfig, chosenServices, detailRows } from "@bayramm/shared/categories";
 import { type MouseEvent, useEffect, useState } from "react";
 import { api } from "./api";
-import { categoryName, partName } from "./category";
+import { categoryName, partsLabel } from "./category";
 import { formatBudget, formatDate, formatDuration, formatGuests, slaView, tashkentTime } from "./format";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
@@ -129,8 +129,13 @@ function RequestCard({ item, t, lang, now, showListing, navigate, selected }: Ca
           <StatusChip status={item.status} late={late} t={t} lang={lang} />
         </span>
         <span className="rq-meta">
-          {textOf(t, `occ_${item.occasionCode}`)} · {formatDate(item.eventDate, t, true)}
-          {item.dayPart ? ` · ${partName(t, item.dayPart).toLowerCase()}` : ""}
+          {[
+            formatDate(item.eventDate, t, true),
+            partsLabel(t, item.listing.categoryCode, item.dayParts),
+            textOf(t, `occ_${item.occasionCode}`),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </span>
         {showListing ? (
           <span className="rq-vitrina">

@@ -12,7 +12,7 @@
    комментарий — пока согласие действует и заявка не отозвана. Телефон клиента
    отдаётся только в карточке заявки, и каждое такое чтение записывается в журнал. */
 
-import type { AvailabilityMode, DayPart } from "../categories/types";
+import type { AvailabilityMode, DayPart, DaySessions, PartMode } from "../categories/types";
 import type { AttributeValue } from "../categories/validate";
 import type {
   DeclineReason,
@@ -30,6 +30,7 @@ export * from "./services";
 export type {
   AvailabilityMode,
   DayPart,
+  DaySessions,
   DeclineReason,
   ListingAttributes,
   Locale,
@@ -168,8 +169,8 @@ export interface VendorRequestItem {
   readonly eventDate: string;
   /** Число гостей; null — категория его не спрашивает или клиент не указал */
   readonly guests: number | null;
-  /** Часть дня (режим parts); null — у категории её нет */
-  readonly dayPart: DayPart | null;
+  /** Части дня заявки; пусто — весь день (у категорий без календаря — не про время) */
+  readonly dayParts: readonly DayPart[];
   /**
    * Поля заявки категории: часы, машины, кг, выбранные услуги и опции (как были при подаче).
    * Без персональных данных; краткая запись строками — detailsSummary из @bayramm/shared/categories
@@ -277,7 +278,7 @@ export interface BusyDay {
   readonly requestId: string | null;
 }
 
-/** Отметка «часть дня занята» (режим parts) */
+/** Отметка «часть дня занята» */
 export interface BusyPart {
   readonly day: string;
   readonly part: DayPart;
@@ -285,26 +286,49 @@ export interface BusyPart {
   readonly requestId: string | null;
 }
 
-/** Договорённости (заявки deal) на часть дня — сколько мест из parallelCapacity занято */
+/**
+ * Договорённости (заявки deal) на часть дня — сколько мест из parallelCapacity занято. Заявка на
+ * весь день и любая заявка витрины с одним мероприятием в день — в каждой части
+ */
 export interface PartBookings {
   readonly day: string;
   readonly part: DayPart;
   readonly count: number;
 }
 
+/** Открытая заявка или договорённость на день календаря — ссылка из дня на заявку */
+export interface CalendarRequest {
+  readonly id: string;
+  readonly publicNo: number;
+  readonly day: string;
+  /** Части заявки; пусто — весь день */
+  readonly parts: readonly DayPart[];
+  readonly status: RequestStatus;
+}
+
+/** День и часть дня — для правки нескольких дней сразу */
+export interface DayPartRef {
+  readonly day: string;
+  readonly part: DayPart;
+}
+
 /**
  * GET /vendor/listings/:id/calendar?month=YYYY-MM → 200 (по умолчанию — текущий месяц).
- * requestDays — даты событий открытых заявок и сделок этого листинга в месяце.
- * Режим parts (фото и видео, кортеж, декор): день — утро, день, вечер. Часть занята, если
- * она в parts или договорённостей на неё (bookings) не меньше parallelCapacity; день занят,
- * если он в busy (весь день) или заняты все три части. У остальных режимов parts и bookings
- * пустые; у режима lead (цветы, торты, подарки) календарь клиенту не показывается.
+ * requestDays — даты событий открытых заявок и сделок этого листинга в месяце, requests — сами
+ * заявки с частями дня (без данных клиента).
+ * День делится на утро, день и вечер (sessions: в каких частях витрина работает, окна, одно
+ * мероприятие в день или несколько). Часть занята, если она в parts, день в busy или
+ * договорённостей на неё (bookings) не меньше parallelCapacity; в режиме whole занятая часть —
+ * весь день. День занят, если заняты все рабочие части. У режима lead (цветы, торты, подарки)
+ * календарь клиенту не показывается, parts и bookings пустые.
  */
 export interface VendorCalendar {
   readonly listingId: string;
   readonly mode: AvailabilityMode;
-  /** Сколько заказов витрина берёт одновременно (экипажи, машины) */
+  /** Сколько заказов витрина берёт одновременно (то же, что sessions.parallelCapacity) */
   readonly parallelCapacity: number;
+  /** Время работы витрины */
+  readonly sessions: DaySessions;
   readonly parts: readonly BusyPart[];
   readonly bookings: readonly PartBookings[];
   readonly month: string;
@@ -314,6 +338,7 @@ export interface VendorCalendar {
   readonly maxDay: string;
   readonly busy: readonly BusyDay[];
   readonly requestDays: readonly string[];
+  readonly requests: readonly CalendarRequest[];
   /**
    * Версия календаря площадки (всех месяцев): растёт на каждой правке, кто бы её ни
    * сделал — партнёр, менеджер или отказ «занято». Правка передаёт её в If-Match
@@ -328,7 +353,8 @@ export const CALENDAR_VERSION_HEADER = "If-Match";
  * PUT    /vendor/listings/:id/calendar/:day[?part=morning|day|evening] → 200: день (или часть
  *        дня) занят (уже занятый — как есть).
  * DELETE /vendor/listings/:id/calendar/:day[?part=…] → 200: свободен (busy — null).
- * part — только у режима parts (иначе 422 invalid_input ["part"]); без part — весь день.
+ * part — только рабочая часть витрины с несколькими мероприятиями в день (иначе 422
+ * invalid_input ["part"]); без part — весь день.
  * Обе — с заголовком If-Match: <version> из календаря или прошлой правки; без него —
  * 428 version_required. Календарь с тех пор изменили — 409 calendar_conflict: перечитать
  * и показать человеку, что изменилось. День, закрытый сотрудником, — 403
@@ -345,6 +371,32 @@ export interface VendorCalendarChange {
 }
 
 /**
+ * PUT /vendor/listings/:id/calendar { busy, free, busyParts, freeParts }, If-Match: <version> →
+ * 200 VendorCalendarBatchResult: несколько дней одной правкой (не больше 400 отметок) — закрыть
+ * или открыть весь день или одну часть, например все вечера суббот месяца. Части — только
+ * рабочие (иначе 422 invalid_input ["busyParts"]); прошедший день или дальше maxDay — 422
+ * date_out_of_range. Отметки, поставленные менеджером, «открыть» не снимает — они в skipped
+ */
+export interface VendorCalendarBatch {
+  readonly busy?: readonly string[];
+  readonly free?: readonly string[];
+  readonly busyParts?: readonly DayPartRef[];
+  readonly freeParts?: readonly DayPartRef[];
+}
+
+export interface VendorCalendarBatchResult {
+  /** Первый и последний день правки: отметки и договорённости ниже — на этом отрезке */
+  readonly from: string;
+  readonly to: string;
+  readonly busy: readonly BusyDay[];
+  readonly parts: readonly BusyPart[];
+  readonly bookings: readonly PartBookings[];
+  /** Сколько отметок менеджера осталось на месте («открыть» их не снимает) */
+  readonly skipped: number;
+  readonly version: number;
+}
+
+/**
  * PUT /vendor/listings/:id/calendar/capacity { parallelCapacity } (1–50), If-Match: <version>
  * → 200 VendorCapacityChange. Сколько заказов витрина берёт одновременно — часть календаря:
  * менять может любой пользователь вендора, версия календаря растёт
@@ -356,6 +408,35 @@ export interface VendorCapacityInput {
 export interface VendorCapacityChange {
   readonly parallelCapacity: number;
   readonly version: number;
+}
+
+/**
+ * PUT /vendor/listings/:id/day-sessions DaySessionsInput, If-Match: <версия календаря> → 200
+ * DaySessionsChange. «Время работы» витрины: одно мероприятие в день или несколько, рабочие
+ * части, свои окна и заказов одновременно — сразу, без модерации, как календарь. Меняет только
+ * владелец кабинета (сотрудник площадки — 403 vendor_owner_required). Ошибки полей — 422
+ * invalid_input (details — mode, parts, windows.<часть>, parallelCapacity). Убрать часть, на
+ * которую есть будущие заявки (новые, в работе, договорённости), нельзя — 409 part_in_use
+ * { inUse: [{ part, count }] }; перейти на одно мероприятие в день можно всегда
+ */
+export interface DaySessionsInput {
+  readonly mode: PartMode;
+  readonly parts: readonly DayPart[];
+  /** Свои окна частей («ЧЧ:ММ»); null — окна категории */
+  readonly windows: Readonly<Partial<Record<DayPart, { readonly from: string; readonly to: string }>>> | null;
+  readonly parallelCapacity: number;
+}
+
+export interface DaySessionsChange {
+  readonly sessions: DaySessions;
+  /** Новая версия календаря */
+  readonly version: number;
+}
+
+/** Тело 409 part_in_use: сколько будущих заявок в каждой убираемой части */
+export interface PartInUse {
+  readonly part: DayPart;
+  readonly count: number;
 }
 
 // ── площадка ───────────────────────────────────────────────────────────────
@@ -501,8 +582,12 @@ export interface VendorListing {
   readonly missingAttributes: readonly string[];
   /** Ссылки на видео (YouTube, Instagram) */
   readonly videoLinks: readonly string[];
-  /** Сколько заказов витрина берёт одновременно (режим parts) */
+  /** Сколько заказов витрина берёт одновременно */
   readonly parallelCapacity: number;
+  /** Время работы витрины (режим, рабочие части, окна, заказов одновременно) */
+  readonly daySessions: DaySessions;
+  /** Версия календаря витрины: правка времени работы идёт от неё (If-Match) */
+  readonly calendarVersion: number;
   /** Услуги витрины по порядку — все статусы */
   readonly services: readonly ListingService[];
   readonly photos: readonly VendorPhoto[];

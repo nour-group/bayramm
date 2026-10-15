@@ -83,12 +83,11 @@ test("вторая витрина в другой категории: катег
   expect(api.vitrinas).toEqual([{ categoryCode: "photo" }]);
   await expect(page.locator(".listing-top .cat-chip")).toHaveText("Фото и видео");
   await expect(page.getByRole("heading", { name: t.listingDataSections.videos })).toBeVisible();
-  // «Заказов одновременно» — в шапке календаря, у занятости по частям дня
-  await expect(
-    page.getByRole("region", { name: t.availability }).getByRole("spinbutton", {
-      name: t.listingDataSections.occupancy,
-    }),
-  ).toBeVisible();
+  // «Заказов одновременно», части и окна — в «Времени работы» рядом с календарём
+  const sessions = page.getByRole("region", { name: t.sessionsTitle });
+  await expect(sessions).toContainText(t.listingDataSections.occupancy);
+  await expect(sessions).toContainText("Утро 05:00–11:00");
+  await expect(page.getByRole("region", { name: t.availability })).toBeVisible();
   // Портфолио: правило и согласие людей на фото (или «лиц нет») — при загрузке, ничего не отмечено заранее
   await expect(page.getByRole("radiogroup", { name: t.photoAckLabel })).toHaveCount(0);
   await page.getByRole("button", { name: t.photosAdd }).click();
@@ -345,29 +344,70 @@ test("услуга партнёра у черновика — в очереди 
   expect(api.unexpected).toEqual([]);
 });
 
-test("части дня: вечер — одна машина из двух; отметить утро и весь день — с версией календаря", async ({
+test("части дня: вечер — одна машина из двух и ссылка на заявку; закрыть утро и весь день — с версией календаря", async ({
   page,
 }) => {
   const api = await start(page);
   await page.goto(`/listings/${CAR_LISTING_ID}`);
-  await expect(page.getByRole("spinbutton", { name: t.listingDataSections.occupancy })).toHaveValue("2");
+  // Время работы — блоком витрины: несколько мероприятий, части с окнами, заказов одновременно
+  const sessions = page.getByRole("region", { name: t.sessionsTitle });
+  await expect(sessions).toContainText(t.sessionsModeParts);
+  await expect(sessions).toContainText("Утро 05:00–11:00, День 11:00–17:00, Вечер 17:00–24:00");
   const day = page.locator(".cal-day").filter({ hasText: /^10$/ });
   await day.click();
   const parts = page.getByRole("region", { name: t.pickedDay("10 октября") });
-  await expect(parts.locator(".day-part-row").filter({ hasText: "Вечер" })).toContainText(
-    t.partBookings(1, 2),
-  );
+  const rows = parts.locator(".day-part-row");
+  // Весь день — «частично занят»: на вечер договорённость, место ещё есть
+  await expect(rows.first()).toContainText(t.wholePartial);
+  const evening = rows.filter({ hasText: "Вечер" });
+  await expect(evening).toContainText("17:00–24:00");
+  await expect(evening).toContainText(t.partSeats(1, 2));
+  await expect(evening.getByRole("link")).toContainText("1052");
   await expectNoAxeViolations(page, "части дня");
   await expectHitAreas(page, "части дня", CONTROLS);
 
-  await act(parts, t.markBusy, "Утро").click();
+  await parts.getByRole("button", { name: `${t.closePart}: Утро` }).click();
   await expect(day).toHaveClass(/cal-partial/);
-  await act(parts, t.markBusy, t.wholeDay).click();
+  await parts.getByRole("button", { name: t.closeWholeDay }).click();
   await expect(day).toHaveClass(/cal-busy/);
   expect(api.calendar).toEqual([
     { version: 0, busyParts: [{ day: BOOKED_DAY, part: "morning" }] },
     { version: 1, busy: [BOOKED_DAY] },
   ]);
+
+  // Время работы: вечер не убрать — на него заявка; утро — с 07:00, машин — три
+  await sessions.getByRole("button", { name: t.sessionsEdit }).click();
+  const form = page.getByRole("dialog", { name: t.sessionsTitle });
+  await expectNoAxeViolations(page, "время работы");
+  await expectHitAreas(page, "время работы", CONTROLS);
+  await form.getByRole("checkbox", { name: "Вечер" }).uncheck();
+  await form.getByRole("button", { name: t.save, exact: true }).click();
+  await expect(form.getByRole("alert")).toHaveText(t.sessionsInUse("вечер", 1));
+  await form.getByRole("checkbox", { name: "Вечер" }).check();
+  await form.getByRole("button", { name: t.sessionsFrom("Утро") }).click();
+  await page.getByRole("option", { name: "07:00", exact: true }).click();
+  await form.getByRole("button", { name: `${t.listingDataSections.occupancy} +1` }).click();
+  await form.getByRole("button", { name: t.save, exact: true }).click();
+  await expect(form).toHaveCount(0);
+  // От версии календаря после двух правок дней — витрину ради этого не перечитывали
+  expect(api.daySessions).toEqual([
+    {
+      version: 2,
+      mode: "parts",
+      parts: ["morning", "day"],
+      windows: null,
+      parallelCapacity: 2,
+    },
+    {
+      version: 2,
+      mode: "parts",
+      parts: ["morning", "day", "evening"],
+      windows: { morning: { from: "07:00", to: "11:00" } },
+      parallelCapacity: 3,
+    },
+  ]);
+  await expect(sessions).toContainText("Утро 07:00–11:00");
+  await expect(sessions).toContainText("3");
   expect(api.unexpected).toEqual([]);
 });
 
@@ -381,15 +421,18 @@ test("заявки: фильтр по категории; заявка корт�
       .getByRole("radiogroup", { name: t.colCategory })
       .getByRole("radio", { name: "Кортеж" })
       .check();
+    await sheet.getByRole("radiogroup", { name: t.partFilter }).getByRole("radio", { name: "Вечер" }).check();
     await sheet.getByRole("button", { name: t.done }).click();
   } else {
     await pick(page, t.colCategory, "Кортеж");
+    await pick(page, t.partFilter, "Вечер");
   }
   await expect(page.getByRole("link", { name: t.requestNo(1051) })).toHaveCount(0);
+  await expect.poll(() => api.queries.at(-1)).toContain("part=evening");
   expect(api.queries.at(-1)).toContain("category=car");
   await page.getByRole("link", { name: t.requestNo(1052) }).click();
   await expect(page).toHaveURL(`/requests/${CAR_REQUEST_ID}`);
-  await expect(page.getByText("Вечер · 17:00–24:00")).toBeVisible();
+  await expect(page.getByRole("definition").filter({ hasText: /^Вечер$/ })).toBeVisible();
   const details = page.getByRole("region", { name: t.requestWhatWhen });
   await expect(details).toContainText("Сколько машин");
   await expect(details).toContainText("Премиум");

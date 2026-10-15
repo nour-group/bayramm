@@ -2,7 +2,11 @@ import type { Dictionaries } from "@bayramm/shared/api";
 import type {
   BusyDay,
   BusyPart,
+  CalendarRequest,
   DayPart,
+  DayPartRef,
+  DaySessions,
+  DaySessionsChange,
   ListingRevisionPayload,
   ListingService,
   PartBookings,
@@ -10,6 +14,8 @@ import type {
   ServiceChanges,
   VendorAttention,
   VendorCalendar,
+  VendorCalendarBatch,
+  VendorCalendarBatchResult,
   VendorCalendarChange,
   VendorContactChange,
   VendorContactsInput,
@@ -30,12 +36,14 @@ import {
   type CategoryConfig,
   categoryConfig,
   categoryTexts,
-  DAY_PARTS,
+  daySessionsOf,
+  defaultDaySessions,
   mergeAttributes,
   missingAttributes,
   type ServiceValues,
   serviceType,
   validateAttributePatch,
+  validateDaySessions,
   validateServiceInput,
   validateVideoLinks,
 } from "@bayramm/shared/categories";
@@ -53,7 +61,9 @@ import { APPS, accountMe, BOT, type HubWatch, METHODS, VENDOR_MEMBERSHIP } from 
    правки и календарь.
 
    Как у API: правка календаря — только с If-Match от текущей версии (нет — 428, устарела —
-   409 calendar_conflict); части дня (?part=) — только у режима parts; карточку (фото, правки,
+   409 calendar_conflict); части дня (?part=, правка нескольких дней PUT …/calendar) — только
+   рабочие части витрины с несколькими мероприятиями в день; «Время работы» (PUT …/day-sessions) —
+   владелец, от версии календаря, часть с будущими заявками не убрать (409 part_in_use); карточку (фото, правки,
    услуги) меняет только владелец кабинета — сотруднику площадки (role: "member") 403
    vendor_owner_required. Услуги проверяются теми же правилами (validateServiceInput); правка
    услуги на витрине опубликованной карточки — предложением. Фото — по правилу категории:
@@ -117,6 +127,8 @@ export interface VendorApi {
   readonly calendars: Map<string, FakeCalendar>;
   /** Правки календаря, как пришли: «PUT 2026-10-20 If-Match: 1», «PUT 2026-10-24?part=evening If-Match: 1» */
   readonly calendarWrites: string[];
+  /** Правки нескольких дней сразу: тела PUT …/calendar, как пришли */
+  readonly batches: VendorCalendarBatch[];
   /** Фото площадки, как в базе (порядок — порядок показа) */
   readonly photos: VendorPhoto[];
   /** Что пришло в POST /photos: витрина, тип, размер и подтверждения «лиц нет» и «согласие» */
@@ -158,6 +170,8 @@ export interface VendorApi {
 export interface FakeCalendar {
   version: number;
   capacity: number;
+  /** Время работы витрины (заказов одновременно — capacity) */
+  sessions: DaySessions;
   readonly busy: Map<string, BusyDay>;
   /** Ключ — «день/часть» */
   readonly parts: Map<string, BusyPart>;
@@ -179,7 +193,7 @@ function item(
     occasionCode: "toy",
     eventDate: "2026-10-24",
     guests: 180,
-    dayPart: null,
+    dayParts: [],
     details: {},
     budgetMinUzs: 30_000_000,
     budgetMaxUzs: 50_000_000,
@@ -300,6 +314,9 @@ const LISTING: VendorListing = {
   missingAttributes: [],
   videoLinks: [],
   parallelCapacity: 1,
+  // Время работы и версия календаря — живые, из календаря витрины (listingView)
+  daySessions: defaultDaySessions(categoryConfig("hall") as CategoryConfig),
+  calendarVersion: 1,
   services: [],
 };
 
@@ -567,6 +584,7 @@ export async function mockVendorApi(
   const hallCalendar: FakeCalendar = {
     version: 1,
     capacity: 1,
+    sessions: LISTING.daySessions,
     busy: new Map(),
     parts: new Map(),
     bookings: [],
@@ -580,6 +598,7 @@ export async function mockVendorApi(
     calendar: hallCalendar,
     calendars: new Map([[LISTING_ID, hallCalendar]]),
     calendarWrites: [],
+    batches: [],
     photos: [...LISTING.photos],
     uploads: [],
     revisions: hallRevisions,
@@ -612,6 +631,10 @@ export async function mockVendorApi(
       state.calendars.set(card.id, {
         version: 1,
         capacity: card.parallelCapacity,
+        sessions: {
+          ...defaultDaySessions(categoryConfig(card.categoryCode) as CategoryConfig),
+          parallelCapacity: card.parallelCapacity,
+        },
         busy: new Map(),
         parts: new Map(),
         bookings: [],
@@ -708,7 +731,7 @@ export async function mockVendorApi(
       ...item(REQUEST_CAR, 1060, 2, {
         listing: { id: CAR_ID, name: "Kortej Premium", categoryCode: "car" },
         guests: null,
-        dayPart: "evening",
+        dayParts: ["evening"],
         eventDate: "2026-10-24",
         contactName: "Дильноза",
         budgetMinUzs: null,
@@ -776,8 +799,15 @@ export async function mockVendorApi(
     if (!card) return null;
     const services = state.services.get(id) ?? [];
     const contactChange = contactChanges.get(id) ?? null;
+    const calendar = state.calendars.get(id);
+    const sessions = calendar
+      ? { ...calendar.sessions, parallelCapacity: calendar.capacity }
+      : defaultDaySessions(categoryConfig(card.categoryCode) as CategoryConfig);
     return {
       ...card,
+      parallelCapacity: sessions.parallelCapacity,
+      daySessions: sessions,
+      calendarVersion: calendar?.version ?? 1,
       photos: photosOf.get(id) ?? [],
       services,
       // Сотрудник площадки видит, что запрос ждёт, но не номера
@@ -1324,7 +1354,28 @@ export async function mockVendorApi(
 
     // ── календарь ────────────────────────────────────────────────────────────
     const calendarState = state.calendars.get(listingId);
-    const mode = category?.availability ?? "day";
+    const mode = category?.availability ?? "parts";
+    const sessionsOf = (cal: FakeCalendar): DaySessions => ({
+      ...cal.sessions,
+      parallelCapacity: cal.capacity,
+    });
+    /** Часть, которую можно отметить: рабочая у витрины с несколькими мероприятиями в день */
+    const workingPart = (cal: FakeCalendar, part: string) =>
+      mode === "parts" &&
+      cal.sessions.mode === "parts" &&
+      (cal.sessions.parts as readonly string[]).includes(part);
+    /** Открытые заявки и договорённости витрины — ссылки из дня календаря */
+    const OPEN = ["new", "viewed", "contacted", "deal"];
+    const openRequests = (): CalendarRequest[] =>
+      [...requests.values()]
+        .filter((r) => r.listing.id === listingId && OPEN.includes(r.status))
+        .map((r) => ({
+          id: r.id,
+          publicNo: r.publicNo,
+          day: r.eventDate,
+          parts: r.dayParts,
+          status: r.status,
+        }));
     if (card && calendarState && rest === "/calendar" && method === "GET") {
       // Срок заказа вместо календаря: кабинет его не запрашивает
       if (mode === "lead") {
@@ -1345,8 +1396,10 @@ export async function mockVendorApi(
         version: calendarState.version,
         mode,
         parallelCapacity: calendarState.capacity,
+        sessions: sessionsOf(calendarState),
         parts: [...calendarState.parts.values()].filter((p) => p.day.startsWith(month)),
         bookings: calendarState.bookings.filter((b) => b.day.startsWith(month)),
+        requests: openRequests().filter((r) => r.day.startsWith(month)),
       };
       return json(route, 200, calendar);
     }
@@ -1369,6 +1422,95 @@ export async function mockVendorApi(
       calendarState.version += 1;
       return json(route, 200, { parallelCapacity: value, version: calendarState.version });
     }
+    // Время работы: только владелец, от версии календаря; часть с будущими заявками не убрать
+    if (card && calendarState && rest === "/day-sessions" && method === "PUT") {
+      state.calendarWrites.push(`PUT day-sessions If-Match: ${request.headers()["if-match"] ?? "—"}`);
+      if (role !== "owner") {
+        state.ownerOnly.push(key);
+        return fail(route, 403, "vendor_owner_required");
+      }
+      const problem = versionCheck();
+      if (problem) return fail(route, problem === "version_required" ? 428 : 409, problem);
+      const config = category as CategoryConfig;
+      const parsed = validateDaySessions(config, request.postDataJSON());
+      if (!parsed.ok) return fail(route, 422, "invalid_input", parsed.errors);
+      const value = parsed.value;
+      if (value.mode === "parts") {
+        const removed = calendarState.sessions.parts.filter((p) => !value.parts.includes(p));
+        const inUse = removed
+          .map((part) => ({
+            part,
+            count: openRequests().filter((r) => r.day >= "2026-10-01" && r.parts.includes(part)).length,
+          }))
+          .filter((p) => p.count > 0);
+        if (inUse.length > 0)
+          return json(route, 409, { error: { code: "part_in_use", message: "part_in_use" }, inUse });
+      }
+      calendarState.sessions = daySessionsOf(config, value);
+      calendarState.capacity = value.parallelCapacity;
+      calendarState.version += 1;
+      const change: DaySessionsChange = {
+        sessions: sessionsOf(calendarState),
+        version: calendarState.version,
+      };
+      return json(route, 200, change);
+    }
+    // Несколько дней одной правкой: закрыть или открыть дни и части; отметки менеджера остаются
+    if (card && calendarState && rest === "/calendar" && method === "PUT") {
+      state.calendarWrites.push(`PUT batch If-Match: ${request.headers()["if-match"] ?? "—"}`);
+      const batch = request.postDataJSON() as VendorCalendarBatch;
+      state.batches.push(batch);
+      if (mode !== "parts") return fail(route, 422, "invalid_input", ["busy"]);
+      if ((batch.busyParts ?? []).some((p) => !workingPart(calendarState, p.part)))
+        return fail(route, 422, "invalid_input", ["busyParts"]);
+      const problem = versionCheck();
+      if (problem) return fail(route, problem === "version_required" ? 428 : 409, problem);
+      const past = (day: string) => day < "2026-10-01";
+      const refs = (list: readonly DayPartRef[] | undefined) => list ?? [];
+      if (
+        [...(batch.busy ?? []), ...(batch.free ?? [])].some(past) ||
+        [...refs(batch.busyParts), ...refs(batch.freeParts)].some((p) => past(p.day))
+      )
+        return fail(route, 422, "date_out_of_range", ["busy"]);
+      let skipped = 0;
+      for (const day of batch.busy ?? [])
+        if (!calendarState.busy.has(day))
+          calendarState.busy.set(day, { day, source: "vendor", requestId: null });
+      for (const day of batch.free ?? []) {
+        if (calendarState.busy.get(day)?.source === "staff") skipped++;
+        else calendarState.busy.delete(day);
+      }
+      for (const ref of refs(batch.busyParts)) {
+        const k = `${ref.day}/${ref.part}`;
+        if (!calendarState.parts.has(k))
+          calendarState.parts.set(k, { day: ref.day, part: ref.part, source: "vendor", requestId: null });
+      }
+      for (const ref of refs(batch.freeParts)) {
+        const k = `${ref.day}/${ref.part}`;
+        if (calendarState.parts.get(k)?.source === "staff") skipped++;
+        else calendarState.parts.delete(k);
+      }
+      calendarState.version += 1;
+      const days = [
+        ...(batch.busy ?? []),
+        ...(batch.free ?? []),
+        ...refs(batch.busyParts).map((p) => p.day),
+        ...refs(batch.freeParts).map((p) => p.day),
+      ].sort();
+      const from = days[0] ?? "2026-10-01";
+      const to = days.at(-1) ?? from;
+      const inRange = (item: { day: string }) => item.day >= from && item.day <= to;
+      const result: VendorCalendarBatchResult = {
+        from,
+        to,
+        busy: [...calendarState.busy.values()].filter(inRange),
+        parts: [...calendarState.parts.values()].filter(inRange),
+        bookings: calendarState.bookings.filter(inRange),
+        skipped,
+        version: calendarState.version,
+      };
+      return json(route, 200, result);
+    }
     const dayMatch = /^\/calendar\/(\d{4}-\d{2}-\d{2})$/.exec(rest);
     if (card && calendarState && dayMatch?.[1] && (method === "PUT" || method === "DELETE")) {
       const day = dayMatch[1];
@@ -1377,7 +1519,7 @@ export async function mockVendorApi(
       state.calendarWrites.push(
         `${method} ${day}${part ? `?part=${part}` : ""} If-Match: ${request.headers()["if-match"] ?? "—"}`,
       );
-      if (part !== null && (mode !== "parts" || !(DAY_PARTS as readonly string[]).includes(part)))
+      if (part !== null && !workingPart(calendarState, part))
         return fail(route, 422, "invalid_input", ["part"]);
       const problem = versionCheck();
       if (problem) return fail(route, problem === "version_required" ? 428 : 409, problem);

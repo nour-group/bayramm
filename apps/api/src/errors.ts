@@ -10,7 +10,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 
 export interface ErrorBody {
   error: { code: string; message: string; details?: string[] };
-  /** Рядом с error — только идентификаторы (duplicate_request → existingId) */
+  /** Рядом с error — только идентификаторы и числа (duplicate_request → existingId, part_in_use → inUse) */
   readonly [extra: string]: unknown;
 }
 
@@ -18,14 +18,14 @@ export class ApiError extends Error {
   readonly status: ContentfulStatusCode;
   readonly code: string;
   readonly details: string[] | undefined;
-  readonly extra: Readonly<Record<string, string>> | undefined;
+  readonly extra: Readonly<Record<string, unknown>> | undefined;
 
   constructor(
     status: ContentfulStatusCode,
     code: string,
     message: string,
     details?: string[],
-    extra?: Readonly<Record<string, string>>,
+    extra?: Readonly<Record<string, unknown>>,
   ) {
     super(message);
     this.name = "ApiError";
@@ -205,6 +205,11 @@ export const BUSINESS_RULES: Readonly<Record<string, Rule>> = {
     status: 409,
     code: "contacts_not_live",
     message: "Contacts of a listing that is not on review or on the site are saved directly",
+  },
+  BR039: {
+    status: 409,
+    code: "part_in_use",
+    message: "This part of the day has upcoming requests",
   },
   // 20261015120000_team_contact_undo_contacted.sql
   BR044: {

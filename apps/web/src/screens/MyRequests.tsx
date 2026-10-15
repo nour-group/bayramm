@@ -1,5 +1,6 @@
+import type { Dict } from "@bayramm/shared";
 import type { ClientRequest, DeclineReason, RequestStatus } from "@bayramm/shared/api";
-import { categoryConfig, detailsSummary } from "@bayramm/shared/categories";
+import { categoryConfig, detailsSummary, hasDayParts } from "@bayramm/shared/categories";
 import { requestStatusName } from "@bayramm/shared/i18n/status";
 import { useEffect, useRef, useState } from "react";
 import { isApiError } from "../api/errors";
@@ -130,7 +131,7 @@ function RequestItem({
               categoryName(category, t, lang),
               occasionName(request.occasionCode),
               formatDayMonth(request.eventDate, t),
-              request.dayPart === null ? null : t.dayPartName(request.dayPart),
+              partsText(request, t),
               request.guests === null ? null : t.guestsShort(request.guests),
               t.requestNo(request.publicNo),
             ])}
@@ -278,4 +279,12 @@ export function MyRequests() {
       {body}
     </div>
   );
+}
+
+/** Время заявки: «утро, вечер», «весь день»; у категории без календаря — ничего */
+function partsText(request: ClientRequest, t: Dict): string | null {
+  const config = categoryConfig(request.listing.categoryCode);
+  if (!config || !hasDayParts(config)) return null;
+  if (request.dayParts.length === 0) return t.partWhole.toLowerCase();
+  return request.dayParts.map((p) => t.dayPartName(p)).join(", ");
 }

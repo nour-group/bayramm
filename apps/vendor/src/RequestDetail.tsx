@@ -30,7 +30,7 @@ import { requestStatusName } from "@bayramm/shared/i18n/status";
 import { RadioGroup, useStickyBar, useToast } from "@bayramm/ui/react";
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
-import { categoryName, partName, partWindow, priceText } from "./category";
+import { categoryName, partsLabel, priceText } from "./category";
 import { errorText } from "./errors";
 import { formatBudget, formatDate, formatGuests, formatMoment, formatPhone, slaView } from "./format";
 import { fill, textOf, type VendorDict } from "./i18n";
@@ -283,9 +283,7 @@ export function RequestDetail({
   // Две строки о заявке: когда (дата и часть дня), что (гости, бюджет, повод)
   const when = [
     formatDate(request.eventDate, t, true),
-    request.dayPart
-      ? `${partName(t, request.dayPart).toLowerCase()} ${partWindow(category, request.dayPart)}`
-      : null,
+    partsLabel(t, request.listing.categoryCode, request.dayParts),
   ]
     .filter((part) => part !== null)
     .join(" · ");

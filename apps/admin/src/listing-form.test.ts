@@ -45,6 +45,18 @@ const listing = (categoryCode: string, extra: Partial<ListingDetail> = {}): List
   missingAttributes: [],
   videoLinks: [],
   parallelCapacity: 1,
+  daySessions: {
+    mode: "parts",
+    parts: ["morning", "day", "evening"],
+    windows: {
+      morning: { from: "05:00", to: "11:00" },
+      day: { from: "11:00", to: "17:00" },
+      evening: { from: "17:00", to: "24:00" },
+    },
+    custom: null,
+    parallelCapacity: 1,
+  },
+  calendarVersion: 0,
   services: [],
   photos: [],
   blockers: { review: [], active: [] },
@@ -56,32 +68,12 @@ const listing = (categoryCode: string, extra: Partial<ListingDetail> = {}): List
 });
 
 describe("что спрашивает форма витрины", () => {
-  it("площадка — вместимость и район; фото — видео и заказы одновременно; торты — ничего лишнего", () => {
-    expect(formParts(cfg("hall"))).toEqual({
-      district: true,
-      capacity: true,
-      videos: false,
-      parallel: false,
-    });
-    expect(formParts(cfg("photo"))).toEqual({
-      district: false,
-      capacity: false,
-      videos: true,
-      parallel: true,
-    });
+  it("площадка — вместимость и район; фото — видео; торты — ничего лишнего (заказов одновременно — во «Время работы»)", () => {
+    expect(formParts(cfg("hall"))).toEqual({ district: true, capacity: true, videos: false });
+    expect(formParts(cfg("photo"))).toEqual({ district: false, capacity: false, videos: true });
     // У кортежа района нет: машина едет по всему городу
-    expect(formParts(cfg("car"))).toEqual({
-      district: false,
-      capacity: false,
-      videos: false,
-      parallel: true,
-    });
-    expect(formParts(cfg("cake"))).toEqual({
-      district: false,
-      capacity: false,
-      videos: false,
-      parallel: false,
-    });
+    expect(formParts(cfg("car"))).toEqual({ district: false, capacity: false, videos: false });
+    expect(formParts(cfg("cake"))).toEqual({ district: false, capacity: false, videos: false });
   });
 
   it("видео: сохранённые ссылки и пустое поле для новой, пока можно добавить", () => {
@@ -99,13 +91,12 @@ describe("правка витрины — только изменённое", ()
     expect(listingBody(car, state, state)).toEqual({});
   });
 
-  it("кортеж: машина в автопарке, где работает, заказы одновременно", () => {
+  it("кортеж: машина в автопарке, где работает", () => {
     const car = cfg("car");
     const before = formState(listing("car"), car);
     const fleet = car.attributes.find((a) => a.key === "fleet") as ListField;
     const now = {
       ...before,
-      values: { ...before.values, parallelCapacity: "3" },
       attributes: {
         ...before.attributes,
         fleet: [{ ...emptyListItem(fleet), model: "Malibu", class: "sedan" }],
@@ -114,7 +105,6 @@ describe("правка витрины — только изменённое", ()
     };
     expect(listingBody(car, now, before)).toEqual({
       attributes: { fleet: [{ model: "Malibu", class: "sedan" }], service_area: "tashkent" },
-      parallelCapacity: 3,
     });
     expect(formErrors(car, now)).toEqual([]);
   });
@@ -185,19 +175,18 @@ describe("телефон и Telegram для клиентов", () => {
 });
 
 describe("ошибки до отправки", () => {
-  it("число мест не числом, ссылка не на YouTube и Instagram, заказов одновременно 0", () => {
+  it("число мест не числом, ссылка не на YouTube и Instagram", () => {
     const car = cfg("car");
     const before = formState(listing("car"), car);
     const fleet = car.attributes.find((a) => a.key === "fleet") as ListField;
     const now = {
       ...before,
-      values: { ...before.values, parallelCapacity: "0" },
       attributes: {
         ...before.attributes,
         fleet: [{ ...emptyListItem(fleet), model: "M", class: "sedan", seats: "x" }],
       },
     };
-    expect(formErrors(car, now).sort()).toEqual(["attributes.fleet.0.seats", "parallelCapacity"]);
+    expect(formErrors(car, now).sort()).toEqual(["attributes.fleet.0.seats"]);
 
     const photo = cfg("photo");
     const photoBefore = formState(listing("photo"), photo);

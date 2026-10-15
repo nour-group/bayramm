@@ -2,10 +2,11 @@
 // вендора (SLA), история, заметки. Телефоны скрыты: показать — отдельным
 // запросом, который база пишет в журнал доступа к ПДн.
 //
-//   GET  /staff/requests?status=&sla=&category=&listingId=&q=&limit=&offset=   список: сначала
-//        без ответа; sla=late — очередь просроченных и нарушенных, самый давний срок первым;
-//        category — заявки витрин этой категории; listingId — одной витрины; contactName — имя
-//        из заявки, чья она
+//   GET  /staff/requests?status=&sla=&category=&listingId=&part=&q=&limit=&offset=   список:
+//        сначала без ответа; sla=late — очередь просроченных и нарушенных, самый давний срок
+//        первым; category — заявки витрин этой категории; listingId — одной витрины; part — на
+//        эту часть дня (whole — на весь день, у категорий с календарём); contactName — имя из
+//        заявки, чья она
 //   GET  /staff/requests/:id                              заявка, история (кто — подписью
 //        журнала), срок ответа по шагам (timeline), заметки; client — id и код C-… для ссылки
 //   POST /staff/requests/:id/client-phone  { reason }     телефон клиента — только
@@ -29,10 +30,11 @@ import type {
   StaffRequestDetail,
   StaffRequestList,
 } from "@bayramm/shared/api/staff";
-import type { RequestDetails } from "@bayramm/shared/categories";
+import { isDayPart, type RequestDetails } from "@bayramm/shared/categories";
 import { Hono } from "hono";
 import { type RawBuilder, sql } from "kysely";
 import { staffOf } from "../auth/session";
+import { dayPartsOf } from "../calendar/sessions";
 import { roleActorKind, type Tx, withActor } from "../db/actor";
 import {
   notifiableVendorUsers,
@@ -117,7 +119,7 @@ const requestFields = (trx: Tx) =>
       "r.occasion_code",
       "r.event_date",
       "r.guests",
-      "r.day_part",
+      "r.day_parts",
       "r.created_at",
       "l.id as listing_id",
       "l.name as listing_name",
@@ -165,7 +167,7 @@ function itemView(row: Omit<RequestRow, "contact_name"> & { contact_name: Reques
     occasionCode: row.occasion_code,
     eventDate: row.event_date,
     guests: row.guests,
-    dayPart: row.day_part,
+    dayParts: dayPartsOf(row.day_parts),
     createdAt: iso(row.created_at),
     contactName: row.contact_name,
     listing: { id: row.listing_id, name: row.listing_name, categoryCode: row.category_code },
@@ -183,6 +185,8 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
   const category = categoryParam && /^[a-z_]{2,20}$/.test(categoryParam) ? categoryParam : undefined;
   const listingParam = c.req.query("listingId");
   const listingId = listingParam && isUuid(listingParam) ? listingParam.toLowerCase() : undefined;
+  const partParam = c.req.query("part");
+  const part = partParam === "whole" || isDayPart(partParam) ? partParam : undefined;
   const { limit, offset } = paging((key) => c.req.query(key));
 
   const result = await withActor(c.var.db, staffOf(c), async (trx) => {
@@ -192,6 +196,12 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
     if (sla.length > 0) conditions.push(sql<boolean>`${slaState} in (${sql.join(sla)})`);
     if (category) conditions.push(sql<boolean>`l.category_code = ${category}`);
     if (listingId) conditions.push(sql<boolean>`r.listing_id = ${listingId}`);
+    if (part === "whole")
+      conditions.push(
+        sql<boolean>`(cardinality(r.day_parts) = 0 and l.category_code in
+          (select c.code from app.categories c where c.availability_mode = 'parts'))`,
+      );
+    else if (part) conditions.push(sql<boolean>`${part}::app.day_part = any (r.day_parts)`);
     if (q !== "") {
       const pattern = likePattern(q);
       const number = /^\d{1,12}$/.test(q) ? q : null;
@@ -222,7 +232,7 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
       // Витрина и вендор заявки есть всегда (внешние ключи) — соединять их ради числа нужно,
       // только когда по ним ищут (раздел, строка поиска); иначе это сотни миллисекунд впустую
       const base = trx.selectFrom("app.requests as r");
-      const row = await (category || q !== ""
+      const row = await (category || q !== "" || part === "whole"
         ? base
             .innerJoin("app.listings as l", "l.id", "r.listing_id")
             .innerJoin("app.vendor_accounts as v", "v.id", "r.vendor_id")

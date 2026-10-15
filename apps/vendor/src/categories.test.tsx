@@ -11,7 +11,7 @@ import type {
   VendorRequestItem,
   VendorRole,
 } from "@bayramm/shared/api/vendor";
-import { categoryConfig } from "@bayramm/shared/categories";
+import { categoryConfig, defaultDaySessions } from "@bayramm/shared/categories";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -78,6 +78,13 @@ const service = (patch: Partial<ListingService> = {}): ListingService => ({
   ...patch,
 });
 
+/** Время работы по умолчанию категории: несколько мероприятий, все части, окна категории */
+const sessionsOf = (code: string, parallelCapacity = 1) => {
+  const category = categoryConfig(code);
+  if (!category) throw new Error(code);
+  return { ...defaultDaySessions(category), parallelCapacity };
+};
+
 const listing = (ref: VendorListingRef, patch: Partial<VendorListing> = {}): VendorListing => ({
   id: ref.id,
   version: 3,
@@ -104,6 +111,8 @@ const listing = (ref: VendorListingRef, patch: Partial<VendorListing> = {}): Ven
   missingAttributes: [],
   videoLinks: [],
   parallelCapacity: 1,
+  daySessions: sessionsOf(ref.categoryCode, patch.parallelCapacity ?? 1),
+  calendarVersion: 4,
   services: [],
   ...patch,
 });
@@ -147,7 +156,7 @@ function item(patch: Partial<VendorRequestItem> = {}): VendorRequestItem {
     occasionCode: "toy",
     eventDate: "2026-11-14",
     guests: null,
-    dayPart: "evening",
+    dayParts: ["evening"],
     details: {
       start_time: "18:00",
       hours: 5,
@@ -200,9 +209,11 @@ const calendar = (listingId: string, patch: Partial<VendorCalendar> = {}): Vendo
   maxDay: "2030-12-31",
   busy: [],
   requestDays: [],
+  requests: [],
   version: 4,
-  mode: "day",
-  parallelCapacity: 1,
+  mode: "parts",
+  parallelCapacity: patch.parallelCapacity ?? 1,
+  sessions: sessionsOf(listingId === CAR ? "car" : "hall", patch.parallelCapacity ?? 1),
   parts: [],
   bookings: [],
   ...patch,
@@ -511,15 +522,16 @@ describe("входящие по витринам", () => {
     const card = container.querySelector(".rq-list .rq");
     expect(card?.querySelector(".rq-vitrina")?.textContent).toBe("Кортеж · Kortej Premium");
     expect(card?.querySelector(".chip-cat")).toBeNull();
-    expect(card?.querySelector(".rq-meta")?.textContent).toContain("вечер");
+    // Части дня — рядом с поводом: «Вечер · Свадьба»
+    expect(card?.querySelector(".rq-meta")?.textContent).toBe("14 ноября, сб · Вечер · Свадьба");
     // Не весь «Начало · Часы · Машины · Класс · Услуги»: остальное — в карточке заявки
     expect(card?.querySelector(".rq-details")?.textContent).toBe("Начало: 18:00");
     expect(container.textContent).not.toContain("Клиент дал согласие");
   });
 
-  it("карточка заявки: часть дня с окном, поля категории, услуги с количеством и дополнениями", async () => {
+  it("карточка заявки: части дня, поля категории, услуги с количеством и дополнениями", async () => {
     await mount(`/requests/${REQUEST}`);
-    expect(container.querySelector(".req-when")?.textContent).toContain("вечер 17:00–24:00");
+    expect(container.querySelector(".req-when")?.textContent).toBe("14 ноября, сб · Вечер");
     // Витрин несколько — заявка называет свою чипом рядом с заголовком
     expect(container.querySelector(".detail-vitrina .chip-cat")?.textContent).toBe("Кортеж · Kortej Premium");
     const rows = [...container.querySelectorAll(".request-details .detail-rows > div")].map(
@@ -1104,7 +1116,7 @@ describe("календарь по модели занятости", () => {
     });
   });
 
-  it("части дня: день открывает утро, день и вечер; часть занимается с ?part= от версии календаря", async () => {
+  it("части дня: у каждого дня — отметки частей; день открывает утро, день и вечер; часть — с ?part=", async () => {
     routes[`PUT ${base}/${day(target)}`] = (_init, url) => ({
       body: {
         day: day(target),
@@ -1115,21 +1127,25 @@ describe("календарь по модели занятости", () => {
     });
     await mount("/calendar");
     await click(byText(".side-vitrinas button", "Kortej Premium"));
-    // Одна строка над месяцем; пока день не выбран, частей на экране нет (заглушки «выберите день» нет)
+    // Одна строка над месяцем — как закрыть день или часть; пока день не открыт, частей нет
     expect(container.querySelector(".page-calendar > .lead")?.textContent).toBe(
-      "Нажмите на день — отметьте утро, день или вечер.",
+      "Нажмите на день, чтобы закрыть его целиком или по частям. Много дней сразу — «Несколько дней».",
     );
     expect(container.querySelector(".day-panel")).toBeNull();
-    expect(container.textContent).not.toContain("Выберите день в календаре");
-    // Точки частей дня — только у дней, где что-то занято (есть утро 28-го)
-    expect(container.querySelectorAll(".cal-day .cal-parts")).toHaveLength(1);
+    // Отметки частей — у каждого дня месяца
+    expect(container.querySelectorAll(".cal-day .cal-parts")).toHaveLength(
+      container.querySelectorAll(".cal-day").length,
+    );
     const cell = container.querySelector<HTMLButtonElement>(`.cal-day[aria-label^="${target} "]`);
-    expect(cell?.getAttribute("aria-label")).toContain("Утро — занято, День — свободно, Вечер — занято");
+    expect(cell?.getAttribute("aria-label")).toContain(
+      "Утро — занято, День — свободно, Вечер — Занято 2 из 2 мест",
+    );
     await click(cell);
     expect(cell?.getAttribute("aria-pressed")).toBe("true");
     const parts = [...container.querySelectorAll(".day-part")].map((p) => p.textContent);
-    expect(parts[1]).toContain("Утро 05:00–11:00");
-    expect(parts[3]).toContain("все места заняты договорённостями");
+    expect(parts[0]).toContain("Утро 05:00–11:00");
+    expect(parts[2]).toContain("Занято 2 из 2 мест");
+    expect(container.querySelector(".day-whole")?.textContent).toContain("частично занят");
     // Часть дня — строка с переключателем «занято»: утро отметил вендор — включён и меняется;
     // вечер заняли договорённости — включён, но не переключить
     const part = (name: string) =>
@@ -1146,43 +1162,32 @@ describe("календарь по модели занятости", () => {
     expect(part("День")?.checked).toBe(true);
   });
 
-  it("сколько заказов одновременно: сохраняется от версии; календарь изменили — перечитан", async () => {
-    let answer = 0;
-    routes[`PUT ${base}/capacity`] = () =>
-      answer++ === 0
-        ? { status: 409, body: { error: { code: "calendar_conflict", message: "x" } } }
-        : { body: { parallelCapacity: 3, version: 6 } };
+  it("телефон: открытый день — шторка; закрыть — она закрывается", async () => {
+    resize(390);
+    routes["GET /api/vendor/me"] = () => ({ body: { ...me("owner"), listings: [REFS[1]] } });
     await mount("/calendar");
-    await click(byText(".side-vitrinas button", "Kortej Premium"));
-    // Редко меняемое — свёрнуто в строку «Заказов одновременно: 2 · Изменить»
-    expect(container.querySelector(".capacity-line")?.textContent).toBe("Заказов одновременно: 2Изменить");
-    expect(container.querySelector("#capacity-input")).toBeNull();
-    const edit = () => container.querySelector<HTMLButtonElement>(".capacity-line button");
-    const save = () => byText<HTMLButtonElement>(".capacity button", "Сохранить");
-    await click(edit());
-    expect(save()?.disabled).toBe(true);
-    await click(container.querySelector('button[aria-label="Заказов одновременно: Больше"]'));
-    expect(save()?.disabled).toBe(false);
-    await click(save());
-    expect(container.textContent).toContain("Календарь изменили — обновили");
-    const reads = calls.filter((c) => c.method === "GET" && c.path.startsWith(base));
-    expect(reads.length).toBeGreaterThan(1);
-    // Календарь изменили — правка закрыта, на экране число из базы; фокус вернулся на «Изменить»
-    expect(container.querySelector("#capacity-input")).toBeNull();
-    expect(document.activeElement).toBe(edit());
-
-    await click(edit());
-    await click(container.querySelector('button[aria-label="Заказов одновременно: Больше"]'));
-    await click(save());
-    const puts = calls.filter((c) => c.method === "PUT" && c.path === `${base}/capacity`);
-    expect(puts.map((c) => c.body)).toEqual([{ parallelCapacity: 3 }, { parallelCapacity: 3 }]);
-    expect(puts[1]?.headers.get("If-Match")).toBe("4");
-    // Сохранили — правка закрыта, в строке новое число
-    expect(container.querySelector("#capacity-input")).toBeNull();
-    expect(container.querySelector(".capacity-text")?.textContent).toBe("Заказов одновременно: 3");
+    await click(container.querySelector(`.cal-day[aria-label^="${target} "]`));
+    const sheet = document.querySelector('[role="dialog"]');
+    expect(sheet?.querySelector(".day-part")).not.toBeNull();
+    expect(container.querySelector(".cal-aside .day-panel")).toBeNull();
+    await click(
+      [...document.querySelectorAll('[role="dialog"] button')].find((b) => b.textContent === "Закрыть"),
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("обозначения — свёрнуты и только те, что есть в показанном месяце", async () => {
+  it("время работы — строкой у календаря; владельцу — ссылка туда, где оно меняется", async () => {
+    await mount("/calendar");
+    await click(byText(".side-vitrinas button", "Kortej Premium"));
+    expect(container.querySelector(".sessions-line")?.textContent).toBe(
+      "Время работы: утро 05:00–11:00, день 11:00–17:00, вечер 17:00–24:00 · заказов одновременно: 2Изменить",
+    );
+    await click(byText(".sessions-line a", "Изменить"));
+    expect(heading()).toBe("Витрина");
+    expect(container.querySelector("#sessions-title")?.textContent).toBe("Время работы");
+  });
+
+  it("обозначения — открыты, пока их не свернули (помнит вкладка); только то, что есть в месяце", async () => {
     routes[`GET ${base}`] = () => ({
       body: calendar(CAR, {
         mode: "parts",
@@ -1196,14 +1201,13 @@ describe("календарь по модели занятости", () => {
     await mount("/calendar");
     await click(byText(".side-vitrinas button", "Kortej Premium"));
     const toggle = () => byText<HTMLButtonElement>(".cal-aside .disclosure", "Обозначения", container);
-    expect(toggle()?.getAttribute("aria-expanded")).toBe("false");
-    expect(container.querySelector(".cal-legend")).toBeNull();
-    await click(toggle());
     expect(toggle()?.getAttribute("aria-expanded")).toBe("true");
     const items = [...container.querySelectorAll(".cal-legend li")].map((li) => li.textContent);
-    // «занято» и «занята часть дня» в этом месяце нет; «Время ташкентское» и «нажмите на день» — тоже
-    expect(items).toEqual(["занято отказом", "закрыл менеджер", "есть заявка", "сегодня"]);
-    expect(container.querySelector(".cal-aside")?.textContent).not.toContain("Время ташкентское");
+    // «занято» и «занята часть дня» в этом месяце нет
+    expect(items).toEqual(["занято (вы отказали: дата занята)", "закрыл менеджер", "есть заявка", "сегодня"]);
+    await click(toggle());
+    expect(container.querySelector(".cal-legend")).toBeNull();
+    expect(window.sessionStorage.getItem("bayramm.vendor.calendar.legend")).toBe("closed");
   });
 
   it("торты: календаря нет — срок заказа витрины и сроки услуг, ссылки туда, где они меняются", async () => {
@@ -1310,5 +1314,75 @@ describe("«требует внимания» у витрин", () => {
     await mount("/services");
     expect(container.querySelector(".side-nav .nav-count")).toBeNull();
     expect(container.querySelector(".vitrina-attn")).toBeNull();
+  });
+});
+
+describe("время работы витрины", () => {
+  const path = `/api/vendor/listings/${CAR}/day-sessions`;
+
+  beforeEach(() => resize(1280));
+
+  const openCard = async () => {
+    await mount("/card");
+    await click(byText(".side-vitrinas button", "Kortej Premium"));
+    await click(byText<HTMLButtonElement>(".sessions button", "Изменить"));
+  };
+
+  it("владелец: одно мероприятие или несколько, части, окна с шагом 30 минут — сразу, от версии календаря", async () => {
+    routes[`PUT ${path}`] = () => ({ body: { sessions: LISTINGS[CAR]?.daySessions, version: 5 } });
+    await mount("/card");
+    await click(byText(".side-vitrinas button", "Kortej Premium"));
+    const card = container.querySelector(".sessions");
+    expect(card?.textContent).toContain("Несколько мероприятий в день");
+    expect(card?.textContent).toContain("Утро 05:00–11:00");
+    await click(byText<HTMLButtonElement>(".sessions button", "Изменить"));
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.querySelector(".ui-radios")).not.toBeNull();
+    // День не работает: галочку сняли — окна дня нет
+    await click(byText<HTMLLabelElement>('[role="dialog"] .sessions-row label', "День"));
+    expect(dialog?.querySelectorAll(".sessions-times")).toHaveLength(2);
+    // Вечер — с 18:00: время из своего списка
+    await pick(byText<HTMLButtonElement>('[role="dialog"] .sessions-row button', "17:00"), "18:00");
+    await click(byText<HTMLButtonElement>('[role="dialog"] button', "Сохранить"));
+    const put = sent("PUT", path)[0];
+    expect(put?.headers.get("If-Match")).toBe("4");
+    expect(put?.body).toEqual({
+      mode: "parts",
+      parts: ["morning", "evening"],
+      windows: { evening: { from: "18:00", to: "24:00" } },
+      parallelCapacity: 2,
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("часть с будущими заявками — словами, сколько их; пересечение окон — у части, до запроса", async () => {
+    routes[`PUT ${path}`] = () => ({
+      status: 409,
+      body: {
+        error: { code: "part_in_use", message: "x", details: ["day"] },
+        inUse: [{ part: "day", count: 2 }],
+      },
+    });
+    await openCard();
+    await click(byText<HTMLLabelElement>('[role="dialog"] .sessions-row label', "День"));
+    await click(byText<HTMLButtonElement>('[role="dialog"] button', "Сохранить"));
+    expect(document.querySelector('[role="dialog"] .form-error')?.textContent).toBe(
+      "Убрать «день» нельзя: на эту часть 2 будущие заявки. Сначала ответьте на них.",
+    );
+    // Утро до 13:00 — пересекает день: ошибка у дня, запрос не уходит
+    await click(byText<HTMLLabelElement>('[role="dialog"] .sessions-row label', "День"));
+    await pick(byText<HTMLButtonElement>('[role="dialog"] .sessions-row button', "11:00"), "13:00");
+    const before = sent("PUT", path).length;
+    await click(byText<HTMLButtonElement>('[role="dialog"] button', "Сохранить"));
+    expect(sent("PUT", path)).toHaveLength(before);
+    expect(document.querySelector('[role="dialog"] .sessions-row.is-invalid')?.textContent).toContain("День");
+  });
+
+  it("сотрудник площадки — только смотрит", async () => {
+    routes = defaultRoutes("member");
+    await mount("/card");
+    await click(byText(".side-vitrinas button", "Kortej Premium"));
+    expect(container.querySelector(".sessions")?.textContent).toContain("Несколько мероприятий в день");
+    expect(byText(".sessions button", "Изменить", container)).toBeUndefined();
   });
 });
