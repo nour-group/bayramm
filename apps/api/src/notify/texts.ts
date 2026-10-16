@@ -9,6 +9,7 @@
 
 import { type Lang, ruPlural } from "@bayramm/shared";
 import type { DayPart, ListingStatus } from "@bayramm/shared/api/staff";
+import { type DayPartWindows, windowText } from "@bayramm/shared/categories";
 
 /** Заявка глазами уведомления: только то, что можно показать получателю */
 export interface RequestFacts {
@@ -46,11 +47,19 @@ const PART_NAMES: Readonly<Record<Lang, Readonly<Record<DayPart, string>> & { re
   uz: { morning: "Ertalab", day: "Kunduzi", evening: "Kechqurun", whole: "Kun boʻyi" },
 };
 
-/** Части дня заявки словами: «Утро, вечер»; пусто — «Весь день» (через запятую — со строчной) */
-export function partsText(lang: Lang, parts: readonly DayPart[]): string {
+/**
+ * Части дня заявки словами: «Утро, вечер»; пусто — «Весь день» (через запятую — со строчной).
+ * С окнами витрины — и время: «Утро 06:00–11:00, вечер 18:00–24:00»
+ */
+export function partsText(lang: Lang, parts: readonly DayPart[], windows?: DayPartWindows | null): string {
   const names = PART_NAMES[lang];
   if (parts.length === 0) return names.whole;
-  return parts.map((part, i) => (i === 0 ? names[part] : names[part].toLowerCase())).join(", ");
+  return parts
+    .map((part, i) => {
+      const name = i === 0 ? names[part] : names[part].toLowerCase();
+      return windows ? `${name} ${windowText(windows[part])}` : name;
+    })
+    .join(", ");
 }
 
 const hoursRu = (n: number) => `${n} ${ruPlural(n, "час", "часа", "часов")}`;

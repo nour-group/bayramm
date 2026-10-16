@@ -456,7 +456,8 @@ test("заявки: фильтр по категории; заявка корт�
   expect(api.queries.at(-1)).toContain("category=car");
   await page.getByRole("link", { name: t.requestNo(1052) }).click();
   await expect(page).toHaveURL(`/requests/${CAR_REQUEST_ID}`);
-  await expect(page.getByRole("definition").filter({ hasText: /^Вечер$/ })).toBeVisible();
+  // Часть дня — со временем витрины
+  await expect(page.getByRole("definition").filter({ hasText: /^Вечер 17:00–24:00$/ })).toBeVisible();
   const details = page.getByRole("region", { name: t.requestWhatWhen });
   await expect(details).toContainText("Сколько машин");
   await expect(details).toContainText("Премиум");

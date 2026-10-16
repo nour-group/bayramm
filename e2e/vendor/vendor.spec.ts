@@ -933,8 +933,10 @@ test.describe("витрины в разных категориях", () => {
     await expect(requestTitle(page)).toContainText("1060");
     await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
     const details = page.locator(".request-details");
-    // Когда: дата и части дня заявки
-    await expect(page.locator(".request .req-when")).toHaveText(`24 октября, сб · ${t.part_evening}`);
+    // Когда: дата и части дня заявки со временем витрины
+    await expect(page.locator(".request .req-when")).toHaveText(
+      `24 октября, сб · ${t.part_evening} 17:00–24:00`,
+    );
     await expect(page.locator(".request .detail-vitrina")).toHaveText("Кортеж · Kortej Premium");
     await expect(details.locator(".detail-rows")).toContainText("Класс машины");
     await expect(details.locator(".detail-rows")).toContainText("Премиум");

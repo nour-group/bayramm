@@ -24,8 +24,10 @@ import {
   categoryConfig,
   chosenServices,
   type DayPart,
+  type DayPartWindows,
   detailRows,
   hasDayParts,
+  windowText,
 } from "@bayramm/shared/categories";
 import { Dialog, RadioGroup, type RadioOption, SearchField, Select, useToast } from "@bayramm/ui/react";
 import { type FormEvent, Fragment, type ReactNode, useCallback, useId, useRef, useState } from "react";
@@ -137,14 +139,20 @@ const withCount = (label: string, count: number): string => (count > 0 ? `${labe
  * Части дня заявки: «Утро, вечер»; без частей — «Весь день»; у категории без календаря (срок
  * заказа) — пусто
  */
-export function partsName(categoryCode: string, parts: readonly DayPart[]): string {
+export function partsName(
+  categoryCode: string,
+  parts: readonly DayPart[],
+  windows?: DayPartWindows | null,
+): string {
   const config = categoryConfig(categoryCode);
   if (config !== undefined && !hasDayParts(config)) return "";
   if (parts.length === 0) return t.wholeDay;
   return parts
     .map((part, i) => {
       const name = t.dayParts[part] ?? part;
-      return i === 0 ? name : name.toLowerCase();
+      const shown = i === 0 ? name : name.toLowerCase();
+      // С окнами витрины — и время части: «Вечер 18:00–24:00»
+      return windows ? `${shown} ${windowText(windows[part])}` : shown;
     })
     .join(", ");
 }
@@ -556,7 +564,7 @@ function RequestView({
         {partsName(request.listing.categoryCode, request.dayParts) ? (
           <>
             <dt>{t.dayPart}</dt>
-            <dd>{partsName(request.listing.categoryCode, request.dayParts)}</dd>
+            <dd>{partsName(request.listing.categoryCode, request.dayParts, request.listing.partWindows)}</dd>
           </>
         ) : null}
         {hasBudget ? (

@@ -31,6 +31,8 @@ import {
   DEFAULT_DAY_PARTS,
   daySessionsOf,
   defaultDaySessions,
+  effectiveWindows,
+  hasDayParts,
   isDayPart,
   type PartMode,
   sortParts,
@@ -67,6 +69,16 @@ export function customWindowsOf(value: unknown): Partial<DayPartWindows> | null 
       out[part] = { from, to };
   }
   return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * Окна частей дня витрины для заявки: свои поверх окон категории; null — у категории нет
+ * календаря (срок заказа) или категория неизвестна
+ */
+export function requestWindowsOf(categoryCode: string, partWindows: unknown): DayPartWindows | null {
+  const category = categoryConfig(categoryCode);
+  if (category === undefined || !hasDayParts(category)) return null;
+  return effectiveWindows(category, customWindowsOf(partWindows));
 }
 
 /** Столбцы витрины со временем работы */

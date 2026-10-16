@@ -283,7 +283,7 @@ export function RequestDetail({
   // Две строки о заявке: когда (дата и часть дня), что (гости, бюджет, повод)
   const when = [
     formatDate(request.eventDate, t, true),
-    partsLabel(t, request.listing.categoryCode, request.dayParts),
+    partsLabel(t, request.listing.categoryCode, request.dayParts, request.listing.partWindows),
   ]
     .filter((part) => part !== null)
     .join(" · ");

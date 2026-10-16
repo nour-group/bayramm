@@ -307,7 +307,17 @@ export function carRequest(base: StaffRequestDetail): StaffRequestDetail {
     guests: null,
     dayParts: ["evening"],
     eventDate: BOOKED_DAY,
-    listing: { id: CAR_LISTING_ID, name: "Oq kortej", categoryCode: "car" },
+    // Окна частей дня — окна категории (своих у витрины нет)
+    listing: {
+      id: CAR_LISTING_ID,
+      name: "Oq kortej",
+      categoryCode: "car",
+      partWindows: {
+        morning: { from: "05:00", to: "11:00" },
+        day: { from: "11:00", to: "17:00" },
+        evening: { from: "17:00", to: "24:00" },
+      },
+    },
     details: {
       start_time: "18:30",
       hours: 4,

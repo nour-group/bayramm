@@ -248,7 +248,8 @@ describe("listRequests", () => {
         publicNo: 1001,
         status: "new",
         declineReason: null,
-        listing: { id: LISTING_ID, name: "Test Hall" },
+        // У строки без категории окон нет
+        listing: { id: LISTING_ID, name: "Test Hall", partWindows: null },
         occasionCode: "toy",
         eventDate: "2026-11-14",
         guests: 200,
