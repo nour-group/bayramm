@@ -28,7 +28,7 @@ import {
 } from "@bayramm/shared/api/vendor";
 import type { RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
-import { dayPartsOf } from "../calendar/sessions";
+import { dayPartsOf, requestWindowsOf } from "../calendar/sessions";
 import { roleActorKind, type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { readRequestPhone, requestContactsAs } from "../db/pii";
@@ -168,6 +168,7 @@ function requestsOf(trx: Tx, actor: VendorActor) {
       "r.listing_id",
       "l.name as listing_name",
       "l.category_code",
+      "l.part_windows",
       "r.occasion_code",
       "r.event_date",
       "r.guests",
@@ -199,7 +200,12 @@ function toItem(row: ItemRow): VendorRequestItem {
     publicNo: Number(row.public_no),
     status: row.status,
     declineReason: row.decline_reason,
-    listing: { id: row.listing_id, name: row.listing_name, categoryCode: row.category_code },
+    listing: {
+      id: row.listing_id,
+      name: row.listing_name,
+      categoryCode: row.category_code,
+      partWindows: requestWindowsOf(row.category_code, row.part_windows),
+    },
     occasionCode: row.occasion_code,
     eventDate: row.event_date,
     guests: row.guests,

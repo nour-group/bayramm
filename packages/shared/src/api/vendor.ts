@@ -12,7 +12,7 @@
    комментарий — пока согласие действует и заявка не отозвана. Телефон клиента
    отдаётся только в карточке заявки, и каждое такое чтение записывается в журнал. */
 
-import type { AvailabilityMode, DayPart, DaySessions, PartMode } from "../categories/types";
+import type { AvailabilityMode, DayPart, DayPartWindows, DaySessions, PartMode } from "../categories/types";
 import type { AttributeValue } from "../categories/validate";
 import type {
   DeclineReason,
@@ -164,7 +164,16 @@ export interface VendorRequestItem {
   readonly publicNo: number;
   readonly status: RequestStatus;
   readonly declineReason: DeclineReason | null;
-  readonly listing: { readonly id: string; readonly name: string; readonly categoryCode: string };
+  readonly listing: {
+    readonly id: string;
+    readonly name: string;
+    readonly categoryCode: string;
+    /**
+     * Окна частей дня витрины — свои или категории (как в «Время работы»): «Вечер 18:00–24:00» у
+     * заявки. null — у категории нет календаря; нет поля — старый ответ, только названия частей
+     */
+    readonly partWindows?: DayPartWindows | null;
+  };
   readonly occasionCode: string;
   readonly eventDate: string;
   /** Число гостей; null — категория его не спрашивает или клиент не указал */

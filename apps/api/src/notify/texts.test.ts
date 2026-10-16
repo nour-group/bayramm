@@ -10,6 +10,7 @@ import {
   opsRevisionSubmitted,
   opsServicesSubmitted,
   opsSlaBreach,
+  partsText,
   type RequestFacts,
   SERVICE_TEXTS,
 } from "./texts";
@@ -219,6 +220,18 @@ describe("тексты уведомлений", () => {
       fields: ["cap_min", "cap_max", "district_code", "address_ru"],
     });
     expect(text).toContain("Меняет: вместимость, район, адрес (рус.).");
+  });
+
+  it("части дня: названия, с окнами витрины — и время; пусто — весь день", () => {
+    const windows = {
+      morning: { from: "06:00", to: "10:00" },
+      day: { from: "12:00", to: "17:00" },
+      evening: { from: "18:00", to: "24:00" },
+    };
+    expect(partsText("ru", ["morning", "evening"])).toBe("Утро, вечер");
+    expect(partsText("ru", ["morning", "evening"], windows)).toBe("Утро 06:00–10:00, вечер 18:00–24:00");
+    expect(partsText("uz", ["evening"], windows)).toBe("Kechqurun 18:00–24:00");
+    expect(partsText("ru", [], windows)).toBe("Весь день");
   });
 
   it("дата события — ДД.ММ.ГГГГ", () => {

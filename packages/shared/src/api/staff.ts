@@ -9,7 +9,7 @@
    Телефоны в ответах не отдаются: только отдельным запросом «показать», который
    база пишет в журнал доступа к ПДн. */
 
-import type { AvailabilityMode, DayPart, DaySessions } from "../categories/types";
+import type { AvailabilityMode, DayPart, DayPartWindows, DaySessions } from "../categories/types";
 import type { AttributeValue } from "../categories/validate";
 import type { DeclineReason, ListingAttributes, PriceUnit, RequestDetails, RequestStatus } from "./client";
 import type { ListingService } from "./services";
@@ -778,7 +778,16 @@ export interface StaffRequestItem {
   readonly createdAt: string;
   /** Имя, которое клиент вписал в заявку — чья она; null — удалено по сроку хранения или не вписано */
   readonly contactName: string | null;
-  readonly listing: { readonly id: string; readonly name: string; readonly categoryCode: string };
+  readonly listing: {
+    readonly id: string;
+    readonly name: string;
+    readonly categoryCode: string;
+    /**
+     * Окна частей дня витрины — свои или категории (как в «Время работы»): «Вечер 18:00–24:00» у
+     * заявки. null — у категории нет календаря; нет поля — старый ответ, только названия частей
+     */
+    readonly partWindows?: DayPartWindows | null;
+  };
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
   /** Сколько раз вендору напоминали (автоматически и сотрудники) */
   readonly reminders: number;

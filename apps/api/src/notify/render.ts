@@ -7,7 +7,7 @@ import { type Lang, trimTrailingSlashes } from "@bayramm/shared";
 import { type CatalogLinkFilters, clientCatalogPath, clientRequestPath } from "@bayramm/shared/api";
 import { categoryConfig, detailsSummary, hasDayParts, type RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
-import { dayPartsOf } from "../calendar/sessions";
+import { dayPartsOf, requestWindowsOf } from "../calendar/sessions";
 import type { Tx } from "../db/actor";
 import { clientProfilesAs, contactChangeState, staffProfilesAs, vendorUserProfilesAs } from "../db/pii";
 import type { AppActorKind, AppStaffRole, Json } from "../db/schema.generated";
@@ -244,6 +244,7 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
       "l.name as listing",
       "l.district_code",
       "l.category_code",
+      "l.part_windows",
       "r.details",
       "o.name_ru",
       "o.name_uz",
@@ -263,8 +264,9 @@ async function requestOf(trx: Tx, requestId: string): Promise<RequestRow | null>
   };
   const category = categoryConfig(row.category_code);
   const dayParts = dayPartsOf(row.day_parts);
+  const windows = requestWindowsOf(row.category_code, row.part_windows);
   const parts = (lang: Lang) =>
-    category !== undefined && hasDayParts(category) ? partsText(lang, dayParts) : null;
+    category !== undefined && hasDayParts(category) ? partsText(lang, dayParts, windows) : null;
   const details = row.details as RequestDetails;
   const districts =
     category?.requestForm.fields.some((f) => f.type === "district" && typeof details[f.key] === "string") ===

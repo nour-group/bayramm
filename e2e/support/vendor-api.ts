@@ -729,7 +729,17 @@ export async function mockVendorApi(
   if (many) {
     requests.set(REQUEST_CAR, {
       ...item(REQUEST_CAR, 1060, 2, {
-        listing: { id: CAR_ID, name: "Kortej Premium", categoryCode: "car" },
+        // Окна частей дня — окна категории (своих у витрины нет)
+        listing: {
+          id: CAR_ID,
+          name: "Kortej Premium",
+          categoryCode: "car",
+          partWindows: {
+            morning: { from: "05:00", to: "11:00" },
+            day: { from: "11:00", to: "17:00" },
+            evening: { from: "17:00", to: "24:00" },
+          },
+        },
         guests: null,
         dayParts: ["evening"],
         eventDate: "2026-10-24",

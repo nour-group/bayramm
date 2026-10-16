@@ -9,9 +9,11 @@ import {
   categoryConfig,
   categoryText,
   type DayPart,
+  type DayPartWindows,
   hasDayParts,
   type PriceUnit,
   priceUnitLabel,
+  windowText,
 } from "@bayramm/shared/categories";
 import { formatMoney } from "./format";
 import type { VendorDict } from "./i18n";
@@ -36,11 +38,22 @@ export function partName(t: VendorDict, part: DayPart): string {
  * Части дня заявки словами: «Утро, вечер»; пусто — «Весь день». У категории без календаря
  * (срок заказа) — null: время дня там ни при чём
  */
-export function partsLabel(t: VendorDict, categoryCode: string, parts: readonly DayPart[]): string | null {
+export function partsLabel(
+  t: VendorDict,
+  categoryCode: string,
+  parts: readonly DayPart[],
+  windows?: DayPartWindows | null,
+): string | null {
   const category = categoryConfig(categoryCode);
   if (category !== undefined && !hasDayParts(category)) return null;
   if (parts.length === 0) return t.wholeDay;
-  return parts.map((part, i) => (i === 0 ? partName(t, part) : partName(t, part).toLowerCase())).join(", ");
+  return parts
+    .map((part, i) => {
+      const name = i === 0 ? partName(t, part) : partName(t, part).toLowerCase();
+      // С окнами витрины — и время части: «Вечер 18:00–24:00»
+      return windows ? `${name} ${windowText(windows[part])}` : name;
+    })
+    .join(", ");
 }
 
 /** Цена услуги или опции: «150 000 сум за час», «2,5 млн сум за мероприятие» */

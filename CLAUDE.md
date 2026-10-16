@@ -403,7 +403,9 @@ required, optional или hidden) и каталог услуг (единицы �
 Убрать часть с будущими заявками (не отказ и не истёкшие) нельзя — 409 `part_in_use` `{ inUse }`;
 перейти на одно мероприятие в день можно всегда. Заявка несёт `day_parts app.day_part[]` (пусто —
 весь день): клиент шлёт `dayParts` или `wholeDay` (`validateRequestParts`: время начала — внутри
-выбранного; у whole — весь день). Поводы (`app.occasions.default_parts`,
+выбранного; у whole — весь день). Заявки кабинета и панели несут окна витрины
+(`listing.partWindows`, `requestWindowsOf` в `apps/api/src/calendar/sessions.ts`): карточка заявки и
+сообщение бота — «Вечер 18:00–24:00» (`partsLabel`, `partsName`, `partsText`). Поводы (`app.occasions.default_parts`,
 `packages/shared/src/categories/occasions.ts`) отмечают свои части в форме: нахорги ош — утро,
 свадьба — вечер. Часть занята, когда отметок и договорённостей не меньше `parallel_capacity`;
 отметка дня, заявка без частей и любая заявка витрины whole занимают все части; день занят, когда

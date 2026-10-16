@@ -34,7 +34,7 @@ import { isDayPart, type RequestDetails } from "@bayramm/shared/categories";
 import { Hono } from "hono";
 import { type RawBuilder, sql } from "kysely";
 import { staffOf } from "../auth/session";
-import { dayPartsOf } from "../calendar/sessions";
+import { dayPartsOf, requestWindowsOf } from "../calendar/sessions";
 import { roleActorKind, type Tx, withActor } from "../db/actor";
 import {
   notifiableVendorUsers,
@@ -124,6 +124,7 @@ const requestFields = (trx: Tx) =>
       "l.id as listing_id",
       "l.name as listing_name",
       "l.category_code",
+      "l.part_windows",
       "v.id as vendor_id",
       "v.public_code",
       "v.name as vendor_name",
@@ -170,7 +171,12 @@ function itemView(row: Omit<RequestRow, "contact_name"> & { contact_name: Reques
     dayParts: dayPartsOf(row.day_parts),
     createdAt: iso(row.created_at),
     contactName: row.contact_name,
-    listing: { id: row.listing_id, name: row.listing_name, categoryCode: row.category_code },
+    listing: {
+      id: row.listing_id,
+      name: row.listing_name,
+      categoryCode: row.category_code,
+      partWindows: requestWindowsOf(row.category_code, row.part_windows),
+    },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
     reminders: row.reminders,
   };
