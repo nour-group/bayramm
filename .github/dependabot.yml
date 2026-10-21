@@ -25,3 +25,8 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # Одним PR в неделю: init, analyze и upload-sarif у codeql-action обязаны быть одной
+    # версии — по отдельности их PR не проходят CodeQL
+    groups:
+      actions:
+        patterns: ["*"]

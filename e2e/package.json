@@ -11,8 +11,8 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@bayramm/shared": "workspace:*",
-    "@playwright/test": "^1.63.0",
-    "@types/node": "^26.6.3",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^26.6.5",
     "typescript": "^6.0.2"
   }
 }
