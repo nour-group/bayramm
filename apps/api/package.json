@@ -27,7 +27,7 @@
     "kysely-codegen": "^0.20.0",
     "sharp": "^0.35.5",
     "typescript": "^6.0.2",
-    "vitest": "^5.0.3",
-    "wrangler": "^4.149.0"
+    "vitest": "^5.0.4",
+    "wrangler": "^4.151.0"
   }
 }
