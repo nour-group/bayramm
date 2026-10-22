@@ -8,6 +8,7 @@
 
 import type { Dict } from "./dict";
 import { type Inline, list, p, strong, warn } from "./rich";
+import { lowerFirst } from "./text-case";
 
 export const uz: Dict = {
   cats: "Nima qidiryapsiz",
@@ -604,7 +605,8 @@ export const uz: Dict = {
   qtySet: (n: number) => `${n} toʻplam`,
   qtyTable: (n: number) => `${n} stol`,
   catSwitch: "Katalog boʻlimlari",
-  catTitle: (name: string) => `Toshkentdagi ${String(name).toLowerCase()}`,
+  // сокращение («FHDYo») — как есть
+  catTitle: (name: string) => `Toshkentdagi ${lowerFirst(String(name))}`,
   catSoon: "tez orada",
   catSoonH: (name: string) => `«${name}» — tez orada katalogda`,
   catSoonP:

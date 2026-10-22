@@ -8,6 +8,7 @@ export { ruPlural } from "./plural";
 export { REQUEST_STATUS_NAMES, requestStatusName } from "./request-status";
 export { type Block, type Inline, inlineText, type RichText, richText } from "./rich";
 export { ru } from "./ru";
+export { lowerFirst } from "./text-case";
 export { uz } from "./uz";
 export { hasNonCanonicalApostrophe, normalizeUz, UZ_OKINA, UZ_TUTUQ } from "./uz-apostrophe";
 

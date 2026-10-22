@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
+import { lowerFirst } from "@bayramm/shared";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { allDemoListings, createMockApi } from "./api/mock";
 import type { ClientApi } from "./api/types";
-import { lowerFirst } from "./components/CatalogSearch";
 import { LANG_KEY } from "./context";
 import { byText, cleanup, click, fakeWebApp, mount, NOW, settle, type } from "./test/harness";
 
