@@ -147,6 +147,8 @@ async function expectContactsFirst(
   await expect(page.locator("form.request")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
+  // Запись шторки в истории снимается шагом назад — дождаться его: следующий goto он бы отменил
+  await page.waitForFunction(() => !(window.history.state && "uiLayer" in window.history.state));
 }
 
 test.describe("тексты экранов", () => {
