@@ -63,7 +63,9 @@ test("✓ —одобрить одно: решение уходит через 5
   const queue = photos(page);
   await queue.getByRole("button", { name: t.photoApproveOne(1, "Bogʻ zali") }).click();
   // До запроса — «Отменить» в строке уведомления, плитка тусклая
-  await expect(page.locator(".ui-toast").filter({ hasText: t.photoApprovedUndo(1) })).toBeVisible();
+  await expect(
+    page.locator(".ui-toast").filter({ hasText: t.photoApprovedUndo(1, "Bogʻ zali") }),
+  ).toBeVisible();
   await expect(queue.locator(".queue-photo.is-decided")).toHaveCount(1);
   expect(api.photoDecisions).toEqual([]);
   await expect(queue.locator(".queue-photo")).toHaveCount(1, { timeout: 12_000 });
@@ -179,7 +181,10 @@ test("просмотр во весь экран: стрелки листают, 
   await expectNoAxeViolations(page, "модерация: фото во весь экран");
   await expectHitAreas(page, "модерация: фото во весь экран", ".photo-viewer button");
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("dialog", { name: t.photoViewerTitle(2, 3, "Bogʻ zali") })).toBeVisible();
+  const second = page.getByRole("dialog", { name: t.photoViewerTitle(2, 3, "Bogʻ zali") });
+  await expect(second).toBeVisible();
+  // Открытым фото считается, когда снимок показан: тогда же доступно «Одобрить»
+  await expect(second.getByRole("button", { name: t.photoApprove, exact: true })).toBeEnabled();
   await page.keyboard.press("ArrowRight");
   const third = page.getByRole("dialog", { name: t.photoViewerTitle(3, 3, "Bogʻ zali") });
   await expect(third).toBeVisible();

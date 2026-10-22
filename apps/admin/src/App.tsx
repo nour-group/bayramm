@@ -130,7 +130,7 @@ export function App() {
   // вписанное в формы остаются, повторить действие можно сразу. В браузере — страница входа
   // с объяснением; после входа — тот же экран, несохранённое форм — из вкладки (drafts.ts). Ответы 401 приходят пачкой: решает первый,
   // остальные (и запоздавшие ответы на старый токен) — уже не про текущую сессию
-  const onExpired = useCallback((expired: string) => {
+  const onExpired = useCallback((expired: string, staffId: string) => {
     if (tokenStore.get() !== expired) return;
     tokenStore.clear();
     const webApp = getWebApp();
@@ -142,7 +142,7 @@ export function App() {
       return;
     }
     // Вписанное в формах — во вкладку до ухода на вход: после входа тот же экран его вернёт
-    const kept = saveDrafts() > 0;
+    const kept = saveDrafts(staffId) > 0;
     const back = backPath();
     window.history.replaceState(null, "", ROUTES.login);
     setAuth({ kind: "signedOut", error: "expired", back, kept });
@@ -150,8 +150,13 @@ export function App() {
 
   const token = auth.kind === "signedIn" ? auth.token : null;
   const staff = auth.kind === "signedIn" ? auth.staff : null;
+  // Вошли: черновики другого сотрудника и старые во вкладке не нужны (свои свежие ждут свой экран)
+  const staffId = staff?.id ?? null;
+  useEffect(() => {
+    if (staffId !== null) clearDrafts(staffId);
+  }, [staffId]);
   const session = useMemo<Session | null>(
-    () => (token && staff ? { api: createApi(token, () => onExpired(token)), staff } : null),
+    () => (token && staff ? { api: createApi(token, () => onExpired(token, staff.id)), staff } : null),
     [token, staff, onExpired],
   );
 

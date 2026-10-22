@@ -65,7 +65,7 @@ import {
   usePagedList,
 } from "../ui";
 import { useUndoable } from "../undo";
-import { PhotoViewer } from "./PhotoViewer";
+import { PhotoViewer, REPEAT_MS } from "./PhotoViewer";
 import { ServiceChanges, ServiceDecision } from "./Services";
 
 type Queue = "review" | "revisions" | "services" | "contacts" | "photos";
@@ -401,6 +401,15 @@ function PhotoQueueList({ state, decides, onDecided, onFocused }: PhotoQueueProp
   const { loaded, reload } = state.list;
   const list = useRef<HTMLUListElement>(null);
   const decidedAt = useRef<DecidedPhoto | null>(null);
+  // ✓ плиток — одно решение на нажатие: после ✓ фокус уже на ✓ следующей плитки (может быть,
+  // другой карточки) — автоповтор Enter не должен одобрить её. Один на всю очередь
+  const lastTile = useRef(0);
+  const repeated = useCallback((): boolean => {
+    const now = Date.now();
+    if (now - lastTile.current < REPEAT_MS) return true;
+    lastTile.current = now;
+    return false;
+  }, []);
   const [said, setSaid] = useState("");
   useEffect(() => {
     if (loaded.state !== "ready" || decidedAt.current === null) return;
@@ -443,6 +452,7 @@ function PhotoQueueList({ state, decides, onDecided, onFocused }: PhotoQueueProp
                 listing={listing}
                 index={index}
                 decides={decides}
+                repeated={repeated}
                 onDecided={decided}
               />
             ))}
@@ -464,11 +474,14 @@ function PhotoCard({
   listing,
   index,
   decides,
+  repeated,
   onDecided,
 }: {
   listing: ListingListItem;
   index: number;
   decides: boolean;
+  /** Нажатие ✓ — повтор предыдущего (раньше REPEAT_MS): не решение */
+  repeated: () => boolean;
   onDecided: (at: DecidedPhoto | null, said: string) => void;
 }) {
   const { api } = useSession();
@@ -512,10 +525,10 @@ function PhotoCard({
     next?.focus();
   }, [decidedIds]);
 
-  const view = (id: string) => {
-    setViewing(id);
-    setSeen((prev) => new Set(prev).add(id));
-  };
+  // Открытым фото считается, когда его снимок показан во весь экран (onShown), а не когда до него
+  // перелистнули: после «Одобрить» следующее открывается само
+  const view = (id: string) => setViewing(id);
+  const shown = (id: string) => setSeen((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
   /** После решения в просмотре — следующее нерешённое фото; кончились — просмотр закрывается */
   const nextAfter = (id: string): string | null => {
     const rest = photos.filter((photo) => photo.id !== id && !decidedIds.has(photo.id));
@@ -538,10 +551,14 @@ function PhotoCard({
     } else focusFrom.current = tile;
     undoable({
       key: photo.id,
-      text: t.photoApprovedUndo(tile + 1),
+      text: t.photoApprovedUndo(tile + 1, listing.name),
       undo: () => unmark(photo.id),
-      commit: async () => {
-        const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
+      commit: async (urgent) => {
+        const result = await api.post(
+          `${base}/${photo.id}/moderation`,
+          { decision: "approved" },
+          { keepalive: urgent },
+        );
         if (!result.ok) {
           unmark(photo.id);
           setFailure(result);
@@ -651,7 +668,11 @@ function PhotoCard({
                     type="button"
                     className="btn btn-icon photo-approve"
                     disabled={working || decidedHere}
-                    onClick={() => approve(photo, tile)}
+                    onClick={(event) => {
+                      // Второй щелчок или автоповтор Enter — уже по следующей плитке: не решение
+                      if (event.detail > 1 || repeated()) return;
+                      approve(photo, tile);
+                    }}
                   >
                     <Icon name="check" size={20} />
                     <span>{t.photoApproveOne(tile + 1, listing.name)}</span>
@@ -718,6 +739,7 @@ function PhotoCard({
             view(id);
           }}
           onApprove={(photo, tile) => approve(photo, tile)}
+          onShown={shown}
           onDecline={(photo, tile) => {
             setFailure(null);
             setDeclining({ photo, n: tile + 1 });

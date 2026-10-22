@@ -132,7 +132,8 @@ function DeadTable({
           {busyLabel(t.retry, busy === item.id)}
         </button>
       ) : null;
-    if (!problem.call) return null;
+    // Звонить — вендору: его телефоны в заявке и у вендора. Клиенту и сотруднику отсюда не звонят
+    if (!problem.call || item.recipientKind !== "vendor_user") return null;
     if (item.request)
       return (
         <Link to={{ name: "request", id: item.request.id }} className={small ? "btn btn-sm" : "btn"}>

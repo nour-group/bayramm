@@ -909,6 +909,18 @@ describe("уведомления", () => {
     expect(button(t.retry)).toBeUndefined();
   });
 
+  it("бот заблокирован у клиента — словами, но без ссылки «позвонить»: звонят только вендору", async () => {
+    const [first] = HEALTH.dead;
+    const client: OutboxHealth = {
+      ...HEALTH,
+      dead: first ? [{ ...first, recipientKind: "client", recipientLabel: "C-1234" }] : [],
+    };
+    mockApi(staff("manager", MANAGER), { "GET /api/staff/outbox": json(client) });
+    await mount("/notifications");
+    expect(text()).toContain(t.delivery.blocked);
+    expect(text()).not.toContain(t.callRequest(1001));
+  });
+
   it("получатель без подписи (удалён) — вид и начало id, как раньше", async () => {
     const [first] = HEALTH.dead;
     const gone: OutboxHealth = { ...HEALTH, dead: first ? [{ ...first, recipientLabel: null }] : [] };
@@ -1979,7 +1991,7 @@ describe("правки карточек", () => {
     expect(container.querySelectorAll(".queue-photo.is-decided")).toHaveLength(1);
     expect(document.activeElement?.classList.contains("photo-approve")).toBe(true);
     expect(document.activeElement).not.toBe(approveFirst);
-    expect(document.body.textContent).toContain(t.photoApprovedUndo(1));
+    expect(document.body.textContent).toContain(t.photoApprovedUndo(1, "Lola zali"));
     // «Отменить» — плитка снова ждёт, запроса не было
     await click(buttonsOf(document.body, t.undo).find((b) => b.closest(".ui-toast")));
     expect(container.querySelectorAll(".queue-photo.is-decided")).toHaveLength(0);
@@ -2130,6 +2142,14 @@ describe("правки карточек", () => {
     expect(viewer()?.querySelector(".viewer-decline")?.className).not.toContain("btn-danger-fill");
     await click(viewer()?.querySelector(".viewer-approve") ?? undefined);
     expect(viewer()?.querySelector("img")?.getAttribute("src")).toContain(`${photoId(1)}.webp`);
+    // Второе нажатие сразу (двойной щелчок, автоповтор Enter) пришлось бы на следующее фото — не решение
+    await click(viewer()?.querySelector(".viewer-approve") ?? undefined);
+    await act(async () => {
+      viewer()
+        ?.querySelector(".viewer-approve")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+    });
+    expect(container.querySelectorAll(".queue-photo.is-decided")).toHaveLength(1);
     await passUndo();
     expect(approved).toEqual([photoId(3)]);
     // Закрыли — открыты все три: «Одобрить все» без подтверждения

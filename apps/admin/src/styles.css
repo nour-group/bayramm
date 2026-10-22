@@ -2753,8 +2753,9 @@ a.rcard-title {
   margin: 0;
 }
 
-/* Рамка снимка: жесты (смахнуть, развести пальцы) — наши, страница под ними не двигается и не
-   увеличивается; увеличенный снимок не вылезает за рамку */
+/* Рамка снимка: смахнуть вбок и развести пальцы — наши жесты, вертикальная прокрутка — браузера
+   (низкий экран, телефон боком: тело просмотра прокручивается); увеличенный снимок двигаем мы
+   и в рамке */
 .viewer-frame {
   display: flex;
   flex: 1 1 auto;
@@ -2763,12 +2764,13 @@ a.rcard-title {
   border-radius: var(--r-8);
   background: var(--plum-deep);
   cursor: zoom-in;
-  touch-action: none;
+  touch-action: pan-y;
   user-select: none;
 }
 
 .viewer-frame.is-zoomed {
   cursor: grab;
+  touch-action: none;
 }
 
 .viewer-image {

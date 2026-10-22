@@ -52,6 +52,11 @@ export interface PhotoViewerProps<P extends ViewerPhoto> {
   readonly onGo: (id: string) => void;
   readonly onApprove: (photo: P, at: number) => void;
   readonly onDecline: (photo: P, at: number) => void;
+  /**
+   * Снимок этого фото показан (загрузился): только теперь фото считается открытым — для «Одобрить
+   * все» без вопроса и для публикации
+   */
+  readonly onShown?: (id: string) => void;
   /** Причина отказа открытого фото — форма прямо в просмотре */
   readonly declining: boolean;
   readonly declineForm: ReactNode;
@@ -76,6 +81,8 @@ const MAX_ZOOM = 4;
 const SWIPE_PX = 48;
 const MOVE_PX = 8;
 const DOUBLE_TAP_MS = 320;
+/** Второе нажатие решения раньше этого — повтор, а не новое решение */
+export const REPEAT_MS = 500;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -255,6 +262,7 @@ export function PhotoViewer<P extends ViewerPhoto>({
   onGo,
   onApprove,
   onDecline,
+  onShown,
   declining,
   declineForm,
   failure,
@@ -263,6 +271,21 @@ export function PhotoViewer<P extends ViewerPhoto>({
 }: PhotoViewerProps<P>) {
   const photo = photos[at];
   const total = photos.length;
+  // Решать — только по показанному снимку: после «Одобрить» открывается следующее, и двойной
+  // щелчок или зажатый Enter не должны одобрить его, пока его не видно
+  const [shown, setShown] = useState<string | null>(null);
+  const loaded = photo !== undefined && shown === photo.id;
+  const lastApprove = useRef(0);
+  /**
+   * Повтор нажатия (второй щелчок, автоповтор клавиши) сразу после «Одобрить» — уже по следующему
+   * фото: не решение. Отказ только открывает форму причины — его не запоминаем
+   */
+  const decide = (event: { detail: number }, run: () => void, approve: boolean) => {
+    const now = Date.now();
+    if (event.detail > 1 || now - lastApprove.current < REPEAT_MS) return;
+    if (approve) lastApprove.current = now;
+    run();
+  };
   const go = (step: number) => {
     const next = photos[(at + step + total) % total];
     if (next) onGo(next.id);
@@ -292,6 +315,7 @@ export function PhotoViewer<P extends ViewerPhoto>({
   // него — на сам диалог), иначе Esc и Tab не дошли бы до просмотра
   const approveRef = useRef<HTMLButtonElement>(null);
   const shownId = photo?.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: loaded — снимок показан, «Одобрить» стало доступно
   useEffect(() => {
     if (working || shownId === undefined) return;
     const viewer = document.querySelector<HTMLElement>(".photo-viewer");
@@ -301,10 +325,11 @@ export function PhotoViewer<P extends ViewerPhoto>({
       viewer?.querySelector<HTMLElement>("form textarea, form input:not([type=hidden])")?.focus();
       return;
     }
-    if (viewer?.contains(document.activeElement)) return;
+    // Фокус на самом просмотре, пока снимок грузился, — на «Одобрить», когда оно стало доступно
+    if (viewer?.contains(document.activeElement) && document.activeElement !== viewer) return;
     const approve = approveRef.current;
     (approve && !approve.disabled ? approve : viewer)?.focus({ preventScroll: true });
-  }, [working, shownId, declining]);
+  }, [working, shownId, declining, loaded]);
   if (!photo) return null;
   const approvable = canApprove(photo);
   return (
@@ -331,8 +356,8 @@ export function PhotoViewer<P extends ViewerPhoto>({
                 ref={approveRef}
                 type="button"
                 className="btn btn-primary viewer-approve"
-                disabled={working || !approvable}
-                onClick={() => onApprove(photo, at)}
+                disabled={working || !approvable || !loaded}
+                onClick={(event) => decide(event, () => onApprove(photo, at), true)}
               >
                 {approvable ? t.photoApprove : doneLabel(photo)}
               </button>
@@ -340,8 +365,8 @@ export function PhotoViewer<P extends ViewerPhoto>({
               <button
                 type="button"
                 className="btn btn-danger viewer-decline"
-                disabled={working || !canDecline(photo) || declining}
-                onClick={() => onDecline(photo, at)}
+                disabled={working || !canDecline(photo) || declining || !loaded}
+                onClick={(event) => decide(event, () => onDecline(photo, at), false)}
               >
                 {t.photoDecline}
               </button>
@@ -374,6 +399,10 @@ export function PhotoViewer<P extends ViewerPhoto>({
             alt=""
             decoding="async"
             draggable={false}
+            onLoad={() => {
+              setShown(photo.id);
+              onShown?.(photo.id);
+            }}
           />
         </div>
         <figcaption className="viewer-claim">

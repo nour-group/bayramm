@@ -46,8 +46,10 @@ type PhotoAck = "consent" | "no_faces";
 export interface PhotoReview {
   readonly seen: ReadonlySet<string>;
   readonly viewing: string | null;
-  /** Открыть фото во весь экран — и запомнить, что его видели */
+  /** Открыть фото во весь экран */
   readonly view: (id: string) => void;
+  /** Снимок показан во весь экран — запомнить, что фото видели */
+  readonly shown: (id: string) => void;
   readonly close: () => void;
 }
 
@@ -58,12 +60,14 @@ export interface PhotoReview {
 export function usePhotoReview(): PhotoReview {
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
   const [viewing, setViewing] = useState<string | null>(null);
-  const view = useCallback((id: string) => {
-    setViewing(id);
-    setSeen((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
-  }, []);
+  const view = useCallback((id: string) => setViewing(id), []);
+  // Открытым фото считается, когда его снимок показан во весь экран, а не когда до него перелистнули
+  const shown = useCallback(
+    (id: string) => setSeen((prev) => (prev.has(id) ? prev : new Set(prev).add(id))),
+    [],
+  );
   const close = useCallback(() => setViewing(null), []);
-  return useMemo(() => ({ seen, viewing, view, close }), [seen, viewing, view, close]);
+  return useMemo(() => ({ seen, viewing, view, shown, close }), [seen, viewing, view, shown, close]);
 }
 
 interface PhotosProps {
@@ -235,6 +239,8 @@ export function Photos({
   const approve = (photo: StaffPhoto, index: number) => {
     setFailure(null);
     setApproving((prev) => new Set(prev).add(photo.id));
+    // «Следующее в очереди» — сразу, а не когда решение ушло
+    setDecidedHere(true);
     goNext(photo.id);
     const done = () =>
       setApproving((prev) => {
@@ -244,13 +250,16 @@ export function Photos({
       });
     undoable({
       key: photo.id,
-      text: t.photoApprovedUndo(index + 1),
+      text: t.photoApprovedUndo(index + 1, listingName),
       undo: done,
-      commit: async () => {
-        const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
+      commit: async (urgent) => {
+        const result = await api.post(
+          `${base}/${photo.id}/moderation`,
+          { decision: "approved" },
+          { keepalive: urgent },
+        );
         // Одобрено — отметка остаётся, пока витрина не перечиталась (фото не мигнёт «ждёт»)
-        if (result.ok) setDecidedHere(true);
-        else {
+        if (!result.ok) {
           done();
           setFailure(result);
         }
@@ -433,6 +442,7 @@ export function Photos({
             view(id);
           }}
           onApprove={(photo, at) => approve(photo, at)}
+          onShown={review.shown}
           onDecline={(photo, at) => {
             setFailure(null);
             setDeclining({ photo, n: at + 1 });

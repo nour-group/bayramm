@@ -14,6 +14,7 @@ import {
   listingBody,
   pick,
   rebase,
+  withoutContacts,
 } from "./pages/ListingForm";
 
 /* Форма витрины по категории: что спрашивать, что уходит в правку (только изменённое) и
@@ -300,6 +301,24 @@ describe("свежая версия витрины поверх вписанно
     // Выбрали «новый» — значение из свежей версии: остаётся только вместимость
     const theirs = pick(hall, merged.now, "descriptionRu", fresh);
     expect(listingBody(hall, theirs, fresh)).toEqual({ capMin: 50 });
+  });
+
+  it("черновик на конец сессии — без контактов витрины: телефона и Telegram во вкладке нет", () => {
+    const car = cfg("car");
+    const state = formState(listing("car"), car);
+    const typed = {
+      ...state,
+      values: { ...state.values, phone: "90 123 45 67", telegram: "oqkortej" },
+      clearTelegram: true,
+    };
+    const stored = withoutContacts(typed);
+    expect([stored.values.phone, stored.values.telegram, stored.clearPhone, stored.clearTelegram]).toEqual([
+      "",
+      "",
+      false,
+      false,
+    ]);
+    expect(JSON.stringify(stored)).not.toContain("45 67");
   });
 
   it("одинаковая правка с обеих сторон — не выбор", () => {

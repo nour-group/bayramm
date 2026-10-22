@@ -24,7 +24,8 @@ export type Result<T> = { readonly ok: true; readonly data: T } | Failure;
 
 export interface Api {
   get<T>(path: string): Promise<Result<T>>;
-  post<T>(path: string, body?: unknown): Promise<Result<T>>;
+  /** keepalive — запрос доживёт до конца, даже если страницу закрывают (решение с «Отменить») */
+  post<T>(path: string, body?: unknown, options?: { readonly keepalive?: boolean }): Promise<Result<T>>;
   patch<T>(path: string, body: unknown): Promise<Result<T>>;
   put<T>(path: string, body: unknown): Promise<Result<T>>;
   del<T>(path: string): Promise<Result<T>>;
@@ -87,7 +88,8 @@ export function createApi(token: string, onUnauthorized: () => void, doFetch: ty
   });
   return {
     get: (path) => send("GET", path),
-    post: (path, body) => send("POST", path, json(body)),
+    post: (path, body, options) =>
+      send("POST", path, { ...json(body), ...(options?.keepalive ? { keepalive: true } : {}) }),
     patch: (path, body) => send("PATCH", path, json(body)),
     put: (path, body) => send("PUT", path, json(body)),
     del: (path) => send("DELETE", path),

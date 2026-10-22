@@ -745,7 +745,7 @@ describe("карточка", () => {
     // «Одобрить» — без причины; уходит через 5 секунд, до того — «Отменить»
     await pickPhoto(2, t.approve);
     expect(calls.filter((c) => c.url.endsWith("/moderation"))).toHaveLength(1);
-    expect(document.body.textContent).toContain(t.photoApprovedUndo(2));
+    expect(document.body.textContent).toContain(t.photoApprovedUndo(2, LISTING.name));
     await act(async () => {
       vi.advanceTimersByTime(UNDO_MS);
     });

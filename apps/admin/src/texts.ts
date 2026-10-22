@@ -660,7 +660,8 @@ export const t = {
   photoZoomIn: "Увеличить",
   photoZoomOut: "Целиком",
   // «Одобрить» в просмотре и ✓ плитки: решение уходит через 5 секунд, до того — «Отменить»
-  photoApprovedUndo: (n: number) => `Фото ${n} одобрено`,
+  // С названием витрины: строки разных витрин не заменяют друг друга, у каждой своё «Отменить»
+  photoApprovedUndo: (n: number, listing: string) => `Фото ${n} одобрено · ${listing}`,
   // «Одобрить все» — после того как каждое фото открыто, или с подтверждением числа
   photoApproveAllQ: (n: number) => `Одобрить ${n} фото, не открывая?`,
   photoApproveAllText: (n: number, seen: number) =>

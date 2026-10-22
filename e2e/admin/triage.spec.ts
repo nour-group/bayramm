@@ -100,7 +100,7 @@ test("просмотр фото: «Увеличить» — крупный ва�
 
   // «Одобрить» — решение ждёт 5 секунд, «Отменить» возвращает фото без запроса
   await viewer.getByRole("button", { name: t.photoApprove, exact: true }).click();
-  const toast = page.locator(".ui-toast").filter({ hasText: t.photoApprovedUndo(2) });
+  const toast = page.locator(".ui-toast").filter({ hasText: t.photoApprovedUndo(2, "Bogʻ zali") });
   await expect(toast).toBeVisible();
   await toast.getByRole("button", { name: t.undo }).click();
   await page.waitForTimeout(5_500);

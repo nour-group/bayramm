@@ -63,7 +63,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Failure, Result } from "../api";
+import { type Failure, type Result, useSession } from "../api";
 import { useDraft } from "../drafts";
 import { NumberField, PhoneField, SlugField, TelegramField } from "../fields";
 import { usePhone } from "../layout";
@@ -370,6 +370,14 @@ const isFormState = (value: unknown): value is FormState => {
   );
 };
 
+/** Черновик без контактов витрины: телефон и Telegram — ПДн, во вкладку их не кладём */
+export const withoutContacts = (state: FormState): FormState => ({
+  ...state,
+  values: { ...state.values, phone: "", telegram: "" },
+  clearPhone: false,
+  clearTelegram: false,
+});
+
 const isStoredForm = (value: unknown): value is StoredForm =>
   typeof value === "object" &&
   value !== null &&
@@ -576,16 +584,25 @@ export function ListingEditor({
     : null;
   // Сессия кончилась посреди правки: вписанное — во вкладку (drafts.ts); вернулись после входа —
   // оно поверх свежей витрины, общее с чужими правками — на выбор, как после «свежей версии»
+  // Черновик — только того же сотрудника и без контактов витрины (ПДн во вкладке не храним);
+  // кто витрину не правит, тому возвращать нечего
   const toast = useOptionalToast();
-  useDraft<StoredForm>(`listing:${listing.id}`, { before, now }, dirty, (draft) => {
-    if (!isStoredForm(draft)) return false;
-    const merged = rebase(category, draft.before, draft.now, before, districtName);
-    setNowState(merged.now);
-    if (merged.conflicts.length > 0)
-      setRebased({ mine: draft.now, fresh: before, conflicts: merged.conflicts, picks: {} });
-    toast?.(t.draftRestored, { tone: "info", duration: 8000 });
-    return true;
-  });
+  const { staff } = useSession();
+  useDraft<StoredForm>(
+    `listing:${listing.id}`,
+    { before: withoutContacts(before), now: withoutContacts(now) },
+    dirty,
+    (draft) => {
+      if (!isStoredForm(draft)) return false;
+      const merged = rebase(category, draft.before, draft.now, before, districtName);
+      setNowState(merged.now);
+      if (merged.conflicts.length > 0)
+        setRebased({ mine: draft.now, fresh: before, conflicts: merged.conflicts, picks: {} });
+      toast?.(t.draftRestored, { tone: "info", duration: 8000 });
+      return true;
+    },
+    { staffId: staff.id, enabled: !readOnly },
+  );
   const choose = (key: string, side: "mine" | "theirs") => {
     if (!rebased) return;
     setRebased({ ...rebased, picks: { ...rebased.picks, [key]: side } });
