@@ -45,6 +45,7 @@ const photo = (n: number, extra: Partial<StaffPhoto> = {}): StaffPhoto => ({
   isCover: false,
   moderation: "pending",
   declineReason: null,
+  ack: "no_faces",
   createdAt: "2026-09-29T06:00:00.000Z",
   ...extra,
 });
@@ -153,15 +154,20 @@ async function mount(path: string) {
 const button = (name: string) =>
   [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === name);
 const toasts = () => document.querySelector(".ui-toasts")?.textContent ?? "";
-/** Шторка фото: нажать плитку N и выбрать пункт */
+/** Просмотр фото: нажать плитку N и выбрать действие (решение — в строке просмотра, остальное — под снимком) */
 async function pickPhoto(n: number, action: string) {
   await act(async () => container.querySelectorAll<HTMLButtonElement>(".photo-tile")[n - 1]?.click());
-  const item = [...document.querySelectorAll<HTMLElement>(".ui-dialog .menu-item")].find(
-    (el) => el.textContent?.trim() === action,
-  );
+  const item = [
+    ...document.querySelectorAll<HTMLElement>(
+      ".photo-viewer .menu-item, .photo-viewer .viewer-actions button",
+    ),
+  ].find((el) => el.textContent?.trim() === action);
   await act(async () => item?.click());
   await settle();
 }
+const closeDialog = () =>
+  act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
+const dialogText = () => document.querySelector(".ui-dialog")?.textContent ?? "";
 
 beforeEach(() => {
   calls = [];
@@ -216,25 +222,47 @@ describe("фото витрины", () => {
     expect(
       [...document.querySelectorAll(".ui-dialog .menu-item")].some((el) => el.textContent === t.moveToStart),
     ).toBe(false);
-    await act(async () =>
-      [...document.querySelectorAll<HTMLButtonElement>(".ui-dialog button")]
-        .find((b) => b.textContent === t.close)
-        ?.click(),
-    );
+    await closeDialog();
     await pickPhoto(2, t.moveToStart);
     const put = calls.find((c) => c.startsWith("PUT") && c.endsWith("/photos/order"));
     expect(put).toBeDefined();
     expect(toasts()).toContain(t.toastPhotoFirst(2));
   });
 
-  it("«Одобрить все» — по одному запросу на ждущее решения фото; в шапке — счёт против минимума и предела", async () => {
+  it("«Одобрить все» — неоткрытые фото только через подтверждение; по одному запросу на фото; в шапке — счёт против минимума и предела", async () => {
     mockApi(10);
     await mount(`/listings/${LISTING_ID}`);
     expect(container.querySelector("#photos-title")?.textContent).toContain(t.photosOf(2, 10));
     expect(container.querySelector(".photos-min")?.textContent).toBe(t.photosMin(3));
     await act(async () => button(t.photosApproveAll(1))?.click());
+    // Ждущее фото не открывали — вопрос с числом, без запроса
+    const question = document.querySelector('[role="alertdialog"]');
+    expect(question?.textContent).toContain(t.photoApproveAllQ(1));
+    expect(question?.textContent).toContain(t.photoApproveAllText(1, 0));
+    expect(calls.some((c) => c.endsWith("/moderation"))).toBe(false);
+    await act(async () =>
+      [...(question?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+        .find((b) => b.textContent === t.photoApproveAllGo)
+        ?.click(),
+    );
     await settle();
     expect(calls.filter((c) => c.endsWith(`/photos/${photo(2).id}/moderation`))).toHaveLength(1);
     expect(toasts()).toContain(t.toastPhotosApproved(1));
+  });
+
+  it("плитка — просмотр во весь экран: что отметил загрузивший и правило категории; открытое — «Одобрить все» сразу", async () => {
+    mockApi(10);
+    await mount(`/listings/${LISTING_ID}`);
+    expect(container.querySelector(".photo-rule")?.textContent).toBe(t.photoRule.no_people);
+    await act(async () => container.querySelectorAll<HTMLButtonElement>(".photo-tile")[1]?.click());
+    expect(document.querySelector(".photo-viewer")).not.toBeNull();
+    expect(dialogText()).toContain(t.photoViewerTitle(2, 2, "Oqsaroy Hall"));
+    expect(dialogText()).toContain(t.photoAckClaim.no_faces);
+    expect(dialogText()).toContain(t.photoRule.no_people);
+    await closeDialog();
+    await act(async () => button(t.photosApproveAll(1))?.click());
+    await settle();
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    expect(calls.filter((c) => c.endsWith(`/photos/${photo(2).id}/moderation`))).toHaveLength(1);
   });
 });

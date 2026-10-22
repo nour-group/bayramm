@@ -10,9 +10,13 @@
    Так же — любой уже загруженный кусок (заранее, по наведению на карточку, раньше на этом
    экране): React.lazy приостанавливается и на готовом модуле, а React 19 показывает
    содержимое после заглушки не сразу, а пачкой (~300 мс). Поэтому экран из готового куска
-   рисуется напрямую, без lazy: каталог → витрина → форма — без задержки на переход. */
+   рисуется напрямую, без lazy: каталог → витрина → форма — без задержки на переход.
 
-import { type ComponentType, createElement, lazy, useState } from "react";
+   Кусок, который не загрузился (нет связи, после выкладки его уже нет), не оставляет пустую
+   страницу: ScreenErrorBoundary оболочки показывает «Повторить», retryableLazy грузит заново. */
+
+import { retryableLazy } from "@bayramm/ui/react";
+import { type ComponentType, createElement, useState } from "react";
 import type { RouteName } from "./routes";
 
 const LOADERS = {
@@ -57,7 +61,7 @@ function screen<K extends ScreenChunk, P extends object>(
   chunk: K,
   pick: (module: ScreenModule<K>) => ComponentType<P>,
 ): ComponentType<P> {
-  const Lazy = lazy(() => load(chunk).then((module) => ({ default: pick(module) })));
+  const Lazy = retryableLazy(() => load(chunk).then((module) => ({ default: pick(module) })));
   function Screen(props: P) {
     const [module] = useState(() => loaded.get(chunk) as ScreenModule<K> | undefined);
     return createElement((module ? pick(module) : Lazy) as ComponentType<P>, props);

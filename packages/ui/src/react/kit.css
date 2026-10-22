@@ -1249,6 +1249,27 @@ button.ui-cal-day.is-partial:not(.is-out):not(.is-busy) {
   box-shadow: inset 0 -3px 0 var(--peach);
 }
 
+/* ---------- экран не открылся ---------- */
+
+/* Строка и «Повторить» на месте экрана: не во весь экран, чтобы шапка и разделы остались */
+.ui-screen-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-12);
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.ui-screen-error-text {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-15);
+  line-height: 1.45;
+}
+
 /* ---------- подсказка ---------- */
 
 .ui-tooltip {

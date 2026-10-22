@@ -443,8 +443,13 @@ describe("панель: вендор в нескольких категория�
       const submitted = await ok<ListingDetail>(
         api("manager", "POST", `/staff/listings/${listing.id}/submit`, { version: listing.version }),
       );
+      // Ждущие фото одобряет публикация — те, что модератор открыл (здесь — все)
+      const approvePhotos = submitted.photos.filter((p) => p.moderation === "pending").map((p) => p.id);
       const published = await ok<ListingDetail>(
-        api("moderator", "POST", `/staff/listings/${listing.id}/publish`, { version: submitted.version }),
+        api("moderator", "POST", `/staff/listings/${listing.id}/publish`, {
+          version: submitted.version,
+          approvePhotos,
+        }),
       );
       expect(published.status).toBe("active");
       expect(published.services.every((s) => s.status === "active")).toBe(true);

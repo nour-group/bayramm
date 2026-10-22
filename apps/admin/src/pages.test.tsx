@@ -242,12 +242,14 @@ async function pickMenu(context: string, action: string) {
   await settle();
 }
 
-/** Шторка фото: нажать плитку N и выбрать пункт (обложка, одобрить, отклонить, удалить…) */
+/** Просмотр фото: нажать плитку N и выбрать действие (решение — в строке просмотра, остальное — под снимком) */
 const photoTile = (n: number) => container.querySelectorAll<HTMLButtonElement>(".photo-tile")[n - 1];
 const sheetItem = (name: string) =>
-  [...document.querySelectorAll<HTMLElement>(".ui-dialog .menu-item")].find(
-    (el) => el.textContent?.trim() === name,
-  );
+  [
+    ...document.querySelectorAll<HTMLButtonElement>(
+      ".photo-viewer .menu-item, .photo-viewer .viewer-actions button",
+    ),
+  ].find((el) => el.textContent?.trim() === name);
 async function pickPhoto(n: number, action: string) {
   await act(async () => photoTile(n)?.click());
   await act(async () => sheetItem(action)?.click());
@@ -618,7 +620,7 @@ describe("карточка", () => {
     expect(text()).toContain("Ремонт");
   });
 
-  it("чего не хватает — человеческими словами; фото, ждущие решения, публикации не мешают", async () => {
+  it("чего не хватает — человеческими словами; ждущие фото к публикации — когда модератор их открыл", async () => {
     const photo = (n: number) => ({
       id: `dddddddd-0000-0000-0000-00000000000${n}`,
       key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-00000000000${n}.webp`,
@@ -645,11 +647,20 @@ describe("карточка", () => {
       }),
     });
     await mount(`/listings/${LISTING_ID}`);
-    const blockers = [...container.querySelectorAll(".blockers li")].map(
-      (li) => li.querySelector(".blocker-text")?.textContent,
-    );
-    // Проверка вендора — одной строкой «n/4» со ссылкой на страницу вендора, где её отмечают
-    expect(blockers).toEqual([t.vendorChecksDone(3, 4)]);
+    const blockers = () =>
+      [...container.querySelectorAll(".blockers li")].map(
+        (li) => li.querySelector(".blocker-text")?.textContent,
+      );
+    // Ждущие фото не открыты — публикация их не одобрит: пункт «Фото» на месте
+    expect(blockers()[0]).toContain(t.blockers.photos);
+    expect(blockers()[0]).toContain(t.readinessPhotos(0, 3));
+    for (const n of [1, 2, 3]) {
+      await act(async () => photoTile(n)?.click());
+      await act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
+    }
+    // Все открыты во весь экран — их одобрит публикация. Проверка вендора — одной строкой «n/4»
+    // со ссылкой на страницу вендора, где её отмечают
+    expect(blockers()).toEqual([t.vendorChecksDone(3, 4)]);
     const toVendor = container.querySelector<HTMLAnchorElement>(".blockers li a");
     expect(toVendor?.textContent).toBe(t.toVendor);
     expect(toVendor?.getAttribute("href")).toBe(`/vendors/${LISTING.vendor.id}`);
@@ -702,35 +713,32 @@ describe("карточка", () => {
       t.photoDeclineReason("Размыто — нужен кадр при свете"),
     );
     // Отклонённое повторно не отклонить; одобрить — можно
-    expect(sheetItem(t.decline)).toBeUndefined();
-    expect(sheetItem(t.approve)).toBeDefined();
-    await act(async () =>
-      [...document.querySelectorAll<HTMLButtonElement>(".ui-dialog button")]
-        .find((b) => b.textContent === t.close)
-        ?.click(),
-    );
+    expect(sheetItem(t.decline)?.disabled).toBe(true);
+    expect(sheetItem(t.approve)?.disabled).toBe(false);
+    await act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
 
-    // «Отклонить» у первого фото: форма причины, отправить без причины нельзя
+    // «Отклонить» у первого фото: форма причины прямо в просмотре, отправить без причины нельзя
     await pickPhoto(1, t.decline);
-    // Форма — под рядом фото: фокус сразу на её заголовке
-    expect(document.activeElement?.textContent).toBe(t.declinePhotoTitle(1));
-    const submit = button(t.declinePhoto);
-    expect(submit?.disabled).toBe(true);
-    expect(container.querySelector(".decline-photo")?.textContent).toContain(t.declinePhotoHint(1));
-    expect(calls.some((c) => c.url.endsWith("/moderation"))).toBe(false);
-    await type(
-      container.querySelector<HTMLTextAreaElement>(".decline-photo textarea") as HTMLTextAreaElement,
-      "  Лицо в кадре  ",
+    const form = () => document.querySelector(".photo-viewer form.confirm");
+    const submit = [...(form()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
+      (b) => b.textContent?.trim() === t.declinePhoto,
     );
+    expect(submit?.disabled).toBe(true);
+    expect(form()?.textContent).toContain(t.declinePhotoHint(1));
+    expect(calls.some((c) => c.url.endsWith("/moderation"))).toBe(false);
+    await type(form()?.querySelector("textarea") as HTMLTextAreaElement, "  Лицо в кадре  ");
     expect(submit?.disabled).toBe(false);
     await act(async () => submit?.click());
     await settle();
     expect(calls.filter((c) => c.url.endsWith("/moderation")).map((c) => c.body)).toEqual([
       { decision: "declined", reason: "Лицо в кадре" },
     ]);
-    // Форма закрылась; «Отклонить» у решённого фото больше нет — фокус на заголовке блока
-    expect(container.querySelector(".decline-photo")).toBeNull();
-    expect(document.activeElement?.id).toBe("photos-title");
+    // Форма закрылась; просмотр перешёл к следующему ждущему решения фото (третьему)
+    expect(form()).toBeNull();
+    expect(document.querySelector(".photo-viewer")?.textContent).toContain(
+      t.photoViewerTitle(3, 3, LISTING.name),
+    );
+    await act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
 
     // «Одобрить» — без причины
     await pickPhoto(2, t.approve);
@@ -841,7 +849,7 @@ describe("карточка", () => {
     expect(managerBlock?.textContent).not.toContain(t.serviceWaits);
   });
 
-  it("фото на телефоне: «Отклонить» — в шторке плитки, причина — в своей шторке; отправка уходит с причиной", async () => {
+  it("фото на телефоне: «Отклонить» — в просмотре плитки, причина — там же; отправка уходит с причиной", async () => {
     vi.stubGlobal("matchMedia", (query: string) => {
       const max = /max-width:\s*(\d+)px/.exec(query);
       return {
@@ -877,12 +885,10 @@ describe("карточка", () => {
     const dialog = () => document.querySelector<HTMLElement>("[role=dialog]");
     await act(async () => photoTile(1)?.click());
     await settle();
-    const item = [...(dialog()?.querySelectorAll<HTMLButtonElement>(".menu-item") ?? [])].find(
-      (b) => b.textContent === t.decline,
-    );
-    await act(async () => item?.click());
+    expect(dialog()?.classList.contains("photo-viewer")).toBe(true);
+    await act(async () => sheetItem(t.decline)?.click());
     await settle();
-    // Шторка с полем причины; без текста кнопка неактивна
+    // Поле причины — в просмотре; без текста кнопка неактивна
     const sheet = dialog();
     expect(sheet?.textContent).toContain(t.declinePhotoHint(1));
     const submit = [...(sheet?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find(
@@ -896,10 +902,10 @@ describe("карточка", () => {
     expect(calls.filter((c) => c.url.endsWith("/moderation")).map((c) => c.body)).toEqual([
       { decision: "declined", reason: "Нужен кадр без людей" },
     ]);
-    expect(dialog()).toBeNull();
+    expect(dialog()?.querySelector("form.confirm")).toBeNull();
   });
 
-  it("отказ по фото: «Отмена» возвращает фокус на плитку этого фото, запроса нет", async () => {
+  it("отказ по фото: «Отмена» оставляет фокус в просмотре, закрытие — на плитке этого фото; запроса нет", async () => {
     const photo = {
       id: "dddddddd-0000-0000-0000-000000000001",
       key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-000000000001.webp`,
@@ -923,13 +929,19 @@ describe("карточка", () => {
     });
     await mount(`/listings/${LISTING_ID}`);
     await pickPhoto(1, t.decline);
-    await type(
-      container.querySelector<HTMLTextAreaElement>(".decline-photo textarea") as HTMLTextAreaElement,
-      "Передумали",
+    const form = () => document.querySelector(".photo-viewer form.confirm");
+    // «Отклонить» стала недоступной — фокус сразу в поле причины, а не в body
+    expect(document.activeElement).toBe(form()?.querySelector("textarea"));
+    await type(form()?.querySelector("textarea") as HTMLTextAreaElement, "Передумали");
+    await act(async () =>
+      [...(form()?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+        .find((b) => b.textContent === t.cancel)
+        ?.click(),
     );
-    await act(async () => button(t.cancel)?.click());
     await settle();
-    expect(container.querySelector(".decline-photo")).toBeNull();
+    expect(form()).toBeNull();
+    expect(document.activeElement?.closest(".photo-viewer")).not.toBeNull();
+    await act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
     expect(document.activeElement).toBe(photoTile(1));
     expect(calls.some((c) => c.url.endsWith("/moderation"))).toBe(false);
   });
@@ -962,14 +974,16 @@ describe("карточка", () => {
     });
     await mount(`/listings/${LISTING_ID}`);
     await pickPhoto(1, t.decline);
-    await type(
-      container.querySelector<HTMLTextAreaElement>(".decline-photo textarea") as HTMLTextAreaElement,
-      "Размыто",
+    const form = () => document.querySelector(".photo-viewer form.confirm");
+    await type(form()?.querySelector("textarea") as HTMLTextAreaElement, "Размыто");
+    await act(async () =>
+      [...(form()?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+        .find((b) => b.textContent === t.declinePhoto)
+        ?.click(),
     );
-    await act(async () => button(t.declinePhoto)?.click());
     await settle();
-    expect(container.querySelector(".decline-photo .field-error")?.textContent).toBe(t.api.reason_required);
-    expect(container.querySelector(".decline-photo")).not.toBeNull();
+    expect(form()?.querySelector(".field-error")?.textContent).toBe(t.api.reason_required);
+    expect(form()).not.toBeNull();
   });
 
   it("пункт «чего не хватает» ведёт к блоку, где он заполняется; телефон и категория — по одному разу", async () => {
@@ -2213,6 +2227,107 @@ describe("переходы между объектами", () => {
     expect(card.textContent).toContain(t.blockers.descriptions);
     expect(card.textContent).toContain(t.vendorChecksDone(3, 4));
     expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
+  });
+
+  it("опубликовать: из ждущих фото одобряются только открытые; про неоткрытые — строка и «Открыть»", async () => {
+    const photo = (n: number, moderation: "approved" | "pending") => ({
+      id: `dddddddd-0000-0000-0000-00000000000${n}`,
+      key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-00000000000${n}.webp`,
+      width: 1600,
+      height: 1200,
+      bytes: 1000,
+      sort: n,
+      isCover: false,
+      moderation,
+      declineReason: null,
+      ack: "no_faces" as const,
+      createdAt: "2026-09-29T06:00:00.000Z",
+    });
+    const photos = [
+      photo(1, "approved"),
+      photo(2, "approved"),
+      photo(3, "approved"),
+      photo(4, "pending"),
+      photo(5, "pending"),
+    ];
+    mockApi(staff("moderator", ["catalog.read", "listings.publish", "photos.moderate"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        status: "review",
+        photos,
+        blockers: { review: [], active: [] },
+      }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json(AVAILABILITY),
+      [`POST /api/staff/listings/${LISTING_ID}/publish`]: json({ ...LISTING, status: "active", photos }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    // Четвёртое открыли во весь экран, пятое — нет
+    await act(async () => photoTile(4)?.click());
+    await act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
+    await act(async () => button(t.actions.publish)?.click());
+    const form = () => container.querySelector(".confirm");
+    expect(form()?.textContent).toContain(t.publishPhotosSeen(1));
+    expect(form()?.textContent).toContain(t.publishPhotosUnseen(1));
+    // «Открыть» — шторка закрывается, просмотр — с неоткрытого фото
+    await act(async () => button(t.publishPhotosOpen)?.click());
+    await settle();
+    expect(form()).toBeNull();
+    expect(document.querySelector(".photo-viewer")?.textContent).toContain(
+      t.photoViewerTitle(5, 5, LISTING.name),
+    );
+    await act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
+    await act(async () => button(t.actions.publish)?.click());
+    expect(form()?.textContent).toContain(t.publishPhotosSeen(2));
+    expect(form()?.textContent).not.toContain(t.publishPhotosUnseen(1));
+    await act(async () => form()?.querySelector<HTMLButtonElement>("button[type=submit]")?.click());
+    await settle();
+    expect(calls.find((c) => c.url.endsWith("/publish"))?.body).toEqual({
+      version: LISTING.version,
+      approvePhotos: [photo(4, "pending").id, photo(5, "pending").id],
+    });
+  });
+
+  it("опубликовать, ни одно ждущее фото не открыто — их не одобряет: в запросе пусто", async () => {
+    const pending = {
+      id: "dddddddd-0000-0000-0000-000000000009",
+      key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-000000000009.webp`,
+      width: 1600,
+      height: 1200,
+      bytes: 1000,
+      sort: 9,
+      isCover: false,
+      moderation: "pending" as const,
+      declineReason: null,
+      ack: "no_faces" as const,
+      createdAt: "2026-09-29T06:00:00.000Z",
+    };
+    const approved = [1, 2, 3].map((n) => ({
+      ...pending,
+      id: `dddddddd-0000-0000-0000-00000000000${n}`,
+      sort: n,
+      moderation: "approved" as const,
+    }));
+    mockApi(staff("moderator", ["catalog.read", "listings.publish", "photos.moderate"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        status: "review",
+        photos: [...approved, pending],
+        blockers: { review: [], active: [] },
+      }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json(AVAILABILITY),
+      [`POST /api/staff/listings/${LISTING_ID}/publish`]: json({ ...LISTING, status: "active" }),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    await act(async () => button(t.actions.publish)?.click());
+    expect(container.querySelector(".confirm")?.textContent).toContain(t.publishPhotosUnseen(1));
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>(".confirm button[type=submit]")?.click(),
+    );
+    await settle();
+    expect(calls.find((c) => c.url.endsWith("/publish"))?.body).toEqual({
+      version: LISTING.version,
+      approvePhotos: [],
+    });
   });
 
   it("приостановить: подтверждение — залитой красной кнопкой, пока ждём сервер — «…»", async () => {

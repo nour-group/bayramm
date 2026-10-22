@@ -1,6 +1,12 @@
 import type { Lang } from "@bayramm/shared";
 import { parseStartParam } from "@bayramm/tg";
-import { ConnectivityProvider, OfflineBanner, ToastProvider, UiTextsProvider } from "@bayramm/ui/react";
+import {
+  ConnectivityProvider,
+  OfflineBanner,
+  ScreenErrorBoundary,
+  ToastProvider,
+  UiTextsProvider,
+} from "@bayramm/ui/react";
 import { Suspense, useEffect, useMemo, useRef } from "react";
 import { LangSwitch } from "./components/LangSwitch";
 import { Link } from "./components/Link";
@@ -298,21 +304,24 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
       <OfflineBanner offline={t.offline} back={t.backOnline} />
       <main id="main" className={`main main-${widthOf(match)}`} tabIndex={-1} ref={main}>
         {/* Пока грузится кусок экрана — место во весь экран: подвал не прыгает вниз */}
-        <Suspense
-          fallback={
-            <div className="screen-fallback">
-              <Loading />
-            </div>
-          }
-        >
-          {gate ? (
-            <div className="screen-fallback">
-              <Loading />
-            </div>
-          ) : (
-            <Screen match={match} />
-          )}
-        </Suspense>
+        {/* Кусок экрана не загрузился (нет связи, после выкладки) — «Повторить», а не пустота */}
+        <ScreenErrorBoundary texts={{ message: t.errLoad, retry: t.retry }} resetKey={route}>
+          <Suspense
+            fallback={
+              <div className="screen-fallback">
+                <Loading />
+              </div>
+            }
+          >
+            {gate ? (
+              <div className="screen-fallback">
+                <Loading />
+              </div>
+            ) : (
+              <Screen match={match} />
+            )}
+          </Suspense>
+        </ScreenErrorBoundary>
       </main>
       {/* Подвал — у сайта; в Mini App его место — нижняя панель. Нижней панели нет у гостя
           сайта (разделы — в шапке и в меню), на внутренних экранах и во входе */}

@@ -77,6 +77,8 @@ photos.post("/:id/photos", requirePermission("listings.write"), limitUpload, asy
     isCover: false,
     moderation: photo.moderation === "withdrawn" ? "declined" : photo.moderation,
     declineReason: null,
+    // Без подтверждения addListingPhoto фото не принимает: «лиц нет» — если не было иного
+    ack: ack ?? "no_faces",
     createdAt: iso(new Date()),
   };
   return c.json(body, 201);

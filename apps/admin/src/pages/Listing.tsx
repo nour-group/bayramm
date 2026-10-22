@@ -34,6 +34,7 @@
 
 import type {
   ListingAction,
+  ListingActionInput,
   ListingDetail,
   ListingInput,
   ListingSaveResult,
@@ -97,7 +98,7 @@ import {
   MainSection,
 } from "./ListingForm";
 import { NextInQueue } from "./NextInQueue";
-import { Photos } from "./Photos";
+import { type PhotoReview, Photos, usePhotoReview } from "./Photos";
 import { Services } from "./Services";
 import { WorkingTimes } from "./WorkingTimes";
 
@@ -296,8 +297,8 @@ interface Remaining {
 
 /**
  * Что осталось: у неопубликованной — для проверки и сверх неё для публикации, у витрины на
- * проверке или приостановленной — для публикации (готовые фото, ждущие решения, не мешают: их
- * одобряет сама публикация); у опубликованной — ничего
+ * проверке или приостановленной — для публикации (ждущие решения фото, открытые модератором, не
+ * мешают: их одобрит публикация — approvable); у опубликованной — ничего
  */
 function remainingOf(listing: ListingDetail, approvable: number, minPhotos: number): Remaining {
   const none: Remaining = { own: [], vendor: [], submit: 0, publish: 0 };
@@ -371,7 +372,16 @@ function CategoryListing({
 
   // Минимум фото — у категории (не меньше трёх) и в настройках платформы: больший из двух
   const minPhotos = Math.max(dictionaries?.settings.minPhotos ?? 3, category.minPhotos);
-  const approvable = listing.photos.filter((photo) => photo.moderation !== "declined").length;
+  // Какие фото открывали во весь экран: публикация одобряет из ждущих только их
+  const review = usePhotoReview();
+  // Сколько фото будет одобрено к публикации: у того, кто публикует, — одобренные и открытые им
+  // ждущие; у остальных — все не отклонённые (решать будет модератор)
+  const approvable = can("listings.publish")
+    ? listing.photos.filter(
+        (photo) =>
+          photo.moderation === "approved" || (photo.moderation === "pending" && review.seen.has(photo.id)),
+      ).length
+    : listing.photos.filter((photo) => photo.moderation !== "declined").length;
   const left = remainingOf(listing, approvable, minPhotos);
   // Сотрудник без права решать по правкам меняет опубликованную карточку через модерацию
   const moderated = listing.status === "active" && !can("revisions.moderate");
@@ -388,6 +398,7 @@ function CategoryListing({
     onChange,
     onDecided: () => setDecided(true),
     left,
+    review,
   });
   const blocker = listing.deleteBlocker;
   const menu: MenuAction[] = [
@@ -480,10 +491,12 @@ function CategoryListing({
             <MainSection />
             <Photos
               listingId={listing.id}
+              listingName={listing.name}
               photoPolicy={category.photoPolicy}
               photos={listing.photos}
               minPhotos={minPhotos}
               maxPhotos={dictionaries?.settings.maxPhotos ?? 10}
+              review={review}
               onChanged={onReload}
             />
             <Services listing={listing} category={category} onChanged={onReload} />
@@ -911,12 +924,15 @@ function useStatusActions({
   onChange,
   onDecided,
   left,
+  review,
 }: {
   listing: ListingDetail;
   onChange: (l: ListingDetail) => void;
   /** Решение по витрине на проверке (опубликовать, вернуть, отклонить) — дальше следующая */
   onDecided: () => void;
   left: Remaining;
+  /** Какие фото открывали: публикация одобряет из ждущих только их */
+  review: PhotoReview;
 }): StatusControls {
   const { api } = useSession();
   const can = useCan();
@@ -931,12 +947,21 @@ function useStatusActions({
   useUnsaved(pending !== null && reason.trim() !== "");
   const actions = ACTIONS_FROM[listing.status].filter((action) => can(PERMISSION[action]));
   const primary = actions.find((action) => PRIMARY.includes(action));
+  // Ждущие решения фото: открытые во весь экран публикация одобрит, остальные — ждут дальше
+  const pendingPhotos = listing.photos.filter((photo) => photo.moderation === "pending");
+  const seenPending = pendingPhotos.filter((photo) => review.seen.has(photo.id));
+  const unseenPending = pendingPhotos.filter((photo) => !review.seen.has(photo.id));
 
   const run = async (event: FormEvent) => {
     event.preventDefault();
     if (!pending) return;
     setBusy(true);
-    const body = { version: listing.version, ...(reason.trim() ? { reason: reason.trim() } : {}) };
+    const body: ListingActionInput = {
+      version: listing.version,
+      ...(reason.trim() ? { reason: reason.trim() } : {}),
+      // Публикация одобряет из ждущих фото только открытые во весь экран
+      ...(pending === "publish" ? { approvePhotos: seenPending.map((photo) => photo.id) } : {}),
+    };
     const result = await api.post<ListingDetail>(`/staff/listings/${listing.id}/${pending}`, body);
     setBusy(false);
     setFailure(result.ok ? null : result);
@@ -957,6 +982,13 @@ function useStatusActions({
   const cancel = () => {
     setPending(null);
     setReason("");
+  };
+  // «Открыть» неоткрытые фото: шторка закрывается, просмотр — с первого из них (после закрытия:
+  // два слоя в одном обновлении оставили бы страницу inert)
+  const openUnseen = () => {
+    const first = unseenPending[0];
+    cancel();
+    if (first) setTimeout(() => review.view(first.id), 0);
   };
 
   const remaining = primary === "publish" ? left.publish : primary === "submit" ? left.submit : 0;
@@ -985,6 +1017,17 @@ function useStatusActions({
   const form = pending ? (
     <form className="confirm" onSubmit={run} noValidate>
       <p className="muted small">{t.actionHints[pending]}</p>
+      {pending === "publish" && seenPending.length > 0 ? (
+        <p className="muted small">{t.publishPhotosSeen(seenPending.length)}</p>
+      ) : null}
+      {pending === "publish" && unseenPending.length > 0 ? (
+        <p className="notice notice-warn">
+          <span>{t.publishPhotosUnseen(unseenPending.length)}</span>{" "}
+          <button type="button" className="btn btn-sm" onClick={openUnseen}>
+            {t.publishPhotosOpen}
+          </button>
+        </p>
+      ) : null}
       <ReasonField
         label={REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
         value={reason}

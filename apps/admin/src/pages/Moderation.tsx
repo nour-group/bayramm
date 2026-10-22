@@ -41,7 +41,7 @@ import type {
 } from "@bayramm/shared/api/staff";
 import { categoryConfig } from "@bayramm/shared/categories";
 import { ConfirmSheet, Dialog, RadioGroup } from "@bayramm/ui/react";
-import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type Failure, useCan, useSession } from "../api";
 import { CategoryChip, formatPrice } from "../categories";
 import { formatMoment, photoSrc, photoSrcSet, vendorLabel } from "../format";
@@ -63,6 +63,7 @@ import {
   toneOf,
   usePagedList,
 } from "../ui";
+import { PhotoViewer } from "./PhotoViewer";
 import { ServiceChanges, ServiceDecision } from "./Services";
 
 type Queue = "review" | "revisions" | "services" | "contacts" | "photos";
@@ -280,8 +281,9 @@ function ReviewQueue({ items, minPhotos }: { items: readonly ListingListItem[]; 
   return (
     <ul className="rcards">
       {items.map((listing) => {
-        // Что именно не хватает — на странице витрины: в карточке очереди хватит числа
-        const missing = publishBlockers(listing.blockers, listing.photos.ready, minPhotos).length;
+        // Что именно не хватает — на странице витрины: в карточке очереди хватит числа. Фото к
+        // публикации — одобренные: ждущие она одобрит, только если модератор их откроет
+        const missing = publishBlockers(listing.blockers, listing.photos.approved, minPhotos).length;
         return (
           <li key={listing.id} className="rcard rcard-tap">
             <div className="rcard-head">
@@ -658,10 +660,13 @@ function PhotoCard({
         <PhotoViewer
           photos={photos}
           at={viewed}
-          listing={listing}
+          name={listing.name}
+          policy={policy}
           decides={decides}
           working={working}
-          decided={decidedIds}
+          canApprove={(photo) => !decidedIds.has(photo.id)}
+          canDecline={(photo) => !decidedIds.has(photo.id)}
+          doneLabel={() => t.photoDecidedHere}
           returnFocus={title}
           onGo={(id) => {
             setDeclining(null);
@@ -718,157 +723,6 @@ function PhotoCard({
         </Dialog>
       )}
     </li>
-  );
-}
-
-interface PhotoViewerProps {
-  photos: readonly PendingPhoto[];
-  /** Какое по счёту открыто */
-  at: number;
-  listing: ListingListItem;
-  decides: boolean;
-  working: boolean;
-  decided: ReadonlySet<string>;
-  returnFocus: RefObject<HTMLElement | null>;
-  onGo: (id: string) => void;
-  onApprove: (photo: PendingPhoto, tile: number) => void;
-  onDecline: (photo: PendingPhoto, tile: number) => void;
-  /** Причина отказа открытого фото — форма прямо в просмотре */
-  declining: boolean;
-  declineForm: ReactNode;
-  failure: Failure | null;
-  onClose: () => void;
-}
-
-/**
- * Фото во весь экран: снимок целиком (не обрезан плиткой), что отметил загрузивший и правило
- * категории, листать — кнопками и стрелками ← →, решить — здесь же. Диалог набора: Esc и
- * крестик закрывают, Tab ходит внутри, фокус после закрытия — на название витрины
- */
-function PhotoViewer({
-  photos,
-  at,
-  listing,
-  decides,
-  working,
-  decided,
-  returnFocus,
-  onGo,
-  onApprove,
-  onDecline,
-  declining,
-  declineForm,
-  failure,
-  onClose,
-}: PhotoViewerProps) {
-  const photo = photos[at];
-  const total = photos.length;
-  const go = (step: number) => {
-    const next = photos[(at + step + total) % total];
-    if (next) onGo(next.id);
-  };
-  // Стрелки листают, пока не вписывают причину отказа (в поле стрелки двигают курсор)
-  const goRef = useRef(go);
-  goRef.current = go;
-  useEffect(() => {
-    if (declining || total < 2) return;
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (target?.closest("input, textarea, [role='radiogroup']")) return;
-      if (event.key === "ArrowLeft") goRef.current(-1);
-      else if (event.key === "ArrowRight") goRef.current(1);
-      else return;
-      event.preventDefault();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [declining, total]);
-  // Решили или перелистнули: кнопка «Одобрить» была недоступна, пока шёл запрос, и фокус ушёл с
-  // неё — возвращаем его в просмотр (на «Одобрить», без него — на сам диалог), иначе Esc и Tab
-  // не дошли бы до просмотра
-  const approveRef = useRef<HTMLButtonElement>(null);
-  const shownId = photo?.id;
-  useEffect(() => {
-    if (working || shownId === undefined) return;
-    const viewer = document.querySelector<HTMLElement>(".photo-viewer");
-    if (viewer?.contains(document.activeElement)) return;
-    (approveRef.current ?? viewer)?.focus({ preventScroll: true });
-  }, [working, shownId]);
-  if (!photo) return null;
-  const policy = categoryConfig(listing.categoryCode)?.photoPolicy;
-  const decidedHere = decided.has(photo.id);
-  return (
-    <Dialog
-      open
-      title={t.photoViewerTitle(at + 1, total, listing.name)}
-      onClose={onClose}
-      returnFocus={returnFocus}
-      className="photo-viewer"
-      actions={
-        <div className="viewer-actions">
-          <button
-            type="button"
-            className="btn btn-icon viewer-step"
-            disabled={total < 2}
-            onClick={() => go(-1)}
-          >
-            <Icon name="back" size={20} />
-            <span className="visually-hidden">{t.photoPrev}</span>
-          </button>
-          {decides ? (
-            <>
-              <button
-                ref={approveRef}
-                type="button"
-                className="btn btn-primary viewer-approve"
-                disabled={working || decidedHere}
-                onClick={() => onApprove(photo, at)}
-              >
-                {decidedHere ? t.photoDecidedHere : t.photoApprove}
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger-fill viewer-decline"
-                disabled={working || decidedHere || declining}
-                onClick={() => onDecline(photo, at)}
-              >
-                {t.photoDecline}
-              </button>
-            </>
-          ) : null}
-          <button
-            type="button"
-            className="btn btn-icon viewer-step"
-            disabled={total < 2}
-            onClick={() => go(1)}
-          >
-            <Icon name="forward" size={20} />
-            <span className="visually-hidden">{t.photoNext}</span>
-          </button>
-        </div>
-      }
-    >
-      <figure className="viewer-figure">
-        <img
-          key={photo.id}
-          className="viewer-image"
-          src={photoSrc(photo.key, 1280)}
-          srcSet={photoSrcSet(photo.key, true)}
-          sizes="100vw"
-          width={photo.width > 0 ? photo.width : undefined}
-          height={photo.height > 0 ? photo.height : undefined}
-          alt=""
-          decoding="async"
-        />
-        <figcaption className="viewer-claim">
-          <span className="photo-claim">{t.photoAckClaim[photo.ack]}</span>
-          {policy ? <span className="photo-rule">{t.photoRule[policy]}</span> : null}
-          {total > 1 ? <span className="muted small viewer-keys">{t.photoViewerKeys}</span> : null}
-        </figcaption>
-      </figure>
-      {declining ? declineForm : null}
-      {failure ? <ErrorText failure={failure} /> : null}
-    </Dialog>
   );
 }
 

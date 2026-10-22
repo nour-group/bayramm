@@ -5,7 +5,7 @@
 //   POST  /staff/listings                                       создать (vendorId, name, categoryCode)
 //   GET   /staff/listings/:id                                   карточка целиком
 //   PATCH /staff/listings/:id                                   правка (version обязателен)
-//   POST  /staff/listings/:id/submit | publish | suspend | reject | draft   { version, reason? }
+//   POST  /staff/listings/:id/submit | publish | suspend | reject | draft   { version, reason?, approvePhotos? }
 //   POST  /staff/listings/:id/category { categoryCode, version } сменить категорию (пока нет заявок)
 //   POST  /staff/listings/:id/phone  { reason? }                телефон и Telegram для клиентов (в журнал)
 //   DELETE /staff/listings/:id                                  удалить (без заявок, не на проверке и не в каталоге)
@@ -60,8 +60,8 @@ import { approveReviewServices, listServices, type ServiceActor } from "../listi
 import { removePhotoObjects } from "../photos/service";
 import { listingPhotoStorage } from "../storage/supabase";
 import { can, requirePermission } from "./access";
-import { Input, invalidInput, likePattern, limitJson, paging, readBody } from "./input";
-import { loadPendingPhotos } from "./pending-photos";
+import { Input, invalidInput, isUuid, likePattern, limitJson, paging, readBody } from "./input";
+import { loadPendingPhotos, photoAckOf } from "./pending-photos";
 import { changedOnly, revisionFields } from "./revision-diff";
 import { blockers, iso, LISTING_STATUSES, num, pathId } from "./shared";
 import { pickSlug, SLUG_RE } from "./slug";
@@ -84,6 +84,8 @@ export async function loadPhotos(trx: Tx, listingId: string): Promise<StaffPhoto
       "is_cover",
       "moderation",
       "moderation_reason",
+      "no_faces_ack",
+      "people_consent_ack",
       "created_at",
     ])
     .where("listing_id", "=", listingId)
@@ -102,6 +104,7 @@ export async function loadPhotos(trx: Tx, listingId: string): Promise<StaffPhoto
     isCover: row.is_cover,
     moderation: row.moderation === "withdrawn" ? "declined" : row.moderation,
     declineReason: row.moderation === "declined" ? row.moderation_reason : null,
+    ack: photoAckOf(row),
     createdAt: iso(row.created_at),
   }));
 }
@@ -700,6 +703,7 @@ export async function applyListingAction(
   action: ListingAction,
   version: number,
   reason: string | null = null,
+  options: PublishOptions = {},
 ): Promise<number> {
   const plan = ACTIONS[action];
   const current = await trx
@@ -716,16 +720,23 @@ export async function applyListingAction(
   if (reason && !plan.reasonRequired) {
     await sql`select set_config('app.reason', ${reason}, true)`.execute(trx);
   }
-  // Модератор публикует карточку целиком: готовые фото и услуги, ждущие решения, одобряются
+  // Модератор публикует карточку целиком: услуги, ждущие решения, одобряются; из ждущих фото —
+  // только те, что он открыл во весь экран (approvePhotos). Остальные ждут решения и клиентам
+  // не видны: фото с лицом не уйдёт в каталог непросмотренным. Одобренных меньше минимума —
+  // публикацию остановит база (publish_blocked, photos)
   if (action === "publish") {
-    await trx
-      .updateTable("app.photos")
-      .set({ moderation: "approved" })
-      .where("listing_id", "=", id)
-      .where("deleted_at", "is", null)
-      .where("status", "=", "ready")
-      .where("moderation", "=", "pending")
-      .execute();
+    const approve = options.approvePhotos ?? [];
+    if (approve === "all" || approve.length > 0) {
+      let photos = trx
+        .updateTable("app.photos")
+        .set({ moderation: "approved" })
+        .where("listing_id", "=", id)
+        .where("deleted_at", "is", null)
+        .where("status", "=", "ready")
+        .where("moderation", "=", "pending");
+      if (approve !== "all") photos = photos.where("id", "in", approve);
+      await photos.execute();
+    }
     await approveReviewServices(trx, id);
   }
 
@@ -740,17 +751,44 @@ export async function applyListingAction(
   return next;
 }
 
+/**
+ * Ждущие фото, которые одобряет публикация: панель шлёт те, что модератор открыл во весь экран.
+ * "all" — только демо-данные staging (свои иллюстрации)
+ */
+export interface PublishOptions {
+  readonly approvePhotos?: readonly string[] | "all";
+}
+
+/** Сколько фото публикация одобряет за раз — с запасом над пределом фото витрины */
+const APPROVE_PHOTOS_MAX = 50;
+
+/** approvePhotos тела publish: id фото без повторов; не массив uuid — ошибка поля */
+function approvePhotosOf(input: Input): string[] {
+  const value = input.peek("approvePhotos");
+  if (value === undefined || value === null) return [];
+  if (
+    !Array.isArray(value) ||
+    value.length > APPROVE_PHOTOS_MAX ||
+    !value.every((item): item is string => typeof item === "string" && isUuid(item))
+  ) {
+    input.fail("approvePhotos");
+    return [];
+  }
+  return [...new Set(value.map((item) => item.toLowerCase()))];
+}
+
 for (const [action, plan] of Object.entries(ACTIONS) as [ListingAction, ActionPlan][]) {
   listings.post(`/:id/${action}`, requirePermission(plan.permission), limitJson, async (c) => {
     const id = pathId(c.req.param("id"));
     const input = new Input(await readBody(c.req.raw));
     const version = input.int("version", { min: 1, max: 2_147_483_647, required: true });
     const reason = input.text("reason", { max: 1000, required: plan.reasonRequired, multiline: true });
+    const approvePhotos = action === "publish" ? approvePhotosOf(input) : [];
     input.done();
     if (typeof version !== "number") throw invalidInput(["version"]);
 
     const listing = await withActor(c.var.db, staffOf(c), async (trx) => {
-      await applyListingAction(trx, id, action, version, reason ?? null);
+      await applyListingAction(trx, id, action, version, reason ?? null, { approvePhotos });
       return loadListing(trx, id);
     });
     return c.json(listing);

@@ -211,6 +211,7 @@ function stubPhoto(
     isCover: sort === 0,
     moderation,
     declineReason,
+    ack: "no_faces",
     createdAt: iso,
   };
 }

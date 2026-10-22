@@ -1,9 +1,12 @@
 /* Фото карточки: загрузка (сжатие в браузере, без метаданных), обложка, порядок, решение
    модератора (отказ — только с причиной: её видит партнёр, она подписана у отклонённого фото),
-   удаление (через подтверждение). Плитка — фото и плашка состояния; нажатие открывает шторку:
-   обложка, «в начало», одобрить, отклонить, удалить. В шапке — сколько фото из предела и
-   минимум; модератору, пока есть ждущие решения, — «Одобрить все (n)». Порядок меняется «в
-   начало» (стрелок «раньше / позже» нет: плитка — одна кнопка).
+   удаление (через подтверждение). Плитка — фото и плашка состояния; нажатие открывает тот же
+   просмотр во весь экран, что у очереди «Новые фото» (PhotoViewer): снимок целиком, что отметил
+   загрузивший (лиц нет / люди согласны) и правило фото категории, ← → листают, «Одобрить» и
+   «Отклонить» — там же, под снимком — обложка, «в начало», удалить. В шапке — сколько фото из
+   предела и минимум; модератору, пока есть ждущие решения, — «Одобрить все (n)»: сразу, если
+   каждое ждущее фото открывали, иначе — через подтверждение с числом неоткрытых. Какие фото
+   открывали — usePhotoReview страницы витрины: публикация одобряет только их.
    Подтверждение — по правилу фото категории, и спрашивается при загрузке («Добавить фото»):
    «без людей» (площадка, кортеж, цветы, торты, подарки, декор) — на фото нет лиц (X-No-Faces);
    портфолио (фото и видео, студия) — люди на фото согласны на публикацию (X-Photo-Consent) или
@@ -18,13 +21,14 @@ import { compressForUpload } from "@bayramm/media/browser";
 import type { StaffPhoto } from "@bayramm/shared/api/staff";
 import { NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
 import type { PhotoPolicy } from "@bayramm/shared/categories";
-import { Checkbox, ConfirmSheet, Dialog, FileDrop, RadioGroup, useToast } from "@bayramm/ui/react";
-import { useEffect, useRef, useState } from "react";
+import { Checkbox, ConfirmSheet, FileDrop, RadioGroup, useToast } from "@bayramm/ui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useSession } from "../api";
 import { photoSrc, photoSrcSet } from "../format";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
 import { ConfirmForm, ErrorText, PhoneSheet, Pill, toneOf } from "../ui";
+import { PhotoViewer } from "./PhotoViewer";
 
 /** Форматы фото; на телефоне — любое фото: так точно предлагают и камеру, и галерею (HEIC — по расширению) */
 const ACCEPT = "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif";
@@ -36,13 +40,41 @@ const REASON_MAX = 500;
 /** Что подтвердил сотрудник о выбранных фото (портфолио) */
 type PhotoAck = "consent" | "no_faces";
 
+/** Какие фото витрины открывали во весь экран (за этот заход на страницу) и какое открыто сейчас */
+export interface PhotoReview {
+  readonly seen: ReadonlySet<string>;
+  readonly viewing: string | null;
+  /** Открыть фото во весь экран — и запомнить, что его видели */
+  readonly view: (id: string) => void;
+  readonly close: () => void;
+}
+
+/**
+ * Просмотр фото страницы витрины: блок «Фото» открывает фото, публикация одобряет только
+ * открытые (остальные ждут решения), шторка публикации открывает первое неоткрытое
+ */
+export function usePhotoReview(): PhotoReview {
+  const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
+  const [viewing, setViewing] = useState<string | null>(null);
+  const view = useCallback((id: string) => {
+    setViewing(id);
+    setSeen((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+  }, []);
+  const close = useCallback(() => setViewing(null), []);
+  return useMemo(() => ({ seen, viewing, view, close }), [seen, viewing, view, close]);
+}
+
 interface PhotosProps {
   listingId: string;
+  /** Название витрины — в заголовке просмотра */
+  listingName: string;
   /** Правило фото категории витрины */
   photoPolicy: PhotoPolicy;
   photos: readonly StaffPhoto[];
   minPhotos: number;
   maxPhotos: number;
+  /** Просмотр во весь экран: общий со шторкой публикации */
+  review: PhotoReview;
   /** После любого изменения — перечитать карточку: меняются и фото, и блокеры */
   onChanged: () => void;
 }
@@ -54,7 +86,16 @@ interface SheetItem {
   readonly run: () => void;
 }
 
-export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, onChanged }: PhotosProps) {
+export function Photos({
+  listingId,
+  listingName,
+  photoPolicy,
+  photos,
+  minPhotos,
+  maxPhotos,
+  review,
+  onChanged,
+}: PhotosProps) {
   const { api } = useSession();
   const can = useCan();
   const portfolio = photoPolicy === "portfolio";
@@ -75,13 +116,14 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
   // Загрузка: подпись правила, подтверждение и выбор файлов — по «Добавить фото»
   const [adding, setAdding] = useState(false);
   const addButton = useRef<HTMLButtonElement>(null);
-  // Шторка фото — по его id: после решения список перечитается, а номер сдвинется
-  const [sheetId, setSheetId] = useState<string | null>(null);
-  const sheetReturn = useRef<HTMLElement | null>(null);
-  // Фото, которое отклоняют, и его номер в ряду; форма причины — шторка на телефоне, на месте шире
+  // Куда вернуть фокус, когда просмотр закроется: плитка, с которой открыли, иначе — заголовок блока
+  const viewerReturn = useRef<HTMLElement | null>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  // Фото, которое отклоняют, и его номер в ряду: причина — прямо в просмотре
   const [declining, setDeclining] = useState<{ photo: StaffPhoto; n: number } | null>(null);
-  const declineReturn = useRef<HTMLElement | null>(null);
-  const declineTitle = useRef<HTMLHeadingElement>(null);
+  // «Одобрить все», когда открыты не все ждущие фото, — через подтверждение
+  const [confirmAll, setConfirmAll] = useState(false);
+  const allButton = useRef<HTMLButtonElement>(null);
   const phone = usePhone();
   const editable = can("listings.write");
   const moderates = can("photos.moderate");
@@ -90,7 +132,14 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
   const hasCover = photos.some((photo) => photo.isCover);
   const isCover = (photo: StaffPhoto, index: number) => photo.isCover || (!hasCover && index === 0);
   const pending = photos.filter((photo) => photo.moderation === "pending");
+  const unseen = pending.filter((photo) => !review.seen.has(photo.id)).length;
   const full = photos.length >= maxPhotos;
+  const { viewing, view, close } = review;
+
+  // Просмотр открыли не с плитки (шторка публикации) — фокус потом на заголовок блока
+  useEffect(() => {
+    if (viewing !== null && !viewerReturn.current?.isConnected) viewerReturn.current = titleRef.current;
+  }, [viewing]);
 
   const upload = async (picked: readonly File[]) => {
     const files = picked.slice(0, Math.max(0, maxPhotos - photos.length));
@@ -140,6 +189,17 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
     onChanged();
   };
 
+  /** После решения в просмотре — следующее ждущее фото; больше нет — остаётся это */
+  const nextPending = (id: string): string | null => {
+    const at = photos.findIndex((photo) => photo.id === id);
+    const rest = photos.filter((photo) => photo.id !== id && photo.moderation === "pending");
+    return (rest.find((photo) => photos.indexOf(photo) > at) ?? rest[0])?.id ?? null;
+  };
+  const goNext = (id: string) => {
+    const next = nextPending(id);
+    if (next && viewing === id) view(next);
+  };
+
   const toStart = (index: number) => {
     const ids = photos.map((p) => p.id);
     const [moved] = ids.splice(index, 1);
@@ -150,13 +210,20 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
 
   const cover = (photo: StaffPhoto, index: number) =>
     void act(() => api.post(`${base}/${photo.id}/cover`), t.toastCover(index + 1));
-  const approve = (photo: StaffPhoto, index: number) =>
-    void act(
-      () => api.post(`${base}/${photo.id}/moderation`, { decision: "approved" }),
-      t.toastPhotoApproved(index + 1),
-    );
+  const approve = async (photo: StaffPhoto, index: number) => {
+    setBusy(true);
+    setFailure(null);
+    const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
+    setBusy(false);
+    if (result.ok) {
+      toast(t.toastPhotoApproved(index + 1), { tone: "success" });
+      goNext(photo.id);
+    } else setFailure(result);
+    onChanged();
+  };
   // Все ждущие решения — по одному (у API решение по одному фото); остановка на первой ошибке
   const approveAll = async () => {
+    setConfirmAll(false);
     setBusy(true);
     let done = 0;
     let stopped: Failure | null = null;
@@ -173,41 +240,19 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
     if (done > 0) toast(t.toastPhotosApproved(done), { tone: "success" });
     onChanged();
   };
-  // Отказ без причины сервер не примет (422): сначала спрашиваем её, а фокус вернётся на ту
-  // плитку, с которой начали
-  const startDecline = (photo: StaffPhoto, index: number, opener: HTMLElement | null) => {
-    declineReturn.current = opener;
-    setFailure(null);
-    setDeclining({ photo, n: index + 1 });
-  };
+  // Каждое ждущее фото открыто во весь экран — одобрить все сразу; иначе — подтвердить число
+  const askAll = () => (unseen === 0 ? void approveAll() : setConfirmAll(true));
+  // Отказ без причины сервер не примет (422): причину спрашивает форма прямо в просмотре
   const decline = async (reason: string): Promise<Failure | null> => {
     if (!declining) return null;
-    const result = await api.post(`${base}/${declining.photo.id}/moderation`, {
-      decision: "declined",
-      reason,
-    });
+    const { photo } = declining;
+    const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "declined", reason });
     if (!result.ok) return result;
-    // Фото решено: на компьютере фокус — на заголовок блока (плитка осталась, но форма закрылась
-    // там же, где открылась); на телефоне шторка вернёт его на плитку
-    if (!phone) declineReturn.current = null;
     setDeclining(null);
+    goNext(photo.id);
     onChanged();
     return null;
   };
-  // На компьютере форма — под рядом фото, далеко от плитки: фокус — на её заголовок, а когда форма
-  // закрылась, — обратно на плитку (после решения — на заголовок «Фото»)
-  const wasDeclining = useRef(false);
-  useEffect(() => {
-    if (phone) return;
-    if (declining) {
-      wasDeclining.current = true;
-      declineTitle.current?.focus();
-    } else if (wasDeclining.current) {
-      wasDeclining.current = false;
-      const back = declineReturn.current;
-      (back?.isConnected ? back : document.getElementById("photos-title"))?.focus();
-    }
-  }, [declining, phone]);
 
   const remove = async () => {
     if (!removing) return;
@@ -216,27 +261,18 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
     await act(() => api.del(`${base}/${photo.id}`));
   };
 
-  const sheetIndex = sheetId === null ? -1 : photos.findIndex((photo) => photo.id === sheetId);
-  const sheetPhoto = sheetIndex >= 0 ? photos[sheetIndex] : undefined;
-  const closeSheet = () => setSheetId(null);
-  /** Действия шторки фото: обложка, в начало, решение модератора, удаление */
-  const sheetItems = (photo: StaffPhoto, index: number): SheetItem[] => [
+  const shownIndex = viewing === null ? -1 : photos.findIndex((photo) => photo.id === viewing);
+  const shown = shownIndex >= 0 ? photos[shownIndex] : undefined;
+  const closeViewer = () => {
+    setDeclining(null);
+    close();
+  };
+  /** Действия под снимком: обложка, в начало, удаление (решение — в строке просмотра) */
+  const moreItems = (photo: StaffPhoto, index: number): SheetItem[] => [
     ...(editable && !isCover(photo, index)
       ? [{ key: "cover", label: t.makeCover, run: () => cover(photo, index) }]
       : []),
     ...(editable && index > 0 ? [{ key: "first", label: t.moveToStart, run: () => toStart(index) }] : []),
-    ...(moderates && photo.moderation !== "approved"
-      ? [{ key: "approve", label: t.approve, run: () => approve(photo, index) }]
-      : []),
-    ...(moderates && photo.moderation !== "declined"
-      ? [
-          {
-            key: "decline",
-            label: t.decline,
-            run: () => startDecline(photo, index, sheetReturn.current),
-          },
-        ]
-      : []),
     ...(editable
       ? [
           {
@@ -248,11 +284,16 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
         ]
       : []),
   ];
+  const statesOf = (photo: StaffPhoto, index: number) => [
+    ...(isCover(photo, index) ? [t.cover] : []),
+    t.moderationStates[photo.moderation] ?? photo.moderation,
+  ];
+  const more = shown ? moreItems(shown, shownIndex) : [];
 
   return (
     <section className="panel" aria-labelledby="photos-title">
       <div className="panel-head">
-        <h2 id="photos-title" tabIndex={-1}>
+        <h2 id="photos-title" tabIndex={-1} ref={titleRef}>
           {t.photos} <span className="count">{t.photosOf(photos.length, maxPhotos)}</span>
         </h2>
         <span className={`photos-min${photos.length < minPhotos ? " is-short" : ""}`}>
@@ -261,11 +302,12 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
         <div className="head-acts">
           {moderates && pending.length > 0 ? (
             <button
+              ref={allButton}
               type="button"
               className="btn btn-sm"
               aria-busy={busy || undefined}
               disabled={busy}
-              onClick={() => void approveAll()}
+              onClick={askAll}
             >
               {t.photosApproveAll(pending.length)}
             </button>
@@ -285,15 +327,13 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
         </div>
       </div>
 
+      {photos.length > 0 ? <p className="photo-rule">{t.photoRule[photoPolicy]}</p> : null}
       {photos.length === 0 ? (
         <p className="muted">{t.photosEmpty}</p>
       ) : (
         <ol className="photos">
           {photos.map((photo, index) => {
-            const states = [
-              ...(isCover(photo, index) ? [t.cover] : []),
-              t.moderationStates[photo.moderation] ?? photo.moderation,
-            ];
+            const states = statesOf(photo, index);
             return (
               <li key={photo.id} className="photo">
                 <button
@@ -302,8 +342,9 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
                   aria-haspopup="dialog"
                   aria-label={`${t.photoN(index + 1)}: ${states.join(", ")}`}
                   onClick={(event) => {
-                    sheetReturn.current = event.currentTarget;
-                    setSheetId(photo.id);
+                    viewerReturn.current = event.currentTarget;
+                    setFailure(null);
+                    view(photo.id);
                   }}
                 >
                   <img
@@ -331,26 +372,61 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
         </ol>
       )}
 
-      <Dialog
-        open={sheetPhoto !== undefined}
-        title={t.photoN(sheetIndex + 1)}
-        onClose={closeSheet}
-        returnFocus={sheetReturn}
-      >
-        {sheetPhoto ? (
-          <>
-            {sheetPhoto.moderation === "declined" && sheetPhoto.declineReason ? (
-              <p className="muted small photo-reason">{t.photoDeclineReason(sheetPhoto.declineReason)}</p>
-            ) : null}
+      {shown ? (
+        <PhotoViewer
+          photos={photos}
+          at={shownIndex}
+          name={listingName}
+          policy={photoPolicy}
+          decides={moderates}
+          working={busy}
+          canApprove={(photo) => photo.moderation !== "approved"}
+          canDecline={(photo) => photo.moderation !== "declined"}
+          doneLabel={(photo) => t.moderationStates[photo.moderation] ?? photo.moderation}
+          returnFocus={viewerReturn}
+          onGo={(id) => {
+            setDeclining(null);
+            view(id);
+          }}
+          onApprove={(photo, at) => void approve(photo, at)}
+          onDecline={(photo, at) => {
+            setFailure(null);
+            setDeclining({ photo, n: at + 1 });
+          }}
+          declining={declining !== null && declining.photo.id === shown.id}
+          declineForm={
+            declining ? (
+              <ConfirmForm
+                key={declining.photo.id}
+                hint={t.declinePhotoHint(declining.n)}
+                label={t.reason}
+                required
+                danger
+                presets={t.reasons.photoDecline}
+                maxLength={REASON_MAX}
+                submitLabel={t.declinePhoto}
+                onSubmit={decline}
+                onCancel={() => setDeclining(null)}
+              />
+            ) : null
+          }
+          failure={failure}
+          onClose={closeViewer}
+        >
+          <p className="muted small">{statesOf(shown, shownIndex).join(" · ")}</p>
+          {shown.moderation === "declined" && shown.declineReason ? (
+            <p className="muted small photo-reason">{t.photoDeclineReason(shown.declineReason)}</p>
+          ) : null}
+          {more.length > 0 ? (
             <ul className="menu">
-              {sheetItems(sheetPhoto, sheetIndex).map((item) => (
+              {more.map((item) => (
                 <li key={item.key}>
                   <button
                     type="button"
                     className={`menu-item${item.danger ? " menu-danger" : ""}`}
                     disabled={busy}
                     onClick={() => {
-                      closeSheet();
+                      closeViewer();
                       setTimeout(item.run, 0);
                     }}
                   >
@@ -359,38 +435,9 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
                 </li>
               ))}
             </ul>
-          </>
-        ) : null}
-      </Dialog>
-
-      <PhoneSheet
-        open={declining !== null}
-        title={t.declinePhotoTitle(declining?.n ?? 0)}
-        onClose={() => setDeclining(null)}
-        returnFocus={declineReturn}
-      >
-        {declining && (
-          <div className="decline-photo">
-            {!phone && (
-              <h3 ref={declineTitle} tabIndex={-1} className="sub-title">
-                {t.declinePhotoTitle(declining.n)}
-              </h3>
-            )}
-            <ConfirmForm
-              key={declining.photo.id}
-              hint={t.declinePhotoHint(declining.n)}
-              label={t.reason}
-              required
-              danger
-              presets={t.reasons.photoDecline}
-              maxLength={REASON_MAX}
-              submitLabel={t.declinePhoto}
-              onSubmit={decline}
-              onCancel={() => setDeclining(null)}
-            />
-          </div>
-        )}
-      </PhoneSheet>
+          ) : null}
+        </PhotoViewer>
+      ) : null}
 
       {editable && !full ? (
         <PhoneSheet
@@ -451,7 +498,17 @@ export function Photos({ listingId, photoPolicy, photos, minPhotos, maxPhotos, o
           ))}
         </ul>
       )}
-      {failure && <ErrorText failure={failure} />}
+      {failure && viewing === null ? <ErrorText failure={failure} /> : null}
+      <ConfirmSheet
+        open={confirmAll}
+        title={t.photoApproveAllQ(pending.length)}
+        text={t.photoApproveAllText(pending.length, pending.length - unseen)}
+        confirmLabel={t.photoApproveAllGo}
+        cancelLabel={t.cancel}
+        returnFocus={allButton}
+        onConfirm={() => void approveAll()}
+        onCancel={() => setConfirmAll(false)}
+      />
       <ConfirmSheet
         open={removing !== null}
         title={t.deletePhotoTitle}
