@@ -23,10 +23,10 @@ const firstCard = (page: Page) =>
     }));
 
 test.describe("первый экран каталога на телефоне", () => {
-  // «Все»: шторки «Фильтры» нет — как сравнили цены (единицы разные), остаётся над выдачей
-  for (const [path, maxTop, hint] of [
-    [PATHS.catalog, 470, true],
-    [PATHS.category("hall"), 422, false],
+  // «Все» — по разделам, пояснений про цены нет; у зала оно — в шторке «Фильтры»
+  for (const [path, maxTop] of [
+    [PATHS.catalog, 470],
+    [PATHS.category("hall"), 422],
   ] as const) {
     test(`сайт 390×844 ${path}: карточка начинается в верхней половине, название — на первом экране`, async ({
       page,
@@ -39,8 +39,7 @@ test.describe("первый экран каталога на телефоне", 
       // Пояснения — не на телефоне
       await expect(page.locator(".catalog-head .catalog-note")).toBeHidden();
       await expect(page.locator(".catalog-head .cat-lead")).toBeHidden();
-      if (hint) await expect(page.locator(".catalog-list .sort-hint")).toHaveText(ru.sortHintUnits);
-      else await expect(page.locator(".catalog-list .sort-hint")).toBeHidden();
+      await expect(page.locator(".catalog-list .sort-hint")).toBeHidden();
     });
   }
 

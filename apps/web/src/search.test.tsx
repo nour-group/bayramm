@@ -174,6 +174,22 @@ describe("поиск в каталоге", () => {
     expect(link.getAttribute("href")).toBe("/catalog?q=kortej");
   });
 
+  it("слово, которое ничего не нашло, пропускается — и строкой об этом", async () => {
+    await mount({ path: "/catalog?category=car&q=qwxyzz%20kortej", mock: { listings: ALL } });
+    await eventually(() => cardNames().length === 3, "все кортежи");
+    expect(document.querySelector(".search-dropped")?.textContent).toBe(
+      "Показаны результаты по «kortej» — «qwxyzz» не нашли",
+    );
+  });
+
+  it("слово о цене — «сначала дешевле», служебные слова не мешают", async () => {
+    const q = encodeURIComponent("недорогой kortej на");
+    await mount({ path: `/catalog?category=car&q=${q}`, mock: { listings: ALL } });
+    await eventually(() => cardNames().length === 3, "все кортежи");
+    expect(document.querySelector(".filter-row .sort")?.textContent).toContain("Сначала дешевле");
+    expect(document.querySelector(".search-dropped")).toBeNull();
+  });
+
   it("пусто везде — популярные разделы и «Сбросить поиск»", async () => {
     await mount({ path: "/catalog?q=qwxyzz", mock: { listings: ALL } });
     await eventually(() => byText("h2", "Ничего не нашли"), "пусто");

@@ -5,7 +5,8 @@ import { useLang } from "../context";
 import { useDocumentTitle } from "../hooks";
 
 /* «Документы» (/docs) — отдельной страницей для подвала сайта и поисковиков: тексты
-   согласий в действующей версии и как работает заявка. Те же блоки — в профиле */
+   согласий в действующей версии, правила площадки для клиента (aboutRules, как в профиле) и как
+   работает заявка */
 export function Docs() {
   const { t } = useLang();
   useDocumentTitle(t.meDocs, t.metaDocsDesc);
@@ -26,11 +27,10 @@ export function Docs() {
         <h2 className="section-title" id="docs-about">
           {t.meAbout}
         </h2>
+        {/* Правила для клиента — те же, что в профиле; о бизнесе площадки здесь ничего */}
+        <RichText blocks={t.aboutRules} />
         <h3 className="sub-title">{t.i_book_h}</h3>
         <RichText blocks={t.i_book_b} />
-        <h3 className="sub-title">{t.i_city_h}</h3>
-        <RichText blocks={t.i_city_b} />
-        <RichText blocks={t.i_d3_b} />
         <TeamHelp lead={t.teamAbout} />
       </section>
     </div>

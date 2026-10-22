@@ -157,6 +157,17 @@ describe("фильтры по полям витрины", () => {
   });
 });
 
+describe("«Все»: порядок по разделам", () => {
+  it("по умолчанию — section; цены разных разделов не сравниваются", () => {
+    expect(parseCatalogQuery(q({ category: "all" }))).toMatchObject({ sort: "section" });
+    expect(parseCatalogQuery(q({ category: "hall" }))).toMatchObject({ sort: "price_asc" });
+  });
+
+  it("price_asc старых сборок в «Все» — принимается", () => {
+    expect(parseCatalogQuery(q({ category: "all", sort: "price_asc" }))).toMatchObject({ sort: "price_asc" });
+  });
+});
+
 describe("поиск: q", () => {
   it("нормализуется; порядок по умолчанию — relevance", () => {
     expect(parseCatalogQuery(q({ q: "  Тўйхона «Ўрда»  " }))).toMatchObject({
@@ -179,6 +190,15 @@ describe("поиск: q", () => {
 
   it("relevance без запроса — порядок по умолчанию", () => {
     expect(parseCatalogQuery(q({ sort: "relevance" }))).toMatchObject({ q: null, sort: "price_asc" });
+    expect(parseCatalogQuery(q({ sort: "relevance", category: "all" }))).toMatchObject({ sort: "section" });
+  });
+
+  it("слово о цене — сначала дешевле: в разделе по цене, в «Все» по разделам", () => {
+    expect(parseCatalogQuery(q({ q: "недорогой зал", category: "hall" }))).toMatchObject({
+      q: { tokens: ["zal"], cheap: true },
+      sort: "price_asc",
+    });
+    expect(parseCatalogQuery(q({ q: "arzon tort", category: "all" }))).toMatchObject({ sort: "section" });
   });
 
   it("длиннее 64 после нормализации или 200 до — 400 invalid_request [q]; повтор — тоже", () => {

@@ -4,7 +4,7 @@
 -- > название > раздел, район, услуги > описание
 begin;
 \ir _fixtures.psql
-select plan(81);
+select plan(84);
 
 -- Опубликовать зал, как в фикстурах: контакты, банкеты, три готовых фото, проверка → каталог
 create function pg_temp.publish(p_listing uuid)
@@ -45,7 +45,7 @@ select ok((select relrowsecurity from pg_class where oid = 'app.listing_search':
   'RLS на документах поиска');
 select ok(not has_table_privilege('bayramm_api', 'app.listing_search', 'SELECT'),
   'API документы поиска не читает — только через app.catalog_search');
-select ok(has_function_privilege('bayramm_api', 'app.catalog_search(text, text)', 'EXECUTE'),
+select ok(has_function_privilege('bayramm_api', 'app.catalog_search(text, text, boolean)', 'EXECUTE'),
   'API ищет функцией');
 select ok(not has_function_privilege('bayramm_api', 'app.listing_search_refresh(uuid[])', 'EXECUTE'),
   'документы пересобирают только триггеры');
@@ -94,6 +94,9 @@ select ok(app.search_matches('versl', 'Versal'), 'подходит: versl → Ve
 select ok(app.search_matches('kor', 'Kortej'), 'подходит: kor → Kortej');
 select ok(app.search_matches('toʻyxona', 'Toyxona Versal'), 'подходит: toʻyxona → Toyxona Versal');
 select ok(app.search_matches('mercedes', 'Mercedes-Benz S-Class'), 'подходит: mercedes → Mercedes-Benz S-Class');
+select ok(app.search_matches('зал для банкета', 'Банкетный зал'), 'подходит: зал для банкета → Банкетный зал');
+select ok(app.search_matches('недорогой зал', 'Зал Наврўз'), 'подходит: недорогой зал → Зал Наврўз');
+select ok(app.search_matches('toʻy uchun arzon tort', 'Tort toʻy'), 'подходит: toʻy uchun arzon tort → Tort toʻy');
 select ok(not app.search_matches('zal', 'ZAGS'), 'не подходит: zal → ZAGS');
 select ok(not app.search_matches('versal', 'Vesna'), 'не подходит: versal → Vesna');
 select ok(not app.search_matches('kortej mercedes', 'Kortej'), 'не подходит: kortej mercedes → Kortej');
@@ -192,7 +195,8 @@ select is(pg_temp.found('Версаль'), array['versal'], 'кириллице�
 select is(pg_temp.found('versal chilonzor'), array['versal'], 'нужны все слова: название и район');
 select is(pg_temp.found('Яккасарай'), '{}'::text[], 'в районе никого — пусто');
 select is(pg_temp.found('test hall'), array['test-a1', 'test-b1'], 'два слова названия');
-select is(pg_temp.found('test-a2'), '{}'::text[], 'черновик не ищется');
+select ok(not 'test-a2' = any (pg_temp.found('test-a2')),
+  'черновик не ищется (слово только из него пропускается — находятся опубликованные «test»)');
 select ok(pg_temp.found('Тойхона') @> array['versal', 'grand', 'test-a1', 'test-b1'],
   'по названию раздела — все его витрины');
 select is(pg_temp.found('banket', 'car'), '{}'::text[], 'раздел сужает поиск');

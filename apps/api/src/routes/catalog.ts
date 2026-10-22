@@ -5,7 +5,7 @@
 //   GET /catalog/listings?category&q&district&date&guests&sort&cursor&limit&a.* → 200 CatalogPage
 //   GET /catalog/suggest?q                                             → 200 CatalogSuggest
 //   GET /catalog/listings/:slug[?date]                                 → 200 ListingDetail | 404
-//   GET /catalog/cards?ids=<uuid>,…                                    → 200 ListingCards (избранное гостя)
+//   GET /catalog/cards?ids=<uuid>,…[&date]                             → 200 ListingCards (сохранённое; с датой — занятость)
 //   POST /catalog/listings/:slug/contact { action, signedIn }          → 200 ListingContacts | 204 | 404
 //
 // Контакты витрины — не в карточке, а по «Связаться»: open — телефон и Telegram и событие
@@ -98,12 +98,15 @@ catalog.get("/suggest", async (c) => {
 });
 
 // Избранное гостя: id хранит браузер, карточки — отсюда. Снятые с публикации в ответ не
-// попадают — у гостя они просто исчезают из списка
+// попадают — у гостя они просто исчезают из списка. С датой — занятость на неё («Сохранённое»
+// на дату из каталога): ответ зависит только от адреса
 catalog.get("/cards", async (c) => {
   const bad: string[] = [];
-  const ids = parseIdsQuery(single(c.req.queries(), "ids", bad) ?? undefined);
+  const query = c.req.queries();
+  const ids = parseIdsQuery(single(query, "ids", bad) ?? undefined);
+  const date = dateParam(query, bad);
   if (bad.length > 0) throw invalidRequest(bad, "Invalid query parameters");
-  const items = await getListingCards(c.var.db, ids);
+  const items = await getListingCards(c.var.db, ids, date);
   c.header("Cache-Control", CARDS_CACHE_CONTROL);
   return c.json({ items } satisfies ListingCards);
 });

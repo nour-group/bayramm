@@ -1,7 +1,8 @@
 // Поля заявки категории (app.requests.details) — проверка по форме категории витрины.
 //
 //   · число гостей — по форме: обязательно, можно не указывать или не спрашивается;
-//   · поля категории — validateRequestDetails из @bayramm/shared/categories (те же правила,
+//   · поля категории — validateRequestDetails из @bayramm/shared/categories (время начала — по
+//     желанию, если выбраны части дня или весь день; те же правила,
 //     что в форме клиента); район — из справочника;
 //   · выбранные услуги — только одобренные услуги этой витрины, опции — только этих услуг,
 //     количество — не меньше минимального у услуги. Названия и цены сохраняются в заявке
@@ -73,7 +74,12 @@ export async function checkDetails(
 
   const bad: string[] = [];
   if (!guestsAllowed(category, input.guests)) bad.push("guests");
-  const parsed = validateRequestDetails(category, input.details);
+  // Части дня или весь день выбраны — время начала по желанию (как в форме клиента)
+  const timeChosen =
+    hasDayParts(category) &&
+    sessionsOfRow(listing).mode === "parts" &&
+    ((Array.isArray(input.dayParts) && input.dayParts.length > 0) || input.wholeDay === true);
+  const parsed = validateRequestDetails(category, input.details, { timeChosen });
   if (!parsed.ok) bad.push(...parsed.errors);
   if (bad.length > 0 || !parsed.ok) throw invalidRequest(bad);
   const { values, services: choices } = parsed.value;

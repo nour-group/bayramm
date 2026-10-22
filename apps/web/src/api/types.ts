@@ -95,8 +95,11 @@ export interface ClientApi {
   consentTexts(locale: Locale, signal?: AbortSignal): Promise<ConsentTexts>;
   /** Имя бота и адрес Mini App — из способов входа (authMethods), отдельного запроса нет */
   bot(signal?: AbortSignal): Promise<BotInfo>;
-  /** Карточки опубликованных площадок по id (избранное гостя); остальных в ответе нет */
-  listingCards(ids: readonly string[], signal?: AbortSignal): Promise<ListingCards>;
+  /**
+   * Карточки опубликованных площадок по id («Сохранённое»); остальных в ответе нет. С датой — и
+   * занятость на неё
+   */
+  listingCards(ids: readonly string[], signal?: AbortSignal, date?: string | null): Promise<ListingCards>;
   /* Дальше — только с сессией клиента (Telegram) */
   createRequest(body: CreateRequest): Promise<RequestCreated>;
   myRequests(signal?: AbortSignal): Promise<ClientRequests>;

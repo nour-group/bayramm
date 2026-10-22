@@ -3,20 +3,31 @@ import {
   clientCatalogPath,
   clientRequestPath,
   comparablePriceUzs,
+  defaultCatalogSort,
   estimatedTotalUzs,
   FEATURED_LISTINGS,
   type ListingCard,
   pickFeatured,
 } from "./client";
 
-const perGuest = { priceFromUzs: 150_000, priceUnit: "per_guest", capMax: 400 } as const;
-const perEvent = { priceFromUzs: 33_000_000, priceUnit: "per_event", capMax: 300 } as const;
+const perGuest = { priceFromUzs: 150_000, priceUnit: "per_guest", capMin: 100, capMax: 400 } as const;
+const perEvent = { priceFromUzs: 33_000_000, priceUnit: "per_event", capMin: null, capMax: 300 } as const;
 
 describe("сравнимая цена", () => {
-  it("без гостей — на гостя: за мероприятие делится на вместимость, вверх", () => {
+  it("без гостей — на гостя: за мероприятие делится на наименьшее число гостей зала, вверх", () => {
     expect(comparablePriceUzs(perGuest, null)).toBe(150_000);
     expect(comparablePriceUzs(perEvent, null)).toBe(110_000);
     expect(comparablePriceUzs({ ...perEvent, priceFromUzs: 33_000_001 }, null)).toBe(110_001);
+    // Есть «от» вместимости — на него, а не на полный зал: большой зал не выходит «дешевле»
+    expect(comparablePriceUzs({ ...perEvent, capMin: 150 }, null)).toBe(220_000);
+  });
+
+  it("порядок по умолчанию: раздел — дешевле, «Все» — по разделам, поиск — подходящие", () => {
+    expect(defaultCatalogSort("hall", null)).toBe("price_asc");
+    expect(defaultCatalogSort("all", null)).toBe("section");
+    expect(defaultCatalogSort("hall", { cheap: false })).toBe("relevance");
+    expect(defaultCatalogSort("hall", { cheap: true })).toBe("price_asc");
+    expect(defaultCatalogSort("all", { cheap: true })).toBe("section");
   });
 
   it("с гостями — примерная сумма: за гостя × гости, за мероприятие как есть", () => {

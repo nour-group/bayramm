@@ -15,6 +15,7 @@ import {
   isDayPart,
   MAX_CHOSEN_SERVICES,
   occasionParts,
+  requestFieldRequired,
   windowText,
 } from "@bayramm/shared/categories";
 import { Checkbox, DateField, NumberStepper, RadioGroup, Select, TimeField } from "@bayramm/ui/react";
@@ -73,8 +74,10 @@ import {
   NAME_MAX,
   parseQty,
   partsWindows,
+  requestDefaults,
   saveDraft,
   servicesField,
+  timeChosen,
   toCreateRequest,
   validate,
 } from "./request-draft";
@@ -331,11 +334,14 @@ function DetailInput({
   value,
   error,
   hint,
+  required = field.required,
   districts,
   onChange,
 }: {
   field: DetailField;
   id: string;
+  /** Обязательно ли сейчас: время начала — по желанию, когда выбраны части дня */
+  required?: boolean;
   value: DraftValue | undefined;
   error: string | undefined;
   hint?: string;
@@ -351,7 +357,7 @@ function DetailInput({
   switch (field.type) {
     case "int":
       return (
-        <Fld id={id} label={label} required={field.required} error={error} hint={hint}>
+        <Fld id={id} label={label} required={required} error={error} hint={hint}>
           <NumberStepper
             id={id}
             min={field.min}
@@ -380,7 +386,7 @@ function DetailInput({
       );
     case "time":
       return (
-        <Fld id={id} label={label} required={field.required} error={error} hint={hint}>
+        <Fld id={id} label={label} required={required} error={error} hint={hint}>
           <TimeField
             id={id}
             label={label}
@@ -393,7 +399,7 @@ function DetailInput({
       );
     case "district":
       return (
-        <Fld id={id} label={label} required={field.required} error={error} hint={hint}>
+        <Fld id={id} label={label} required={required} error={error} hint={hint}>
           <Select
             id={id}
             label={label}
@@ -424,7 +430,7 @@ function DetailInput({
           </Fld>
         );
       return (
-        <Fld id={id} label={label} required={field.required} error={error} hint={hint}>
+        <Fld id={id} label={label} required={required} error={error} hint={hint}>
           <Select
             id={id}
             label={label}
@@ -440,7 +446,7 @@ function DetailInput({
     case "multi": {
       const codes = Array.isArray(value) ? value : [];
       return (
-        <Fld id={id} label={label} required={field.required} error={error} hint={hint} group>
+        <Fld id={id} label={label} required={required} error={error} hint={hint} group>
           <div className="checks">
             {field.options.map((option, i) => (
               <Checkbox
@@ -634,8 +640,12 @@ function initialDraft(
       ...parts,
       ...occasionTime,
       services,
-      // Количество, выбранное на витрине («3 часа»), — в поле формы той же единицы
-      values: fieldsFromQty(services, listing.services, {}, shownFieldKeys(category, {})),
+      // Значения по умолчанию («Сколько машин» — 1); количество, выбранное на витрине («3 часа»), —
+      // в поле формы той же единицы
+      values: {
+        ...requestDefaults(category),
+        ...fieldsFromQty(services, listing.services, {}, shownFieldKeys(category, {})),
+      },
       date: day,
       guests:
         guests === null || category.requestForm.guests === "hidden"
@@ -1052,6 +1062,7 @@ function Form({
             value={draft.values[field.key]}
             error={errors[`d.${field.key}`]}
             hint={field.key === "start_time" ? startHint : undefined}
+            required={requestFieldRequired(field, { timeChosen: timeChosen(category, listing, draft) })}
             districts={districts}
             onChange={(value) => setValue(field.key, value)}
           />

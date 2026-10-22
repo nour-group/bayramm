@@ -130,13 +130,6 @@ export const uz: Dict = {
   meCo: "Kompaniya rekvizitlari shu yerda eʼlon qilinadi",
   meCoNote: "Prototip. Haqiqiy maʼlumotlar hozircha yigʻilmaydi.",
   meWipeGo: "Oʻchirish",
-  i_city_h: "Hozircha faqat Toshkent",
-  i_city_b: [
-    p("Hamkorlarni bir shahardan boshlab yigʻamiz. Boʻsh katalog — katalog yoʻqligidan yomonroq."),
-    p(
-      "Keyingi navbatda Samarqand va Buxoro — lekin Toshkentda har bir kategoriya boʻyicha yetarli hamkor yigʻilgandan keyin.",
-    ),
-  ],
   i_ver_h: "Hamkorlarni qanday tekshiramiz",
   i_ver_b: [
     p("«Tekshirilgan» belgisi toʻrt narsani bildiradi:"),
@@ -177,12 +170,6 @@ export const uz: Dict = {
     p("Toʻliq matn ishga tushirishdan oldin eʼlon qilinadi."),
     p(
       "Qisqacha: foydalanish bepul. Biz sizni hamkor bilan bogʻlaymiz va uning roʻyxatini tekshiramiz. Xizmat shartnomasini hamkor bilan toʻgʻridan-toʻgʻri tuzasiz, sifat boʻyicha daʼvolar unga.",
-    ),
-  ],
-  i_d3_h: "Ommaviy oferta",
-  i_d3_b: [
-    p(
-      "Oferta hamkorlar va ularning obunasiga tegishli. Siz uchun platforma bepul — na komissiya, na soʻrov uchun toʻlov.",
     ),
   ],
   i_wipe_h: "Hisob oʻchirilsinmi?",
@@ -440,7 +427,7 @@ export const uz: Dict = {
   ],
   estimateFor: (amount: string, guests: number) => `${guests} mehmonga taxminan ${amount}`,
   sortHintPerGuest:
-    "Tadbir narxi toʻla zal hisobida bir mehmonga qayta hisoblandi. Mehmonlar sonini kiriting — umumiy summalarni solishtiramiz.",
+    "Tadbir narxi zalning eng kam mehmon soni boʻyicha bir mehmonga qayta hisoblandi. Mehmonlar sonini kiriting — umumiy summalarni solishtiramiz.",
   perGuestApprox: (amount: string) => `≈ ${amount} mehmon boshiga`,
   sortHintTotal: (guests: number) => `${guests} mehmon uchun taxminiy summa solishtiriladi.`,
   myData: "Mening maʼlumotlarim",
@@ -682,7 +669,7 @@ export const uz: Dict = {
   budgetsSmall: ["3 mln gacha", "3–7 mln", "7–15 mln", "15 mln dan ortiq", "hali bilmayman"],
   errChoose: "Variantni tanlang",
   errChooseSome: "Kamida bitta variantni belgilang",
-  errTime: "Vaqtni koʻrsating",
+  errTime: "Boshlanish vaqtini koʻrsating",
   errRange: (min: number, max: number) => `${min} dan ${max} gacha`,
   errInvalid: "Qiymatni tekshiring",
   errServices: "Kamida bitta xizmatni tanlang",
@@ -803,4 +790,9 @@ export const uz: Dict = {
   srEmptyP: "Yozilishini tekshiring yoki boʻlimlarga qarang.",
   srClear: "Qidiruvni tozalash",
   s_relevance: "Avval mosroqlari",
+  s_section: "Boʻlimlar boʻyicha",
+  busyTailH: "Bu sanada band",
+  srDropped: (found: string, missed: string) => `«${found}» boʻyicha natijalar — «${missed}» topilmadi`,
+  thousandSum: "ming soʻm",
+  svDateHint: "Sanani tanlang — kim boʻshligini koʻrsatamiz.",
 };

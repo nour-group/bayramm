@@ -52,21 +52,26 @@ export function ErrorState({ message, onRetry }: { message?: string; onRetry: ()
   );
 }
 
-/** Пустое состояние: узор гириха как иллюстрация — над текстом, не за ним */
+/**
+ * Пустое состояние: узор гириха как иллюстрация — над текстом, не за ним. screen — вместо экрана,
+ * который грузился (Loading screen): той же высоты, подвал не подпрыгивает
+ */
 export function EmptyState({
   title,
   text,
   action,
   headingLevel = 2,
+  screen = false,
 }: {
   title: string;
   text: string;
   action?: ReactNode;
   headingLevel?: 1 | 2;
+  screen?: boolean;
 }) {
   const Heading = headingLevel === 1 ? "h1" : "h2";
   return (
-    <div className="state state-empty">
+    <div className={screen ? "state state-empty state-screen" : "state state-empty"}>
       <span className="girih" aria-hidden="true" />
       <Heading className="state-title" tabIndex={headingLevel === 1 ? -1 : undefined}>
         {title}

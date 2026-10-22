@@ -1,7 +1,8 @@
 /* SQL поиска из TS — чтобы база и TS не разошлись:
-     · searchSql()        — app.search_norm (таблицы нормализации — normalize.ts и CYRILLIC_LATIN)
-                            и app.listing_attrs_text (текстовые поля витрины — attributes.ts из
-                            конфигурации категорий): блок для миграции;
+     · searchSql()        — app.search_norm (таблицы нормализации — normalize.ts и CYRILLIC_LATIN),
+                            app.search_query_words (слова запроса без служебных и слов о цене —
+                            searchTokens) и app.listing_attrs_text (текстовые поля витрины —
+                            attributes.ts из конфигурации категорий): блок для миграции;
      · searchVectorsSql() — тест-векторы (vectors.ts) для pgTAP.
    Печатает их pnpm --silent --filter @bayramm/shared search:sql. Тест API
    (apps/api/src/db/search-sql.test.ts) сверяет последний блок в миграциях и блок в pgTAP с этим
@@ -11,7 +12,14 @@
 import { CATEGORIES } from "../categories/config";
 import { CYRILLIC_LATIN } from "../slug";
 import { attrTextJsonPath, attrTextPaths } from "./attributes";
-import { SEARCH_APOSTROPHES, SEARCH_MARK_RANGES } from "./normalize";
+import {
+  SEARCH_APOSTROPHES,
+  SEARCH_CHEAP_PREFIXES,
+  SEARCH_MARK_RANGES,
+  SEARCH_MAX_TOKENS,
+  SEARCH_MIN_LENGTH,
+  SEARCH_STOP_WORDS,
+} from "./normalize";
 import { MATCH_VECTORS, MISMATCH_VECTORS, NORM_VECTORS } from "./vectors";
 
 /** Начало и конец блока функций в миграции — по ним его находит тест */
@@ -46,6 +54,25 @@ function normBody(): string {
     `    ${literal(fromChars)},`,
     `    ${literal(toChars)}),`,
     `    NFKD), ${literal(`[${marks}]`)}, '', 'g')), '[^a-z0-9]+', ' ', 'g'))`,
+  ].join("\n");
+}
+
+/** Тело app.search_query_words: слова — как у searchTokens */
+function wordsBody(): string {
+  const stop = `{${SEARCH_STOP_WORDS.join(",")}}`;
+  const cheap = `^(${SEARCH_CHEAP_PREFIXES.join("|")})`;
+  return [
+    "  with w as (",
+    `    select u.t, min(u.n) as n, u.t = any (${literal(stop)}::text[]) as stop`,
+    "    from unnest(string_to_array(app.search_norm(p_text), ' ')) with ordinality as u(t, n)",
+    `    where length(u.t) >= ${SEARCH_MIN_LENGTH} and u.t !~ ${literal(cheap)}`,
+    "    group by u.t",
+    "  )",
+    "  select coalesce(array_agg(x.t order by x.n), '{}')",
+    "  from (select w.t, w.n from w",
+    "        where not w.stop or not exists (select 1 from w o where not o.stop)",
+    "        order by w.n",
+    `        limit ${SEARCH_MAX_TOKENS}) x`,
   ].join("\n");
 }
 
@@ -85,6 +112,16 @@ export function searchSql(): string {
     "",
     "comment on function app.search_norm(text) is",
     "  'Текст для поиска: строчные, кириллица → латиница, без апострофов и диакритики, [a-z0-9 ] (= searchNorm из @bayramm/shared/search)';",
+    "",
+    "create or replace function app.search_query_words(p_text text)",
+    "returns text[]",
+    "language sql immutable strict parallel safe set search_path = ''",
+    "as $$",
+    wordsBody(),
+    "$$;",
+    "",
+    "comment on function app.search_query_words(text) is",
+    "  'Слова запроса поиска: различные, от двух символов, без слов о цене и служебных (если есть другие), первые шесть (= searchTokens из @bayramm/shared/search)';",
     "",
     "create or replace function app.listing_attrs_text(p_category text, p_attributes jsonb)",
     "returns text",

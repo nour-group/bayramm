@@ -35,7 +35,8 @@ async function at(page: Page, width: number, height = 900) {
 
 /** Сколько колонок в первом ряду сетки карточек */
 const columns = (page: Page, list: string) =>
-  page.locator(`${list} > li`).evaluateAll((items) => {
+  // Заголовки разделов «Все» — во всю ширину, не колонка
+  page.locator(`${list} > li:not(.cards-section)`).evaluateAll((items) => {
     const tops = items.map((li) => li.getBoundingClientRect().top);
     const first = Math.min(...tops);
     return tops.filter((top) => Math.abs(top - first) < 2).length;
@@ -330,10 +331,10 @@ test.describe("строка фильтров каталога", () => {
         await page.keyboard.press("Escape");
         await expect(row.locator(".filters-open")).toHaveText(t.moreFiltersN(1));
 
-        // Раздел без полей витрины («Все») и кортеж на дату — тоже без ленты вбок
+        // «Все» (по разделам — порядок выбирать не из чего) и кортеж на дату — тоже без ленты вбок
         await open(page, PATHS.catalog, ".card", { guest: true });
         await expectRowOnScreen(page, `${width} ${lang} все`);
-        await expect(row.locator(".sort")).toBeVisible();
+        await expect(row.locator(".sort")).toHaveCount(0);
         await open(page, `${PATHS.category("car")}&date=${addDays(TODAY, 7)}`, ".card", { guest: true });
         await expectRowOnScreen(page, `${width} ${lang} кортежи на дату`);
         await expectNoOverflow(page, `${width} ${lang} каталог`);

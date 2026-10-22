@@ -50,7 +50,15 @@ describe("SQL поиска в миграции", () => {
   });
 
   it("пороги похожести app.catalog_search — как у TS", () => {
-    const text = readFileSync(join(migrationsDir, "20261015090000_catalog_search.sql"), "utf8");
+    // Последняя миграция, где функция создаётся заново
+    const file = readdirSync(migrationsDir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort()
+      .reverse()
+      .find((f) =>
+        readFileSync(join(migrationsDir, f), "utf8").includes("create function app.catalog_search"),
+      );
+    const text = readFileSync(join(migrationsDir, file ?? ""), "utf8");
     const fn = text.slice(text.indexOf("create function app.catalog_search"));
     expect(fn).toContain(`set pg_trgm.word_similarity_threshold = '${SEARCH_WORD_SIMILARITY}'`);
     expect(fn).toContain(`set pg_trgm.strict_word_similarity_threshold = '${SEARCH_FUZZY_SIMILARITY}'`);

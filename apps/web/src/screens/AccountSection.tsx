@@ -3,7 +3,6 @@ import type { Me } from "@bayramm/shared/api/me";
 import { type MouseEvent, useState } from "react";
 import { type HumanProof, humanProofFor, PhoneCode } from "../components/PhoneCode";
 import { canSignIn, useAccount, useLang, useServices } from "../context";
-import { useAsync } from "../hooks";
 import { authHref, browser } from "../hub";
 import { Icon } from "../icons";
 import { hrefFor } from "../router";
@@ -141,14 +140,13 @@ function Methods({
   );
 }
 
-export function AccountSection() {
+/** Раздел «Аккаунт» профиля; способы входа (methods) грузит профиль — раздел появляется с ними сразу */
+export function AccountSection({ methods: ready }: { methods: AuthMethods | null }) {
   const { api, identity, webApp } = useServices();
   const { t } = useLang();
   const { me, deleted } = useAccount();
-  const methods = useAsync("auth-methods", (signal) => api.authMethods(signal));
   const [leaving, setLeaving] = useState(false);
   const profile = me.status === "ready" ? me.data : null;
-  const ready = methods.status === "ready" ? methods.data : null;
 
   if (deleted || !canSignIn(identity) || profile === null) return null;
 

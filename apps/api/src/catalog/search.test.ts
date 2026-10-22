@@ -44,9 +44,10 @@ describe("выдача с q", () => {
     const found = fake.queries.find(isCatalog);
     const sql = found?.sql ?? "";
     expect(sql).toMatch(
-      /inner join app\.catalog_search\(\$\d+::text, \$\d+::text\) as "sr" on "sr"\."listing_id" = "l"\."id"/,
+      /inner join app\.catalog_search\(\$\d+::text, \$\d+::text, \$\d+::boolean\) as "sr" on "sr"\."listing_id" = "l"\."id"/,
     );
-    expect(found?.parameters).toEqual(expect.arrayContaining(["kortej lyuks", "car"]));
+    // Выдача — с пропуском слов, которые ничего не нашли
+    expect(found?.parameters).toEqual(expect.arrayContaining(["kortej lyuks", "car", true]));
     // Сырого текста в SQL и параметрах нет — только нормализованный
     expect(JSON.stringify(found)).not.toContain("Кортеж");
     expect(sql.slice(sql.lastIndexOf("order by"))).toContain(
@@ -192,6 +193,8 @@ describe("подсказки", () => {
     expect(search?.sql).toContain('order by "sr"."score" desc, "l"."id" limit $');
     expect(search?.parameters.at(-1)).toBe(5);
     expect(search?.parameters).toContain("versal");
+    // Подсказки на каждую букву — без повторов поиска без слов
+    expect(search?.parameters).toContain(false);
   });
 
   it("оценка названия: начало слова — выше похожего; не подходит — null", () => {

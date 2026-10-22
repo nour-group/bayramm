@@ -8,6 +8,7 @@ import {
   NORM_VECTORS,
   relevanceKey,
   SEARCH_MAX_TOKENS,
+  searchAll,
   searchDoc,
   searchMatches,
   searchNorm,
@@ -18,6 +19,7 @@ import {
   searchVectorsCount,
   searchVectorsSql,
   similarity,
+  splitDropped,
   wordSimilarity,
 } from ".";
 
@@ -43,6 +45,78 @@ describe("searchNorm — общие векторы с app.search_norm", () => {
   });
 });
 
+describe("служебные слова и слова о цене", () => {
+  it("не ищутся: «торт на заказ» — торт и заказ, «toʻy uchun» — toy", () => {
+    expect(searchTokens(searchNorm("торт на заказ"))).toEqual(["tort", "zakaz"]);
+    expect(searchTokens(searchNorm("toʻy uchun zal"))).toEqual(["toy", "zal"]);
+    expect(searchTokens(searchNorm("зал для банкета или свадьбы"))).toEqual(["zal", "banketa", "svadbi"]);
+  });
+
+  it("слово о цене — порядок «сначала дешевле», а не слово поиска", () => {
+    expect(query("недорогой зал")).toEqual({ text: "nedorogoy zal", tokens: ["zal"], cheap: true });
+    expect(query("Дешёвый кортеж").cheap).toBe(true);
+    expect(query("arzon tort").tokens).toEqual(["tort"]);
+    expect(query("Versal").cheap).toBe(false);
+  });
+
+  it("одни слова о цене — не поиск; одни служебные — ищутся («за» — начало «ЗАГС»)", () => {
+    expect(searchQuery("недорого")).toBeNull();
+    expect(searchQuery("за")?.tokens).toEqual(["za"]);
+    expect(searchQuery("для на")?.tokens).toEqual(["dlya", "na"]);
+  });
+
+  it("что не нашлось — словами, как ввели", () => {
+    expect(splitDropped("Katta  zal", ["katta"])).toEqual({ found: "zal", missed: "Katta" });
+    expect(splitDropped("недорогой зал на Чиланзаре", ["chilanzare"])).toEqual({
+      found: "зал",
+      missed: "Чиланзаре",
+    });
+    expect(splitDropped("зал", [])).toEqual({ found: "зал", missed: "" });
+  });
+});
+
+describe("поиск без лишних слов (searchAll)", () => {
+  const source = {
+    name: "",
+    category: ["Банкетный зал", "Toʻyxona"],
+    district: [],
+    services: [],
+    attributes: "",
+    descriptions: [],
+  };
+  const docs = new Map([
+    ["versal", searchDoc({ ...source, name: "Versal" })],
+    ["grand", searchDoc({ ...source, name: "Grand", district: ["Чиланзар", "Chilonzor"] })],
+  ]);
+
+  it("все слова нашли — как есть", () => {
+    const result = searchAll(docs, query("Versal зал"));
+    expect([...result.scores.keys()]).toEqual(["versal"]);
+    expect(result.dropped).toEqual([]);
+  });
+
+  it("слово, которое ничего не находит, пропускается", () => {
+    const result = searchAll(docs, query("katta Versal"));
+    expect([...result.scores.keys()]).toEqual(["versal"]);
+    expect(result.dropped).toEqual(["katta"]);
+  });
+
+  it("каждое слово находит, но не вместе, — пусто, без пропусков", () => {
+    const result = searchAll(docs, query("Versal Чиланзар"));
+    expect(result.scores.size).toBe(0);
+    expect(result.dropped).toEqual([]);
+  });
+
+  it("подсказки (forgive = false) и больше четырёх слов — без пропусков", () => {
+    expect(searchAll(docs, query("katta Versal"), false).scores.size).toBe(0);
+    expect(searchAll(docs, query("aa bb cc dd Versal")).scores.size).toBe(0);
+  });
+
+  it("ни одно слово не нашло — пусто", () => {
+    expect(searchAll(docs, query("лимузин белый")).scores.size).toBe(0);
+  });
+});
+
 describe("слова запроса", () => {
   it("различные, от двух символов, по порядку", () => {
     expect(searchTokens("kortej a kortej s class mercedes")).toEqual(["kortej", "class", "mercedes"]);
@@ -55,10 +129,11 @@ describe("слова запроса", () => {
   it("короче двух символов или без слов — не запрос", () => {
     expect(searchQuery("ж")).toBeNull();
     // Длина — после нормализации: «я» — уже два символа
-    expect(searchQuery("я")).toEqual({ text: "ya", tokens: ["ya"] });
+    expect(searchQuery("я")).toEqual({ text: "ya", tokens: ["ya"], cheap: false });
     expect(searchQuery(" ' ")).toBeNull();
     expect(searchQuery("a b c")).toBeNull();
-    expect(searchQuery("Ко")).toEqual({ text: "ko", tokens: ["ko"] });
+    // Служебное слово одно — ищется: «Ко» — начало «Кортеж»
+    expect(searchQuery("Ко")).toEqual({ text: "ko", tokens: ["ko"], cheap: false });
   });
 });
 

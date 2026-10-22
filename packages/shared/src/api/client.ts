@@ -131,16 +131,32 @@ export interface Photo {
 
 /**
  * Порядок выдачи. relevance — по похожести на запрос поиска (q): только с q, с ним — по
- * умолчанию; оплата на него, как и на остальные, не влияет
+ * умолчанию. section — по разделам (в порядке показа разделов), внутри раздела — сначала дешевле:
+ * по умолчанию в «Все», где цены разных разделов (за гостя, за час, за штуку) не сравнить. Оплата
+ * ни на один порядок не влияет
  */
-export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc" | "relevance";
+export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc" | "relevance" | "section";
+
+/** Раздел «Все» — все включённые категории одной выдачей */
+export const CATALOG_ALL = "all";
+
+/**
+ * Порядок выдачи по умолчанию (sort не передан) — один у API, клиента и демо-API: в разделе —
+ * сначала дешевле, в «Все» — по разделам; с поиском — сначала подходящие, а со словом о цене
+ * («недорогой зал») — сначала дешевле
+ */
+export function defaultCatalogSort(category: string, q: { readonly cheap: boolean } | null): CatalogSort {
+  const cheapest: CatalogSort = category === CATALOG_ALL ? "section" : "price_asc";
+  if (q === null) return cheapest;
+  return q.cheap ? cheapest : "relevance";
+}
 
 /**
  * GET /catalog/listings — параметры строки запроса. Всё необязательно.
  * category — код категории; без него — залы (hall), как в v0.1 (старые сборки клиента).
  * category=all — все включённые категории одной выдачей (раздел «Все»): фильтров полей витрины
  * и гостей там нет (они у каждой категории свои), «вместительнее» — тоже; город и район — есть,
- * как везде; цены разных единиц сравниваются как есть, подпись единицы — у каждой карточки.
+ * как везде; порядок по умолчанию — по разделам (section): цены разных разделов не сравнить.
  * guests — отсекает витрины с вместимостью в гостях (cap_max) меньше; у категорий без
  * вместимости не отсекает. date — не отсекает, а опускает занятые в этот день целиком в конец
  * выдачи (при любой сортировке); частично занятые (занята часть рабочих частей дня) — среди
@@ -151,7 +167,8 @@ export type CatalogSort = "price_asc" | "price_desc" | "capacity_desc" | "releva
  * Фильтры по полям витрины категории — параметры «a.<поле>» и «a.<список>.<поле>»
  * (categoryFilters в @bayramm/shared/categories): bool — 1|true, enum/multi — коды через
  * запятую, int — число. Неизвестный фильтр категории — 400 invalid_request.
- * sort по умолчанию — price_asc (с q — relevance); цены сравниваются по comparablePriceUzs, а не
+ * sort по умолчанию — defaultCatalogSort (в разделе price_asc, в «Все» section, с q — relevance,
+ * со словом о цене — сначала дешевле); цены сравниваются по comparablePriceUzs, а не
  * как есть: у одних залов цена за гостя, у других — за мероприятие. Неверный параметр — 400
  * invalid_request (details — имена параметров); курсор от другой сортировки, даты, числа гостей
  * или другого запроса — 400 invalid_cursor.
@@ -214,7 +231,7 @@ export interface ListingCard {
   readonly dateLoad: DateLoad | null;
 }
 
-type PricedCard = Pick<ListingCard, "priceFromUzs" | "priceUnit" | "capMax">;
+type PricedCard = Pick<ListingCard, "priceFromUzs" | "priceUnit" | "capMin" | "capMax">;
 
 /**
  * Примерная сумма за мероприятие на guests гостей: цена за гостя × гости, остальные
@@ -225,18 +242,27 @@ export function estimatedTotalUzs(card: PricedCard, guests: number): number {
 }
 
 /**
+ * Сколько гостей берём, пересчитывая цену за мероприятие на гостя: наименьшее число гостей зала
+ * (cap_min), без него — вместимость (cap_max). Не полный зал: иначе большой зал выходил бы
+ * «дешевле» маленького за те же деньги
+ */
+export const perGuestBasis = (card: Pick<ListingCard, "capMin" | "capMax">): number | null =>
+  card.capMin ?? card.capMax;
+
+/**
  * Цена для сортировки price_asc / price_desc — одна шкала для обеих единиц цены зала:
  *   · задано число гостей — примерная сумма на это число (estimatedTotalUzs);
- *   · не задано — цена за гостя: цена за мероприятие делится на вместимость зала (cap_max)
- *     с округлением вверх, то есть «от» на гостя, если зал заполнен.
+ *   · не задано — цена за гостя: цена за мероприятие делится на наименьшее число гостей зала
+ *     (perGuestBasis) с округлением вверх.
  * Без вместимости (не залы) и у остальных единиц цены (за час, за кг…) — цена как есть.
  * Ту же формулу считает SQL каталога (apps/api/src/catalog/service.ts) и демо-API.
  * Оплата, премиум и продвижение в ней не участвуют — правило продукта
  */
 export function comparablePriceUzs(card: PricedCard, guests: number | null): number {
   if (guests !== null) return estimatedTotalUzs(card, guests);
-  if (card.priceUnit === "per_event" && card.capMax !== null) {
-    return Math.ceil(card.priceFromUzs / card.capMax);
+  const basis = perGuestBasis(card);
+  if (card.priceUnit === "per_event" && basis !== null) {
+    return Math.ceil(card.priceFromUzs / basis);
   }
   return card.priceFromUzs;
 }
@@ -247,6 +273,11 @@ export interface CatalogPage {
   readonly nextCursor: string | null;
   /** Сколько всего нашлось — только с q и только на первой странице (без cursor) */
   readonly total?: number;
+  /**
+   * С q: слова запроса (после нормализации), которые ничего не нашли, — выдача без них
+   * («katta zal» → по «zal»). Нет — все слова нашли (или не нашлось ничего)
+   */
+  readonly dropped?: readonly string[];
 }
 
 // ── подсказки поиска ───────────────────────────────────────────────────────

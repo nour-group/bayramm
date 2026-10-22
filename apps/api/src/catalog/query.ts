@@ -13,16 +13,19 @@
 //
 // q — поиск (@bayramm/shared/search): короче SEARCH_MIN_LENGTH после нормализации — не поиск (q
 // не учитывается, как пустой: так поле, пока в нём одна буква, не ломает выдачу); длиннее
-// SEARCH_MAX_LENGTH или сырой строки больше SEARCH_RAW_MAX_LENGTH — 400 invalid_request. С q
-// порядок по умолчанию — relevance; relevance без q — порядок по умолчанию (price_asc).
+// SEARCH_MAX_LENGTH или сырой строки больше SEARCH_RAW_MAX_LENGTH — 400 invalid_request. Порядок
+// по умолчанию — defaultCatalogSort (@bayramm/shared/api): в разделе — price_asc, в «Все» —
+// section (по разделам, внутри — дешевле), с q — relevance, а со словом о цене («недорогой зал») —
+// снова сначала дешевле; relevance без q — порядок по умолчанию.
 //
 // Без category — залы (hall), как в v0.1 (старые сборки клиента). category=all — все включённые
-// категории одной выдачей (раздел «Все»): цены разных единиц сравниваются как есть. Фильтры
+// категории одной выдачей (раздел «Все»): цены разных разделов не сравнить — по умолчанию по
+// разделам (price_* старых сборок принимается: цены сравниваются как есть). Фильтры
 // «a.<поле>» — из конфигурации категории (@bayramm/shared/categories), неизвестный — 400
 // invalid_request; у «all» их нет. part (morning | day | evening | whole) — только вместе с
 // date: без даты время не действует; ключ сортировки он не меняет (отсекает, как фильтры).
 
-import type { CatalogPart, CatalogSort } from "@bayramm/shared/api";
+import { type CatalogPart, type CatalogSort, defaultCatalogSort } from "@bayramm/shared/api";
 import { type AttributeFilter, categoryConfig, parseAttributeFilters } from "@bayramm/shared/categories";
 import {
   SEARCH_MAX_LENGTH,
@@ -39,12 +42,10 @@ export const CATALOG_SORTS: readonly CatalogSort[] = [
   "price_desc",
   "capacity_desc",
   "relevance",
+  "section",
 ];
 /** Фильтр «Время»: часть дня или весь день */
 export const CATALOG_PARTS: readonly CatalogPart[] = ["morning", "day", "evening", "whole"];
-export const DEFAULT_SORT: CatalogSort = "price_asc";
-/** Порядок по умолчанию с поиском */
-export const SEARCH_SORT: CatalogSort = "relevance";
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 50;
 export const MAX_GUESTS = 5000;
@@ -199,13 +200,13 @@ export function parseCatalogQuery(query: QueryValues): CatalogParams {
   const q = searchParam(query, bad);
 
   const sortValue = single(query, "sort", bad);
-  let sort = q === null ? DEFAULT_SORT : SEARCH_SORT;
+  let sort = defaultCatalogSort(category, q);
   if (sortValue !== null) {
     if ((CATALOG_SORTS as readonly string[]).includes(sortValue)) sort = sortValue as CatalogSort;
     else bad.push("sort");
   }
   // «По похожести» без запроса — не о чем: как без sort
-  if (sort === "relevance" && q === null) sort = DEFAULT_SORT;
+  if (sort === "relevance" && q === null) sort = defaultCatalogSort(category, null);
 
   const cursorValue = single(query, "cursor", bad);
   if (bad.length > 0) throw invalidRequest(bad, "Invalid query parameters");

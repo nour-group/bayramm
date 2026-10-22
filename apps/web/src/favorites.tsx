@@ -61,7 +61,8 @@ export interface FavoritesValue {
   /** Отметить или снять */
   readonly toggle: (listing: { readonly id: string; readonly name: string }) => void;
   /** Карточки избранного для экрана «Сохранённое»: снятых с публикации в них нет */
-  readonly cards: (signal: AbortSignal) => Promise<readonly ListingCard[]>;
+  /** Карточки отмеченного; с датой — и занятость на неё */
+  readonly cards: (signal: AbortSignal, date?: string | null) => Promise<readonly ListingCard[]>;
 }
 
 const FavoritesContext = createContext<FavoritesValue | null>(null);
@@ -168,10 +169,20 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     [api, ids, mode, guest, toast, t, savedText, savedAction],
   );
 
+  // С датой у аккаунта — его список с сервера, затем публичные карточки по нему (в них занятость на
+  // дату): отметки в памяти могут быть ещё не загружены. Ошибка любого запроса — у экрана, с «Повторить»
   const cards = useCallback(
-    async (signal: AbortSignal) => {
-      if (mode === "account") return (await api.favorites(signal)).items;
-      return (await api.listingCards(guestFavorites(), signal)).items;
+    async (signal: AbortSignal, date: string | null = null) => {
+      if (mode === "guest") return (await api.listingCards(guestFavorites(), signal, date)).items;
+      const own = (await api.favorites(signal)).items;
+      if (date === null) return own;
+      return (
+        await api.listingCards(
+          own.map((card) => card.id),
+          signal,
+          date,
+        )
+      ).items;
     },
     [api, mode],
   );

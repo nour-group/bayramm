@@ -2,6 +2,7 @@ import { ru, uz } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
 import {
   addDays,
+  formatApproxMoney,
   formatDayMonth,
   formatDuration,
   formatMomentTashkent,
@@ -88,6 +89,14 @@ describe("деньги", () => {
     expect(formatMoney(45_500_000, ru)).toBe(`45,5${NBSP}млн${NBSP}сум`);
     expect(formatMoney(250_000, ru)).toBe(`250${NBSP}000${NBSP}сум`);
     expect(formatMoney(45_000_000, uz)).toBe(`45${NBSP}mln${NBSP}soʻm`);
+  });
+
+  it("примерная сумма — без ложной точности: до тысяч, от миллиона — «млн»", () => {
+    expect(formatApproxMoney(128_572, ru)).toBe(`129${NBSP}тыс.${NBSP}сум`);
+    expect(formatApproxMoney(128_572, uz)).toBe(`129${NBSP}ming${NBSP}soʻm`);
+    expect(formatApproxMoney(999_600, ru)).toBe(`1${NBSP}млн${NBSP}сум`);
+    expect(formatApproxMoney(45_500_000, ru)).toBe(`45,5${NBSP}млн${NBSP}сум`);
+    expect(formatApproxMoney(750, ru)).toBe(`750${NBSP}сум`);
   });
 
   it("цена «от»: по-русски впереди, по-узбекски — окончание -dan слитно; единица — всегда", () => {

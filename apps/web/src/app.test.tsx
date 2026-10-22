@@ -50,7 +50,7 @@ describe("каталог", () => {
     expect(window.location.search).toBe("?category=hall&guests=200");
   });
 
-  it("«Все» — раздел по умолчанию: первый в переключателе, карточки подписаны разделом", async () => {
+  it("«Все» — раздел по умолчанию: первый в переключателе, карточки — под заголовками разделов", async () => {
     await mount({ path: "/catalog", mock: { listings: allDemoListings(TODAY) } });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     expect(document.querySelector("h1")?.textContent).toBe("Каталог: всё для праздника");
@@ -60,10 +60,10 @@ describe("каталог", () => {
     expect(chips.find((c) => c.textContent === "Тойханы")?.getAttribute("href")).toBe(
       "/catalog?category=hall",
     );
-    // Разделы вперемешку: у карточки — раздел; гостей (они у раздела) нет, место — есть
-    expect(document.querySelector(".card-meta")?.textContent).toMatch(
-      /Залы|Кортежи|Фото|Торты|Цветы|Подарки|Декор/,
-    );
+    // По разделам: заголовок раздела над его карточками (цены разделов не сравнить); гостей (они у
+    // раздела) нет, место — есть
+    expect(document.querySelector(".cards-section h2")?.textContent).toBe("Тойханы");
+    expect(document.querySelector(".card-name")?.tagName).toBe("H3");
     expect(field("Гости")).toBeNull();
     expect(field("Город и район")?.textContent).toBe("Весь Ташкент");
   });
@@ -150,8 +150,10 @@ describe("каталог", () => {
     await mount({ path: "/catalog?category=hall&guests=200" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     const cards = [...document.querySelectorAll(".card")];
+    // По цене: крупно — то, по чему сортируют (сумма на 200 гостей), цена «от» — ниже
     const perGuest = cards.find((c) => c.textContent?.includes("за гостя"));
-    expect(perGuest?.querySelector(".card-estimate")?.textContent).toMatch(/^около .+ на 200 гостей$/);
+    expect(perGuest?.querySelector(".card-key")?.textContent).toMatch(/^около .+ на 200 гостей$/);
+    expect(perGuest?.querySelector(".card-price")?.textContent).toMatch(/^от .+ за гостя$/);
     const perEvent = cards.find((c) => !c.textContent?.includes("за гостя"));
     expect(perEvent?.querySelector(".card-estimate")).toBeNull();
     expect(document.querySelector(".sort-hint")?.textContent).toBe(
@@ -162,17 +164,18 @@ describe("каталог", () => {
     await mount({ path: "/catalog?category=hall" });
     await waitFor(() => document.querySelectorAll(".card").length > 0, "карточки");
     // У цены за гостя примерной суммы нет — гостей не указали
-    const perGuestCard = [...document.querySelectorAll(".card")].find((c) =>
-      c.querySelector(".card-price")?.textContent?.includes("за гостя"),
+    const perGuestCard = [...document.querySelectorAll(".card")].find(
+      (c) => c.querySelector(".card-price .unit")?.textContent === "за гостя",
     );
     expect(perGuestCard?.querySelector(".card-estimate")).toBeNull();
-    expect(document.querySelector(".sort-hint")?.textContent).toContain("на одного гостя при полном зале");
-    // У цены за мероприятие — сколько это на гостя: по ней сортирует «Сначала дешевле»
+    expect(document.querySelector(".sort-hint")?.textContent).toContain("при наименьшем числе гостей зала");
+    // У цены за мероприятие крупно — сколько это на гостя, до тысяч: по ней сортирует «Сначала
+    // дешевле»; цена «от» за мероприятие — ниже
     const perEventCard = [...document.querySelectorAll(".card")].find((c) =>
       c.querySelector(".card-price")?.textContent?.includes("за мероприятие"),
     );
-    expect(perEventCard?.querySelector(".card-estimate")?.textContent).toMatch(
-      /^≈ [\d\s,]+(млн\s)?сум за гостя$/,
+    expect(perEventCard?.querySelector(".card-key")?.textContent).toMatch(
+      /^≈ \d+\s(тыс\.|млн)\sсум за гостя$/,
     );
     cleanup();
 
@@ -495,6 +498,13 @@ describe("язык и оболочка", () => {
     expect(about?.querySelectorAll("li").length).toBeGreaterThanOrEqual(4);
     expect(about?.textContent).toContain("12 часов");
     expect(about?.textContent).not.toMatch(/Пустой каталог|подписк|оферт/i);
+  });
+
+  it("«Документы»: «О площадке» — правила для клиента, без внутренних подробностей", async () => {
+    await mount({ path: "/docs" });
+    const about = await waitFor(() => document.querySelector('[aria-labelledby="docs-about"]'), "документы");
+    expect(about.textContent).toContain("12 часов");
+    expect(about.textContent).not.toMatch(/Пустой каталог|подписк|оферт|проверенных/i);
   });
 
   it("профиль: тексты согласий из API раскрываются", async () => {

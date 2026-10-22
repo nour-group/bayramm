@@ -322,7 +322,7 @@ const car: CategoryConfig = {
     fields: [
       startTime(true),
       hours(24, true),
-      { key: "cars_count", label: "rf_cars_count", type: "int", min: 1, max: 30, required: true },
+      { key: "cars_count", label: "rf_cars_count", type: "int", min: 1, max: 30, required: true, initial: 1 },
       { key: "car_class", label: "rf_car_class", type: "enum", options: CAR_CLASSES, required: false },
       servicesField(false),
     ],

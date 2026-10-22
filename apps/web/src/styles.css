@@ -689,6 +689,15 @@ textarea.field-input {
   max-width: 100%;
 }
 
+/* «Сохранённое»: дата — над карточками; подсказка рядом переносится */
+.favorites-date {
+  margin-bottom: 16px;
+}
+
+.favorites-date > p {
+  flex: 1 1 200px;
+}
+
 .filter-row .ui-select-compact {
   max-width: 260px;
 }
@@ -919,6 +928,23 @@ textarea.field-input {
   list-style: none;
 }
 
+/* «Все» по разделам: заголовок раздела — во всю ширину сетки, над его карточками */
+.cards-section {
+  grid-column: 1 / -1;
+  padding-top: 12px;
+}
+
+.cards-section:first-child {
+  padding-top: 0;
+}
+
+/* Поиск без слов, которые ничего не нашли: что показали */
+.search-dropped {
+  margin-top: 4px;
+  color: var(--ink);
+  font-size: var(--fs-13-5);
+}
+
 /* Карточка — опора для сердечка в углу фото (сердечко — отдельным правилом, ловушка №8) */
 .card {
   position: relative;
@@ -973,6 +999,7 @@ textarea.field-input {
 
 .card-name {
   min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--ink);
   font-family: var(--font-display);
   font-size: var(--fs-19);
@@ -994,12 +1021,28 @@ textarea.field-input {
   font-size: var(--fs-12-5);
 }
 
+/* Выдача по цене залов: крупно — ключ порядка (на гостя или на всех гостей), цена «от» — мельче */
+.card-key {
+  margin-top: 4px;
+}
+
+.card-key b,
 .card-price b,
 .bar-price b {
   color: var(--plum);
   font-family: var(--font-display);
   font-size: var(--fs-19);
   font-weight: 600;
+}
+
+.card-price-minor {
+  margin-top: 0;
+}
+
+.card-price-minor b {
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--fs-13-5);
 }
 
 /* Единица цены («за мероприятие», «за гостя») не рвётся: переносится целиком под сумму */
@@ -1107,10 +1150,17 @@ textarea.field-input {
   margin-top: 16px;
 }
 
-/* Название и «Новый» — рядом, сердечко — справа (между ними значок висел посередине) */
+/* Название и «Новый» — рядом, сердечко — справа (между ними значок висел посередине). Длинное
+   название переносится и на 320px, сердечко остаётся справа */
 .venue-head .card-top {
+  flex-wrap: wrap;
   justify-content: flex-start;
   width: 100%;
+}
+
+.venue-head .screen-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .venue-meta {
@@ -2003,9 +2053,18 @@ textarea.field-input {
   color: var(--coral);
 }
 
-.docs {
+.docs,
+.docs-loading {
   display: grid;
   gap: var(--gap-9);
+}
+
+/* Заготовка строки документа — высотой со строку (summary 48px и рамка) */
+.doc-skeleton {
+  display: block;
+  height: 50px;
+  background: var(--lilac);
+  animation: pulse 1.2s var(--ease-io) infinite alternate;
 }
 
 .doc {
@@ -3135,6 +3194,13 @@ textarea.field-input {
     width: auto;
     min-width: 280px;
     margin: 16px auto 0;
+  }
+
+  /* Галерея площадки — не выше min(60vh, 440px): название, район и вместимость под ней и цена
+     справа видны на первом экране (1280×800) */
+  .venue .gallery-item {
+    aspect-ratio: auto;
+    height: min(60vh, 440px);
   }
 
   /* Площадка: фото и описание слева, справа — карточка с ценой, телефоном и заявкой;

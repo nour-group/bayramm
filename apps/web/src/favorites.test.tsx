@@ -75,12 +75,27 @@ describe("избранное гостя (без входа)", () => {
     expect(stored()).toEqual([A.id]);
   });
 
-  it("пусто — объяснение из прототипа и ссылка в поиск", async () => {
+  it("пусто — объяснение из прототипа и ссылка в поиск; сразу, без заготовок карточек", async () => {
     await mount({ path: "/favorites", identity: "guest" });
+    expect(document.querySelector(".state-cards")).toBeNull();
     await waitFor(() => document.querySelector(".state-empty"), "пустое состояние");
     expect(text()).toContain("Пока пусто");
     expect(text()).toContain("Нажимайте сердечко на карточках — список соберётся здесь. Входить не нужно.");
     expect(byText("a", "К поиску")?.getAttribute("href")).toBe("/catalog");
+  });
+
+  it("дата из каталога — у карточек занятость на неё; дату можно сменить и снять", async () => {
+    window.localStorage.setItem(FAVORITES_KEY, JSON.stringify([B.id, A.id]));
+    // В каталоге выбрали 20 октября — «Сохранённое» показывает, кто свободен в этот день
+    await mount({ path: "/catalog?category=hall&date=2026-10-20", identity: "guest" });
+    await waitFor(() => document.querySelectorAll(".card").length > 0, "каталог");
+    cleanup();
+    await mount({ path: "/favorites", identity: "guest" });
+    await waitFor(() => cardNames().length === 2, "две карточки");
+    const chips = [...document.querySelectorAll(".card-badges .chip")].map((c) => c.textContent);
+    expect(chips).toHaveLength(2);
+    expect(chips.every((c) => c?.includes("20 окт"))).toBe(true);
+    expect(document.querySelector(".favorites-date")?.textContent).toContain("20 окт");
   });
 
   it("снятая с публикации площадка пропадает из списка без ошибки", async () => {

@@ -1,4 +1,10 @@
-import type { CatalogPart, CatalogQuery, CatalogSort, ListingCard } from "@bayramm/shared/api";
+import {
+  type CatalogPart,
+  type CatalogQuery,
+  type CatalogSort,
+  defaultCatalogSort,
+  type ListingCard,
+} from "@bayramm/shared/api";
 import { SEARCH_MAX_LENGTH, searchNorm, searchQuery } from "@bayramm/shared/search";
 import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -7,6 +13,7 @@ import type { ClientApi } from "../api/types";
 import { CLIENT_CATEGORIES, hasCapacity, hasDistrict } from "../categories";
 import { addDays, isIsoDate } from "../format";
 import { ALL_CATEGORIES, hrefFor } from "../routes";
+import { sessionGet, sessionRemove, sessionSet } from "../storage";
 import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
 
 /* Фильтры каталога живут в адресе
@@ -16,18 +23,19 @@ import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
    района) или район (он и выездные; город — его; район — только где он есть у витрин раздела). Гости — только где вместимость (залы, рестораны),
    порядок «вместительнее» — там же. Время (part) — только вместе с датой: свободные в эту часть
    дня или весь день. Поиск (q) — вместе с разделом и фильтрами; с ним порядок по умолчанию —
-   «сначала подходящие» (relevance). */
+   «сначала подходящие» (relevance), а со словом о цене («недорогой зал») — сначала дешевле. В «Все»
+   цены разных разделов не сравнить: там порядок — по разделам (section), по цене — только в разделе. */
 
 export const SORTS = ["price_asc", "price_desc", "capacity_desc"] as const satisfies readonly CatalogSort[];
 
-/** Порядок, если sort не передан: так же решает сервер. В адресе его не пишем */
-export const DEFAULT_SORT = "price_asc" satisfies CatalogSort;
-/** Порядок по умолчанию с поиском */
+/** Порядок с поиском: сначала подходящие */
 export const SEARCH_SORT = "relevance" satisfies CatalogSort;
+/** Порядок «Все»: по разделам */
+export const SECTION_SORT = "section" satisfies CatalogSort;
 
-/** Порядок по умолчанию этих фильтров: с поиском — «сначала подходящие» */
-export const defaultSortOf = (filters: Pick<CatalogFilters, "q">): CatalogSort =>
-  filters.q === null ? DEFAULT_SORT : SEARCH_SORT;
+/** Порядок по умолчанию этих фильтров — как решает сервер (defaultCatalogSort). В адресе его не пишем */
+export const defaultSortOf = (filters: Pick<CatalogFilters, "q" | "category">): CatalogSort =>
+  defaultCatalogSort(filters.category, filters.q === null ? null : searchQuery(filters.q));
 
 export const MAX_GUESTS = 5000;
 /** Насколько вперёд можно выбрать дату */
@@ -76,10 +84,18 @@ export const noFiltersIn = (category: string, q: string | null = null): CatalogF
 export const catalogCategory = (code: string | null | undefined) =>
   CLIENT_CATEGORIES.find((c) => c.code === code) ?? null;
 
-/** Порядки выдачи категории: «вместительнее» — только где есть вместимость; с поиском — и «подходящие» */
+/**
+ * Порядки выдачи: в разделе — по цене, «вместительнее» (только где есть вместимость); в «Все» — по
+ * разделам (цены разделов не сравнить); с поиском — и «подходящие»
+ */
 export const sortsOf = (category: string, searching = false): readonly CatalogSort[] => {
   const config = catalogCategory(category);
-  const sorts = config && hasCapacity(config) ? SORTS : SORTS.filter((s) => s !== "capacity_desc");
+  const sorts: readonly CatalogSort[] =
+    config === null
+      ? [SECTION_SORT]
+      : hasCapacity(config)
+        ? SORTS
+        : SORTS.filter((s) => s !== "capacity_desc");
   return searching ? [SEARCH_SORT, ...sorts] : sorts;
 };
 
@@ -93,6 +109,20 @@ export function searchText(raw: string | null | undefined): string | null {
   while (text !== "" && searchNorm(text).length > SEARCH_MAX_LENGTH) text = text.slice(0, -1).trimEnd();
   return searchQuery(text) === null ? null : text;
 }
+
+/** Дата из каталога — в пределах выбора: с сегодняшнего дня и не дальше DATE_HORIZON_DAYS; иначе null */
+export function catalogDate(value: string | null | undefined, today: string): string | null {
+  return isIsoDate(value) && value >= today && value <= addDays(today, DATE_HORIZON_DAYS) ? value : null;
+}
+
+/* Последняя дата, выбранная в каталоге, — во вкладке: «Сохранённое» показывает занятость на неё */
+const LAST_DATE_KEY = "bayramm.web.catalog-date";
+
+export const rememberCatalogDate = (date: string | null) =>
+  date === null ? sessionRemove(LAST_DATE_KEY) : sessionSet(LAST_DATE_KEY, date);
+
+export const lastCatalogDate = (today: string): string | null =>
+  catalogDate(sessionGet(LAST_DATE_KEY), today);
 
 /** Код города и района — как в справочнике (app.cities, app.districts) */
 const PLACE_CODE = /^[a-z_]{2,30}$/;
@@ -116,7 +146,7 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
   const city = query.get("city");
   const district = query.get("district");
   const sort = query.get("sort");
-  const day = isIsoDate(date) && date >= today && date <= addDays(today, DATE_HORIZON_DAYS) ? date : null;
+  const day = catalogDate(date, today);
   const q = searchText(query.get("q"));
   return {
     category: code,
@@ -128,7 +158,8 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
     // витрин раздела (и в «Все»): кортеж и фото приезжают сами, у них только город
     city: city && PLACE_CODE.test(city) ? city : null,
     district: district && PLACE_CODE.test(district) && (!category || hasDistrict(category)) ? district : null,
-    sort: sortsOf(code, q !== null).find((s) => s === sort && s !== defaultSortOf({ q })) ?? null,
+    sort:
+      sortsOf(code, q !== null).find((s) => s === sort && s !== defaultSortOf({ q, category: code })) ?? null,
     attrs: category ? readAttrFilters(category, query) : NO_ATTRS,
   };
 }
@@ -194,6 +225,8 @@ export interface Feed {
   readonly items: readonly ListingCard[];
   /** Сколько нашлось всего — с поиском (первая страница ответа); иначе null */
   readonly total: number | null;
+  /** Слова запроса (после нормализации), которые ничего не нашли: выдача — без них */
+  readonly dropped: readonly string[];
   readonly status: FeedStatus;
   readonly hasMore: boolean;
   readonly retry: () => void;
@@ -210,6 +243,7 @@ interface Snapshot {
   readonly items: readonly ListingCard[];
   readonly cursor: string | null;
   readonly total: number | null;
+  readonly dropped: readonly string[];
 }
 
 const snapshots = new WeakMap<ClientApi, Map<string, Snapshot>>();
@@ -220,7 +254,13 @@ function restoredFeed(api: ClientApi, key: string, query: CatalogQuery): Snapsho
   if (snapshot && Date.now() - snapshot.at <= SNAPSHOT_TTL_MS) return snapshot;
   const page = api.peek.catalog(query);
   return page
-    ? { at: Date.now(), items: page.items, cursor: page.nextCursor, total: page.total ?? null }
+    ? {
+        at: Date.now(),
+        items: page.items,
+        cursor: page.nextCursor,
+        total: page.total ?? null,
+        dropped: page.dropped ?? [],
+      }
     : null;
 }
 
@@ -230,12 +270,13 @@ function keepSnapshot(
   items: readonly ListingCard[],
   cursor: string | null,
   total: number | null,
+  dropped: readonly string[],
 ) {
   if (!api.peek) return;
   const byKey = snapshots.get(api) ?? new Map<string, Snapshot>();
   snapshots.set(api, byKey);
   byKey.delete(key);
-  byKey.set(key, { at: Date.now(), items, cursor, total });
+  byKey.set(key, { at: Date.now(), items, cursor, total, dropped });
   // Последние десять выдач хватит на «назад»
   if (byKey.size > 10) byKey.delete(byKey.keys().next().value as string);
 }
@@ -265,6 +306,7 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
   const [items, setItems] = useState<readonly ListingCard[]>(initial?.items ?? []);
   const [cursor, setCursor] = useState<string | null>(initial?.cursor ?? null);
   const [total, setTotal] = useState<number | null>(initial?.total ?? null);
+  const [dropped, setDropped] = useState<readonly string[]>(initial?.dropped ?? []);
   const [status, setStatus] = useState<FeedStatus>(initial ? "ready" : "loading");
   const [attempt, setAttempt] = useState(0);
   // Поколение запроса: ответ по старым фильтрам не допишется в новую выдачу
@@ -279,8 +321,8 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
 
   // Снимок для «назад»: каждый раз, когда выдача этих фильтров готова
   useEffect(() => {
-    if (status === "ready" && shownKey.current === key) keepSnapshot(api, key, items, cursor, total);
-  }, [api, key, items, cursor, total, status]);
+    if (status === "ready" && shownKey.current === key) keepSnapshot(api, key, items, cursor, total, dropped);
+  }, [api, key, items, cursor, total, dropped, status]);
 
   useEffect(() => {
     if (restored.current === key && attempt === 0) return;
@@ -293,6 +335,7 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
     setItems([]);
     setCursor(null);
     setTotal(null);
+    setDropped([]);
     api.catalog(queryRef.current, controller.signal).then(
       (page) => {
         if (current !== generation.current) return;
@@ -300,6 +343,7 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
         setItems(page.items);
         setCursor(page.nextCursor);
         setTotal(page.total ?? null);
+        setDropped(page.dropped ?? []);
         setStatus("ready");
       },
       (error: unknown) => {
@@ -339,5 +383,5 @@ export function useCatalogFeed(api: ClientApi, filters: CatalogFilters): Feed {
     else if (status === "more-error") loadMore();
   });
 
-  return { items, total, status, hasMore: cursor !== null, retry, loadMore };
+  return { items, total, dropped, status, hasMore: cursor !== null, retry, loadMore };
 }

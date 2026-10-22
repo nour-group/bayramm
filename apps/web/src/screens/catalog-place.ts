@@ -40,18 +40,23 @@ export function placeChoice(
       .filter((d) => d.city === city)
       .map((d) => ({ value: `district:${d.code}`, label: pick(d.name, lang), nested: true }));
 
-  const options: SelectOption[] = only
-    ? [{ value: "", label: t.wholeCity(pick(only.name, lang)) }, ...districtsOf(only.code)]
-    : [
-        { value: "", label: t.anyPlace },
-        ...cities.flatMap((city) => [
-          { value: `city:${city.code}`, label: t.wholeCity(pick(city.name, lang)) },
-          ...districtsOf(city.code),
-        ]),
-        ...(cities.length === 0
-          ? districts.map((d) => ({ value: `district:${d.code}`, label: pick(d.name, lang) }))
-          : []),
-      ];
+  // Справочник ещё грузится — подпись по умолчанию та же, что будет («Весь Ташкент»): пилюля не
+  // меняет ширину, и строка фильтров не перескакивает
+  const options: SelectOption[] =
+    dicts === null
+      ? [{ value: "", label: t.wholeCity(t.meCityV) }]
+      : only
+        ? [{ value: "", label: t.wholeCity(pick(only.name, lang)) }, ...districtsOf(only.code)]
+        : [
+            { value: "", label: t.anyPlace },
+            ...cities.flatMap((city) => [
+              { value: `city:${city.code}`, label: t.wholeCity(pick(city.name, lang)) },
+              ...districtsOf(city.code),
+            ]),
+            ...(cities.length === 0
+              ? districts.map((d) => ({ value: `district:${d.code}`, label: pick(d.name, lang) }))
+              : []),
+          ];
 
   // Единственный город целиком — то же, что «везде»: значение по умолчанию
   const value =

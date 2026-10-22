@@ -244,10 +244,20 @@ describe("каталог категории", () => {
     expect(document.querySelector(".filters-open")?.textContent).toBe("Фильтры");
   });
 
-  it("у раздела без полей витрины порядок — пилюлей в строке, шторки нет", async () => {
+  it("«Все»: по разделам, выбирать порядок не из чего; с поиском — пилюлей в строке, шторки нет", async () => {
     await mount({ path: "/catalog", mock: { listings: ALL } });
     await waitFor(() => cardNames().length > 0, "все разделы");
     expect(document.querySelector(".filters-open")).toBeNull();
+    expect(document.querySelector(".filter-row .sort")).toBeNull();
+    // Над карточками раздела — его заголовок, разделы — в порядке показа
+    const heads = [...document.querySelectorAll(".cards-section h2")].map((h) => h.textContent);
+    expect(heads[0]).toBe("Тойханы");
+    expect(new Set(heads).size).toBe(heads.length);
+    expect(text()).not.toContain("разные единицы цены");
+    cleanup();
+
+    await mount({ path: "/catalog?q=%D0%B7%D0%B0%D0%BB", mock: { listings: ALL } });
+    await waitFor(() => cardNames().length > 0, "поиск во всех разделах");
     const sort = document.querySelector(".filter-row .sort");
     expect(sort?.classList.contains("in-sheet")).toBe(false);
   });
@@ -534,8 +544,8 @@ describe("заявка по форме категории", () => {
     await type(field("Телефон"), "00 123 45 67");
     await click(transferCheckbox());
     await click(byText("button", "Отправить заявку"));
+    // Свадьба отметила вечер — «Начало» по желанию
     expect([...document.querySelectorAll(".fld-error")].map((e) => e.textContent)).toEqual([
-      "Укажите время",
       "Заполните это поле",
       "Заполните это поле",
     ]);

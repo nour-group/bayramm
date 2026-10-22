@@ -44,7 +44,7 @@ describe("listCatalog", () => {
   });
 
   const PER_GUEST_OR_EVENT =
-    "(case when l.price_unit = 'per_event' and l.cap_max is not null then (l.price_from_uzs + l.cap_max - 1) / l.cap_max else l.price_from_uzs end)";
+    "(case when l.price_unit = 'per_event' and coalesce(l.cap_min, l.cap_max) is not null then (l.price_from_uzs + coalesce(l.cap_min, l.cap_max) - 1) / coalesce(l.cap_min, l.cap_max) else l.price_from_uzs end)";
   // Загрузка выдачи на дату — одним запросом на категорию (app.catalog_day_load), не на строку
   const BUSY = "coalesce(dl.load = 'busy', false)";
 
@@ -52,6 +52,8 @@ describe("listCatalog", () => {
     ["price_asc", PER_GUEST_OR_EVENT],
     ["price_desc", `(-${PER_GUEST_OR_EVENT})`],
     ["capacity_desc", "(-coalesce(l.cap_max, 0))::bigint"],
+    // По разделам: место раздела, внутри — цена; оплаты в ключе нет
+    ["section", `(cat.sort::bigint * 100000000000 + ${PER_GUEST_OR_EVENT})`],
   ])("%s: занятые целиком в конце, затем ключ сортировки, затем id", async (sort, key) => {
     const fake = fakeDb();
     await listCatalog(fake.db, parseCatalogQuery({ sort: [sort], date: ["2026-10-03"] }));
@@ -439,7 +441,9 @@ describe("listFeatured", () => {
     );
     expect(featured[0]?.parameters).toContain(4);
     // Цена как у выдачи по умолчанию (на гостя), затем id; даты нет — занятость не считается
-    expect(sql).toContain("(l.price_from_uzs + l.cap_max - 1) / l.cap_max");
+    expect(sql).toContain(
+      "(l.price_from_uzs + coalesce(l.cap_min, l.cap_max) - 1) / coalesce(l.cap_min, l.cap_max)",
+    );
     expect(sql).not.toContain("day_load");
     expect(fake.log.at(-1)).toBe("commit");
   });

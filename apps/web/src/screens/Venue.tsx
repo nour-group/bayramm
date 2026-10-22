@@ -652,6 +652,7 @@ export function Venue({ slug }: { slug: string }) {
     return isNotFound(listing.error) ? (
       <EmptyState
         headingLevel={1}
+        screen
         title={t.venueGoneH}
         text={t.venueGoneP}
         action={

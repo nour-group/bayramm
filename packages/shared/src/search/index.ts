@@ -12,23 +12,31 @@
 
 export { attrTextJsonPath, attrTextPaths, listingAttrText } from "./attributes";
 export {
+  isCheapWord,
+  type QueryWord,
   SEARCH_APOSTROPHES,
+  SEARCH_CHEAP_PREFIXES,
   SEARCH_MAX_LENGTH,
   SEARCH_MAX_TOKENS,
   SEARCH_MIN_LENGTH,
   SEARCH_RAW_MAX_LENGTH,
+  SEARCH_STOP_WORDS,
   type SearchQuery,
   searchNorm,
   searchQuery,
   searchTokens,
+  splitDropped,
 } from "./normalize";
 export {
   relevanceKey,
+  SEARCH_FORGIVE_MAX_TOKENS,
   SEARCH_FUZZY_MIN_LENGTH,
   SEARCH_FUZZY_SIMILARITY,
   SEARCH_WORD_SIMILARITY,
   type SearchDoc,
+  type SearchResult,
   type SearchSource,
+  searchAll,
   searchDoc,
   searchMatches,
   searchScore,

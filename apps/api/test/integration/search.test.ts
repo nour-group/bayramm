@@ -130,6 +130,23 @@ describe("GET /catalog/listings?q", () => {
     expect(await found({ q: run, sort: "price_desc" })).toEqual(["versal", "oqsaroy", "grand"]);
   });
 
+  it("слово о цене — сначала дешевле; служебные слова не мешают", async () => {
+    expect(await found({ q: `недорогой ${run}`, category: "hall" })).toEqual(["grand", "oqsaroy", "versal"]);
+    expect(await found({ q: `${run} для свадьбы`, category: "hall", sort: "price_asc" })).toEqual([
+      "grand",
+      "oqsaroy",
+      "versal",
+    ]);
+  });
+
+  it("слово, которое ничего не находит, пропускается — и названо в dropped", async () => {
+    const body = await json<CatalogPage>(await call(url({ q: `zzqqxxw ${run}`, category: "hall" })), 200);
+    expect(body.items.map((i) => byId.get(i.id)).sort()).toEqual(["grand", "oqsaroy", "versal"]);
+    expect(body.dropped).toEqual(["zzqqxxw"]);
+    const all = await json<CatalogPage>(await call(url({ q: run, category: "hall" })), 200);
+    expect(all.dropped).toBeUndefined();
+  });
+
   it("курсор: страницы без повторов, total — только на первой; курсор другого запроса — 400", async () => {
     const seen: string[] = [];
     let cursor: string | null = null;
