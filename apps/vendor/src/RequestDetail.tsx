@@ -7,7 +7,10 @@
    «Другой причины»; «занято» занимает дату. На телефоне кнопки действий прилипают к низу над
    нижней панелью: видны, сколько ни листай (и у короткой заявки — внизу, а не посреди экрана).
    «Я связался» по ошибке — уведомление «Отмечено · Отменить» на 8 секунд: отмена возвращает
-   заявку, пока API её принимает (VENDOR_UNDO_SECONDS, тот же партнёр).
+   заявку, пока API её принимает (VENDOR_UNDO_SECONDS, тот же партнёр). «Договорились»
+   встаёт на место «Я связался», а отменить его нельзя (клиенту сразу уходит сообщение, дата
+   занята): фокус на новую кнопку не переходит, первую секунду она нажатие не принимает
+   (второе касание двойного), и решение — только через подтверждение.
 
    Что нужно клиенту — по форме заявки категории: часть дня (модель parts), поля категории
    (detailRows: часы, машины, кг…) и выбранные услуги с количеством и дополнениями — названия
@@ -27,7 +30,7 @@ import {
 } from "@bayramm/shared/api/vendor";
 import { categoryConfig, chosenServices, detailRows } from "@bayramm/shared/categories";
 import { requestStatusName } from "@bayramm/shared/i18n/status";
-import { RadioGroup, useStickyBar, useToast } from "@bayramm/ui/react";
+import { ConfirmSheet, RadioGroup, useStickyBar, useToast } from "@bayramm/ui/react";
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { categoryName, partsLabel, priceText } from "./category";
@@ -43,6 +46,9 @@ import { Heading, LoadError, Loading, type ScreenProps, StatusChip } from "./ui"
 import { useUnsaved } from "./unsaved";
 import { useLoad } from "./useLoad";
 import { useNow } from "./useNow";
+
+/** Сколько «Договорились», только что вставшее на место нажатой кнопки, не принимает нажатие */
+export const DEAL_ARM_MS = 1000;
 
 interface DeclineFormProps {
   readonly t: VendorDict;
@@ -151,9 +157,18 @@ export function RequestDetail({
   }, [ready, onLoaded, onChanged]);
 
   // Нажатая кнопка исчезает (форма отказа вместо действий, новые действия после ответа) —
-  // фокус не теряется в body: он переходит на первое поле или кнопку нового блока
+  // фокус не теряется в body: форма отказа — на её первое поле; новые действия — на сам блок
+  // действий, а не на первую кнопку (там встало бы «Договорились»: Enter второй раз — сделка)
   const actionsRef = useRef<HTMLDivElement>(null);
-  const refocus = useRef(false);
+  const refocus = useRef<"first" | "block" | null>(null);
+  const [confirmDeal, setConfirmDeal] = useState(false);
+  // «Договорились» только что встало на место нажатой кнопки: первую секунду не нажимается
+  const [dealArmed, setDealArmed] = useState(true);
+  useEffect(() => {
+    if (dealArmed) return;
+    const timer = setTimeout(() => setDealArmed(true), DEAL_ARM_MS);
+    return () => clearTimeout(timer);
+  }, [dealArmed]);
   // Панель действий прилипла к низу (телефон, открытая заявка): её высота — в запас прокрутки
   const shown = ready?.status;
   useStickyBar(
@@ -162,14 +177,17 @@ export function RequestDetail({
     phone && !declining && (shown === "new" || shown === "viewed" || shown === "contacted"),
   );
   const decline = useCallback((open: boolean) => {
-    refocus.current = true;
+    refocus.current = open ? "first" : "block";
     setDeclining(open);
   }, []);
   // biome-ignore lint/correctness/useExhaustiveDependencies: перенос фокуса — после смены формы или статуса
   useEffect(() => {
-    if (!refocus.current) return;
-    refocus.current = false;
-    actionsRef.current?.querySelector<HTMLElement>("input, button:not(:disabled)")?.focus();
+    const target = refocus.current;
+    if (!target) return;
+    refocus.current = null;
+    const block = actionsRef.current;
+    if (target === "first") block?.querySelector<HTMLElement>("input, button:not(:disabled)")?.focus();
+    else block?.focus({ preventScroll: true });
   }, [declining, shown]);
 
   const back = useCallback(() => navigate({ route: "requests" }), [navigate]);
@@ -191,7 +209,7 @@ export function RequestDetail({
         history:
           current.history.at(-1)?.status === "contacted" ? current.history.slice(0, -1) : current.history,
       }));
-      refocus.current = true;
+      refocus.current = "block";
       onChanged?.();
       toast(t.undone);
     } catch (err) {
@@ -219,7 +237,8 @@ export function RequestDetail({
             ? current.history
             : [...current.history, { status: item.status, at: new Date().toISOString(), by: "vendor_user" }],
       }));
-      refocus.current = true;
+      refocus.current = "block";
+      if (item.status === "contacted") setDealArmed(false);
       setDeclining(false);
       onChanged?.();
     } catch (err) {
@@ -452,7 +471,7 @@ export function RequestDetail({
       ) : null}
 
       {/* Действия — последними: на телефоне панель прилипает к низу над нижней панелью */}
-      <div className={`request-actions${sticky ? " is-bar" : ""}`} ref={actionsRef}>
+      <div className={`request-actions${sticky ? " is-bar" : ""}`} ref={actionsRef} tabIndex={-1}>
         {notice ? (
           <p className="form-error" role="alert">
             {notice.kind === "stale" ? t.staleStatus : notice.text}
@@ -494,7 +513,9 @@ export function RequestDetail({
               type="button"
               className="btn btn-dark"
               disabled={pending}
-              onClick={() => void act({ status: "deal" })}
+              onClick={() => {
+                if (dealArmed) setConfirmDeal(true);
+              }}
             >
               <Icon name="check" size={17} />
               {t.actDeal}
@@ -526,6 +547,20 @@ export function RequestDetail({
           <p className="note">{status === "withdrawn" ? t.doneWithdrawn : t.doneExpired}</p>
         ) : null}
       </div>
+      {/* Сделку не отменить: клиенту сразу уходит сообщение, дата (кроме срока заказа) занята */}
+      <ConfirmSheet
+        open={confirmDeal && status === "contacted"}
+        title={t.dealConfirmTitle}
+        text={category?.availability === "lead" ? t.dealConfirmTextLead : t.dealConfirmText}
+        confirmLabel={t.dealConfirm}
+        cancelLabel={t.cancel}
+        onConfirm={() => {
+          setConfirmDeal(false);
+          void act({ status: "deal" });
+        }}
+        onCancel={() => setConfirmDeal(false)}
+        returnFocus={actionsRef}
+      />
     </section>
   );
 }

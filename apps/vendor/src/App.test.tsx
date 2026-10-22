@@ -24,6 +24,7 @@ import { tashkentToday } from "./format";
 import { forgetAuthMethods } from "./hub";
 import { vendorDict } from "./i18n";
 import { decidedRevisions, revisionFields } from "./Proposal";
+import { DEAL_ARM_MS } from "./RequestDetail";
 
 // Сжатие фото — канвас браузера, которого в jsdom нет: подменено в test-setup.ts
 
@@ -585,14 +586,46 @@ describe("заявки", () => {
     });
   });
 
-  it("фокус не теряется: форма отказа — на первую причину, «Отмена» и ответ — на новые действия", async () => {
+  it("фокус не теряется: форма отказа — на первую причину, «Отмена» и ответ — на блок действий, не на кнопку", async () => {
     await mount(`/requests/${REQUEST_ID}`);
     await click(byText("button", "Отказать"));
     expect((document.activeElement as HTMLInputElement | null)?.name).toBe("decline-reason");
     await click(byText("form.decline button", "Отмена"));
-    expect(document.activeElement?.textContent).toBe("Я связался с клиентом");
+    expect(document.activeElement?.classList.contains("request-actions")).toBe(true);
     await click(byText("button", "Я связался с клиентом"));
-    expect(document.activeElement?.textContent).toBe("Договорились");
+    // На месте «Я связался» — «Договорились»: Enter второй раз не должен стать договорённостью
+    expect(document.activeElement?.classList.contains("request-actions")).toBe(true);
+  });
+
+  it("«Договорились» — первую секунду не нажимается, дальше только через подтверждение", async () => {
+    await mount(`/requests/${REQUEST_ID}`);
+    await click(byText("button", "Я связался с клиентом"));
+    const patches = () => calls.filter((c) => c.method === "PATCH").map((c) => c.body);
+    const sheet = () => document.querySelector('[role="alertdialog"]');
+    // Второе касание двойного — по «Договорились», вставшему на место: ничего
+    await click(byText("button", "Договорились"));
+    expect(sheet()).toBeNull();
+    await act(() => new Promise((resolve) => setTimeout(resolve, DEAL_ARM_MS + 50)));
+
+    await click(byText("button", "Договорились"));
+    expect(sheet()?.textContent).toContain("Договорились с клиентом?");
+    expect(sheet()?.textContent).toContain("Клиенту сразу придёт сообщение");
+    expect(sheet()?.textContent).toContain("дата станет занятой");
+    // Фокус — на отмене: Enter по привычке ничего не решит
+    expect(document.activeElement?.textContent).toBe("Отмена");
+    await click(
+      [...document.querySelectorAll('[role="alertdialog"] button')].find((b) => b.textContent === "Отмена"),
+    );
+    expect(sheet()).toBeNull();
+    expect(patches()).toEqual([{ status: "contacted" }]);
+
+    await click(byText("button", "Договорились"));
+    await click(
+      [...document.querySelectorAll('[role="alertdialog"] button')].find(
+        (b) => b.textContent === "Да, договорились",
+      ),
+    );
+    expect(patches()).toEqual([{ status: "contacted" }, { status: "deal" }]);
   });
 
   it("переход устарел (409) — сообщение и свежая карточка", async () => {

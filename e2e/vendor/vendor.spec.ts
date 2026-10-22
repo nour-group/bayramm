@@ -296,6 +296,45 @@ test.describe("кабинет", () => {
     expect(api.unexpected).toEqual([]);
   });
 
+  test("«Договорились» на месте «Я связался»: второе касание ничего не решает, договорённость — через подтверждение", async ({
+    page,
+  }) => {
+    const api = await start(page);
+    await page.goto(`/requests/${REQUEST_NEW}`);
+    await expect(requestTitle(page)).toContainText("1051");
+    const contacted = page.getByRole("button", { name: t.actContacted });
+    const box = await contacted.boundingBox();
+    if (!box) throw new Error("нет кнопки «Я связался»");
+    await contacted.click();
+    await expect(page.locator(".detail-top .chip")).toHaveText(st.contacted);
+    const deal = page.getByRole("button", { name: t.actDeal });
+    // Фокус — не на новой кнопке: Enter второй раз — не договорённость
+    await expect(deal).not.toBeFocused();
+    await expect(page.locator(".request-actions")).toBeFocused();
+    // Второе касание по тому же месту — сразу после ответа: ни окна, ни запроса
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    const sheet = page.getByRole("alertdialog", { name: t.dealConfirmTitle });
+    await expect(sheet).toHaveCount(0);
+
+    await page.waitForTimeout(1100);
+    await deal.click();
+    await expect(sheet).toContainText(t.dealConfirmText);
+    await expect(sheet.getByRole("button", { name: t.cancel })).toBeFocused();
+    await expectNoAxeViolations(page, "заявка: подтверждение договорённости");
+    await sheet.getByRole("button", { name: t.cancel }).click();
+    await expect(sheet).toHaveCount(0);
+    expect(api.patches).toEqual([{ id: REQUEST_NEW, body: { status: "contacted" } }]);
+
+    await deal.click();
+    await sheet.getByRole("button", { name: t.dealConfirm }).click();
+    await expect(page.locator(".detail-top .chip")).toHaveText(st.deal);
+    expect(api.patches).toEqual([
+      { id: REQUEST_NEW, body: { status: "contacted" } },
+      { id: REQUEST_NEW, body: { status: "deal" } },
+    ]);
+    expect(api.unexpected).toEqual([]);
+  });
+
   test("вкладки входящих: «Ждут ответа» — новые и открытые; просрочка видна над любой вкладкой", async ({
     page,
   }) => {
@@ -1631,6 +1670,11 @@ test.describe("что ждёт партнёра после решений ком
     await expectHitAreas(page, "заявка: ответил менеджер", CONTROLS);
     // Партнёр продолжил работу — первый ответ остаётся за менеджером
     await page.getByRole("button", { name: t.actDeal }).click();
+    await page
+      .getByRole("alertdialog", { name: t.dealConfirmTitle })
+      .getByRole("button", { name: t.dealConfirm })
+      .click();
+    await expect(page.locator(".detail-top .chip")).toHaveText(st.deal);
     await expect(note).toContainText(t.firstByStaff);
     expect(api.unexpected).toEqual([]);
   });
