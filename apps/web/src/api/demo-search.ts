@@ -45,8 +45,9 @@ export function demoSearch(
   listings: readonly ListingDetail[],
   dictionaries: Dictionaries,
   q: SearchQuery,
+  forgive = true,
 ): SearchResult<string> {
-  return searchAll(new Map(listings.map((l) => [l.id, docOf(l, dictionaries)])), q);
+  return searchAll(new Map(listings.map((l) => [l.id, docOf(l, dictionaries)])), q, forgive);
 }
 
 /** Подсказки, как GET /catalog/suggest: разделы, районы в разделах, до пяти витрин по похожести */
@@ -67,7 +68,8 @@ export function demoSuggest(
     });
   }
   const places = suggestPlaces(q, dictionaries.categories, dictionaries.districts, [...counts.values()]);
-  const { scores } = demoSearch(listings, dictionaries, q);
+  // Подсказки — без пропуска слов, как у API
+  const { scores } = demoSearch(listings, dictionaries, q, false);
   const found = listings
     .filter((l) => scores.has(l.id))
     .sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0) || a.id.localeCompare(b.id))

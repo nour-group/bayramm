@@ -3,7 +3,7 @@
 -- и они — в dropped
 begin;
 \ir _fixtures.psql
-select plan(16);
+select plan(18);
 
 -- Слаги найденного по порядку оценки и пропущенные слова — только витрины фикстур (вендоры A и B)
 create function pg_temp.found(p_query text, p_category text default null)
@@ -51,6 +51,12 @@ select is(pg_temp.found('a1 b1'), '{}'::text[],
 select is(pg_temp.found('zzqqxx qqzzyy'), '{}'::text[], 'ни одно слово не нашло — пусто');
 select is(pg_temp.found('zzqqxx test hall', 'hall'), array['test-a1', 'test-b1'],
   'в разделе — так же');
+select is((select count(*)::int from app.catalog_search('zzqqxx test hall', null, false) s
+           join app.listings l on l.id = s.listing_id
+           where l.vendor_id in ('aaaaaaaa-0000-0000-0000-000000000001', 'bbbbbbbb-0000-0000-0000-000000000001')),
+  0, 'без p_forgive (подсказки) — без пропусков: нужны все слова');
+select is(pg_temp.found('zzqqxx qqyyzz xxzzqq wwqqzz test hall'), '{}'::text[],
+  'больше четырёх слов — без пропусков');
 
 select * from finish();
 rollback;

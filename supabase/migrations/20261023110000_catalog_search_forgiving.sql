@@ -6,9 +6,10 @@
 --     («недорогой», «дешёвый», «arzon» — они меняют порядок, его выбирает API) и без служебных
 --     («на», «для», «uchun»), если в запросе есть другие слова (одно «за» — начало «ЗАГС» — ищется).
 --     Списки — из TS: блок search-sql ниже (pnpm --filter @bayramm/shared search:sql);
---   · app.catalog_search — слова из app.search_query_words. По всем словам вместе ничего нет —
---     ещё раз без слов, которые сами по себе ничего в разделе не находят («katta zal» → «zal»);
---     ничего не нашло ни одно слово или каждое находит, но не вместе, — пусто. Новый столбец
+--   · app.catalog_search — слова из app.search_query_words. По всем словам вместе ничего нет, а слов
+--     два–четыре — ещё раз без слов, которые сами по себе ничего в разделе не находят («katta zal» →
+--     «zal»); ничего не нашло ни одно слово или каждое находит, но не вместе, — пусто. Только для
+--     выдачи (p_forgive, по умолчанию да): подсказки на каждую букву зовут без повторов. Новый столбец
 --     dropped — пропущенные слова (одинаков у всех строк; пусто — все слова нашли): по нему клиент
 --     пишет «Показаны результаты по «зал» — «katta» не нашли». Оценка и правила совпадения — прежние;
 --     оплата в них не участвует;
@@ -92,13 +93,13 @@ as $$
 $$;
 
 -- ── поиск ───────────────────────────────────────────────────────────────────
--- Возвращает ещё и пропущенные слова — у функции другой тип результата: пересоздаём
+-- Возвращает ещё и пропущенные слова и принимает p_forgive — пересоздаём
 drop function app.catalog_search(text, text);
 
 -- Подходящие активные витрины (раздел: null или 'all' — все), оценка (больше — выше) и пропущенные
 -- слова. Слова — app.search_query_words; в SQL — параметрами ($1[i], похожие слова — $4[k]), а не
 -- текстом запроса. Внутри — только битовые карты индексов (почему — 20261015090000_catalog_search)
-create function app.catalog_search(p_query text, p_category text default null)
+create function app.catalog_search(p_query text, p_category text default null, p_forgive boolean default true)
 returns table (listing_id uuid, score real, dropped text[])
 language plpgsql stable security definer set search_path = ''
 set pg_trgm.word_similarity_threshold = '0.6'
@@ -181,7 +182,8 @@ begin
   return query execute format(v_sql,
     array_to_string(v_score, ' + '), cardinality(v_tokens), array_to_string(v_match, ' and '))
   using v_tokens, v_text, p_category, v_alts, '{}'::text[];
-  if found or cardinality(v_tokens) < 2 then
+  -- Без пропусков: подсказки (p_forgive = false), одно слово или больше четырёх — проверок слишком много
+  if found or not p_forgive or cardinality(v_tokens) not between 2 and 4 then
     return;
   end if;
 
@@ -212,9 +214,9 @@ begin
   using v_tokens, v_text, p_category, v_alts, v_dropped;
 end $$;
 
-comment on function app.catalog_search(text, text) is
-  'Поиск по каталогу: активные витрины раздела (null, all — все), где подходят все слова запроса (по всем вместе ничего — без слов, которые ничего не находят: они в dropped), и оценка для порядка «по похожести». Запрос не сохраняется';
+comment on function app.catalog_search(text, text, boolean) is
+  'Поиск по каталогу: активные витрины раздела (null, all — все), где подходят все слова запроса (по всем вместе ничего и p_forgive — без слов, которые ничего не находят: они в dropped), и оценка для порядка «по похожести». Запрос не сохраняется';
 
 -- ── права ───────────────────────────────────────────────────────────────────
-revoke execute on function app.search_query_words(text), app.catalog_search(text, text) from public;
-grant execute on function app.catalog_search(text, text) to bayramm_api;
+revoke execute on function app.search_query_words(text), app.catalog_search(text, text, boolean) from public;
+grant execute on function app.catalog_search(text, text, boolean) to bayramm_api;

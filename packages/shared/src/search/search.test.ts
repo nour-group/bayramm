@@ -107,6 +107,11 @@ describe("поиск без лишних слов (searchAll)", () => {
     expect(result.dropped).toEqual([]);
   });
 
+  it("подсказки (forgive = false) и больше четырёх слов — без пропусков", () => {
+    expect(searchAll(docs, query("katta Versal"), false).scores.size).toBe(0);
+    expect(searchAll(docs, query("aa bb cc dd Versal")).scores.size).toBe(0);
+  });
+
   it("ни одно слово не нашло — пусто", () => {
     expect(searchAll(docs, query("лимузин белый")).scores.size).toBe(0);
   });

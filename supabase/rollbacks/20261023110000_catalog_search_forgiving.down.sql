@@ -18,7 +18,7 @@ as $$
   where length(t) >= 2
 $$;
 
-drop function app.catalog_search(text, text);
+drop function app.catalog_search(text, text, boolean);
 
 create function app.catalog_search(p_query text, p_category text default null)
 returns table (listing_id uuid, score real)

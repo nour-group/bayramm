@@ -169,14 +169,22 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     [api, ids, mode, guest, toast, t, savedText, savedAction],
   );
 
-  // С датой и у аккаунта — публичные карточки по его отметкам (в них занятость на дату)
+  // С датой у аккаунта — его список с сервера, затем публичные карточки по нему (в них занятость на
+  // дату): отметки в памяти могут быть ещё не загружены. Ошибка любого запроса — у экрана, с «Повторить»
   const cards = useCallback(
     async (signal: AbortSignal, date: string | null = null) => {
-      if (mode === "account" && date === null) return (await api.favorites(signal)).items;
-      const list = mode === "account" ? [...ids] : guestFavorites();
-      return (await api.listingCards(list, signal, date)).items;
+      if (mode === "guest") return (await api.listingCards(guestFavorites(), signal, date)).items;
+      const own = (await api.favorites(signal)).items;
+      if (date === null) return own;
+      return (
+        await api.listingCards(
+          own.map((card) => card.id),
+          signal,
+          date,
+        )
+      ).items;
     },
-    [api, mode, ids],
+    [api, mode],
   );
 
   const ready = mode === "guest" || loaded;

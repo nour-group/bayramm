@@ -121,12 +121,20 @@ export interface SearchResult<K> {
   readonly dropped: readonly string[];
 }
 
+/** Сколько слов запроса проверяем по одному, когда по всем вместе ничего (больше — без пропусков) */
+export const SEARCH_FORGIVE_MAX_TOKENS = 4;
+
 /**
- * Поиск по документам — как app.catalog_search: все слова запроса; по всем вместе ничего —
- * ещё раз без слов, которые сами по себе ничего не находят («katta zal» → «zal»). Ничего не
- * нашло ни одно слово или каждое находит что-то, но не вместе, — пусто
+ * Поиск по документам — как app.catalog_search: все слова запроса; по всем вместе ничего, а слов
+ * два–SEARCH_FORGIVE_MAX_TOKENS — ещё раз без слов, которые сами по себе ничего не находят («katta
+ * zal» → «zal»). Ничего не нашло ни одно слово или каждое находит что-то, но не вместе, — пусто.
+ * forgive = false (подсказки) — только все слова
  */
-export function searchAll<K>(docs: ReadonlyMap<K, SearchDoc>, q: SearchQuery): SearchResult<K> {
+export function searchAll<K>(
+  docs: ReadonlyMap<K, SearchDoc>,
+  q: SearchQuery,
+  forgive = true,
+): SearchResult<K> {
   const run = (query: SearchQuery) => {
     const scores = new Map<K, number>();
     for (const [key, doc] of docs) {
@@ -136,7 +144,8 @@ export function searchAll<K>(docs: ReadonlyMap<K, SearchDoc>, q: SearchQuery): S
     return scores;
   };
   const scores = run(q);
-  if (scores.size > 0 || q.tokens.length < 2) return { scores, dropped: [] };
+  if (scores.size > 0 || !forgive || q.tokens.length < 2 || q.tokens.length > SEARCH_FORGIVE_MAX_TOKENS)
+    return { scores, dropped: [] };
   const all = [...docs.values()];
   const kept = q.tokens.filter((token) =>
     all.some((doc) => searchScore(doc, { ...q, tokens: [token] }) !== null),

@@ -45,7 +45,7 @@ select ok((select relrowsecurity from pg_class where oid = 'app.listing_search':
   'RLS на документах поиска');
 select ok(not has_table_privilege('bayramm_api', 'app.listing_search', 'SELECT'),
   'API документы поиска не читает — только через app.catalog_search');
-select ok(has_function_privilege('bayramm_api', 'app.catalog_search(text, text)', 'EXECUTE'),
+select ok(has_function_privilege('bayramm_api', 'app.catalog_search(text, text, boolean)', 'EXECUTE'),
   'API ищет функцией');
 select ok(not has_function_privilege('bayramm_api', 'app.listing_search_refresh(uuid[])', 'EXECUTE'),
   'документы пересобирают только триггеры');

@@ -29,6 +29,7 @@ export {
 } from "./normalize";
 export {
   relevanceKey,
+  SEARCH_FORGIVE_MAX_TOKENS,
   SEARCH_FUZZY_MIN_LENGTH,
   SEARCH_FUZZY_SIMILARITY,
   SEARCH_WORD_SIMILARITY,

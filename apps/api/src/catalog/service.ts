@@ -204,10 +204,11 @@ interface SearchRow {
 
 /**
  * Подходящие запросу активные витрины раздела и оценка (app.catalog_search). В базу — только
- * нормализованный текст (searchNorm), параметром
+ * нормализованный текст (searchNorm), параметром. forgive — по всем словам ничего: ещё раз без
+ * слов, которые ничего не находят (выдача); подсказки на каждую букву — без этого
  */
-function searchRelation(q: SearchQuery, category: string | null): RawBuilder<SearchRow> {
-  return sql<SearchRow>`app.catalog_search(${q.text}::text, ${category}::text)`;
+function searchRelation(q: SearchQuery, category: string | null, forgive = true): RawBuilder<SearchRow> {
+  return sql<SearchRow>`app.catalog_search(${q.text}::text, ${category}::text, ${forgive}::boolean)`;
 }
 
 /**
@@ -576,7 +577,7 @@ export async function catalogSuggest(db: Db, q: SearchQuery): Promise<CatalogSug
     );
 
     const listings = await publicListings(trx, NO_DATE)
-      .innerJoin(searchRelation(q, null).as("sr"), (j) => j.onRef("sr.listing_id", "=", "l.id"))
+      .innerJoin(searchRelation(q, null, false).as("sr"), (j) => j.onRef("sr.listing_id", "=", "l.id"))
       .orderBy("sr.score", "desc")
       .orderBy("l.id")
       .limit(SUGGEST_LISTINGS)

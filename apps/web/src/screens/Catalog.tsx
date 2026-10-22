@@ -380,7 +380,11 @@ export function Catalog() {
             format={(date) => formatDayMonth(date, t)}
             texts={calendarTexts}
             clearLabel={t.anyDate}
-            onChange={(date) => setFilters({ date, part: date === null ? null : filters.part })}
+            onChange={(date) => {
+              // Дату сняли — и «Сохранённое» больше её не показывает
+              if (date === null) rememberCatalogDate(null);
+              setFilters({ date, part: date === null ? null : filters.part });
+            }}
           />
           {timed ? (
             <>
@@ -532,9 +536,15 @@ export function Catalog() {
             <ul className="cards">
               {items.map((card, i) => (
                 <Fragment key={card.id}>
-                  {grouped && items[i - 1]?.categoryCode !== card.categoryCode ? (
+                  {/* Занятые на дату — в конце всей выдачи: над ними одна черта, а не разделы ещё раз */}
+                  {grouped && card.busyOnDate !== true && items[i - 1]?.categoryCode !== card.categoryCode ? (
                     <li className="cards-section">
                       <h2 className="section-title">{categoryName(card.categoryCode, t, lang)}</h2>
+                    </li>
+                  ) : null}
+                  {grouped && card.busyOnDate === true && items[i - 1]?.busyOnDate !== true ? (
+                    <li className="cards-section">
+                      <h2 className="section-title">{t.busyTailH}</h2>
                     </li>
                   ) : null}
                   <li>
@@ -546,7 +556,7 @@ export function Catalog() {
                       priority={i === 0}
                       sizes={side ? CARD_PHOTO_SIZES_SIDE : CARD_PHOTO_SIZES}
                       headingLevel={grouped ? 3 : 2}
-                      showCategory={category === null && !grouped}
+                      showCategory={category === null && (!grouped || card.busyOnDate === true)}
                       priceKey={priceSort && hallUnits}
                     />
                   </li>
