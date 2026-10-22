@@ -1,7 +1,14 @@
 import type { CatalogSort } from "@bayramm/shared/api";
 import { DateField, Dialog, NumberStepper, RadioGroup, Select } from "@bayramm/ui/react";
 import { useEffect, useId, useRef, useState } from "react";
-import { CLIENT_CATEGORIES, categoryDesc, categoryName, hasCalendar, hasCapacity } from "../categories";
+import {
+  CLIENT_CATEGORIES,
+  categoryDesc,
+  categoryName,
+  hasCalendar,
+  hasCapacity,
+  hasDistrict,
+} from "../categories";
 import { AttrFiltersForm } from "../components/AttrFilters";
 import { useCalendarTexts } from "../components/Calendar";
 import { CatalogSearch } from "../components/CatalogSearch";
@@ -170,7 +177,7 @@ function GuestsField({
 }
 
 export function Catalog() {
-  const { api, now } = useServices();
+  const { api, now, webApp } = useServices();
   const { t, lang } = useLang();
   const { state: dicts } = useDictionaries();
   const { query, navigate } = useNav();
@@ -187,10 +194,15 @@ export function Catalog() {
   const [sheet, setSheet] = useState(false);
   const name = category ? (categoryName(category.code, t, lang) ?? category.code) : t.catAll;
   const sectionTitle = category ? t.catTitle(name) : t.catAllTitle;
+  // В Telegram заголовок — одной строкой и на 320px: город и «каталог» там и так ясны (поисковики
+  // Mini App не читают — длинный остаётся у сайта)
+  const shortTitle = category ? name : t.catAllShort;
   const searching = filters.q !== null;
   const title =
     filters.q === null
-      ? sectionTitle
+      ? webApp
+        ? shortTitle
+        : sectionTitle
       : feed.total !== null && feed.status !== "loading"
         ? t.srResultsN(filters.q, feed.total)
         : t.srResultsH(filters.q);
@@ -231,7 +243,13 @@ export function Catalog() {
   const defaultSort = defaultSortOf(filters);
   const capacity = category !== null && hasCapacity(category);
   const extra = attrFilterCount(filters.attrs);
-  const place = placeChoice(filters, dicts.status === "ready" ? dicts.data : null, t, lang);
+  const place = placeChoice(
+    filters,
+    dicts.status === "ready" ? dicts.data : null,
+    t,
+    lang,
+    category === null || hasDistrict(category),
+  );
   // «Время» — когда выбрана дата и у раздела есть календарь (в «Все» — тоже)
   const timed = filters.date !== null && (category === null || hasCalendar(category));
   const partLabel = (part: (typeof CATALOG_PARTS)[number]) =>
@@ -290,9 +308,10 @@ export function Catalog() {
         <h1 className="screen-title" tabIndex={-1}>
           {title}
         </h1>
-        {/* Что в разделе — та же строка, что на плитке лендинга */}
+        {/* Что в разделе — та же строка, что на плитке лендинга; обе строки — с планшета: на
+            телефоне первый экран — выдаче (про цены — и на лендинге, и в «О площадке») */}
         {category ? <p className="cat-lead">{categoryDesc(category.code, t)}</p> : null}
-        <p className="muted small">{t.catalogNote}</p>
+        <p className="muted small catalog-note">{t.catalogNote}</p>
       </div>
 
       {/* Поиск — над разделами, во всю ширину; в Telegram — вверху вкладки каталога */}
@@ -420,6 +439,8 @@ export function Catalog() {
         ) : null}
 
         <div className="catalog-list">
+          {/* Как сравнили цены — над сеткой с планшета; на телефоне — у порядка в шторке
+              «Фильтры» (у карточки за мероприятие и так «≈ N за гостя») */}
           {sortHint && items.length > 0 ? <p className="muted small sort-hint">{sortHint}</p> : null}
 
           {feed.status === "loading" ? <CardsLoading /> : null}
@@ -540,6 +561,8 @@ export function Catalog() {
               options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
               onChange={(sort) => setFilters({ sort: sort === defaultSort ? null : sort })}
             />
+            {/* Как сравнили цены — здесь, у порядка: на телефоне над выдачей её нет */}
+            {sortHint ? <p className="muted small sheet-hint">{sortHint}</p> : null}
           </fieldset>
           {category ? (
             <AttrFiltersForm

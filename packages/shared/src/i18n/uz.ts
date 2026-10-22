@@ -330,7 +330,7 @@ export const uz: Dict = {
   anyDistrict: "barcha tumanlar",
   fPlace: "Shahar va tuman",
   anyPlace: "Hamma joyda",
-  wholeCity: (city: string) => `${city} — butun shahar`,
+  wholeCity: (city: string) => `Butun ${city}`,
   anyDatePill: "Istalgan sana",
   guestsPill: "Nechta mehmon",
   extraFilters: "Qoʻshimcha filtrlar",
@@ -768,6 +768,7 @@ export const uz: Dict = {
   // раздел каталога «Все»
   catAll: "Barchasi",
   catAllTitle: "Katalog: bayram uchun hammasi",
+  catAllShort: "Bayram uchun hammasi",
   metaCatalogAllDesc:
     "Toshkentda bayram uchun hammasi: toʻyxonalar, kortejlar, foto, tortlar va boshqalar — narxlar, boʻsh kunlar va hamkorlar kontaktlari.",
   catAllSoonH: "Katalog tez orada toʻldiriladi",

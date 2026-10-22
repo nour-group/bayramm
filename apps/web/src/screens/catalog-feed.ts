@@ -13,7 +13,7 @@ import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
    (?category=&q=&city=&district=&date=&part=&guests=&sort=&a.<поле>=): ссылка «похожие» из «Моих
    заявок», кнопки бота и «назад» из карточки возвращают ту же выдачу. Без category — все разделы
    одной выдачей («Все»). Место — везде, и в «Все»: город (его районы и выездные витрины без
-   района) или район (только он; город — его). Гости — только где вместимость (залы, рестораны),
+   района) или район (он и выездные; город — его; район — только где он есть у витрин раздела). Гости — только где вместимость (залы, рестораны),
    порядок «вместительнее» — там же. Время (part) — только вместе с датой: свободные в эту часть
    дня или весь день. Поиск (q) — вместе с разделом и фильтрами; с ним порядок по умолчанию —
    «сначала подходящие» (relevance). */
@@ -124,9 +124,10 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
     date: day,
     part: day === null ? null : (CATALOG_PARTS.find((p) => p === part) ?? null),
     guests: category && hasCapacity(category) ? parseGuests(query.get("guests")) : null,
-    // Коды города и района — как проверяет API: иначе 400 вместо выдачи
+    // Коды города и района — как проверяет API: иначе 400 вместо выдачи. Район — где он есть у
+    // витрин раздела (и в «Все»): кортеж и фото приезжают сами, у них только город
     city: city && PLACE_CODE.test(city) ? city : null,
-    district: district && PLACE_CODE.test(district) ? district : null,
+    district: district && PLACE_CODE.test(district) && (!category || hasDistrict(category)) ? district : null,
     sort: sortsOf(code, q !== null).find((s) => s === sort && s !== defaultSortOf({ q })) ?? null,
     attrs: category ? readAttrFilters(category, query) : NO_ATTRS,
   };

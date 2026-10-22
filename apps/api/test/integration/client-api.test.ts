@@ -312,6 +312,28 @@ describe("GET /catalog/listings", () => {
     expect((await catalogNames("category=hall&city=tashkent")).names).toEqual(expect.arrayContaining(all));
   });
 
+  it("район — витрины в нём и без района (выездные приезжают и туда)", async () => {
+    // Без района у зала опубликовать нельзя (BR004) — снимаем район мимо триггеров, как реплика
+    const setDistrict = async (code: string | null) => {
+      await admin.query("set session_replication_role = replica");
+      try {
+        await admin.query("update app.listings set district_code = $2 where id = $1", [
+          listings.small.id,
+          code,
+        ]);
+      } finally {
+        await admin.query("reset session_replication_role");
+      }
+    };
+    await setDistrict(null);
+    try {
+      expect((await catalogNames(BASE)).names).toContain("small");
+      expect((await catalogNames("category=hall&district=sergeli")).names).toEqual(["small"]);
+    } finally {
+      await setDistrict("bektemir");
+    }
+  });
+
   it("цена за мероприятие сравнивается честно: без гостей — на гостя по вместимости, с гостями — сумма", async () => {
     // Без гостей event = 33 млн / 300 = 110 000 за гостя: между mid (100 000) и small (120 000)
     expect((await catalogNames(`${BASE}&sort=price_desc`)).names).toEqual([

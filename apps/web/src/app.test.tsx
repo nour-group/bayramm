@@ -45,7 +45,7 @@ describe("каталог", () => {
     expect(place?.textContent).toBe("Чиланзар");
     for (const card of document.querySelectorAll(".card")) expect(card.textContent).toContain("Чиланзар");
 
-    await choose(place, "Ташкент — весь город");
+    await choose(place, "Весь Ташкент");
     await waitFor(() => !window.location.search.includes("district"), "район снят");
     expect(window.location.search).toBe("?category=hall&guests=200");
   });
@@ -65,7 +65,7 @@ describe("каталог", () => {
       /Залы|Кортежи|Фото|Торты|Цветы|Подарки|Декор/,
     );
     expect(field("Гости")).toBeNull();
-    expect(field("Город и район")?.textContent).toBe("Ташкент — весь город");
+    expect(field("Город и район")?.textContent).toBe("Весь Ташкент");
   });
 
   it("лента догружается по курсору, без повторов", async () => {

@@ -424,7 +424,12 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
             (select d.code from app.districts d where d.city_code = ${city as string}))`,
         ),
       )
-      .$if(district !== null, (qb) => qb.where("l.district_code", "=", district as string))
+      // Район: витрины в нём и без района — выездные приезжают и туда (кортеж, фото, кейтеринг)
+      .$if(district !== null, (qb) =>
+        qb.where((eb) =>
+          eb.or([eb("l.district_code", "=", district as string), eb("l.district_code", "is", null)]),
+        ),
+      )
       .$if(guests !== null, (qb) =>
         qb.where(sql<boolean>`(l.cap_max is null or l.cap_max >= ${guests as number})`),
       )

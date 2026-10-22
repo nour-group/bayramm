@@ -641,6 +641,12 @@ textarea.field-input {
   line-height: 1.45;
 }
 
+/* Что в разделе и про цены — с планшета (ниже, @media 768px): на телефоне первый экран — выдаче */
+.catalog-head .cat-lead,
+.catalog-head .catalog-note {
+  display: none;
+}
+
 /* Поиск по каталогу — над разделами во всю ширину (поле и подсказки — @bayramm/ui/react,
    SearchSuggest). Подсказки — над картами и фильтрами: у панели свой слой */
 .catalog-search {
@@ -881,9 +887,15 @@ textarea.field-input {
   color: var(--coral);
 }
 
-/* Как сравнили цены за гостя и за мероприятие — строкой над сеткой */
+/* Как сравнили цены за гостя и за мероприятие — строкой над сеткой с планшета (ниже, @media
+   768px); на телефоне — у порядка в шторке «Фильтры» (.sheet-hint) */
 .sort-hint {
+  display: none;
   margin: 0 0 12px;
+}
+
+.sheet-hint {
+  margin-top: 8px;
 }
 
 /* Заготовки карточек, пока выдача грузится: не ниже окна — подвал не прыгает */
@@ -2853,6 +2865,12 @@ textarea.field-input {
 /* ---------- планшет: колонка 720px по центру (.main), нижняя панель на месте ---------- */
 
 @media (min-width: 768px) {
+  .catalog-head .cat-lead,
+  .catalog-head .catalog-note,
+  .sort-hint {
+    display: block;
+  }
+
   /* Порядок — у правого края строки фильтров */
   .sort {
     margin-left: auto;

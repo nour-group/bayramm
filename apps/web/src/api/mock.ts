@@ -762,7 +762,8 @@ export function createMockApi(options: MockOptions = {}): MockApi {
               l.districtCode === null ||
               DEMO_DICTIONARIES.districts.some((d) => d.code === l.districtCode && d.city === query.city),
           )
-          .filter((l) => !query.district || l.districtCode === query.district)
+          // Район — он и витрины без района (выездные), как у API
+          .filter((l) => !query.district || l.districtCode === null || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax === null || l.capMax >= query.guests)
           // «Время» — вместе с датой: свободные в эту часть дня (или весь день)
           .filter((l) => !query.date || !query.part || demoFreeIn(l, query.date, query.part))
