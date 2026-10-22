@@ -109,6 +109,66 @@ describe("ScreenErrorBoundary", () => {
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
+  it("повтор на месте снова отказал (старый Chromium помнит отказ import()) — перезагрузка; дальше — по «Повторить» без отметки", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const reload = vi.fn();
+
+    // Кусок на сервере есть, но второй import() отказывает так же, без запроса
+    const first = flaky(Number.POSITIVE_INFINITY);
+    mount(first.Screen, { reload });
+    await flush();
+    expect(reload).not.toHaveBeenCalled();
+    click(retryButton());
+    await flush();
+    expect(first.load).toHaveBeenCalledTimes(2);
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    // После перезагрузки (меньше минуты) снова так же — сама страница больше не перезагружается,
+    // «Повторить» перезагружает по нажатию
+    cleanup();
+    const second = flaky(Number.POSITIVE_INFINITY);
+    mount(second.Screen, { reload });
+    await flush();
+    click(retryButton());
+    await flush();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(alert()).not.toBeNull();
+    click(retryButton());
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(second.load).toHaveBeenCalledTimes(2);
+  });
+
+  it("без адреса куска (WebKit) — сначала «Повторить» на месте, перезагрузка — только при втором отказе", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const reload = vi.fn();
+    const { load, Screen } = flaky(
+      Number.POSITIVE_INFINITY,
+      () => new TypeError("Importing a module script failed."),
+    );
+    mount(Screen, { reload });
+    await flush();
+    expect(alert()).not.toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    click(retryButton());
+    await flush();
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("без адреса и повтор помог — без перезагрузки", async () => {
+    const reload = vi.fn();
+    const { Screen } = flaky(1, () => new TypeError("Importing a module script failed."));
+    mount(Screen, { reload });
+    await flush();
+    click(retryButton());
+    await flush();
+    expect(reload).not.toHaveBeenCalled();
+    expect(document.getElementById("docs")).not.toBeNull();
+  });
+
   it("кусок есть (сбой сети) — без перезагрузки", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);

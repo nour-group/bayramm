@@ -69,3 +69,15 @@ test("«Одобрить все»: неоткрытые — через подт�
   expect(api.photoDecisions.map((d) => d.body)).toEqual([{ decision: "approved" }, { decision: "approved" }]);
   expect(api.unexpected).toEqual([]);
 });
+
+test("«Отклонить» с клавиатуры — фокус в поле причины; Esc закрывает просмотр", async ({ page }) => {
+  const api = await start(page);
+  await page.goto(`/listings/${PHOTO_LISTING_ID}`);
+  await tile(page, 1).click();
+  await viewer(page, 1).getByRole("button", { name: t.photoDecline, exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(viewer(page, 1).locator("form textarea")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(viewer(page, 1)).toHaveCount(0);
+  expect(api.photoDecisions).toEqual([]);
+});

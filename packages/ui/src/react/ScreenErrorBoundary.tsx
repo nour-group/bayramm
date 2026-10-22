@@ -3,10 +3,16 @@
    «Повторить»; связь вернулась — повтор сам. Сменился экран (resetKey) — ошибка прежнего
    забыта, новый грузится как обычно.
 
-   Куска нет на сервере (404 после выкладки) — одна перезагрузка страницы: новая сборка знает
-   новые имена кусков. Отметка во вкладке (sessionStorage) не даёт перезагружаться чаще раза
-   в минуту — битая выкладка не закрутит страницу; дальше «Повторить» перезагружает по
-   нажатию.
+   Перезагрузка страницы — когда повтор на месте не поможет:
+     · куска нет на сервере (404 после выкладки, адрес из текста ошибки) — сразу: новая сборка
+       знает новые имена кусков;
+     · кусок снова не загрузился после повтора на месте при живой сети: Chromium до 153 (вебвью
+       Android, Telegram Desktop) помнит отказ import() того же адреса и второй раз даже не
+       идёт в сеть. Без адреса (WebKit его не пишет) — так же: сначала «Повторить», и только
+       второй отказ — перезагрузка.
+   Сама страница перезагружается не чаще раза в минуту (отметка во вкладке, sessionStorage) —
+   битая выкладка не закрутит её; после этого перезагружает «Повторить» — по нажатию, без
+   отметки.
 
    React.lazy запоминает отказ import() навсегда — повтор с ним невозможен. Поэтому экраны
    строятся на retryableLazy: после отказа, на следующей попытке границы, загрузка начинается
@@ -47,8 +53,10 @@ interface State {
   /** Номер попытки: retryableLazy начинает загрузку заново, когда он сменился */
   readonly attempt: number;
   readonly key: unknown;
-  /** Куска нет на сервере (404): «Повторить» перезагружает страницу */
-  readonly missing: boolean;
+  /** Повторов на месте после отказа (с последней смены экрана) */
+  readonly retries: number;
+  /** Повтор на месте не поможет, а сама страница уже перезагружалась: «Повторить» — перезагрузка */
+  readonly reloadOnRetry: boolean;
 }
 
 // Номер попытки границы над экраном; без границы — 0, и повтора нет (как у React.lazy).
@@ -130,18 +138,26 @@ export class ScreenErrorBoundary extends Component<ScreenErrorBoundaryProps, Sta
     error: null,
     attempt: nextAttempt(),
     key: this.props.resetKey,
-    missing: false,
+    retries: 0,
+    reloadOnRetry: false,
   };
   private alive = false;
 
   static getDerivedStateFromError(error: unknown): Partial<State> {
-    return { failed: true, error, missing: false };
+    return { failed: true, error };
   }
 
   static getDerivedStateFromProps(props: ScreenErrorBoundaryProps, state: State): Partial<State> | null {
     if (Object.is(props.resetKey, state.key)) return null;
     // Новый экран — с чистого листа; номер попытки меняется, чтобы упавший раньше кусок грузился заново
-    return { key: props.resetKey, failed: false, error: null, missing: false, attempt: nextAttempt() };
+    return {
+      key: props.resetKey,
+      failed: false,
+      error: null,
+      attempt: nextAttempt(),
+      retries: 0,
+      reloadOnRetry: false,
+    };
   }
 
   override componentDidMount(): void {
@@ -154,27 +170,51 @@ export class ScreenErrorBoundary extends Component<ScreenErrorBoundaryProps, Sta
 
   override componentDidCatch(error: unknown, _info: ErrorInfo): void {
     if (!isChunkLoadError(error) || !online()) return;
-    const url = chunkUrlOf(error);
-    // Safari адреса не пишет: при живой сети считаем, что куска нет
-    void (url ? isMissing(url) : Promise.resolve(true)).then((missing) => {
-      if (!missing || !this.alive || this.state.error !== error) return;
-      if (mayReload(Date.now())) (this.props.reload ?? defaultReload)();
-      else this.setState({ missing: true });
-    });
-  }
-
-  private readonly retry = (): void => {
-    if (this.state.missing) {
-      (this.props.reload ?? defaultReload)();
+    // Повтор на месте уже был, а кусок снова не пришёл — import() того же адреса может так и
+    // отказывать без запроса в сеть (старый Chromium): только перезагрузка
+    if (this.state.retries > 0) {
+      this.reloadFor(error);
       return;
     }
-    this.setState({ failed: false, error: null, attempt: nextAttempt() });
+    // Без адреса (WebKit) не знаем, что куска нет: сначала «Повторить»
+    const url = chunkUrlOf(error);
+    if (url) void isMissing(url).then((missing) => missing && this.reloadFor(error));
+  }
+
+  /** Перезагрузить страницу сами — не чаще раза в минуту; дальше — по «Повторить» */
+  private reloadFor(error: unknown): void {
+    if (!this.alive || this.state.error !== error) return;
+    if (mayReload(Date.now())) (this.props.reload ?? defaultReload)();
+    else this.setState({ reloadOnRetry: true });
+  }
+
+  /** Повтор на месте: кусок грузится заново (retryableLazy) */
+  private readonly retryInPage = (): void => {
+    this.setState((state) => ({
+      failed: false,
+      error: null,
+      attempt: nextAttempt(),
+      retries: state.retries + 1,
+    }));
+  };
+
+  /** «Повторить»: нажатие человека — перезагрузка без отметки, если повтор на месте не поможет */
+  private readonly retry = (): void => {
+    if (this.state.reloadOnRetry) (this.props.reload ?? defaultReload)();
+    else this.retryInPage();
   };
 
   override render(): ReactNode {
     const { failed, error, attempt } = this.state;
     if (failed)
-      return <ScreenError texts={this.props.texts} onRetry={this.retry} auto={isChunkLoadError(error)} />;
+      return (
+        <ScreenError
+          texts={this.props.texts}
+          onRetry={this.retry}
+          onReconnect={this.retryInPage}
+          auto={isChunkLoadError(error)}
+        />
+      );
     return <AttemptContext.Provider value={attempt}>{this.props.children}</AttemptContext.Provider>;
   }
 }
@@ -182,15 +222,18 @@ export class ScreenErrorBoundary extends Component<ScreenErrorBoundaryProps, Sta
 function ScreenError({
   texts,
   onRetry,
+  onReconnect,
   auto,
 }: {
   texts: ScreenErrorTexts;
   onRetry: () => void;
+  /** Связь вернулась — повтор на месте (сама страница перезагружается только по отметке) */
+  onReconnect: () => void;
   /** Повторить самим, когда связь вернулась (кусок не загрузился) */
   auto: boolean;
 }) {
   useOnReconnect(() => {
-    if (auto) onRetry();
+    if (auto) onReconnect();
   });
   return (
     <div className="ui-screen-error" role="alert">

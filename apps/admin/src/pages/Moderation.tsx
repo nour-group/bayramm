@@ -281,8 +281,9 @@ function ReviewQueue({ items, minPhotos }: { items: readonly ListingListItem[]; 
   return (
     <ul className="rcards">
       {items.map((listing) => {
-        // Что именно не хватает — на странице витрины: в карточке очереди хватит числа
-        const missing = publishBlockers(listing.blockers, listing.photos.ready, minPhotos).length;
+        // Что именно не хватает — на странице витрины: в карточке очереди хватит числа. Фото к
+        // публикации — одобренные: ждущие она одобрит, только если модератор их откроет
+        const missing = publishBlockers(listing.blockers, listing.photos.approved, minPhotos).length;
         return (
           <li key={listing.id} className="rcard rcard-tap">
             <div className="rcard-head">

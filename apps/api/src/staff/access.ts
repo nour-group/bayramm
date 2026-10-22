@@ -28,7 +28,10 @@ export const PERMISSIONS = {
   "listings.write": ["admin", "manager"],
   /** Отправить карточку на проверку */
   "listings.submit": ["admin", "manager"],
-  /** Опубликовать (в том числе вернуть из приостановки) — одобряет и фото карточки */
+  /**
+   * Опубликовать (в том числе вернуть из приостановки) — одобряет и ждущие фото, которые модератор
+   * открыл (approvePhotos в теле publish)
+   */
   "listings.publish": ["admin", "moderator"],
   /** Приостановить и отклонить — только с причиной */
   "listings.moderate": ["admin", "moderator"],

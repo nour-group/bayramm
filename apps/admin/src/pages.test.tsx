@@ -930,6 +930,8 @@ describe("карточка", () => {
     await mount(`/listings/${LISTING_ID}`);
     await pickPhoto(1, t.decline);
     const form = () => document.querySelector(".photo-viewer form.confirm");
+    // «Отклонить» стала недоступной — фокус сразу в поле причины, а не в body
+    expect(document.activeElement).toBe(form()?.querySelector("textarea"));
     await type(form()?.querySelector("textarea") as HTMLTextAreaElement, "Передумали");
     await act(async () =>
       [...(form()?.querySelectorAll<HTMLButtonElement>("button") ?? [])]

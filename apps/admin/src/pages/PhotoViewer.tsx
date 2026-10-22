@@ -103,10 +103,15 @@ export function PhotoViewer<P extends ViewerPhoto>({
   // него — на сам диалог), иначе Esc и Tab не дошли бы до просмотра
   const approveRef = useRef<HTMLButtonElement>(null);
   const shownId = photo?.id;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: declining — повод вернуть фокус, когда форма закрылась
   useEffect(() => {
     if (working || shownId === undefined) return;
     const viewer = document.querySelector<HTMLElement>(".photo-viewer");
+    // «Отклонить» (и с клавиатуры) — кнопка стала недоступной, фокус ушёл бы в body: сразу в
+    // поле причины, иначе Esc, стрелки и Tab до формы не дошли бы
+    if (declining) {
+      viewer?.querySelector<HTMLElement>("form textarea, form input:not([type=hidden])")?.focus();
+      return;
+    }
     if (viewer?.contains(document.activeElement)) return;
     const approve = approveRef.current;
     (approve && !approve.disabled ? approve : viewer)?.focus({ preventScroll: true });
