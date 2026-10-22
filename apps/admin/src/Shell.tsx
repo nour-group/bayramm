@@ -10,7 +10,14 @@
 
 import type { OpsQueues, StaffDictionaries, StaffPermission, StaffQueues } from "@bayramm/shared/api/staff";
 import { getWebApp } from "@bayramm/tg/webapp";
-import { Dialog, stickyBar, ToastProvider, useOnReconnect, useStickyBar } from "@bayramm/ui/react";
+import {
+  Dialog,
+  ScreenErrorBoundary,
+  stickyBar,
+  ToastProvider,
+  useOnReconnect,
+  useStickyBar,
+} from "@bayramm/ui/react";
 import {
   Fragment,
   type ReactNode,
@@ -230,15 +237,20 @@ function Page({ view, title, headingRef, dictionaries, sections, home, crumbs, s
         <ActionSlotContext.Provider value={slot}>
           {/* Кусок экрана ещё грузится (первый заход в раздел) — заготовка его формы. Каждый
               переход — экран заново: фильтры и страница списка читаются из адреса */}
-          <Suspense fallback={<Skeleton kind={nested ? "detail" : "list"} />}>
-            <Fragment key={seq}>{content}</Fragment>
-          </Suspense>
+          <ScreenErrorBoundary texts={SCREEN_ERROR} resetKey={seq}>
+            <Suspense fallback={<Skeleton kind={nested ? "detail" : "list"} />}>
+              <Fragment key={seq}>{content}</Fragment>
+            </Suspense>
+          </ScreenErrorBoundary>
         </ActionSlotContext.Provider>
       </div>
       <div ref={setSlot} className="actionbar-slot" />
     </section>
   );
 }
+
+// Кусок раздела не загрузился (нет связи, после выкладки) — строка и «Повторить» вместо пустоты
+const SCREEN_ERROR = { message: t.screenFailed, retry: t.retry };
 
 /** Место панели действий прилипло к низу (телефон): его высота — в запас прокрутки (scroll-padding) */
 function useStickySlot(slot: HTMLElement | null): void {

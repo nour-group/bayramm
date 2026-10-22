@@ -52,6 +52,8 @@ export const t = {
   toClientApp: "Приложение Bayramm",
   toCabinet: "Кабинет партнёра",
   retry: "Повторить",
+  // раздел не открылся: кусок сборки не загрузился (ScreenErrorBoundary)
+  screenFailed: "Не удалось открыть раздел. Проверьте связь и нажмите «Повторить».",
   signOut: "Выйти",
   signedInAs: "Вы вошли как",
   errors: {

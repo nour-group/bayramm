@@ -1,6 +1,7 @@
 /* Свои контролы Bayramm вместо системных: выпадающий список (и список с поиском), галочка, переключатель,
    группа вариантов, число, дата, время, файлы, поиск (и поиск с подсказками), диалог, уведомления, подсказка;
-   связь (есть ли сеть и баннер «нет связи»); прилипшие панели (высота — в scroll-padding).
+   связь (есть ли сеть и баннер «нет связи»); прилипшие панели (высота — в scroll-padding);
+   граница экрана (кусок не загрузился — «Повторить» вместо пустой страницы).
    Стили — @bayramm/ui/kit.css (только токены), тексты — из словаря приложения. */
 
 export { Calendar, type CalendarProps, type CalendarTexts } from "./Calendar";
@@ -20,6 +21,14 @@ export {
   useOnReconnect,
 } from "./online";
 export { SHEET_BELOW } from "./overlay";
+export {
+  chunkUrlOf,
+  isChunkLoadError,
+  retryableLazy,
+  ScreenErrorBoundary,
+  type ScreenErrorBoundaryProps,
+  type ScreenErrorTexts,
+} from "./ScreenErrorBoundary";
 export { SearchField, type SearchFieldProps } from "./SearchField";
 export {
   fitSuggest,
