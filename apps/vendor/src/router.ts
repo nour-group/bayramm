@@ -1,10 +1,12 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
 import { historyBack, pushScreen } from "@bayramm/ui/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { tashkentToday } from "./format";
 
 /* Все экраны кабинета — в одной карте. Пути, вписанные по месту, разъезжаются
    (ловушка №9 в CLAUDE.md). :id — единственный параметр пути, UUID заявки. Параметры адреса:
-   календарь — ?listing=<витрина>&day=YYYY-MM-DD (открыть день: из заявки «Открыть день»),
+   календарь — ?listing=<витрина>&day=YYYY-MM-DD&from=<заявка> (открыть день: из заявки «Открыть
+   день»; день вне календаря — от сегодня до горизонта — отбрасывается; from — куда «Назад»),
    витрина — ?focus=sessions|attributes (к блоку: из календаря «Изменить» и «Изменить срок»). */
 export const ROUTES = {
   requests: "/requests",
@@ -55,12 +57,28 @@ export interface Location {
   readonly listing?: string;
   /** Календарь: открыть этот день, "YYYY-MM-DD" */
   readonly day?: string;
+  /** Календарь: открыт из этой заявки — «Назад» Telegram ведёт к ней */
+  readonly from?: string;
   /** Витрина: к этому блоку */
   readonly focus?: VenueFocus;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 86_400_000;
+
+/** Сколько дней вперёд открыт календарь — как у API (CALENDAR_HORIZON_DAYS) */
+export const CALENDAR_HORIZON_DAYS = 730;
+
+/** Настоящая дата от сегодня (по Ташкенту) до горизонта календаря: иначе день из адреса не открываем */
+export function dayInCalendar(day: string, now: number = Date.now()): boolean {
+  if (!DAY_RE.test(day)) return false;
+  const time = Date.parse(`${day}T00:00:00Z`);
+  if (Number.isNaN(time) || new Date(time).toISOString().slice(0, 10) !== day) return false;
+  const today = tashkentToday(now);
+  const last = new Date(Date.parse(`${today}T00:00:00Z`) + CALENDAR_HORIZON_DAYS * DAY_MS).toISOString();
+  return day >= today && day <= last.slice(0, 10);
+}
 
 /** Путь экрана с параметрами адреса */
 export function pathOf(location: Location): string {
@@ -69,6 +87,7 @@ export function pathOf(location: Location): string {
   if (location.route === "calendar") {
     if (location.listing) query.set("listing", location.listing);
     if (location.day) query.set("day", location.day);
+    if (location.from) query.set("from", location.from);
   }
   if (location.route === "card" && location.focus) query.set("focus", location.focus);
   const search = query.toString();
@@ -89,10 +108,12 @@ export function matchRoute(pathname: string, search = ""): Location | null {
   if (route === "calendar") {
     const listing = query.get("listing");
     const day = query.get("day");
+    const from = query.get("from");
     return {
       route,
       ...(listing && UUID_RE.test(listing) ? { listing: listing.toLowerCase() } : {}),
-      ...(day && DAY_RE.test(day) ? { day } : {}),
+      ...(day && dayInCalendar(day) ? { day } : {}),
+      ...(from && UUID_RE.test(from) ? { from: from.toLowerCase() } : {}),
     };
   }
   if (route === "card") {

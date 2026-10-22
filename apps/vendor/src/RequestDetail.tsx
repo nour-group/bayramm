@@ -348,7 +348,12 @@ export function RequestDetail({
   const dayState = request.eventDay
     ? requestDayState(request.eventDay, request.eventDate, request.dayParts, t)
     : null;
-  const dayLink: Location = { route: "calendar", day: request.eventDate, listing: request.listing.id };
+  const dayLink: Location = {
+    route: "calendar",
+    day: request.eventDate,
+    listing: request.listing.id,
+    from: request.id,
+  };
   const openDay = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.defaultPrevented || event.button !== 0) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

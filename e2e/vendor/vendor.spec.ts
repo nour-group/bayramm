@@ -308,6 +308,8 @@ test.describe("кабинет", () => {
     await search.fill("4567");
     await expect(cards).toHaveCount(1);
     await expect(cards).toContainText("Азиза");
+    // Что ищут — не в адресе страницы
+    expect(page.url()).not.toContain("4567");
     await expectNoAxeViolations(page, "входящие: поиск");
     await expectHitAreas(page, "входящие: поиск", CONTROLS);
     await expectNoOverflow(page, "входящие: поиск");
@@ -315,7 +317,7 @@ test.describe("кабинет", () => {
     await cards.click();
     await expect(page.locator(".request .req-day")).toContainText(fill(t.eventDayLine, { state: "" }).trim());
     await page.getByRole("link", { name: t.openDay }).click();
-    await expect(page).toHaveURL(`/calendar?listing=${LISTING_ID}&day=2026-10-24`);
+    await expect(page).toHaveURL(`/calendar?listing=${LISTING_ID}&day=2026-10-24&from=${REQUEST_NEW}`);
     // На телефоне экран под шторкой дня (inert) — заголовок ищем в разметке, а не у диктора
     await expect(page.locator("main h1")).toHaveText(t.calendar);
     // День открыт: на телефоне — шторкой, на компьютере — колонкой рядом с месяцем

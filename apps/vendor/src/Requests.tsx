@@ -19,8 +19,9 @@
 
    Над вкладками — поиск (№ заявки, имя клиента или конец его номера; ищет сервер, через
    300 мс тишины), «Дата праздника» и порядок «по дате события». Счётчики вкладок — с теми же
-   фильтрами: видно, где нашлось; значок раздела они не трогают. Поиск переживает переход в
-   заявку и обратно, но не перезагрузку: нигде не хранится. */
+   фильтрами: видно, где нашлось; значок раздела они не трогают. Что ищут, уходит только телом
+   POST (адрес пишут журналы); поиск переживает переход в заявку и обратно, но не перезагрузку и
+   смену кабинета: нигде не хранится (inbox-find.ts). */
 
 import {
   REQUEST_TABS,
@@ -32,7 +33,7 @@ import {
 import { categoryConfig, chosenServices, detailRows } from "@bayramm/shared/categories";
 import { type CalendarTexts, DateField, SearchField, useRevalidate } from "@bayramm/ui/react";
 import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
-import { api, type InboxFind } from "./api";
+import { api } from "./api";
 import { categoryName, partsLabel } from "./category";
 import {
   formatBudget,
@@ -45,6 +46,7 @@ import {
 } from "./format";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
+import { type InboxFind, rememberedFind, rememberFind } from "./inbox-find";
 import { ListingPicker } from "./ListingPicker";
 import { type Navigate, pathOf } from "./router";
 import { Empty, Heading, LoadError, Loading, type ScreenProps, StatusChip } from "./ui";
@@ -62,9 +64,6 @@ const EMPTY: Readonly<Record<RequestTab, [TextKey, TextKey]>> = {
   active: ["emptyActive", "emptyActiveText"],
   closed: ["emptyClosed", "emptyClosedText"],
 };
-
-/** Поиск, дата и порядок — до перезагрузки страницы: переход в заявку и обратно их не теряет */
-let lastFind: InboxFind = { q: "", date: null, sort: "default" };
 
 /** Тексты календаря набора для «Дата праздника» — словами кабинета */
 export function calendarTexts(t: VendorDict): CalendarTexts {
@@ -285,10 +284,11 @@ export function Requests({
   onCounts,
 }: RequestsProps) {
   const now = useNow();
-  const [find, setFindState] = useState<InboxFind>(lastFind);
+  const [find, setFindState] = useState<InboxFind>(rememberedFind);
   const setFind = (patch: Partial<InboxFind>) => {
-    lastFind = { ...lastFind, ...patch };
-    setFindState(lastFind);
+    const next = { ...rememberedFind(), ...patch };
+    rememberFind(next);
+    setFindState(next);
   };
   // Поиск уходит на сервер после 300 мс тишины: не на каждую букву
   const [q, setQ] = useState(find.q.trim());

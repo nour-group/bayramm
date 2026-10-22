@@ -3,7 +3,9 @@
 //
 //   GET    /vendor/me                              → 200 VendorMe (у витрин — attention: что ждёт партнёра)
 //   PATCH  /vendor/me                  { locale }  → 200 VendorMe
-//   GET    /vendor/requests?tab=&cursor=&limit=&listingId= → 200 VendorRequestPage
+//   GET    /vendor/requests?tab=&cursor=&limit=&listingId=&date=&sort= → 200 VendorRequestPage
+//   POST   /vendor/requests/search   { tab, cursor?, listingId?, q, date?, sort? } → 200 VendorRequestPage
+//          (поиск — телом: имя и цифры номера клиента не попадают в журналы запросов)
 //   GET    /vendor/requests/:id                    → 200 VendorRequestDetail (new → viewed)
 //   PATCH  /vendor/requests/:id        { status, declineReason?, declineNote? } → 200 VendorRequestItem
 //   POST   /vendor/requests/:id/call               → 204 (нажатие на телефон — в журнал)
@@ -56,6 +58,7 @@ import type { AppEnv } from "../env";
 import { ApiError } from "../errors";
 import { outboxKick } from "../notify/kick";
 import { type PhotoDeps, photoAckFromHeaders } from "../photos/service";
+import { allowed, tooManyRequests } from "../ratelimit";
 import { invalidInput, isUuid } from "../staff/input";
 import { listingPhotoStorage } from "../storage/supabase";
 import { assertVendorCan } from "../vendor/access";
@@ -78,10 +81,12 @@ import { getListing, getMe, parseLocale, setLocale } from "../vendor/profile";
 import {
   getRequest,
   idOrNotFound,
+  isPhoneSearch,
   listRequests,
   logCallAttempt,
   parseListQuery,
   parsePatch,
+  parseSearchBody,
   undoContacted,
   updateRequestStatus,
 } from "../vendor/requests";
@@ -151,6 +156,20 @@ vendor.patch("/me", limitBody, async (c) => {
 vendor.get("/requests", async (c) => {
   const query = parseListQuery(c.req.query());
   return c.json(await listRequests(c.var.db, vendorOf(c), query));
+});
+
+// Поиск во входящих — телом, а не в адресе: Workers Logs пишут метод и адрес каждого запроса.
+// Поиск по номеру клиента — не чаще 20 в минуту на пользователя кабинета (перебор концов номера)
+vendor.post("/requests/search", limitBody, async (c) => {
+  const query = parseSearchBody(await readJson(c.req.raw));
+  const actor = vendorOf(c);
+  if (
+    isPhoneSearch(query.search) &&
+    !(await allowed(c, "RATE_LIMIT_INBOX_SEARCH", `vendor_user:${actor.id}`))
+  ) {
+    return tooManyRequests(c);
+  }
+  return c.json(await listRequests(c.var.db, actor, query));
 });
 
 vendor.get("/requests/:id", async (c) => {

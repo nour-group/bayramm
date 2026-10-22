@@ -74,6 +74,7 @@ import { ListingPicker } from "./ListingPicker";
 import { useLayout } from "./layout";
 import { type Location, type Navigate, pathOf } from "./router";
 import { TeamContactInline } from "./TeamContact";
+import { useBackButton } from "./telegram";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
 
@@ -494,6 +495,8 @@ interface CalendarProps extends ScreenProps {
   readonly role?: VendorRole;
   /** Открыть этот день ("YYYY-MM-DD"): пришли из заявки по «Открыть день» */
   readonly day?: string;
+  /** Заявка, из которой пришли: «Назад» Telegram — к ней */
+  readonly from?: string;
 }
 
 /** Отметка дня целиком в загруженном месяце: busy — занят (как ответил сервер), null — свободен */
@@ -535,8 +538,14 @@ export function Calendar({
   navigate,
   role = "owner",
   day,
+  from,
 }: CalendarProps) {
   const listing = listings.find((l) => l.id === listingId);
+  // Пришли из заявки («Открыть день»): кнопка «Назад» Telegram возвращает к ней
+  const backToRequest = useCallback(() => {
+    if (from) navigate({ route: "request", id: from });
+  }, [from, navigate]);
+  useBackButton(from ? backToRequest : null);
   const header = (
     <>
       <Heading headingRef={headingRef}>{t.calendar}</Heading>

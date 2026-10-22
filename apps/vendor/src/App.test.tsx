@@ -23,6 +23,7 @@ import { attentionOf, attentionTotals, mergeListings } from "./attention";
 import { formatDate, tashkentToday } from "./format";
 import { forgetAuthMethods } from "./hub";
 import { vendorDict } from "./i18n";
+import { forgetFind } from "./inbox-find";
 import { decidedRevisions, revisionFields } from "./Proposal";
 import { DEAL_ARM_MS } from "./RequestDetail";
 
@@ -129,6 +130,7 @@ function defaultRoutes(locale: "ru" | "uz" = "ru"): Record<string, Handler> {
     "GET /api/vendor/me": () => ({ body: me(locale) }),
     "PATCH /api/vendor/me": (init) => ({ body: me(JSON.parse(String(init.body)).locale) }),
     "GET /api/vendor/requests": () => ({ body: page([item()]) }),
+    "POST /api/vendor/requests/search": () => ({ body: page([item()]) }),
     [`GET /api/vendor/requests/${REQUEST_ID}`]: () => ({ body: detail() }),
     [`POST /api/vendor/requests/${REQUEST_ID}/call`]: () => ({ status: 204 }),
     [`PATCH /api/vendor/requests/${REQUEST_ID}`]: (init) => ({
@@ -663,7 +665,10 @@ describe("заявки", () => {
 
   it("дата заявки в календаре: «вечер — занято 1 из 2 мест»; «Открыть день» — этот день в календаре витрины", async () => {
     resize(1280);
-    const day = "2026-11-14";
+    // День в календаре: от сегодня до горизонта, иначе ссылка его не откроет
+    const day = new Date(Date.parse(`${tashkentToday()}T00:00:00Z`) + 20 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
     const sessions = {
       mode: "parts" as const,
       parts: ["morning" as const, "day" as const, "evening" as const],
@@ -677,6 +682,7 @@ describe("заявки", () => {
     };
     routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({
       body: detail({
+        eventDate: day,
         dayParts: ["evening"],
         eventDay: { sessions, busy: null, parts: [], bookings: [{ day, part: "evening", count: 1 }] },
       }),
@@ -706,14 +712,22 @@ describe("заявки", () => {
     expect(container.textContent).not.toContain("займёт эту дату");
     await click(byText("a", "Открыть день"));
     expect(window.location.pathname + window.location.search).toBe(
-      `/calendar?listing=${LISTING_ID}&day=${day}`,
+      `/calendar?listing=${LISTING_ID}&day=${day}&from=${REQUEST_ID}`,
     );
     expect(heading()).toBe("Календарь");
-    expect(calls.some((c) => c.path === `/api/vendor/listings/${LISTING_ID}/calendar?month=2026-11`)).toBe(
-      true,
+    expect(
+      calls.some((c) => c.path === `/api/vendor/listings/${LISTING_ID}/calendar?month=${day.slice(0, 7)}`),
+    ).toBe(true);
+    expect(container.querySelector("#day-panel-title")?.textContent).toBe(
+      formatDate(day, vendorDict.ru, true),
     );
-    expect(container.querySelector("#day-panel-title")?.textContent).toBe("14 ноября, сб");
     expect(container.querySelector(".day-panel")?.textContent).toContain("Занято 1 из 2 мест");
+    // «Назад» Telegram — к заявке, из которой пришли
+    const webApp = (window as unknown as { Telegram: { WebApp: FakeWebApp } }).Telegram.WebApp;
+    const onBack = webApp.BackButton.onClick.mock.calls.at(-1)?.[0] as () => void;
+    await act(async () => onBack());
+    await flush();
+    expect(window.location.pathname).toBe(`/requests/${REQUEST_ID}`);
   });
 
   it("старый ответ без занятости даты — строки нет; после «Я связался» — что «Договорились» займёт дату", async () => {
@@ -741,7 +755,7 @@ describe("заявки", () => {
     expect(container.querySelector(".call-note")).toBeNull();
   });
 
-  it("поиск: №, имя или конец номера — на сервер через паузу; дата праздника и порядок — в запросе", async () => {
+  it("поиск: №, имя или конец номера — телом POST через паузу, не в адресе; дата и порядок — в запросе", async () => {
     await mount("/requests");
     const input = container.querySelector<HTMLInputElement>(".inbox-search input") ?? undefined;
     expect(input?.getAttribute("aria-label")).toBe("Поиск заявок");
@@ -750,18 +764,29 @@ describe("заявки", () => {
       setter?.call(input, "4567");
       input?.dispatchEvent(new Event("input", { bubbles: true }));
     });
+    const searches = () =>
+      calls.filter((c) => c.method === "POST" && c.path === "/api/vendor/requests/search");
     // Не на каждую букву: запрос — после 300 мс тишины
-    expect(calls.some((c) => c.path.includes("q=4567"))).toBe(false);
+    expect(searches()).toHaveLength(0);
     await act(async () => new Promise((resolve) => setTimeout(resolve, 350)));
     await flush();
-    expect(calls.at(-1)?.path).toBe("/api/vendor/requests?tab=waiting&q=4567");
+    expect(searches().at(-1)?.body).toEqual({
+      tab: "waiting",
+      cursor: null,
+      listingId: null,
+      q: "4567",
+      date: null,
+      sort: null,
+    });
+    // Что ищут — ни в одном адресе: ни у API, ни у страницы
+    expect(calls.some((c) => c.path.includes("4567"))).toBe(false);
+    expect(window.location.href).not.toContain("4567");
+    expect(JSON.stringify(window.history.state)).not.toContain("4567");
     await click(byText("button", "По дате события"));
-    expect(calls.at(-1)?.path).toBe("/api/vendor/requests?tab=waiting&q=4567&sort=event");
+    expect(searches().at(-1)?.body).toMatchObject({ q: "4567", sort: "event" });
     // Ничего не нашлось — «Сбросить поиск»
-    routes["GET /api/vendor/requests"] = (_, url) => ({
-      body: url.searchParams.has("q")
-        ? { ...page([]), counts: { waiting: 0, active: 0, closed: 0 } }
-        : page([item()]),
+    routes["POST /api/vendor/requests/search"] = () => ({
+      body: { ...page([]), counts: { waiting: 0, active: 0, closed: 0 } },
     });
     await click(byText("button", "Закрытые"));
     expect(container.textContent).toContain("Ничего не нашлось");
@@ -772,6 +797,21 @@ describe("заявки", () => {
     // Порядок помнится до перезагрузки страницы — вернуть обычный
     await click(byText("button", "По дате события"));
     expect(calls.at(-1)?.path).toBe("/api/vendor/requests?tab=closed");
+  });
+
+  it("поиск помнится между экранами и стирается при смене кабинета и выходе (forgetFind)", async () => {
+    await mount("/requests");
+    const input = container.querySelector<HTMLInputElement>(".inbox-search input") ?? undefined;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    await act(async () => {
+      setter?.call(input, "Dilnoza");
+      input?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    forgetFind();
+    act(() => root.unmount());
+    container.remove();
+    await mount("/requests");
+    expect(container.querySelector<HTMLInputElement>(".inbox-search input")?.value).toBe("");
   });
 });
 

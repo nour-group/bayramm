@@ -2,14 +2,23 @@
    экран входа заменяет кабинет, а вход вне Telegram и вовсе уводит со страницы — вписанное
    пропало бы. Поэтому в тот момент, когда API ответил 401, открытые формы с правками кладут
    вписанное во вкладку (sessionStorage, префикс черновиков; закрыли вкладку — пропало). После
-   входа экран открывает ту же форму с черновиком и стирает его. Выход и смена кабинета стирают
-   все черновики. Хранилища нет (старый вебвью, запрет) — без черновиков, как раньше. */
+   входа экран открывает ту же форму с черновиком и стирает его — только тому же пользователю
+   кабинета и только черновик понятного вида (старый или обрезанный не открывается). Выход и смена
+   кабинета стирают все черновики. Хранилища нет (старый вебвью, запрет) — без черновиков. */
 
 import { useEffect, useRef } from "react";
 
 export const DRAFT_PREFIX = "bayramm.vendor.draft.";
 
 const flushes = new Set<{ current: (() => void) | null }>();
+
+/** Чей кабинет открыт (id пользователя кабинета); null — вход ещё не состоялся */
+let owner: string | null = null;
+
+/** Оболочка говорит, кто вошёл: черновик пишется и отдаётся только ему */
+export function setDraftOwner(userId: string | null): void {
+  owner = userId;
+}
 
 /** Сессия кончилась: каждая открытая форма с правками сохраняет вписанное */
 export function flushDrafts(): void {
@@ -32,19 +41,26 @@ export function useDraftOnExpiry(flush: (() => void) | null): void {
 }
 
 export function saveDraft(key: string, value: unknown): void {
+  if (owner === null) return;
   try {
-    window.sessionStorage.setItem(`${DRAFT_PREFIX}${key}`, JSON.stringify(value));
+    window.sessionStorage.setItem(`${DRAFT_PREFIX}${key}`, JSON.stringify({ owner, value }));
   } catch {
     // без хранилища — без черновика
   }
 }
 
-/** Черновик по ключу — и сразу стереть: восстанавливается один раз */
-export function takeDraft<T>(key: string): T | null {
+/**
+ * Черновик по ключу — и сразу стереть: восстанавливается один раз. Чужой (другой пользователь
+ * кабинета) или непонятного вида (valid — проверка формы) — null
+ */
+export function takeDraft<T>(key: string, valid: (value: unknown) => value is T): T | null {
   try {
     const raw = window.sessionStorage.getItem(`${DRAFT_PREFIX}${key}`);
     window.sessionStorage.removeItem(`${DRAFT_PREFIX}${key}`);
-    return raw === null ? null : (JSON.parse(raw) as T);
+    if (raw === null || owner === null) return null;
+    const saved = JSON.parse(raw) as { owner?: unknown; value?: unknown } | null;
+    if (saved?.owner !== owner) return null;
+    return valid(saved.value) ? saved.value : null;
   } catch {
     return null;
   }

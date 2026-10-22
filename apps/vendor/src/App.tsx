@@ -15,11 +15,12 @@ import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRe
 import { VendorChooser } from "./Account";
 import { ApiFailure, accountMe, api, setUnauthorizedHandler, signIn, tokenStore } from "./api";
 import { type AttentionMark, attentionTotals, mergeListings } from "./attention";
-import { clearDrafts, flushDrafts } from "./drafts";
+import { clearDrafts, flushDrafts, setDraftOwner } from "./drafts";
 import { Gate, type GateKind } from "./Gate";
 import { CALLBACK_PATH, chooseVendor, finishHub, SIGNIN_PARAM, startHub } from "./hub";
 import { fill, LANG_NAMES, type VendorDict, vendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
+import { forgetFind } from "./inbox-find";
 import { initialLang, saveLang } from "./lang";
 import { type Layout, useLayout } from "./layout";
 import {
@@ -285,6 +286,8 @@ function Cabinet() {
   const [scope, setScope] = useState<"all" | "listing">("all");
   const [fresh, setFresh] = useState<number | null>(null);
   const ready = auth.kind === "ready" ? auth : null;
+  // Черновики форм — только того, кто вошёл (drafts.ts); до входа — ничьи
+  setDraftOwner(ready ? ready.me.user.id : null);
   const { confirmLeave } = unsaved.registry;
   // Другая витрина — формы прежней закрываются: с правками — сначала вопрос
   const chooseListing = useCallback((id: string) => confirmLeave(() => setListingId(id)), [confirmLeave]);
@@ -488,6 +491,7 @@ function Cabinet() {
   const switchVendor = useCallback(() => {
     chooseVendor(null);
     clearDrafts();
+    forgetFind();
     setFresh(null);
     retry();
   }, [retry]);
@@ -522,6 +526,7 @@ function Cabinet() {
             navigate={navigate}
             role={auth.me.user.role}
             day={location.day}
+            from={location.from}
           />
         )}
       </Lazy>

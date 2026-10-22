@@ -14,6 +14,9 @@
 //                                            витрин не выкачать скриптом
 //   POST /auth/phone/send из Mini App — по аккаунту RATE_LIMIT_OTP_ACCOUNT 3 в минуту
 //                                            (ставит routes/auth.ts: initData вместо Turnstile)
+//   POST /vendor/requests/search по номеру клиента (от 4 цифр) — по пользователю кабинета
+//                                           RATE_LIMIT_INBOX_SEARCH   20 в минуту: концы номеров
+//                                            не перебрать (ставит routes/vendor.ts)
 //
 // Лимиты по IP ставит mountRateLimits до маршрутов — до базы и проверки сессии.
 // Ключ — HMAC(ID_HASH_KEY, IP) (auth/ip.ts): адрес не уходит даже в счётчик.
@@ -40,11 +43,12 @@ export type RateLimitBinding =
   | "RATE_LIMIT_REQUESTS_IP"
   | "RATE_LIMIT_REQUESTS_ACTOR"
   | "RATE_LIMIT_CONTACTS_IP"
-  | "RATE_LIMIT_OTP_ACCOUNT";
+  | "RATE_LIMIT_OTP_ACCOUNT"
+  | "RATE_LIMIT_INBOX_SEARCH";
 
 export const rateLimited = () => new ApiError(429, "rate_limited", "Too many requests");
 
-function tooManyRequests(c: Context<AppEnv>): Response {
+export function tooManyRequests(c: Context<AppEnv>): Response {
   return c.json(rateLimited().toBody(), 429, {
     "Retry-After": String(RATE_LIMIT_PERIOD_SECONDS),
     "Cache-Control": "no-store",

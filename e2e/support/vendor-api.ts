@@ -1028,14 +1028,21 @@ export async function mockVendorApi(
       locale = (request.postDataJSON() as { locale: "ru" | "uz" }).locale;
       return json(route, 200, vendorMe(locale, role, listingMode, attentionOf, statusOf));
     }
-    if (key === "GET /vendor/requests") {
-      const tab = (url.searchParams.get("tab") ?? "waiting") as RequestTab;
-      const listingId = url.searchParams.get("listingId");
+    if (key === "GET /vendor/requests" || key === "POST /vendor/requests/search") {
+      // Поиск — только телом POST, как у API: в адресе он попал бы в журналы запросов
+      const body = method === "POST" ? (request.postDataJSON() as Record<string, string | null>) : null;
+      if (body === null && url.searchParams.has("q")) {
+        state.unexpected.push(`${key}?q`);
+        return fail(route, 422, "invalid_input");
+      }
+      const param = (name: string) => (body ? (body[name] ?? null) : url.searchParams.get(name));
+      const tab = (param("tab") ?? "waiting") as RequestTab;
+      const listingId = param("listingId");
       state.inboxQueries.push({ tab, listingId });
       // Поиск, как у API: цифры — № заявки или конец номера клиента (от 4), иначе — часть имени
-      const q = (url.searchParams.get("q") ?? "").trim();
+      const q = (param("q") ?? "").trim();
       const digits = q.replace(/^[№#]/, "").replace(/[\s()+-]/g, "");
-      const date = url.searchParams.get("date");
+      const date = param("date");
       const found = (r: VendorRequestDetail) =>
         (date === null || r.eventDate === date) &&
         (q === "" ||
@@ -1058,7 +1065,7 @@ export async function mockVendorApi(
       ).length;
       const shown = all.filter((r) => tabOf(r.status) === tab);
       // По дате события — ближайшие сверху
-      if (url.searchParams.get("sort") === "event")
+      if (param("sort") === "event")
         shown.sort((a, b) => a.eventDate.localeCompare(b.eventDate) || a.publicNo - b.publicNo);
       return json(route, 200, { items: shown.map(listItem), nextCursor: null, counts, overdue });
     }

@@ -11,10 +11,13 @@
 // Какие переходы статусов разрешены, решает база (app.request_transitions);
 // отказ «занято» сам занимает дату в календаре (триггер).
 //
-// Поиск во входящих (q): номер заявки, имя клиента или конец его номера (от 4 цифр,
-// requestIdsByPhoneTail из db/pii — номер не раскрывается). Запрос нигде не сохраняется и не
-// пишется в лог: в SQL — только параметром. Ещё фильтр «дата праздника» (date) и порядок «по
-// дате события» (sort=event) — у любой вкладки; счётчики вкладок — с теми же фильтрами.
+// Поиск во входящих (q) — только телом POST /vendor/requests/search, не в адресе: журналы
+// запросов Workers пишут метод и адрес, имя и цифры номера клиента туда не попадают. Номер
+// заявки, имя клиента или конец его номера (от 4 цифр, searchRequestsByPhoneTail из db/pii —
+// номер не раскрывается, каждый такой поиск — в журнале доступа к ПДн, частота — лимитом
+// маршрута). В SQL — только параметром, в console.* — никогда. Ещё фильтр «дата праздника»
+// (date) и порядок «по дате события» (sort=event) — у любой вкладки и в GET; счётчики вкладок —
+// с теми же фильтрами.
 
 import {
   DECLINE_NOTE_MAX,
@@ -37,7 +40,7 @@ import { sql } from "kysely";
 import { availabilityModeOf, dayPartsOf, requestWindowsOf, sessionsOfRow } from "../calendar/sessions";
 import { roleActorKind, type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
-import { readRequestPhone, requestContactsAs, requestIdsByPhoneTail } from "../db/pii";
+import { readRequestPhone, requestContactsAs, searchRequestsByPhoneTail } from "../db/pii";
 import { ApiError, notFound } from "../errors";
 import { partsCalendar, toBusyDay } from "./calendar";
 import { isIsoDate, tashkentToday } from "./dates";
@@ -112,13 +115,20 @@ export function parseSearch(raw: string | undefined): InboxSearch | null {
 
 const likeText = (text: string) => `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
-/** Условие поиска для запроса с заявкой r и контактом rc (имя видно только по согласию) */
-function searchMatch(search: InboxSearch) {
+/** Поиск по номеру клиента: от четырёх цифр (с ним — журнал доступа к ПДн и лимит частоты) */
+export function isPhoneSearch(search: InboxSearch | null | undefined): boolean {
+  return search?.kind === "digits" && search.digits.length >= 4;
+}
+
+/**
+ * Условие поиска для запроса с заявкой r и контактом rc (имя видно только по согласию). phoneIds —
+ * заявки, где номер клиента кончается на эти цифры (найдены один раз на поиск)
+ */
+function searchMatch(search: InboxSearch, phoneIds: readonly string[]) {
   if (search.kind === "name") return sql<boolean>`rc.contact_name ilike ${likeText(search.text)}`;
   const byNo = sql<boolean>`r.public_no = ${search.digits}::bigint`;
-  // Номер клиента: от четырёх последних цифр; длиннее девяти — это весь номер, берём хвост
-  if (search.digits.length < 4) return byNo;
-  return sql<boolean>`(${byNo} or r.id in (${requestIdsByPhoneTail(search.digits.slice(-9))}))`;
+  if (!isPhoneSearch(search)) return byNo;
+  return sql<boolean>`(${byNo} or r.id = any(${[...phoneIds]}::uuid[]))`;
 }
 
 const NEWEST_CURSOR_RE = /^[1-9][0-9]{0,15}$/;
@@ -161,7 +171,31 @@ export function formatInboxCursor(cursor: InboxCursor): string {
 /** Прежнее имя вкладки «Ждут ответа» — его шлют старые сборки кабинета */
 const LEGACY_TABS: Readonly<Record<string, RequestTab>> = { new: "waiting" };
 
-export function parseListQuery(query: Record<string, string | undefined>): ListQuery {
+/** Поля тела POST /vendor/requests/search — те же, что у адреса GET, плюс q */
+const SEARCH_BODY_KEYS = ["tab", "cursor", "limit", "listingId", "q", "date", "sort"] as const;
+
+/** Тело поиска { tab, cursor, listingId, q, date, sort } — в те же проверки, что адрес GET */
+export function parseSearchBody(body: unknown): ListQuery {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) throw invalid("body");
+  const fields: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (!(SEARCH_BODY_KEYS as readonly string[]).includes(key)) throw invalid(key);
+    if (value === null || value === undefined) continue;
+    if (typeof value !== "string" && typeof value !== "number") throw invalid(key);
+    fields[key] = String(value);
+  }
+  return parseListQuery(fields, { search: true });
+}
+
+/**
+ * Адрес GET /vendor/requests или тело поиска. q — только у поиска (search: true): в адресе его
+ * быть не должно — адрес попадает в журналы запросов
+ */
+export function parseListQuery(
+  query: Record<string, string | undefined>,
+  options: { readonly search?: boolean } = {},
+): ListQuery {
+  if (!options.search && query.q !== undefined) throw invalid("q");
   const asked = query.tab ?? "waiting";
   const tab = Object.hasOwn(LEGACY_TABS, asked) ? LEGACY_TABS[asked] : asked;
   if (tab === undefined || !(REQUEST_TABS as readonly string[]).includes(tab)) throw invalid("tab");
@@ -330,13 +364,21 @@ const DUE_US = sql<string>`(extract(epoch from r.sla_due_at) * 1000000)::bigint`
 export async function listRequests(db: Db, actor: VendorActor, query: ListQuery): Promise<VendorRequestPage> {
   return withActor(db, actor, async (trx) => {
     const { search, date } = query;
+    // Номер клиента сверяет база один раз на поиск — и пишет об этом в журнал доступа к ПДн
+    const phoneIds =
+      search && isPhoneSearch(search)
+        ? await searchRequestsByPhoneTail(
+            trx,
+            (search as Extract<InboxSearch, { kind: "digits" }>).digits.slice(-9),
+          )
+        : [];
     const base = requestsOf(trx, actor)
       .select([ANSWERED.as("answered"), DUE_US.as("due_us")])
       .where("r.status", "in", [...TAB_STATUSES[query.tab]])
       .$if(typeof query.listingId === "string", (qb) =>
         qb.where("r.listing_id", "=", query.listingId as string),
       )
-      .$if(Boolean(search), (qb) => qb.where(searchMatch(search as InboxSearch)))
+      .$if(Boolean(search), (qb) => qb.where(searchMatch(search as InboxSearch, phoneIds)))
       .$if(Boolean(date), (qb) => qb.where("r.event_date", "=", date as string));
     const { after } = query;
     const rows =
@@ -389,7 +431,7 @@ export async function listRequests(db: Db, actor: VendorActor, query: ListQuery)
       .$if(typeof query.listingId === "string", (qb) =>
         qb.where("r.listing_id", "=", query.listingId as string),
       )
-      .$if(Boolean(search), (qb) => qb.where(searchMatch(search as InboxSearch)))
+      .$if(Boolean(search), (qb) => qb.where(searchMatch(search as InboxSearch, phoneIds)))
       .$if(Boolean(date), (qb) => qb.where("r.event_date", "=", date as string))
       .groupBy("r.status")
       .execute();

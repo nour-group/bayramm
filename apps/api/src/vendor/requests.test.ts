@@ -8,6 +8,7 @@ import {
   getRequest,
   type InboxCursor,
   idOrNotFound,
+  isPhoneSearch,
   listRequests,
   logCallAttempt,
   PAGE_LIMIT_DEFAULT,
@@ -15,6 +16,7 @@ import {
   parseListQuery,
   parsePatch,
   parseSearch,
+  parseSearchBody,
   undoContacted,
   updateRequestStatus,
   withoutUndone,
@@ -137,13 +139,20 @@ describe("разбор запроса", () => {
     expect(parseSearch("  ")).toBeNull();
     expect(parseSearch("Д")).toBeNull();
     expect(() => parseSearch("я".repeat(65))).toThrow(ApiError);
+    // Поиск — только телом POST: в адресе GET его не принимаем (адрес попадает в журналы запросов)
+    expect(() => parseListQuery({ q: "4567" })).toThrow(ApiError);
+    expect(parseListQuery({ date: "2026-11-14", sort: "event" })).toMatchObject({
+      date: "2026-11-14",
+      sort: "event",
+    });
     expect(
-      parseListQuery({
+      parseSearchBody({
         tab: "closed",
         q: "4567",
         date: "2026-11-14",
         sort: "event",
         cursor: "2026-11-14.1042",
+        listingId: null,
       }),
     ).toEqual({
       tab: "closed",
@@ -164,10 +173,20 @@ describe("разбор запроса", () => {
     ]) {
       expect(() => parseListQuery(query), JSON.stringify(query)).toThrow(ApiError);
     }
+    // Тело поиска: только известные поля, строками
+    for (const body of [null, [], "q=1", { q: "Дилноза", extra: 1 }, { q: { $ne: "" } }]) {
+      expect(() => parseSearchBody(body), JSON.stringify(body)).toThrow(ApiError);
+    }
+    expect(isPhoneSearch({ kind: "digits", digits: "4567" })).toBe(true);
+    expect(isPhoneSearch({ kind: "digits", digits: "104" })).toBe(false);
+    expect(isPhoneSearch({ kind: "name", text: "4567 Дилноза" })).toBe(false);
   });
 
   it("поиск — только параметром: номер заявки или конец номера клиента, имя — по видимому контакту", async () => {
-    const fake = dbWith(row(), () => null);
+    const found = "eeeeeeee-0000-0000-0000-0000000000a9";
+    const fake = dbWith(row(), (q) =>
+      q.sql.includes("vendor_requests_by_phone_tail") ? [{ id: found }] : null,
+    );
     await listRequests(fake.db, ACTOR, {
       tab: "waiting",
       listingId: null,
@@ -176,15 +195,19 @@ describe("разбор запроса", () => {
       search: { kind: "digits", digits: "998901234567" },
       date: "2026-11-14",
     });
+    // Номер сверяет база один раз на поиск (и пишет о нём в журнал доступа к ПДн): хвост — последние
+    // девять цифр, только параметром
+    const tails = fake.queries.filter((q) => q.sql.includes("vendor_requests_by_phone_tail"));
+    expect(tails).toHaveLength(1);
+    expect(tails[0]?.parameters).toEqual(["901234567"]);
     const list = fake.queries.find(isItemQuery);
     expect(list?.sql).toContain("r.public_no = $");
-    expect(list?.sql).toContain("pii.vendor_requests_by_phone_tail($");
+    expect(list?.sql).toContain("r.id = any($");
     expect(list?.sql).toContain('"r"."event_date" = $');
-    // Хвост номера — последние девять цифр; сам запрос в SQL не вписан
-    expect(list?.parameters).toEqual(expect.arrayContaining(["998901234567", "901234567", "2026-11-14"]));
+    expect(list?.parameters).toEqual(expect.arrayContaining(["998901234567", [found], "2026-11-14"]));
     expect(list?.sql).not.toContain("901234567");
     const counts = fake.queries.find((q) => q.sql.includes("group by"));
-    expect(counts?.parameters).toEqual(expect.arrayContaining(["901234567", "2026-11-14"]));
+    expect(counts?.parameters).toEqual(expect.arrayContaining([[found], "2026-11-14"]));
 
     const byName = dbWith(row(), () => null);
     await listRequests(byName.db, ACTOR, {
@@ -196,6 +219,8 @@ describe("разбор запроса", () => {
       sort: "event",
     });
     const named = byName.queries.find(isItemQuery);
+    // Имя — без функции номера и без строки журнала
+    expect(byName.queries.some((q) => q.sql.includes("vendor_requests_by_phone_tail"))).toBe(false);
     expect(named?.sql).toContain("rc.contact_name ilike $");
     expect(named?.parameters).toContain("%50\\%\\_%");
     expect(named?.sql).toContain('order by "r"."event_date", "r"."public_no"');

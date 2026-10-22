@@ -48,7 +48,7 @@ import { errorText } from "./errors";
 import { authMethods } from "./hub";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
-import { type EditDraft, EditSheet } from "./ListingEdit";
+import { type EditDraft, EditSheet, isEditDraft } from "./ListingEdit";
 import { ListingPicker } from "./ListingPicker";
 import { EDIT_GROUPS, type EditGroup } from "./listing-edit";
 import { RevisionNotice } from "./Proposal";
@@ -582,17 +582,19 @@ function VenueCard({
   const revisionsReady = revisions.state === "ready";
   // biome-ignore lint/correctness/useExhaustiveDependencies: один раз, когда предложения загружены
   useEffect(() => {
-    if (!revisionsReady) return;
+    // Окна «Изменить» сейчас нет (открыто предложение, не владелец) — черновик остаётся до него
+    if (!revisionsReady || !canEdit) return;
     const start = `edit.${listing.id}.`;
     for (const key of draftKeys(start)) {
-      const draft = takeDraft<EditDraft>(key);
       const group = key.slice(start.length);
-      if (draft && canEdit && EDIT_GROUPS.includes(group as EditGroup) && editing === null) {
+      if (!EDIT_GROUPS.includes(group as EditGroup)) continue;
+      const draft = takeDraft(key, isEditDraft);
+      if (draft && editing === null) {
         setRestored(draft);
         open(group as EditGroup);
       }
     }
-  }, [revisionsReady, listing.id]);
+  }, [revisionsReady, listing.id, canEdit]);
   const stale = () => {
     void onChanged();
     void refreshRevisions();

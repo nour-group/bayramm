@@ -40,6 +40,7 @@ import type {
 import { CALENDAR_VERSION_HEADER, NO_FACES_HEADER, PHOTO_CONSENT_HEADER } from "@bayramm/shared/api/vendor";
 import { clearDrafts } from "./drafts";
 import { vendorHeaders } from "./hub";
+import { forgetFind, type InboxFind } from "./inbox-find";
 
 const API = "/api";
 const TOKEN_KEY = "bayramm.vendor.session";
@@ -114,13 +115,6 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   }
 }
 
-/** Поиск во входящих: что ищут, дата праздника, порядок */
-export interface InboxFind {
-  readonly q: string;
-  readonly date: string | null;
-  readonly sort: "default" | "event";
-}
-
 // Сессия кончилась посреди работы (12 часов, отключили доступ) — App показывает «откройте заново»
 let onUnauthorized: (() => void) | null = null;
 
@@ -175,8 +169,9 @@ export async function signOut(): Promise<void> {
     await send("/auth/logout", { method: "POST" });
   } finally {
     tokenStore.clear();
-    // Черновики форм — этого аккаунта: следующему не достаются
+    // Черновики форм и поиск во входящих — этого аккаунта: следующему не достаются
     clearDrafts();
+    forgetFind();
   }
 }
 
@@ -218,10 +213,23 @@ export const api = {
    * конец номера), дата праздника и порядок по дате события
    */
   requests: (tab: string, cursor?: string | null, listingId?: string | null, find?: InboxFind) => {
+    // Что ищут (имя, цифры номера клиента) — только телом POST: адрес запроса пишут журналы
+    if (find?.q) {
+      return json<VendorRequestPage>("/vendor/requests/search", {
+        method: "POST",
+        body: JSON.stringify({
+          tab,
+          cursor: cursor ?? null,
+          listingId: listingId ?? null,
+          q: find.q,
+          date: find.date,
+          sort: find.sort === "event" ? "event" : null,
+        }),
+      });
+    }
     const query = new URLSearchParams({ tab });
     if (cursor) query.set("cursor", cursor);
     if (listingId) query.set("listingId", listingId);
-    if (find?.q) query.set("q", find.q);
     if (find?.date) query.set("date", find.date);
     if (find?.sort === "event") query.set("sort", "event");
     return json<VendorRequestPage>(`/vendor/requests?${query}`);

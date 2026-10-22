@@ -98,6 +98,39 @@ export interface EditDraft {
   readonly videos: string[];
 }
 
+const isText = (value: unknown): value is string => typeof value === "string";
+const texts = (value: unknown, keys: readonly string[]) =>
+  typeof value === "object" &&
+  value !== null &&
+  keys.every((key) => isText((value as Record<string, unknown>)[key]));
+
+/** Черновик понятного вида: старый или обрезанный (другая сборка) не открывается */
+export function isEditDraft(value: unknown): value is EditDraft {
+  if (typeof value !== "object" || value === null) return false;
+  const draft = value as Record<string, unknown>;
+  return (
+    texts(draft.basics, ["name", "descriptionRu", "descriptionUz"]) &&
+    texts(draft.place, ["districtCode", "addressRu", "addressUz", "capMin", "capMax"]) &&
+    typeof draft.drafts === "object" &&
+    draft.drafts !== null &&
+    !Array.isArray(draft.drafts) &&
+    Array.isArray(draft.videos) &&
+    draft.videos.every(isText)
+  );
+}
+
+/** Вид значения поля витрины: строка, флажок, список или текст на двух языках */
+const kindOf = (value: unknown) => (Array.isArray(value) ? "list" : typeof value);
+
+/** Поля витрины из черновика — только те, что есть в форме, и того же вида */
+function restoredAttributes(before: AttributeDrafts, saved: AttributeDrafts): AttributeDrafts {
+  const next: Record<string, AttributeDraft> = { ...before };
+  for (const [key, value] of Object.entries(saved)) {
+    if (key in before && kindOf(value) === kindOf(before[key])) next[key] = value;
+  }
+  return next;
+}
+
 /** Ключ черновика окна: витрина и карточка */
 export const editDraftKey = (listingId: string, group: EditGroup) => `edit.${listingId}.${group}`;
 
@@ -249,7 +282,9 @@ export function EditSheet({
   const [basics, setBasics] = useState(() => restored?.basics ?? basicsOf(listing));
   const [place, setPlace] = useState(() => restored?.place ?? placeOf(listing));
   const [before] = useState<AttributeDrafts>(() => (category ? attributeDraftsOf(listing, category) : {}));
-  const [drafts, setDrafts] = useState<AttributeDrafts>(() => restored?.drafts ?? before);
+  const [drafts, setDrafts] = useState<AttributeDrafts>(() =>
+    restored ? restoredAttributes(before, restored.drafts) : before,
+  );
   const [videos, setVideos] = useState<string[]>(() => restored?.videos ?? videoDraftsOf(listing));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [badAttributes, setBadAttributes] = useState<ReadonlySet<string>>(new Set());
