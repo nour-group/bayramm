@@ -42,7 +42,9 @@ export function useRevalidate(
   useEffect(() => {
     if (!enabled) return;
     const run = () => {
-      if (!visible() || Date.now() - last.current < minGap) return;
+      // Без сети не ходим: «нет связи» и так видно, а повтор придёт с событием online
+      const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+      if (offline || !visible() || Date.now() - last.current < minGap) return;
       last.current = Date.now();
       latest.current();
     };

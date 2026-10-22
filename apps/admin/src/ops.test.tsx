@@ -462,6 +462,54 @@ describe("заявка: работа с заявкой", () => {
     expect(text()).not.toContain("напоминаний");
   });
 
+  it("список перечитывается сам: вернулись во вкладку — новые данные; не вышло — список на месте и строка о сбое", async () => {
+    const counts = {
+      waiting: 0,
+      overdue: 1,
+      breached: 0,
+      answered: 0,
+      answered_late: 0,
+      ops_contacted: 0,
+      closed: 0,
+    };
+    let answer: "one" | "two" | "fail" = "one";
+    mockApi(staff("manager", MANAGER), {
+      "GET /api/staff/requests": () =>
+        answer === "fail"
+          ? new Response(JSON.stringify({ error: { code: "internal", message: "x" } }), { status: 503 })
+          : json({
+              total: answer === "one" ? 1 : 2,
+              items:
+                answer === "one"
+                  ? [REQUEST]
+                  : [REQUEST, { ...REQUEST, id: "cccccccc-0000-0000-0000-000000000002", publicNo: 1002 }],
+              counts,
+            })(null),
+    });
+    await mount("/requests");
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(container.querySelector(".updated-at")?.textContent).toMatch(/^Обновлено \d\d:\d\d$/);
+    // Вкладка снова видна (не раньше, чем через несколько секунд после прошлого чтения)
+    const later = Date.now() + 60_000;
+    const now = vi.spyOn(Date, "now").mockReturnValue(later);
+    answer = "two";
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await settle();
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+    // Перечитать не вышло — список прежний, о сбое — строкой уведомления, ошибки на месте списка нет
+    now.mockReturnValue(later + 60_000);
+    answer = "fail";
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await settle();
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(document.body.textContent).toContain(t.refreshFailed);
+    now.mockRestore();
+  });
+
   it("список: очередь «Требуют действия» — sla=late, счётчик — просроченные и нарушенные", async () => {
     mockApi(staff("manager", MANAGER), {
       "GET /api/staff/requests": json({

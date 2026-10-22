@@ -8,7 +8,7 @@
 
 import { getWebApp, launchedFromTelegram, loadTelegramWebApp, type TelegramWebApp } from "@bayramm/tg/webapp";
 import { base } from "@bayramm/ui";
-import { backLayerOpen, setBackButton } from "@bayramm/ui/react";
+import { backLayerOpen, markScreenBack, setBackButton } from "@bayramm/ui/react";
 import { useEffect } from "react";
 
 export type { TelegramWebApp };
@@ -60,9 +60,12 @@ export function useBackButton(onBack: (() => void) | null): boolean {
     };
     button.onClick?.(handler);
     button.show?.();
+    markScreenBack(true);
     return () => {
       button.offClick?.(handler);
-      button.hide?.();
+      markScreenBack(false);
+      // Открыта шторка — кнопка пока её; спрячет набор, когда шторка закроется
+      if (!backLayerOpen()) button.hide?.();
     };
   }, [onBack]);
   return typeof getWebApp()?.BackButton?.show === "function";

@@ -15,7 +15,6 @@ import {
   ScreenErrorBoundary,
   stickyBar,
   ToastProvider,
-  useOnReconnect,
   useRevalidate,
   useStickyBar,
 } from "@bayramm/ui/react";
@@ -378,8 +377,7 @@ function useBadges(permissions: readonly StaffPermission[], section: Section | n
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: section — повод перечитать
   useEffect(() => refresh(false), [refresh, section]);
-  useOnReconnect(() => refresh(true));
-  // Вернулись в панель (вкладка, Mini App из фона) и раз в полторы минуты — счётчики свежие
+  // Вернулись в панель (вкладка, Mini App из фона), вернулась связь и раз в полторы минуты — счётчики свежие
   useRevalidate(() => refresh(true), { enabled });
   return badges;
 }

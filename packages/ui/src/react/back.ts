@@ -66,19 +66,27 @@ function backTop(): void {
 /* ---------- Telegram ---------- */
 
 let shown: BackButtonLike | null = null;
-let wasVisible = false;
+/** Экран сейчас показывает свою «Назад» (вложенный экран): закрыв слой, кнопку не прячем */
+let screenWants = false;
 const onTelegramBack = () => backTop();
+
+/**
+ * Обработчик «назад» экрана приложения показал кнопку Telegram (on) или убрал её (off). Не снимок
+ * при открытии слоя: из шторки могли перейти на вложенный экран, и кнопка нужна уже ему
+ */
+export function markScreenBack(on: boolean): void {
+  screenWants = on;
+}
 
 function syncTelegram(button: BackButtonLike): void {
   if (layers.length > 0 && shown === null) {
     shown = button;
-    wasVisible = button.isVisible === true;
     button.onClick?.(onTelegramBack);
     button.show?.();
   } else if (layers.length === 0 && shown !== null) {
     shown.offClick?.(onTelegramBack);
-    // Кнопку экрана (вложенный экран под шторкой) не прячем
-    if (!wasVisible) shown.hide?.();
+    if (screenWants) shown.show?.();
+    else shown.hide?.();
     shown = null;
   }
 }
@@ -169,6 +177,23 @@ function sync(): void {
 }
 
 /**
+ * Переход маршрутизатора на новый экран (вместо history.pushState). Слой открыт и его запись
+ * сверху (ссылка в шторке, «Уйти» в вопросе о несохранённом) — новый экран встаёт на её место:
+ * иначе запись закрытого слоя осталась бы под ним, и «назад» пришлось бы жать дважды
+ */
+export function pushScreen(state: unknown, url: string): void {
+  if (typeof window === "undefined") return;
+  if (historyOn && depthOf(window.history.state) > 0 && ownPop === null) {
+    window.history.replaceState(state, "", url);
+    // Записей слоёв поверх экрана больше нет; слой, что остался открытым, получит новую
+    entries = 0;
+    later();
+    return;
+  }
+  window.history.pushState(state, "", url);
+}
+
+/**
  * «Назад» экрана из кода приложения (ушли без сохранения, «назад» в шапке) — мимо записей открытых
  * слоёв: history.back() снял бы запись шторки, и закрылась бы шторка, а не экран
  */
@@ -216,6 +241,7 @@ export function resetBackLayers(): void {
   entries = 0;
   ownPop = null;
   screenPop = false;
+  screenWants = false;
   consuming = false;
   if (timer !== null) clearTimeout(timer);
   timer = null;

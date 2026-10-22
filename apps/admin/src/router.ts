@@ -1,6 +1,6 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
 import type { StaffPermission } from "@bayramm/shared/api/staff";
-import { historyBack } from "@bayramm/ui/react";
+import { historyBack, pushScreen } from "@bayramm/ui/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 /* Все маршруты панели — в одной карте. Пути, вписанные по месту, разъезжаются
@@ -333,7 +333,8 @@ export function useRoute(
             "",
             `${currentHref()}${window.location.hash}`,
           );
-          window.history.pushState({ idx: historyIndex() + 1 }, "", next);
+          // Ссылка в открытой шторке — новый экран на месте записи шторки (@bayramm/ui/react)
+          pushScreen({ idx: historyIndex() + 1 }, next);
         }
         setRoute((prev) => ({ path: pathOf(view), seq: prev.seq + 1, back: false }));
       };

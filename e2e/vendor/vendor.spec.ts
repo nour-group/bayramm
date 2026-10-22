@@ -1381,6 +1381,41 @@ test.describe("витрины в разных категориях", () => {
     expect(api.unexpected).toEqual([]);
   });
 
+  test("заявка по ссылке из шторки дня: в браузере «назад» — сразу к календарю, в Telegram — «Назад» заявки на месте", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "на компьютере открытый день — колонка рядом с месяцем, не шторка");
+    await start(page, { telegram: false, listings: "many" });
+    await page.addInitScript(() =>
+      window.sessionStorage.setItem("bayramm.vendor.session", "e2e-vendor-token"),
+    );
+    await page.goto("/calendar");
+    await chooseVitrina(page, "Kortej Premium");
+    await dayButton(page, 24).click();
+    await page.getByRole("dialog").locator(".day-request").first().click();
+    await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
+    // Запись шторки не осталась под заявкой: один «назад» — календарь
+    await page.goBack();
+    await expect(page).toHaveURL("/calendar");
+    await expect(heading(page)).toHaveText(t.calendar);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
+  test("Telegram: заявка по ссылке из шторки дня — «Назад» заявки видна и ведёт обратно", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "на компьютере открытый день — колонка рядом с месяцем, не шторка");
+    await start(page, { listings: "many" });
+    await page.goto("/calendar");
+    await chooseVitrina(page, "Kortej Premium");
+    await dayButton(page, 24).click();
+    await page.getByRole("dialog").locator(".day-request").first().click();
+    await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
+    await expect.poll(async () => (await telegramState(page)).back.visible).toBe(true);
+    await page.waitForTimeout(100);
+    expect((await telegramState(page)).back.visible).toBe(true);
+  });
+
   test("кортеж: день по частям — шторка на телефоне, колонка справа на компьютере; «занято N из M мест»", async ({
     page,
   }) => {

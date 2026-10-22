@@ -182,6 +182,14 @@ export function ToastProvider({ children, offset = 16 }: ToastProviderProps) {
   );
 }
 
+/**
+ * То же, но без ToastProvider над компонентом — null (общий загрузчик данных, который зовут и
+ * выше провайдера)
+ */
+export function useOptionalToast(): Show | null {
+  return useContext(ToastContext);
+}
+
 /** Показать уведомление: toast("Сохранено"), toast("Не удалось", { tone: "error" }) */
 export function useToast(): Show {
   const show = useContext(ToastContext);

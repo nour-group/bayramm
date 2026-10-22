@@ -9,6 +9,8 @@ export {
   type BackButtonLike,
   backLayerOpen,
   historyBack,
+  markScreenBack,
+  pushScreen,
   setBackButton,
   setBackHistory,
   useBackLayer,
@@ -56,6 +58,7 @@ export {
   ToastProvider,
   type ToastProviderProps,
   type ToastTone,
+  useOptionalToast,
   useToast,
 } from "./Toast";
 export { Tooltip, type TooltipProps, type TooltipTriggerProps } from "./Tooltip";
