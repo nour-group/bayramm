@@ -210,6 +210,16 @@ test.describe("до входа", () => {
       await expect(heading(page)).toHaveText(title);
       await expect(page.getByRole("link", { name: t.openBot })).toHaveCount(bot ? 1 : 0);
       if (signIn === "error") await expect(page.getByRole("button", { name: t.retry })).toBeVisible();
+      // Тупиков нет: контакт команды под каждым отказом; не привязан — проверить снова, не перезапуская
+      await expect(page.getByText(t.teamTitle)).toBeVisible();
+      await expect(page.getByRole("link", { name: t.teamWrite })).toBeVisible();
+      await expect(page.getByRole("button", { name: t.gateCheckAgain })).toHaveCount(
+        signIn === "not_linked" ? 1 : 0,
+      );
+      // Сессия кончилась в Telegram — вход заново по initData, без закрытия кабинета
+      await expect(page.getByRole("button", { name: t.gateRestart })).toHaveCount(
+        signIn === "expired" ? 1 : 0,
+      );
       await expect(sections(page)).toHaveCount(0);
       await expectNoAxeViolations(page, `вход: ${signIn}`);
     });
@@ -349,6 +359,29 @@ test.describe("кабинет", () => {
     // Открыта «Закрытые», а просроченная — во «Ждут ответа»: плашка по счётчику API всё равно есть
     await expect(page.locator(".promise-late")).toHaveText(t.inboxLate);
     expect([...new Set(api.inboxQueries.map((q) => q.tab))]).toEqual(["waiting", "closed"]);
+  });
+
+  test("вкладки входящих целиком в колонке списка — на любой ширине и на обоих языках, без прокрутки вбок", async ({
+    page,
+  }) => {
+    await start(page);
+    for (const lang of ["ru", "uz"] as const) {
+      await page.goto("/account");
+      await chooseLang(page, lang);
+      for (const width of [320, 390, 1024, 1280, 1440]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto("/requests");
+        const group = page.locator(".pills-fill");
+        await expect(group.locator(".pill")).toHaveCount(3);
+        await page.evaluate(() => document.fonts.ready);
+        const clipped = await group.evaluate((el) =>
+          [el, ...el.querySelectorAll(".pill")]
+            .filter((node) => node.scrollWidth > node.clientWidth + 0.5)
+            .map((node) => node.textContent),
+        );
+        expect(clipped, `${width}px ${lang}`).toEqual([]);
+      }
+    }
   });
 
   test("фокус не уходит под прилипшие панели: Tab по входящим, заявке и витрине", async ({ page }) => {
@@ -552,6 +585,18 @@ test.describe("кабинет", () => {
     await expect(heading(page)).toHaveText(t.requests);
     await page.goBack();
     await expect(heading(page)).toHaveText(t.calendar);
+  });
+
+  test("опубликованная витрина: открыть на сайте и скопировать ссылку", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await start(page);
+    await page.goto("/card");
+    const open = page.getByRole("link", { name: t.venueOpenSite });
+    await expect(open).toHaveAttribute("href", /\/venue\/lola-zali$/);
+    await expect(open).toHaveAttribute("target", "_blank");
+    await page.getByRole("button", { name: t.venueCopyLink }).click();
+    await expect(page.getByText(t.venueLinkCopied)).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/\/venue\/lola-zali$/);
   });
 
   test("календарь изменил кто-то другой: правка не затирает чужую, месяц перечитан, отметить заново", async ({
@@ -1747,8 +1792,8 @@ test.describe("что ждёт партнёра после решений ком
         await expect(heading(page)).toBeVisible();
         await chooseLang(page, lang);
         await expect(heading(page)).toHaveText(vendorDict[lang].account);
-        // «Витрина» и «Услуги»: значок «Заявок» появляется, когда загружен список заявок
-        await expect(page.locator(".tabbar .nav-count")).toHaveCount(2);
+        // «Заявки», «Витрина» и «Услуги»: счётчик заявок приходит и вне входящих
+        await expect(page.locator(".tabbar .nav-count")).toHaveCount(3);
         await page.evaluate(() => document.fonts.ready);
         const clipped = await page.$$eval(".tabbar .nav-label", (labels) =>
           labels.filter((el) => el.scrollWidth > el.clientWidth + 0.5).map((el) => el.textContent),

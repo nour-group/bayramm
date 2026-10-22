@@ -210,6 +210,22 @@ body {
   gap: var(--gap-9);
 }
 
+/* Контакт команды под экраном отказа: тупика нет */
+.gate-team {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-7);
+  margin-top: 8px;
+}
+
+.gate-team-title {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-13-5);
+  font-weight: 600;
+}
+
 .page-title {
   margin: 0;
   color: var(--plum);
@@ -418,12 +434,22 @@ body {
 }
 
 /* Вкладки входящих — на всю ширину, ширина каждой — по её подписи: «В работе 2» не
-   переносится на две строки, «Закрытые» не уходит за край */
+   переносится на две строки, «Закрытые» не уходит за край. Прокрутки вбок нет: тесно — счётчик
+   под подписью (ниже — по ширине экрана и по ширине колонки списка) */
+.pills-fill {
+  overflow: visible;
+}
+
 .pills-fill .pill {
   flex: 1 1 auto;
   justify-content: center;
   padding: 0 10px;
   white-space: nowrap;
+}
+
+/* Ширина колонки списка, а не экрана: на компьютере список заявок — колонка 300–400px */
+.inbox-list {
+  container-type: inline-size;
 }
 
 /* Телефон (320–429px): три подписи со счётчиками («Ждут ответа 3») в строку не влезают —
@@ -436,6 +462,24 @@ body {
     min-width: 0;
     padding: 4px 6px;
     line-height: 1.2;
+    /* «Javob kutmoqda» на 320px — в две строки, а не обрезано */
+    text-align: center;
+    white-space: normal;
+  }
+}
+
+/* Колонка списка уже трёх подписей со счётчиками в строку (RU — 381px, UZ — 402px) */
+@container (max-width: 419px) {
+  .pills-fill .pill {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+    padding: 4px 6px;
+    line-height: 1.2;
+    /* «Javob kutmoqda» на 320px — в две строки, а не обрезано */
+    text-align: center;
+    white-space: normal;
   }
 }
 
@@ -1307,6 +1351,13 @@ body {
   background: var(--coral);
 }
 
+/* Витрина на сайте: открыть и скопировать ссылку — в строку, узко — друг под другом */
+.venue-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-9);
+}
+
 /* Площадка */
 .venue {
   display: flex;
@@ -1591,6 +1642,11 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: var(--gap-9);
+}
+
+/* Под экраном отказа — по центру, как его кнопки (после .team-links: ловушка №7) */
+.gate-team .team-links {
+  justify-content: center;
 }
 
 /* ── разделы кабинета ─────────────────────────────────────────────────────── */
@@ -3091,7 +3147,7 @@ body {
 /* Широкий компьютер: список заявок шире */
 @media (min-width: 1280px) {
   .inbox {
-    grid-template-columns: 380px minmax(0, 1fr);
+    grid-template-columns: 400px minmax(0, 1fr);
     gap: 32px;
   }
 }

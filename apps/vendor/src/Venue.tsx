@@ -39,10 +39,12 @@ import {
   hasDayParts,
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
-import { useEffect, useRef, useState } from "react";
+import { useToast } from "@bayramm/ui/react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { categoryName } from "./category";
 import { errorText } from "./errors";
+import { authMethods } from "./hub";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { EditSheet } from "./ListingEdit";
@@ -50,6 +52,7 @@ import { ListingPicker } from "./ListingPicker";
 import type { EditGroup } from "./listing-edit";
 import { RevisionNotice } from "./Proposal";
 import type { Navigate } from "./router";
+import { openSiteLink } from "./telegram";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
 import { VenueContacts } from "./VenueContacts";
@@ -435,6 +438,57 @@ export function Venue({
   );
 }
 
+/** Адрес витрины на сайте (сайт окружения — из GET /auth/methods); пока не узнали — null */
+function useSiteUrl(slug: string): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    void authMethods().then((methods) => {
+      const web = methods?.apps.web;
+      if (active) setUrl(web ? `${web.replace(/\/+$/, "")}/venue/${encodeURIComponent(slug)}` : null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [slug]);
+  return url;
+}
+
+/**
+ * Витрина на сайте: открыть её глазами клиента и скопировать ссылку (в Instagram, Telegram).
+ * В Telegram ссылка открывается во внешнем браузере, кабинет остаётся открытым
+ */
+function VenueLinks({ slug, t }: { slug: string; t: VendorDict }) {
+  const url = useSiteUrl(slug);
+  const toast = useToast();
+  if (url === null) return null;
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast(t.venueLinkCopied, { tone: "success" });
+    } catch {
+      // Буфер обмена недоступен (старый вебвью, нет разрешения) — ссылка текстом, её можно выделить
+      toast(fill(t.venueLinkCopyFailed, { url }));
+    }
+  };
+  return (
+    <div className="venue-links">
+      <a
+        className="btn btn-ghost"
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(event: MouseEvent<HTMLAnchorElement>) => openSiteLink(url, event)}
+      >
+        {t.venueOpenSite}
+      </a>
+      <button type="button" className="btn btn-ghost" onClick={() => void copy()}>
+        {t.venueCopyLink}
+      </button>
+    </div>
+  );
+}
+
 interface VenueCardProps {
   readonly listing: VendorListing;
   readonly t: VendorDict;
@@ -512,6 +566,8 @@ function VenueCard({
           </span>
         </span>
       </div>
+      {/* Клиенты видят только опубликованную */}
+      {listing.status === "active" ? <VenueLinks slug={listing.slug} t={t} /> : null}
 
       {/* Ключ — витрина: «отправили на проверку» другой витрины не переносится */}
       <Readiness

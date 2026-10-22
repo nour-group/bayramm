@@ -68,6 +68,15 @@ export function useBackButton(onBack: (() => void) | null): boolean {
   return typeof getWebApp()?.BackButton?.show === "function";
 }
 
+/** Страница сайта: внутри Telegram — во внешнем браузере (openLink), не закрывая кабинет; в браузере — ссылкой */
+export function openSiteLink(url: string, event?: { preventDefault(): void }): void {
+  const webApp = getWebApp() as (TelegramWebApp & { openLink?: (url: string) => void }) | null;
+  if (typeof webApp?.openLink === "function") {
+    event?.preventDefault();
+    webApp.openLink(url);
+  }
+}
+
 /** Ссылка на бота: внутри Telegram — не закрывая кабинет, в браузере — обычный переход */
 export function openBotLink(url: string, event?: { preventDefault(): void }): void {
   const webApp = getWebApp();
