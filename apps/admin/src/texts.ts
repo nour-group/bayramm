@@ -996,6 +996,7 @@ export const t = {
     vendor_contact: "Контакт вендора",
     vendor_user: "Пользователь кабинета",
     listing_contact: "Контакты витрины",
+    vendor_inbox: "Входящие кабинета",
   } as Record<string, string>,
   auditActions: {
     "listing.create": "Витрина создана",
@@ -1065,6 +1066,7 @@ export const t = {
     staff_contact_change: "новые контакты витрины",
     self_contact_change: "своя просьба о контактах",
     system_notification: "уведомление",
+    request_search: "поиск заявки по номеру клиента",
   } as Record<string, string>,
 
   // команда

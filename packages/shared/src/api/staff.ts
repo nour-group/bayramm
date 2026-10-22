@@ -1095,7 +1095,10 @@ export interface PiiAccessEntry {
   readonly actorKind: ActorKind;
   /** Как в AuditEntry: сотрудник, пользователь кабинета или клиент — с подписью */
   readonly actor: { readonly id: string; readonly name: string | null } | null;
-  /** client, request_contact, vendor_contact, vendor_user, listing_contact */
+  /**
+   * client, request_contact, vendor_contact, vendor_user, listing_contact; vendor_inbox — поиск во
+   * входящих кабинета по концу номера клиента (subjectId — вендор, purpose request_search)
+   */
   readonly subjectKind: string;
   readonly subjectId: string;
   /**
