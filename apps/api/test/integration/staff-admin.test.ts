@@ -473,9 +473,14 @@ describe("вендор → карточка → проверка → публи�
   });
 
   it("непроверенный вендор не публикуется: блокеры чек-листа", async () => {
+    // Фото модератор открыл — публикация одобрила бы их; мешает только проверка вендора
+    const photos = await ok<StaffPhoto[]>(api("moderator", "GET", `/staff/listings/${listing.id}/photos`));
     expect(
       await error(
-        api("moderator", "POST", `/staff/listings/${listing.id}/publish`, { version: listing.version }),
+        api("moderator", "POST", `/staff/listings/${listing.id}/publish`, {
+          version: listing.version,
+          approvePhotos: photos.map((p) => p.id),
+        }),
       ),
     ).toEqual({
       status: 422,
