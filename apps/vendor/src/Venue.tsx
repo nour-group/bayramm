@@ -40,18 +40,19 @@ import {
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
 import { useToast } from "@bayramm/ui/react";
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, type RefObject, useEffect, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { categoryName } from "./category";
+import { draftKeys, takeDraft } from "./drafts";
 import { errorText } from "./errors";
 import { authMethods } from "./hub";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
-import { EditSheet } from "./ListingEdit";
+import { type EditDraft, EditSheet } from "./ListingEdit";
 import { ListingPicker } from "./ListingPicker";
-import type { EditGroup } from "./listing-edit";
+import { EDIT_GROUPS, type EditGroup } from "./listing-edit";
 import { RevisionNotice } from "./Proposal";
-import type { Navigate } from "./router";
+import type { Navigate, VenueFocus } from "./router";
 import { openSiteLink } from "./telegram";
 import { Empty, Heading, LoadError, Loading, type ScreenProps } from "./ui";
 import { useLoad } from "./useLoad";
@@ -92,6 +93,12 @@ const STATUS_LEAD: Readonly<
   suspended: { todo: "readySuspended", done: "readySuspended" },
   rejected: { todo: "readyRejected", done: "readyRejectedDone" },
 };
+
+/**
+ * Сколько обычно занимает проверка витрины командой — говорим партнёру один раз, после отправки
+ * (решение приходит ботом в Telegram)
+ */
+export const REVIEW_HOURS = 24;
 
 /** Из этих статусов партнёр сам отправляет витрину на проверку (POST …/submit) */
 const SUBMITTABLE: ReadonlySet<VendorListing["status"]> = new Set(["draft", "rejected"]);
@@ -265,11 +272,13 @@ function Readiness({ listing, category, t, lang, owner, go, pending, onSubmitted
   const teamFirst = listing.reviewBlockers.filter((code) => !VENDOR_BLOCKERS.has(code));
   const submittable = SUBMITTABLE.has(listing.status) && todos.length === 0;
   const canSubmit = submittable && teamFirst.length === 0;
-  // Отправили отсюда: сказать об этом и держать фокус на сказанном (кнопка исчезла)
+  // Отправили отсюда: сколько ждать — всплывающей строкой, один раз; «на проверке» скажет сам
+  // чек-лист. Кнопка исчезла — фокус на чек-лист, а не в никуда
+  const toast = useToast();
   const [sent, setSent] = useState(false);
-  const sentRef = useRef<HTMLParagraphElement>(null);
+  const block = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (sent && listing.status === "review") sentRef.current?.focus({ preventScroll: true });
+    if (sent && listing.status === "review") block.current?.focus({ preventScroll: true });
   }, [sent, listing.status]);
   const leadKeys = STATUS_LEAD[listing.status];
   const lead =
@@ -288,29 +297,25 @@ function Readiness({ listing, category, t, lang, owner, go, pending, onSubmitted
       t={t}
       owner={owner}
       onSubmitted={onSubmitted}
-      onDone={() => setSent(true)}
+      onDone={() => {
+        setSent(true);
+        toast(fill(t.submitDone, { n: REVIEW_HOURS }), { tone: "success", duration: 8000 });
+      }}
     />
   ) : listing.status === "review" ? (
     <WithdrawAction listing={listing} t={t} owner={owner} onWithdrawn={onSubmitted} />
   ) : null;
-  const done =
-    sent && listing.status === "review" ? (
-      <p className="note" role="status" tabIndex={-1} ref={sentRef}>
-        {t.submitDone}
-      </p>
-    ) : null;
   if (todos.length === 0 && team.length === 0) {
     return (
-      <div className="notice readiness">
+      <div className="notice readiness" ref={block as RefObject<HTMLDivElement>} tabIndex={-1}>
         <p>{lead}</p>
         {reason}
         {action}
-        {done}
       </div>
     );
   }
   return (
-    <section className="panel readiness" aria-labelledby="ready-title">
+    <section className="panel readiness" aria-labelledby="ready-title" ref={block} tabIndex={-1}>
       <h2 className="section-title" id="ready-title">
         {t.blockersTitle}
       </h2>
@@ -346,7 +351,6 @@ function Readiness({ listing, category, t, lang, owner, go, pending, onSubmitted
       {!owner && todos.length > 0 ? <p className="note">{t.todoOwner}</p> : null}
       {team.length > 0 ? <p className="note">{fill(t.todoTeam, { list: codesText(team, t) })}</p> : null}
       {action}
-      {done}
     </section>
   );
 }
@@ -363,6 +367,15 @@ interface VenueProps extends ScreenProps {
   readonly navigate: Navigate;
   /** Партнёр изменил витрину (фото, предложение): значки «требует внимания» в разделах — заново */
   readonly onChanged?: () => void;
+  /** Пришли по ссылке к блоку (?focus=): время работы или данные витрины */
+  readonly focus?: VenueFocus;
+}
+
+/** Заголовок блока витрины, к которому ведёт ссылка */
+function focusTarget(focus: VenueFocus): HTMLElement | null {
+  return focus === "sessions"
+    ? document.getElementById("sessions-title")
+    : document.querySelector<HTMLElement>('[data-group="attributes"] .panel-title');
 }
 
 export function Venue({
@@ -377,6 +390,7 @@ export function Venue({
   inSidebar = false,
   navigate,
   onChanged,
+  focus,
 }: VenueProps) {
   const [listing, reload, set, refresh] = useLoad<VendorListing>(listingId, (id) => api.listing(id));
   const owner = role === "owner";
@@ -390,6 +404,18 @@ export function Venue({
     set(() => result.listing);
     onChanged?.();
   };
+  // К блоку из ссылки — когда витрина на экране, один раз: прокрутка и фокус на его заголовок
+  const ready = listing.state === "ready";
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focus || !ready || focused.current) return;
+    focused.current = true;
+    requestAnimationFrame(() => {
+      const target = focusTarget(focus);
+      target?.scrollIntoView?.({ block: "start" });
+      target?.focus({ preventScroll: true });
+    });
+  }, [focus, ready]);
 
   if (listings.length === 0 || !listingId) {
     return (
@@ -522,15 +548,16 @@ function VenueCard({
   );
   const pending =
     revisions.state === "ready" ? revisions.data.items.find((r) => r.status === "pending") : undefined;
-  // Окно «Изменить» какой-то карточки и что сказано после сохранения
+  // Окно «Изменить» какой-то карточки; сохранили — всплывающая строка, фокус — на заголовок карточки
   const [editing, setEditing] = useState<EditGroup | null>(null);
-  const [said, setSaid] = useState<"saved" | "sent" | null>(null);
-  const status = useRef<HTMLParagraphElement>(null);
+  const toast = useToast();
+  const groupTitle = useRef<HTMLElement | null>(null);
   // Пока предложение открыто, новое отправить нельзя (одно на витрину): «Изменить» скрыто
   const canEdit = owner && pending === undefined;
   const open = (group: EditGroup) => {
     if (!canEdit) return;
-    setSaid(null);
+    // Закрыли без сохранения — фокус туда, откуда открыли; сохранили — на заголовок карточки
+    groupTitle.current = null;
     setEditing(group);
   };
   const go: TodoRoutes = {
@@ -541,13 +568,31 @@ function VenueCard({
   };
   const saved = (result: VendorListingSaved) => {
     const sent = result.sentForModeration.length > 0;
+    groupTitle.current = document.querySelector<HTMLElement>(`[data-group="${editing}"] .panel-title`);
     setEditing(null);
-    setSaid(sent ? "sent" : "saved");
+    toast(sent ? t.proposalSent : t.editSaved, { tone: "success" });
     onSaved(result);
     // Предложение появилось: карточки отметят «на проверке», «Изменить» скроется
     if (sent) void refreshRevisions();
   };
   // Витрину успели изменить или предложение уже открыто — показать, как сейчас
+  // Сессия кончилась посреди правки: после входа — то же окно с вписанным (drafts.ts). Ждём
+  // предложения: пока одно открыто, окна «Изменить» нет — черновик тогда пропадает
+  const [restored, setRestored] = useState<EditDraft | null>(null);
+  const revisionsReady = revisions.state === "ready";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: один раз, когда предложения загружены
+  useEffect(() => {
+    if (!revisionsReady) return;
+    const start = `edit.${listing.id}.`;
+    for (const key of draftKeys(start)) {
+      const draft = takeDraft<EditDraft>(key);
+      const group = key.slice(start.length);
+      if (draft && canEdit && EDIT_GROUPS.includes(group as EditGroup) && editing === null) {
+        setRestored(draft);
+        open(group as EditGroup);
+      }
+    }
+  }, [revisionsReady, listing.id]);
   const stale = () => {
     void onChanged();
     void refreshRevisions();
@@ -594,11 +639,6 @@ function VenueCard({
         owner={owner}
         onChanged={onProposal}
       />
-      {said ? (
-        <p className="note" role="status" tabIndex={-1} ref={status}>
-          {said === "sent" ? t.proposalSent : t.editSaved}
-        </p>
-      ) : null}
 
       <div className="venue-grid">
         {/* Ключ — витрина: галочка и ошибки загрузки другой витрины не переносятся.
@@ -643,10 +683,14 @@ function VenueCard({
           listing={listing}
           t={t}
           lang={lang}
-          returnFocus={status}
-          onClose={() => setEditing(null)}
+          returnFocus={groupTitle}
+          onClose={() => {
+            setRestored(null);
+            setEditing(null);
+          }}
           onSaved={saved}
           onStale={stale}
+          restored={restored}
         />
       ) : null}
     </article>

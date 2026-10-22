@@ -93,7 +93,8 @@ function Group({
   return (
     <section className="panel group" aria-labelledby={id} data-group={group}>
       <div className="group-head">
-        <h3 className="panel-title" id={id}>
+        {/* Фокус сюда — по ссылке ?focus= (из календаря «Изменить срок») */}
+        <h3 className="panel-title" id={id} tabIndex={-1}>
           {title}
         </h3>
         {review ? <span className="chip chip-wait">{t.chipReview}</span> : null}

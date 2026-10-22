@@ -15,7 +15,12 @@
    ссылкой на витрину, где чек-лист готовности: заявок не будет, пока витрину не опубликуют.
 
    На компьютере список стоит рядом с карточкой (Inbox.tsx): открытая заявка отмечена в
-   списке (aria-current), а список перечитывается тихо, когда карточка что-то изменила. */
+   списке (aria-current), а список перечитывается тихо, когда карточка что-то изменила.
+
+   Над вкладками — поиск (№ заявки, имя клиента или конец его номера; ищет сервер, через
+   300 мс тишины), «Дата праздника» и порядок «по дате события». Счётчики вкладок — с теми же
+   фильтрами: видно, где нашлось; значок раздела они не трогают. Поиск переживает переход в
+   заявку и обратно, но не перезагрузку: нигде не хранится. */
 
 import {
   REQUEST_TABS,
@@ -25,11 +30,19 @@ import {
   type VendorRequestPage,
 } from "@bayramm/shared/api/vendor";
 import { categoryConfig, chosenServices, detailRows } from "@bayramm/shared/categories";
-import { useRevalidate } from "@bayramm/ui/react";
-import { type MouseEvent, useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { type CalendarTexts, DateField, SearchField, useRevalidate } from "@bayramm/ui/react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { api, type InboxFind } from "./api";
 import { categoryName, partsLabel } from "./category";
-import { formatBudget, formatDate, formatDuration, formatGuests, slaView, tashkentTime } from "./format";
+import {
+  formatBudget,
+  formatDate,
+  formatDeadline,
+  formatDuration,
+  formatGuests,
+  slaView,
+  tashkentToday,
+} from "./format";
 import { fill, type TextKey, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { ListingPicker } from "./ListingPicker";
@@ -50,13 +63,35 @@ const EMPTY: Readonly<Record<RequestTab, [TextKey, TextKey]>> = {
   closed: ["emptyClosed", "emptyClosedText"],
 };
 
+/** Поиск, дата и порядок — до перезагрузки страницы: переход в заявку и обратно их не теряет */
+let lastFind: InboxFind = { q: "", date: null, sort: "default" };
+
+/** Тексты календаря набора для «Дата праздника» — словами кабинета */
+export function calendarTexts(t: VendorDict): CalendarTexts {
+  return {
+    prev: t.prevMonth,
+    next: t.nextMonth,
+    weekdays: t.weekdays,
+    monthTitle: (month) => `${t.months[Number(month.slice(5, 7)) - 1] ?? ""} ${month.slice(0, 4)}`,
+    dayLabel: (day) => formatDate(day, t),
+    free: "",
+    busy: "",
+    selected: t.inboxDateChosen,
+    today: t.legendToday,
+  };
+}
+
+const DAY_MS = 86_400_000;
+const shiftDay = (day: string, days: number) =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
+
 /** Статусы, в которых заявка ещё ждёт первого ответа — для них идёт счётчик */
 export const awaitsAnswer = (item: VendorRequestItem): boolean =>
   (item.status === "new" || item.status === "viewed") && item.sla.firstResponseAt === null;
 
 export function SlaTimer({ item, t, now }: { item: VendorRequestItem; t: VendorDict; now: number }) {
   const view = slaView(item.sla, now);
-  const due = tashkentTime(item.sla.dueAt);
+  const due = formatDeadline(item.sla.dueAt, t, now);
   if (view.kind === "answered") {
     return view.late ? <p className="sla-note">{t.answeredLate}</p> : null;
   }
@@ -250,11 +285,36 @@ export function Requests({
   onCounts,
 }: RequestsProps) {
   const now = useNow();
-  // Ключ — вкладка и витрина: смена любой из них — новая загрузка, ответ на старую отброшен
-  const [page, reload, setPage, refresh] = useLoad<VendorRequestPage>(`${tab}/${filter ?? ""}`, (key) => {
-    const [askedTab = "waiting", listingId = ""] = key.split("/");
-    return api.requests(askedTab, null, listingId || null);
-  });
+  const [find, setFindState] = useState<InboxFind>(lastFind);
+  const setFind = (patch: Partial<InboxFind>) => {
+    lastFind = { ...lastFind, ...patch };
+    setFindState(lastFind);
+  };
+  // Поиск уходит на сервер после 300 мс тишины: не на каждую букву
+  const [q, setQ] = useState(find.q.trim());
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(find.q.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [find.q]);
+  const asked = useMemo<InboxFind>(
+    () => ({ q, date: find.date, sort: find.sort }),
+    [q, find.date, find.sort],
+  );
+  const filtered = asked.q !== "" || asked.date !== null;
+  // Ключ — вкладка, витрина и поиск: смена любого — новая загрузка, ответ на старую отброшен
+  const [page, reload, setPage, refresh] = useLoad<VendorRequestPage>(
+    JSON.stringify([tab, filter ?? "", asked.q, asked.date ?? "", asked.sort]),
+    (key) => {
+      const [askedTab = "waiting", listingId = "", text = "", date = "", sort = "default"] = JSON.parse(
+        key,
+      ) as string[];
+      return api.requests(askedTab, null, listingId || null, {
+        q: text,
+        date: date || null,
+        sort: sort === "event" ? "event" : "default",
+      });
+    },
+  );
   const [more, setMore] = useState<"idle" | "loading" | "failed">("idle");
 
   // Карточка рядом изменила заявку — список и счётчики тоже (без «Загрузка…» и потери фокуса)
@@ -263,10 +323,10 @@ export function Requests({
   }, [version, refresh]);
   // Догрузили следующие страницы — тихое перечитывание первой их не срежет: ждём смены вкладки
   const extended = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: сброс — по смене вкладки и витрины
+  // biome-ignore lint/correctness/useExhaustiveDependencies: сброс — по смене вкладки, витрины и поиска
   useEffect(() => {
     extended.current = false;
-  }, [tab, filter]);
+  }, [tab, filter, asked]);
   // Вернулись во входящие (вкладка, Mini App из фона, связь) и раз в полторы минуты — новые заявки
   // и сроки сами, без «потяните, чтобы обновить»
   useRevalidate(
@@ -277,14 +337,15 @@ export function Requests({
   );
 
   const counts = page.state === "ready" ? page.data.counts : null;
+  // Значок раздела — по всем заявкам: счётчики найденного его не меняют
   useEffect(() => {
-    if (counts) onCounts?.(counts);
-  }, [counts, onCounts]);
+    if (counts && !filtered) onCounts?.(counts);
+  }, [counts, onCounts, filtered]);
 
   const loadMore = async (cursor: string) => {
     setMore("loading");
     try {
-      const next = await api.requests(tab, cursor, filter);
+      const next = await api.requests(tab, cursor, filter, asked);
       setPage((current) => ({ ...next, items: [...current.items, ...next.items] }));
       extended.current = true;
       setMore("idle");
@@ -322,6 +383,42 @@ export function Requests({
         lang={lang}
       />
 
+      {/* Поиск, дата праздника и порядок — одной строкой с переносом */}
+      <div className="inbox-find">
+        <SearchField
+          className="inbox-search"
+          value={find.q}
+          onChange={(value) => setFind({ q: value })}
+          placeholder={t.inboxSearchPh}
+          aria-label={t.inboxSearch}
+          maxLength={64}
+        />
+        <div className="inbox-filters">
+          <DateField
+            size="compact"
+            label={t.inboxDate}
+            placeholder={t.inboxDate}
+            value={find.date}
+            onChange={(date) => setFind({ date })}
+            min={shiftDay(tashkentToday(), -365)}
+            max={shiftDay(tashkentToday(), 730)}
+            defaultMonth={tashkentToday().slice(0, 7)}
+            legend={false}
+            format={(day) => formatDate(day, t)}
+            texts={calendarTexts(t)}
+            clearLabel={t.inboxDateAny}
+          />
+          <button
+            type="button"
+            className="pill"
+            aria-pressed={find.sort === "event"}
+            onClick={() => setFind({ sort: find.sort === "event" ? "default" : "event" })}
+          >
+            {t.inboxSortEvent}
+          </button>
+        </div>
+      </div>
+
       {/* biome-ignore lint/a11y/useSemanticElements: переключатель вкладок — группа кнопок, не форма */}
       <div className="pills pills-fill" role="group" aria-label={t.requests}>
         {REQUEST_TABS.map((key) => (
@@ -340,8 +437,23 @@ export function Requests({
 
       {page.state === "loading" ? <Loading t={t} kind="list" /> : null}
       {page.state === "error" ? <LoadError t={t} onRetry={reload} error={page.error} /> : null}
-      {page.state === "ready" && page.data.items.length === 0 ? (
+      {page.state === "ready" && page.data.items.length === 0 && !filtered ? (
         <Empty icon="requests" title={t[EMPTY[tab][0]]} text={t[EMPTY[tab][1]]} />
+      ) : null}
+      {page.state === "ready" && page.data.items.length === 0 && filtered ? (
+        <div className="inbox-nothing">
+          <p className="note">{t.inboxNothing}</p>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              setQ("");
+              setFind({ q: "", date: null });
+            }}
+          >
+            {t.inboxReset}
+          </button>
+        </div>
       ) : null}
       {page.state === "ready" && page.data.items.length > 0 ? (
         <>

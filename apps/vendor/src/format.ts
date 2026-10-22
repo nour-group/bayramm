@@ -43,6 +43,21 @@ export function formatMoment(iso: string, t: VendorDict, now: number = Date.now(
   return day === tashkentToday(now) ? time : `${formatDate(day, t)}, ${time}`;
 }
 
+/**
+ * Срок со словом дня: «09:00 завтра», «21:40 сегодня», «23:10 вчера», дальше — «09:00, 14 ноября»
+ * (по-узбекски — «ertaga 09:00»): «ответить до 09:00» без дня читают как сегодня
+ */
+export function formatDeadline(iso: string, t: VendorDict, now: number = Date.now()): string {
+  const day = tashkentDate(iso);
+  const time = tashkentTime(iso);
+  const today = tashkentToday(now);
+  const DAY = 24 * 60 * 60 * 1000;
+  if (day === today) return fill(t.momentToday, { time });
+  if (day === tashkentToday(now + DAY)) return fill(t.momentTomorrow, { time });
+  if (day === tashkentToday(now - DAY)) return fill(t.momentYesterday, { time });
+  return fill(t.momentOn, { time, date: formatDate(day, t) });
+}
+
 /** Целое с разделителем разрядов: 150 000 (узкий неразрывный пробел не рвёт число) */
 export function groupDigits(value: number): string {
   return String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");

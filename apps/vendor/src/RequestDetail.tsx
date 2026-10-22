@@ -12,6 +12,14 @@
    занята): фокус на новую кнопку не переходит, первую секунду она нажатие не принимает
    (второе касание двойного), и решение — только через подтверждение.
 
+   Под датой — её занятость сейчас, как в календаре («свободно», «вечер — занято 1 из 2 мест»), и
+   «Открыть день» — календарь витрины на этой дате с открытым днём: одну дату не обещают двоим.
+   «Договорились» займёт дату — это сказано под кнопкой и в подтверждении.
+
+   Позвонили клиенту (tel:) и вернулись в кабинет — уведомление «Поговорили? Отметьте «Я
+   связался»» с кнопкой; не дозвонились — строка под телефоном: заявку оставить как есть, бот
+   напомнит о сроке.
+
    Что нужно клиенту — по форме заявки категории: часть дня (модель parts), поля категории
    (detailRows: часы, машины, кг…) и выбранные услуги с количеством и дополнениями — названия
    и цены как были при подаче заявки (chosenServices). История переходов — строкой, когда их
@@ -34,13 +42,14 @@ import { ConfirmSheet, RadioGroup, useStickyBar, useToast } from "@bayramm/ui/re
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { categoryName, partsLabel, priceText } from "./category";
+import { requestDayState } from "./day-load";
 import { errorText } from "./errors";
 import { formatBudget, formatDate, formatGuests, formatMoment, formatPhone, slaView } from "./format";
 import { fill, textOf, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
 import { useLayout } from "./layout";
 import { awaitsAnswer, SlaTimer } from "./Requests";
-import type { Navigate } from "./router";
+import { type Location, type Navigate, pathOf } from "./router";
 import { useBackButton } from "./telegram";
 import { Heading, LoadError, Loading, type ScreenProps, StatusChip } from "./ui";
 import { useUnsaved } from "./unsaved";
@@ -145,6 +154,9 @@ export function RequestDetail({
   const level = split ? 2 : 1;
   const toast = useToast();
   const phone = useLayout() === "phone";
+  // Позвонили клиенту: вернулись в кабинет — спросить, отметить ли «Я связался»
+  const called = useRef(false);
+  const [callTried, setCallTried] = useState(false);
 
   // Открытие новой заявки делает её просмотренной: список рядом должен это показать
   const reported = useRef(false);
@@ -255,6 +267,25 @@ export function RequestDetail({
     }
   };
 
+  // Вернулись после звонка (вкладка или Mini App снова на экране): пока заявка ждёт ответа —
+  // предложить отметку; не дозвонились — уведомление просто уйдёт
+  const latest = useRef({ act, status: detail.state === "ready" ? detail.data.status : null });
+  latest.current = { act, status: detail.state === "ready" ? detail.data.status : null };
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || !called.current) return;
+      called.current = false;
+      const { status: now } = latest.current;
+      if (now !== "new" && now !== "viewed") return;
+      toast(t.callBackAsk, {
+        duration: 12000,
+        action: { label: t.callBackMark, onClick: () => void latest.current.act({ status: "contacted" }) },
+      });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [toast, t]);
+
   // Ссылка «Назад» — в браузере на телефоне; в Telegram — его кнопка, рядом со списком — не нужна
   const backTo =
     nativeBack || split ? null : (
@@ -313,6 +344,19 @@ export function RequestDetail({
   ]
     .filter((part) => part !== null)
     .join(" · ");
+  // Дата в календаре сейчас — пока по заявке решают (сервер отдаёт только тогда)
+  const dayState = request.eventDay
+    ? requestDayState(request.eventDay, request.eventDate, request.dayParts, t)
+    : null;
+  const dayLink: Location = { route: "calendar", day: request.eventDate, listing: request.listing.id };
+  const openDay = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    navigate(dayLink);
+  };
+  // «Договорились» займёт дату — у витрин с календарём
+  const occupies = category?.availability !== "lead";
   // Прилипает к низу (телефон) панель с двумя действиями: открытая заявка, не форма отказа
   const sticky = (status === "new" || status === "viewed" || status === "contacted") && !declining;
   const stepName = (entry: (typeof request.history)[number]) => requestStatusName(lang, entry.status);
@@ -357,12 +401,17 @@ export function RequestDetail({
                 className="btn btn-primary btn-wide btn-phone"
                 href={`tel:${request.contact.phone}`}
                 aria-label={`${t.call} ${formatPhone(request.contact.phone)}`}
-                onClick={() => void api.callAttempt(id).catch(() => {})}
+                onClick={() => {
+                  called.current = true;
+                  setCallTried(true);
+                  void api.callAttempt(id).catch(() => {});
+                }}
               >
                 <Icon name="phone" size={20} />
                 {formatPhone(request.contact.phone)}
               </a>
             ) : null}
+            {callTried && awaitsAnswer(request) ? <p className="note call-note">{t.callNoAnswer}</p> : null}
           </>
         ) : (
           <p className="notice">{t.contactHidden}</p>
@@ -371,6 +420,14 @@ export function RequestDetail({
           <span className="req-when">{when}</span>
           <span className="req-what">{what}</span>
         </p>
+        {dayState ? (
+          <p className={`req-day req-day-${dayState.tone}`}>
+            <span className="req-day-state">{fill(t.eventDayLine, { state: dayState.text })}</span>
+            <a className="req-day-link" href={pathOf(dayLink)} onClick={openDay}>
+              {t.openDay}
+            </a>
+          </p>
+        ) : null}
         {request.contact?.comment ? (
           <div className="comment">
             <p className="field-label">{t.commentLabel}</p>
@@ -524,6 +581,9 @@ export function RequestDetail({
               {t.actNoDeal}
             </button>
           </div>
+        ) : null}
+        {!declining && status === "contacted" && occupies ? (
+          <p className="note deal-hint">{t.dealBusyHint}</p>
         ) : null}
         {!declining && (status === "deal" || status === "declined") ? (
           <>

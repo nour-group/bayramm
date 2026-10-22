@@ -29,9 +29,11 @@ import {
   type CategoryConfig,
   categoryConfig,
   categoryPriceUnits,
+  implausiblePerGuest,
   newOptionDraft,
   newServiceDraft,
   type OptionDraft,
+  PER_GUEST_PRICE_WARN,
   type PriceUnit,
   priceUnitLabel,
   SERVICE_LIMITS,
@@ -45,7 +47,7 @@ import {
   serviceType,
   serviceTypeLabel,
 } from "@bayramm/shared/categories";
-import { ConfirmSheet, NumberStepper, RadioGroup, Select } from "@bayramm/ui/react";
+import { ConfirmSheet, NumberStepper, RadioGroup, Select, useToast } from "@bayramm/ui/react";
 import { type FormEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { priceText } from "./category";
@@ -54,6 +56,7 @@ import { errorText } from "./errors";
 import { formatMoney } from "./format";
 import { fill, type VendorDict } from "./i18n";
 import { Icon } from "./icons";
+import { useFocusInvalid } from "./invalid";
 import { ListingPicker } from "./ListingPicker";
 import { MoneyInput } from "./MoneyInput";
 import { type MenuAction, OverflowMenu } from "./OverflowMenu";
@@ -292,6 +295,8 @@ interface EditorProps {
   readonly category: CategoryConfig;
   /** null — новая услуга */
   readonly service: ListingService | null;
+  /** Типы услуг, которые на витрине уже есть: в выборе каталога — «уже есть» */
+  readonly existing: ReadonlySet<string>;
   readonly t: VendorDict;
   readonly lang: Lang;
   readonly onDone: (saved: ListingService, how: "sent" | "saved") => void;
@@ -300,9 +305,21 @@ interface EditorProps {
   readonly onCancel: () => void;
 }
 
-function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, onCancel }: EditorProps) {
+function ServiceEditor({
+  listing,
+  category,
+  service,
+  existing,
+  t,
+  lang,
+  onDone,
+  onStale,
+  onCancel,
+}: EditorProps) {
   const id = useId();
   const create = service === null;
+  const form = useRef<HTMLFormElement>(null);
+  const showInvalid = useFocusInvalid(form);
   const [draft, setDraft] = useState<ServiceDraft | null>(() => (service ? serviceDraftOf(service) : null));
   const [before] = useState<ServiceDraft | null>(() => (service ? serviceDraftOf(service) : null));
   const [invalid, setInvalid] = useState<ReadonlySet<string>>(new Set());
@@ -316,6 +333,10 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
   const title = useRef<HTMLHeadingElement>(null);
   const byProposal = service !== null && changesByProposal(listing, service);
   const type = draft ? serviceType(category, draft.type) : undefined;
+  // За что цена — у новой услуги с несколькими единицами выбирает сам партнёр: подставленная
+  // первая единица («за гостя») превращала цену зала за вечер в цену за гостя
+  const [unitChosen, setUnitChosen] = useState(!create);
+  const unitPicked = unitChosen || (type?.units.length ?? 0) <= 1;
 
   useEffect(() => {
     title.current?.focus({ preventScroll: true });
@@ -345,14 +366,16 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
     if (!draft) {
       setInvalid(new Set(["type"]));
       setNotice("invalid");
+      showInvalid();
       return;
     }
     setNotice(null);
-    const errors = serviceErrors(category, draft, { create });
+    const errors = [...serviceErrors(category, draft, { create }), ...(unitPicked ? [] : ["priceUnit"])];
     if (errors.length > 0) {
       setInvalid(new Set(errors));
       if (inConditions(errors)) setConditions(true);
       setNotice("invalid");
+      showInvalid();
       return;
     }
     setInvalid(new Set());
@@ -378,6 +401,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
         setInvalid(new Set(err.details));
         if (inConditions(err.details)) setConditions(true);
         setNotice("invalid");
+        showInvalid();
       } else if (err.code === "no_changes") setNotice("noChanges");
       else if (err.code === "too_many_services") setNotice("tooMany");
       else if (err.code === "vendor_owner_required") setNotice("ownerOnly");
@@ -441,12 +465,13 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
   // Внутри <fieldset> с <legend>: имя группе даёт legend
   const unitControl = (
     units: readonly PriceUnit[],
-    value: PriceUnit,
+    value: PriceUnit | null,
     onChange: (unit: PriceUnit) => void,
     path: string,
   ): ReactNode => {
     // Единица у типа одна — выбирать нечего: просто написано, за что цена
-    if (units.length === 1) return <p className="svc-unit-fixed">{priceUnitLabel(lang, value)}</p>;
+    if (units.length === 1)
+      return <p className="svc-unit-fixed">{priceUnitLabel(lang, units[0] ?? "per_event")}</p>;
     return (
       <RadioGroup
         variant="pill"
@@ -458,6 +483,9 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
       />
     );
   };
+  // Цена за гостя похожа на цену за всё мероприятие — переспросить под полем цены
+  const priceDigits = draft?.price ? Number(draft.price) : null;
+  const priceWarn = draft !== null && unitPicked && implausiblePerGuest(draft.priceUnit, priceDigits);
 
   const notices: Record<Exclude<FormNotice, null>, string> = {
     invalid: t.proposalInvalid,
@@ -476,7 +504,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
       <h2 className="section-title" id={`${id}-title`} ref={title} tabIndex={-1}>
         {create ? t.serviceNew : t.serviceEditTitle}
       </h2>
-      <form className="proposal-form" onSubmit={submit} noValidate>
+      <form ref={form} className="proposal-form" onSubmit={submit} noValidate>
         {create ? (
           <div className="form-row">
             <label className="field-label" htmlFor={`${id}-type`}>
@@ -487,22 +515,31 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
               label={t.serviceType}
               placeholder={t.serviceTypePick}
               value={draft?.type ?? null}
-              options={category.services.map((option) => ({
-                value: option.code,
-                label: serviceTypeLabel(lang, category, option.code),
-                hint: option.units.map((unit) => priceUnitLabel(lang, unit)).join(", "),
-              }))}
+              options={category.services.map((option) => {
+                const units = option.units.map((unit) => priceUnitLabel(lang, unit)).join(", ");
+                // Каталожная услуга уже на витрине — «уже есть»: вторая такая — путаница в цене
+                const already = option.code !== "other" && existing.has(option.code);
+                return {
+                  value: option.code,
+                  label: serviceTypeLabel(lang, category, option.code),
+                  hint: already ? `${t.svcAlready} · ${units}` : units,
+                };
+              })}
               onChange={(code) => {
                 const next = newServiceDraft(category, code) ?? null;
                 setInvalid(new Set());
                 setNotice(null);
                 setDraft(next);
+                setUnitChosen(false);
                 setConditions(next !== null && hasConditions(next));
               }}
               aria-invalid={bad("type") || undefined}
               aria-describedby={described("type")}
             />
             {errorOf("type", t.svcPickType)}
+            {draft && draft.type !== "other" && existing.has(draft.type) ? (
+              <p className="note">{t.svcAlreadyNote}</p>
+            ) : null}
           </div>
         ) : (
           <p className="svc-type-fixed">
@@ -536,13 +573,26 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
               />
               {errorOf("priceUzs", t.svcPriceInvalid)}
             </div>
-            <fieldset className="choices">
+            <fieldset className="choices" aria-invalid={bad("priceUnit") || undefined}>
               <legend className="field-label">
                 {t.priceUnitLabel} <FieldMark required t={t} />
               </legend>
-              {unitControl(type.units, draft.priceUnit, (unit) => set({ priceUnit: unit }), "priceUnit")}
-              {errorOf("priceUnit", t.fieldInvalid)}
+              {unitControl(
+                type.units,
+                unitPicked ? draft.priceUnit : null,
+                (unit) => {
+                  setUnitChosen(true);
+                  set({ priceUnit: unit });
+                },
+                "priceUnit",
+              )}
+              {errorOf("priceUnit", t.svcPickUnit)}
             </fieldset>
+            {priceWarn ? (
+              <p className="note svc-price-warn">
+                {fill(t.svcPerGuestHigh, { max: formatMoney(PER_GUEST_PRICE_WARN, t, lang) })}
+              </p>
+            ) : null}
 
             <Disclosure label={t.serviceConditions} open={conditions} onOpenChange={setConditions}>
               <div className="svc-conditions">
@@ -563,7 +613,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                       aria-invalid={bad("minQty") || undefined}
                       aria-describedby={described("minQty")}
                     />
-                    {errorOf("minQty", t.fieldInvalid)}
+                    {errorOf("minQty", t.svcMinInvalid)}
                   </div>
                   <div className="form-row">
                     <label className="field-label" htmlFor={`${id}-lead`}>
@@ -582,14 +632,14 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                       aria-invalid={bad("leadDays") || undefined}
                       aria-describedby={described("leadDays")}
                     />
-                    {errorOf("leadDays", t.fieldInvalid)}
+                    {errorOf("leadDays", t.svcLeadInvalid)}
                   </div>
                 </div>
 
                 <div className="form-grid">
                   {textField("includesRu", t.serviceIncludesRu, "includes", true)}
                   {textField("includesUz", t.serviceIncludesUz, "includes", true)}
-                  {errorOf("includes", t.fieldInvalid)}
+                  {errorOf("includes", t.svcIncludesInvalid)}
                 </div>
               </div>
             </Disclosure>
@@ -597,7 +647,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
             <fieldset className="choices svc-option-list" aria-describedby={described("options")}>
               <legend className="panel-title">{t.serviceOptions}</legend>
               <p className="note">{t.serviceOptionsLead}</p>
-              {errorOf("options", t.fieldInvalid)}
+              {errorOf("options", t.svcOptionsInvalid)}
               {draft.options.map((option, index) => {
                 const rowId = `${id}-opt-${option.key}`;
                 const rowBad = badRow(index);
@@ -662,7 +712,7 @@ function ServiceEditor({ listing, category, service, t, lang, onDone, onStale, o
                         />
                       </div>
                     </div>
-                    {rowBad ? <p className="field-error">{t.fieldInvalid}</p> : null}
+                    {rowBad ? <p className="field-error">{t.svcOptionInvalid}</p> : null}
                     <button
                       type="button"
                       className="btn btn-ghost svc-option-remove"
@@ -772,6 +822,8 @@ export function Services({
 }: ServicesProps) {
   const [listing, reload, setListing, refresh] = useLoad<VendorListing>(listingId, (key) => api.listing(key));
   const owner = role === "owner";
+  // Сделанное без следа на экране (сохранили, отправили, удалили) — всплывающей строкой
+  const toast = useToast();
   const [editing, setEditing] = useState<Editing>(null);
   const [message, setMessage] = useState<Message>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -837,7 +889,7 @@ export function Services({
           ? await api.submitService(listingId ?? "", service.id)
           : await api.withdrawService(listingId ?? "", service.id);
       replace(saved);
-      setMessage({ text: action === "submit" ? t.proposalSent : t.svcSaved, tone: "status" });
+      toast(action === "submit" ? t.proposalSent : t.svcSaved, { tone: "success" });
       focusNext.current = service.id;
       void quietly();
     } catch (err) {
@@ -871,7 +923,7 @@ export function Services({
         confirmFrom.current = document.getElementById(`svc-${service.id}`);
       }
       setConfirm(null);
-      setMessage({ text: t.svcSaved, tone: "status" });
+      toast(t.svcSaved, { tone: "success" });
       void quietly();
     } catch (err) {
       setConfirmError(failureText(err));
@@ -925,14 +977,12 @@ export function Services({
           listing={ready}
           category={category}
           service={editingService}
+          existing={new Set(ready.services.map((s) => s.type))}
           t={t}
           lang={lang}
           onDone={(saved, how) => {
             replace(saved);
-            setMessage({
-              text: how === "saved" ? t.svcSaved : t.proposalSent,
-              tone: "status",
-            });
+            toast(how === "saved" ? t.svcSaved : t.proposalSent, { tone: "success" });
             focusNext.current = saved.id;
             setEditing(null);
             void quietly();

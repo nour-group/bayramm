@@ -348,6 +348,17 @@ export const SERVICE_LIMITS = {
   maxServices: 30,
 } as const;
 
+/**
+ * Цена «за гостя» выше этой, скорее всего, — цена за всё мероприятие, вписанная не туда (15 млн
+ * за гостя): форма услуги переспрашивает, но не запрещает
+ */
+export const PER_GUEST_PRICE_WARN = 2_000_000;
+
+/** Цена за гостя подозрительно высокая — форма предупреждает */
+export function implausiblePerGuest(unit: PriceUnit | null, priceUzs: number | null): boolean {
+  return unit === "per_guest" && priceUzs !== null && priceUzs > PER_GUEST_PRICE_WARN;
+}
+
 /** Опция услуги: id ставит сервер (UUID), code — шаблон категории, если взят из него */
 export interface ServiceOptionValue {
   readonly id?: string;

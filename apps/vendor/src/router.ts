@@ -3,7 +3,9 @@ import { historyBack, pushScreen } from "@bayramm/ui/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 /* Все экраны кабинета — в одной карте. Пути, вписанные по месту, разъезжаются
-   (ловушка №9 в CLAUDE.md). :id — единственный параметр, UUID заявки. */
+   (ловушка №9 в CLAUDE.md). :id — единственный параметр пути, UUID заявки. Параметры адреса:
+   календарь — ?listing=<витрина>&day=YYYY-MM-DD (открыть день: из заявки «Открыть день»),
+   витрина — ?focus=sessions|attributes (к блоку: из календаря «Изменить» и «Изменить срок»). */
 export const ROUTES = {
   requests: "/requests",
   request: "/requests/:id",
@@ -41,23 +43,40 @@ export const SECTION_OF: Readonly<Record<Route, Section>> = {
   account: "account",
 };
 
+/** Блоки витрины, к которым ведёт ссылка: время работы, данные витрины (срок заказа) */
+export const VENUE_FOCUS = ["sessions", "attributes"] as const;
+export type VenueFocus = (typeof VENUE_FOCUS)[number];
+
 export interface Location {
   readonly route: Route;
   /** id заявки для route = request */
   readonly id?: string;
+  /** Календарь: эта витрина (иначе — выбранная в кабинете) */
+  readonly listing?: string;
+  /** Календарь: открыть этот день, "YYYY-MM-DD" */
+  readonly day?: string;
+  /** Витрина: к этому блоку */
+  readonly focus?: VenueFocus;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Путь экрана */
+/** Путь экрана с параметрами адреса */
 export function pathOf(location: Location): string {
-  return location.route === "request"
-    ? ROUTES.request.replace(":id", location.id ?? "")
-    : ROUTES[location.route];
+  if (location.route === "request") return ROUTES.request.replace(":id", location.id ?? "");
+  const query = new URLSearchParams();
+  if (location.route === "calendar") {
+    if (location.listing) query.set("listing", location.listing);
+    if (location.day) query.set("day", location.day);
+  }
+  if (location.route === "card" && location.focus) query.set("focus", location.focus);
+  const search = query.toString();
+  return search ? `${ROUTES[location.route]}?${search}` : ROUTES[location.route];
 }
 
-/** Экран по пути. Корень — главный экран, неизвестный путь — null */
-export function matchRoute(pathname: string): Location | null {
+/** Экран по пути (и параметрам адреса). Корень — главный экран, неизвестный путь — null */
+export function matchRoute(pathname: string, search = ""): Location | null {
   const path = trimTrailingSlashes(pathname) || "/";
   if (path === "/") return { route: HOME };
   const request = /^\/requests\/([^/]+)$/.exec(path);
@@ -65,8 +84,31 @@ export function matchRoute(pathname: string): Location | null {
     return UUID_RE.test(request[1]) ? { route: "request", id: request[1].toLowerCase() } : null;
   }
   const route = (Object.keys(ROUTES) as Route[]).find((key) => key !== "request" && ROUTES[key] === path);
-  return route ? { route } : null;
+  if (!route) return null;
+  const query = new URLSearchParams(search);
+  if (route === "calendar") {
+    const listing = query.get("listing");
+    const day = query.get("day");
+    return {
+      route,
+      ...(listing && UUID_RE.test(listing) ? { listing: listing.toLowerCase() } : {}),
+      ...(day && DAY_RE.test(day) ? { day } : {}),
+    };
+  }
+  if (route === "card") {
+    const focus = VENUE_FOCUS.find((f) => f === query.get("focus"));
+    return focus ? { route, focus } : { route };
+  }
+  return { route };
 }
+
+/** Адрес окна сейчас: путь и параметры — экран зависит от обоих */
+const here = () => `${window.location.pathname}${window.location.search}`;
+
+const split = (url: string): readonly [string, string] => {
+  const at = url.indexOf("?");
+  return at < 0 ? [url, ""] : [url.slice(0, at), url.slice(at)];
+};
 
 export type Navigate = (
   location: Location,
@@ -92,7 +134,7 @@ export interface LeaveGuard {
  * Telegram (адрес экрана возвращается в историю, «Уйти» — снова назад)
  */
 export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Location | null, Navigate] {
-  const [path, setPath] = useState(() => window.location.pathname);
+  const [path, setPath] = useState(here);
   // «Уйти» после вопроса: следующий popstate — тот самый уход, не держать
   const passing = useRef(false);
 
@@ -101,7 +143,7 @@ export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Locati
     if (window.location.pathname === "/") {
       const { search, hash } = window.location;
       window.history.replaceState(null, "", `${ROUTES[HOME]}${search}${hash}`);
-      setPath(ROUTES[HOME]);
+      setPath(`${ROUTES[HOME]}${search}`);
     }
     const onPop = () => {
       const held = passing.current ? null : (guard?.current?.holding() ?? null);
@@ -116,7 +158,7 @@ export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Locati
         });
         return;
       }
-      setPath(window.location.pathname);
+      setPath(here());
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -126,7 +168,7 @@ export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Locati
     (location, options) => {
       const next = pathOf(location);
       const go = () => {
-        if (window.location.pathname !== next) {
+        if (here() !== next) {
           // hash (#tgWebAppData=…) не переносим: он нужен SDK только при первом открытии
           if (options?.replace) window.history.replaceState(null, "", next);
           // Ссылка в открытой шторке — новый экран на месте записи шторки (@bayramm/ui/react)
@@ -135,12 +177,13 @@ export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Locati
         setPath(next);
       };
       // Тот же экран — никуда не уходим, спрашивать не о чем
-      const held = options?.force || next === window.location.pathname ? null : guard?.current?.holding();
+      const held = options?.force || next === here() ? null : guard?.current?.holding();
       if (held && guard?.current) guard.current.ask(go);
       else go();
     },
     [guard],
   );
 
-  return [matchRoute(path), navigate] as const;
+  const [pathname, search] = split(path);
+  return [matchRoute(pathname, search), navigate] as const;
 }

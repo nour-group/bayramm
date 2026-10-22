@@ -12,13 +12,18 @@
    и видео, студия): «Что на фото» — «Лиц нет» или «Люди согласны» (X-No-Faces / X-Photo-Consent),
    ничего не выбрано заранее. Каждый файл перекодирует браузер (compressForUpload: без EXIF и
    геопозиции) и отправляет по одному; новое фото ждёт модератора. Отклонённому — причина одной
-   строкой под плиткой. Удаление — через подтверждение. */
+   строкой под плиткой. Удаление — через подтверждение.
+
+   В шторке — сам снимок. У отклонённого — причина и «Заменить»: новое фото (с тем же
+   подтверждением) встаёт вместо него. Перенос (раньше, позже, в начало, обложка) шторку не
+   закрывает — строка в ней говорит, что сделано. На компьютере одобренные фото (кроме обложки)
+   можно перетащить мышью на место другого. Загрузили, заменили, удалили — всплывающая строка. */
 
 import { isImageError } from "@bayramm/media";
 import { compressForUpload } from "@bayramm/media/browser";
 import type { VendorListing, VendorPhoto } from "@bayramm/shared/api/vendor";
-import { Checkbox, ConfirmSheet, Dialog, FileDrop, RadioGroup, UiIcon } from "@bayramm/ui/react";
-import { useRef, useState } from "react";
+import { Checkbox, ConfirmSheet, Dialog, FileDrop, RadioGroup, UiIcon, useToast } from "@bayramm/ui/react";
+import { type DragEvent, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { errorText } from "./errors";
 import { fill, textOf, type VendorDict } from "./i18n";
@@ -86,6 +91,22 @@ export function photoMoves(photos: readonly VendorPhoto[], photo: VendorPhoto): 
   };
 }
 
+/**
+ * Порядок одобренных фото после перетаскивания dragged на место target; null — так нельзя
+ * (обложка не двигается и её место не занимают, ждущее решения и отклонённое не участвуют)
+ */
+export function dropOrder(photos: readonly VendorPhoto[], dragged: string, target: string): string[] | null {
+  const approved = photos.filter((p) => p.moderation === "approved");
+  const ids = approved.map((p) => p.id);
+  const from = ids.indexOf(dragged);
+  const to = ids.indexOf(target);
+  if (from === -1 || to === -1 || from === to) return null;
+  if (approved[from]?.isCover || approved[to]?.isCover) return null;
+  const next = ids.filter((id) => id !== dragged);
+  next.splice(to, 0, dragged);
+  return next;
+}
+
 export interface VenuePhotosProps {
   readonly listing: VendorListing;
   /** Правило фото категории: portfolio — люди на фото с их согласия */
@@ -108,7 +129,12 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
   const [openedId, setOpenedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+  // Что сделано в открытой шторке (перенос, обложка): шторка остаётся, строка — в ней
+  const [moved, setMoved] = useState<string | null>(null);
+  // Перетаскивание мышью: какое фото тащат и над каким
+  const [dragged, setDragged] = useState<string | null>(null);
+  const [dropOn, setDropOn] = useState<string | null>(null);
+  const toast = useToast();
   const [removing, setRemoving] = useState<VendorPhoto | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -123,7 +149,6 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
     const files = picked.slice(0, room);
     if (files.length === 0) return;
     setProblems([]);
-    setDone(null);
     const found: Problem[] = [];
     for (const [index, file] of files.entries()) {
       setProgress({ done: index, total: files.length });
@@ -150,6 +175,8 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
     await onChanged();
     setProgress(null);
     setProblems(found);
+    const loaded = files.length - found.filter((p) => p.key !== "skipped").length;
+    if (loaded > 0) toast(fill(t.photosUploaded, { n: loaded }), { tone: "success" });
     // Подтверждение — про выбранные фото: следующие — снова с галочкой
     setNoFaces(false);
     setKind(null);
@@ -178,17 +205,22 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
     focusBack.current = title.current;
     setRemoveBusy(false);
     setRemoving(null);
+    toast(t.photoDeleted, { tone: "success" });
   };
 
-  /** Порядок или обложка: сразу на сервер, потом витрина заново; шторка закрывается */
-  const arrange = async (run: () => Promise<unknown>, message: string) => {
+  /**
+   * Порядок или обложка: сразу на сервер, потом витрина заново. Из шторки — она остаётся открытой
+   * (фото на новом месте, строка «сделано» в ней); перетаскиванием — всплывающая строка
+   */
+  const arrange = async (run: () => Promise<unknown>, message: string, inSheet = true) => {
     setBusy(true);
     setMoveError(null);
+    setMoved(null);
     try {
       await run();
       await onChanged();
-      setDone(message);
-      setOpenedId(null);
+      if (inSheet) setMoved(message);
+      else toast(message, { tone: "success" });
     } catch (err) {
       // Набор фото уже другой (модератор решил, удалили с другого устройства) — как сейчас
       if (err instanceof ApiFailure && (err.code === "invalid_input" || err.code === "not_found")) {
@@ -200,6 +232,98 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
       setBusy(false);
     }
   };
+
+  /** Отклонённое фото — заменить новым: с тем же подтверждением, что у загрузки */
+  const replace = async (file: File | undefined, old: VendorPhoto) => {
+    if (!file) return;
+    setBusy(true);
+    setMoveError(null);
+    const gone = (err: unknown) => {
+      // Уже удалено (с другого устройства) — как удалено
+      if (!(err instanceof ApiFailure && err.code === "not_found")) throw err;
+    };
+    try {
+      // Мест нет — сначала убрать отклонённое (клиенты его и так не видят), иначе — после загрузки
+      if (room === 0) await api.deletePhoto(listing.id, old.id).catch(gone);
+      const photo = await compressForUpload(file);
+      await api.uploadPhoto(listing.id, photo.blob, {
+        noFaces: portfolio ? kind === "no_faces" : noFaces,
+        consent: portfolio && kind === "consent",
+      });
+      if (room > 0) await api.deletePhoto(listing.id, old.id).catch(gone);
+      await onChanged();
+      focusBack.current = title.current;
+      setOpenedId(null);
+      setNoFaces(false);
+      setKind(null);
+      toast(t.photoReplaced, { tone: "success" });
+    } catch (err) {
+      setMoveError(uploadErrorText(err, t));
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Подтверждение для загрузки: «лиц нет» (галочка) или «что на фото» (portfolio) */
+  const acknowledgement = (labelFor: string, disabled: boolean) =>
+    portfolio ? (
+      <div className="upload-kind">
+        <p className="field-label" id={labelFor}>
+          {t.photoKindLabel}
+        </p>
+        {/* Ничего не выбрано заранее: без выбора файлы не выбрать. Два варианта столбиком:
+          подпись «Люди согласны на публикацию» целиком и на 320px */}
+        <RadioGroup<PhotoKind>
+          value={kind}
+          onChange={setKind}
+          variant="row"
+          aria-labelledby={labelFor}
+          disabled={disabled}
+          options={[
+            { value: "no_faces", label: t.photoKindNoFaces },
+            { value: "consent", label: t.photoKindConsent },
+          ]}
+        />
+      </div>
+    ) : (
+      <Checkbox checked={noFaces} onChange={setNoFaces} disabled={disabled}>
+        {t.noFacesAck}
+      </Checkbox>
+    );
+
+  // Перетаскивание мышью (компьютер): одобренное фото, кроме обложки, — на место другого такого же
+  const draggable = (photo: VendorPhoto) =>
+    owner && !uploading && !busy && photo.moderation === "approved" && !photo.isCover;
+  const dragProps = (photo: VendorPhoto) =>
+    draggable(photo)
+      ? {
+          draggable: true,
+          onDragStart: (event: DragEvent<HTMLLIElement>) => {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", photo.id);
+            setDragged(photo.id);
+          },
+          onDragEnd: () => {
+            setDragged(null);
+            setDropOn(null);
+          },
+          onDragOver: (event: DragEvent<HTMLLIElement>) => {
+            if (dragged === null || dropOrder(photos, dragged, photo.id) === null) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setDropOn(photo.id);
+          },
+          onDragLeave: () => setDropOn((current) => (current === photo.id ? null : current)),
+          onDrop: (event: DragEvent<HTMLLIElement>) => {
+            event.preventDefault();
+            const order = dragged === null ? null : dropOrder(photos, dragged, photo.id);
+            setDragged(null);
+            setDropOn(null);
+            if (order) void arrange(() => api.reorderPhotos(listing.id, order), t.photoMoved, false);
+          },
+        }
+      : {};
 
   const opened = photos.find((p) => p.id === openedId) ?? null;
   const moves = opened ? photoMoves(photos, opened) : null;
@@ -232,7 +356,11 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
               />
             );
             return (
-              <li key={photo.id}>
+              <li
+                key={photo.id}
+                className={dropOn === photo.id ? "is-drop" : undefined}
+                {...dragProps(photo)}
+              >
                 {owner ? (
                   <button
                     type="button"
@@ -242,6 +370,7 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
                     onClick={(event) => {
                       focusBack.current = event.currentTarget;
                       setMoveError(null);
+                      setMoved(null);
                       setOpenedId(photo.id);
                     }}
                   >
@@ -295,11 +424,6 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
           })}
         </ul>
       )}
-      {done ? (
-        <p className="sr-only" role="status">
-          {done}
-        </p>
-      ) : null}
       {/* Шторка уже закрылась (набор фото изменился) — ошибка остаётся здесь */}
       {moveError && !opened ? (
         <p className="form-error" role="alert">
@@ -311,30 +435,7 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
         <>
           {room > 0 ? (
             <div className="upload">
-              {portfolio ? (
-                <div className="upload-kind">
-                  <p className="field-label" id={labelId}>
-                    {t.photoKindLabel}
-                  </p>
-                  {/* Ничего не выбрано заранее: без выбора файлы не выбрать. Два варианта столбиком:
-                    подпись «Люди согласны на публикацию» целиком и на 320px */}
-                  <RadioGroup<PhotoKind>
-                    value={kind}
-                    onChange={setKind}
-                    variant="row"
-                    aria-labelledby={labelId}
-                    disabled={uploading}
-                    options={[
-                      { value: "no_faces", label: t.photoKindNoFaces },
-                      { value: "consent", label: t.photoKindConsent },
-                    ]}
-                  />
-                </div>
-              ) : (
-                <Checkbox checked={noFaces} onChange={setNoFaces} disabled={uploading}>
-                  {t.noFacesAck}
-                </Checkbox>
-              )}
+              {acknowledgement(labelId, uploading)}
               <FileDrop
                 title={t.addPhotos}
                 hint={t.photosDrop}
@@ -371,6 +472,36 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
           >
             {opened && moves ? (
               <div className="photo-actions">
+                {/* Сам снимок: что именно двигают, делают обложкой или меняют */}
+                <img
+                  className="photo-sheet-img"
+                  src={opened.src}
+                  srcSet={opened.srcSet}
+                  sizes="(min-width: 720px) 480px, 100vw"
+                  width={opened.width}
+                  height={opened.height}
+                  alt=""
+                  decoding="async"
+                />
+                {opened.moderation === "declined" ? (
+                  <>
+                    <p className="photo-decline">
+                      {opened.declineReason
+                        ? fill(t.photoDeclinedReason, { reason: opened.declineReason })
+                        : t.photoDeclinedNoReason}
+                    </p>
+                    <div className="upload photo-replace">
+                      {acknowledgement(`${labelId}-replace`, busy)}
+                      <FileDrop
+                        title={t.photoReplace}
+                        hint={t.photoReplaceHint}
+                        accept={PHOTO_ACCEPT}
+                        disabled={!acknowledged || busy}
+                        onFiles={(files) => void replace(files[0], opened)}
+                      />
+                    </div>
+                  </>
+                ) : null}
                 {moves.cover ? (
                   <button
                     type="button"
@@ -413,9 +544,15 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
                     {t.photoLater}
                   </button>
                 ) : null}
+                {moved ? (
+                  <p className="status-line" role="status">
+                    {moved}
+                  </p>
+                ) : null}
+                {/* Удаление — рамкой: главное в шторке — порядок и обложка, а не стереть */}
                 <button
                   type="button"
-                  className="ui-btn ui-btn-danger"
+                  className="btn btn-danger"
                   disabled={busy}
                   onClick={() => {
                     setRemoveError(null);
@@ -425,7 +562,7 @@ export function VenuePhotos({ listing, portfolio, t, owner, onChanged }: VenuePh
                 >
                   {t.photoDelete}
                 </button>
-                {opened.moderation !== "approved" ? <p className="note">{t.photoOnlyApproved}</p> : null}
+                {opened.moderation === "pending" ? <p className="note">{t.photoOnlyApproved}</p> : null}
                 {moveError ? (
                   <p className="form-error" role="alert">
                     {moveError}

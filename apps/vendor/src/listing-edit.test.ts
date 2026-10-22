@@ -157,18 +157,18 @@ describe("проверки до запроса", () => {
 
   it("адрес — не длиннее 300; название — 2–80", () => {
     expect(placeErrors(LISTING, hall, { ...placeOf(LISTING), addressRu: "я".repeat(301) })).toEqual({
-      addressRu: "fieldInvalid",
+      addressRu: "errAddressLong",
     });
-    expect(basicsErrors({ ...basicsOf(LISTING), name: "A" }, false)).toEqual({ name: "fieldInvalid" });
+    expect(basicsErrors({ ...basicsOf(LISTING), name: "A" }, false)).toEqual({ name: "errNameLength" });
     expect(basicsErrors({ ...basicsOf(LISTING), name: "я".repeat(81) }, false)).toEqual({
-      name: "fieldInvalid",
+      name: "errNameLength",
     });
   });
 
   it("на проверке и на сайте описание не стереть, у черновика — можно", () => {
     const blank = { ...basicsOf(LISTING), descriptionUz: "  " };
     expect(basicsErrors(blank, false)).toEqual({});
-    expect(basicsErrors(blank, true)).toEqual({ descriptionUz: "fieldInvalid" });
+    expect(basicsErrors(blank, true)).toEqual({ descriptionUz: "errDescriptionRequired" });
   });
 
   it("ссылка на видео из ответа сервера: videoLinks.N и video_links.N, весь список — все поля", () => {

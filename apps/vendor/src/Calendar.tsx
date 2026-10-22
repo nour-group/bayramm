@@ -16,6 +16,11 @@
      · lead (цветы, торты, подарки) — календаря нет: одно предложение про срок «заказ не позже
        чем за N дней» из поля витрины и одна ссылка туда, где он меняется (владельцу).
 
+   Месяц — стрелками, списком «месяц и год» (13 месяцев вперёд) или жестом вбок на телефоне.
+   «Несколько дней»: под месяцем — «24 октября – 26 декабря · 9 дней»; выбрали последний день —
+   страница доезжает до кнопок; закрыли или открыли — всплывающая строка «Закрыто: 9 дней».
+   Пришли из заявки («Открыть день», ?day=) — месяц этого дня, день открыт.
+
    Над месяцем — одна строка, как закрыть день или часть. «Обозначения» — только то, что есть в
    показанном месяце; открыты, пока партнёр их не свернёт (помнит вкладка — sessionStorage).
 
@@ -32,6 +37,7 @@
    Подпись дня для диктора называет всё, что видно глазами: занят ли (и какие части), кем
    (отказ «занято», менеджер), есть ли заявка, сегодня ли. */
 
+import { ruPlural } from "@bayramm/shared";
 import type {
   BusyDay,
   BusyPart,
@@ -44,22 +50,22 @@ import type {
   VendorListingRef,
   VendorRole,
 } from "@bayramm/shared/api/vendor";
-import {
-  DAY_PARTS,
-  type DayLoad,
-  type DayMarks,
-  DEFAULT_DAY_PARTS,
-  dayLoadOf,
-  type PartLoad,
-  partLoads,
-  windowText,
-} from "@bayramm/shared/categories";
+import { windowText } from "@bayramm/shared/categories";
 import { requestStatusName } from "@bayramm/shared/i18n/status";
-import { ConfirmSheet, Dialog, Switch } from "@bayramm/ui/react";
-import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { ConfirmSheet, Dialog, Select, Switch, useToast } from "@bayramm/ui/react";
+import {
+  type MouseEvent,
+  type ReactNode,
+  type TouchEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ApiFailure, api } from "./api";
 import { availabilityOf, partName } from "./category";
 import { Disclosure } from "./Disclosure";
+import { dayView, partStateText, seatsText, wholeStateText, withDefaults } from "./day-load";
 import { errorText } from "./errors";
 import { formatDate, tashkentToday, weekdayIndex } from "./format";
 import { fill, type VendorDict } from "./i18n";
@@ -89,95 +95,6 @@ const addDay = (day: string, n: number) =>
   new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
 // ── день ───────────────────────────────────────────────────────────────────
-
-/**
- * Ответ без времени работы и заявок дня (старый API во время выкладки) — как у витрины по
- * умолчанию: несколько мероприятий, все части, окна по умолчанию
- */
-export function withDefaults(calendar: VendorCalendar): VendorCalendar {
-  return {
-    ...calendar,
-    sessions: calendar.sessions ?? {
-      mode: "parts",
-      parts: [...DAY_PARTS],
-      windows: DEFAULT_DAY_PARTS,
-      custom: null,
-      parallelCapacity: calendar.parallelCapacity ?? 1,
-    },
-    requests: calendar.requests ?? [],
-    parts: calendar.parts ?? [],
-    bookings: calendar.bookings ?? [],
-  };
-}
-
-/** Отметки и договорённости дня — для правил занятости из @bayramm/shared/categories */
-export function marksOf(calendar: VendorCalendar, day: string): DayMarks {
-  const booked: Partial<Record<DayPart, number>> = {};
-  for (const b of calendar.bookings) if (b.day === day) booked[b.part] = b.count;
-  return {
-    whole: calendar.busy.some((b) => b.day === day),
-    marked: calendar.parts.filter((p) => p.day === day).map((p) => p.part),
-    booked,
-  };
-}
-
-export interface DayView {
-  /** Отметка дня целиком */
-  readonly entry: BusyDay | undefined;
-  /** Рабочие части (у одного мероприятия в день — пусто): что занято и сколько договорённостей */
-  readonly parts: readonly (PartLoad & { readonly mark: BusyPart | undefined })[];
-  readonly load: DayLoad;
-  readonly requests: readonly CalendarRequest[];
-}
-
-/** День глазами календаря: по тем же правилам, что каталог и сервер */
-export function dayView(calendar: VendorCalendar, day: string): DayView {
-  const marks = marksOf(calendar, day);
-  const { sessions } = calendar;
-  const parts =
-    sessions.mode === "whole"
-      ? []
-      : partLoads(sessions, marks)
-          .filter((p) => sessions.parts.includes(p.part))
-          .map((p) => ({ ...p, mark: calendar.parts.find((m) => m.day === day && m.part === p.part) }));
-  return {
-    entry: calendar.busy.find((b) => b.day === day),
-    parts,
-    load: dayLoadOf(sessions, marks),
-    requests: calendar.requests.filter((r) => r.day === day),
-  };
-}
-
-/** «Занято 1 из 2 мест» */
-export function seatsText(t: VendorDict, booked: number, capacity: number): string {
-  return fill(t.partSeats, { n: booked, cap: capacity, seats: capacity === 1 ? t.seatsOne : t.seatsMany });
-}
-
-/** Отметка дня или части словами: кем закрыто */
-function markText(t: VendorDict, source: BusyDay["source"]): string {
-  return source === "staff" ? t.legendStaff : source === "request_decline" ? t.dayDeclined : t.partBusy;
-}
-
-/** Состояние части: закрыта (кем), все места заняты, «занято N из M мест», свободна */
-export function partStateText(
-  t: VendorDict,
-  info: DayView["parts"][number],
-  capacity: number,
-  dayBusy: boolean,
-): string {
-  if (dayBusy) return t.partCovered;
-  if (info.mark) return markText(t, info.mark.source);
-  if (info.booked > 0) return seatsText(t, info.booked, capacity);
-  return t.partFree;
-}
-
-/** «Весь день»: занят (кем), частично занят (и когда есть договорённость, а места остались), свободен */
-export function wholeStateText(t: VendorDict, view: DayView): string {
-  if (view.entry) return markText(t, view.entry.source);
-  if (view.load === "busy") return t.partBusy;
-  if (view.load === "partial" || view.parts.some((p) => p.booked > 0)) return t.wholePartial;
-  return t.partFree;
-}
 
 /** Подпись дня для диктора: дата, загрузка (и части), есть ли заявка, сегодня ли */
 export function dayLabel(
@@ -240,6 +157,34 @@ export function rangeDays(
     days.push(day);
   }
   return days;
+}
+
+/** «9 дней» / «9 kun» */
+export function daysText(t: VendorDict, lang: "ru" | "uz", n: number): string {
+  return fill(lang === "ru" ? ruPlural(n, t.daysOne, t.daysFew, t.daysMany) : t.daysMany, { n });
+}
+
+/** Выбор нескольких дней одной строкой: «24 октября – 26 декабря · 9 дней» */
+export function rangeSummary(
+  t: VendorDict,
+  lang: "ru" | "uz",
+  start: string,
+  end: string,
+  chosen: number,
+): string {
+  const [from, to] = start <= end ? [start, end] : [end, start];
+  const span = from === to ? formatDate(from, t) : `${formatDate(from, t)} – ${formatDate(to, t)}`;
+  return `${span} · ${daysText(t, lang, chosen)}`;
+}
+
+/** Месяцы для выбора: от текущего на 12 вперёд (и показанный, если он дальше), не дальше последнего */
+export function monthChoices(today: string, maxDay: string, shown: string): string[] {
+  const first = today.slice(0, 7);
+  const last = maxDay.slice(0, 7);
+  const months: string[] = [];
+  for (let m = first; m <= last && months.length < 13; m = shiftMonth(m, 1)) months.push(m);
+  if (!months.includes(shown) && shown >= first && shown <= last) months.push(shown);
+  return months;
 }
 
 /** Тело правки нескольких дней */
@@ -516,9 +461,10 @@ function LeadTime({
         <Icon name="clock" size={20} />
         <span>{known ? fill(t.leadText, { n: leadDays }) : t.leadUnset}</span>
       </p>
-      {/* Срок — поле витрины: меняет владелец кабинета; сотруднику площадки ссылка вела бы в тупик */}
+      {/* Срок — поле витрины: меняет владелец кабинета; сотруднику площадки ссылка вела бы в тупик.
+        Ведёт сразу к «Данным витрины», а не в начало страницы */}
       {owner ? (
-        <RouteButton to={{ route: "card" }} navigate={navigate}>
+        <RouteButton to={{ route: "card", focus: "attributes" }} navigate={navigate}>
           {known ? t.leadEdit : t.leadSet}
         </RouteButton>
       ) : null}
@@ -546,6 +492,8 @@ interface CalendarProps extends ScreenProps {
   readonly navigate: Navigate;
   /** Срок заказа и время работы (категории без календаря и с ним) меняет владелец кабинета */
   readonly role?: VendorRole;
+  /** Открыть этот день ("YYYY-MM-DD"): пришли из заявки по «Открыть день» */
+  readonly day?: string;
 }
 
 /** Отметка дня целиком в загруженном месяце: busy — занят (как ответил сервер), null — свободен */
@@ -586,6 +534,7 @@ export function Calendar({
   inSidebar = false,
   navigate,
   role = "owner",
+  day,
 }: CalendarProps) {
   const listing = listings.find((l) => l.id === listingId);
   const header = (
@@ -625,7 +574,16 @@ export function Calendar({
   return (
     <section className="page page-calendar" aria-labelledby="page-title">
       {header}
-      <CalendarMonth t={t} lang={lang} listing={listing} navigate={navigate} owner={role === "owner"} />
+      {/* Ключ — день из адреса: другая ссылка на день — месяц и день заново */}
+      <CalendarMonth
+        key={day ?? ""}
+        t={t}
+        lang={lang}
+        listing={listing}
+        navigate={navigate}
+        owner={role === "owner"}
+        day={day}
+      />
     </section>
   );
 }
@@ -724,17 +682,19 @@ function CalendarMonth({
   listing,
   navigate,
   owner,
+  day,
 }: {
   t: VendorDict;
   lang: "ru" | "uz";
   listing: VendorListingRef;
   navigate: Navigate;
   owner: boolean;
+  day?: string;
 }) {
   const listingId = listing.id;
   const layout = useLayout();
   const desktop = layout === "desktop";
-  const [month, setMonth] = useState(() => tashkentToday().slice(0, 7));
+  const [month, setMonth] = useState(() => (day ?? tashkentToday()).slice(0, 7));
   const key = `${listingId}/${month}`;
   const [calendar, reload, setCalendar, refresh] = useLoad<VendorCalendar>(key, (k) => {
     const [id = "", m = ""] = k.split("/");
@@ -744,7 +704,7 @@ function CalendarMonth({
   const [message, setMessage] = useState<Message | null>(null);
   // Почему правка не сохранилась (нет связи, прошедший день…): текст по коду ответа API
   const [failure, setFailure] = useState<string | null>(null);
-  const [opened, setOpened] = useState<string | null>(null);
+  const [opened, setOpened] = useState<string | null>(day ?? null);
   const dayPanel = useRef<HTMLDivElement>(null);
   // Несколько дней: выбор отрезка, дни недели, что закрыть или открыть
   const [ranging, setRanging] = useState(false);
@@ -753,6 +713,11 @@ function CalendarMonth({
   const [what, setWhat] = useState<RangeWhat>("whole");
   const [freeing, setFreeing] = useState(false);
   const [legendOpen, setLegendOpen] = useState(legendOpenStored);
+  const toast = useToast();
+  // Кнопки «Закрыть · n»: выбрали последний день — страница доезжает до них (на телефоне они ниже)
+  const rangeActs = useRef<HTMLDivElement>(null);
+  // Жест вбок по месяцу (телефон): начало касания
+  const touch = useRef<{ x: number; y: number } | null>(null);
   // Правки уходят по одной, каждая — от последней известной версии календаря площадки:
   // две правки от одной версии вторая не прошла бы (409), хотя чужих изменений не было
   const queue = useRef<Promise<void>>(Promise.resolve());
@@ -769,9 +734,12 @@ function CalendarMonth({
   useEffect(() => {
     if (calendar.state === "ready") remember(calendar.data.listingId, calendar.data.version);
   }, [calendar, remember]);
-  // Другая витрина — открытый день и выбор нескольких дней не переносятся
-  // biome-ignore lint/correctness/useExhaustiveDependencies: сброс — по смене витрины
+  // Другая витрина — открытый день и выбор нескольких дней не переносятся (день из адреса при
+  // первом показе остаётся открытым)
+  const shownListing = useRef(listingId);
   useEffect(() => {
+    if (shownListing.current === listingId) return;
+    shownListing.current = listingId;
     setOpened(null);
     setRanging(false);
     setRange(null);
@@ -874,6 +842,10 @@ function CalendarMonth({
     mark("range", true);
     const asked = round.current;
     const batch = batchOf(chosenDays, what, close);
+    // Сколько и чего закрыли: «Закрыто: 9 дней · вечер»
+    const done = `${fill(close ? t.rangeClosedToast : t.rangeOpenedToast, {
+      days: daysText(t, lang, chosenDays.length),
+    })}${what === "whole" ? "" : ` · ${partName(t, what).toLowerCase()}`}`;
     queue.current = queue.current.then(async () => {
       try {
         if (round.current !== asked) return;
@@ -881,6 +853,7 @@ function CalendarMonth({
         remember(listingId, result.version);
         setCalendar((current) => (current.listingId === listingId ? mergeBatch(current, result) : current));
         if (result.skipped > 0) setMessage("skipped");
+        toast(done, { tone: "success" });
         setRange(null);
       } catch (err) {
         if (!(await conflicted(err))) {
@@ -906,7 +879,27 @@ function CalendarMonth({
   const pick = (day: string) => {
     // Первое нажатие — начало; второе — конец; третье — новый выбор
     if (!range || range.end !== null) setRange({ start: day, end: null });
-    else setRange({ start: range.start, end: day });
+    else {
+      setRange({ start: range.start, end: day });
+      // Отрезок выбран — к кнопкам «Закрыть» и «Открыть» (на телефоне они под месяцем)
+      requestAnimationFrame(() => rangeActs.current?.scrollIntoView?.({ block: "nearest" }));
+    }
+  };
+  // Жест вбок по месяцу: влево — следующий, вправо — предыдущий (вертикальная прокрутка — нет)
+  const swipeStart = (event: TouchEvent<HTMLDivElement>) => {
+    const point = event.touches[0];
+    touch.current = point ? { x: point.clientX, y: point.clientY } : null;
+  };
+  const swipeEnd = (event: TouchEvent<HTMLDivElement>) => {
+    const start = touch.current;
+    const point = event.changedTouches[0];
+    touch.current = null;
+    if (!start || !point) return;
+    const dx = point.clientX - start.x;
+    const dy = point.clientY - start.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < 0 && canNext) setMonth((m) => shiftMonth(m, 1));
+    if (dx > 0 && canPrev) setMonth((m) => shiftMonth(m, -1));
   };
   const toggleRanging = () => {
     setRanging(!ranging);
@@ -956,11 +949,26 @@ function CalendarMonth({
       <p className="lead cal-hint">{ranging ? t.rangeHint : whole ? t.calendarHintWhole : t.calendarHint}</p>
       <div className="cal-layout">
         <div className="cal-main">
-          <div className="cal">
+          <div className="cal" onTouchStart={swipeStart} onTouchEnd={swipeEnd}>
             <div className="cal-head">
-              <p className="cal-month" aria-live="polite">
-                {monthName} <span>{year}</span>
-              </p>
+              {ready ? (
+                // Месяц — списком: до августа не листать стрелкой десять раз
+                <Select
+                  className="cal-month-pick"
+                  size="compact"
+                  label={t.monthPick}
+                  value={month}
+                  options={monthChoices(ready.today, ready.maxDay, month).map((m) => ({
+                    value: m,
+                    label: `${t.months[Number(m.slice(5, 7)) - 1] ?? ""} ${m.slice(0, 4)}`,
+                  }))}
+                  onChange={setMonth}
+                />
+              ) : (
+                <p className="cal-month" aria-live="polite">
+                  {monthName} <span>{year}</span>
+                </p>
+              )}
               <div className="cal-nav">
                 <button
                   type="button"
@@ -1004,12 +1012,12 @@ function CalendarMonth({
           </div>
           {ranging && ready ? (
             <section className="panel range-panel" aria-label={t.rangeMode}>
-              <p className="note" aria-live="polite">
+              <p className="note range-summary" aria-live="polite">
                 {range === null
                   ? t.rangePickStart
                   : range.end === null
-                    ? t.rangePickEnd
-                    : fill(t.rangeChosen, { n: chosenDays.length })}
+                    ? `${formatDate(range.start, t)} · ${t.rangePickEnd}`
+                    : rangeSummary(t, lang, range.start, range.end, chosenDays.length)}
               </p>
               <fieldset className="range-weekdays">
                 <legend>{t.rangeWeekdays}</legend>
@@ -1046,7 +1054,7 @@ function CalendarMonth({
                   </div>
                 </fieldset>
               ) : null}
-              <div className="range-acts">
+              <div className="range-acts" ref={rangeActs}>
                 <button
                   type="button"
                   className="btn btn-dark"
@@ -1082,7 +1090,11 @@ function CalendarMonth({
                 <span className="sessions-title">{t.sessionsTitle}:</span> {sessionsLine(ready, t)}
               </p>
               {owner ? (
-                <RouteLink to={{ route: "card" }} navigate={navigate} className="btn btn-ghost">
+                <RouteLink
+                  to={{ route: "card", focus: "sessions" }}
+                  navigate={navigate}
+                  className="btn btn-ghost"
+                >
                   {t.sessionsEdit}
                 </RouteLink>
               ) : null}
