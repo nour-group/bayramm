@@ -63,7 +63,8 @@ test("компьютер 1280×800: название, район и цена в�
   await prepare(page);
   await open(page, PATHS.venue(VENUE.slug), ".venue-head h1", { guest: true });
   const fold = await page.evaluate(() => {
-    const bottom = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().bottom ?? 9999;
+    const bottom = (selector: string) =>
+      document.querySelector(selector)?.getBoundingClientRect().bottom ?? 9999;
     return {
       gallery: document.querySelector(".gallery")?.getBoundingClientRect().height ?? 9999,
       name: bottom(".venue-head h1"),
