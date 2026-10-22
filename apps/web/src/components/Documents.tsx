@@ -15,7 +15,12 @@ const PURPOSE_TITLE = {
 export function Documents() {
   const { api } = useServices();
   const { t, lang } = useLang();
-  const texts = useAsync(`consents:${lang}`, (signal) => api.consentTexts(lang, signal));
+  // Уже в кэше вкладки (профиль ждал их) — сразу, без заготовок
+  const texts = useAsync(
+    `consents:${lang}`,
+    (signal) => api.consentTexts(lang, signal),
+    () => api.peek?.consentTexts(lang),
+  );
 
   // Пока грузятся — заготовки строк тех же размеров: разделы ниже не прыгают
   if (texts.status === "loading")

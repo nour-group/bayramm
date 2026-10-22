@@ -206,9 +206,11 @@ function MyData() {
 export function Profile() {
   const { api, webApp, identity } = useServices();
   const { deleted, me } = useAccount();
-  const { t } = useLang();
-  // Тот же запрос, что у раздела «Аккаунт» (кэш вкладки): роли — ссылками в другие приложения
+  const { t, lang } = useLang();
+  // Те же запросы, что у раздела «Аккаунт» и документов (кэш вкладки): роли — ссылками в другие
+  // приложения, тексты согласий — строками, высота которых зависит от текста
   const methods = useAsync("auth-methods", (signal) => api.authMethods(signal));
+  const consents = useAsync(`consents:${lang}`, (signal) => api.consentTexts(lang, signal));
   useDocumentTitle(t.navProfile);
   const user = deleted ? undefined : webApp?.initDataUnsafe.user;
   // Имя: из Telegram (Mini App), на сайте — из профиля аккаунта
@@ -219,9 +221,10 @@ export function Profile() {
       ? [own.firstName, own.lastName].filter(Boolean).join(" ") || null
       : null;
 
-  // Аккаунт и способы входа ещё грузятся — экран целиком после них: разделы появляются разом, а
-  // не сдвигают друг друга (имя, «Аккаунт» с ролями, «Мои данные»)
-  if (!deleted && canSignIn(identity) && (me.status === "loading" || methods.status === "loading"))
+  // Аккаунт, способы входа и документы ещё грузятся — экран целиком после них: разделы появляются
+  // разом, а не сдвигают друг друга (имя, «Аккаунт» с ролями, «Мои данные», документы)
+  const waiting = me.status === "loading" || methods.status === "loading" || consents.status === "loading";
+  if (!deleted && canSignIn(identity) && waiting)
     return (
       <div className="screen profile screen-fallback">
         <h1 className="screen-title" tabIndex={-1}>
@@ -246,7 +249,7 @@ export function Profile() {
       </section>
 
       {/* «Мои заявки» — своя вкладка (и раздел шапки): здесь второй ссылки на них нет */}
-      <AccountSection />
+      <AccountSection methods={methods.status === "ready" ? methods.data : null} />
 
       {canSignIn(identity) ? (
         <section className="section" aria-labelledby="profile-data">

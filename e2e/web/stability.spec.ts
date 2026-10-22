@@ -25,6 +25,8 @@ async function watchShifts(page: Page): Promise<void> {
 const shifts = (page: Page) => page.evaluate(() => (window as unknown as { __cls: number }).__cls);
 
 test.describe("экран не прыгает, когда приходят данные", () => {
+  // Телефон: там экраны длиннее окна и сдвиг заметнее всего; компьютер — тот же код
+  test.skip(({ isMobile }) => !isMobile, "телефон: проект web-phone");
   for (const [name, path, ready, guest] of [
     ["пустое «Сохранённое» гостя", PATHS.favorites, ".state-empty", true],
     ["профиль", PATHS.profile, ".docs", false],
