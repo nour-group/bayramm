@@ -73,7 +73,11 @@ export function isChunkLoadError(error: unknown): boolean {
 export function chunkUrlOf(error: unknown): string | null {
   if (!(error instanceof Error)) return null;
   const found = /(https?:\/\/[^\s'"]+|\/assets\/[^\s'"]+)/.exec(error.message)?.[1];
-  return found ? found.replace(/[.,;)]+$/, "") : null;
+  if (!found) return null;
+  // Знаки препинания после адреса — не его часть (без регулярного выражения: строка чужая)
+  let end = found.length;
+  while (end > 0 && ".,;)".includes(found.charAt(end - 1))) end -= 1;
+  return found.slice(0, end);
 }
 
 function online(): boolean {
