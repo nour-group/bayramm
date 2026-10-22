@@ -77,7 +77,7 @@ import {
   toCreateRequest,
   validate,
 } from "./request-draft";
-import { estimate, hasQty, suggestedQty } from "./request-estimate";
+import { estimate, fieldsFromQty, hasQty, qtyFieldOf, suggestedQty, withFieldQty } from "./request-estimate";
 import {
   lastRequest,
   markSendAfterSignIn,
@@ -469,6 +469,7 @@ function ServicePick({
   qtyId,
   error,
   disabled,
+  qtyFrom,
   onToggle,
   onChange,
 }: {
@@ -480,6 +481,8 @@ function ServicePick({
   qtyId: string;
   error: string | undefined;
   disabled: boolean;
+  /** Подпись поля формы, из которого количество («Сколько часов»); null — своё поле */
+  qtyFrom: string | null;
   onToggle: (on: boolean) => void;
   onChange: (next: DraftService) => void;
 }) {
@@ -493,7 +496,9 @@ function ServicePick({
       </Checkbox>
       {chosen ? (
         <div className="svc-choice-more">
-          {hasQty(service.priceUnit) ? (
+          {hasQty(service.priceUnit) && qtyFrom !== null ? (
+            <p className="muted small svc-qty-from">{t.svcQtyFrom(chosen.qty, qtyFrom)}</p>
+          ) : hasQty(service.priceUnit) ? (
             <div className="field svc-qty">
               <label className="field-label" htmlFor={qtyId}>
                 {qtyQuestion(service.priceUnit, t)}
@@ -569,6 +574,12 @@ const touched = (draft: Draft): boolean =>
   [draft.guests, draft.name, draft.phone, draft.comment].some((v) => v.trim() !== "") ||
   Object.keys(draft.values).length > 0;
 
+/** Ключи полей категории, которые форма сейчас показывает */
+const shownFieldKeys = (category: CategoryConfig, values: Draft["values"]): string[] =>
+  detailFields(category)
+    .filter((field) => fieldShown(field, values))
+    .map((field) => field.key);
+
 /**
  * Черновик формы: сохранённый в этой вкладке — как есть; иначе дата и гости — из адреса (каталог →
  * витрина → форма), без них — из прошлой заявки этой вкладки, как и имя, телефон и повод
@@ -615,12 +626,15 @@ function initialDraft(
       : {};
   const phone = last && isPhoneDigits(last.phone) ? maskPhoneDigits(last.phone) : "";
   const name = last?.name || telegramName;
+  const services = saved?.services ?? [];
   return {
     draft: {
       ...EMPTY_DRAFT,
       ...parts,
       ...occasionTime,
-      services: saved?.services ?? [],
+      services,
+      // Количество, выбранное на витрине («3 часа»), — в поле формы той же единицы
+      values: fieldsFromQty(services, listing.services, {}, shownFieldKeys(category, {})),
       date: day,
       guests:
         guests === null || category.requestForm.guests === "hidden"
@@ -738,7 +752,13 @@ function Form({
     });
   const toggleWholeDay = (on: boolean) =>
     update({ wholeDay: on, dayParts: on ? [] : draft.dayParts, partsTouched: true });
-  const checked = submitted ? { ...serverErrors, ...validate(draft, context, t) } : serverErrors;
+  // Количество услуги в единице поля формы («Сколько часов») — из этого поля: спрашиваем один раз
+  const fieldKeys = shownFieldKeys(category, draft.values);
+  const current: Draft = {
+    ...draft,
+    services: withFieldQty(draft.services, listing.services, draft.values, fieldKeys),
+  };
+  const checked = submitted ? { ...serverErrors, ...validate(current, context, t) } : serverErrors;
   // Гостю согласие спросим после входа — ошибки «не отмечено» до него нет
   const errors = guest ? withoutConsent(checked) : checked;
   const guests = parseGuests(draft.guests);
@@ -750,11 +770,16 @@ function Form({
   );
   const minDate = firstDate(today, lead);
   const svcField = servicesField(category);
+  const qtyLabelOf = (service: PublicService): string | null => {
+    const key = qtyFieldOf(service, fieldKeys);
+    const field = key === null ? undefined : detailFields(category).find((f) => f.key === key);
+    return field ? catText(lang, field.label) : null;
+  };
   const scale = budgetScale(category);
   const budgetLabels = category.code === "hall" ? t.budgets : t.budgetsSmall;
   const chosenEstimate = estimate(
     listing.services,
-    draft.services.map((s) => ({ id: s.id, qty: parseQty(s.qty), options: s.options })),
+    current.services.map((s) => ({ id: s.id, qty: parseQty(s.qty), options: s.options })),
     guests,
   );
 
@@ -797,7 +822,7 @@ function Form({
     setSendError(null);
     setServerErrors({});
     // Гостю согласие — после входа: проверяем остальное и уводим во вход, черновик — во вкладке
-    const found = guest ? withoutConsent(validate(draft, context, t)) : validate(draft, context, t);
+    const found = guest ? withoutConsent(validate(current, context, t)) : validate(current, context, t);
     const first = fieldOrder(category, draft, parts).find((field) => found[field]);
     if (guest && !first) {
       saveDraft(listing.slug, draft);
@@ -812,7 +837,7 @@ function Form({
     }
     setSending(true);
     try {
-      const body = toCreateRequest(draft, listing, category, {
+      const body = toCreateRequest(current, listing, category, {
         transfer: transferText,
         notify: notify ? notifyText : null,
       });
@@ -1041,7 +1066,8 @@ function Form({
               <ServicePick
                 key={service.id}
                 service={service}
-                chosen={draft.services.find((s) => s.id === service.id)}
+                chosen={current.services.find((s) => s.id === service.id)}
+                qtyFrom={qtyLabelOf(service)}
                 pickId={i === 0 ? fieldId("services") : `${fieldId(`svc.${service.id}`)}-pick`}
                 qtyId={fieldId(`svc.${service.id}`)}
                 error={errors[`svc.${service.id}`]}

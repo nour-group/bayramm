@@ -329,9 +329,21 @@ describe("витрина категории", () => {
     await waitFor(() => transferCheckbox(), "форма");
     const first = document.querySelector<HTMLInputElement>(".svc-choice input[type=checkbox]");
     expect(first?.checked).toBe(true);
-    // Количество — минимальное у вендора
-    expect(document.querySelector<HTMLInputElement>(".svc-qty input")?.value).toBe(
-      String(oq.services[0]?.minQty),
+    // Количество — минимальное у вендора; у кортежа оно — в поле «Сколько часов», второй раз
+    // его не спрашиваем: часы поменяли — за ними количество услуги и сумма
+    const min = String(oq.services[0]?.minQty);
+    expect((field("Сколько часов") as HTMLInputElement | null)?.value).toBe(min);
+    expect(document.querySelector(".svc-qty input")).toBeNull();
+    expect(document.querySelector(".svc-qty-from")?.textContent).toBe(
+      `Количество: ${min} — из поля «Сколько часов»`,
+    );
+    await type(field("Сколько часов"), "6");
+    expect(document.querySelector(".svc-qty-from")?.textContent).toBe(
+      "Количество: 6 — из поля «Сколько часов»",
+    );
+    await waitFor(
+      () => document.querySelector(".estimate-sum b")?.textContent?.includes("2,1"),
+      "6 ч × 350 000",
     );
   });
 
@@ -416,8 +428,11 @@ describe("заявка по форме категории", () => {
     await type(field("Сколько часов"), "5");
     await type(field("Сколько машин"), "2");
     await click(document.querySelector(".svc-choice input[type=checkbox]"));
-    // Количество часов услуги — из поля «Сколько часов»
-    expect(document.querySelector<HTMLInputElement>(".svc-qty input")?.value).toBe("5");
+    // Количество часов услуги — из поля «Сколько часов» (своего поля у услуги нет)
+    expect(document.querySelector(".svc-qty input")).toBeNull();
+    expect(document.querySelector(".svc-qty-from")?.textContent).toBe(
+      "Количество: 5 — из поля «Сколько часов»",
+    );
     await click(byText(".svc-choice-options label", /Украшение живыми цветами/)?.querySelector("input"));
     // Примерная сумма: 5 ч × 350 000 + 400 000 — подписана как предварительная
     await waitFor(() => document.querySelector(".estimate-sum b")?.textContent?.includes("2,2"), "сумма");

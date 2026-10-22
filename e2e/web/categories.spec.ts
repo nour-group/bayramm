@@ -209,12 +209,14 @@ test.describe("заявка по категории", () => {
     await chooseIn(page, "Начало", "17:30");
     await fieldOf(page, "Сколько часов").getByRole("spinbutton").fill("5");
     await fieldOf(page, "Сколько машин").getByRole("spinbutton").fill("2");
-    // Услуга уже отмечена с витрины; количество — минимальное у вендора
+    // Услуга уже отмечена с витрины; часы второй раз не спрашиваются — количество услуги из
+    // «Сколько часов» (5 ч, не 3 с витрины), сумма — по ним
     const chosen = page.locator(".svc-choice.on");
     await expect(chosen).toHaveCount(1);
-    await expect(chosen.locator(".svc-qty input")).toHaveValue("3");
+    await expect(chosen.locator(".svc-qty input")).toHaveCount(0);
+    await expect(chosen.locator(".svc-qty-from")).toHaveText(ru.svcQtyFrom("5", "Сколько часов"));
     await check(chosen, /Шампанское и вода/).click();
-    await expect(page.locator(".estimate-sum b")).toHaveText(/≈\s1,2\sмлн\sсум/);
+    await expect(page.locator(".estimate-sum b")).toHaveText(/≈\s1,9\sмлн\sсум/);
     await expect(page.locator(".estimate")).toContainText(ru.estimateNote);
     await finishAndSend(page);
     // Время не выбрано: ошибка у поля «Время», заявка не ушла
@@ -242,7 +244,7 @@ test.describe("заявка по категории", () => {
       "Начало: 09:00",
       "Сколько часов: 5",
       "Сколько машин: 2",
-      "Какие услуги нужны: Машина для молодожёнов × 3 (+Шампанское и вода)",
+      "Какие услуги нужны: Машина для молодожёнов × 5 (+Шампанское и вода)",
     ]);
   });
 
@@ -270,7 +272,8 @@ test.describe("заявка по категории", () => {
     await check(fieldOf(page, "Что снимать"), "Видео").click();
     const shoot = page.locator(".svc-choice").filter({ hasText: "Фотосъёмка в день свадьбы" });
     await check(shoot, /Фотосъёмка в день свадьбы/).click();
-    await shoot.locator(".svc-qty input").fill("6");
+    // Часы съёмки — полем формы «Сколько часов», услуга считает по нему
+    await fieldOf(page, "Сколько часов").getByRole("spinbutton").fill("6");
     await check(shoot, /Второй фотограф/).click();
     // 6 ч × 500 000 + второй фотограф 1 500 000
     await expect(page.locator(".estimate-sum b")).toHaveText(/≈\s4,5\sмлн\sсум/);
@@ -304,7 +307,9 @@ test.describe("заявка по категории", () => {
     await chooseIn(page, "Район доставки", "Чиланзар");
     const cake = page.locator(".svc-choice").filter({ hasText: "Свадебный торт" });
     await check(cake, /Свадебный торт/).click();
-    await cake.locator(".svc-qty input").fill("4");
+    // Вес — полем формы, услуга считает по нему
+    await fieldOf(page, "Вес, кг").getByRole("spinbutton").fill("4");
+    await expect(cake.locator(".svc-qty-from")).toHaveText(ru.svcQtyFrom("4", "Вес, кг"));
     await finishAndSend(page);
     await expect(page.getByRole("heading", { level: 1, name: ru.sentH })).toBeVisible();
     await page.getByRole("link", { name: ru.toMyRequests }).click();
@@ -424,7 +429,8 @@ test.describe("категории в Telegram", () => {
     await prepare(page);
     await fakeTelegram(page);
     await open(page, `/?category=car&date=${BUSY_DAY}`, ".card .chip");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catTitle(ru.catName.car));
+    // В Telegram заголовок — коротко, одной строкой: название раздела
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.catName.car);
     await expect(page.locator(".landing, .site-footer")).toHaveCount(0);
     await page.locator(".cards .card-link").first().click();
     await expect(page.locator(".venue-head h1")).toHaveText(CAR.name);

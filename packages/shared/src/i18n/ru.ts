@@ -642,6 +642,8 @@ export const ru = {
   svcMin: (qty: string) => `минимум ${qty}`,
   svcLead: (n: number) => `заказ за ${n} ${ruPlural(n, "день", "дня", "дней")}`,
   svcIncludes: "Что входит",
+  // количество услуги — из поля формы той же единицы («Сколько часов»)
+  svcQtyFrom: (qty: string, field: string) => `Количество: ${qty} — из поля «${field}»`,
   svcOptions: "Дополнительно",
   svcPick: "Добавить в заявку",
   svcPicked: "В заявке",

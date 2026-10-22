@@ -645,6 +645,7 @@ export const uz: Dict = {
   svcMin: (qty: string) => `kamida ${qty}`,
   svcLead: (n: number) => `${n} kun oldin buyurtma`,
   svcIncludes: "Nimalar kiradi",
+  svcQtyFrom: (qty: string, field: string) => `Miqdori: ${qty} — «${field}» maydonidan`,
   svcOptions: "Qoʻshimcha",
   svcPick: "Soʻrovga qoʻshish",
   svcPicked: "Soʻrovda",
