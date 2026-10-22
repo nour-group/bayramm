@@ -19,7 +19,7 @@ import type { ClientRequest, ClientSource, DayPart, RequestCreated } from "@bayr
 import type { RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
 import { dayPartsOf } from "../calendar/sessions";
-import { type ClientActor, type Tx, withActor } from "../db/actor";
+import { type ClientActor, roleActorKind, type Tx, withActor } from "../db/actor";
 import type { Db } from "../db/client";
 import { insertRequestContact } from "../db/pii";
 import { ApiError, isPgError, notFound } from "../errors";
@@ -213,8 +213,12 @@ async function insertRequest(
 
 // ── «Мои заявки» ───────────────────────────────────────────────────────────
 
-// Срок ответа прошёл, а вендор не ответил: клиенту предлагаются похожие
-const SLA_BREACHED = sql<boolean>`(r.status in ('new', 'viewed') and r.first_response_at is null and r.sla_due_at <= now())`;
+// Срок ответа прошёл, а вендор сам не ответил: клиенту предлагаются похожие. «Связались»,
+// отмеченное сотрудником (first_response_by = staff), — не ответ вендора, пока заявка не сдвинулась
+// дальше «связались»
+const SLA_BREACHED = sql<boolean>`(r.sla_due_at <= now() and (
+  (r.status in ('new', 'viewed') and r.first_response_at is null)
+  or (r.status = 'contacted' and r.first_response_by = 'staff')))`;
 
 // Заявки клиента с листингом и его обложкой. Листинг клиенту виден и после
 // снятия с публикации (RLS: есть его заявка); фото — только публичные
@@ -252,6 +256,7 @@ function clientRequests(trx: Tx, clientId: string) {
       "r.created_at",
       "r.sla_due_at",
       "r.first_response_at",
+      "r.first_response_by",
       SLA_BREACHED.as("sla_breached"),
       "l.id as listing_id",
       "l.slug",
@@ -285,6 +290,7 @@ function toClientRequest(row: ClientRequestRow): ClientRequest {
     createdAt: row.created_at.toISOString(),
     slaDueAt: row.sla_due_at.toISOString(),
     firstResponseAt: row.first_response_at?.toISOString() ?? null,
+    firstResponseBy: row.first_response_by === null ? null : roleActorKind(row.first_response_by),
     slaBreached: row.sla_breached,
     listing: {
       id: row.listing_id,

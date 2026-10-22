@@ -1,10 +1,11 @@
-import { isPhoneDigits, phoneDigits } from "../format";
+import { isIsoDate, isPhoneDigits, phoneDigits } from "../format";
 import { sessionGet, sessionGetJson, sessionRemove, sessionSet, sessionSetJson } from "../storage";
 
 /* Следующая заявка — без повторного ввода: имя, телефон и повод из последней заявки, ушедшей в
    этой вкладке. Живут, как черновик, только во вкладке (sessionStorage): ключ — под префиксом
    черновиков, поэтому удаление аккаунта (clearDrafts) стирает и его. Дата и гости приходят
-   из адреса (каталог → витрина → форма). Согласия не подставляются никогда — их отмечают
+   из адреса (каталог → витрина → форма), а без них в адресе — тоже из прошлой заявки (зал
+   выбирают несколькими заявками на один день). Согласия не подставляются никогда — их отмечают
    заново, осознанно.
 
    Гость сайта заполняет форму до входа: «Отправить» проверяет поля и уводит во вход, а метка
@@ -20,7 +21,13 @@ export interface LastRequest {
   /** 9 цифр после +998 */
   readonly phone: string;
   readonly occasion: string | null;
+  /** День мероприятия, ГГГГ-ММ-ДД; у записей старой вкладки нет */
+  readonly date?: string | null;
+  readonly guests?: number | null;
 }
+
+const optional = (v: unknown, type: "string" | "number") =>
+  v === undefined || v === null || typeof v === type;
 
 const isLastRequest = (value: unknown): value is LastRequest => {
   if (typeof value !== "object" || value === null) return false;
@@ -28,16 +35,20 @@ const isLastRequest = (value: unknown): value is LastRequest => {
   return (
     typeof v.name === "string" &&
     typeof v.phone === "string" &&
-    (v.occasion === null || typeof v.occasion === "string")
+    (v.occasion === null || typeof v.occasion === "string") &&
+    optional(v.date, "string") &&
+    optional(v.guests, "number")
   );
 };
 
-/** Запомнить контакты и повод ушедшей заявки — для следующей в этой вкладке */
+/** Запомнить контакты, повод, день и гостей ушедшей заявки — для следующей в этой вкладке */
 export function rememberLastRequest(last: LastRequest): void {
   sessionSetJson(LAST_KEY, {
     name: last.name.trim(),
     phone: isPhoneDigits(phoneDigits(last.phone)) ? phoneDigits(last.phone) : "",
     occasion: last.occasion,
+    date: isIsoDate(last.date) ? last.date : null,
+    guests: Number.isInteger(last.guests) && (last.guests ?? 0) > 0 ? (last.guests ?? null) : null,
   } satisfies LastRequest);
 }
 

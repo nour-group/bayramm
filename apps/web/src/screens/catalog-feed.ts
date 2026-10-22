@@ -4,9 +4,9 @@ import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAbort } from "../api/errors";
 import type { ClientApi } from "../api/types";
-import { CLIENT_CATEGORIES, hasCapacity } from "../categories";
+import { CLIENT_CATEGORIES, hasCapacity, hasDistrict } from "../categories";
 import { addDays, isIsoDate } from "../format";
-import { ALL_CATEGORIES } from "../routes";
+import { ALL_CATEGORIES, hrefFor } from "../routes";
 import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
 
 /* Фильтры каталога живут в адресе
@@ -145,6 +145,28 @@ export function filtersQuery(filters: CatalogFilters): Record<string, string | n
     sort: filters.sort,
     ...filters.attrs,
   };
+}
+
+/**
+ * Кто ещё свободен в тот же день: раздел, дата, гости (где вместимость) и район витрины (где он
+ * есть) — «Показать похожие» в «Моих заявках» и «Кто ещё свободен» после отправки заявки
+ */
+export function sameDayHref(
+  categoryCode: string,
+  date: string | null,
+  guests: number | null,
+  district: string | null,
+): string {
+  const category = catalogCategory(categoryCode);
+  return hrefFor(
+    { name: "catalog" },
+    {
+      category: categoryCode,
+      date,
+      guests: category && hasCapacity(category) ? guests : null,
+      district: category && hasDistrict(category) ? district : null,
+    },
+  );
 }
 
 export function hasFilters(filters: CatalogFilters): boolean {

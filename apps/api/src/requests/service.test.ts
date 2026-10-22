@@ -324,6 +324,7 @@ function requestRow(patch: Record<string, unknown> = {}) {
     created_at: new Date("2026-09-29T07:00:00Z"),
     sla_due_at: new Date("2026-09-29T19:00:00Z"),
     first_response_at: null,
+    first_response_by: null,
     sla_breached: false,
     listing_id: LISTING,
     slug: "hall-1",
@@ -347,6 +348,7 @@ describe("listClientRequests", () => {
               status: "declined",
               decline_reason: "busy",
               first_response_at: new Date("2026-09-29T08:00:00Z"),
+              first_response_by: "vendor_user",
               cover_key: "k.webp",
               cover_width: 10,
               cover_height: 20,
@@ -358,8 +360,9 @@ describe("listClientRequests", () => {
     const query = fake.queries.find(isList);
     expect(query?.sql).toContain('where "r"."client_id" = $');
     expect(query?.sql).toContain('order by "r"."created_at" desc, "r"."id" desc limit $');
-    expect(query?.sql).toContain(
-      "(r.status in ('new', 'viewed') and r.first_response_at is null and r.sla_due_at <= now()) as \"sla_breached\"",
+    // Срок прошёл без ответа вендора; «связались» от сотрудника — не его ответ
+    expect(query?.sql.replace(/\s+/g, " ")).toContain(
+      "(r.sla_due_at <= now() and ( (r.status in ('new', 'viewed') and r.first_response_at is null) or (r.status = 'contacted' and r.first_response_by = 'staff'))) as \"sla_breached\"",
     );
     expect(items).toEqual([
       {
@@ -374,6 +377,7 @@ describe("listClientRequests", () => {
         createdAt: "2026-09-29T07:00:00.000Z",
         slaDueAt: "2026-09-29T19:00:00.000Z",
         firstResponseAt: "2026-09-29T08:00:00.000Z",
+        firstResponseBy: "vendor_user",
         slaBreached: false,
         listing: {
           id: LISTING,
@@ -384,6 +388,25 @@ describe("listClientRequests", () => {
         },
       },
     ]);
+  });
+});
+
+describe("listClientRequests: «связались» от команды", () => {
+  it("отдаёт, кто ответил первым: staff — не ответ вендора, срок считается сорванным", async () => {
+    const fake = fakeDb((q) =>
+      isList(q)
+        ? [
+            requestRow({
+              status: "contacted",
+              first_response_at: new Date("2026-09-29T20:00:00Z"),
+              first_response_by: "staff",
+              sla_breached: true,
+            }),
+          ]
+        : [],
+    );
+    const [item] = await listClientRequests(fake.db, CLIENT);
+    expect(item).toMatchObject({ status: "contacted", firstResponseBy: "staff", slaBreached: true });
   });
 });
 

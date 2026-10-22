@@ -309,6 +309,7 @@ export function demoRequests(listings: readonly ListingDetail[], now: number): C
       slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),
       firstResponseAt:
         answeredAfter === null ? null : new Date(createdAt + answeredAfter * HOUR).toISOString(),
+      firstResponseBy: answeredAfter === null ? null : ("vendor_user" as const),
       slaBreached: answeredAfter === null && hoursAgo > 12,
       listing: pickListing(listing),
     };
@@ -346,6 +347,17 @@ export function demoRequests(listings: readonly ListingDetail[], now: number): C
       guests: 150,
       dayParts: [],
       details: { weight_kg: 6, tiers: 3, filling: "berry", fulfillment: "delivery", services: [cakeChoice] },
+    });
+  // «Связались» после срока отметила команда: исполнитель сам не ответил — похожие остаются
+  const late = halls[4];
+  if (late)
+    out.push({
+      ...base(late, 6, "contacted", 20, 14),
+      firstResponseBy: "staff",
+      slaBreached: true,
+      guests: Math.min(150, late.capMax ?? 150),
+      dayParts: [],
+      details: {},
     });
   return out;
 }
@@ -888,6 +900,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           createdAt: new Date(createdAt).toISOString(),
           slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),
           firstResponseAt: null,
+          firstResponseBy: null,
           slaBreached: false,
           listing: pickListing(listing),
         };

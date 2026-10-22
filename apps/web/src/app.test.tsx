@@ -295,6 +295,11 @@ describe("мои заявки", () => {
     );
     expect(items[2]?.textContent).toContain("ответили за 2 ч 15 мин");
     expect(items[3]?.textContent).toContain("Причина: дата занята");
+    // «Связались» отметила команда после срока: не ответ исполнителя, похожие остаются
+    const team = items.at(-1);
+    expect(team?.textContent).toContain("Команда Bayramm связалась с исполнителем — он свяжется с вами");
+    expect(team?.textContent).not.toContain("ответили за");
+    expect(team?.querySelector(".req-breached a")?.textContent).toBe("Показать похожие");
   });
 
   it("отозвать — с подтверждением, кнопки одного размера", async () => {

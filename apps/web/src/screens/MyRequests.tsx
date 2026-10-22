@@ -13,8 +13,9 @@ import { useAccount, useDictionaries, useLang, useServices } from "../context";
 import { formatDayMonth, formatDuration, formatMomentTashkent, hoursLeft, metaLine } from "../format";
 import { useAsync, useDocumentTitle, useNow } from "../hooks";
 import { Icon } from "../icons";
-import { DEFAULT_CATEGORY, hrefFor, useNav } from "../router";
+import { hrefFor, useNav } from "../router";
 import { haptic } from "../telegram";
+import { sameDayHref } from "./catalog-feed";
 
 /* Статус — словом из общего словаря (@bayramm/shared/i18n/status): то же видят исполнитель в
    кабинете и команда; вид чипа — по смыслу */
@@ -70,21 +71,14 @@ function RequestItem({
   }, [highlighted]);
 
   const waiting = WAITING.includes(request.status) && request.firstResponseAt === null;
-  const breached = waiting && request.slaBreached;
+  // «Связались» отметила команда, а не исполнитель: он ещё не ответил сам
+  const byTeam = request.firstResponseBy === "staff";
+  // Срок прошёл, а исполнитель сам не ответил (сервер считает и отметку команды) — похожие
+  const breached = (waiting || byTeam) && request.slaBreached;
   const left = hoursLeft(request.slaDueAt, current);
-  // Похожие — та же категория и дата; гости и район — только у залов (у остальных каталог по
-  // ним не отбирает)
+  // Похожие — та же категория и дата; гости — где вместимость, район — где он есть
   const category = request.listing.categoryCode;
-  const hall = category === DEFAULT_CATEGORY;
-  const similarHref = hrefFor(
-    { name: "catalog" },
-    {
-      category,
-      date: request.eventDate,
-      guests: hall ? request.guests : null,
-      district: hall ? request.listing.districtCode : null,
-    },
-  );
+  const similarHref = sameDayHref(category, request.eventDate, request.guests, request.listing.districtCode);
   // Поля заявки категории строками: «Начало: 17:30», «Какие услуги нужны: …»
   const config = categoryConfig(category);
   const summary = config
@@ -175,7 +169,13 @@ function RequestItem({
         </div>
       ) : null}
 
-      {request.firstResponseAt ? (
+      {/* Отметка команды — не ответ исполнителя: так же говорит бот (contactedByTeam) */}
+      {request.firstResponseAt && byTeam ? (
+        <p className="req-sla">
+          <Icon name="checkFill" size={14} />
+          <span>{t.contactedByTeam}</span>
+        </p>
+      ) : request.firstResponseAt ? (
         <p className="req-sla">
           <Icon name="checkFill" size={14} />
           <span>

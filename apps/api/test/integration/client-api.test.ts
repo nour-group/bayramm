@@ -672,6 +672,7 @@ describe("заявка: гость → клиент → мои заявки → 
       occasionCode: "toy",
       slaDueAt: created.slaDueAt,
       firstResponseAt: null,
+      firstResponseBy: null,
       slaBreached: false,
       listing: { id: listings.mid.id, slug: listings.mid.slug, districtCode: "bektemir" },
     });

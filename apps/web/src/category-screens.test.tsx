@@ -410,9 +410,9 @@ describe("заявка по форме категории", () => {
     await click(transferCheckbox());
     await click(byText("button", "Отправить заявку"));
     await waitFor(() => byText("h1", "Заявка отправлена"), "отправлено");
-    // Искать дальше — в том же разделе, а не в залах
-    expect(byText<HTMLAnchorElement>(".sent a", "К поиску")?.getAttribute("href")).toBe(
-      "/catalog?category=car",
+    // Искать дальше — в том же разделе на тот же день, а не в залах
+    expect(byText<HTMLAnchorElement>(".sent a", "Кто ещё свободен 20 окт")?.getAttribute("href")).toBe(
+      "/catalog?category=car&date=2026-10-20",
     );
 
     const created = (api as MockApi).created[0];

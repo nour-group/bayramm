@@ -217,6 +217,8 @@ export const ru = {
   chMailMsg: "Откроется почтовое приложение.",
   sentHome: "В «Моё событие»",
   sentSearch: "К поиску",
+  // после отправки: тот же раздел, дата и гости
+  sentFreeOn: (date: string) => `Кто ещё свободен ${date}`,
   meVer: "версия прототипа",
   calFreeN: (n: number) => `свободно ${n} ${ruPlural(n, "день", "дня", "дней")}`,
   calBusyN: (n: number) => `занято ${n} ${ruPlural(n, "день", "дня", "дней")}`,
@@ -401,6 +403,8 @@ export const ru = {
   st_expired: "срок истёк",
   dueBy: (time: string) => `ответ до ${time}`,
   answeredIn: (duration: string) => `ответили за ${duration}`,
+  // «связались» отметила команда, а не исполнитель (так же говорит бот)
+  contactedByTeam: "Команда Bayramm связалась с исполнителем — он свяжется с вами",
   durHours: (h: number) => `${h} ч`,
   durMinutes: (m: number) => `${m} мин`,
   dr_busy: "дата занята",

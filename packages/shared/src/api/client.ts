@@ -538,7 +538,15 @@ export interface ClientRequest {
   readonly createdAt: string;
   readonly slaDueAt: string;
   readonly firstResponseAt: string | null;
-  /** Срок ответа прошёл без ответа — клиенту предлагаются похожие площадки */
+  /**
+   * Кто ответил первым: vendor_user — исполнитель; staff — команда Bayramm отметила «связались»
+   * вместо него (клиенту — «команда связалась с исполнителем», не его ответ); null — ответа нет
+   */
+  readonly firstResponseBy: "vendor_user" | "staff" | "system" | "client" | null;
+  /**
+   * Срок ответа прошёл, а исполнитель сам не ответил (отметка команды — не его ответ): клиенту
+   * предлагаются похожие площадки
+   */
   readonly slaBreached: boolean;
   readonly listing: Pick<ListingCard, "id" | "slug" | "name" | "cover" | "districtCode" | "categoryCode">;
 }

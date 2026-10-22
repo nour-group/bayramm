@@ -22,7 +22,6 @@ import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useS
 import { isApiError, isNotFound } from "../api/errors";
 import { categoryName, catText, clientCategory } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
-import { categoryHref } from "../components/Categories";
 import { ContactButton } from "../components/ContactSheet";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
@@ -51,7 +50,7 @@ import { continueAtHub } from "../hub";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
 import { canRequestPhone, haptic, requestPhone, requestWriteAccess } from "../telegram";
-import { MAX_GUESTS, parseGuests } from "./catalog-feed";
+import { MAX_GUESTS, parseGuests, sameDayHref } from "./catalog-feed";
 import {
   budgetScale,
   COMMENT_MAX,
@@ -268,8 +267,16 @@ function Consent({
   );
 }
 
-function Sent({ listing, created }: { listing: ListingDetail; created: RequestCreated }) {
+/** Отправленная заявка и её день — для «Кто ещё свободен» */
+interface SentRequest {
+  readonly created: RequestCreated;
+  readonly date: string | null;
+  readonly guests: number | null;
+}
+
+function Sent({ listing, sent }: { listing: ListingDetail; sent: SentRequest }) {
   const { t } = useLang();
+  const { created } = sent;
   const heading = useRef<HTMLHeadingElement>(null);
   useDocumentTitle(t.sentH);
 
@@ -304,9 +311,12 @@ function Sent({ listing, created }: { listing: ListingDetail; created: RequestCr
         <Link className="btn btn-secondary" href={hrefFor({ name: "requests" })}>
           {t.toMyRequests}
         </Link>
-        {/* Дальше искать — в том же разделе, откуда пришли (кортеж → кортежи) */}
-        <Link className="btn btn-secondary" href={categoryHref(listing.categoryCode)}>
-          {t.sentSearch}
+        {/* Дальше искать — в том же разделе на тот же день: гости и район, как у «похожих» */}
+        <Link
+          className="btn btn-secondary"
+          href={sameDayHref(listing.categoryCode, sent.date, sent.guests, listing.districtCode)}
+        >
+          {sent.date ? t.sentFreeOn(formatDayMonth(sent.date, t)) : t.sentSearch}
         </Link>
       </div>
     </section>
@@ -541,7 +551,7 @@ interface FormProps {
   readonly occasions: readonly OccasionItem[];
   readonly districts: readonly DictItem[];
   readonly consents: readonly ConsentText[];
-  readonly onCreated: (created: RequestCreated) => void;
+  readonly onCreated: (sent: SentRequest) => void;
   readonly onConsentsOutdated: () => void;
 }
 
@@ -561,8 +571,8 @@ const touched = (draft: Draft): boolean =>
 
 /**
  * Черновик формы: сохранённый в этой вкладке — как есть; иначе дата и гости — из адреса (каталог →
- * витрина → форма), имя, телефон и повод — из прошлой заявки этой вкладки (request-prefill.ts),
- * имя без неё — из Telegram. Согласия здесь не бывает: их отмечают каждый раз
+ * витрина → форма), без них — из прошлой заявки этой вкладки, как и имя, телефон и повод
+ * (request-prefill.ts); имя без неё — из Telegram. Согласия здесь не бывает: их отмечают каждый раз
  */
 function initialDraft(
   listing: ListingDetail,
@@ -573,8 +583,10 @@ function initialDraft(
   telegramName: string,
 ): { readonly draft: Draft; readonly prefilled: boolean } {
   const saved = loadDraft(listing.slug);
-  const date = query.get("date");
-  const guests = parseGuests(query.get("guests"));
+  // Прошлая заявка вкладки: контакты, повод, а без даты и гостей в адресе — и они
+  const last = lastRequest();
+  const date = query.get("date") ?? last?.date ?? null;
+  const guests = parseGuests(query.get("guests")) ?? last?.guests ?? null;
   // Часть дня с витрины (нажали на свободное утро): она и выбрана — если на дату свободна
   const part = query.get("part");
   const takenOnDate = listing.busyParts.find((p) => p.date === date)?.parts ?? [];
@@ -589,8 +601,7 @@ function initialDraft(
   const lead = leadDaysOf(listing, saved?.services.map((s) => s.id) ?? []);
   const day =
     isIsoDate(date) && date >= firstDate(today, lead) && !listing.busyDates.includes(date) ? date : null;
-  // Прошлая заявка вкладки: повод — если он есть в списке; его части дня — как при выборе повода
-  const last = lastRequest();
+  // Повод прошлой заявки — если он есть в списке; его части дня — как при выборе повода
   const occasion = occasions.find((o) => o.code === last?.occasion) ?? null;
   const takenOnDay = listing.busyParts.find((p) => p.date === day)?.parts ?? [];
   const occasionTime =
@@ -807,10 +818,16 @@ function Form({
       });
       const result = await api.createRequest(body);
       clearDraft(listing.slug);
-      // Следующей заявке в этой вкладке — те же контакты и повод (согласия — нет)
-      rememberLastRequest({ name: draft.name, phone: draft.phone, occasion: draft.occasion });
+      // Следующей заявке в этой вкладке — те же контакты, повод, дата и гости (согласия — нет)
+      rememberLastRequest({
+        name: draft.name,
+        phone: draft.phone,
+        occasion: draft.occasion,
+        date: draft.date,
+        guests: parseGuests(draft.guests),
+      });
       haptic(webApp, "success");
-      onCreated(result);
+      onCreated({ created: result, date: draft.date, guests: parseGuests(draft.guests) });
     } catch (error) {
       haptic(webApp, "error");
       if (isApiError(error) && error.status === 409 && error.existingId) {
@@ -1208,7 +1225,7 @@ export function RequestForm({ slug }: { slug: string }) {
     () => api.peek?.listing(slug),
   );
   // Итог — здесь, а не в форме: смена языка перезагружает тексты согласий и форму
-  const [created, setCreated] = useState<RequestCreated | null>(null);
+  const [created, setCreated] = useState<SentRequest | null>(null);
   const lastConsents = useRef<readonly ConsentText[] | null>(null);
   const signedIn = canSignIn(identity);
   // Тексты согласий витрина уже попросила заранее (кэш вкладки) — форма без заглушки. Гость
@@ -1226,7 +1243,7 @@ export function RequestForm({ slug }: { slug: string }) {
   // Вкладку называем по витрине: «Заявка: Lola zali · Bayramm» (так же — разметка воркера)
   useDocumentTitle(listing.status === "ready" ? `${t.rqTitle}: ${listing.data.name}` : t.rqTitle);
 
-  if (created && listing.status === "ready") return <Sent listing={listing.data} created={created} />;
+  if (created && listing.status === "ready") return <Sent listing={listing.data} sent={created} />;
   if (listing.status === "error")
     return isNotFound(listing.error) ? (
       <EmptyState
