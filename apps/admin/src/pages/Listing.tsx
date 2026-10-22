@@ -625,6 +625,7 @@ function NextStep({
   /** У формы есть блок «Данные витрины» (поля категории, вместимость или видео) */
   showAttributes: boolean;
 }) {
+  const can = useCan();
   if (left.own.length === 0 && left.vendor.length === 0) {
     if (listing.status !== "review") return null;
     return (
@@ -656,6 +657,10 @@ function NextStep({
     const target = BLOCKER_TARGET[code];
     return target === "form-attrs-title" && !showAttributes ? undefined : target;
   };
+  // Пункт, который роль не исправит (модератор не правит витрину и вендора), — не «Перейти» в
+  // тупик, а кто исправляет. Фото одобряет и модератор
+  const fixes = (code: PublishBlocker) =>
+    can("listings.write") || (code === "photos" && can("photos.moderate"));
   return (
     <section className="notice notice-warn next-step" aria-labelledby={NEXT_TITLE}>
       <h2 id={NEXT_TITLE} className="notice-title" tabIndex={-1}>
@@ -672,11 +677,13 @@ function NextStep({
                 {label}
                 {more ? <span className="sub">{more}</span> : null}
               </span>
-              {target ? (
+              {target && fixes(code) ? (
                 <button type="button" className="btn btn-sm" onClick={() => focusSection(target)}>
                   {t.goTo}
                   <span className="visually-hidden">: {label}</span>
                 </button>
+              ) : target ? (
+                <span className="muted small blocker-who">{t.fixedByManager}</span>
               ) : null}
             </li>
           );
@@ -684,9 +691,13 @@ function NextStep({
         {left.vendor.length > 0 ? (
           <li>
             <span className="blocker-text">{t.vendorChecksDone(4 - left.vendor.length, 4)}</span>
-            <Link to={{ name: "vendor", id: listing.vendor.id }} className="btn btn-sm">
-              {t.toVendor}
-            </Link>
+            {can("vendors.write") ? (
+              <Link to={{ name: "vendor", id: listing.vendor.id }} className="btn btn-sm">
+                {t.toVendor}
+              </Link>
+            ) : (
+              <span className="muted small blocker-who">{t.fixedByManager}</span>
+            )}
           </li>
         ) : null}
       </ul>
@@ -946,7 +957,18 @@ function useStatusActions({
   // Вписанная причина или комментарий к смене статуса — несохранённое
   useUnsaved(pending !== null && reason.trim() !== "");
   const actions = ACTIONS_FROM[listing.status].filter((action) => can(PERMISSION[action]));
-  const primary = actions.find((action) => PRIMARY.includes(action));
+  const forward = actions.find((action) => PRIMARY.includes(action));
+  const remaining = forward === "publish" ? left.publish : forward === "submit" ? left.submit : 0;
+  // Модератор (витрину не правит) на проверке, а опубликовать нельзя: решения — вернуть с причиной
+  // и отклонить, на виду; «Опубликовать (осталось n)» вело бы к пунктам, которые исправит менеджер
+  const deciding = listing.status === "review" && !can("listings.write") && remaining > 0;
+  const decisions: readonly ListingAction[] = deciding
+    ? actions.filter((action) => action === "draft" || action === "reject")
+    : [];
+  const primary = decisions.length > 0 ? undefined : forward;
+  /** Причина обязательна: отказ, приостановка, возврат модератором с проверки */
+  const needsReason = (action: ListingAction) =>
+    REASON_REQUIRED.has(action) || (deciding && action === "draft");
   // Ждущие решения фото: открытые во весь экран публикация одобрит, остальные — ждут дальше
   const pendingPhotos = listing.photos.filter((photo) => photo.moderation === "pending");
   const seenPending = pendingPhotos.filter((photo) => review.seen.has(photo.id));
@@ -991,28 +1013,51 @@ function useStatusActions({
     if (first) setTimeout(() => review.view(first.id), 0);
   };
 
-  const remaining = primary === "publish" ? left.publish : primary === "submit" ? left.submit : 0;
-  const primaryButton = primary ? (
+  const decisionButtons = decisions.map((action) => (
     <button
-      ref={primaryRef}
+      key={action}
+      ref={action === decisions[0] ? primaryRef : undefined}
       type="button"
-      className={actionClass(primary)}
-      aria-expanded={pending === primary}
-      // Не хватает — к блоку «Что осталось»: шторка с подтверждением была бы отказом сервера
-      onClick={() => (remaining > 0 ? focusSection(NEXT_TITLE) : choose(primary))}
+      className={action === "reject" ? "btn btn-danger" : "btn btn-primary"}
+      aria-expanded={pending === action}
+      onClick={() => choose(action)}
     >
-      {remaining > 0 ? t.actionLeft(t.actions[primary], remaining) : t.actions[primary]}
+      {action === "draft" ? t.returnWithReason : t.actions[action]}
     </button>
-  ) : null;
+  ));
+  const primaryButton =
+    decisions.length > 0 ? (
+      <>{decisionButtons}</>
+    ) : primary ? (
+      <button
+        ref={primaryRef}
+        type="button"
+        className={actionClass(primary)}
+        aria-expanded={pending === primary}
+        // Не хватает — к блоку «Что осталось»: шторка с подтверждением была бы отказом сервера
+        onClick={() => (remaining > 0 ? focusSection(NEXT_TITLE) : choose(primary))}
+      >
+        {remaining > 0 ? t.actionLeft(t.actions[primary], remaining) : t.actions[primary]}
+      </button>
+    ) : null;
 
   const menu: MenuAction[] = actions
-    .filter((action) => action !== primary)
-    .map((action) => ({
-      key: action,
-      label: t.actions[action],
-      danger: DESTRUCTIVE.has(action),
-      run: () => choose(action),
-    }));
+    .filter((action) => action !== primary && !decisions.includes(action))
+    .map((action) =>
+      // «Опубликовать» ушло в «…», пока не хватает: как и кнопка — к «Что осталось», не к шторке
+      action === forward && remaining > 0
+        ? {
+            key: action,
+            label: t.actionLeft(t.actions[action], remaining),
+            run: () => focusSection(NEXT_TITLE),
+          }
+        : {
+            key: action,
+            label: t.actions[action],
+            danger: DESTRUCTIVE.has(action),
+            run: () => choose(action),
+          },
+    );
 
   const form = pending ? (
     <form className="confirm" onSubmit={run} noValidate>
@@ -1029,18 +1074,18 @@ function useStatusActions({
         </p>
       ) : null}
       <ReasonField
-        label={REASON_REQUIRED.has(pending) ? t.reason : `${t.comment} (${t.optional})`}
+        label={needsReason(pending) ? t.reason : `${t.comment} (${t.optional})`}
         value={reason}
         onChange={setReason}
-        presets={REASON_PRESETS[pending]}
-        required={REASON_REQUIRED.has(pending)}
+        presets={REASON_PRESETS[pending] ?? (needsReason(pending) ? t.reasons.listingReturn : undefined)}
+        required={needsReason(pending)}
       />
       <div className="acts">
         <button
           type="submit"
           className={`btn ${DESTRUCTIVE.has(pending) ? "btn-danger-fill" : "btn-primary"}`}
           aria-busy={busy || undefined}
-          disabled={busy || (REASON_REQUIRED.has(pending) && reason.trim() === "")}
+          disabled={busy || (needsReason(pending) && reason.trim() === "")}
         >
           {busyLabel(t.actions[pending], busy)}
         </button>
@@ -1061,7 +1106,7 @@ function useStatusActions({
         open
         title={t.actions[pending]}
         onClose={cancel}
-        returnFocus={pending === primary ? primaryRef : moreRef}
+        returnFocus={pending === primary || decisions.includes(pending) ? primaryRef : moreRef}
       >
         {phone ? form : <section className="panel status-form">{form}</section>}
       </PhoneSheet>

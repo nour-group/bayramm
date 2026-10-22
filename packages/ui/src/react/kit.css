@@ -489,12 +489,8 @@ button.ui-cal-day {
   cursor: pointer;
 }
 
-/* Выходной — своей подложкой (та же пара токенов, что в календаре кабинета); у каждого дня,
-   который можно выбрать, — рамка: на белой карточке белые будни не пропадают */
-.ui-cal-day.is-weekend {
-  background: var(--cell-wk);
-}
-
+/* Выходной — только цветом дня недели в шапке, не подложкой: подложка у клетки — занятость.
+   У каждого дня, который можно выбрать, — рамка: на белой карточке белые будни не пропадают */
 button.ui-cal-day:not(.is-out):not(.is-busy) {
   box-shadow: inset 0 0 0 1px var(--rule);
 }
@@ -517,11 +513,25 @@ button.ui-cal-day:not(.is-out):not(.is-busy) {
   font-weight: 400;
 }
 
-/* Занятый день выцветает, а не краснеет: красный значит «нажми» */
+/* Занятый день — темнее свободного и заштрихован (штриховка 3:1 к свободной клетке, пара
+   busyLine/cell): занятость видна без цвета. Число выцветает и зачёркнуто, а не краснеет —
+   красный значит «нажми». Под числом — подложка без штриховки. Образец в легенде (.ui-cal-key) —
+   та же раскраска */
+.ui-cal-day.is-busy,
+.ui-cal-key.is-busy {
+  background-color: var(--busy);
+  background-image: repeating-linear-gradient(135deg, var(--busy-line) 0 1.5px, transparent 1.5px 6px);
+}
+
 .ui-cal-day.is-busy {
-  background: var(--busy);
   color: var(--busy-ink);
   text-decoration: line-through;
+}
+
+.ui-cal-day.is-busy .ui-cal-num {
+  padding: 0 4px;
+  border-radius: var(--r-999);
+  background: var(--busy);
 }
 
 /* Календарь только для показа: число — текст, а не неактивная кнопка, ему нужен контраст
@@ -530,13 +540,15 @@ button.ui-cal-day:not(.is-out):not(.is-busy) {
   color: var(--muted);
 }
 
-/* Частично занятый день (заняты не все части дня): нижняя половина клетки — цветом
-   занятого, число — в полном контрасте (пары ink/cell и ink/busy). Выбрать можно */
+/* Частично занятый день (заняты не все части дня): нижняя половина — подложкой занятого без
+   штриховки, по низу — полоса (3:1, пара busyLine/cell), число — в полном контрасте (пары
+   ink/cell и ink/busy). Выбрать можно */
 .ui-cal-day.is-partial,
-button.ui-cal-day.is-partial:not(.is-out):not(.is-busy) {
+button.ui-cal-day.is-partial:not(.is-out):not(.is-busy),
+.ui-cal-key.is-partial {
   background: linear-gradient(to top, var(--busy) 50%, var(--cell) 50%);
   box-shadow:
-    inset 0 -3px 0 var(--busy-ink),
+    inset 0 -3px 0 var(--busy-line),
     inset 0 0 0 1px var(--rule);
 }
 
@@ -547,46 +559,41 @@ button.ui-cal-day.is-partial:not(.is-out):not(.is-busy) {
 .ui-cal-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--gap-12);
+  gap: var(--gap-7) var(--gap-12);
   margin: 8px 0 0;
   color: var(--muted);
   font-size: var(--fs-12-5);
 }
 
-.ui-leg::before {
-  content: "";
+.ui-leg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-5);
+}
+
+/* Образец клетки в легенде: те же классы состояний, что у дней, — раскраска одна */
+.ui-cal-key {
   display: inline-block;
-  width: 10px;
-  height: 10px;
-  margin-right: 6px;
+  flex: none;
+  width: 14px;
+  height: 14px;
   border-radius: var(--r-3);
-  vertical-align: -1px;
-}
-
-.ui-leg-free::before {
-  border: 1px solid var(--rule);
   background: var(--cell);
+  box-shadow: inset 0 0 0 1px var(--rule);
 }
 
-.ui-leg-busy::before {
-  background: var(--busy-ink);
-}
-
-.ui-leg-part::before {
-  border: 1px solid var(--rule);
-  background: linear-gradient(to top, var(--busy-ink) 50%, var(--cell) 50%);
-}
-
-.ui-leg-sel::before {
+.ui-cal-key.is-selected {
   background: var(--plum);
+  box-shadow: none;
 }
 
-.ui-leg-today::before {
+.ui-cal-key.is-today {
   width: 6px;
   height: 6px;
+  margin: 0 4px;
   border-radius: var(--r-999);
   background: var(--plum);
-  vertical-align: 1px;
+  box-shadow: none;
 }
 
 /* ---------- галочка и переключатель ---------- */
@@ -704,6 +711,16 @@ button.ui-cal-day.is-partial:not(.is-out):not(.is-busy) {
 .ui-switch.is-disabled {
   color: var(--muted);
   cursor: not-allowed;
+}
+
+/* Идёт запрос: переключатель недоступен, но фокус на нём остаётся (aria-busy) */
+.ui-native[aria-busy="true"],
+.ui-native[aria-busy="true"] + .ui-switch-track {
+  cursor: progress;
+}
+
+.ui-native[aria-busy="true"] + .ui-switch-track {
+  opacity: 0.6;
 }
 
 /* ---------- группа вариантов ---------- */

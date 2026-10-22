@@ -1517,6 +1517,10 @@ export async function mockStaffApi(
     const found =
       requestMatch && method === "GET" ? requests.find((r) => r.id === requestMatch[1]) : undefined;
     if (found) return json(route, 200, found);
+    // «Связались с площадкой» — заявка как её вернёт API: срок закрыт командой
+    const contacted = /^POST \/staff\/requests\/([0-9a-f-]{36})\/contacted$/.exec(key);
+    const contactedRequest = contacted ? requests.find((r) => r.id === contacted[1]) : undefined;
+    if (contactedRequest) return json(route, 200, { ...contactedRequest, sla: "ops_contacted" });
     if (key === "GET /staff/revisions") {
       // Решённое из очереди уходит
       const list: RevisionList =

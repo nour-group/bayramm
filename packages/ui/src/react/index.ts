@@ -1,9 +1,20 @@
 /* Свои контролы Bayramm вместо системных: выпадающий список (и список с поиском), галочка, переключатель,
    группа вариантов, число, дата, время, файлы, поиск (и поиск с подсказками), диалог, уведомления, подсказка;
-   связь (есть ли сеть и баннер «нет связи»); прилипшие панели (высота — в scroll-padding);
+   связь (есть ли сеть и баннер «нет связи»); прилипшие панели (высота — в scroll-padding); «назад»
+   закрывает открытый слой (back.ts); тихое перечитывание списков и «сейчас» для сроков (revalidate.ts);
    граница экрана (кусок не загрузился — «Повторить» вместо пустой страницы).
    Стили — @bayramm/ui/kit.css (только токены), тексты — из словаря приложения. */
 
+export {
+  type BackButtonLike,
+  backLayerOpen,
+  historyBack,
+  markScreenBack,
+  pushScreen,
+  setBackButton,
+  setBackHistory,
+  useBackLayer,
+} from "./back";
 export { Calendar, type CalendarProps, type CalendarTexts } from "./Calendar";
 export { Combobox, type ComboboxProps } from "./Combobox";
 export { Checkbox, RadioGroup, type RadioGroupProps, type RadioOption, Switch } from "./choices";
@@ -21,6 +32,7 @@ export {
   useOnReconnect,
 } from "./online";
 export { SHEET_BELOW } from "./overlay";
+export { type RevalidateOptions, useNow, useRevalidate } from "./revalidate";
 export {
   chunkUrlOf,
   isChunkLoadError,
@@ -46,6 +58,7 @@ export {
   ToastProvider,
   type ToastProviderProps,
   type ToastTone,
+  useOptionalToast,
   useToast,
 } from "./Toast";
 export { Tooltip, type TooltipProps, type TooltipTriggerProps } from "./Tooltip";

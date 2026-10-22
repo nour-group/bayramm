@@ -10,7 +10,7 @@ import {
 } from "../support/a11y";
 import { labelled, spinbutton } from "../support/field-name";
 import { expect, test } from "../support/offline";
-import { clickBackButton, fakeTelegram } from "../support/telegram";
+import { clickBackButton, fakeTelegram, telegramState } from "../support/telegram";
 import {
   CAKE_ID,
   CAR_ID,
@@ -210,6 +210,16 @@ test.describe("до входа", () => {
       await expect(heading(page)).toHaveText(title);
       await expect(page.getByRole("link", { name: t.openBot })).toHaveCount(bot ? 1 : 0);
       if (signIn === "error") await expect(page.getByRole("button", { name: t.retry })).toBeVisible();
+      // Тупиков нет: контакт команды под каждым отказом; не привязан — проверить снова, не перезапуская
+      await expect(page.getByText(t.teamTitle)).toBeVisible();
+      await expect(page.getByRole("link", { name: t.teamWrite })).toBeVisible();
+      await expect(page.getByRole("button", { name: t.gateCheckAgain })).toHaveCount(
+        signIn === "not_linked" ? 1 : 0,
+      );
+      // Сессия кончилась в Telegram — вход заново по initData, без закрытия кабинета
+      await expect(page.getByRole("button", { name: t.gateRestart })).toHaveCount(
+        signIn === "expired" ? 1 : 0,
+      );
       await expect(sections(page)).toHaveCount(0);
       await expectNoAxeViolations(page, `вход: ${signIn}`);
     });
@@ -349,6 +359,29 @@ test.describe("кабинет", () => {
     // Открыта «Закрытые», а просроченная — во «Ждут ответа»: плашка по счётчику API всё равно есть
     await expect(page.locator(".promise-late")).toHaveText(t.inboxLate);
     expect([...new Set(api.inboxQueries.map((q) => q.tab))]).toEqual(["waiting", "closed"]);
+  });
+
+  test("вкладки входящих целиком в колонке списка — на любой ширине и на обоих языках, без прокрутки вбок", async ({
+    page,
+  }) => {
+    await start(page);
+    for (const lang of ["ru", "uz"] as const) {
+      await page.goto("/account");
+      await chooseLang(page, lang);
+      for (const width of [320, 390, 1024, 1280, 1440]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto("/requests");
+        const group = page.locator(".pills-fill");
+        await expect(group.locator(".pill")).toHaveCount(3);
+        await page.evaluate(() => document.fonts.ready);
+        const clipped = await group.evaluate((el) =>
+          [el, ...el.querySelectorAll(".pill")]
+            .filter((node) => node.scrollWidth > node.clientWidth + 0.5)
+            .map((node) => node.textContent),
+        );
+        expect(clipped, `${width}px ${lang}`).toEqual([]);
+      }
+    }
   });
 
   test("фокус не уходит под прилипшие панели: Tab по входящим, заявке и витрине", async ({ page }) => {
@@ -498,6 +531,72 @@ test.describe("кабинет", () => {
       .poll(() => api.calendarWrites)
       .toEqual(["PUT 2026-10-20 If-Match: 1", "DELETE 2026-10-10 If-Match: 2"]);
     expect(api.unexpected).toEqual([]);
+  });
+
+  test("шторка дня: «Назад» Telegram и браузера закрывает её, а не кабинет; после правки фокус на месте, Esc закрывает", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "на компьютере открытый день — колонка рядом с месяцем, не шторка");
+    await start(page);
+    await page.goto("/calendar");
+    await expect(heading(page)).toHaveText(t.calendar);
+    expect((await telegramState(page)).back.visible).toBe(false);
+
+    // Telegram: пока шторка открыта, «Назад» видна и закрывает её; кабинет остаётся на календаре
+    await dayButton(page, 20).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect.poll(async () => (await telegramState(page)).back.visible).toBe(true);
+    await clickBackButton(page);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL("/calendar");
+    await expect.poll(async () => (await telegramState(page)).back.visible).toBe(false);
+
+    // Правка дня: кнопка недоступна, пока запрос идёт, но фокус не уходит со шторки — Tab и Esc работают
+    await dayButton(page, 20).click();
+    const close = page.getByRole("dialog").getByRole("button", { name: t.closeWholeDay });
+    await close.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog").getByRole("button", { name: t.openWholeDay })).toBeFocused();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
+  test("шторка в браузере: «назад» браузера закрывает её и остаётся на экране", async ({ page }) => {
+    test.skip(isDesktop(page), "на компьютере открытый день — колонка рядом с месяцем, не шторка");
+    await start(page, { telegram: false });
+    // Вошли через хаб раньше: сессия кабинета во вкладке
+    await page.addInitScript(() =>
+      window.sessionStorage.setItem("bayramm.vendor.session", "e2e-vendor-token"),
+    );
+    await page.goto("/calendar");
+    await expect(heading(page)).toHaveText(t.calendar);
+    await dayButton(page, 20).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL("/calendar");
+    await expect(heading(page)).toHaveText(t.calendar);
+    // Закрыли крестиком — запись шторки ушла: «назад» уводит с календаря, а не открывает пустой шаг
+    await dayButton(page, 20).click();
+    await closeDay(page);
+    await page.getByRole("navigation", { name: t.sections }).getByRole("link", { name: t.requests }).click();
+    await expect(heading(page)).toHaveText(t.requests);
+    await page.goBack();
+    await expect(heading(page)).toHaveText(t.calendar);
+  });
+
+  test("опубликованная витрина: открыть на сайте и скопировать ссылку", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await start(page);
+    await page.goto("/card");
+    const open = page.getByRole("link", { name: t.venueOpenSite });
+    await expect(open).toHaveAttribute("href", /\/venue\/lola-zali$/);
+    await expect(open).toHaveAttribute("target", "_blank");
+    await page.getByRole("button", { name: t.venueCopyLink }).click();
+    await expect(page.getByText(t.venueLinkCopied)).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/\/venue\/lola-zali$/);
   });
 
   test("календарь изменил кто-то другой: правка не затирает чужую, месяц перечитан, отметить заново", async ({
@@ -1282,6 +1381,41 @@ test.describe("витрины в разных категориях", () => {
     expect(api.unexpected).toEqual([]);
   });
 
+  test("заявка по ссылке из шторки дня: в браузере «назад» — сразу к календарю, в Telegram — «Назад» заявки на месте", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "на компьютере открытый день — колонка рядом с месяцем, не шторка");
+    await start(page, { telegram: false, listings: "many" });
+    await page.addInitScript(() =>
+      window.sessionStorage.setItem("bayramm.vendor.session", "e2e-vendor-token"),
+    );
+    await page.goto("/calendar");
+    await chooseVitrina(page, "Kortej Premium");
+    await dayButton(page, 24).click();
+    await page.getByRole("dialog").locator(".day-request").first().click();
+    await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
+    // Запись шторки не осталась под заявкой: один «назад» — календарь
+    await page.goBack();
+    await expect(page).toHaveURL("/calendar");
+    await expect(heading(page)).toHaveText(t.calendar);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
+  test("Telegram: заявка по ссылке из шторки дня — «Назад» заявки видна и ведёт обратно", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "на компьютере открытый день — колонка рядом с месяцем, не шторка");
+    await start(page, { listings: "many" });
+    await page.goto("/calendar");
+    await chooseVitrina(page, "Kortej Premium");
+    await dayButton(page, 24).click();
+    await page.getByRole("dialog").locator(".day-request").first().click();
+    await expect(page).toHaveURL(`/requests/${REQUEST_CAR}`);
+    await expect.poll(async () => (await telegramState(page)).back.visible).toBe(true);
+    await page.waitForTimeout(100);
+    expect((await telegramState(page)).back.visible).toBe(true);
+  });
+
   test("кортеж: день по частям — шторка на телефоне, колонка справа на компьютере; «занято N из M мест»", async ({
     page,
   }) => {
@@ -1341,6 +1475,8 @@ test.describe("витрины в разных категориях", () => {
     await expect(page.locator(".cal-legend li")).toHaveText([
       t.legendBusy,
       t.legendPart,
+      t.legendMarkFree,
+      t.legendMarkBusy,
       t.legendRequest,
       t.legendToday,
     ]);
@@ -1691,8 +1827,8 @@ test.describe("что ждёт партнёра после решений ком
         await expect(heading(page)).toBeVisible();
         await chooseLang(page, lang);
         await expect(heading(page)).toHaveText(vendorDict[lang].account);
-        // «Витрина» и «Услуги»: значок «Заявок» появляется, когда загружен список заявок
-        await expect(page.locator(".tabbar .nav-count")).toHaveCount(2);
+        // «Заявки», «Витрина» и «Услуги»: счётчик заявок приходит и вне входящих
+        await expect(page.locator(".tabbar .nav-count")).toHaveCount(3);
         await page.evaluate(() => document.fonts.ready);
         const clipped = await page.$$eval(".tabbar .nav-label", (labels) =>
           labels.filter((el) => el.scrollWidth > el.clientWidth + 0.5).map((el) => el.textContent),

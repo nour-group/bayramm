@@ -46,7 +46,9 @@ const ru = {
   gateDisabledTitle: "Доступ отключён",
   gateDisabledText: "Свяжитесь с вашим менеджером Bayramm.",
   gateExpiredTitle: "Сессия закончилась",
-  gateExpiredText: "Закройте кабинет и откройте его из бота заново.",
+  gateExpiredText: "Нажмите «Перезапустить». Не помогло — закройте кабинет и откройте его из бота заново.",
+  gateRestart: "Перезапустить",
+  gateCheckAgain: "Я поделился номером — проверить",
   // …в браузере: бота закрывать не нужно, войти снова через хаб
   gateExpiredTextWeb: "Войдите снова — через сайт Bayramm.",
   gateErrorTitle: "Не удалось войти",
@@ -651,6 +653,13 @@ const ru = {
   capacityMore: "Больше",
   capacityInvalid: "От 1 до 50.",
   legendPart: "занята часть дня",
+  venueOpenSite: "Открыть на сайте",
+  venueCopyLink: "Скопировать ссылку",
+  venueLinkCopied: "Ссылка скопирована",
+  venueLinkCopyFailed: "Не получилось скопировать. Ссылка: {url}",
+  legendMarkFree: "отметка части дня: свободна",
+  legendMarkBooked: "отметка части дня: есть договорённость, места остались",
+  legendMarkBusy: "отметка части дня: занята",
 };
 
 type Shape<T> = { readonly [K in keyof T]: T[K] extends readonly string[] ? readonly string[] : string };
@@ -697,7 +706,10 @@ const uz: VendorDict = {
   gateDisabledTitle: "Kirish oʻchirilgan",
   gateDisabledText: "Bayramm menejeringiz bilan bogʻlaning.",
   gateExpiredTitle: "Sessiya tugadi",
-  gateExpiredText: "Kabinetni yoping va botdan qayta oching.",
+  gateExpiredText:
+    "«Qayta ishga tushirish»ni bosing. Yordam bermasa — kabinetni yoping va botdan qayta oching.",
+  gateRestart: "Qayta ishga tushirish",
+  gateCheckAgain: "Raqamni ulashdim — tekshirish",
   gateExpiredTextWeb: "Bayramm sayti orqali qayta kiring.",
   gateErrorTitle: "Kirib boʻlmadi",
   gateErrorText: "Internetni tekshiring va qayta urinib koʻring.",
@@ -1274,6 +1286,13 @@ const uz: VendorDict = {
   capacityMore: "Koʻproq",
   capacityInvalid: "1 dan 50 gacha.",
   legendPart: "kun qismi band",
+  venueOpenSite: "Saytda ochish",
+  venueCopyLink: "Havolani nusxalash",
+  venueLinkCopied: "Havola nusxalandi",
+  venueLinkCopyFailed: "Nusxalab boʻlmadi. Havola: {url}",
+  legendMarkFree: "kun qismi belgisi: boʻsh",
+  legendMarkBooked: "kun qismi belgisi: kelishuv bor, joy qolgan",
+  legendMarkBusy: "kun qismi belgisi: band",
 };
 
 export const vendorDict: Readonly<Record<Lang, VendorDict>> = { ru, uz };

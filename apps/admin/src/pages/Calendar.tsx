@@ -191,6 +191,18 @@ export function dayState(
   };
 }
 
+/** Отметки частей дня под числами: свободна, есть договорённость, занята — в легенде те, что видны */
+export type PartMark = "free" | "booked" | "busy";
+
+const MARK_CLASS: Readonly<Record<PartMark, string>> = { free: "", booked: "is-booked", busy: "is-busy" };
+
+export function marksOf(states: readonly { parts: readonly PartLoad[] }[]): PartMark[] {
+  const found = new Set<PartMark>();
+  for (const state of states)
+    for (const p of state.parts) found.add(p.busy ? "busy" : p.booked > 0 ? "booked" : "free");
+  return (["free", "booked", "busy"] as const).filter((mark) => found.has(mark));
+}
+
 type Range = { readonly start: string; readonly end: string | null };
 
 /** Что закрыть или открыть на нескольких днях: весь день или часть */
@@ -482,6 +494,7 @@ export function Calendar({
           const openedState = opened && !stale ? dayState(availability, opened) : null;
           const capacity = availability.sessions.parallelCapacity;
           const rangeParts = availability.sessions.mode === "whole" ? [] : availability.sessions.parts;
+          const marks = stale ? [] : marksOf(days.map((day) => dayState(availability, day)));
           return (
             <>
               {stale ? (
@@ -520,7 +533,7 @@ export function Calendar({
                           onClick={() => (ranging ? pick(day) : setOpened(opened === day ? null : day))}
                         >
                           {day === today ? <span className="cal-today-dot" aria-hidden="true" /> : null}
-                          {Number(day.slice(8))}
+                          <span className="cal-num">{Number(day.slice(8))}</span>
                           {state && state.parts.length > 0 ? (
                             <span className="cal-parts" aria-hidden="true">
                               {state.parts.map((p) => (
@@ -550,6 +563,12 @@ export function Calendar({
                   <span className="cal-key cal-key-busy" aria-hidden="true" />
                   {t.legendBusy}
                 </li>
+                {marks.map((mark) => (
+                  <li key={mark}>
+                    <span className={`cal-key-part ${MARK_CLASS[mark]}`.trim()} aria-hidden="true" />
+                    {t.legendMark[mark]}
+                  </li>
+                ))}
                 <li>
                   <span className="cal-key cal-key-today" aria-hidden="true" />
                   {t.legendToday}

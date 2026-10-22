@@ -6,12 +6,16 @@
 
    Вне Telegram без сессии (outside) — не короткий экран, а Welcome.tsx: что это за кабинет и
    как получить доступ, затем вход. Сессия кончилась в браузере — «войдите снова», а не
-   «откройте из бота»: человек пришёл не из бота. */
+   «откройте из бота»: человек пришёл не из бота; в Telegram — «Перезапустить» (вход заново по
+   initData). Номер не привязан — «Я поделился номером — проверить»: после контакта в боте вход
+   проходит без перезапуска кабинета. Тупиков нет: под каждым экраном — контакт команды
+   (TeamContact.tsx), если он указан. */
 
 import { type MouseEvent, useEffect, useState } from "react";
 import { authMethods, botOf } from "./hub";
 import type { TextKey, VendorDict } from "./i18n";
 import { Icon } from "./icons";
+import { TeamContactLinks, useTeamContact } from "./TeamContact";
 import { inTelegram, openBotLink } from "./telegram";
 import type { ScreenProps } from "./ui";
 import { Heading } from "./ui";
@@ -93,6 +97,7 @@ interface GateProps extends Pick<ScreenProps, "t" | "headingRef"> {
 
 export function Gate({ kind, t, headingRef, onRetry, onSignIn }: GateProps) {
   const phone = usePhoneSignIn(kind in TEXTS_WITHOUT_PHONE);
+  const team = useTeamContact();
   if (kind === "loading") {
     return (
       <section className="gate" aria-busy="true">
@@ -112,6 +117,8 @@ export function Gate({ kind, t, headingRef, onRetry, onSignIn }: GateProps) {
         : (TEXTS_WITHOUT_PHONE[kind] ?? withPhone);
   // Внутри Telegram вход — по кнопке бота; хаб — для браузера
   const signIn = WANTS_SIGN_IN.includes(kind) && !telegram;
+  // В Telegram сессия кончилась — войти заново по initData, не закрывая кабинет
+  const restart = kind === "expired" && telegram;
   return (
     <section className="gate" aria-labelledby="page-title">
       <span className="empty-art">
@@ -125,13 +132,29 @@ export function Gate({ kind, t, headingRef, onRetry, onSignIn }: GateProps) {
             {kind === "not_linked" ? t.signInOther : t.signIn}
           </button>
         ) : null}
-        {WANTS_BOT.includes(kind) ? <BotLink t={t} primary={!signIn} /> : null}
+        {restart ? (
+          <button type="button" className="btn btn-primary" onClick={onRetry}>
+            {t.gateRestart}
+          </button>
+        ) : null}
+        {WANTS_BOT.includes(kind) ? <BotLink t={t} primary={!signIn && !restart} /> : null}
+        {kind === "not_linked" ? (
+          <button type="button" className="btn btn-ghost" onClick={onRetry}>
+            {t.gateCheckAgain}
+          </button>
+        ) : null}
         {kind === "error" ? (
           <button type="button" className="btn btn-primary" onClick={onRetry}>
             {t.retry}
           </button>
         ) : null}
       </div>
+      {team && kind !== "outside" ? (
+        <div className="gate-team">
+          <p className="gate-team-title">{t.teamTitle}</p>
+          <TeamContactLinks t={t} team={team} />
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -428,11 +428,16 @@ function DayPanel({ calendar, day, t, lang, pending, navigate, onToggle, titled,
             {wholeStateText(t, view)}
           </span>
         </p>
+        {/* Пока правка уходит — aria-disabled, а не disabled: фокус остаётся на кнопке */}
         <button
           type="button"
           className={view.entry ? "btn btn-ghost" : "btn btn-dark"}
-          disabled={locked || staffDay || pending.has(wholeKey)}
-          onClick={() => onToggle(day, null, view.entry)}
+          disabled={locked || staffDay}
+          aria-disabled={pending.has(wholeKey) || undefined}
+          aria-busy={pending.has(wholeKey) || undefined}
+          onClick={() => {
+            if (!pending.has(wholeKey)) onToggle(day, null, view.entry);
+          }}
         >
           {view.entry ? t.openWholeDay : t.closeWholeDay}
         </button>
@@ -449,7 +454,8 @@ function DayPanel({ calendar, day, t, lang, pending, navigate, onToggle, titled,
                 <Switch
                   className="day-part-switch"
                   checked={info.busy}
-                  disabled={locked || blocked || info.mark?.source === "staff" || pending.has(key)}
+                  disabled={locked || blocked || info.mark?.source === "staff"}
+                  busy={pending.has(key)}
                   onChange={() => onToggle(day, info.part, info.mark)}
                 >
                   <span className="day-part-name">
@@ -625,23 +631,39 @@ export function Calendar({
 }
 
 /** Что из обозначений есть в показанном месяце: тем же правилам, что и раскраска дней */
-type LegendKey = "busy" | "part" | "decline" | "staff" | "request" | "today";
+type LegendKey =
+  | "busy"
+  | "part"
+  | "decline"
+  | "staff"
+  | "markFree"
+  | "markBooked"
+  | "markBusy"
+  | "request"
+  | "today";
 
-const LEGEND: Readonly<
-  Record<
-    LegendKey,
-    {
-      dot: string;
-      text: "legendBusy" | "legendPart" | "legendDecline" | "legendStaff" | "legendRequest" | "legendToday";
-    }
-  >
-> = {
-  busy: { dot: "dot-busy", text: "legendBusy" },
-  part: { dot: "dot-part", text: "legendPart" },
-  decline: { dot: "dot-decline", text: "legendDecline" },
-  staff: { dot: "dot-staff", text: "legendStaff" },
-  request: { dot: "dot-req", text: "legendRequest" },
-  today: { dot: "dot-today", text: "legendToday" },
+type LegendText =
+  | "legendBusy"
+  | "legendPart"
+  | "legendDecline"
+  | "legendStaff"
+  | "legendMarkFree"
+  | "legendMarkBooked"
+  | "legendMarkBusy"
+  | "legendRequest"
+  | "legendToday";
+
+/** Образец — те же классы, что у клетки дня и отметки части: раскраска одна */
+const LEGEND: Readonly<Record<LegendKey, { swatch: string; text: LegendText; lock?: true }>> = {
+  busy: { swatch: "cal-key cal-busy", text: "legendBusy" },
+  part: { swatch: "cal-key cal-partial", text: "legendPart" },
+  decline: { swatch: "cal-key cal-busy cal-request_decline", text: "legendDecline" },
+  staff: { swatch: "cal-key cal-busy cal-staff", text: "legendStaff", lock: true },
+  markFree: { swatch: "part-key", text: "legendMarkFree" },
+  markBooked: { swatch: "part-key is-booked", text: "legendMarkBooked" },
+  markBusy: { swatch: "part-key is-busy", text: "legendMarkBusy" },
+  request: { swatch: "dot dot-req", text: "legendRequest" },
+  today: { swatch: "dot dot-today", text: "legendToday" },
 };
 
 export function legendOf(calendar: VendorCalendar): LegendKey[] {
@@ -650,6 +672,7 @@ export function legendOf(calendar: VendorCalendar): LegendKey[] {
     const view = dayView(calendar, day);
     const sourceKey = (source: BusyDay["source"]): LegendKey =>
       source === "request_decline" ? "decline" : source === "staff" ? "staff" : "busy";
+    for (const p of view.parts) found.add(p.busy ? "markBusy" : p.booked > 0 ? "markBooked" : "markFree");
     if (view.entry) {
       found.add(sourceKey(view.entry.source));
       continue;
@@ -1077,7 +1100,14 @@ function CalendarMonth({
               <ul className="cal-legend">
                 {legend.map((key) => (
                   <li key={key}>
-                    <span className={`dot ${LEGEND[key].dot}`} />
+                    {LEGEND[key].lock ? (
+                      <span className="cal-key-lock" aria-hidden="true">
+                        <span className={LEGEND[key].swatch} />
+                        <Icon name="lock" size={12} />
+                      </span>
+                    ) : (
+                      <span className={LEGEND[key].swatch} aria-hidden="true" />
+                    )}
                     {t[LEGEND[key].text]}
                   </li>
                 ))}

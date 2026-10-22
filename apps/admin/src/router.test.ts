@@ -205,7 +205,8 @@ describe("маршруты панели оператора", () => {
   it("«назад»: переходили внутри панели — по истории, открыли сразу здесь — к разделу вместо записи", () => {
     const id = "aaaaaaaa-0000-0000-0000-000000000001";
     const navigate = vi.fn();
-    const back = vi.spyOn(window.history, "back").mockImplementation(() => {});
+    // Мимо записей открытых шторок — history.go(-n) набора (historyBack); шторок нет — на шаг
+    const back = vi.spyOn(window.history, "go").mockImplementation(() => {});
     window.history.replaceState(null, "", `/clients/${id}`);
     expect(historyIndex()).toBe(0);
     goBack({ name: "client", id }, navigate);
@@ -215,6 +216,7 @@ describe("маршруты панели оператора", () => {
     window.history.replaceState({ idx: 2 }, "", `/clients/${id}`);
     goBack({ name: "client", id }, navigate);
     expect(back).toHaveBeenCalledTimes(1);
+    expect(back).toHaveBeenCalledWith(-1);
     expect(navigate).toHaveBeenCalledTimes(1);
     back.mockRestore();
   });

@@ -5,9 +5,10 @@
 
 import type { AuthMethods } from "@bayramm/shared/api/account";
 import type { DayPart, StaffMe, StaffPermission } from "@bayramm/shared/api/staff";
-import { useOnReconnect } from "@bayramm/ui/react";
+import { useOnReconnect, useOptionalToast } from "@bayramm/ui/react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { fetchMethods } from "./session";
+import { t } from "./texts";
 
 const API = "/api";
 
@@ -132,9 +133,18 @@ export type Loaded<T> =
 export function useLoad<T>(path: string | null) {
   const { api } = useSession();
   const [loaded, setLoaded] = useState<Loaded<T>>({ state: "loading" });
+  // Когда пришли показанные данные: «Обновлено 10:42» у списков, которые перечитываются сами
+  const [at, setAt] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   const current = useRef(path);
   current.current = path;
+
+  // Перечитать не вышло, а данные уже на экране: они остаются, о сбое — строкой уведомления
+  // (useLoad зовут и выше ToastProvider — там без неё)
+  const toast = useOptionalToast();
+  const notify = useRef(toast);
+  notify.current = toast;
+  const shownPath = useRef<string | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt — повод перечитать (reload)
   useEffect(() => {
@@ -145,7 +155,19 @@ export function useLoad<T>(path: string | null) {
     setLoaded((prev) => (prev.state === "ready" ? prev : { state: "loading" }));
     void api.get<T>(path).then((result) => {
       if (!active || current.current !== path) return;
-      setLoaded(result.ok ? { state: "ready", data: result.data } : { state: "error", failure: result });
+      if (result.ok) {
+        setLoaded({ state: "ready", data: result.data });
+        setAt(Date.now());
+        shownPath.current = path;
+        return;
+      }
+      // Тот же список тихо перечитывали (возврат во вкладку, таймер, после действия) — он остаётся
+      // и перечитывается дальше; ошибка вместо данных — только у того, что ещё не показывали
+      setLoaded((prev) => {
+        if (prev.state === "ready" && shownPath.current === path) return prev;
+        return { state: "error", failure: result };
+      });
+      if (shownPath.current === path) notify.current?.(t.refreshFailed, { tone: "error" });
     });
     return () => {
       active = false;
@@ -158,7 +180,7 @@ export function useLoad<T>(path: string | null) {
   useOnReconnect(() => {
     if (retryable) reload();
   });
-  return { loaded, reload, set } as const;
+  return { loaded, reload, set, at } as const;
 }
 
 /**

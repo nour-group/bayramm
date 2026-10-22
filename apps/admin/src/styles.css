@@ -2119,12 +2119,7 @@ textarea.input {
   cursor: default;
 }
 
-/* Выходной — своей подложкой: та же пара токенов, что в кабинете и в ui-cal. Вес — как у одного
-   класса: занятый, частично занятый и выбранный (они ниже) его перекрывают */
-:where(.cal-day).cal-we {
-  background-color: var(--cell-wk);
-}
-
+/* Выходной — только цветом в шапке, как в кабинете и ui-cal: подложка клетки — занятость */
 .cal-wd.cal-we {
   color: var(--coral-deep);
 }
@@ -2140,40 +2135,49 @@ textarea.input {
   background: var(--plum);
 }
 
-/* Рабочие части дня под числом: свободна, есть договорённость, занята */
+/* Рабочие части дня под числом — как в кабинете, отличие формой (3:1 к клетке): свободна — пустая
+   рамка, есть договорённость — залита наполовину, занята — залита целиком */
 .cal-parts {
   display: flex;
   gap: 2px;
 }
 
-.cal-parts i {
-  width: 7px;
-  height: 4px;
+.cal-parts i,
+.cal-key-part {
+  display: inline-block;
+  width: 9px;
+  height: 6px;
   border-radius: var(--r-999);
-  background: var(--muted-lt);
-  opacity: 0.35;
+  box-shadow: inset 0 0 0 1.5px var(--busy-line);
 }
 
-.cal-parts i.is-booked {
-  background: var(--coral);
-  opacity: 1;
+.cal-parts i.is-booked,
+.cal-key-part.is-booked {
+  background: linear-gradient(to right, var(--coral-deep) 50%, transparent 50%);
+  box-shadow: inset 0 0 0 1.5px var(--coral-deep);
 }
 
-.cal-parts i.is-busy {
+.cal-parts i.is-busy,
+.cal-key-part.is-busy {
   background: var(--berry);
-  opacity: 1;
+  box-shadow: none;
 }
 
-/* Занятый день — после прошедших и сегодняшнего: отметка видна всегда (ловушка №7) */
-.cal-busy .cal-today-dot {
-  background: var(--sel-ink);
-}
-
+/* Занятый день — после прошедших и сегодняшнего (ловушка №7): темнее свободного и заштрихован,
+   как в кабинете и ui-cal (штриховка 3:1 к свободной клетке); число — ink на подложке без
+   штриховки (пара ink/busy). Образец в легенде — та же раскраска */
 .cal-busy,
 .cal-busy:disabled {
-  background-color: var(--plum);
-  box-shadow: inset 0 0 0 1px var(--plum);
-  color: var(--sel-ink);
+  background-color: var(--busy);
+  background-image: repeating-linear-gradient(135deg, var(--busy-line) 0 1.5px, transparent 1.5px 6px);
+  box-shadow: inset 0 0 0 1px var(--rule);
+  color: var(--ink);
+}
+
+.cal-busy .cal-num {
+  padding: 0 4px;
+  border-radius: var(--r-999);
+  background: var(--busy);
 }
 
 /* ── панель v0.2: заявки, клиенты, уведомления, журнал, команда, настройки ── */
@@ -2950,9 +2954,10 @@ a.rcard-title {
   background: var(--cell);
 }
 
+/* Образец занятого — после .cal-key: та же раскраска, что у клетки */
 .cal-key-busy {
-  border-color: var(--plum);
-  background: var(--plum);
+  background-color: var(--busy);
+  background-image: repeating-linear-gradient(135deg, var(--busy-line) 0 1.5px, transparent 1.5px 6px);
 }
 
 .cal-key-today {
@@ -2969,7 +2974,7 @@ a.rcard-title {
   background: var(--coral-soft);
 }
 
-/* Выбор нескольких дней — после занятых (ловушка №7): занятый день остаётся сливовым,
+/* Выбор нескольких дней — после занятых (ловушка №7): занятый день остаётся заштрихованным,
    выбор — коралловым кольцом */
 .cal-chosen:not(.cal-busy) {
   background-color: var(--coral-soft);
@@ -3099,6 +3104,19 @@ a.rcard-title {
 
 .actionbar > .btn-more {
   flex: 0 0 auto;
+}
+
+/* Действие не удалось — причина в панели над кнопками, а не в начале страницы */
+.actionbar.has-error {
+  flex-wrap: wrap;
+}
+
+.actionbar-error {
+  flex: 1 0 100%;
+}
+
+.actionbar-error > .notice {
+  margin: 0;
 }
 
 /* Панель действий унесла кнопки вниз — пустая рамка на месте не нужна */
@@ -3303,16 +3321,11 @@ a.rcard-title {
   font-weight: 700;
 }
 
-/* Части дня: день занят частично — сиреневой клеткой со сливовой полосой снизу */
-.cal-partial {
-  background-color: var(--lilac);
-  background-image: linear-gradient(to top, var(--plum) 4px, transparent 4px);
-}
-
+/* Части дня: день занят частично — нижняя половина подложкой занятого без штриховки и полоса по
+   низу (3:1), как в кабинете и ui-cal */
+.cal-partial,
 .cal-key-partial {
-  border-color: var(--lilac);
-  background-color: var(--lilac);
-  background-image: linear-gradient(to top, var(--plum) 4px, transparent 4px);
+  background-image: linear-gradient(to top, var(--busy-line) 3px, var(--busy) 3px 50%, transparent 50%);
 }
 
 /* Открытый день — после «сегодня» (ловушка №7): его части под сеткой */

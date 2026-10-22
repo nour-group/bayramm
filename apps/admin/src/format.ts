@@ -33,6 +33,11 @@ export function formatDay(day: string): string {
 }
 
 const timeOnly = formatter({ hour: "2-digit", minute: "2-digit" });
+
+/** Время по Ташкенту: «10:42» */
+export function formatClock(ms: number): string {
+  return timeOnly.format(ms);
+}
 const dayKey = formatter({ year: "numeric", month: "2-digit", day: "2-digit" });
 const yearOnly = formatter({ year: "numeric" });
 const shortDate = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", timeZone: "UTC" });

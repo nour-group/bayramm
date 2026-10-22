@@ -25,7 +25,8 @@ import {
   type VendorRequestPage,
 } from "@bayramm/shared/api/vendor";
 import { categoryConfig, chosenServices, detailRows } from "@bayramm/shared/categories";
-import { type MouseEvent, useEffect, useState } from "react";
+import { useRevalidate } from "@bayramm/ui/react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { categoryName, partsLabel } from "./category";
 import { formatBudget, formatDate, formatDuration, formatGuests, slaView, tashkentTime } from "./format";
@@ -260,6 +261,20 @@ export function Requests({
   useEffect(() => {
     if (version > 0) void refresh();
   }, [version, refresh]);
+  // Догрузили следующие страницы — тихое перечитывание первой их не срежет: ждём смены вкладки
+  const extended = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: сброс — по смене вкладки и витрины
+  useEffect(() => {
+    extended.current = false;
+  }, [tab, filter]);
+  // Вернулись во входящие (вкладка, Mini App из фона, связь) и раз в полторы минуты — новые заявки
+  // и сроки сами, без «потяните, чтобы обновить»
+  useRevalidate(
+    () => {
+      if (!extended.current) void refresh();
+    },
+    { enabled: page.state === "ready" },
+  );
 
   const counts = page.state === "ready" ? page.data.counts : null;
   useEffect(() => {
@@ -271,6 +286,7 @@ export function Requests({
     try {
       const next = await api.requests(tab, cursor, filter);
       setPage((current) => ({ ...next, items: [...current.items, ...next.items] }));
+      extended.current = true;
       setMore("idle");
     } catch {
       setMore("failed");

@@ -3,7 +3,12 @@
    языка — загрузки словаря. Тестам воркера (node) не нужно. */
 
 import { LANGS } from "@bayramm/shared";
+import { setBackHistory } from "@bayramm/ui/react";
 import { loadDictionary } from "./i18n";
 import { preloadAll } from "./screens";
+
+// Шторки без записей истории: шаг назад закрытой шторки одного теста пришёл бы в следующий
+// (сами записи проверяют тесты набора и e2e)
+setBackHistory(false);
 
 if (typeof document !== "undefined") await Promise.all([preloadAll(), ...LANGS.map(loadDictionary)]);

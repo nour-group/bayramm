@@ -21,6 +21,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useBackLayer } from "./back";
 import { UiIcon } from "./icons";
 import { useUiTexts } from "./texts";
 
@@ -203,6 +204,8 @@ export function Overlay({
   // Открытый список или календарь — как системный: страница под ним inert (нажатие мимо
   // только закрывает, диктор не уходит на страницу); шторка ещё и не даёт её прокручивать
   const release = useModal(layer, true, mode === "sheet");
+  // «Назад» закрывает список или календарь, а не экран под ним
+  useBackLayer(true, () => close.current("close"));
   // После снятия inert (эффект выше снимается раньше): теперь фокус можно вернуть
   useEffect(() => () => after.current(), []);
 

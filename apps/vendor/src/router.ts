@@ -1,4 +1,5 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
+import { historyBack, pushScreen } from "@bayramm/ui/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 /* Все экраны кабинета — в одной карте. Пути, вписанные по месту, разъезжаются
@@ -110,7 +111,8 @@ export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Locati
         window.history.pushState(held.state, "", held.url);
         guard.current.ask(() => {
           passing.current = true;
-          window.history.back();
+          // Мимо записи открытого вопроса «Уйти без сохранения?»
+          historyBack();
         });
         return;
       }
@@ -127,7 +129,8 @@ export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Locati
         if (window.location.pathname !== next) {
           // hash (#tgWebAppData=…) не переносим: он нужен SDK только при первом открытии
           if (options?.replace) window.history.replaceState(null, "", next);
-          else window.history.pushState(null, "", next);
+          // Ссылка в открытой шторке — новый экран на месте записи шторки (@bayramm/ui/react)
+          else pushScreen(null, next);
         }
         setPath(next);
       };

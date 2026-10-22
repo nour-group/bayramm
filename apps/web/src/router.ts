@@ -1,3 +1,4 @@
+import { pushScreen } from "@bayramm/ui/react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { hrefFor, type Match, matchRoute, parentOf } from "./routes";
 
@@ -98,7 +99,8 @@ export function useRouter(): Router {
         { ...historyState(), bayrammIdx: historyIdx(), scroll: scrollTop() } satisfies HistoryState,
         "",
       );
-      window.history.pushState({ bayrammIdx: historyIdx() + 1 } satisfies HistoryState, "", next);
+      // Ссылка в открытой шторке (меню сайта) — новый экран на месте записи шторки (@bayramm/ui/react)
+      pushScreen({ bayrammIdx: historyIdx() + 1 } satisfies HistoryState, next);
     }
     setLocation({ path: url.pathname, search: url.search, restoreScroll: null });
   }, []);

@@ -658,12 +658,11 @@ describe("карточка", () => {
       await act(async () => photoTile(n)?.click());
       await act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
     }
-    // Все открыты во весь экран — их одобрит публикация. Проверка вендора — одной строкой «n/4»
-    // со ссылкой на страницу вендора, где её отмечают
+    // Все открыты во весь экран — их одобрит публикация. Проверка вендора — одной строкой «n/4»;
+    // отмечает её менеджер: модератору — кто, а не ссылка в тупик
     expect(blockers()).toEqual([t.vendorChecksDone(3, 4)]);
-    const toVendor = container.querySelector<HTMLAnchorElement>(".blockers li a");
-    expect(toVendor?.textContent).toBe(t.toVendor);
-    expect(toVendor?.getAttribute("href")).toBe(`/vendors/${LISTING.vendor.id}`);
+    expect(container.querySelector(".blockers li a")).toBeNull();
+    expect(container.querySelector(".blockers li .blocker-who")?.textContent).toBe(t.fixedByManager);
     // Осталась проверка вендора — главная кнопка говорит сколько, а не открывает шторку
     expect(button(t.actionLeft(t.actions.publish, 1))).toBeDefined();
     // Модератор решает по фото (все ждущие — одной кнопкой), но не загружает их
@@ -2209,7 +2208,7 @@ describe("переходы между объектами", () => {
   });
 
   it("опубликовать, пока чего-то не хватает: в кнопке — сколько осталось, нажатие ведёт к блоку «Что осталось», шторки и запроса нет", async () => {
-    mockApi(staff("moderator", ["catalog.read", "listings.publish", "listings.moderate", "listings.draft"]), {
+    mockApi(staff("admin", ALL_PERMISSIONS), {
       [`GET /api/staff/listings/${LISTING_ID}`]: json({
         ...LISTING,
         status: "review",
@@ -2226,6 +2225,8 @@ describe("переходы между объектами", () => {
     const card = container.querySelector(".next-step") as HTMLElement;
     expect(card.textContent).toContain(t.blockers.descriptions);
     expect(card.textContent).toContain(t.vendorChecksDone(3, 4));
+    // Администратор исправит сам: у пунктов — «Перейти»
+    expect(card.querySelector(".blocker-who")).toBeNull();
     expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
   });
 
@@ -2328,6 +2329,33 @@ describe("переходы между объектами", () => {
       version: LISTING.version,
       approvePhotos: [],
     });
+  });
+
+  it("модератор на проверке, опубликовать нельзя: решения — «Вернуть с причиной» и «Отклонить» на виду, пункты — «исправляет менеджер»", async () => {
+    mockApi(staff("moderator", ["catalog.read", "listings.publish", "listings.moderate", "listings.draft"]), {
+      [`GET /api/staff/listings/${LISTING_ID}`]: json({
+        ...LISTING,
+        status: "review",
+        blockers: { review: [], active: ["descriptions", "stir"] },
+      }),
+      [`GET /api/staff/listings/${LISTING_ID}/availability`]: json(AVAILABILITY),
+    });
+    await mount(`/listings/${LISTING_ID}`);
+    expect(button(t.actionLeft(t.actions.publish, 2))).toBeUndefined();
+    expect(button(t.returnWithReason)).toBeDefined();
+    expect(button(t.actions.reject)).toBeDefined();
+    const card = container.querySelector(".next-step") as HTMLElement;
+    expect(card.textContent).not.toContain(t.goTo);
+    expect([...card.querySelectorAll(".blocker-who")].map((el) => el.textContent)).toEqual([
+      t.fixedByManager,
+      t.fixedByManager,
+    ]);
+    // Вернуть — только с причиной: без неё отправить нельзя
+    await act(async () => button(t.returnWithReason)?.click());
+    const submit = container.querySelector<HTMLButtonElement>(".confirm button[type=submit]");
+    expect(submit?.disabled).toBe(true);
+    await type(container.querySelector(".confirm textarea") as HTMLTextAreaElement, "Нет описаний");
+    expect(submit?.disabled).toBe(false);
   });
 
   it("приостановить: подтверждение — залитой красной кнопкой, пока ждём сервер — «…»", async () => {
