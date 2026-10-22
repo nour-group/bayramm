@@ -713,6 +713,16 @@ button.ui-cal-day.is-partial:not(.is-out):not(.is-busy),
   cursor: not-allowed;
 }
 
+/* Идёт запрос: переключатель недоступен, но фокус на нём остаётся (aria-busy) */
+.ui-native[aria-busy="true"],
+.ui-native[aria-busy="true"] + .ui-switch-track {
+  cursor: progress;
+}
+
+.ui-native[aria-busy="true"] + .ui-switch-track {
+  opacity: 0.6;
+}
+
 /* ---------- группа вариантов ---------- */
 
 .ui-radios {

@@ -13,6 +13,8 @@ interface CheckProps {
   readonly children: ReactNode;
   readonly id?: string;
   readonly disabled?: boolean;
+  /** Идёт запрос: переключить нельзя, но фокус остаётся на месте (aria-busy, aria-disabled) */
+  readonly busy?: boolean;
   readonly "aria-invalid"?: boolean;
   readonly "aria-describedby"?: string;
   readonly className?: string;
@@ -25,11 +27,14 @@ function Check({
   children,
   id,
   disabled = false,
+  busy = false,
   className,
   "aria-invalid": invalid,
   "aria-describedby": describedBy,
 }: CheckProps & { kind: "check" | "switch" }) {
-  const change = (event: ChangeEvent<HTMLInputElement>) => onChange(event.target.checked);
+  const change = (event: ChangeEvent<HTMLInputElement>) => {
+    if (!busy) onChange(event.target.checked);
+  };
   return (
     <label
       className={[`ui-${kind}`, disabled ? "is-disabled" : "", className ?? ""].filter(Boolean).join(" ")}
@@ -41,6 +46,8 @@ function Check({
         role={kind === "switch" ? "switch" : undefined}
         checked={checked}
         disabled={disabled}
+        aria-disabled={busy || undefined}
+        aria-busy={busy || undefined}
         aria-invalid={invalid || undefined}
         aria-describedby={describedBy}
         onChange={change}

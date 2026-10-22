@@ -6,7 +6,11 @@
 
    Заголовок с крестиком «Закрыть» (подпись — из UiTextsProvider) и кнопки действий стоят на
    месте, прокручивается только тело: длинные фильтры не уводят «Показать» за край шторки.
-   У подтверждения (alertdialog) крестика нет — ответ даёт одна из двух кнопок. */
+   У подтверждения (alertdialog) крестика нет — ответ даёт одна из двух кнопок.
+
+   «Назад» (кнопка Telegram, системное «назад» Android, «назад» браузера) закрывает диалог тем
+   же путём, что крестик (back.ts). Фокус, выпавший из диалога (кнопка стала недоступной или
+   пропала), возвращается в него: Esc и Tab работают дальше. */
 
 import {
   type KeyboardEvent,
@@ -19,6 +23,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useBackLayer } from "./back";
 import { UiIcon } from "./icons";
 import { focusables, focusQuietly, surroundings, trapTab, useModal } from "./overlay";
 import { useUiTexts } from "./texts";
@@ -44,6 +49,53 @@ export interface DialogProps {
 
 export function Dialog({ open, ...props }: DialogProps) {
   return open ? <DialogLayer {...props} /> : null;
+}
+
+/** Открытые диалоги по порядку: фокус, выпавший на страницу, ловит верхний */
+const opened: HTMLElement[] = [];
+
+/**
+ * Фокус выпал из верхнего диалога на body (кнопка под фокусом стала disabled или пропала):
+ * вернуть его в диалог, а Esc и Tab, пришедшие уже на body, — обработать как в диалоге
+ */
+function useFocusKeeper(panel: RefObject<HTMLDivElement | null>, close: () => void): void {
+  const closing = useRef(close);
+  closing.current = close;
+  useEffect(() => {
+    const node = panel.current;
+    if (!node) return;
+    opened.push(node);
+    const isTop = () => opened[opened.length - 1] === node;
+    const escaped = () => {
+      const active = document.activeElement;
+      return !active || active === document.body || active === document.documentElement;
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      if (event.relatedTarget) return;
+      // Кнопка пропала из разметки или стала недоступной: фокус уже на body
+      setTimeout(() => {
+        if (isTop() && node.isConnected && escaped()) focusQuietly(node);
+      }, 0);
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (!isTop() || !escaped()) return;
+      if (event.key === "Escape" || event.key === "Esc") {
+        event.preventDefault();
+        closing.current();
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        focusQuietly(focusables(node)[0] ?? node);
+      }
+    };
+    node.addEventListener("focusout", onFocusOut);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      node.removeEventListener("focusout", onFocusOut);
+      document.removeEventListener("keydown", onKey);
+      const index = opened.indexOf(node);
+      if (index >= 0) opened.splice(index, 1);
+    };
+  }, [panel]);
 }
 
 function DialogLayer({
@@ -75,6 +127,8 @@ function DialogLayer({
   const first = useRef(initialFocus);
 
   useModal(layer, true);
+  useBackLayer(true, () => close.current());
+  useFocusKeeper(panel, () => close.current());
   // Снимается после inert: фокус вернётся на уже доступную кнопку
   useEffect(() => () => focusQuietly(back.current?.current ?? origin), [origin]);
   useLayoutEffect(() => {
