@@ -1467,15 +1467,19 @@ textarea.field-input {
   white-space: nowrap;
 }
 
+/* Кнопки: «Связаться» (значок и слово) и заявка — делят строку и растут вровень; не поместились
+   рядом (320px, «Заявка на другую дату») — заявка строкой ниже, во всю ширину */
 .bar-actions {
   display: flex;
   flex: 1 0 auto;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: var(--gap-9);
 }
 
-.venue-bar .btn-primary {
+.venue-bar .btn-primary,
+.venue-bar .btn.call {
   flex: 1 0 auto;
   padding: 0 16px;
   white-space: nowrap;
@@ -1488,20 +1492,22 @@ textarea.field-input {
   display: contents;
 }
 
-/* Подпись «Связаться» в панели — только в карточке на компьютере: на телефоне — кнопка-иконка
-   (её имя для диктора — «Связаться: <витрина>»; второй кнопки на витрине нет) */
-.call-label {
-  display: none;
-}
-
-/* Телефон до 430px: кегль цены и поля кнопки поменьше — обычная цена с «Оставить заявку»
-   помещается в одну строку и на 360px; длинная подпись или узбекская цена — две строки */
+/* Телефон до 430px: кегль цены и поля кнопок поменьше; цена — строкой над кнопками, кнопки —
+   поровну во всю ширину (имя «Связаться» для диктора — «Связаться: <витрина>») */
 @media (max-width: 429px) {
   .bar-price b {
     font-size: var(--fs-14);
   }
 
-  .venue-bar .btn-primary {
+  /* С кнопкой заявки (не в Telegram — там она внизу экрана, своя) */
+  .venue-bar.with-request .bar-price {
+    flex-basis: 100%;
+  }
+
+  .venue-bar .btn-primary,
+  .venue-bar .btn.call {
+    flex-basis: 0;
+    min-height: var(--hit-min);
     padding: 0 12px;
   }
 }
@@ -3155,19 +3161,6 @@ textarea.field-input {
 
   .venue-bar .bar-price .unit {
     font-size: var(--fs-13-5);
-  }
-
-  .venue-bar .icon-btn.call {
-    width: auto;
-    height: auto;
-    min-height: 48px;
-    gap: var(--gap-7);
-    padding: 0 16px;
-    font-weight: 700;
-  }
-
-  .call-label {
-    display: inline;
   }
 
   /* Кнопки — столбиком во всю ширину карточки, под ценой */
