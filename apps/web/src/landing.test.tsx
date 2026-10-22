@@ -55,6 +55,30 @@ describe("лендинг (/ в браузере)", () => {
     expect(document.querySelector('nav.site-nav a[aria-current="page"]')).toBeNull();
   });
 
+  it("связь с командой — в подвале и в «О площадке», если контакт указан; нет — ни строки", async () => {
+    const team = { telegram: "bayramm_team", phone: "+998901112233" };
+    await mount({ path: "/docs", identity: "guest", mock: { team } });
+    await waitFor(() => document.querySelector(".footer-team"), "строка в подвале");
+    const footer = document.querySelector(".footer-team");
+    expect(footer?.textContent).toContain("Связь с командой:");
+    expect(footer?.querySelector('a[href="https://t.me/bayramm_team"]')?.textContent).toBe(
+      "Написать в Telegram",
+    );
+    expect(footer?.querySelector('a[href="tel:+998901112233"]')?.textContent).toBe(
+      "Позвонить: +998 90 111 22 33",
+    );
+    expect(document.querySelector(".docs-page .team-help")?.textContent).toContain(
+      "Вопрос о Bayramm или жалоба на исполнителя — напишите команде:",
+    );
+    cleanup();
+
+    await mount({ path: "/docs", identity: "guest" });
+    await waitFor(() => document.querySelector(".site-footer"), "подвал");
+    await waitFor(() => document.querySelector(".footer-lang"), "язык в подвале");
+    expect(document.querySelector(".footer-team, .team-help")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/напишите нам/i);
+  });
+
   it("витрин нет — блока витрин нет, заглушек под видом витрин тоже; категории — «скоро»", async () => {
     await mount({ path: "/", identity: "guest", mock: { listings: [] } });
     await waitFor(() => !document.querySelector(".ln-cards"), "блок витрин скрыт");

@@ -18,6 +18,7 @@ import {
   startTelegramLink,
   widgetReturnPath,
 } from "./hub";
+import { markSendAfterSignIn } from "./screens/request-prefill";
 import {
   byText,
   cleanup,
@@ -142,6 +143,56 @@ describe("хаб входа /auth", () => {
     expect(byText("a", /Открыть Bayramm в Telegram/)?.getAttribute("href")).toBe(
       "https://t.me/bayramm_demo_bot?startapp",
     );
+  });
+
+  it("гость отправлял заявку: хаб называет её, телефон — из формы, бот — на эту витрину, путь назад", async () => {
+    const venue = LISTINGS[0];
+    if (!venue) throw new Error("нет демо-площадки");
+    const form = `/venue/${venue.slug}/request?date=2026-10-15`;
+    markSendAfterSignIn(venue.slug, venue.name);
+    window.sessionStorage.setItem(
+      `bayramm.web.draft.${venue.slug}`,
+      JSON.stringify({ phone: "90 123 45 67" }),
+    );
+    await mount({ path: authHref({ return: form }), identity: "guest", api: api({ phone: true }) });
+    await waitFor(() => document.querySelector("form.phone-code"), "форма телефона");
+    expect(document.querySelector(".auth-lead")?.textContent).toBe(
+      `Отправка заявки в «${venue.name}» — осталось войти`,
+    );
+    expect(field("Номер телефона")?.value).toBe("90 123 45 67");
+    expect(byText("a", /Открыть Bayramm в Telegram/)?.getAttribute("href")).toBe(
+      `https://t.me/bayramm_demo_bot?startapp=vendor_${venue.slug}`,
+    );
+    await click(byText("a", "Вернуться к заявке"));
+    await waitFor(() => `${window.location.pathname}${window.location.search}` === form, "назад к форме");
+  });
+
+  it("аккаунт отключён: контакт команды под ошибкой; не указан — ни ссылок, ни «напишите нам»", async () => {
+    const disabled = (method: string) =>
+      method === "verifyPhoneCode" ? new ApiError(403, "account_disabled") : null;
+    const signIn = async () => {
+      await type(field("Номер телефона"), "00 123 45 67");
+      await click(byText("button", "Получить код"));
+      await type(field("Код из сообщения"), DEMO_OTP_CODE);
+      await click(byText("button", "Войти"));
+    };
+    const team = { telegram: "bayramm_team", phone: "+998901112233" };
+    await mount({ path: "/auth", identity: "guest", api: api({ phone: true, team, failWith: disabled }) });
+    await waitFor(() => document.querySelector("form.phone-code"), "форма телефона");
+    await signIn();
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Аккаунт отключён.");
+    const help = document.querySelector(".team-help");
+    expect(help?.textContent).toContain("Напишите команде Bayramm — разберёмся:");
+    expect(help?.querySelector('a[href="https://t.me/bayramm_team"]')).not.toBeNull();
+    expect(help?.querySelector('a[href="tel:+998901112233"]')).not.toBeNull();
+    cleanup();
+
+    await mount({ path: "/auth", identity: "guest", api: api({ phone: true, failWith: disabled }) });
+    await waitFor(() => document.querySelector("form.phone-code"), "форма телефона");
+    await signIn();
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Аккаунт отключён.");
+    expect(document.querySelector(".team-help")).toBeNull();
+    expect(text()).not.toMatch(/напишите нам/i);
   });
 
   it("вход по телефону включён: подсказка под кнопкой Telegram упоминает и телефон", async () => {

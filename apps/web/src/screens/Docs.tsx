@@ -1,5 +1,6 @@
 import { Documents } from "../components/Documents";
 import { RichText } from "../components/RichText";
+import { TeamHelp } from "../components/TeamHelp";
 import { useLang } from "../context";
 import { useDocumentTitle } from "../hooks";
 
@@ -30,6 +31,7 @@ export function Docs() {
         <h3 className="sub-title">{t.i_city_h}</h3>
         <RichText blocks={t.i_city_b} />
         <RichText blocks={t.i_d3_b} />
+        <TeamHelp lead={t.teamAbout} />
       </section>
     </div>
   );

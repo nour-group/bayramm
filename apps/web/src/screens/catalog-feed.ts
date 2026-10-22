@@ -4,16 +4,16 @@ import { useOnReconnect } from "@bayramm/ui/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isAbort } from "../api/errors";
 import type { ClientApi } from "../api/types";
-import { CLIENT_CATEGORIES, hasCapacity } from "../categories";
+import { CLIENT_CATEGORIES, hasCapacity, hasDistrict } from "../categories";
 import { addDays, isIsoDate } from "../format";
-import { ALL_CATEGORIES } from "../routes";
+import { ALL_CATEGORIES, hrefFor } from "../routes";
 import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
 
 /* Фильтры каталога живут в адресе
    (?category=&q=&city=&district=&date=&part=&guests=&sort=&a.<поле>=): ссылка «похожие» из «Моих
    заявок», кнопки бота и «назад» из карточки возвращают ту же выдачу. Без category — все разделы
    одной выдачей («Все»). Место — везде, и в «Все»: город (его районы и выездные витрины без
-   района) или район (только он; город — его). Гости — только где вместимость (залы, рестораны),
+   района) или район (он и выездные; город — его; район — только где он есть у витрин раздела). Гости — только где вместимость (залы, рестораны),
    порядок «вместительнее» — там же. Время (part) — только вместе с датой: свободные в эту часть
    дня или весь день. Поиск (q) — вместе с разделом и фильтрами; с ним порядок по умолчанию —
    «сначала подходящие» (relevance). */
@@ -124,9 +124,10 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
     date: day,
     part: day === null ? null : (CATALOG_PARTS.find((p) => p === part) ?? null),
     guests: category && hasCapacity(category) ? parseGuests(query.get("guests")) : null,
-    // Коды города и района — как проверяет API: иначе 400 вместо выдачи
+    // Коды города и района — как проверяет API: иначе 400 вместо выдачи. Район — где он есть у
+    // витрин раздела (и в «Все»): кортеж и фото приезжают сами, у них только город
     city: city && PLACE_CODE.test(city) ? city : null,
-    district: district && PLACE_CODE.test(district) ? district : null,
+    district: district && PLACE_CODE.test(district) && (!category || hasDistrict(category)) ? district : null,
     sort: sortsOf(code, q !== null).find((s) => s === sort && s !== defaultSortOf({ q })) ?? null,
     attrs: category ? readAttrFilters(category, query) : NO_ATTRS,
   };
@@ -145,6 +146,28 @@ export function filtersQuery(filters: CatalogFilters): Record<string, string | n
     sort: filters.sort,
     ...filters.attrs,
   };
+}
+
+/**
+ * Кто ещё свободен в тот же день: раздел, дата, гости (где вместимость) и район витрины (где он
+ * есть) — «Показать похожие» в «Моих заявках» и «Кто ещё свободен» после отправки заявки
+ */
+export function sameDayHref(
+  categoryCode: string,
+  date: string | null,
+  guests: number | null,
+  district: string | null,
+): string {
+  const category = catalogCategory(categoryCode);
+  return hrefFor(
+    { name: "catalog" },
+    {
+      category: categoryCode,
+      date,
+      guests: category && hasCapacity(category) ? guests : null,
+      district: category && hasDistrict(category) ? district : null,
+    },
+  );
 }
 
 export function hasFilters(filters: CatalogFilters): boolean {

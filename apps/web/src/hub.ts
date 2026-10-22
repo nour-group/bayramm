@@ -62,6 +62,9 @@ export function saveReturn(path: string | null): void {
   if (safe) sessionSet(RETURN_KEY, safe);
 }
 
+/** Куда вернут после входа — не забывая (хаб говорит, что ждёт: заявка в форме) */
+export const peekReturn = (): string | null => safeReturn(sessionGet(RETURN_KEY));
+
 /** Куда вернуть после входа (и забыть); по умолчанию — профиль */
 export function takeReturn(fallback = "/profile"): string {
   const path = safeReturn(sessionGet(RETURN_KEY));

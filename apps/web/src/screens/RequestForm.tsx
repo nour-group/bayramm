@@ -22,12 +22,12 @@ import { type FormEvent, type ReactNode, useEffect, useId, useMemo, useRef, useS
 import { isApiError, isNotFound } from "../api/errors";
 import { categoryName, catText, clientCategory } from "../categories";
 import { useCalendarTexts } from "../components/Calendar";
-import { categoryHref } from "../components/Categories";
 import { ContactButton } from "../components/ContactSheet";
 import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
 import { EmptyState, ErrorState, Loading } from "../components/States";
+import { needsTeam, TeamHelp } from "../components/TeamHelp";
 import { BotLink } from "../components/TelegramCta";
 import { canSignIn, pick, useDictionaries, useLang, useServices } from "../context";
 import {
@@ -51,7 +51,7 @@ import { continueAtHub } from "../hub";
 import { Icon } from "../icons";
 import { hrefFor, useNav } from "../router";
 import { canRequestPhone, haptic, requestPhone, requestWriteAccess } from "../telegram";
-import { MAX_GUESTS, parseGuests } from "./catalog-feed";
+import { MAX_GUESTS, parseGuests, sameDayHref } from "./catalog-feed";
 import {
   budgetScale,
   COMMENT_MAX,
@@ -78,7 +78,7 @@ import {
   toCreateRequest,
   validate,
 } from "./request-draft";
-import { estimate, hasQty, suggestedQty } from "./request-estimate";
+import { estimate, fieldsFromQty, hasQty, qtyFieldOf, suggestedQty, withFieldQty } from "./request-estimate";
 import {
   lastRequest,
   markSendAfterSignIn,
@@ -268,8 +268,16 @@ function Consent({
   );
 }
 
-function Sent({ listing, created }: { listing: ListingDetail; created: RequestCreated }) {
+/** Отправленная заявка и её день — для «Кто ещё свободен» */
+interface SentRequest {
+  readonly created: RequestCreated;
+  readonly date: string | null;
+  readonly guests: number | null;
+}
+
+function Sent({ listing, sent }: { listing: ListingDetail; sent: SentRequest }) {
   const { t } = useLang();
+  const { created } = sent;
   const heading = useRef<HTMLHeadingElement>(null);
   useDocumentTitle(t.sentH);
 
@@ -304,9 +312,12 @@ function Sent({ listing, created }: { listing: ListingDetail; created: RequestCr
         <Link className="btn btn-secondary" href={hrefFor({ name: "requests" })}>
           {t.toMyRequests}
         </Link>
-        {/* Дальше искать — в том же разделе, откуда пришли (кортеж → кортежи) */}
-        <Link className="btn btn-secondary" href={categoryHref(listing.categoryCode)}>
-          {t.sentSearch}
+        {/* Дальше искать — в том же разделе на тот же день: гости и район, как у «похожих» */}
+        <Link
+          className="btn btn-secondary"
+          href={sameDayHref(listing.categoryCode, sent.date, sent.guests, listing.districtCode)}
+        >
+          {sent.date ? t.sentFreeOn(formatDayMonth(sent.date, t)) : t.sentSearch}
         </Link>
       </div>
     </section>
@@ -459,6 +470,7 @@ function ServicePick({
   qtyId,
   error,
   disabled,
+  qtyFrom,
   onToggle,
   onChange,
 }: {
@@ -470,6 +482,8 @@ function ServicePick({
   qtyId: string;
   error: string | undefined;
   disabled: boolean;
+  /** Подпись поля формы, из которого количество («Сколько часов»); null — своё поле */
+  qtyFrom: string | null;
   onToggle: (on: boolean) => void;
   onChange: (next: DraftService) => void;
 }) {
@@ -483,7 +497,9 @@ function ServicePick({
       </Checkbox>
       {chosen ? (
         <div className="svc-choice-more">
-          {hasQty(service.priceUnit) ? (
+          {hasQty(service.priceUnit) && qtyFrom !== null ? (
+            <p className="muted small svc-qty-from">{t.svcQtyFrom(chosen.qty, qtyFrom)}</p>
+          ) : hasQty(service.priceUnit) ? (
             <div className="field svc-qty">
               <label className="field-label" htmlFor={qtyId}>
                 {qtyQuestion(service.priceUnit, t)}
@@ -541,7 +557,7 @@ interface FormProps {
   readonly occasions: readonly OccasionItem[];
   readonly districts: readonly DictItem[];
   readonly consents: readonly ConsentText[];
-  readonly onCreated: (created: RequestCreated) => void;
+  readonly onCreated: (sent: SentRequest) => void;
   readonly onConsentsOutdated: () => void;
 }
 
@@ -559,10 +575,16 @@ const touched = (draft: Draft): boolean =>
   [draft.guests, draft.name, draft.phone, draft.comment].some((v) => v.trim() !== "") ||
   Object.keys(draft.values).length > 0;
 
+/** Ключи полей категории, которые форма сейчас показывает */
+const shownFieldKeys = (category: CategoryConfig, values: Draft["values"]): string[] =>
+  detailFields(category)
+    .filter((field) => fieldShown(field, values))
+    .map((field) => field.key);
+
 /**
  * Черновик формы: сохранённый в этой вкладке — как есть; иначе дата и гости — из адреса (каталог →
- * витрина → форма), имя, телефон и повод — из прошлой заявки этой вкладки (request-prefill.ts),
- * имя без неё — из Telegram. Согласия здесь не бывает: их отмечают каждый раз
+ * витрина → форма), без них — из прошлой заявки этой вкладки, как и имя, телефон и повод
+ * (request-prefill.ts); имя без неё — из Telegram. Согласия здесь не бывает: их отмечают каждый раз
  */
 function initialDraft(
   listing: ListingDetail,
@@ -573,8 +595,10 @@ function initialDraft(
   telegramName: string,
 ): { readonly draft: Draft; readonly prefilled: boolean } {
   const saved = loadDraft(listing.slug);
-  const date = query.get("date");
-  const guests = parseGuests(query.get("guests"));
+  // Прошлая заявка вкладки: контакты, повод, а без даты и гостей в адресе — и они
+  const last = lastRequest();
+  const date = query.get("date") ?? last?.date ?? null;
+  const guests = parseGuests(query.get("guests")) ?? last?.guests ?? null;
   // Часть дня с витрины (нажали на свободное утро): она и выбрана — если на дату свободна
   const part = query.get("part");
   const takenOnDate = listing.busyParts.find((p) => p.date === date)?.parts ?? [];
@@ -589,8 +613,7 @@ function initialDraft(
   const lead = leadDaysOf(listing, saved?.services.map((s) => s.id) ?? []);
   const day =
     isIsoDate(date) && date >= firstDate(today, lead) && !listing.busyDates.includes(date) ? date : null;
-  // Прошлая заявка вкладки: повод — если он есть в списке; его части дня — как при выборе повода
-  const last = lastRequest();
+  // Повод прошлой заявки — если он есть в списке; его части дня — как при выборе повода
   const occasion = occasions.find((o) => o.code === last?.occasion) ?? null;
   const takenOnDay = listing.busyParts.find((p) => p.date === day)?.parts ?? [];
   const occasionTime =
@@ -604,12 +627,15 @@ function initialDraft(
       : {};
   const phone = last && isPhoneDigits(last.phone) ? maskPhoneDigits(last.phone) : "";
   const name = last?.name || telegramName;
+  const services = saved?.services ?? [];
   return {
     draft: {
       ...EMPTY_DRAFT,
       ...parts,
       ...occasionTime,
-      services: saved?.services ?? [],
+      services,
+      // Количество, выбранное на витрине («3 часа»), — в поле формы той же единицы
+      values: fieldsFromQty(services, listing.services, {}, shownFieldKeys(category, {})),
       date: day,
       guests:
         guests === null || category.requestForm.guests === "hidden"
@@ -656,6 +682,8 @@ function Form({
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  // Заявки с аккаунта ограничены: тут поможет только команда — её контакт под ошибкой
+  const [sendTeam, setSendTeam] = useState(false);
   const [serverErrors, setServerErrors] = useState<Partial<Record<Field, string>>>({});
   const calendarTexts = useCalendarTexts();
   const id = useId();
@@ -727,7 +755,13 @@ function Form({
     });
   const toggleWholeDay = (on: boolean) =>
     update({ wholeDay: on, dayParts: on ? [] : draft.dayParts, partsTouched: true });
-  const checked = submitted ? { ...serverErrors, ...validate(draft, context, t) } : serverErrors;
+  // Количество услуги в единице поля формы («Сколько часов») — из этого поля: спрашиваем один раз
+  const fieldKeys = shownFieldKeys(category, draft.values);
+  const current: Draft = {
+    ...draft,
+    services: withFieldQty(draft.services, listing.services, draft.values, fieldKeys),
+  };
+  const checked = submitted ? { ...serverErrors, ...validate(current, context, t) } : serverErrors;
   // Гостю согласие спросим после входа — ошибки «не отмечено» до него нет
   const errors = guest ? withoutConsent(checked) : checked;
   const guests = parseGuests(draft.guests);
@@ -739,11 +773,16 @@ function Form({
   );
   const minDate = firstDate(today, lead);
   const svcField = servicesField(category);
+  const qtyLabelOf = (service: PublicService): string | null => {
+    const key = qtyFieldOf(service, fieldKeys);
+    const field = key === null ? undefined : detailFields(category).find((f) => f.key === key);
+    return field ? catText(lang, field.label) : null;
+  };
   const scale = budgetScale(category);
   const budgetLabels = category.code === "hall" ? t.budgets : t.budgetsSmall;
   const chosenEstimate = estimate(
     listing.services,
-    draft.services.map((s) => ({ id: s.id, qty: parseQty(s.qty), options: s.options })),
+    current.services.map((s) => ({ id: s.id, qty: parseQty(s.qty), options: s.options })),
     guests,
   );
 
@@ -786,11 +825,11 @@ function Form({
     setSendError(null);
     setServerErrors({});
     // Гостю согласие — после входа: проверяем остальное и уводим во вход, черновик — во вкладке
-    const found = guest ? withoutConsent(validate(draft, context, t)) : validate(draft, context, t);
+    const found = guest ? withoutConsent(validate(current, context, t)) : validate(current, context, t);
     const first = fieldOrder(category, draft, parts).find((field) => found[field]);
     if (guest && !first) {
       saveDraft(listing.slug, draft);
-      markSendAfterSignIn(listing.slug);
+      markSendAfterSignIn(listing.slug, listing.name);
       continueAtHub();
       return;
     }
@@ -801,16 +840,22 @@ function Form({
     }
     setSending(true);
     try {
-      const body = toCreateRequest(draft, listing, category, {
+      const body = toCreateRequest(current, listing, category, {
         transfer: transferText,
         notify: notify ? notifyText : null,
       });
       const result = await api.createRequest(body);
       clearDraft(listing.slug);
-      // Следующей заявке в этой вкладке — те же контакты и повод (согласия — нет)
-      rememberLastRequest({ name: draft.name, phone: draft.phone, occasion: draft.occasion });
+      // Следующей заявке в этой вкладке — те же контакты, повод, дата и гости (согласия — нет)
+      rememberLastRequest({
+        name: draft.name,
+        phone: draft.phone,
+        occasion: draft.occasion,
+        date: draft.date,
+        guests: parseGuests(draft.guests),
+      });
       haptic(webApp, "success");
-      onCreated(result);
+      onCreated({ created: result, date: draft.date, guests: parseGuests(draft.guests) });
     } catch (error) {
       haptic(webApp, "error");
       if (isApiError(error) && error.status === 409 && error.existingId) {
@@ -818,6 +863,7 @@ function Form({
         return;
       }
       setSendError(sendErrorText(error, t, listing.capMax ?? MAX_GUESTS));
+      setSendTeam(needsTeam(error));
       setServerErrors(serverFieldErrors(error, draft, category, t));
       // День занят целиком — в календаре формы он тоже станет занятым
       const sentDate = draft.date;
@@ -1024,7 +1070,8 @@ function Form({
               <ServicePick
                 key={service.id}
                 service={service}
-                chosen={draft.services.find((s) => s.id === service.id)}
+                chosen={current.services.find((s) => s.id === service.id)}
+                qtyFrom={qtyLabelOf(service)}
                 pickId={i === 0 ? fieldId("services") : `${fieldId(`svc.${service.id}`)}-pick`}
                 qtyId={fieldId(`svc.${service.id}`)}
                 error={errors[`svc.${service.id}`]}
@@ -1171,17 +1218,19 @@ function Form({
           {sendError}
         </p>
       ) : null}
+      {sendError && sendTeam ? <TeamHelp /> : null}
 
-      {/* Над кнопками: на телефоне панель прилипает к низу, пометка — в конце формы. Гостю — что
-          заявка уйдёт после входа и чем войти (телефон — если вход по нему включён) */}
-      <p className="bar-note">
-        {guest
-          ? t.rqGuestSend(methods.status === "ready" && methods.data !== null && methods.data.phone)
-          : t.requestNote}
-      </p>
-      {guest ? <BotLink slug={listing.slug} /> : null}
-      {/* Отказ и отправка — одного размера (правило продукта о согласии) */}
-      <div className="action-bar form-bar" ref={formBar}>
+      {/* Над кнопками: на телефоне панель прилипает к низу, пометка — в конце формы */}
+      {guest ? <BotLink slug={listing.slug} /> : <p className="bar-note">{t.requestNote}</p>}
+      {/* Отказ и отправка — одного размера (правило продукта о согласии). Гостю пометка — в самой
+          панели, над «Войти и отправить»: что заявка уйдёт после входа и чем войти (телефон —
+          если вход по нему включён); на телефоне — у прилипшей кнопки, а не в конце страницы */}
+      <div className={guest ? "action-bar form-bar with-note" : "action-bar form-bar"} ref={formBar}>
+        {guest ? (
+          <p className="bar-note form-bar-note">
+            {t.rqGuestSend(methods.status === "ready" && methods.data !== null && methods.data.phone)}
+          </p>
+        ) : null}
         <button type="button" className="btn btn-secondary" onClick={back}>
           {t.back}
         </button>
@@ -1191,7 +1240,7 @@ function Form({
           disabled={sending || (!guest && !transferText)}
           aria-busy={sending}
         >
-          {sending ? t.sending : t.rqSend}
+          {sending ? t.sending : guest ? t.rqSendGuest : t.rqSend}
         </button>
       </div>
     </form>
@@ -1208,7 +1257,7 @@ export function RequestForm({ slug }: { slug: string }) {
     () => api.peek?.listing(slug),
   );
   // Итог — здесь, а не в форме: смена языка перезагружает тексты согласий и форму
-  const [created, setCreated] = useState<RequestCreated | null>(null);
+  const [created, setCreated] = useState<SentRequest | null>(null);
   const lastConsents = useRef<readonly ConsentText[] | null>(null);
   const signedIn = canSignIn(identity);
   // Тексты согласий витрина уже попросила заранее (кэш вкладки) — форма без заглушки. Гость
@@ -1226,7 +1275,7 @@ export function RequestForm({ slug }: { slug: string }) {
   // Вкладку называем по витрине: «Заявка: Lola zali · Bayramm» (так же — разметка воркера)
   useDocumentTitle(listing.status === "ready" ? `${t.rqTitle}: ${listing.data.name}` : t.rqTitle);
 
-  if (created && listing.status === "ready") return <Sent listing={listing.data} created={created} />;
+  if (created && listing.status === "ready") return <Sent listing={listing.data} sent={created} />;
   if (listing.status === "error")
     return isNotFound(listing.error) ? (
       <EmptyState

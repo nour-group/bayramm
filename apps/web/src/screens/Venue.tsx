@@ -598,17 +598,19 @@ function VenueView({ listing, requestHref }: { listing: ListingDetail; requestHr
       <div className="venue-side">
         <RequestNote />
         {/* Цена целиком, без многоточия: не помещается рядом с кнопками — кнопки строкой ниже */}
-        <div className="action-bar venue-bar" ref={bar}>
+        <div className={nativeMain ? "action-bar venue-bar" : "action-bar venue-bar with-request"} ref={bar}>
           <div className="bar-price">
             <b>{price.amount}</b>
             <span className="unit">{price.unit}</span>
             {picked.length > 0 ? <span className="bar-chosen">{t.svcChosenN(picked.length)}</span> : null}
           </div>
           <div className="bar-actions">
+            {/* Значок и слово «Связаться» на любой ширине: телефон — до заявки (правило
+                продукта), и кнопка говорит об этом сама, не одним значком */}
             <ContactButton
               slug={listing.slug}
               name={listing.name}
-              className="icon-btn call"
+              className="btn btn-secondary call"
               ariaLabel={`${t.contactBtn}: ${listing.name}`}
             >
               <Icon name="phone" size={20} />

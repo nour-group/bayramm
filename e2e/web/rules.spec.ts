@@ -111,13 +111,16 @@ async function expectContactsFirst(
   const desktop = isDesktop(page);
   // Номера в карточке нет: он — в окне «Связаться»
   await expect(page.locator(`a[href="tel:${venue.phone}"]`)).toHaveCount(0);
-  // Кнопка — одна: на телефоне — значок в панели внизу, на компьютере — в карточке справа;
-  // везде — на экране без прокрутки
+  // Кнопка — одна: на телефоне — в панели внизу, на компьютере — в карточке справа; везде — на
+  // экране без прокрутки и со словом «Связаться», не одним значком
   const barCall = page.locator(".venue-bar button.call");
   await expect(barCall).toBeVisible();
   await expect(barCall).toBeInViewport();
   await expect(barCall).toHaveAccessibleName(`${ru.contactBtn}: ${venue.name}`);
-  if (desktop) await expect(barCall).toContainText(ru.contactBtn);
+  await expect(barCall).toContainText(ru.contactBtn);
+  expect(
+    await barCall.locator(".call-label").evaluate((el) => el.getBoundingClientRect().width),
+  ).toBeGreaterThan(0);
   await expect(page.getByRole("button", { name: ru.contactBtn }).locator("visible=true")).toHaveCount(1);
   // Цена в панели не уходит под кнопку: рядом с ней или над ней (на компьютере и когда кнопки
   // не поместились рядом — строкой ниже)
@@ -144,6 +147,8 @@ async function expectContactsFirst(
   await expect(page.locator("form.request")).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
+  // Запись шторки в истории снимается шагом назад — дождаться его: следующий goto он бы отменил
+  await page.waitForFunction(() => !(window.history.state && "uiLayer" in window.history.state));
 }
 
 test.describe("тексты экранов", () => {

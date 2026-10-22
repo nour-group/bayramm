@@ -246,10 +246,13 @@ test.describe("гость и вход", () => {
     await expect(form.getByRole("spinbutton", { name: ru.rqG })).toHaveValue("120");
     await expect(form.getByRole("checkbox", { name: new RegExp(service.name.ru) })).toBeChecked();
     await expect(form.locator(".consents input[type=checkbox]")).toHaveCount(0);
-    await expect(page.locator(".bar-note")).toHaveText(ru.rqGuestSend(true));
+    // Кнопка говорит, что будет: вход, потом отправка; пометка — в панели у кнопки
+    await expect(page.locator(".form-bar .bar-note")).toHaveText(ru.rqGuestSend(true));
+    const guestSend = page.locator(".form-bar").getByRole("button", { name: ru.rqSendGuest });
+    if (!isDesktop(page)) await expect(guestSend).toBeInViewport();
 
-    // «Отправить» с пустыми полями — ошибки здесь же, во вход не уводит
-    await form.getByRole("button", { name: ru.rqSend }).click();
+    // «Войти и отправить» с пустыми полями — ошибки здесь же, во вход не уводит
+    await guestSend.click();
     await expect(form.getByText(ru.errOcc)).toBeVisible();
     await expect(page).toHaveURL((url) => url.pathname === PATHS.request(VENUE.slug));
 
@@ -262,10 +265,18 @@ test.describe("гость и вход", () => {
     const hub = page.waitForRequest(
       (request) => request.isNavigationRequest() && new URL(request.url()).pathname === "/auth",
     );
-    await form.getByRole("button", { name: ru.rqSend }).click();
+    await guestSend.click();
     expect(new URL((await hub).url()).searchParams.get("return")).toBe(requestPath);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(ru.authTitle);
     expect(new URL(page.url()).search).toBe("");
+    // Хаб знает, какая заявка ждёт: называет её, номер — из формы, бот — на эту витрину
+    await expect(page.locator(".auth-lead")).toHaveText(ru.authForRequest(VENUE.name));
+    await expect(page.getByLabel(ru.authPhoneLabel).first()).toHaveValue("90 123 45 67");
+    await expect(page.getByRole("link", { name: ru.authOpenBot })).toHaveAttribute(
+      "href",
+      new RegExp(`startapp=vendor_${VENUE.slug}$`),
+    );
+    await expect(page.getByRole("link", { name: ru.authBackToRequest })).toHaveAttribute("href", requestPath);
 
     await page.getByLabel(ru.authPhoneLabel).first().fill("00 123 45 67");
     await page.getByRole("button", { name: ru.authSendCode }).click();

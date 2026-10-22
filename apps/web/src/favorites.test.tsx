@@ -39,15 +39,23 @@ describe("избранное гостя (без входа)", () => {
     await click(heart);
     expect(heartOf(A.name)?.getAttribute("aria-pressed")).toBe("true");
     expect(stored()).toEqual([A.id]);
-    // У гостя сайта вкладок нет: «Сохранённое» — раздел в шапке (на телефоне — в меню)
-    expect(toast()).toContain(
-      "Сохранили. Список — в разделе «Сохранённое» вверху страницы, входить не нужно.",
-    );
+    // У гостя сайта вкладок нет: «Сохранённое» — раздел в шапке (на телефоне — в меню), а в
+    // уведомлении — «Открыть»
+    expect(toast()).toContain("Сохранили. Список — в «Сохранённом», входить не нужно.");
     expect(toast()).not.toContain("вкладк");
+    expect(document.querySelector(".ui-toast-action")?.textContent).toBe("Открыть");
 
     await click(heartOf(A.name));
     expect(heartOf(A.name)?.getAttribute("aria-pressed")).toBe("false");
     expect(window.localStorage.getItem(FAVORITES_KEY)).toBeNull();
+  });
+
+  it("«Открыть» в уведомлении ведёт в «Сохранённое»", async () => {
+    await mount({ path: "/catalog", identity: "guest" });
+    await waitFor(() => heartOf(A.name), "сердечко на карточке");
+    await click(heartOf(A.name));
+    await click(document.querySelector(".ui-toast-action"));
+    await waitFor(() => window.location.pathname === "/favorites", "раздел «Сохранённое»");
   });
 
   it("раздел «Сохранённое» у гостя: в шапке рядом с каталогом, отмеченные карточки, снятое уходит сразу", async () => {

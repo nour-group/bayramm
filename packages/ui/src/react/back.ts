@@ -102,6 +102,8 @@ let ownPop: { readonly href: string } | null = null;
 let screenPop = false;
 let historyOn = true;
 let timer: ReturnType<typeof setTimeout> | null = null;
+/** Документ уходит на другой адрес (ссылка, вход, переход): history.go отменил бы этот переход */
+let leaving = false;
 
 const depthOf = (state: unknown): number => {
   const value = state && typeof state === "object" ? (state as Record<string, unknown>)[MARK] : undefined;
@@ -144,13 +146,26 @@ export function setBackHistory(enabled: boolean): void {
 
 // Слушаем с загрузки модуля: обработчики одного объекта зовутся по порядку подписки, и наш должен
 // успеть раньше маршрутизатора приложения, чтобы остановить popstate своей записи
-if (typeof window !== "undefined" && typeof window.addEventListener === "function")
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("popstate", onPop, true);
+  window.addEventListener("beforeunload", () => {
+    leaving = true;
+  });
+  // Переход не состоялся (tel:, загрузка файла, вернулись из кэша) — страница жива: досчитать записи
+  const stay = () => {
+    if (!leaving) return;
+    leaving = false;
+    later();
+  };
+  window.addEventListener("pageshow", stay);
+  window.addEventListener("pointerdown", stay, true);
+  window.addEventListener("keydown", stay, true);
+}
 
 function syncHistory(): void {
   if (!historyOn || typeof window === "undefined" || typeof window.history?.pushState !== "function") return;
   // Свой шаг назад ещё идёт — досчитаем, когда придёт
-  if (ownPop) return;
+  if (ownPop || leaving) return;
   // Экран сменился, пока слой был открыт (новая запись без отметки): записи слоёв — под ней
   entries = Math.min(entries, depthOf(window.history.state));
   while (entries < layers.length) {
@@ -241,6 +256,7 @@ export function resetBackLayers(): void {
   entries = 0;
   ownPop = null;
   screenPop = false;
+  leaving = false;
   screenWants = false;
   consuming = false;
   if (timer !== null) clearTimeout(timer);

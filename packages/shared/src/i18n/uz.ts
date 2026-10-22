@@ -8,6 +8,7 @@
 
 import type { Dict } from "./dict";
 import { type Inline, list, p, strong, warn } from "./rich";
+import { lowerFirst } from "./text-case";
 
 export const uz: Dict = {
   cats: "Nima qidiryapsiz",
@@ -215,6 +216,7 @@ export const uz: Dict = {
   chMailMsg: "Pochta ilovasi ochiladi.",
   sentHome: "«Tadbirim»ga",
   sentSearch: "Qidiruvga",
+  sentFreeOn: (date: string) => `${date} kuni yana kim boʻsh`,
   meVer: "prototip versiyasi",
   calFreeN: (n: number) => `${n} kun boʻsh`,
   calBusyN: (n: number) => `${n} kun band`,
@@ -259,6 +261,7 @@ export const uz: Dict = {
   rqReq: "majburiy",
   rqOpt: "ixtiyoriy",
   rqSend: "Soʻrov yuborish",
+  rqSendGuest: "Kirib yuborish",
   rqNote: "Soʻrov joyni biriktirmaydi. Sanani hamkor tasdiqlaydi.",
   permTitle: "Maʼlumotlar hamkorga berilsinmi?",
   permWho: (n: string) => `«${n}» hamkori koʻradi:`,
@@ -329,7 +332,7 @@ export const uz: Dict = {
   anyDistrict: "barcha tumanlar",
   fPlace: "Shahar va tuman",
   anyPlace: "Hamma joyda",
-  wholeCity: (city: string) => `${city} — butun shahar`,
+  wholeCity: (city: string) => `Butun ${city}`,
   anyDatePill: "Istalgan sana",
   guestsPill: "Nechta mehmon",
   extraFilters: "Qoʻshimcha filtrlar",
@@ -393,7 +396,7 @@ export const uz: Dict = {
   consentMissing: "Rozilik matnini yuklab boʻlmadi. Usiz soʻrov yuborib boʻlmaydi.",
   sending: "Yuborilmoqda…",
   errSend: "Soʻrovni yuborib boʻlmadi. Qayta urinib koʻring.",
-  errBlocked: "Bu hisobdan soʻrov yuborish cheklangan. Bizga yozing.",
+  errBlocked: "Bu hisobdan soʻrov yuborish cheklangan.",
   errDailyLimit: "Bugun bu hisobdan juda koʻp soʻrov yuborildi. Ertaga urinib koʻring.",
   errConsentOutdated: "Rozilik matni yangilandi. Uni oʻqib, qayta belgilang.",
   openInTg: "Telegramda ochish",
@@ -406,6 +409,7 @@ export const uz: Dict = {
   st_expired: "muddati oʻtdi",
   dueBy: (time: string) => `javob ${time} gacha`,
   answeredIn: (duration: string) => `${duration} ichida javob berdi`,
+  contactedByTeam: "Bayramm jamoasi hamkor bilan bogʻlandi — u siz bilan oʻzi bogʻlanadi",
   durHours: (h: number) => `${h} soat`,
   durMinutes: (m: number) => `${m} daqiqa`,
   dr_busy: "sana band",
@@ -468,6 +472,9 @@ export const uz: Dict = {
   // ── вход и аккаунт (хаб /auth, профиль) ─────────────────────────────────
   authTitle: "Bayrammga kirish",
   authLead: "Soʻrov yuborish va javoblarni koʻrish uchun kiring. Parol kerak emas.",
+  authForRequest: (name: string | null) =>
+    name ? `«${name}»ga soʻrov yuborish — faqat kirish qoldi` : "Soʻrov toʻldirildi — faqat kirish qoldi",
+  authBackToRequest: "Soʻrovga qaytish",
   authForVendor: "Kirgandan keyin hamkor kabineti ochiladi.",
   authForAdmin: "Kirgandan keyin jamoa paneli ochiladi.",
   authLinkTitle: "Telegramni ulash",
@@ -497,7 +504,7 @@ export const uz: Dict = {
   authErrAttempts: "Beshta notoʻgʻri urinish. Yangi kod soʻrang.",
   authErrTooSoon: (seconds: number) => `Yangi kodni ${seconds} soniyadan keyin soʻrash mumkin.`,
   authErrLimit: "Kodlar juda koʻp soʻraldi. Bir necha daqiqadan keyin urinib koʻring.",
-  authErrDisabled: "Hisob oʻchirilgan. Bizga yozing — hal qilamiz.",
+  authErrDisabled: "Hisob oʻchirilgan.",
   authErrPhoneOff: "Telefon orqali kirish hozircha mavjud emas. Telegram orqali kiring.",
   authErrDelivery: "Kodni yuborib boʻlmadi. Qayta urinib koʻring.",
   authErr: "Kirib boʻlmadi. Qayta urinib koʻring.",
@@ -517,7 +524,12 @@ export const uz: Dict = {
   accAddTelegram: "Telegramni ulash",
   accLinked: "Tayyor: kirish usuli qoʻshildi.",
   accErrTaken:
-    "Bu kirish usuli boshqa Bayramm hisobida. Oʻsha usul bilan kiring va ortiqcha hisobni oʻchiring yoki bizga yozing.",
+    "Bu kirish usuli boshqa Bayramm hisobida. Oʻsha usul bilan kiring va ortiqcha hisobni oʻchiring.",
+  teamTitle: "Jamoa bilan aloqa",
+  teamHelp: "Bayramm jamoasiga yozing — hal qilamiz:",
+  teamAbout: "Bayramm haqida savol yoki hamkor ustidan shikoyat — jamoaga yozing:",
+  teamTelegram: "Telegramda yozish",
+  teamCall: (phone: string) => `Qoʻngʻiroq qilish: ${phone}`,
   accErrKindTaken: "Hisobda bunday kirish usuli allaqachon bor.",
   // избранное (подписи к текстам прототипа sv*)
   favToggle: (name: string) => `Saqlash: ${name}`,
@@ -602,7 +614,8 @@ export const uz: Dict = {
   qtySet: (n: number) => `${n} toʻplam`,
   qtyTable: (n: number) => `${n} stol`,
   catSwitch: "Katalog boʻlimlari",
-  catTitle: (name: string) => `Toshkentdagi ${String(name).toLowerCase()}`,
+  // сокращение («FHDYo») — как есть
+  catTitle: (name: string) => `Toshkentdagi ${lowerFirst(String(name))}`,
   catSoon: "tez orada",
   catSoonH: (name: string) => `«${name}» — tez orada katalogda`,
   catSoonP:
@@ -643,6 +656,7 @@ export const uz: Dict = {
   svcMin: (qty: string) => `kamida ${qty}`,
   svcLead: (n: number) => `${n} kun oldin buyurtma`,
   svcIncludes: "Nimalar kiradi",
+  svcQtyFrom: (qty: string, field: string) => `Miqdori: ${qty} — «${field}» maydonidan`,
   svcOptions: "Qoʻshimcha",
   svcPick: "Soʻrovga qoʻshish",
   svcPicked: "Soʻrovda",
@@ -680,7 +694,9 @@ export const uz: Dict = {
   errPartBusy: (part: string) =>
     `Bu vaqt (${part}) hamkorda band — boshqasini tanlang yoki qoʻngʻiroq qiling.`,
   savedApp: "Saqlandi. Roʻyxat — «Saqlanganlar» boʻlimida.",
-  savedGuest: "Saqlandi. Roʻyxat — sahifa tepasidagi «Saqlanganlar» boʻlimida, kirish shart emas.",
+  savedGuest: "Saqlandi. Roʻyxat — «Saqlanganlar»da, kirish shart emas.",
+  // кнопка в уведомлении «Сохранили» — к списку
+  savedOpen: "Ochish",
   svEmptyPSigned: "Kartochkalardagi yurakchani bosing — roʻyxat shu yerda yigʻiladi va hisobingizda qoladi.",
   lnCatsH: "Nimalarni topish mumkin",
   metaCatDesc: (name: string, what: string) =>
@@ -742,8 +758,8 @@ export const uz: Dict = {
       : "Soʻrov bepul. Uni Telegram orqali kirgandan keyin yuborasiz: shunda hamkor sizga javob bera oladi.",
   rqGuestSend: (phone: boolean): string =>
     phone
-      ? "Kirgandan keyin yuboramiz — Telegram yoki telefon raqami orqali. Toʻldirilganlar shaklda qoladi."
-      : "Telegram orqali kirgandan keyin yuboramiz. Toʻldirilganlar shaklda qoladi.",
+      ? "Kirgandan keyin yuboramiz — Telegram yoki raqam orqali. Toʻldirilganlar qoladi."
+      : "Telegram orqali kirgandan keyin yuboramiz. Toʻldirilganlar qoladi.",
   rqConsentAfterSignIn:
     "Maʼlumotlarni hamkorga berishga rozilikni kirgandan keyin — yuborishdan oldin belgilaysiz.",
   rqSignedIn: "Kirdingiz, toʻldirilganlar joyida. Rozilikni belgilang va soʻrovni yuboring.",
@@ -766,6 +782,7 @@ export const uz: Dict = {
   // раздел каталога «Все»
   catAll: "Barchasi",
   catAllTitle: "Katalog: bayram uchun hammasi",
+  catAllShort: "Bayram uchun hammasi",
   metaCatalogAllDesc:
     "Toshkentda bayram uchun hammasi: toʻyxonalar, kortejlar, foto, tortlar va boshqalar — narxlar, boʻsh kunlar va hamkorlar kontaktlari.",
   catAllSoonH: "Katalog tez orada toʻldiriladi",

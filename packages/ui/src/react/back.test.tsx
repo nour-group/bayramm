@@ -138,6 +138,24 @@ describe("«назад» закрывает открытый слой", () => {
     window.removeEventListener("popstate", screen);
   });
 
+  it("браузер: документ уходит на другой адрес — запись шторки не снимаем (history.go отменил бы переход)", async () => {
+    window.history.replaceState({ idx: 4 }, "", "/venue/lola");
+    render(<Sheet />);
+    await click(opener());
+    expect(window.history.state).toMatchObject({ idx: 4, uiLayer: 1 });
+    const go = vi.spyOn(window.history, "go");
+    // Ссылка на другой документ: beforeunload раньше, чем закрытие шторки досчитает записи
+    window.dispatchEvent(new Event("beforeunload"));
+    await click(document.querySelector<HTMLButtonElement>(".ui-dialog-close"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(go).not.toHaveBeenCalled();
+    // Переход не состоялся (tel:) — страница жива: первое касание досчитывает
+    window.dispatchEvent(new Event("pointerdown"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(go).toHaveBeenCalledWith(-1);
+    go.mockRestore();
+  });
+
   it("слой не закрылся (спросили о несохранённом) — запись возвращается", async () => {
     render(<Sheet keep />);
     await click(opener());

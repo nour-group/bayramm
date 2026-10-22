@@ -2,7 +2,8 @@
    группа вариантов, число, дата, время, файлы, поиск (и поиск с подсказками), диалог, уведомления, подсказка;
    связь (есть ли сеть и баннер «нет связи»); прилипшие панели (высота — в scroll-padding); «назад»
    закрывает открытый слой (back.ts); тихое перечитывание списков и «сейчас» для сроков (revalidate.ts);
-   граница экрана (кусок не загрузился — «Повторить» вместо пустой страницы).
+   граница экрана (кусок не загрузился — «Повторить» вместо пустой страницы); контакт команды
+   Bayramm (Telegram и телефон — что указано).
    Стили — @bayramm/ui/kit.css (только токены), тексты — из словаря приложения. */
 
 export {
@@ -51,6 +52,12 @@ export {
 } from "./SearchSuggest";
 export { Select, type SelectOption, type SelectProps } from "./Select";
 export { type StickyEdge, stickyBar, useStickyBar } from "./sticky";
+export {
+  hasTeamContact,
+  TeamContact,
+  type TeamContactProps,
+  type TeamContactValue,
+} from "./TeamContact";
 export { TimeField, type TimeFieldProps, timeOptions } from "./TimeField";
 export {
   type ToastAction,

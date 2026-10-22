@@ -309,6 +309,7 @@ export function demoRequests(listings: readonly ListingDetail[], now: number): C
       slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),
       firstResponseAt:
         answeredAfter === null ? null : new Date(createdAt + answeredAfter * HOUR).toISOString(),
+      firstResponseBy: answeredAfter === null ? null : ("vendor_user" as const),
       slaBreached: answeredAfter === null && hoursAgo > 12,
       listing: pickListing(listing),
     };
@@ -346,6 +347,17 @@ export function demoRequests(listings: readonly ListingDetail[], now: number): C
       guests: 150,
       dayParts: [],
       details: { weight_kg: 6, tiers: 3, filling: "berry", fulfillment: "delivery", services: [cakeChoice] },
+    });
+  // «Связались» после срока отметила команда: исполнитель сам не ответил — похожие остаются
+  const late = halls[4];
+  if (late)
+    out.push({
+      ...base(late, 6, "contacted", 20, 14),
+      firstResponseBy: "staff",
+      slaBreached: true,
+      guests: Math.min(150, late.capMax ?? 150),
+      dayParts: [],
+      details: {},
     });
   return out;
 }
@@ -545,6 +557,8 @@ export interface MockOptions {
   readonly turnstileSiteKey?: string | null;
   /** Избранное демо-аккаунта (id площадок, последние отмеченные — первыми) */
   readonly favorites?: readonly string[];
+  /** Контакт команды (настройка панели); по умолчанию не указан */
+  readonly team?: { readonly telegram: string | null; readonly phone: string | null };
   /** Площадки «сняты с публикации»: в выдаче, карточках и избранном их нет, карточка — 404 */
   readonly hidden?: readonly string[];
 }
@@ -750,7 +764,8 @@ export function createMockApi(options: MockOptions = {}): MockApi {
               l.districtCode === null ||
               DEMO_DICTIONARIES.districts.some((d) => d.code === l.districtCode && d.city === query.city),
           )
-          .filter((l) => !query.district || l.districtCode === query.district)
+          // Район — он и витрины без района (выездные), как у API
+          .filter((l) => !query.district || l.districtCode === null || l.districtCode === query.district)
           .filter((l) => !query.guests || l.capMax === null || l.capMax >= query.guests)
           // «Время» — вместе с датой: свободные в эту часть дня (или весь день)
           .filter((l) => !query.date || !query.part || demoFreeIn(l, query.date, query.part))
@@ -888,6 +903,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           createdAt: new Date(createdAt).toISOString(),
           slaDueAt: new Date(createdAt + 12 * HOUR).toISOString(),
           firstResponseAt: null,
+          firstResponseBy: null,
           slaBreached: false,
           listing: pickListing(listing),
         };
@@ -981,7 +997,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         phone: options.phone ?? true,
         turnstileSiteKey: options.turnstileSiteKey ?? null,
         apps,
-        team: { telegram: null, phone: null },
+        team: options.team ?? { telegram: null, phone: null },
       })),
 
     signInWidget: () => respond("signInWidget", undefined, demoSession),

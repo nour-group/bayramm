@@ -31,6 +31,15 @@ test.describe("избранное гостя", () => {
     await open(page, `${PATHS.venue(SECOND.slug)}?guest`, ".venue-head h1");
     await page.locator(heart(SECOND.name)).click();
     await expect(page.locator(heart(SECOND.name))).toHaveAttribute("aria-pressed", "true");
+    // Уведомление — над панелью витрины (цена, «Связаться», заявка), а не поверх неё
+    const note = page.locator(".ui-toast").filter({ hasText: ru.savedGuest });
+    await expect(note.getByRole("button", { name: ru.savedOpen })).toBeVisible();
+    if (!isDesktop(page)) {
+      const noteBox = await note.boundingBox();
+      const barBox = await page.locator(".venue-bar").boundingBox();
+      expect(noteBox && barBox).toBeTruthy();
+      if (noteBox && barBox) expect(noteBox.y + noteBox.height).toBeLessThanOrEqual(barBox.y + 1);
+    }
 
     // Раздел — из меню гостя (на компьютере — из шапки); последние отмеченные — первыми
     await open(page, PATHS.catalog, ".card", { guest: true });

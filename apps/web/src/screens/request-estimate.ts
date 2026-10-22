@@ -75,6 +75,19 @@ export function estimate(
   return { total, counted, needsGuests };
 }
 
+/** Поле формы заявки в той же единице, что услуга: часы, вес, штуки, столы */
+const QTY_FIELD: Partial<Record<PriceUnit, string>> = {
+  per_hour: "hours",
+  per_kg: "weight_kg",
+  per_item: "quantity",
+  per_table: "tables",
+};
+
+/** Число из поля формы («6»); пусто или не число — null */
+function fieldNumber(raw: unknown): number | null {
+  return typeof raw === "string" && /^\d{1,6}$/.test(raw.trim()) ? Number(raw.trim()) : null;
+}
+
 /**
  * Количество, которое форма предлагает при выборе услуги: из поля формы в той же единице
  * (часы, вес, штуки, столы), иначе минимальное у вендора или 1 — но не меньше минимального
@@ -84,15 +97,57 @@ export function suggestedQty(
   values: Readonly<Record<string, unknown>>,
 ): string {
   if (!hasQty(service.priceUnit)) return "";
-  const from: Partial<Record<PriceUnit, string>> = {
-    per_hour: "hours",
-    per_kg: "weight_kg",
-    per_item: "quantity",
-    per_table: "tables",
-  };
-  const key = from[service.priceUnit];
-  const raw = key === undefined ? undefined : values[key];
-  const field = typeof raw === "string" && /^\d{1,6}$/.test(raw.trim()) ? Number(raw.trim()) : null;
+  const key = QTY_FIELD[service.priceUnit];
+  const field = key === undefined ? null : fieldNumber(values[key]);
   const min = service.minQty ?? 1;
   return String(Math.max(min, field ?? min));
+}
+
+/**
+ * Поле формы, за которым идёт количество услуги: такое поле есть в форме категории («Сколько
+ * часов» у кортежа) — второй раз количество не спрашиваем, оно равно полю (не меньше минимального
+ * у вендора); нет — null, количество у услуги своё
+ */
+export function qtyFieldOf(
+  service: Pick<PublicService, "priceUnit">,
+  fieldKeys: readonly string[],
+): string | null {
+  const key = QTY_FIELD[service.priceUnit];
+  return key !== undefined && fieldKeys.includes(key) ? key : null;
+}
+
+/** Выбранные услуги с количеством из поля формы там, где оно есть (qtyFieldOf) */
+export function withFieldQty<T extends { readonly id: string; readonly qty: string }>(
+  chosen: readonly T[],
+  services: readonly PublicService[],
+  values: Readonly<Record<string, unknown>>,
+  fieldKeys: readonly string[],
+): T[] {
+  return chosen.map((choice) => {
+    const service = services.find((s) => s.id === choice.id);
+    return service && qtyFieldOf(service, fieldKeys) !== null
+      ? { ...choice, qty: suggestedQty(service, values) }
+      : choice;
+  });
+}
+
+/**
+ * Поля формы, пустые, а количество у услуги уже выбрано (на витрине): «3 часа» с витрины —
+ * в «Сколько часов». Несколько услуг на одно поле — большее
+ */
+export function fieldsFromQty(
+  chosen: readonly { readonly id: string; readonly qty: string }[],
+  services: readonly PublicService[],
+  values: Readonly<Record<string, unknown>>,
+  fieldKeys: readonly string[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const choice of chosen) {
+    const service = services.find((s) => s.id === choice.id);
+    const key = service ? qtyFieldOf(service, fieldKeys) : null;
+    const qty = fieldNumber(choice.qty);
+    if (key === null || qty === null || fieldNumber(values[key]) !== null) continue;
+    out[key] = String(Math.max(qty, fieldNumber(out[key]) ?? 0));
+  }
+  return out;
 }

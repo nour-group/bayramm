@@ -45,7 +45,7 @@ describe("каталог", () => {
     expect(place?.textContent).toBe("Чиланзар");
     for (const card of document.querySelectorAll(".card")) expect(card.textContent).toContain("Чиланзар");
 
-    await choose(place, "Ташкент — весь город");
+    await choose(place, "Весь Ташкент");
     await waitFor(() => !window.location.search.includes("district"), "район снят");
     expect(window.location.search).toBe("?category=hall&guests=200");
   });
@@ -65,7 +65,7 @@ describe("каталог", () => {
       /Залы|Кортежи|Фото|Торты|Цветы|Подарки|Декор/,
     );
     expect(field("Гости")).toBeNull();
-    expect(field("Город и район")?.textContent).toBe("Ташкент — весь город");
+    expect(field("Город и район")?.textContent).toBe("Весь Ташкент");
   });
 
   it("лента догружается по курсору, без повторов", async () => {
@@ -295,6 +295,29 @@ describe("мои заявки", () => {
     );
     expect(items[2]?.textContent).toContain("ответили за 2 ч 15 мин");
     expect(items[3]?.textContent).toContain("Причина: дата занята");
+    // «Связались» отметила команда после срока: не ответ исполнителя, похожие остаются
+    const team = items.at(-1);
+    expect(team?.textContent).toContain("Команда Bayramm связалась с исполнителем — он свяжется с вами");
+    expect(team?.textContent).not.toContain("ответили за");
+    expect(team?.querySelector(".req-breached a")?.textContent).toBe("Показать похожие");
+  });
+
+  it("«связались» от команды, потом отказ исполнителя — ни «команда связалась», ни времени ответа", async () => {
+    const team = requests.at(-1);
+    if (team?.firstResponseBy !== "staff") throw new Error("нет заявки с отметкой команды");
+    const declined = {
+      ...team,
+      status: "declined" as const,
+      declineReason: "busy" as const,
+      slaBreached: false,
+    };
+    await mount({ path: "/requests", mock: { requests: [declined] } });
+    await waitFor(() => document.querySelector(".req"), "заявка");
+    const item = document.querySelector(".req");
+    expect(item?.textContent).toContain("Причина: дата занята");
+    expect(item?.textContent).not.toContain("Команда Bayramm связалась");
+    expect(item?.textContent).not.toContain("ответили за");
+    expect(item?.querySelector(".req-breached")).toBeNull();
   });
 
   it("отозвать — с подтверждением, кнопки одного размера", async () => {

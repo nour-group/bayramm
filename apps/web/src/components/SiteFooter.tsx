@@ -7,6 +7,7 @@ import { Icon } from "../icons";
 import { hrefFor } from "../router";
 import { LANG_NAMES } from "./LangSwitch";
 import { Link } from "./Link";
+import { TeamLinks, useTeamContact } from "./TeamHelp";
 import { telegramLink } from "./TelegramCta";
 
 /**
@@ -45,7 +46,23 @@ function FooterLang() {
   );
 }
 
-/** Подвал сайта (в Mini App его нет): каталог, документы, бот в Telegram, язык */
+/** «Связь с командой» строкой ссылок; контакт не указан — строки нет */
+function FooterTeam() {
+  const { t } = useLang();
+  const team = useTeamContact();
+  if (!team) return null;
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: группа ссылок с подписью, fieldset здесь не форма
+    <div className="footer-team" role="group" aria-label={t.teamTitle}>
+      <span className="muted" aria-hidden="true">
+        {t.teamTitle}:
+      </span>
+      <TeamLinks team={team} variant="links" />
+    </div>
+  );
+}
+
+/** Подвал сайта (в Mini App его нет): каталог, документы, бот в Telegram, язык, связь с командой */
 export function SiteFooter() {
   const { api, now } = useServices();
   const { t } = useLang();
@@ -73,6 +90,7 @@ export function SiteFooter() {
           ) : null}
         </nav>
         <FooterLang />
+        <FooterTeam />
       </div>
       <p className="footer-copy muted small">© {year} Bayramm</p>
     </footer>

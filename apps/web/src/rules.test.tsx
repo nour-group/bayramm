@@ -428,17 +428,18 @@ describe("вход перед заявкой — до кнопки, а не по
       expect(
         byText<HTMLLabelElement>("label", new RegExp(service.name.ru))?.querySelector("input")?.checked,
       ).toBe(true);
-      expect(document.querySelector(".bar-note")?.textContent).toContain("Отправим после входа");
+      // Пометка — в панели кнопок, у «Войти и отправить» (на телефоне панель прилипает к низу)
+      expect(document.querySelector(".form-bar .bar-note")?.textContent).toContain("Отправим после входа");
 
       // Не всё заполнено — во вход не уводим, ошибки у полей
-      await click(byText(".form-bar button", "Отправить заявку"));
+      await click(byText(".form-bar button", "Войти и отправить"));
       expect(replace).not.toHaveBeenCalled();
       expect(text()).toContain("Выберите повод");
 
       await click(byText("label.ui-radio", "Свадьба"));
       await type(field("Как к вам обращаться"), "Азиза");
       await type(field("Телефон"), "00 123 45 67");
-      await click(byText(".form-bar button", "Отправить заявку"));
+      await click(byText(".form-bar button", "Войти и отправить"));
       expect(replace).toHaveBeenCalledWith(
         `/auth?return=${encodeURIComponent(`${FORM_PATH}?date=2026-10-15&guests=120`)}`,
       );

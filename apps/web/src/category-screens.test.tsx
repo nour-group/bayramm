@@ -109,7 +109,7 @@ describe("каталог категории", () => {
     expect(field("Город и район")).toBe(row.querySelector(".filter-place"));
     expect(field("Дата")).toBe(row.querySelector(".ui-date"));
     expect(field("Время")).toBe(row.querySelector(".filter-part"));
-    expect(row.querySelector(".filter-place")?.textContent).toContain("Ташкент — весь город");
+    expect(row.querySelector(".filter-place")?.textContent).toContain("Весь Ташкент");
     expect(row.querySelector(".ui-date")?.textContent).toContain("8 окт");
     // Поля витрины — колонкой рядом с выдачей (видна на компьютере) и шторкой по «Фильтры»
     expect(document.querySelector(".catalog-body .filters-side .attr-filters")).not.toBeNull();
@@ -126,7 +126,7 @@ describe("каталог категории", () => {
     await click(place);
     const options = [...document.querySelectorAll('[role="option"]')];
     // Первая строка — город целиком, под ней районы с отступом
-    expect(options[0]?.textContent).toBe("Ташкент — весь город");
+    expect(options[0]?.textContent).toBe("Весь Ташкент");
     expect(options[0]?.classList.contains("is-nested")).toBe(false);
     expect(options.slice(1).every((o) => o.classList.contains("is-nested"))).toBe(true);
     expect(options.map((o) => o.textContent)).toContain("Юнусабад");
@@ -141,8 +141,27 @@ describe("каталог категории", () => {
     expect(document.querySelector(".filter-place")?.classList.contains("is-set")).toBe(true);
     expect(document.querySelector(".filter-place")?.textContent).toContain("Юнусабад");
     // Снова весь город — район снят
-    await choose(document.querySelector(".filter-place"), "Ташкент — весь город");
+    await choose(document.querySelector(".filter-place"), "Весь Ташкент");
     await waitFor(() => window.location.search === "?category=hall", "весь город");
+  });
+
+  it("район в «Все» — витрины района и выездные; у кортежа районов нет — только город", async () => {
+    await mount({ path: "/catalog?district=yunusobod", mock: { listings: ALL } });
+    await waitFor(() => cardNames().length > 0, "выдача");
+    // Выездные без района (кортеж, фото) приезжают и в Юнусабад: они в выдаче вместе с районом
+    const shown = cardNames().map((name) => ALL.find((l) => l.name === name)?.districtCode);
+    expect(shown.every((code) => code === "yunusobod" || code === null)).toBe(true);
+    expect(shown).toContain(null);
+    expect(shown).toContain("yunusobod");
+    cleanup();
+
+    await mount({ path: "/catalog?category=car&district=yunusobod", mock: { listings: ALL } });
+    await waitFor(() => cardNames().length > 0, "кортежи");
+    expect(cardNames()).toHaveLength(ALL.filter((l) => l.categoryCode === "car").length);
+    await click(document.querySelector(".filter-place"));
+    expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
+      "Весь Ташкент",
+    ]);
   });
 
   it("смена категории сохраняет дату; отметки — свободно, частично занято, занято", async () => {
@@ -310,9 +329,21 @@ describe("витрина категории", () => {
     await waitFor(() => transferCheckbox(), "форма");
     const first = document.querySelector<HTMLInputElement>(".svc-choice input[type=checkbox]");
     expect(first?.checked).toBe(true);
-    // Количество — минимальное у вендора
-    expect(document.querySelector<HTMLInputElement>(".svc-qty input")?.value).toBe(
-      String(oq.services[0]?.minQty),
+    // Количество — минимальное у вендора; у кортежа оно — в поле «Сколько часов», второй раз
+    // его не спрашиваем: часы поменяли — за ними количество услуги и сумма
+    const min = String(oq.services[0]?.minQty);
+    expect((field("Сколько часов") as HTMLInputElement | null)?.value).toBe(min);
+    expect(document.querySelector(".svc-qty input")).toBeNull();
+    expect(document.querySelector(".svc-qty-from")?.textContent).toBe(
+      `Количество: ${min} — из поля «Сколько часов»`,
+    );
+    await type(field("Сколько часов"), "6");
+    expect(document.querySelector(".svc-qty-from")?.textContent).toBe(
+      "Количество: 6 — из поля «Сколько часов»",
+    );
+    await waitFor(
+      () => document.querySelector(".estimate-sum b")?.textContent?.includes("2,1"),
+      "6 ч × 350 000",
     );
   });
 
@@ -397,8 +428,11 @@ describe("заявка по форме категории", () => {
     await type(field("Сколько часов"), "5");
     await type(field("Сколько машин"), "2");
     await click(document.querySelector(".svc-choice input[type=checkbox]"));
-    // Количество часов услуги — из поля «Сколько часов»
-    expect(document.querySelector<HTMLInputElement>(".svc-qty input")?.value).toBe("5");
+    // Количество часов услуги — из поля «Сколько часов» (своего поля у услуги нет)
+    expect(document.querySelector(".svc-qty input")).toBeNull();
+    expect(document.querySelector(".svc-qty-from")?.textContent).toBe(
+      "Количество: 5 — из поля «Сколько часов»",
+    );
     await click(byText(".svc-choice-options label", /Украшение живыми цветами/)?.querySelector("input"));
     // Примерная сумма: 5 ч × 350 000 + 400 000 — подписана как предварительная
     await waitFor(() => document.querySelector(".estimate-sum b")?.textContent?.includes("2,2"), "сумма");
@@ -410,9 +444,9 @@ describe("заявка по форме категории", () => {
     await click(transferCheckbox());
     await click(byText("button", "Отправить заявку"));
     await waitFor(() => byText("h1", "Заявка отправлена"), "отправлено");
-    // Искать дальше — в том же разделе, а не в залах
-    expect(byText<HTMLAnchorElement>(".sent a", "К поиску")?.getAttribute("href")).toBe(
-      "/catalog?category=car",
+    // Искать дальше — в том же разделе на тот же день, а не в залах
+    expect(byText<HTMLAnchorElement>(".sent a", "Кто ещё свободен 20 окт")?.getAttribute("href")).toBe(
+      "/catalog?category=car&date=2026-10-20",
     );
 
     const created = (api as MockApi).created[0];

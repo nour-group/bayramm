@@ -2,8 +2,10 @@ import type { AuthMethods } from "@bayramm/shared/api/account";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
 import { saveSiteSession } from "../api/session";
+import { Link } from "../components/Link";
 import { authErrorText, humanProofFor, PhoneCode } from "../components/PhoneCode";
 import { ErrorState, Loading } from "../components/States";
+import { needsTeam, TeamHelp } from "../components/TeamHelp";
 import { telegramLink } from "../components/TelegramCta";
 import { TelegramLogin } from "../components/TelegramLogin";
 import { useAccount, useLang, useServices } from "../context";
@@ -16,6 +18,7 @@ import {
   isTelegramLink,
   loadHubRequest,
   parseHubRequest,
+  peekReturn,
   readWidgetFields,
   saveHubRequest,
   saveReturn,
@@ -25,6 +28,7 @@ import {
 } from "../hub";
 import { Icon } from "../icons";
 import { useNav } from "../router";
+import { pendingSend } from "./request-prefill";
 
 /* Хаб входа — /auth. Один вход для всего Bayramm:
      · вход на сайт: виджет Telegram (только на домене бота) или код из сообщения;
@@ -38,7 +42,12 @@ import { useNav } from "../router";
    войти ещё раз. После входа страница загружается заново — сессия есть у всего сайта. */
 
 type Phase =
-  | { readonly kind: "form"; readonly notice: string | null }
+  | {
+      readonly kind: "form";
+      readonly notice: string | null;
+      /** После этой ошибки остаётся написать команде: её контакт — под сообщением */
+      readonly team?: boolean;
+    }
   | { readonly kind: "continuing" }
   | { readonly kind: "badLink" };
 
@@ -79,10 +88,11 @@ function useContinue(setPhase: (phase: Phase) => void) {
             clearHubRequest();
             browser.replace(redirectUrl);
           },
-          (again: unknown) => setPhase({ kind: "form", notice: authErrorText(t, again) }),
+          (again: unknown) =>
+            setPhase({ kind: "form", notice: authErrorText(t, again), team: needsTeam(again) }),
         ));
       }
-      setPhase({ kind: "form", notice: authErrorText(t, error) });
+      setPhase({ kind: "form", notice: authErrorText(t, error), team: needsTeam(error) });
     }
   }, [api, identity, t, setPhase, navigate]);
 }
@@ -92,14 +102,25 @@ function useContinue(setPhase: (phase: Phase) => void) {
  * виджетом — на случай, когда он сам показывает ошибку (домен боту ещё не задан): тогда
  * выход — Bayramm в Telegram, а телефон упоминается, только если вход по нему здесь есть
  */
-function TelegramBlock({ methods, link, phone }: { methods: AuthMethods; link: boolean; phone: boolean }) {
+function TelegramBlock({
+  methods,
+  link,
+  phone,
+  slug,
+}: {
+  methods: AuthMethods;
+  link: boolean;
+  phone: boolean;
+  /** Заявка ждёт входа: бот откроет её витрину (черновик формы — в этой вкладке) */
+  slug: string | null;
+}) {
   const { t } = useLang();
   const [failed, setFailed] = useState(false);
   const onError = useCallback(() => setFailed(true), []);
   const bot = methods.telegram.bot;
   const here =
     methods.telegram.loginDomain !== null && methods.telegram.loginDomain === window.location.hostname;
-  const botHref = bot ? telegramLink(bot) : null;
+  const botHref = bot ? telegramLink(bot, slug ?? undefined) : null;
 
   return (
     <section className="section auth-block" aria-labelledby="auth-telegram">
@@ -188,6 +209,8 @@ export function SignIn() {
   }
 
   const hub = loadHubRequest();
+  // Гость отправлял заявку: хаб называет её, подставляет телефон из формы и ведёт назад к ней
+  const pending = hub === null && !link && !linkPhone ? pendingSend(peekReturn()) : null;
   const ready = methods.status === "ready" ? methods.data : null;
   const human = ready ? humanProofFor(ready, webApp?.initData) : null;
   const title = linkPhone ? t.authLinkPhoneTitle : link ? t.authLinkTitle : t.authTitle;
@@ -202,7 +225,17 @@ export function SignIn() {
         </p>
       ) : (
         <>
-          {linkPhone ? null : (
+          {pending ? (
+            <>
+              <Link className="link-btn auth-back" href={pending.href}>
+                <Icon name="prev" size={17} />
+                {t.authBackToRequest}
+              </Link>
+              <p className="auth-lead">
+                <strong>{t.authForRequest(pending.name)}</strong>
+              </p>
+            </>
+          ) : linkPhone ? null : (
             <p className="auth-lead">
               {hub?.app === "vendor" ? t.authForVendor : hub?.app === "admin" ? t.authForAdmin : t.authLead}
             </p>
@@ -213,6 +246,7 @@ export function SignIn() {
               <span>{phase.notice}</span>
             </div>
           ) : null}
+          {phase.notice && phase.team ? <TeamHelp /> : null}
           {methods.status === "loading" ? <Loading /> : null}
           {ready && linkPhone ? (
             ready.phone ? (
@@ -228,13 +262,23 @@ export function SignIn() {
           ) : null}
           {ready && !linkPhone ? (
             <>
-              <TelegramBlock methods={ready} link={link} phone={ready.phone && !link} />
+              <TelegramBlock
+                methods={ready}
+                link={link}
+                phone={ready.phone && !link}
+                slug={pending?.slug ?? null}
+              />
               {ready.phone && !link ? (
                 <section className="section auth-block" aria-labelledby="auth-phone">
                   <h2 className="section-title" id="auth-phone">
                     {t.authPhone}
                   </h2>
-                  <PhoneCode onCode={onPhoneCode} submitLabel={t.authSignIn} human={human} />
+                  <PhoneCode
+                    onCode={onPhoneCode}
+                    submitLabel={t.authSignIn}
+                    human={human}
+                    initialPhone={pending?.phone}
+                  />
                 </section>
               ) : null}
             </>
@@ -256,6 +300,7 @@ export function TelegramCallback() {
   const replaceMe = me.replace;
   useDocumentTitle(t.authTitle);
   const [error, setError] = useState<string | null>(null);
+  const [team, setTeam] = useState(false);
   const done = useRef(false);
 
   useEffect(() => {
@@ -281,7 +326,10 @@ export function TelegramCallback() {
           saveSiteSession(session);
           browser.replace(AUTH_PATH);
         });
-    run.catch((err: unknown) => setError(authErrorText(t, err)));
+    run.catch((err: unknown) => {
+      setError(authErrorText(t, err));
+      setTeam(needsTeam(err));
+    });
   }, [api, lang, t, replaceMe, navigate]);
 
   return (
@@ -295,6 +343,7 @@ export function TelegramCallback() {
             <Icon name="warnD" size={17} />
             <span>{error}</span>
           </div>
+          {team ? <TeamHelp /> : null}
           <a className="btn btn-secondary wide" href={AUTH_PATH}>
             {t.authSignIn}
           </a>

@@ -1,3 +1,4 @@
+import { lowerFirst } from "@bayramm/shared";
 import type { CatalogSuggest } from "@bayramm/shared/api";
 import { searchQuery } from "@bayramm/shared/search";
 import { SearchSuggest, type SuggestGroup, type SuggestOption } from "@bayramm/ui/react";
@@ -32,13 +33,6 @@ const takeSearchFocus = () => {
   focusRequested = false;
   return requested;
 };
-
-/** Первая буква — строчная, если это не сокращение («ЗАГС», «FHDYo» — как есть) */
-export function lowerFirst(text: string): string {
-  const [first = "", second = ""] = [...text];
-  if (second !== "" && second === second.toUpperCase() && second !== second.toLowerCase()) return text;
-  return first.toLowerCase() + text.slice(first.length);
-}
 
 type Suggest =
   | { readonly status: "idle" }

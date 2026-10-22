@@ -160,7 +160,7 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
     expect(legacyCatalogHref(url.pathname, url.search)).toBe(hrefFor({ name: "catalog" }, filters));
   });
 
-  it("похожие другой категории — та же категория, дата и район; гостей у неё нет", () => {
+  it("похожие другой категории — та же категория и дата; района и гостей у кортежа нет (приезжает сам)", () => {
     const url = at(
       clientCatalogPath({ category: "car", date: "2026-10-20", guests: 200, district: "chilonzor" }),
     );
@@ -172,7 +172,7 @@ describe("ссылки из бота (@bayramm/shared/api) ведут на эк�
       part: null,
       guests: null,
       city: null,
-      district: "chilonzor",
+      district: null,
       sort: null,
       attrs: {},
     });

@@ -312,6 +312,28 @@ describe("GET /catalog/listings", () => {
     expect((await catalogNames("category=hall&city=tashkent")).names).toEqual(expect.arrayContaining(all));
   });
 
+  it("район — витрины в нём и без района (выездные приезжают и туда)", async () => {
+    // Без района у зала опубликовать нельзя (BR004) — снимаем район мимо триггеров, как реплика
+    const setDistrict = async (code: string | null) => {
+      await admin.query("set session_replication_role = replica");
+      try {
+        await admin.query("update app.listings set district_code = $2 where id = $1", [
+          listings.small.id,
+          code,
+        ]);
+      } finally {
+        await admin.query("reset session_replication_role");
+      }
+    };
+    await setDistrict(null);
+    try {
+      expect((await catalogNames(BASE)).names).toContain("small");
+      expect((await catalogNames("category=hall&district=sergeli")).names).toEqual(["small"]);
+    } finally {
+      await setDistrict("bektemir");
+    }
+  });
+
   it("цена за мероприятие сравнивается честно: без гостей — на гостя по вместимости, с гостями — сумма", async () => {
     // Без гостей event = 33 млн / 300 = 110 000 за гостя: между mid (100 000) и small (120 000)
     expect((await catalogNames(`${BASE}&sort=price_desc`)).names).toEqual([
@@ -672,6 +694,7 @@ describe("заявка: гость → клиент → мои заявки → 
       occasionCode: "toy",
       slaDueAt: created.slaDueAt,
       firstResponseAt: null,
+      firstResponseBy: null,
       slaBreached: false,
       listing: { id: listings.mid.id, slug: listings.mid.slug, districtCode: "bektemir" },
     });
@@ -719,6 +742,63 @@ describe("заявка: гость → клиент → мои заявки → 
     const again = await json<RequestCreated>(res, 201);
     expect(again.id).not.toBe(created.id);
     expect((await myRequests(tokenA)).map((r) => r.status)).toEqual(["new", "withdrawn"]);
+  });
+});
+
+describe("«связались» отметила команда", () => {
+  /** В обход триггеров, как реплика: история и статус — как после отметки сотрудника и ответа вендора */
+  async function replica(text: string, params: unknown[]): Promise<void> {
+    await admin.query("begin");
+    try {
+      await admin.query("set local session_replication_role = replica");
+      await admin.query(text, params);
+      await admin.query("commit");
+    } catch (error) {
+      await admin.query("rollback");
+      throw error;
+    }
+  }
+
+  it("срок прошёл, вендор сам не ответил — похожие; ответил позже (отказ → снова связались) — нет", async () => {
+    const token = await newClient();
+    const created = await json<RequestCreated>(
+      await post(
+        "/requests",
+        token,
+        requestBody({ listingId: listings.big.id, eventDate: addDays(today, 45) }),
+      ),
+      201,
+    );
+    await replica(
+      `update app.requests set status = 'contacted', sla_due_at = now() - interval '1 hour',
+                               first_response_at = now(), first_response_by = 'staff'
+       where id = $1`,
+      [created.id],
+    );
+    await replica(
+      `insert into app.request_status_log (request_id, from_status, to_status, actor_kind, source)
+       values ($1, 'new', 'contacted', 'staff', 'admin')`,
+      [created.id],
+    );
+    expect(await myRequests(token)).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        status: "contacted",
+        firstResponseBy: "staff",
+        slaBreached: true,
+      }),
+    ]);
+
+    // Вендор отказал и снова «связались»: это его ответ — похожих больше нет
+    await replica(
+      `insert into app.request_status_log (request_id, from_status, to_status, actor_kind, source)
+       values ($1, 'contacted', 'declined', 'vendor_user', 'vendor_cabinet'),
+              ($1, 'declined', 'contacted', 'vendor_user', 'vendor_cabinet')`,
+      [created.id],
+    );
+    expect(await myRequests(token)).toEqual([
+      expect.objectContaining({ status: "contacted", firstResponseBy: "staff", slaBreached: false }),
+    ]);
   });
 });
 

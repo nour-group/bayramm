@@ -132,6 +132,17 @@ describe("словарь: глоссарий клиента (glossary.ts)", () =
 });
 
 describe("словарь: узбекский", () => {
+  it("заголовок раздела: «Toshkentdagi …» строчными, сокращение — как есть", () => {
+    expect(uz.catTitle(uz.catName.hall)).toBe("Toshkentdagi toʻyxonalar");
+    expect(uz.catTitle(uz.catName.zags)).toBe("Toshkentdagi FHDYo");
+    for (const name of Object.values(uz.catName)) {
+      const title = uz.catTitle(name);
+      expect(title.slice("Toshkentdagi ".length).toLowerCase()).toBe(name.toLowerCase());
+      // Сокращение не превращается в слово строчными («fhdyo»)
+      if (/^\p{Lu}{2}/u.test(name)) expect(title).toContain(name);
+    }
+  });
+
   it("латиница, без кириллицы", () => {
     expect(allTexts("uz").filter(({ text }) => /[\u0400-\u04FF]/.test(text))).toEqual([]);
   });

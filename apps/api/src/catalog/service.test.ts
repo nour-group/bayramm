@@ -86,7 +86,7 @@ describe("listCatalog", () => {
     expect(query?.parameters[placeholder - 1]).toBe(300);
   });
 
-  it("город — его районы и витрины без района (выездные); район — только он", async () => {
+  it("город — его районы и витрины без района (выездные); район — он и выездные", async () => {
     const fake = fakeDb();
     await listCatalog(fake.db, parseCatalogQuery({ category: ["all"], city: ["tashkent"] }));
     const query = fake.queries.find(isCatalog);
@@ -101,8 +101,7 @@ describe("listCatalog", () => {
     const byDistrict = fakeDb();
     await listCatalog(byDistrict.db, parseCatalogQuery({ category: ["all"], district: ["yunusobod"] }));
     const district = byDistrict.queries.find(isCatalog);
-    expect(district?.sql).toMatch(/"l"\."district_code" = \$\d+/);
-    expect(district?.sql).not.toContain("district_code is null");
+    expect(district?.sql).toMatch(/\("l"\."district_code" = \$\d+ or "l"\."district_code" is null\)/);
     expect(district?.parameters).toContain("yunusobod");
   });
 

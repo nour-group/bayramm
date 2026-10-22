@@ -13,6 +13,7 @@ import {
 import { isApiError } from "./api/errors";
 import { canSignIn, useAccount, useLang, useServices } from "./context";
 import { chromeOf } from "./nav";
+import { hrefFor, useNav } from "./router";
 import { localGetJson, localRemove, localSetJson } from "./storage";
 
 /* Избранное — площадки с сердечком (в прототипе «Сохранённое»).
@@ -77,9 +78,14 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
   const { t } = useLang();
   const toast = useToast();
   const mode = canSignIn(identity) && !deleted ? "account" : "guest";
+  const { navigate } = useNav();
   // Где искать список — по оболочке (nav.ts): у приложения это вкладка, у гостя сайта —
-  // раздел в шапке (на телефоне — в меню)
+  // раздел в шапке (на телефоне — в меню); в уведомлении — «Открыть», чтобы не искать
   const savedText = chromeOf(identity, webApp !== null, deleted) === "app" ? t.savedApp : t.savedGuest;
+  const savedAction = useMemo(
+    () => ({ label: t.savedOpen, onClick: () => navigate(hrefFor({ name: "favorites" })) }),
+    [t, navigate],
+  );
   const [guest, setGuest] = useState<string[]>(guestFavorites);
   const [account, setAccount] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -138,7 +144,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         const next = adding ? [id, ...guest] : guest.filter((item) => item !== id);
         saveGuestFavorites(next);
         setGuest(next);
-        if (adding) toast(savedText);
+        if (adding) toast(savedText, { action: savedAction });
         return;
       }
       pending.current.set(id, adding);
@@ -148,7 +154,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
       (adding ? api.addFavorite(id) : api.removeFavorite(id)).then(
         () => {
           pending.current.delete(id);
-          if (adding) toast(savedText);
+          if (adding) toast(savedText, { action: savedAction });
         },
         (error: unknown) => {
           pending.current.delete(id);
@@ -159,7 +165,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
         },
       );
     },
-    [api, ids, mode, guest, toast, t, savedText],
+    [api, ids, mode, guest, toast, t, savedText, savedAction],
   );
 
   const cards = useCallback(
