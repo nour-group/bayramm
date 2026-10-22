@@ -5,13 +5,14 @@
 
 import { compressForUpload } from "@bayramm/media/browser";
 import type { VendorContactChange, VendorListing, VendorPhoto } from "@bayramm/shared/api/vendor";
-import { UiTextsProvider } from "@bayramm/ui/react";
-import { act, type ReactElement } from "react";
+import { ToastProvider, UiTextsProvider } from "@bayramm/ui/react";
+import { act, type ReactElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { vendorDict } from "./i18n";
+import { UnsavedContext, useUnsavedGuard } from "./unsaved";
 import { VenueContacts } from "./VenueContacts";
-import { photoMoves, VenuePhotos } from "./VenuePhotos";
+import { dropOrder, photoMoves, VenuePhotos } from "./VenuePhotos";
 import { WithdrawAction } from "./VenueWithdraw";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -115,13 +116,28 @@ beforeEach(() => {
 let host = document.createElement("div");
 let root: Root;
 
+/** Как в оболочке кабинета: уход с вписанным спрашивает «Уйти без сохранения?» */
+function UnsavedHost({ children }: { children: ReactNode }) {
+  const unsaved = useUnsavedGuard(t);
+  return (
+    <UnsavedContext.Provider value={unsaved.registry}>
+      {children}
+      {unsaved.sheet}
+    </UnsavedContext.Provider>
+  );
+}
+
 async function mount(ui: ReactElement) {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
   // Тексты набора (крестик «Закрыть» шторки) — как в корне кабинета
   await act(async () =>
-    root.render(<UiTextsProvider texts={{ close: t.close, clear: t.clear }}>{ui}</UiTextsProvider>),
+    root.render(
+      <UiTextsProvider texts={{ close: t.close, clear: t.clear }}>
+        <ToastProvider>{ui}</ToastProvider>
+      </UiTextsProvider>,
+    ),
   );
 }
 
@@ -188,6 +204,20 @@ describe("photoMoves: что можно сделать с фото", () => {
   });
 });
 
+describe("dropOrder: перетаскивание мышью", () => {
+  const photos = [photo(1), photo(2), photo(3), photo(4), photo(5, "pending")];
+  const idOf = (n: number) => (photos[n - 1] as VendorPhoto).id;
+
+  it("на место другого одобренного: вперёд и назад; обложка, ждущее и само на себя — нельзя", () => {
+    expect(dropOrder(photos, idOf(4), idOf(2))).toEqual([idOf(1), idOf(4), idOf(2), idOf(3)]);
+    expect(dropOrder(photos, idOf(2), idOf(4))).toEqual([idOf(1), idOf(3), idOf(4), idOf(2)]);
+    expect(dropOrder(photos, idOf(3), idOf(1))).toBeNull();
+    expect(dropOrder(photos, idOf(1), idOf(3))).toBeNull();
+    expect(dropOrder(photos, idOf(5), idOf(2))).toBeNull();
+    expect(dropOrder(photos, idOf(2), idOf(2))).toBeNull();
+  });
+});
+
 describe("фото: плитки и шторка действий", () => {
   const props = (patch: Partial<Parameters<typeof VenuePhotos>[0]> = {}) => ({
     listing: listingOf(),
@@ -238,7 +268,9 @@ describe("фото: плитки и шторка действий", () => {
       ids: [photo(1).id, photo(2).id, photo(4).id, photo(3).id],
     });
     expect(onChanged).toHaveBeenCalledTimes(1);
-    expect(sheet()).toBeNull();
+    // Шторка остаётся: что сделано — строкой в ней, снимок — на месте
+    expect(sheet()?.querySelector('[role="status"]')?.textContent).toBe("Порядок фото изменён");
+    expect(sheet()?.querySelector("img.photo-sheet-img")).not.toBeNull();
   });
 
   it("«Сделать обложкой» — POST …/cover без тела; у обложки и ждущего фото такой кнопки нет", async () => {
@@ -296,6 +328,37 @@ describe("фото: плитки и шторка действий", () => {
     expect(decline).toHaveLength(1);
     expect(decline[0]?.textContent).toBe("Отклонено: На фото виден человек");
     expect(host.textContent).not.toContain("загрузите новое");
+  });
+
+  it("шторка отклонённого: снимок, причина и «Заменить фото» — новое встаёт вместо него", async () => {
+    answers[`POST ${BASE}/photos`] = () => ({ status: 201, body: photo(9, "pending") });
+    answers[`DELETE ${BASE}/photos/${photo(2).id}`] = () => ({ status: 204 });
+    const onChanged = vi.fn(async () => {});
+    await mount(
+      <VenuePhotos
+        {...props({ onChanged, listing: listingOf({ photos: [photo(1), photo(2, "declined")] }) })}
+      />,
+    );
+    await click(label("Фото 2: действия"));
+    const open = sheet() as Element;
+    expect(open.querySelector("img.photo-sheet-img")).not.toBeNull();
+    expect(open.querySelector(".photo-decline")?.textContent).toBe("Отклонено: На фото виден человек");
+    // «Удалить» — рамкой, а не заливкой
+    expect(buttonIn(open, "Удалить")?.className).toBe("btn btn-danger");
+    const input = open.querySelector<HTMLInputElement>('input[type="file"]');
+    expect(input?.disabled).toBe(true);
+    await click(open.querySelector('input[type="checkbox"]'));
+    expect(input?.disabled).toBe(false);
+    const file = new File([new Uint8Array([1, 2, 3])], "new.jpg", { type: "image/jpeg" });
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => input?.dispatchEvent(new Event("change", { bubbles: true })));
+    await settle();
+    // Сначала новое (место есть), потом отклонённое — прочь
+    expect(calls_("POST", `${BASE}/photos`)).toHaveLength(1);
+    expect(calls_("DELETE", `${BASE}/photos/${photo(2).id}`)).toHaveLength(1);
+    expect(onChanged).toHaveBeenCalled();
+    expect(sheet()).toBeNull();
+    expect(document.body.textContent).toContain("Фото заменено — ждёт проверки");
   });
 });
 
@@ -452,7 +515,8 @@ describe("контакты витрины", () => {
     expect(put?.body).toEqual({ phone: "+998912223344", telegram: "new_lola" });
     expect(onChanged).toHaveBeenCalledTimes(1);
     expect(sheet()).toBeNull();
-    expect(host.querySelector('[role="status"]')?.textContent).toBe("Контакты сохранены");
+    // Сохранено — всплывающей строкой
+    expect(document.body.textContent).toContain("Контакты сохранены");
   });
 
   it("опубликованная: «Отправить изменения» и строка про проверку командой; Telegram можно убрать (null)", async () => {
@@ -464,7 +528,7 @@ describe("контакты витрины", () => {
     await type(fields()[1] ?? null, "");
     await click(buttonIn(sheet() as Element, "Отправить изменения"));
     expect(calls_("PUT", `${BASE}/contacts`)[0]?.body).toEqual({ phone: "+998901112233", telegram: null });
-    expect(host.querySelector('[role="status"]')?.textContent).toBe("Отправлено на проверку команде Bayramm");
+    expect(document.body.textContent).toContain("Отправлено на проверку команде Bayramm");
   });
 
   it("неполный номер и неверный Telegram — ошибки у полей, запроса нет", async () => {
@@ -480,6 +544,26 @@ describe("контакты витрины", () => {
       "5–32 знака: латиница, цифры и «_», с буквы и не на «_»",
     ]);
     expect(fields()[0]?.getAttribute("aria-invalid")).toBe("true");
+    // Фокус — на первое неверное поле
+    expect(document.activeElement).toBe(fields()[0]);
+  });
+
+  it("ничего не изменили — отправить нельзя; закрыть с вписанным — «Уйти без сохранения?»", async () => {
+    await mount(
+      <UnsavedHost>
+        <VenueContacts {...props()} />
+      </UnsavedHost>,
+    );
+    await click(buttonIn(host, "Изменить"));
+    const send = () => buttonIn(sheet() as Element, "Отправить изменения") as HTMLButtonElement | undefined;
+    expect(send()?.disabled).toBe(true);
+    await type(fields()[1] ?? null, "new_lola");
+    expect(send()?.disabled).toBe(false);
+    await click(buttonIn(sheet() as Element, "Отмена"));
+    const ask = document.querySelector('[role="alertdialog"]');
+    expect(ask?.textContent).toContain("Уйти без сохранения?");
+    await click(buttonIn(ask as Element, "Остаться"));
+    expect(fields()[1]?.value).toBe("new_lola");
   });
 
   it("чужой код страны: «только Узбекистан» сразу", async () => {
@@ -542,6 +626,11 @@ describe("контакты витрины", () => {
     expect(fields()[1]?.value).toBe("");
     await click(buttonIn(sheet() as Element, "Отмена"));
     await click(buttonIn(host, "Отозвать"));
+    // Отзыв — через подтверждение
+    expect(calls_("POST", `${BASE}/contact-change/withdraw`)).toHaveLength(0);
+    const confirm = document.querySelector('[role="alertdialog"]');
+    expect(confirm?.textContent).toContain("Отозвать новые контакты?");
+    await click(buttonIn(confirm as Element, "Отозвать"));
     expect(calls_("POST", `${BASE}/contact-change/withdraw`)).toHaveLength(1);
     expect(onChanged).toHaveBeenCalledTimes(1);
   });

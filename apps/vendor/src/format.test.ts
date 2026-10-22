@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatBudget,
   formatDate,
+  formatDeadline,
   formatDuration,
   formatGuests,
   formatMoment,
@@ -16,6 +17,21 @@ import { vendorDict } from "./i18n";
 
 const { ru, uz } = vendorDict;
 const HOUR = 3600 * 1000;
+
+describe("срок ответа со словом дня", () => {
+  // 20:00 по Ташкенту, 1 октября
+  const now = Date.parse("2026-10-01T15:00:00Z");
+  it("сегодня, завтра, вчера; дальше — с датой; по-узбекски — слово дня впереди", () => {
+    expect(formatDeadline("2026-10-01T16:40:00Z", ru, now)).toBe("21:40 сегодня");
+    expect(formatDeadline("2026-10-02T04:00:00Z", ru, now)).toBe("09:00 завтра");
+    expect(formatDeadline("2026-09-30T18:10:00Z", ru, now)).toBe("23:10 вчера");
+    expect(formatDeadline("2026-10-05T04:00:00Z", ru, now)).toBe("09:00, 5 октября");
+    expect(formatDeadline("2026-10-02T04:00:00Z", uz, now)).toBe("ertaga 09:00");
+    expect(formatDeadline("2026-10-01T16:40:00Z", uz, now)).toBe("bugun 21:40");
+    // Полночь по Ташкенту — уже следующий день
+    expect(formatDeadline("2026-10-01T19:00:00Z", ru, now)).toBe("00:00 завтра");
+  });
+});
 
 describe("время по Ташкенту", () => {
   it("UTC+5: полночь в Ташкенте — ещё вечер по UTC", () => {

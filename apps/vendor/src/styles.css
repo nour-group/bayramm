@@ -744,6 +744,53 @@ body {
   color: var(--ink);
 }
 
+/* Дата в календаре сейчас: плашка состояния (цвета — как у статусов) и «Открыть день» */
+.req-day {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--gap-9);
+  margin: 0;
+}
+
+.req-day-state {
+  padding: 2px 10px;
+  border-radius: var(--r-999);
+  font-size: var(--fs-12-5);
+  font-weight: 700;
+}
+
+.req-day-free .req-day-state {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.req-day-partial .req-day-state {
+  background: var(--lilac);
+  color: var(--plum);
+}
+
+.req-day-busy .req-day-state {
+  background: var(--coral-soft);
+  color: var(--coral-deep);
+}
+
+.req-day-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--hit-min);
+  color: var(--plum);
+  font-size: var(--fs-14);
+  font-weight: 700;
+}
+
+/* Под телефоном: не дозвонились — что делать; под кнопками сделки — что она займёт дату */
+.call-note,
+.deal-hint {
+  margin: 0;
+  font-size: var(--fs-13-5);
+}
+
 .facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3339,4 +3386,72 @@ body {
   .cal-layout {
     grid-template-columns: minmax(0, 1fr) 320px;
   }
+}
+
+/* В Telegram на телефоне своей шапки с названием нет: у Mini App своя, с именем бота. Остаётся
+   отступ безопасных зон, и он не прилипает — первая заявка выше на экране */
+.app-tg.app-phone .top {
+  position: static;
+  min-height: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.app-tg.app-phone .top .brand {
+  display: none;
+}
+
+.app-tg.app-phone .frame > .ui-net {
+  top: var(--pad-t);
+}
+
+/* Плашка про 12 часов над входящими — компактнее: на первом экране больше заявок */
+.inbox-list .promise-late {
+  padding: 6px 12px;
+}
+
+/* Поиск, дата праздника и порядок над вкладками входящих */
+.inbox-find {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-7);
+}
+
+.inbox-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7);
+}
+
+.inbox-nothing {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-7);
+}
+
+.inbox-nothing .note {
+  margin: 0;
+}
+
+/* Шторка фото: сам снимок целиком, не выше половины экрана */
+.photo-sheet-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 40vh;
+  border-radius: var(--r-14);
+  background: var(--lilac);
+  object-fit: contain;
+}
+
+/* Одобренное фото можно перетащить мышью на место другого: куда упадёт — рамка */
+.photos li[draggable="true"] .photo-tile {
+  cursor: grab;
+}
+
+.photos li.is-drop .photo-tile {
+  outline: 2px dashed var(--plum);
+  outline-offset: 2px;
 }

@@ -46,6 +46,7 @@ export function makeEnv(): Env {
     RATE_LIMIT_REQUESTS_ACTOR: allowAll,
     RATE_LIMIT_CONTACTS_IP: allowAll,
     RATE_LIMIT_OTP_ACCOUNT: allowAll,
+    RATE_LIMIT_INBOX_SEARCH: allowAll,
   };
 }
 

@@ -5,18 +5,22 @@
      · на проверке, опубликована, приостановлена — «Отправить изменения»: уходит запросом команде
        («Клиенты увидят новые контакты после проверки командой Bayramm»); клиенты до решения видят
        прежние. Ждущий запрос — «на проверке» и новые значения, его можно отозвать; отказ — причина.
-   Телефон обязателен, Telegram — нет. Сотрудник площадки (member) контакты только смотрит. */
+   Телефон обязателен, Telegram — нет. Сотрудник площадки (member) контакты только смотрит.
+   Отправить можно только изменённое (кнопка ждёт правки); закрыть шторку с вписанным — «Уйти без
+   сохранения?»; отозвать запрос — через подтверждение. Сохранили или отправили — всплывающая
+   строка; ошибка проверки — фокус на неверное поле. */
 
 import { normalizeTelegram, readUzPhoneDigits, UZ_PHONE_DIGITS } from "@bayramm/shared";
 import type { VendorContactChange, VendorListing } from "@bayramm/shared/api/vendor";
-import { Dialog } from "@bayramm/ui/react";
+import { ConfirmSheet, Dialog, useToast } from "@bayramm/ui/react";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { PhoneField, TelegramField, telegramProblem } from "./ContactFields";
 import { errorText } from "./errors";
 import { formatPhone } from "./format";
 import { fill, type VendorDict } from "./i18n";
-import { useUnsaved } from "./unsaved";
+import { useFocusInvalid } from "./invalid";
+import { useConfirmLeave, useUnsaved } from "./unsaved";
 
 /** Статусы, где контакты меняются запросом команде (как в базе: moderated_field_requires_revision) */
 const MODERATED: ReadonlySet<VendorListing["status"]> = new Set(["review", "active", "suspended"]);
@@ -60,15 +64,22 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
+  const toast = useToast();
+  const form = useRef<HTMLFormElement>(null);
+  const showInvalid = useFocusInvalid(form);
+  const withdrawButton = useRef<HTMLButtonElement>(null);
 
-  // Вписанное и не отправленное: уход с экрана спрашивает «Уйти без сохранения?»
-  useUnsaved(open && (phone !== start.phone || telegram !== start.telegram));
+  // Вписанное и не отправленное: уход с экрана и закрытие шторки спрашивают «Уйти без сохранения?»
+  const dirty = phone !== start.phone || telegram !== start.telegram;
+  useUnsaved(open && dirty);
+  const confirmLeave = useConfirmLeave();
 
+  // Вопрос и шторка закрываются по очереди (ловушка №11): шторка — следующим тактом
   const close = () => {
-    if (!busy) setOpen(false);
+    if (!busy) confirmLeave(() => queueMicrotask(() => setOpen(false)));
   };
 
   const openSheet = () => {
@@ -90,7 +101,11 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
     }
     setErrors(found);
     setFormError(null);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      showInvalid();
+      return;
+    }
+    if (!dirty) return;
     setBusy(true);
     try {
       const saved = await api.saveContacts(listing.id, {
@@ -98,7 +113,7 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
         telegram: telegram === "" ? null : telegram,
       });
       await onChanged();
-      setDone(saved.sentForModeration ? t.contactsSent : t.contactsSaved);
+      toast(saved.sentForModeration ? t.contactsSent : t.contactsSaved, { tone: "success" });
       setOpen(false);
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "invalid_input") {
@@ -106,6 +121,7 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
           ...(err.details.includes("phone") ? { phone: t.phoneShort } : {}),
           ...(err.details.includes("telegram") ? { telegram: t.telegramRule } : {}),
         });
+        showInvalid();
       } else {
         // Статус витрины успели изменить: перечитать — подпись кнопки и путь станут верными
         if (err instanceof ApiFailure && err.code === "contacts_not_live") await onChanged();
@@ -117,6 +133,7 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
   };
 
   const withdraw = async () => {
+    setConfirmWithdraw(false);
     setWithdrawing(true);
     setWithdrawError(null);
     try {
@@ -131,6 +148,7 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
     }
     await onChanged();
     setWithdrawing(false);
+    toast(t.contactsWithdrawn, { tone: "success" });
     // Кнопки «Отозвать» больше нет — фокус на «Изменить»
     edit.current?.focus({ preventScroll: true });
   };
@@ -168,11 +186,12 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
                 })}
               </span>
               <button
+                ref={withdrawButton}
                 type="button"
                 className="btn btn-ghost"
                 disabled={withdrawing}
                 aria-busy={withdrawing || undefined}
-                onClick={() => void withdraw()}
+                onClick={() => setConfirmWithdraw(true)}
               >
                 {t.contactsWithdraw}
               </button>
@@ -188,11 +207,16 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
       {declined && !pending ? (
         <p className="note">{fill(t.contactsDeclined, { reason: declined.reason ?? "—" })}</p>
       ) : null}
-      {done ? (
-        <p className="sr-only" role="status">
-          {done}
-        </p>
-      ) : null}
+      <ConfirmSheet
+        open={confirmWithdraw}
+        title={t.contactsWithdrawQ}
+        text={t.contactsWithdrawText}
+        confirmLabel={t.contactsWithdraw}
+        cancelLabel={t.cancel}
+        onConfirm={() => void withdraw()}
+        onCancel={() => setConfirmWithdraw(false)}
+        returnFocus={withdrawButton}
+      />
 
       {owner ? (
         <Dialog
@@ -209,7 +233,7 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
                 type="submit"
                 form={formId}
                 className="ui-btn ui-btn-primary"
-                disabled={busy}
+                disabled={busy || !dirty}
                 aria-busy={busy || undefined}
               >
                 {moderated ? t.contactsSend : t.contactsSave}
@@ -217,7 +241,13 @@ export function VenueContacts({ listing, t, owner, onChanged }: Props) {
             </>
           }
         >
-          <form id={formId} className="contacts-form" noValidate onSubmit={(event) => void submit(event)}>
+          <form
+            ref={form}
+            id={formId}
+            className="contacts-form"
+            noValidate
+            onSubmit={(event) => void submit(event)}
+          >
             <PhoneField
               label={t.contactsPhone}
               t={t}

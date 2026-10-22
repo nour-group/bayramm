@@ -14,6 +14,7 @@ import { clickBackButton, fakeTelegram, telegramState } from "../support/telegra
 import {
   CAKE_ID,
   CAR_ID,
+  LISTING_ID,
   mockVendorApi,
   NOW,
   PHOTO_ID,
@@ -288,6 +289,39 @@ test.describe("кабинет", () => {
     await page.locator(".pills .pill").nth(1).click();
     await expect(page.locator(".rq-list .rq")).toHaveCount(1);
     expect(api.unexpected).toEqual([]);
+  });
+
+  test("поиск во входящих; у заявки — занятость даты, «Открыть день» — этот день в календаре витрины", async ({
+    page,
+  }) => {
+    await start(page);
+    await page.goto("/requests");
+    await expect(heading(page)).toHaveText(t.requests);
+    const cards = page.locator(".rq-list .rq");
+    await expect(cards).toHaveCount(2);
+    const search = page.getByRole("searchbox", { name: t.inboxSearch });
+    // № заявки — одна
+    await search.fill("1047");
+    await expect(cards).toHaveCount(1);
+    await expect(cards).toContainText("Бекзод");
+    // Последние цифры номера клиента
+    await search.fill("4567");
+    await expect(cards).toHaveCount(1);
+    await expect(cards).toContainText("Азиза");
+    // Что ищут — не в адресе страницы
+    expect(page.url()).not.toContain("4567");
+    await expectNoAxeViolations(page, "входящие: поиск");
+    await expectHitAreas(page, "входящие: поиск", CONTROLS);
+    await expectNoOverflow(page, "входящие: поиск");
+
+    await cards.click();
+    await expect(page.locator(".request .req-day")).toContainText(fill(t.eventDayLine, { state: "" }).trim());
+    await page.getByRole("link", { name: t.openDay }).click();
+    await expect(page).toHaveURL(`/calendar?listing=${LISTING_ID}&day=2026-10-24&from=${REQUEST_NEW}`);
+    // На телефоне экран под шторкой дня (inert) — заголовок ищем в разметке, а не у диктора
+    await expect(page.locator("main h1")).toHaveText(t.calendar);
+    // День открыт: на телефоне — шторкой, на компьютере — колонкой рядом с месяцем
+    await expect(page.getByRole("heading", { name: "24 октября, сб" })).toBeVisible();
   });
 
   test("«Я связался» по ошибке: «Отмечено · Отменить» — заявка снова ждёт ответа", async ({ page }) => {
@@ -1019,15 +1053,16 @@ test.describe("кабинет", () => {
 
 test.describe("витрины в разных категориях", () => {
   /**
-   * Выбрать витрину: на компьютере — в боковой панели, на телефоне (до четырёх витрин) — пилюли
-   * вверху экрана
+   * Выбрать витрину: на компьютере — в боковой панели, на телефоне — вверху экрана: до двух витрин
+   * пилюли, больше — список выбора (ListingPicker.tsx)
    */
   async function chooseVitrina(page: Page, name: string) {
     if (isDesktop(page)) {
       await page.locator(".side-vitrinas").getByRole("button", { name }).click();
       return;
     }
-    await page.locator("main .vitrina-pills").getByRole("button", { name }).click();
+    await page.locator("main .vitrina-select button").click();
+    await page.getByRole("option").filter({ hasText: name }).click();
   }
 
   test("входящие: все витрины или одна; заявка — категория, часть дня, поля категории и услуги", async ({
@@ -1043,12 +1078,13 @@ test.describe("витрины в разных категориях", () => {
         page.locator(".side-vitrinas").getByRole("button", { name: t.allListings }),
       ).toHaveAttribute("aria-pressed", "true");
     } else {
-      await expect(
-        page.locator("main .vitrina-pills").getByRole("button", { name: t.allListings }),
-      ).toHaveAttribute("aria-pressed", "true");
-      // Подписи над пилюлями нет — имя группы только для диктора
-      await expect(page.locator("main .vitrina-pills")).toHaveAccessibleName(t.inboxFilter);
-      await expect(page.locator("main").getByText(t.inboxFilter, { exact: true })).toHaveCount(0);
+      // Витрин четыре — список выбора, «Все витрины» выбраны
+      await expect(page.locator("main .vitrina-pills")).toHaveCount(0);
+      await expect(page.locator("main .vitrina-select button")).toContainText(t.allListings);
+      // Подписи над выбором нет — имя только для диктора
+      await expect(page.locator("main .vitrina-select button")).toHaveAccessibleName(
+        new RegExp(`^${t.inboxFilter}`),
+      );
     }
     // «Ждут ответа» — новые обеих витрин и открытая без ответа
     await expect(page.locator(".rq-list .rq")).toHaveCount(3);
@@ -1138,9 +1174,10 @@ test.describe("витрины в разных категориях", () => {
     await expectNoOverflow(page, "витрина: готова к проверке");
     await ready.getByRole("button", { name: t.submitListing }).click();
     await expect(ready).toContainText(t.readyReview);
-    const said = ready.getByRole("status");
-    await expect(said).toHaveText(t.submitDone);
-    await expect(said).toBeFocused();
+    // «На проверке» говорит чек-лист, сколько ждать — всплывающая строка, один раз; фокус — на чек-листе
+    await expect(ready.getByRole("status")).toHaveCount(0);
+    await expect(page.getByText(fill(t.submitDone, { n: 24 }))).toBeVisible();
+    await expect(ready).toBeFocused();
     await expect(ready.getByRole("button", { name: t.submitListing })).toHaveCount(0);
     expect(api.submits).toEqual([PHOTO_ID]);
     // Статус витрины — «На проверке» и у самой витрины
@@ -1290,10 +1327,7 @@ test.describe("витрины в разных категориях", () => {
     await chooseVitrina(page, "Kortej Premium");
     // Какая витрина — называет выбор (телефон) или заголовок с категорией (компьютер)
     if (isDesktop(page)) await expect(page.locator(".venue .chip-cat")).toHaveText("Кортеж");
-    else
-      await expect(
-        page.locator("main .vitrina-pills").getByRole("button", { name: "Kortej Premium" }),
-      ).toHaveAttribute("aria-pressed", "true");
+    else await expect(page.locator("main .vitrina-select button")).toContainText("Kortej Premium");
     await editButton(page, t.attributesTitle).click();
     const form = sheet(page, t.attributesTitle);
     await form.getByRole("button", { name: "Добавить машину" }).click();
@@ -1503,7 +1537,7 @@ test.describe("витрины в разных категориях", () => {
     await dayButton(page, 31).click();
     await page.getByRole("button", { name: t.weekdaysLong[5] }).click();
     await page.locator(".range-what").getByRole("button", { name: t.part_evening }).click();
-    await expect(page.getByText(fill(t.rangeChosen, { n: 4 }))).toBeVisible();
+    await expect(page.locator(".range-summary")).toHaveText("5 октября – 31 октября · 4 дня");
     await expect(dayButton(page, 10)).toHaveClass(/cal-chosen/);
     await expect(dayButton(page, 11)).not.toHaveClass(/cal-chosen/);
     await expectNoAxeViolations(page, "календарь: несколько дней");
@@ -1642,7 +1676,8 @@ test.describe("витрины в разных категориях", () => {
           if (width >= 1024) {
             await page.locator(".side-vitrinas").getByRole("button", { name: vitrina }).click();
           } else {
-            await page.locator("main .vitrina-pills").getByRole("button", { name: vitrina }).click();
+            await page.locator("main .vitrina-select button").click();
+            await page.getByRole("option").filter({ hasText: vitrina }).click();
           }
         }
         await expect(page.locator(".status-line, .skeleton")).toHaveCount(0);
@@ -1776,9 +1811,11 @@ test.describe("что ждёт партнёра после решений ком
       await expect(side.getByRole("button", { name: /Lola zali/ })).toContainText(words);
       await expect(side.getByRole("button", { name: /Kortej Premium/ })).not.toContainText(words);
     } else {
-      const pills = page.locator("main .vitrina-pills");
-      await expect(pills.getByRole("button", { name: /Lola zali/ })).toContainText(words);
-      await expect(pills.getByRole("button", { name: /Kortej Premium/ })).not.toContainText(words);
+      // Витрин четыре — список выбора: слова — в варианте списка
+      await page.locator("main .vitrina-select button").click();
+      await expect(page.getByRole("option").filter({ hasText: "Lola zali" })).toContainText(words);
+      await expect(page.getByRole("option").filter({ hasText: "Kortej Premium" })).not.toContainText(words);
+      await page.keyboard.press("Escape");
     }
     await expectNoAxeViolations(page, "услуги: витрины с отказами");
   });

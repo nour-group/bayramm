@@ -9,7 +9,9 @@
    перечитывается. Часть, на которую есть будущие заявки, убрать нельзя (409 part_in_use — со
    сколькими заявками); перейти на одно мероприятие в день можно всегда.
    Владелец кабинета меняет в шторке «Изменить»; сотрудник площадки (member) только смотрит.
-   Вписанное и не сохранённое — уход переспросит (useUnsaved). */
+   Вписанное и не сохранённое — уход переспросит (useUnsaved). Подсказка к «Заказов одновременно» —
+   словами категории (залы, машины, команды); у зала с указанным «Сколько залов» — их число рядом.
+   Сохранили — всплывающая строка; ошибка проверки — фокус на первое неверное поле. */
 
 import { ruPlural } from "@bayramm/shared";
 import type { VendorListing } from "@bayramm/shared/api/vendor";
@@ -28,12 +30,13 @@ import {
   windowText,
   windowTimes,
 } from "@bayramm/shared/categories";
-import { Checkbox, Dialog, NumberStepper, RadioGroup, Select } from "@bayramm/ui/react";
+import { Checkbox, Dialog, NumberStepper, RadioGroup, Select, useToast } from "@bayramm/ui/react";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { ApiFailure, api } from "./api";
 import { partName } from "./category";
 import { errorText } from "./errors";
-import { fill, type VendorDict } from "./i18n";
+import { fill, type TextKey, type VendorDict } from "./i18n";
+import { useFocusInvalid } from "./invalid";
 import { useConfirmLeave, useUnsaved } from "./unsaved";
 
 interface Props {
@@ -46,6 +49,19 @@ interface Props {
 }
 
 type Draft = DaySessionsDraft;
+
+/** Что значит «заказов одновременно» у категории: залы, машины, команды или мероприятия */
+const CAPACITY_HINT: Readonly<Record<string, TextKey>> = {
+  hall: "capacityHalls",
+  restaurant: "capacityHalls",
+  car: "capacityCars",
+  photo: "capacityTeams",
+  decor: "capacityTeams",
+};
+
+export function capacityHint(t: VendorDict, categoryCode: string): string {
+  return `${t[CAPACITY_HINT[categoryCode] ?? "capacityEvents"]} ${t.capacityLead}`;
+}
 
 /** «на эту часть 2 будущие заявки» */
 function inUseText(t: VendorDict, lang: "ru" | "uz", part: DayPart, count: number): string {
@@ -65,7 +81,11 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
   const [errors, setErrors] = useState<readonly string[]>([]);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const toast = useToast();
+  const form = useRef<HTMLFormElement>(null);
+  const showInvalid = useFocusInvalid(form);
+  // «Сколько залов» витрины — рядом с «Заказов одновременно»: обычно это одно и то же число
+  const halls = listing.attributes.halls_count;
 
   useUnsaved(open && daySessionsDirty(draft, start));
   const confirmLeave = useConfirmLeave();
@@ -76,7 +96,6 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
     setDraft(next);
     setErrors([]);
     setFormError(null);
-    setDone(false);
     setOpen(true);
   };
   // Вписанное и не сохранённое — «Уйти без сохранения?»; окно закрывается следующим тактом
@@ -104,6 +123,7 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
     if (!checked.ok) {
       setErrors(checked.errors);
       setFormError(null);
+      showInvalid();
       return;
     }
     setErrors([]);
@@ -113,10 +133,12 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
       await api.setDaySessions(listing.id, input, listing.calendarVersion);
       await onChanged();
       setOpen(false);
-      setDone(true);
+      toast(t.sessionsSaved, { tone: "success" });
     } catch (err) {
-      if (err instanceof ApiFailure && err.code === "invalid_input") setErrors(err.details);
-      else if (err instanceof ApiFailure && err.code === "part_in_use" && err.inUse.length > 0)
+      if (err instanceof ApiFailure && err.code === "invalid_input") {
+        setErrors(err.details);
+        showInvalid();
+      } else if (err instanceof ApiFailure && err.code === "part_in_use" && err.inUse.length > 0)
         setFormError(err.inUse.map((p) => inUseText(t, lang, p.part, p.count)).join(" "));
       else {
         // Календарь изменили: версия устарела — перечитать витрину, сохранить ещё раз
@@ -133,7 +155,7 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
   return (
     <section className="panel sessions" aria-labelledby="sessions-title">
       <div className="contacts-head">
-        <h3 className="panel-title" id="sessions-title">
+        <h3 className="panel-title" id="sessions-title" tabIndex={-1}>
           {t.sessionsTitle}
         </h3>
         {owner ? (
@@ -167,11 +189,6 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
           <dd>{sessions.parallelCapacity}</dd>
         </div>
       </dl>
-      {done ? (
-        <p className="sr-only" role="status">
-          {t.sessionsSaved}
-        </p>
-      ) : null}
 
       {owner ? (
         <Dialog
@@ -197,7 +214,13 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
             </>
           }
         >
-          <form id={formId} className="sessions-form" noValidate onSubmit={(event) => void submit(event)}>
+          <form
+            ref={form}
+            id={formId}
+            className="sessions-form"
+            noValidate
+            onSubmit={(event) => void submit(event)}
+          >
             <p className="note">{t.sessionsLead}</p>
             <fieldset className="sessions-field">
               <legend>{t.sessionsMode}</legend>
@@ -264,7 +287,8 @@ export function WorkingTimes({ listing, t, lang, owner, onChanged }: Props) {
                 {t.capacityTitle}
               </p>
               <p className="note" id={`${formId}-capacity-hint`}>
-                {t.capacityLead}
+                {capacityHint(t, listing.categoryCode)}
+                {typeof halls === "number" ? ` ${fill(t.capacityHallsCount, { n: halls })}` : ""}
               </p>
               <NumberStepper
                 value={draft.capacity}

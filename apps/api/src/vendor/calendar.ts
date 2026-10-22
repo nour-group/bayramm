@@ -96,7 +96,7 @@ async function assertOwnListing(trx: Tx, actor: VendorActor, listingId: string):
   };
 }
 
-const toBusyDay = (row: { day: string; source: string; request_id: string | null }): BusyDay => ({
+export const toBusyDay = (row: { day: string; source: string; request_id: string | null }): BusyDay => ({
   day: row.day,
   source: row.source as BusySource,
   requestId: row.request_id,

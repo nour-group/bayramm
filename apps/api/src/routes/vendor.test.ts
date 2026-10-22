@@ -13,6 +13,7 @@ describe("/vendor без сессии кабинета", () => {
     ["GET", "/vendor/me"],
     ["PATCH", "/vendor/me"],
     ["GET", "/vendor/requests"],
+    ["POST", "/vendor/requests/search"],
     ["GET", `/vendor/requests/${ID}`],
     ["PATCH", `/vendor/requests/${ID}`],
     ["POST", `/vendor/requests/${ID}/call`],

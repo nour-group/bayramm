@@ -20,9 +20,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { attentionOf, attentionTotals, mergeListings } from "./attention";
-import { tashkentToday } from "./format";
+import { formatDate, tashkentToday } from "./format";
 import { forgetAuthMethods } from "./hub";
 import { vendorDict } from "./i18n";
+import { forgetFind } from "./inbox-find";
 import { decidedRevisions, revisionFields } from "./Proposal";
 import { DEAL_ARM_MS } from "./RequestDetail";
 
@@ -129,6 +130,7 @@ function defaultRoutes(locale: "ru" | "uz" = "ru"): Record<string, Handler> {
     "GET /api/vendor/me": () => ({ body: me(locale) }),
     "PATCH /api/vendor/me": (init) => ({ body: me(JSON.parse(String(init.body)).locale) }),
     "GET /api/vendor/requests": () => ({ body: page([item()]) }),
+    "POST /api/vendor/requests/search": () => ({ body: page([item()]) }),
     [`GET /api/vendor/requests/${REQUEST_ID}`]: () => ({ body: detail() }),
     [`POST /api/vendor/requests/${REQUEST_ID}/call`]: () => ({ status: 204 }),
     [`PATCH /api/vendor/requests/${REQUEST_ID}`]: (init) => ({
@@ -660,6 +662,157 @@ describe("заявки", () => {
     await click(container.querySelector(".rq") ?? undefined);
     expect(heading()).toBe("Сессия закончилась");
   });
+
+  it("дата заявки в календаре: «вечер — занято 1 из 2 мест»; «Открыть день» — этот день в календаре витрины", async () => {
+    resize(1280);
+    // День в календаре: от сегодня до горизонта, иначе ссылка его не откроет
+    const day = new Date(Date.parse(`${tashkentToday()}T00:00:00Z`) + 20 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const sessions = {
+      mode: "parts" as const,
+      parts: ["morning" as const, "day" as const, "evening" as const],
+      windows: {
+        morning: { from: "06:00", to: "11:00" },
+        day: { from: "12:00", to: "17:00" },
+        evening: { from: "18:00", to: "24:00" },
+      },
+      custom: null,
+      parallelCapacity: 2,
+    };
+    routes[`GET /api/vendor/requests/${REQUEST_ID}`] = () => ({
+      body: detail({
+        eventDate: day,
+        dayParts: ["evening"],
+        eventDay: { sessions, busy: null, parts: [], bookings: [{ day, part: "evening", count: 1 }] },
+      }),
+    });
+    routes[`GET /api/vendor/listings/${LISTING_ID}/calendar`] = (_, url) => ({
+      body: {
+        listingId: LISTING_ID,
+        month: url.searchParams.get("month") ?? "",
+        today: tashkentToday(),
+        maxDay: "2099-12-31",
+        busy: [],
+        requestDays: [day],
+        requests: [],
+        version: 1,
+        mode: "parts",
+        parallelCapacity: 2,
+        sessions,
+        parts: [],
+        bookings: [{ day, part: "evening", count: 1 }],
+      } satisfies VendorCalendar,
+    });
+    await mount(`/requests/${REQUEST_ID}`);
+    const line = container.querySelector(".req-day");
+    expect(line?.classList.contains("req-day-partial")).toBe(true);
+    expect(line?.textContent).toContain("На эту дату: вечер — занято 1 из 2 мест");
+    // «Договорились» займёт дату — сказано под кнопками (после «Я связался»)
+    expect(container.textContent).not.toContain("займёт эту дату");
+    await click(byText("a", "Открыть день"));
+    expect(window.location.pathname + window.location.search).toBe(
+      `/calendar?listing=${LISTING_ID}&day=${day}&from=${REQUEST_ID}`,
+    );
+    expect(heading()).toBe("Календарь");
+    expect(
+      calls.some((c) => c.path === `/api/vendor/listings/${LISTING_ID}/calendar?month=${day.slice(0, 7)}`),
+    ).toBe(true);
+    expect(container.querySelector("#day-panel-title")?.textContent).toBe(
+      formatDate(day, vendorDict.ru, true),
+    );
+    expect(container.querySelector(".day-panel")?.textContent).toContain("Занято 1 из 2 мест");
+    // «Назад» Telegram — к заявке, из которой пришли
+    const webApp = (window as unknown as { Telegram: { WebApp: FakeWebApp } }).Telegram.WebApp;
+    const onBack = webApp.BackButton.onClick.mock.calls.at(-1)?.[0] as () => void;
+    await act(async () => onBack());
+    await flush();
+    expect(window.location.pathname).toBe(`/requests/${REQUEST_ID}`);
+  });
+
+  it("старый ответ без занятости даты — строки нет; после «Я связался» — что «Договорились» займёт дату", async () => {
+    await mount(`/requests/${REQUEST_ID}`);
+    expect(container.querySelector(".req-day")).toBeNull();
+    await click(byText("button", "Я связался с клиентом"));
+    expect(container.textContent).toContain("«Договорились» займёт эту дату в календаре.");
+  });
+
+  it("позвонили и вернулись — «Отметьте «Я связался»» с кнопкой; не дозвонились — строка, что делать", async () => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    await mount(`/requests/${REQUEST_ID}`);
+    await click(container.querySelector('a[href^="tel:"]') ?? undefined);
+    expect(container.querySelector(".call-note")?.textContent).toBe(
+      "Не дозвонились — оставьте заявку как есть, мы напомним о сроке.",
+    );
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    await flush();
+    expect(document.body.textContent).toContain("Поговорили с клиентом? Отметьте «Я связался».");
+    await click([...document.querySelectorAll("button")].find((b) => b.textContent === "Отметить"));
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ status: "contacted" });
+    expect(container.querySelector(".detail-top .chip")?.textContent).toBe("Связались");
+    // Ещё раз вернулись — заявка уже не ждёт ответа, спрашивать нечего
+    await act(async () => document.dispatchEvent(new Event("visibilitychange")));
+    expect(container.querySelector(".call-note")).toBeNull();
+  });
+
+  it("поиск: №, имя или конец номера — телом POST через паузу, не в адресе; дата и порядок — в запросе", async () => {
+    await mount("/requests");
+    const input = container.querySelector<HTMLInputElement>(".inbox-search input") ?? undefined;
+    expect(input?.getAttribute("aria-label")).toBe("Поиск заявок");
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    await act(async () => {
+      setter?.call(input, "4567");
+      input?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const searches = () =>
+      calls.filter((c) => c.method === "POST" && c.path === "/api/vendor/requests/search");
+    // Не на каждую букву: запрос — после 300 мс тишины
+    expect(searches()).toHaveLength(0);
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 350)));
+    await flush();
+    expect(searches().at(-1)?.body).toEqual({
+      tab: "waiting",
+      cursor: null,
+      listingId: null,
+      q: "4567",
+      date: null,
+      sort: null,
+    });
+    // Что ищут — ни в одном адресе: ни у API, ни у страницы
+    expect(calls.some((c) => c.path.includes("4567"))).toBe(false);
+    expect(window.location.href).not.toContain("4567");
+    expect(JSON.stringify(window.history.state)).not.toContain("4567");
+    await click(byText("button", "По дате события"));
+    expect(searches().at(-1)?.body).toMatchObject({ q: "4567", sort: "event" });
+    // Ничего не нашлось — «Сбросить поиск»
+    routes["POST /api/vendor/requests/search"] = () => ({
+      body: { ...page([]), counts: { waiting: 0, active: 0, closed: 0 } },
+    });
+    await click(byText("button", "Закрытые"));
+    expect(container.textContent).toContain("Ничего не нашлось");
+    // Значок раздела — по всем заявкам, а не по найденному
+    expect(container.querySelector(".nav-count")?.textContent).toBe("1");
+    await click(byText("button", "Сбросить поиск"));
+    expect(calls.at(-1)?.path).toBe("/api/vendor/requests?tab=closed&sort=event");
+    // Порядок помнится до перезагрузки страницы — вернуть обычный
+    await click(byText("button", "По дате события"));
+    expect(calls.at(-1)?.path).toBe("/api/vendor/requests?tab=closed");
+  });
+
+  it("поиск помнится между экранами и стирается при смене кабинета и выходе (forgetFind)", async () => {
+    await mount("/requests");
+    const input = container.querySelector<HTMLInputElement>(".inbox-search input") ?? undefined;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    await act(async () => {
+      setter?.call(input, "Dilnoza");
+      input?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    forgetFind();
+    act(() => root.unmount());
+    container.remove();
+    await mount("/requests");
+    expect(container.querySelector<HTMLInputElement>(".inbox-search input")?.value).toBe("");
+  });
 });
 
 describe("календарь", () => {
@@ -941,6 +1094,33 @@ describe("календарь", () => {
     ).toBe(true);
     const put = calls.find((c) => c.method === "PUT" && c.path === calendarPath);
     expect(put?.headers.get("If-Match")).toBe("7");
+    // Что сделано — всплывающей строкой: сколько дней и какая часть
+    expect(document.body.textContent).toMatch(/Закрыто: \d+ (день|дня|дней) · вечер/);
+  });
+
+  it("несколько дней: «1 октября – 3 октября · 3 дня» под месяцем", async () => {
+    routes[`GET ${calendarPath}`] = () => ({ body: { ...calendar(), today: `${month}-01` } });
+    await mount("/calendar");
+    await click(byText("button", "Несколько дней"));
+    await click(days()[0]);
+    expect(container.querySelector(".range-summary")?.textContent).toContain("Теперь — на последний.");
+    await click(days()[2]);
+    const first = formatDate(`${month}-01`, vendorDict.ru);
+    const third = formatDate(`${month}-03`, vendorDict.ru);
+    expect(container.querySelector(".range-summary")?.textContent).toBe(`${first} – ${third} · 3 дня`);
+  });
+
+  it("месяц — списком на 13 месяцев вперёд: до дальнего месяца — одним выбором", async () => {
+    await mount("/calendar");
+    const trigger = byText<HTMLButtonElement>(".cal-head button", month.slice(0, 4));
+    await click(trigger);
+    const options = [...document.querySelectorAll('[role="option"]')];
+    expect(options).toHaveLength(13);
+    await click(options.at(-1));
+    const last = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1 + 12, 1))
+      .toISOString()
+      .slice(0, 7);
+    expect(calls.at(-1)?.path).toBe(`${calendarPath}?month=${last}`);
   });
 });
 
@@ -1085,7 +1265,7 @@ describe("изменения витрины", () => {
     expect(patched().map((c) => c.body)).toEqual([{ version: 3, name: "New Hall" }]);
     expect(posted()).toEqual([]);
     expect(dialog()).toBeNull();
-    expect(container.textContent).toContain("Отправлено на проверку");
+    expect(document.body.textContent).toContain("Отправлено на проверку");
     // Карточка прежняя, у неё метка и строка «Предложено»; «Изменить» скрыто, пока предложение открыто
     expect(container.querySelector(".venue-name")?.textContent).toBe("Test Hall");
     const group = container.querySelector('[data-group="basics"]');
@@ -1179,15 +1359,16 @@ describe("изменения витрины", () => {
     ]);
     expect(posted()).toEqual([]);
     expect(dialog()).toBeNull();
-    expect(container.textContent).toContain("Сохранено.");
+    expect(document.body.textContent).toContain("Сохранено.");
     expect(container.querySelector('[data-group="place"]')?.textContent).toContain("80–300 гостей");
     expect(container.querySelector('[data-group="place"]')?.textContent).toContain("Чиланзар");
     expect(container.querySelector('[data-group="place"] .chip')).toBeNull();
     // Пункт выполнен — его больше нет; предложения не было
     expect(container.querySelector(".readiness")?.textContent).not.toContain("Укажите вместимость");
     expect(edit("Место")).toBeDefined();
-    // Фокус — на строку «Сохранено»: кнопка чек-листа исчезла
-    expect(document.activeElement?.getAttribute("role")).toBe("status");
+    // Фокус — на заголовок сохранённой карточки (кнопка чек-листа исчезла); «Сохранено» — строкой
+    // уведомления
+    expect(document.activeElement?.textContent).toBe("Место");
   });
 
   it("«до» меньше «от» и вне 1–5000 — ошибка у поля, без запроса", async () => {
@@ -1372,6 +1553,34 @@ describe("изменения витрины", () => {
     expect(text.match(/владелец кабинета/g)).toHaveLength(1);
     // Ни предложения, ни решения по прошлому — блока изменений нет
     expect(container.querySelector(".proposal")).toBeNull();
+  });
+
+  it("сессия кончилась посреди правки: вписанное не пропало — после входа окно открывается с ним", async () => {
+    routes[`PATCH ${listingPath}`] = () => ({
+      status: 401,
+      body: { error: { code: "unauthorized", message: "x" } },
+    });
+    await mount("/card");
+    await click(edit("Основное"));
+    await type(field("Описание на русском"), "Зал на 300 гостей с террасой");
+    await click(submit());
+    expect(heading()).toBe("Сессия закончилась");
+    await click(byText("button", "Перезапустить"));
+    await flush();
+    expect(heading()).toBe("Витрина");
+    expect(dialog()?.textContent).toContain("Вернули вписанное до конца сессии — проверьте и сохраните.");
+    expect(field("Описание на русском")?.value).toBe("Зал на 300 гостей с террасой");
+    // Черновик восстанавливается один раз
+    expect(Object.keys(window.sessionStorage).filter((k) => k.startsWith("bayramm.vendor.draft."))).toEqual(
+      [],
+    );
+  });
+
+  it("ссылка к блоку (?focus=attributes, из календаря «Изменить срок») — фокус на «Данные витрины»", async () => {
+    await mount("/card?focus=attributes");
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(document.activeElement?.textContent).toBe("Данные витрины");
+    expect(document.activeElement?.closest("[data-group]")?.getAttribute("data-group")).toBe("attributes");
   });
 });
 

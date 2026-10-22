@@ -20,7 +20,8 @@ import type { SelectOption } from "@bayramm/ui/react";
 import type { TextKey } from "./i18n";
 
 /** Группа сведений: у каждой своя карточка и своё окно «Изменить» */
-export type EditGroup = "basics" | "place" | "attributes" | "videos";
+export const EDIT_GROUPS = ["basics", "place", "attributes", "videos"] as const;
+export type EditGroup = (typeof EDIT_GROUPS)[number];
 
 /** Границы вместимости — как у столбцов базы и сервера */
 export const CAPACITY_RANGE = { min: 1, max: 5000 } as const;
@@ -170,11 +171,11 @@ export type FieldErrors = Readonly<Record<string, TextKey>>;
 export function basicsErrors(values: BasicsValues, moderated: boolean): FieldErrors {
   const errors: Record<string, TextKey> = {};
   const name = values.name.trim();
-  if (name.length < 2 || name.length > 80) errors.name = "fieldInvalid";
+  if (name.length < 2 || name.length > 80) errors.name = "errNameLength";
   // На проверке и на сайте без описания витрина не готова — стереть его нельзя
   if (moderated) {
-    if (values.descriptionRu.trim() === "") errors.descriptionRu = "fieldInvalid";
-    if (values.descriptionUz.trim() === "") errors.descriptionUz = "fieldInvalid";
+    if (values.descriptionRu.trim() === "") errors.descriptionRu = "errDescriptionRequired";
+    if (values.descriptionUz.trim() === "") errors.descriptionUz = "errDescriptionRequired";
   }
   return errors;
 }
@@ -202,8 +203,8 @@ export function placeErrors(
   values: PlaceValues,
 ): FieldErrors {
   const errors: Record<string, TextKey> = hasCapacity(category) ? { ...capacityErrors(listing, values) } : {};
-  if (values.addressRu.trim().length > 300) errors.addressRu = "fieldInvalid";
-  if (values.addressUz.trim().length > 300) errors.addressUz = "fieldInvalid";
+  if (values.addressRu.trim().length > 300) errors.addressRu = "errAddressLong";
+  if (values.addressUz.trim().length > 300) errors.addressUz = "errAddressLong";
   return errors;
 }
 

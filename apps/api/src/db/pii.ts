@@ -139,6 +139,18 @@ async function firstPhone(trx: Tx, query: RawBuilder<PhoneRow>): Promise<string 
  * Телефон клиента из заявки. Вендор — без причины (reason не передаётся), пока
  * действует согласие; сотрудник — только admin и с причиной. Кабинет вендора, панель
  */
+/**
+ * Заявки партнёра, где номер клиента кончается на эти цифры (4–9) — поиск во входящих. Только id:
+ * номер не раскрывается; сам поиск — строка в журнале доступа к ПДн (сколько совпало, без цифр).
+ * Вызывать один раз на поиск. Кабинет вендора
+ */
+export async function searchRequestsByPhoneTail(trx: Tx, tail: string): Promise<string[]> {
+  const { rows } = await sql<{ id: string }>`
+    select id::text as id from unnest(pii.vendor_requests_by_phone_tail(${tail}::text)) as id
+  `.execute(trx);
+  return rows.map((row) => row.id);
+}
+
 export function readRequestPhone(trx: Tx, requestId: string, reason?: string | null): Promise<string | null> {
   return firstPhone(
     trx,

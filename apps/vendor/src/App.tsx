@@ -15,10 +15,12 @@ import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRe
 import { VendorChooser } from "./Account";
 import { ApiFailure, accountMe, api, setUnauthorizedHandler, signIn, tokenStore } from "./api";
 import { type AttentionMark, attentionTotals, mergeListings } from "./attention";
+import { clearDrafts, flushDrafts, setDraftOwner } from "./drafts";
 import { Gate, type GateKind } from "./Gate";
 import { CALLBACK_PATH, chooseVendor, finishHub, SIGNIN_PARAM, startHub } from "./hub";
 import { fill, LANG_NAMES, type VendorDict, vendorDict } from "./i18n";
 import { Icon, type IconName } from "./icons";
+import { forgetFind } from "./inbox-find";
 import { initialLang, saveLang } from "./lang";
 import { type Layout, useLayout } from "./layout";
 import {
@@ -34,7 +36,7 @@ import {
 } from "./router";
 import { SideVitrinas } from "./SideVitrinas";
 import { Lazy, preloadScreens, SCREENS, warmInbox } from "./screens";
-import { announceReady, launchedFromTelegram, loadTelegramWebApp } from "./telegram";
+import { announceReady, inTelegram, launchedFromTelegram, loadTelegramWebApp } from "./telegram";
 import { Heading } from "./ui";
 import { UnsavedContext, useUnsavedGuard } from "./unsaved";
 import { Welcome } from "./Welcome";
@@ -284,6 +286,8 @@ function Cabinet() {
   const [scope, setScope] = useState<"all" | "listing">("all");
   const [fresh, setFresh] = useState<number | null>(null);
   const ready = auth.kind === "ready" ? auth : null;
+  // Черновики форм — только того, кто вошёл (drafts.ts); до входа — ничьи
+  setDraftOwner(ready ? ready.me.user.id : null);
   const { confirmLeave } = unsaved.registry;
   // Другая витрина — формы прежней закрываются: с правками — сначала вопрос
   const chooseListing = useCallback((id: string) => confirmLeave(() => setListingId(id)), [confirmLeave]);
@@ -324,9 +328,13 @@ function Cabinet() {
     if (auth.kind === "ready") preloadScreens();
   }, [auth.kind]);
 
-  // Сессия кончилась посреди работы — «откройте из бота заново»
+  // Сессия кончилась посреди работы — «откройте из бота заново». Вписанное в открытых формах —
+  // во вкладку: после входа форма откроется с ним (drafts.ts)
   useEffect(() => {
-    setUnauthorizedHandler(() => setAuth({ kind: "expired" }));
+    setUnauthorizedHandler(() => {
+      flushDrafts();
+      setAuth({ kind: "expired" });
+    });
     return () => setUnauthorizedHandler(null);
   }, []);
 
@@ -436,6 +444,18 @@ function Cabinet() {
   }, [section, signedIn, refreshAttention]);
   // Заявки одной витрины — только когда витрин несколько и выбрана одна
   const listings = ready?.me.listings ?? [];
+  // Ссылка на день календаря (из заявки) несёт свою витрину: она становится выбранной везде — ещё
+  // до первой отрисовки календаря (иначе он открылся бы на прежней витрине и сбросил день). Дальше
+  // выбор витрины — снова за человеком, пока не придёт другая такая ссылка
+  const linked =
+    location?.listing && listings.some((listing) => listing.id === location.listing)
+      ? location.listing
+      : null;
+  const [linkedSeen, setLinkedSeen] = useState<string | null>(null);
+  if (linked !== null && linked !== linkedSeen) {
+    setLinkedSeen(linked);
+    setListingId(linked);
+  }
   const attention = useMemo(() => attentionTotals(listings), [listings]);
   const inboxFilter = scope === "listing" && listings.length > 1 ? listingId : null;
   const filterInbox = useCallback(
@@ -470,6 +490,8 @@ function Cabinet() {
   }, []);
   const switchVendor = useCallback(() => {
     chooseVendor(null);
+    clearDrafts();
+    forgetFind();
     setFresh(null);
     retry();
   }, [retry]);
@@ -503,6 +525,8 @@ function Cabinet() {
             inSidebar={layout === "desktop"}
             navigate={navigate}
             role={auth.me.user.role}
+            day={location.day}
+            from={location.from}
           />
         )}
       </Lazy>
@@ -521,6 +545,7 @@ function Cabinet() {
             inSidebar={layout === "desktop"}
             navigate={navigate}
             onChanged={refreshAttention}
+            focus={location.focus}
           />
         )}
       </Lazy>
@@ -576,12 +601,15 @@ function Cabinet() {
 
   // Разделы — только в кабинете; до входа на любой ширине — шапка и экран по центру
   const shell = ready ? layout : "gate";
+  // В Telegram у Mini App своя шапка с именем бота: на телефоне своей полосы с названием нет —
+  // только отступ безопасных зон, и он не прилипает (первая заявка выше на экране)
+  const telegram = ready !== null && inTelegram();
   return (
     <UiTextsProvider texts={uiTexts}>
       {/* Уведомления — над прилипшими панелями низа (нижняя панель, панель действий заявки) */}
       <ToastProvider offset="bars">
         <UnsavedContext.Provider value={unsaved.registry}>
-          <div className={`app app-${shell}`}>
+          <div className={`app app-${shell}${telegram ? " app-tg" : ""}`}>
             <a className="skip" href="#main">
               {t.skip}
             </a>
@@ -616,7 +644,7 @@ function Cabinet() {
                 </div>
               </aside>
             ) : (
-              <TopBar>
+              <TopBar sticky={!(telegram && shell === "phone")}>
                 <Brand t={t} />
                 {ready ? null : <LangSwitch lang={lang} t={t} onChange={chooseLang} />}
               </TopBar>
@@ -658,9 +686,9 @@ function Cabinet() {
 }
 
 /** Шапка телефона и планшета прилипла к верху: фокус и прокрутка к полю не уходят под неё */
-function TopBar({ children }: { children: ReactNode }) {
+function TopBar({ children, sticky = true }: { children: ReactNode; sticky?: boolean }) {
   const bar = useRef<HTMLElement>(null);
-  useStickyBar(bar, "top");
+  useStickyBar(bar, "top", sticky);
   return (
     <header ref={bar} className="top">
       {children}

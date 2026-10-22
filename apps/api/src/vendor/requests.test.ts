@@ -8,12 +8,15 @@ import {
   getRequest,
   type InboxCursor,
   idOrNotFound,
+  isPhoneSearch,
   listRequests,
   logCallAttempt,
   PAGE_LIMIT_DEFAULT,
   parseInboxCursor,
   parseListQuery,
   parsePatch,
+  parseSearch,
+  parseSearchBody,
   undoContacted,
   updateRequestStatus,
   withoutUndone,
@@ -126,6 +129,103 @@ describe("разбор запроса", () => {
     ]) {
       expect(() => parseListQuery(query), JSON.stringify(query)).toThrow(ApiError);
     }
+  });
+
+  it("поиск, дата праздника и порядок по дате события", () => {
+    expect(parseSearch(" №1047 ")).toEqual({ kind: "digits", digits: "1047" });
+    expect(parseSearch("+998 90 123-45-67")).toEqual({ kind: "digits", digits: "998901234567" });
+    expect(parseSearch("Дилноза")).toEqual({ kind: "name", text: "Дилноза" });
+    // Пусто и одна буква — не поиск
+    expect(parseSearch("  ")).toBeNull();
+    expect(parseSearch("Д")).toBeNull();
+    expect(() => parseSearch("я".repeat(65))).toThrow(ApiError);
+    // Поиск — только телом POST: в адресе GET его не принимаем (адрес попадает в журналы запросов)
+    expect(() => parseListQuery({ q: "4567" })).toThrow(ApiError);
+    expect(parseListQuery({ date: "2026-11-14", sort: "event" })).toMatchObject({
+      date: "2026-11-14",
+      sort: "event",
+    });
+    expect(
+      parseSearchBody({
+        tab: "closed",
+        q: "4567",
+        date: "2026-11-14",
+        sort: "event",
+        cursor: "2026-11-14.1042",
+        listingId: null,
+      }),
+    ).toEqual({
+      tab: "closed",
+      listingId: null,
+      after: { kind: "event", date: "2026-11-14", no: 1042 },
+      limit: PAGE_LIMIT_DEFAULT,
+      search: { kind: "digits", digits: "4567" },
+      date: "2026-11-14",
+      sort: "event",
+    });
+    expect(formatInboxCursor({ kind: "event", date: "2026-11-14", no: 1042 })).toBe("2026-11-14.1042");
+    for (const query of [
+      { date: "2026-02-30" },
+      { date: "14.11.2026" },
+      { sort: "price" },
+      // курсор по сроку не подходит порядку по дате события
+      { sort: "event", cursor: "1.1790000000123456.1042" },
+    ]) {
+      expect(() => parseListQuery(query), JSON.stringify(query)).toThrow(ApiError);
+    }
+    // Тело поиска: только известные поля, строками
+    for (const body of [null, [], "q=1", { q: "Дилноза", extra: 1 }, { q: { $ne: "" } }]) {
+      expect(() => parseSearchBody(body), JSON.stringify(body)).toThrow(ApiError);
+    }
+    expect(isPhoneSearch({ kind: "digits", digits: "4567" })).toBe(true);
+    expect(isPhoneSearch({ kind: "digits", digits: "104" })).toBe(false);
+    expect(isPhoneSearch({ kind: "name", text: "4567 Дилноза" })).toBe(false);
+  });
+
+  it("поиск — только параметром: номер заявки или конец номера клиента, имя — по видимому контакту", async () => {
+    const found = "eeeeeeee-0000-0000-0000-0000000000a9";
+    const fake = dbWith(row(), (q) =>
+      q.sql.includes("vendor_requests_by_phone_tail") ? [{ id: found }] : null,
+    );
+    await listRequests(fake.db, ACTOR, {
+      tab: "waiting",
+      listingId: null,
+      after: null,
+      limit: 20,
+      search: { kind: "digits", digits: "998901234567" },
+      date: "2026-11-14",
+    });
+    // Номер сверяет база один раз на поиск (и пишет о нём в журнал доступа к ПДн): хвост — последние
+    // девять цифр, только параметром
+    const tails = fake.queries.filter((q) => q.sql.includes("vendor_requests_by_phone_tail"));
+    expect(tails).toHaveLength(1);
+    expect(tails[0]?.parameters).toEqual(["901234567"]);
+    const list = fake.queries.find(isItemQuery);
+    expect(list?.sql).toContain("r.public_no = $");
+    expect(list?.sql).toContain("r.id = any($");
+    expect(list?.sql).toContain('"r"."event_date" = $');
+    expect(list?.parameters).toEqual(expect.arrayContaining(["998901234567", [found], "2026-11-14"]));
+    expect(list?.sql).not.toContain("901234567");
+    const counts = fake.queries.find((q) => q.sql.includes("group by"));
+    expect(counts?.parameters).toEqual(expect.arrayContaining([[found], "2026-11-14"]));
+
+    const byName = dbWith(row(), () => null);
+    await listRequests(byName.db, ACTOR, {
+      tab: "closed",
+      listingId: null,
+      after: null,
+      limit: 20,
+      search: { kind: "name", text: "50%_" },
+      sort: "event",
+    });
+    const named = byName.queries.find(isItemQuery);
+    // Имя — без функции номера и без строки журнала
+    expect(byName.queries.some((q) => q.sql.includes("vendor_requests_by_phone_tail"))).toBe(false);
+    expect(named?.sql).toContain("rc.contact_name ilike $");
+    expect(named?.parameters).toContain("%50\\%\\_%");
+    expect(named?.sql).toContain('order by "r"."event_date", "r"."public_no"');
+    // Имя ищется только среди видимых контактов: счётчики — с тем же контактом
+    expect(byName.queries.find((q) => q.sql.includes("group by"))?.sql).toContain('"pii"."request_contacts"');
   });
 
   it("переход: только contacted, deal, declined; причина — только у отказа и обязательна", () => {
@@ -377,6 +477,51 @@ describe("getRequest", () => {
     expect(detail.contact).toBeNull();
     expect(detail.contactName).toBeNull();
     expect(fake.queries.some((q) => q.sql.includes("read_request_phone"))).toBe(false);
+  });
+
+  it("занятость даты: время работы витрины, отметки и договорённости того же дня", async () => {
+    const fake = dbWith(row({ status: "viewed" }), (q) => {
+      if (q.sql.includes('from "app"."listings" as "l" inner join "app"."categories"'))
+        return [
+          {
+            category_code: "hall",
+            parallel_capacity: 2,
+            part_mode: "parts",
+            day_parts: "{morning,evening}",
+            part_windows: null,
+            availability_mode: "parts",
+          },
+        ];
+      if (q.sql.includes('from "app"."availability" where')) return [];
+      if (q.sql.includes('"app"."availability_parts"'))
+        return [{ day: "2026-11-14", part: "morning", source: "vendor", request_id: null }];
+      if (q.sql.includes("r.status = 'deal'")) return [{ day: "2026-11-14", part: "evening", count: 1 }];
+      return null;
+    });
+    const detail = await getRequest(fake.db, ACTOR, REQUEST_ID, new Date("2026-10-20T08:00:00Z"));
+    expect(detail.eventDay?.sessions).toMatchObject({ mode: "parts", parallelCapacity: 2 });
+    expect(detail.eventDay?.sessions.parts).toEqual(["morning", "evening"]);
+    expect(detail.eventDay?.busy).toBeNull();
+    expect(detail.eventDay?.parts).toEqual([
+      { day: "2026-11-14", part: "morning", source: "vendor", requestId: null },
+    ]);
+    expect(detail.eventDay?.bookings).toEqual([{ day: "2026-11-14", part: "evening", count: 1 }]);
+    const day = fake.queries.find((q) => q.sql.includes('"app"."availability_parts"'));
+    expect(day?.parameters).toEqual([LISTING_ID, "2026-11-14", "2026-11-14"]);
+  });
+
+  it("решённая заявка и прошедшая дата — без занятости и без чтения календаря", async () => {
+    const closed = dbWith(row({ status: "deal" }));
+    expect(
+      (await getRequest(closed.db, ACTOR, REQUEST_ID, new Date("2026-10-20T08:00:00Z"))).eventDay,
+    ).toBeNull();
+    const past = dbWith(row({ status: "viewed" }));
+    expect(
+      (await getRequest(past.db, ACTOR, REQUEST_ID, new Date("2026-11-20T08:00:00Z"))).eventDay,
+    ).toBeNull();
+    for (const fake of [closed, past]) {
+      expect(fake.queries.some((q) => q.sql.includes('"app"."availability'))).toBe(false);
+    }
   });
 
   it("чужая или несуществующая — 404 и откат", async () => {

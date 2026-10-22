@@ -384,26 +384,23 @@ describe("витрины", () => {
     expect(byText(".svc-name", "Машина для молодожёнов")).toBeDefined();
   });
 
-  it("телефон, до четырёх витрин: пилюли с переносом — все видны, выбор в одно нажатие, подписи на экране нет", async () => {
+  it("телефон, от трёх витрин: список выбора — пилюли заняли бы пол-экрана; подписи на экране нет", async () => {
     routes[`GET /api/vendor/listings/${CAR}/calendar`] = () => ({ body: calendar(CAR, { mode: "parts" }) });
     await mount("/calendar");
     expect(container.querySelector(".side")).toBeNull();
-    expect(container.querySelector(".vitrina-select")).toBeNull();
-    const group = container.querySelector(".vitrina-pills");
-    // Имя группы — только для диктора: «Выберите витрину» над пилюлями на экране нет
-    expect(group?.getAttribute("aria-label")).toBe("Выберите витрину");
+    expect(container.querySelector(".vitrina-pills")).toBeNull();
     expect(container.querySelector("label.field-label")).toBeNull();
-    const pills = [...(group?.querySelectorAll("button") ?? [])];
-    expect(pills.map((p) => p.textContent)).toEqual([
-      "Lola zaliТойхона",
-      "Kortej PremiumКортеж",
-      "Kadr StudioФото и видео",
-      "Shirin TortТорты и сладости",
+    const trigger = container.querySelector(".vitrina-select button");
+    expect(trigger?.textContent).toContain("Lola zali · Тойхона");
+    await click(trigger);
+    expect([...document.querySelectorAll('[role="option"]')].map((o) => o.textContent)).toEqual([
+      "Lola zali · Тойхона",
+      "Kortej Premium · Кортеж",
+      "Kadr Studio · Фото и видео",
+      "Shirin Tort · Торты и сладости",
     ]);
-    expect(pills[0]?.getAttribute("aria-pressed")).toBe("true");
-    await click(pills[1]);
+    await click(byText('[role="option"]', "Kortej Premium"));
     expect(sent("GET", `/api/vendor/listings/${CAR}/calendar?month=${month}`)).toHaveLength(1);
-    expect(pills[1]?.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("телефон, больше четырёх витрин: список выбора — тоже без подписи на экране", async () => {
@@ -453,33 +450,31 @@ describe("витрины", () => {
 describe("входящие по витринам", () => {
   it("все витрины или одна (listingId); значок у раздела — по всем витринам", async () => {
     await mount("/requests");
-    // Витрин четыре — пилюли («Все витрины» первой), подписи на экране нет
-    const group = () => container.querySelector(".vitrina-pills");
-    const pill = (name: string) => byText<HTMLButtonElement>(".vitrina-pills button", name, container);
-    expect(group()?.getAttribute("aria-label")).toBe("Витрина");
-    expect(container.querySelector(".vitrina-select")).toBeNull();
-    expect(pill("Все витрины")?.getAttribute("aria-pressed")).toBe("true");
+    // Витрин четыре — список выбора («Все витрины» первым), подписи на экране нет
+    expect(container.querySelector(".vitrina-pills")).toBeNull();
+    expect(container.querySelector(".vitrina-select label")).toBeNull();
+    expect(container.querySelector(".vitrina-select button")?.textContent).toContain("Все витрины");
+    const pick = async (name: string) => {
+      await click(container.querySelector(".vitrina-select button"));
+      await click(byText('[role="option"]', name));
+    };
     expect(calls.find((c) => c.path.startsWith("/api/vendor/requests?"))?.path).toBe(
       "/api/vendor/requests?tab=waiting",
     );
     expect(container.querySelector(".nav-count")?.textContent).toBe("1");
 
     // Витрина без заявок: список пуст, а значок у раздела — по-прежнему по всем витринам
-    await click(pill("Lola zali"));
+    await pick("Lola zali");
     expect(calls.at(-1)?.path).toBe(`/api/vendor/requests?tab=waiting&listingId=${HALL}`);
     expect(container.querySelectorAll(".rq-list .rq")).toHaveLength(0);
     expect(container.querySelector(".nav-count")?.textContent).toBe("1");
-    await click(pill("Kortej Premium"));
+    await pick("Kortej Premium");
     expect(calls.at(-1)?.path).toBe(`/api/vendor/requests?tab=waiting&listingId=${CAR}`);
     expect(container.querySelectorAll(".rq-list .rq")).toHaveLength(1);
 
     // Выбранная во входящих витрина — выбранная и в других разделах
     await click(byText("nav.tabbar a", "Витрина"));
-    expect(
-      byText<HTMLButtonElement>(".vitrina-pills button", "Kortej Premium", container)?.getAttribute(
-        "aria-pressed",
-      ),
-    ).toBe("true");
+    expect(container.querySelector(".vitrina-select button")?.textContent).toContain("Kortej Premium");
     expect(container.querySelector(".venue .chip-cat")).toBeNull();
   });
 
@@ -509,11 +504,7 @@ describe("входящие по витринам", () => {
     expect(notice?.textContent).not.toContain("Lola zali");
     await click(byText(".not-live button", "Что осталось"));
     expect(heading()).toBe("Витрина");
-    expect(
-      byText<HTMLButtonElement>(".vitrina-pills button", "Kadr Studio", container)?.getAttribute(
-        "aria-pressed",
-      ),
-    ).toBe("true");
+    expect(container.querySelector(".vitrina-select button")?.textContent).toContain("Kadr Studio");
     expect(container.querySelector(".readiness h2")?.textContent).toBe("Что осталось до публикации");
   });
 
@@ -671,7 +662,34 @@ describe("услуги", () => {
     expect(container.querySelector(".svc-editor")).toBeNull();
     expect(byText(".svc", "Лимузин")?.querySelector(".chip")?.textContent).toBe("Черновик");
     expect(document.activeElement?.textContent).toBe("Лимузин");
-    expect(container.textContent).toContain("Сохранено.");
+    // Сохранено — всплывающей строкой
+    expect(document.body.textContent).toContain("Сохранено.");
+  });
+
+  it("каталог: что уже есть — «уже есть»; за что цена — не выбрано заранее; «15 млн за гостя» — переспросить", async () => {
+    routes[`GET /api/vendor/listings/${HALL}`] = () => ({
+      body: { ...LISTINGS[HALL], services: [service({ type: "banquet_weekday", priceUnit: "per_guest" })] },
+    });
+    await mount("/services");
+    await click(byText("button", "Добавить услугу"));
+    await click(field("Услуга из каталога"));
+    expect(byText('[role="option"]', "Банкет — будни")?.textContent).toContain("уже есть");
+    expect(byText('[role="option"]', "Банкет — выходные")?.textContent).not.toContain("уже есть");
+    await click(byText('[role="option"]', "Банкет — выходные"));
+    // Две единицы — ни одна не выбрана заранее
+    const units = () => [...container.querySelectorAll<HTMLInputElement>('.svc-editor input[type="radio"]')];
+    expect(units()).toHaveLength(2);
+    expect(units().some((u) => u.checked)).toBe(false);
+    await type(field("Цена"), "15000000");
+    await click(byText(".svc-editor button", "Отправить на проверку"));
+    expect(sent("POST", `/api/vendor/listings/${HALL}/services`)).toEqual([]);
+    expect(container.textContent).toContain("Выберите, за что цена.");
+    // Фокус — на первое неверное: выбор единицы
+    expect(document.activeElement).toBe(units()[0]);
+    await click(units()[0]?.closest("label") ?? units()[0]);
+    expect(container.querySelector(".svc-price-warn")?.textContent).toBe(
+      "Цена за гостя больше 2 млн сум. Проверьте: может, это цена за всё мероприятие?",
+    );
   });
 
   it("«другая услуга» — название на двух языках обязательно", async () => {
@@ -1043,9 +1061,13 @@ describe("чек-лист готовности", () => {
       const after = container.querySelector(".readiness");
       expect(after?.textContent).toContain("Витрина на проверке у команды Bayramm");
       expect(byText(".readiness button", "Отправить на проверку", container)).toBeUndefined();
-      const said = container.querySelector('.readiness [role="status"]');
-      expect(said?.textContent).toBe("Отправили: витрина на проверке у команды Bayramm.");
-      expect(document.activeElement).toBe(said);
+      // «На проверке» скажет чек-лист — второй строки об этом нет; сколько ждать — всплывающей
+      // строкой, один раз; фокус — на чек-листе (кнопка исчезла)
+      expect(after?.querySelector('[role="status"]')).toBeNull();
+      expect(document.body.textContent).toContain(
+        "Отправили на проверку. Обычно проверяем за 24 ч — решение придёт в Telegram.",
+      );
+      expect(document.activeElement).toBe(after);
       // Значки и статусы витрин в разделах — заново
       expect(sent("GET", "/api/vendor/me").length).toBeGreaterThan(1);
     });
@@ -1114,6 +1136,18 @@ describe("календарь по модели занятости", () => {
         bookings: [{ day: day(target), part: "evening", count: 2 }],
       }),
     });
+  });
+
+  it("день по ссылке из заявки: витрина ссылки выбрана, день открыт; другая витрина — выбором, как обычно", async () => {
+    routes[`GET /api/vendor/listings/${HALL}/calendar`] = () => ({ body: calendar(HALL, { mode: "parts" }) });
+    await mount(`/calendar?listing=${CAR}&day=${day(target)}`);
+    expect(sent("GET", `${base}?month=${month}`)).toHaveLength(1);
+    expect(sent("GET", `/api/vendor/listings/${HALL}/calendar?month=${month}`)).toHaveLength(0);
+    expect(container.querySelector("#day-panel-title")).not.toBeNull();
+    await click(byText(".side-vitrinas button", "Lola zali"));
+    expect(sent("GET", `/api/vendor/listings/${HALL}/calendar?month=${month}`)).toHaveLength(1);
+    // Открытый день другой витрины не переносится
+    expect(container.querySelector("#day-panel-title")).toBeNull();
   });
 
   it("части дня: у каждого дня — отметки частей; день открывает утро, день и вечер; часть — с ?part=", async () => {

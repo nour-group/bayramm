@@ -22,15 +22,18 @@ import type { VendorListing, VendorListingSaved } from "@bayramm/shared/api/vend
 import { DESCRIPTION_MAX } from "@bayramm/shared/api/vendor";
 import { type AttributeDraft, type AttributeDrafts, categoryConfig } from "@bayramm/shared/categories";
 import { Dialog, NumberStepper, Select } from "@bayramm/ui/react";
-import { type FormEvent, type RefObject, useId, useState } from "react";
+import { type FormEvent, type RefObject, useId, useRef, useState } from "react";
 import { AttributesForm } from "./Attributes";
 import { ApiFailure, api } from "./api";
+import { saveDraft, useDraftOnExpiry } from "./drafts";
 import { errorText as apiErrorText } from "./errors";
 import { fill, type TextKey, type VendorDict } from "./i18n";
+import { useFocusInvalid } from "./invalid";
 import {
   attributeDraftsOf,
   attributesChanges,
   attributesErrors,
+  type BasicsValues,
   basicsChanges,
   basicsErrors,
   basicsOf,
@@ -41,6 +44,7 @@ import {
   hasCapacity,
   hasDistrict,
   type ListingChanges,
+  type PlaceValues,
   placeChanges,
   placeErrors,
   placeOf,
@@ -82,7 +86,53 @@ interface SheetProps {
   readonly onSaved: (saved: VendorListingSaved) => void;
   /** Витрину успели изменить или предложение уже открыто: перечитать витрину и предложения */
   readonly onStale: () => void;
+  /** Вписанное до конца сессии (drafts.ts): окно открывается с ним */
+  readonly restored?: EditDraft | null;
 }
+
+/** Вписанное в окне «Изменить» — на случай конца сессии */
+export interface EditDraft {
+  readonly basics: BasicsValues;
+  readonly place: PlaceValues;
+  readonly drafts: AttributeDrafts;
+  readonly videos: string[];
+}
+
+const isText = (value: unknown): value is string => typeof value === "string";
+const texts = (value: unknown, keys: readonly string[]) =>
+  typeof value === "object" &&
+  value !== null &&
+  keys.every((key) => isText((value as Record<string, unknown>)[key]));
+
+/** Черновик понятного вида: старый или обрезанный (другая сборка) не открывается */
+export function isEditDraft(value: unknown): value is EditDraft {
+  if (typeof value !== "object" || value === null) return false;
+  const draft = value as Record<string, unknown>;
+  return (
+    texts(draft.basics, ["name", "descriptionRu", "descriptionUz"]) &&
+    texts(draft.place, ["districtCode", "addressRu", "addressUz", "capMin", "capMax"]) &&
+    typeof draft.drafts === "object" &&
+    draft.drafts !== null &&
+    !Array.isArray(draft.drafts) &&
+    Array.isArray(draft.videos) &&
+    draft.videos.every(isText)
+  );
+}
+
+/** Вид значения поля витрины: строка, флажок, список или текст на двух языках */
+const kindOf = (value: unknown) => (Array.isArray(value) ? "list" : typeof value);
+
+/** Поля витрины из черновика — только те, что есть в форме, и того же вида */
+function restoredAttributes(before: AttributeDrafts, saved: AttributeDrafts): AttributeDrafts {
+  const next: Record<string, AttributeDraft> = { ...before };
+  for (const [key, value] of Object.entries(saved)) {
+    if (key in before && kindOf(value) === kindOf(before[key])) next[key] = value;
+  }
+  return next;
+}
+
+/** Ключ черновика окна: витрина и карточка */
+export const editDraftKey = (listingId: string, group: EditGroup) => `edit.${listingId}.${group}`;
 
 /** Район: список по городам из справочника; пока не загрузился — только текущий */
 function DistrictField({
@@ -122,7 +172,7 @@ function DistrictField({
       {dictionaries.state === "error" ? (
         <LoadError t={t} onRetry={reload} error={dictionaries.error} />
       ) : null}
-      {bad ? <p className="field-error">{t.fieldInvalid}</p> : null}
+      {bad ? <p className="field-error">{t.errDistrict}</p> : null}
     </div>
   );
 }
@@ -210,17 +260,32 @@ function VideoFields({
   );
 }
 
-export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSaved, onStale }: SheetProps) {
+export function EditSheet({
+  group,
+  listing,
+  t,
+  lang,
+  onClose,
+  returnFocus,
+  onSaved,
+  onStale,
+  restored = null,
+}: SheetProps) {
   const id = useId();
   const category = categoryConfig(listing.categoryCode);
   const moderated = !savesDirectly(listing.status);
   const confirmLeave = useConfirmLeave();
+  // Ошибка проверки — фокус и прокрутка к первому неверному полю (оно бывает за краем шторки)
+  const form = useRef<HTMLFormElement>(null);
+  const showInvalid = useFocusInvalid(form);
 
-  const [basics, setBasics] = useState(() => basicsOf(listing));
-  const [place, setPlace] = useState(() => placeOf(listing));
+  const [basics, setBasics] = useState(() => restored?.basics ?? basicsOf(listing));
+  const [place, setPlace] = useState(() => restored?.place ?? placeOf(listing));
   const [before] = useState<AttributeDrafts>(() => (category ? attributeDraftsOf(listing, category) : {}));
-  const [drafts, setDrafts] = useState<AttributeDrafts>(before);
-  const [videos, setVideos] = useState<string[]>(() => videoDraftsOf(listing));
+  const [drafts, setDrafts] = useState<AttributeDrafts>(() =>
+    restored ? restoredAttributes(before, restored.drafts) : before,
+  );
+  const [videos, setVideos] = useState<string[]>(() => restored?.videos ?? videoDraftsOf(listing));
   const [errors, setErrors] = useState<FieldErrors>({});
   const [badAttributes, setBadAttributes] = useState<ReadonlySet<string>>(new Set());
   const [badVideos, setBadVideos] = useState<ReadonlySet<number>>(new Set());
@@ -243,6 +308,10 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
   const dirty = Object.keys(changes).length > 0;
   // Вписанное и не сохранённое: уход с экрана и закрытие окна переспросят
   useUnsaved(dirty);
+  // Сессия кончилась посреди правки — вписанное ждёт во вкладке, после входа окно откроется с ним
+  useDraftOnExpiry(
+    dirty ? () => saveDraft(editDraftKey(listing.id, group), { basics, place, drafts, videos }) : null,
+  );
 
   // «Уйти» закрывает вопрос и окно разом: два слоя, закрытых в одном обновлении, возвращают
   // странице inert друг другу по очереди и оставляют её недоступной. Окно — следующим тактом
@@ -264,6 +333,7 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
     setBadVideos(links);
     const ok = Object.keys(found).length === 0 && attributes.size === 0 && links.size === 0;
     setNotice(ok ? null : "invalid");
+    if (!ok) showInvalid();
     return ok;
   };
 
@@ -291,6 +361,7 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
         setBadAttributes(attributes);
         setBadVideos(new Set(videoErrorIndexes(err.details, videos.length)));
         setNotice("invalid");
+        showInvalid();
       } else if (err instanceof ApiFailure && err.code === "no_changes") {
         setNotice("noChanges");
       } else if (err instanceof ApiFailure && err.code === "revision_pending") {
@@ -403,7 +474,8 @@ export function EditSheet({ group, listing, t, lang, onClose, returnFocus, onSav
         </>
       }
     >
-      <form id={`${id}-form`} className="proposal-form" onSubmit={submit} noValidate>
+      <form ref={form} id={`${id}-form`} className="proposal-form" onSubmit={submit} noValidate>
+        {restored ? <p className="notice">{t.draftRestored}</p> : null}
         {group === "basics" ? (
           <>
             {text("name", t.nameLabel, basics.name, (v) => setBasics((p) => ({ ...p, name: v })), {

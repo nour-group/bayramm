@@ -554,6 +554,9 @@ describe("заявки вендора A", () => {
       ["new", "system"],
       ["viewed", "vendor_user"],
     ]);
+    // Занятость даты заявки — как в календаре кабинета: день пока свободен
+    expect(detail.eventDay).toMatchObject({ busy: null, parts: [], bookings: [] });
+    expect(detail.eventDay?.sessions.mode).toBeDefined();
 
     const { rows: log } = await admin.query<{ actor_id: string; source: string }>(
       "select actor_id, source from app.request_status_log where request_id = $1 and to_status = 'viewed'",
@@ -577,6 +580,50 @@ describe("заявки вендора A", () => {
       await call("/vendor/requests?tab=new", bearer(A.token))
     ).json()) as VendorRequestPage;
     expect(legacy.items.map((r) => r.id)).toEqual(page.items.map((r) => r.id));
+  });
+
+  it("поиск во входящих — телом POST: конец номера и имя — только свои заявки; каждый поиск по номеру — в журнале ПДн", async () => {
+    const search = async (body: Record<string, unknown>) =>
+      (
+        (await (
+          await call("/vendor/requests/search", {
+            method: "POST",
+            headers: { ...json, Authorization: `Bearer ${A.token}` },
+            body: JSON.stringify({ tab: "waiting", ...body }),
+          })
+        ).json()) as VendorRequestPage
+      ).items.map((r) => r.id);
+    const byPhone = await search({ q: "0301" });
+    expect(byPhone).toEqual(expect.arrayContaining([ra1.id, ra2.id]));
+    expect(byPhone).not.toContain(rb.id);
+    expect(await search({ q: "client te" })).toEqual(expect.arrayContaining([ra1.id, ra2.id]));
+    expect(await search({ q: "9999" })).toEqual([]);
+    // В адресе поиск не принимается: адрес попадает в журналы запросов
+    expect((await call("/vendor/requests?tab=waiting&q=0301", bearer(A.token))).status).toBe(422);
+    const list = async (query: string) =>
+      (
+        (await (
+          await call(`/vendor/requests?tab=waiting&${query}`, bearer(A.token))
+        ).json()) as VendorRequestPage
+      ).items.map((r) => r.id);
+    expect(await list(`date=${ra2.eventDate}`)).toEqual([ra2.id]);
+    expect(await list("sort=event")).toEqual([ra1.id, ra2.id]);
+    // Поиск по номеру — одна строка журнала на поиск: кто, сколько совпало, без цифр; имя — без строки
+    const { rows } = await admin.query<{ purpose: string; reason: string }>(
+      `select purpose, reason from app.pii_access_log
+       where subject_kind = 'vendor_inbox' and actor_id = $1 order by id`,
+      [A.userId],
+    );
+    expect(rows).toEqual([
+      { purpose: "request_search", reason: "совпадений: 2" },
+      { purpose: "request_search", reason: "совпадений: 0" },
+    ]);
+    // Номера заявок поиск не читает: строк по самим заявкам не прибавилось
+    const { rows: reads } = await admin.query<{ n: number }>(
+      "select count(*)::int as n from app.pii_access_log where subject_id = $1",
+      [ra2.id],
+    );
+    expect(reads[0]?.n).toBe(0);
   });
 
   it("звонок клиенту — событие в журнале действий, статус не меняется", async () => {
@@ -715,6 +762,20 @@ describe("заявки вендора A", () => {
       ra1.id,
     ]);
     expect(after).toHaveLength(before.length);
+    // Поиск тоже их не находит — ни по имени, ни по номеру
+    for (const q of ["client te", "0301"]) {
+      const found = (await (
+        await call("/vendor/requests/search", {
+          method: "POST",
+          headers: { ...json, Authorization: `Bearer ${A.token}` },
+          body: JSON.stringify({ tab: "active", q }),
+        })
+      ).json()) as VendorRequestPage;
+      expect(
+        found.items.map((r) => r.id),
+        q,
+      ).not.toContain(ra1.id);
+    }
   });
 });
 
