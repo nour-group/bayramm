@@ -195,7 +195,8 @@ select is(pg_temp.found('Версаль'), array['versal'], 'кириллице�
 select is(pg_temp.found('versal chilonzor'), array['versal'], 'нужны все слова: название и район');
 select is(pg_temp.found('Яккасарай'), '{}'::text[], 'в районе никого — пусто');
 select is(pg_temp.found('test hall'), array['test-a1', 'test-b1'], 'два слова названия');
-select is(pg_temp.found('test-a2'), '{}'::text[], 'черновик не ищется');
+select ok(not 'test-a2' = any (pg_temp.found('test-a2')),
+  'черновик не ищется (слово только из него пропускается — находятся опубликованные «test»)');
 select ok(pg_temp.found('Тойхона') @> array['versal', 'grand', 'test-a1', 'test-b1'],
   'по названию раздела — все его витрины');
 select is(pg_temp.found('banket', 'car'), '{}'::text[], 'раздел сужает поиск');
