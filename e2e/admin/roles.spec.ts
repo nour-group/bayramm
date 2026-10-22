@@ -156,8 +156,8 @@ test("менеджер: повтора уведомлений и телефон�
   await expect(page.getByRole("heading", { name: t.requestClient })).toBeVisible();
   await expect(page.getByLabel(t.clientPhoneReason)).toHaveCount(0);
   await page.goto(`/clients/${CLIENT_ID}`);
-  // Блокировка — пункт «Ещё» в заголовке страницы клиента
-  await page.getByRole("button", { name: t.more, exact: true }).click();
+  // Блокировка — пункт «Ещё» в заголовке страницы клиента (не «Ещё» нижней панели)
+  await page.getByRole("main").getByRole("button", { name: t.more, exact: true }).click();
   await expect(page.getByRole("dialog").getByRole("button", { name: t.block })).toBeVisible();
 });
 

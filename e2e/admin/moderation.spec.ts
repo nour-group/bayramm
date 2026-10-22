@@ -14,6 +14,7 @@ import { horizontalOverflow } from "../support/web";
 /* Модерация: очередь «Новые фото» — плитки ждущих фото с ✓ и ✕ (отказ — с причиной в шторке),
    отметкой загрузившего и правилом категории; плитка открывает просмотр во весь экран (листать
    ← →, решать там же); «Одобрить все» — сразу, если всё открыто, иначе с подтверждением числа.
+   «Одобрить» (✓ и в просмотре) уходит через 5 секунд — до того «Отменить» в строке уведомления.
    Решения идут в тот же POST …/photos/:id/moderation; после решения очередь перечитывается,
    фокус — на следующую плитку, а когда очередь опустела — на сегменты; пустые очереди в
    сегментах не показываются, все пусты — «Всё разобрано». Телефон и компьютер. */
@@ -54,12 +55,18 @@ test("плитки: два фото, у каждого ✓ и ✕; запрос�
   expect(api.unexpected).toEqual([]);
 });
 
-test("✓ —одобрить одно: решение уходит, плитка пропадает, фокус — на ✓ следующей", async ({ page }) => {
+test("✓ —одобрить одно: решение уходит через 5 секунд, плитка пропадает, фокус — на ✓ следующей", async ({
+  page,
+}) => {
   const api = await start(page);
   await page.goto("/moderation?queue=photos");
   const queue = photos(page);
   await queue.getByRole("button", { name: t.photoApproveOne(1, "Bogʻ zali") }).click();
-  await expect(queue.locator(".queue-photo")).toHaveCount(1);
+  // До запроса — «Отменить» в строке уведомления, плитка тусклая
+  await expect(page.locator(".ui-toast").filter({ hasText: t.photoApprovedUndo(1) })).toBeVisible();
+  await expect(queue.locator(".queue-photo.is-decided")).toHaveCount(1);
+  expect(api.photoDecisions).toEqual([]);
+  await expect(queue.locator(".queue-photo")).toHaveCount(1, { timeout: 12_000 });
   expect(api.photoDecisions).toEqual([
     { listingId: PHOTO_QUEUE_LISTING_ID, photoId: photoQueueId(1), body: { decision: "approved" } },
   ]);
@@ -178,7 +185,9 @@ test("просмотр во весь экран: стрелки листают, 
   await expect(third).toBeVisible();
   // Одобрили в просмотре — открыто следующее нерешённое (по кругу — первое)
   await third.getByRole("button", { name: t.photoApprove, exact: true }).click();
-  await expect.poll(() => api.photoDecisions.map((d) => d.photoId)).toEqual([photoQueueId(3)]);
+  await expect
+    .poll(() => api.photoDecisions.map((d) => d.photoId), { timeout: 12_000 })
+    .toEqual([photoQueueId(3)]);
   await expect(page.locator(".photo-viewer img")).toHaveAttribute("src", new RegExp(photoQueueId(1)));
   await page.keyboard.press("Escape");
   await expect(page.locator(".photo-viewer")).toHaveCount(0);

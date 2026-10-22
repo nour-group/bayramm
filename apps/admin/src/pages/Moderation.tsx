@@ -64,6 +64,7 @@ import {
   UpdatedAt,
   usePagedList,
 } from "../ui";
+import { useUndoable } from "../undo";
 import { PhotoViewer } from "./PhotoViewer";
 import { ServiceChanges, ServiceDecision } from "./Services";
 
@@ -418,8 +419,9 @@ function PhotoQueueList({ state, decides, onDecided, onFocused }: PhotoQueueProp
       onFocused();
     }
   }, [loaded, onFocused]);
+  // Одобрение с «Отменить» уходит позже: фокус к тому времени уже на следующей плитке — at нет
   const decided = useCallback(
-    (at: DecidedPhoto, text: string) => {
+    (at: DecidedPhoto | null, text: string) => {
       decidedAt.current = at;
       setSaid(text);
       onDecided();
@@ -467,10 +469,14 @@ function PhotoCard({
   listing: ListingListItem;
   index: number;
   decides: boolean;
-  onDecided: (at: DecidedPhoto, said: string) => void;
+  onDecided: (at: DecidedPhoto | null, said: string) => void;
 }) {
   const { api } = useSession();
+  const undoable = useUndoable();
   const photos = listing.pendingPhotos ?? [];
+  const card = useRef<HTMLLIElement>(null);
+  // Одобрили с плитки: фокус — на ✓ следующей нерешённой (эта стала недоступной)
+  const focusFrom = useRef<number | null>(null);
   const [decidedIds, setDecidedIds] = useState<ReadonlySet<string>>(new Set());
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -485,7 +491,26 @@ function PhotoCard({
   const open = photos.filter((photo) => !decidedIds.has(photo.id));
   const more = Math.max(0, listing.photos.pending - photos.length);
   const mark = (id: string) => setDecidedIds((prev) => new Set(prev).add(id));
+  const unmark = (id: string) =>
+    setDecidedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   const policy = categoryConfig(listing.categoryCode)?.photoPolicy;
+  // После отрисовки с новой отметкой: ✓ решённой плитки уже недоступна
+  // biome-ignore lint/correctness/useExhaustiveDependencies: перенос фокуса — именно после смены отметок
+  useEffect(() => {
+    const from = focusFrom.current;
+    if (from === null) return;
+    focusFrom.current = null;
+    const own = card.current?.querySelectorAll<HTMLButtonElement>(".photo-approve:not(:disabled)");
+    const next =
+      own && own.length > 0
+        ? own[Math.min(from, own.length - 1)]
+        : card.current?.parentElement?.querySelector<HTMLButtonElement>(".photo-approve:not(:disabled)");
+    next?.focus();
+  }, [decidedIds]);
 
   const view = (id: string) => {
     setViewing(id);
@@ -499,22 +524,32 @@ function PhotoCard({
     return (rest.find((photo) => photos.indexOf(photo) > at) ?? rest[0] ?? null)?.id ?? null;
   };
 
-  const approve = async (photo: PendingPhoto, tile: number) => {
-    setWorking(true);
+  /**
+   * Одобрить: плитка сразу тускнеет, решение уходит через 5 секунд — до того «Отменить» в строке
+   * уведомления возвращает её без запроса. Сервер отказал — плитка снова ждёт, причина под карточкой
+   */
+  const approve = (photo: PendingPhoto, tile: number) => {
     setFailure(null);
-    const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
-    setWorking(false);
-    if (!result.ok) {
-      setFailure(result);
-      return;
-    }
     mark(photo.id);
     if (viewing === photo.id) {
       const next = nextAfter(photo.id);
       if (next) view(next);
       else setViewing(null);
-    }
-    onDecided({ listing: listing.id, tile, card: index }, t.photoApprovedSaid(listing.name));
+    } else focusFrom.current = tile;
+    undoable({
+      key: photo.id,
+      text: t.photoApprovedUndo(tile + 1),
+      undo: () => unmark(photo.id),
+      commit: async () => {
+        const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
+        if (!result.ok) {
+          unmark(photo.id);
+          setFailure(result);
+          return;
+        }
+        onDecided(null, t.photoApprovedSaid(listing.name));
+      },
+    });
   };
 
   const approveAll = async () => {
@@ -573,7 +608,7 @@ function PhotoCard({
   const current = viewed === -1 ? null : (photos[viewed] ?? null);
 
   return (
-    <li className="rcard photo-card" data-listing={listing.id}>
+    <li ref={card} className="rcard photo-card" data-listing={listing.id}>
       <div className="rcard-head">
         {/* Витрина — сразу на блоке фото: целиком посмотреть и решить там */}
         <Link to={{ name: "listing", id: listing.id, query: { focus: "photos" } }} className="rcard-title">
@@ -601,7 +636,7 @@ function PhotoCard({
                 <img
                   src={photoSrc(photo.key, 640)}
                   srcSet={photoSrcSet(photo.key)}
-                  sizes="(max-width: 719px) 50vw, 200px"
+                  sizes="(max-width: 719px) 50vw, 280px"
                   width={photo.width > 0 ? photo.width : undefined}
                   height={photo.height > 0 ? photo.height : undefined}
                   alt=""
@@ -616,7 +651,7 @@ function PhotoCard({
                     type="button"
                     className="btn btn-icon photo-approve"
                     disabled={working || decidedHere}
-                    onClick={() => void approve(photo, tile)}
+                    onClick={() => approve(photo, tile)}
                   >
                     <Icon name="check" size={20} />
                     <span>{t.photoApproveOne(tile + 1, listing.name)}</span>
@@ -645,7 +680,7 @@ function PhotoCard({
           <button
             ref={allButton}
             type="button"
-            className="btn btn-primary photo-approve-all"
+            className="btn btn-sm photo-approve-all"
             aria-busy={working || undefined}
             disabled={working}
             onClick={askAll}
@@ -682,7 +717,7 @@ function PhotoCard({
             setDeclining(null);
             view(id);
           }}
-          onApprove={(photo, tile) => void approve(photo, tile)}
+          onApprove={(photo, tile) => approve(photo, tile)}
           onDecline={(photo, tile) => {
             setFailure(null);
             setDeclining({ photo, n: tile + 1 });

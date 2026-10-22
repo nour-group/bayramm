@@ -54,6 +54,7 @@ import {
   toneOf,
 } from "../ui";
 import { useUnsaved } from "../unsaved";
+import { NextInQueue } from "./NextInQueue";
 
 /** Единицы цены дополнения: единицы категории и единица шаблона, если её там нет (как в кабинете) */
 export function optionUnits(category: CategoryConfig, option: Pick<OptionDraft, "priceUnit">): PriceUnit[] {
@@ -228,6 +229,8 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
   const decides = can("revisions.moderate");
   // Что решили здесь — строкой статуса: кнопки решения исчезли, фокус — на заголовке блока
   const [said, setSaid] = useState("");
+  // Решили здесь и решать в витрине больше нечего — к следующей витрине в очереди услуг
+  const [decidedHere, setDecidedHere] = useState(false);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -286,6 +289,7 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
         : t.serviceDeclinedHere(service.name.ru),
     );
     focusSection("services-title");
+    setDecidedHere(true);
     onChanged();
   };
 
@@ -449,6 +453,9 @@ export function Services({ listing, category, onChanged }: ServicesProps) {
           })}
         </ul>
       )}
+      {decides && decidedHere && !listing.services.some(awaitsDecision) ? (
+        <NextInQueue queue="services" currentId={listing.id} focus={false} />
+      ) : null}
       {failure && <ErrorText failure={failure} />}
       <ConfirmSheet
         open={removing !== null}

@@ -385,6 +385,9 @@ const REQUEST: StaffRequestDetail = {
     },
   ],
   reminders: 1,
+  // Последнее действие команды — заметка два часа назад: в списке «напомнили 1× · команда …»
+  lastOpsAt: new Date(NOW.getTime() - 2 * 3_600_000).toISOString(),
+  lastOpsBy: "Дильноза",
   timeline: [
     { kind: "created", at: new Date(NOW.getTime() - 15 * 3_600_000).toISOString() },
     { kind: "viewed", at: new Date(NOW.getTime() - 14 * 3_600_000).toISOString() },
@@ -854,6 +857,13 @@ export interface StaffApiOptions {
   readonly contactChange?: boolean;
   /** Какое предложение изменений ждёт решения: по умолчанию название и описание, facts — вместимость, район, адрес */
   readonly revision?: "default" | "facts";
+  /**
+   * Пока в панели вписывали, коллега сохранил витрину: первая правка (PATCH) — 409
+   * version_conflict, витрина в моке уже с этими полями и новой версией
+   */
+  readonly colleagueEdit?: Partial<
+    Pick<ListingDetail, "name" | "descriptionRu" | "descriptionUz" | "addressRu">
+  >;
 }
 
 export async function mockStaffApi(
@@ -873,8 +883,10 @@ export async function mockStaffApi(
     photoQueue = 2,
     contactChange: contactChangeSeed = false,
     revision: revisionKind = "default",
+    colleagueEdit,
   }: StaffApiOptions = {},
 ) {
+  let colleagueSaved = colleagueEdit === undefined;
   let elevated = 0;
   // Фото очереди «Новые фото»: решённое уходит из неё, пока тест её не перечитал
   const queuePhotos: PendingPhoto[] = Array.from({ length: photoQueue }, (_, i) => photoQueuePhoto(i + 1));
@@ -1363,6 +1375,11 @@ export async function mockStaffApi(
         // Сотрудник — администратор: решает по правкам сам, на модерацию ничего не уходит
         const input = request.postDataJSON() as ListingInput;
         state.patches.push(input as unknown as Record<string, unknown>);
+        if (!colleagueSaved) {
+          colleagueSaved = true;
+          replace({ ...listing, ...colleagueEdit, version: listing.version + 1 });
+          return fail(route, 409, "version_conflict");
+        }
         if (input.version !== listing.version) return fail(route, 409, "version_conflict");
         const fields = patchCategoryFields(listing, input as unknown as Record<string, unknown>);
         if (!fields.ok) return fail(route, 422, "invalid_input", fields.errors);
@@ -1559,6 +1576,26 @@ export async function mockStaffApi(
     if (key === "GET /staff/audit") return json(route, 200, AUDIT);
     if (key === "GET /staff/audit/pii") return json(route, 200, PII_AUDIT);
     if (key === "GET /staff/team") return json(route, 200, { items: team });
+    // Пригласить в команду: новый сотрудник ждёт входа
+    if (key === "POST /staff/team") {
+      const input = request.postDataJSON() as { displayName: string; role: StaffRole; username?: string };
+      state.actions.push(key);
+      team.push({
+        id: `00000000-0000-4000-8e00-${String(team.length + 1).padStart(12, "0")}`,
+        displayName: input.displayName,
+        username: input.username ?? null,
+        invitedBy: input.username ? "telegram" : "phone",
+        role: input.role,
+        active: true,
+        accepted: false,
+        linked: false,
+        linkedAt: null,
+        botLinked: false,
+        createdAt: NOW.toISOString(),
+        self: false,
+      });
+      return json(route, 201, { items: team });
+    }
     const member = /^\/staff\/team\/([0-9a-f-]{36})$/.exec(path);
     if (member?.[1] && method === "DELETE") {
       state.deletes.push(key);

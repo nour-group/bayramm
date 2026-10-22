@@ -165,6 +165,7 @@ html.in-telegram body {
 }
 
 .nav a,
+.nav-more,
 .action {
   display: inline-flex;
   flex: none;
@@ -178,6 +179,19 @@ html.in-telegram body {
   text-decoration: none;
   white-space: nowrap;
   transition: background-color var(--t1) var(--ease-soft);
+}
+
+/* «Ещё ▾» — разделы, что не влезли в строку шапки; пока меряем ширины — не видна */
+.nav-more {
+  position: relative;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.nav-more.is-measuring {
+  visibility: hidden;
 }
 
 .action {
@@ -225,13 +239,15 @@ html.in-telegram body {
 
 /* Наведение — только там, где есть курсор (ловушка №6) */
 @media (hover: hover) {
-  .nav a:hover {
+  .nav a:hover,
+  .nav-more:hover {
     background: var(--lilac);
   }
 }
 
 /* Выбранное — после наведения, чтобы наведение его не перекрывало (ловушка №7) */
-.nav a[aria-current="page"] {
+.nav a[aria-current="page"],
+.nav-more.is-current {
   background: var(--plum);
   color: var(--sel-ink);
 }
@@ -2058,6 +2074,12 @@ textarea.input {
   overflow-wrap: anywhere;
 }
 
+/* Длинный текст в списке (описание витрины) — обычным начертанием, с переносами строк */
+.dl .dd-text {
+  font-weight: 400;
+  white-space: pre-line;
+}
+
 /* Календарь занятости: неделя с понедельника, день — кнопка 44px */
 .cal-head {
   display: flex;
@@ -2471,7 +2493,8 @@ textarea.input {
     gap: var(--gap-7);
   }
 
-  .nav a {
+  .nav a,
+  .nav-more {
     padding: 0 10px;
   }
 }
@@ -2631,10 +2654,11 @@ a.rcard-title {
   font-weight: 700;
 }
 
-/* Очередь фото: плитки ждущих фото, под каждой — ✓ и ✕ (кнопки по 44px, поровну) */
+/* Очередь фото: плитки ждущих фото, под каждой — ✓ и ✕ (кнопки по 44px, поровну). На
+   компьютере плитка 240–280px: лицо в кадре видно ещё до просмотра во весь экран */
 .queue-photos {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 280px));
   gap: var(--gap-9);
   margin: 4px 0 0;
   padding: 0;
@@ -2729,21 +2753,54 @@ a.rcard-title {
   margin: 0;
 }
 
+/* Рамка снимка: жесты (смахнуть, развести пальцы) — наши, страница под ними не двигается и не
+   увеличивается; увеличенный снимок не вылезает за рамку */
+.viewer-frame {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: clip;
+  border-radius: var(--r-8);
+  background: var(--plum-deep);
+  cursor: zoom-in;
+  touch-action: none;
+  user-select: none;
+}
+
+.viewer-frame.is-zoomed {
+  cursor: grab;
+}
+
 .viewer-image {
   display: block;
   flex: 1 1 auto;
   width: 100%;
   min-height: 0;
   max-height: 70vh;
-  border-radius: var(--r-8);
-  background: var(--plum-deep);
   object-fit: contain;
+  transform-origin: center;
 }
 
 .viewer-claim {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--gap-5) var(--gap-12);
+}
+
+/* Подсказка про клавиши — где есть мышь; на касаниях — про жесты */
+.viewer-keys {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .viewer-keys {
+    display: inline;
+  }
+
+  .viewer-gestures {
+    display: none;
+  }
 }
 
 /* Внизу: ‹ одобрить отклонить › — главное посередине, листать — по краям */
@@ -3528,6 +3585,24 @@ a.rcard-title {
 
   .dl dd {
     margin-bottom: 8px;
+  }
+
+  /* Пары «подпись — значение» в строку: короткие строки заявки не растягиваются вдвое */
+  .dl-pairs {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: baseline;
+    row-gap: var(--gap-7);
+  }
+
+  .dl-pairs dd {
+    margin-bottom: 0;
+  }
+
+  /* Строка со ссылкой — высотой с палец: зона нажатия ссылки (44px) не уходит под соседнюю */
+  .dl-pairs .dd-link {
+    display: flex;
+    align-items: center;
+    min-height: var(--hit-min);
   }
 
   .lead {

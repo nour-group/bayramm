@@ -3,10 +3,12 @@
    клиенты до решения видят прежние. Блок самодостаточный: сам спрашивает у API, есть ли ждущее
    предложение (GET /staff/listings/:id/contact-change — без значений), и если нет — ничего не
    рисует. Значения — только по «Показать» (POST …/reveal: сервер пишет чтение в журнал доступа к
-   ПДн): «сейчас» и «предлагает партнёр». После этого — «Одобрить» (контакты витрины заменятся,
-   партнёру уведомление) и «Отклонить» (только с причиной — частые чипами, её увидит партнёр).
-   Решает модератор или администратор (revisions.moderate), остальным — что предложение есть и
-   кто решает. ?focus=contacts (ссылка из оповещения команды) — фокус на заголовок блока. */
+   ПДн с причиной «решение по смене контактов»): одной кнопкой «Показать контакты» — «сейчас» и
+   «предлагает партнёр». После этого — «Одобрить» (контакты витрины заменятся, партнёру
+   уведомление) и «Отклонить» (только с причиной — частые чипами, её увидит партнёр); решили —
+   «следующее в очереди» (NextInQueue). Решает модератор или администратор (revisions.moderate),
+   остальным — что предложение есть и кто решает. ?focus=contacts (ссылка из оповещения команды и
+   очереди) — фокус на заголовок блока. */
 
 import { formatUzPhone } from "@bayramm/shared";
 import type {
@@ -20,6 +22,7 @@ import { formatMoment } from "../format";
 import { readQuery } from "../router";
 import { t } from "../texts";
 import { busyLabel, ConfirmForm, ErrorText, focusSection, PhoneSheet } from "../ui";
+import { NextInQueue } from "./NextInQueue";
 
 const TITLE_ID = "contact-change-title";
 
@@ -57,7 +60,10 @@ export function ContactChange({ listingId, onDecided }: { listingId: string; onD
   const show = async () => {
     setRevealing(true);
     setFailure(null);
-    const result = await api.post<ContactChangeReveal>(`${base}/reveal`, {});
+    // Зачем открыли — пишется в журнал доступа к ПДн: здесь причина всегда одна
+    const result = await api.post<ContactChangeReveal>(`${base}/reveal`, {
+      reason: t.contactChange.revealReason,
+    });
     setRevealing(false);
     if (result.ok) {
       setValues(result.data);
@@ -90,9 +96,13 @@ export function ContactChange({ listingId, onDecided }: { listingId: string; onD
 
   if (outcome !== null) {
     return (
-      <p className="notice notice-good" role="status">
-        {outcome === "approved" ? t.contactChange.approved : t.contactChange.declined}
-      </p>
+      <>
+        <p className="notice notice-good" role="status">
+          {outcome === "approved" ? t.contactChange.approved : t.contactChange.declined}
+        </p>
+        {/* Решили — сразу к следующей смене контактов в очереди */}
+        <NextInQueue queue="contacts" currentId={listingId} />
+      </>
     );
   }
   if (change === null) return null;
@@ -135,8 +145,9 @@ export function ContactChange({ listingId, onDecided }: { listingId: string; onD
             disabled={revealing}
             onClick={() => void show()}
           >
-            {busyLabel(t.show, revealing)}
+            {busyLabel(t.contactChange.reveal, revealing)}
           </button>
+          <span className="muted small">{t.contactChange.revealHint}</span>
         </div>
       ) : null}
       {failure ? <ErrorText failure={failure} /> : null}

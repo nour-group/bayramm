@@ -6,7 +6,15 @@ import {
   type ListField,
 } from "@bayramm/shared/categories";
 import { describe, expect, it } from "vitest";
-import { districtChoices, formErrors, formParts, formState, listingBody } from "./pages/ListingForm";
+import {
+  districtChoices,
+  formErrors,
+  formParts,
+  formState,
+  listingBody,
+  pick,
+  rebase,
+} from "./pages/ListingForm";
 
 /* Форма витрины по категории: что спрашивать, что уходит в правку (только изменённое) и
    какие ошибки видны до отправки — те же пути, что в ответе 422 сервера. */
@@ -263,5 +271,42 @@ describe("район — по городам", () => {
       settings: { minPhotos: 3, maxPhotos: 10, slaHours: 12 },
     });
     expect(options.map((o) => o.value)).toEqual(["", "chilonzor"]);
+  });
+});
+
+describe("свежая версия витрины поверх вписанного", () => {
+  it("ваше остаётся, чужое подтягивается; общее поле — на выбор, по умолчанию ваше", () => {
+    const hall = cfg("hall");
+    const before = formState(listing("hall", { descriptionRu: "Было", addressRu: "Улица 1" }), hall);
+    // Здесь вписали описание и вместимость
+    const now = {
+      ...before,
+      values: { ...before.values, descriptionRu: "Моё описание", capMin: "50" },
+    };
+    // Тем временем коллега поменял описание и адрес
+    const fresh = formState(
+      listing("hall", { descriptionRu: "Новое описание", addressRu: "Улица 2", version: 4 }),
+      hall,
+    );
+    const merged = rebase(hall, before, now, fresh);
+    expect(merged.now.values.descriptionRu).toBe("Моё описание");
+    expect(merged.now.values.capMin).toBe("50");
+    expect(merged.now.values.addressRu).toBe("Улица 2");
+    expect(merged.conflicts).toEqual([
+      { key: "descriptionRu", label: "Описание (RU)", mine: "Моё описание", theirs: "Новое описание" },
+    ]);
+    // В тело правки против свежей версии уходит только ваше
+    expect(listingBody(hall, merged.now, fresh)).toEqual({ descriptionRu: "Моё описание", capMin: 50 });
+    // Выбрали «новый» — значение из свежей версии: остаётся только вместимость
+    const theirs = pick(hall, merged.now, "descriptionRu", fresh);
+    expect(listingBody(hall, theirs, fresh)).toEqual({ capMin: 50 });
+  });
+
+  it("одинаковая правка с обеих сторон — не выбор", () => {
+    const car = cfg("car");
+    const before = formState(listing("car"), car);
+    const now = { ...before, values: { ...before.values, name: "Кортеж" } };
+    const fresh = formState(listing("car", { name: "Кортеж" }), car);
+    expect(rebase(car, before, now, fresh).conflicts).toEqual([]);
   });
 });

@@ -28,6 +28,8 @@ import { photoSrc, photoSrcSet } from "../format";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
 import { ConfirmForm, ErrorText, PhoneSheet, Pill, toneOf } from "../ui";
+import { useUndoable } from "../undo";
+import { NextInQueue } from "./NextInQueue";
 import { PhotoViewer } from "./PhotoViewer";
 
 /** Форматы фото; на телефоне — любое фото: так точно предлагают и камеру, и галерею (HEIC — по расширению) */
@@ -131,7 +133,23 @@ export function Photos({
   // Обложка — отмеченное фото, а пока отметки нет — первое
   const hasCover = photos.some((photo) => photo.isCover);
   const isCover = (photo: StaffPhoto, index: number) => photo.isCover || (!hasCover && index === 0);
-  const pending = photos.filter((photo) => photo.moderation === "pending");
+  // Одобренные, но ещё отменяемые («Отменить» 5 секунд): для экрана — уже одобрены
+  const undoable = useUndoable();
+  const [approving, setApproving] = useState<ReadonlySet<string>>(new Set());
+  // Решили здесь и ждущих не осталось — к следующей витрине в очереди фото
+  const [decidedHere, setDecidedHere] = useState(false);
+  // Перечитали витрину: что сервер уже одобрил (или решил иначе), помнить больше не нужно
+  useEffect(() => {
+    setApproving((prev) => {
+      const next = new Set(
+        [...prev].filter((id) => photos.find((photo) => photo.id === id)?.moderation === "pending"),
+      );
+      return next.size === prev.size ? prev : next;
+    });
+  }, [photos]);
+  const stateOf = (photo: StaffPhoto): StaffPhoto["moderation"] =>
+    approving.has(photo.id) ? "approved" : photo.moderation;
+  const pending = photos.filter((photo) => stateOf(photo) === "pending");
   const unseen = pending.filter((photo) => !review.seen.has(photo.id)).length;
   const full = photos.length >= maxPhotos;
   const { viewing, view, close } = review;
@@ -192,7 +210,7 @@ export function Photos({
   /** После решения в просмотре — следующее ждущее фото; больше нет — остаётся это */
   const nextPending = (id: string): string | null => {
     const at = photos.findIndex((photo) => photo.id === id);
-    const rest = photos.filter((photo) => photo.id !== id && photo.moderation === "pending");
+    const rest = photos.filter((photo) => photo.id !== id && stateOf(photo) === "pending");
     return (rest.find((photo) => photos.indexOf(photo) > at) ?? rest[0])?.id ?? null;
   };
   const goNext = (id: string) => {
@@ -210,16 +228,35 @@ export function Photos({
 
   const cover = (photo: StaffPhoto, index: number) =>
     void act(() => api.post(`${base}/${photo.id}/cover`), t.toastCover(index + 1));
-  const approve = async (photo: StaffPhoto, index: number) => {
-    setBusy(true);
+  /**
+   * Одобрить: фото сразу считается одобренным, решение уходит через 5 секунд — до того «Отменить»
+   * в строке уведомления возвращает его без запроса. Сервер отказал — фото снова ждёт, причина — здесь
+   */
+  const approve = (photo: StaffPhoto, index: number) => {
     setFailure(null);
-    const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
-    setBusy(false);
-    if (result.ok) {
-      toast(t.toastPhotoApproved(index + 1), { tone: "success" });
-      goNext(photo.id);
-    } else setFailure(result);
-    onChanged();
+    setApproving((prev) => new Set(prev).add(photo.id));
+    goNext(photo.id);
+    const done = () =>
+      setApproving((prev) => {
+        const next = new Set(prev);
+        next.delete(photo.id);
+        return next;
+      });
+    undoable({
+      key: photo.id,
+      text: t.photoApprovedUndo(index + 1),
+      undo: done,
+      commit: async () => {
+        const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
+        // Одобрено — отметка остаётся, пока витрина не перечиталась (фото не мигнёт «ждёт»)
+        if (result.ok) setDecidedHere(true);
+        else {
+          done();
+          setFailure(result);
+        }
+        onChanged();
+      },
+    });
   };
   // Все ждущие решения — по одному (у API решение по одному фото); остановка на первой ошибке
   const approveAll = async () => {
@@ -237,7 +274,10 @@ export function Photos({
     }
     setBusy(false);
     setFailure(stopped);
-    if (done > 0) toast(t.toastPhotosApproved(done), { tone: "success" });
+    if (done > 0) {
+      toast(t.toastPhotosApproved(done), { tone: "success" });
+      setDecidedHere(true);
+    }
     onChanged();
   };
   // Каждое ждущее фото открыто во весь экран — одобрить все сразу; иначе — подтвердить число
@@ -249,6 +289,7 @@ export function Photos({
     const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "declined", reason });
     if (!result.ok) return result;
     setDeclining(null);
+    setDecidedHere(true);
     goNext(photo.id);
     onChanged();
     return null;
@@ -286,7 +327,7 @@ export function Photos({
   ];
   const statesOf = (photo: StaffPhoto, index: number) => [
     ...(isCover(photo, index) ? [t.cover] : []),
-    t.moderationStates[photo.moderation] ?? photo.moderation,
+    t.moderationStates[stateOf(photo)] ?? stateOf(photo),
   ];
   const more = shown ? moreItems(shown, shownIndex) : [];
 
@@ -359,10 +400,8 @@ export function Photos({
                   />
                   <span className="photo-tags" aria-hidden="true">
                     {isCover(photo, index) ? <Pill tone="strong">{t.cover}</Pill> : null}
-                    {photo.moderation === "approved" ? null : (
-                      <Pill tone={toneOf("photo", photo.moderation)}>
-                        {t.moderationStates[photo.moderation]}
-                      </Pill>
+                    {stateOf(photo) === "approved" ? null : (
+                      <Pill tone={toneOf("photo", stateOf(photo))}>{t.moderationStates[stateOf(photo)]}</Pill>
                     )}
                   </span>
                 </button>
@@ -372,6 +411,10 @@ export function Photos({
         </ol>
       )}
 
+      {moderates && decidedHere && pending.length === 0 ? (
+        <NextInQueue queue="photos" currentId={listingId} focus={false} />
+      ) : null}
+
       {shown ? (
         <PhotoViewer
           photos={photos}
@@ -380,15 +423,16 @@ export function Photos({
           policy={photoPolicy}
           decides={moderates}
           working={busy}
-          canApprove={(photo) => photo.moderation !== "approved"}
-          canDecline={(photo) => photo.moderation !== "declined"}
-          doneLabel={(photo) => t.moderationStates[photo.moderation] ?? photo.moderation}
+          canApprove={(photo) => stateOf(photo) !== "approved"}
+          // Пока «Одобрить» можно отменить — сначала «Отменить», потом отказ
+          canDecline={(photo) => !approving.has(photo.id) && stateOf(photo) !== "declined"}
+          doneLabel={(photo) => t.moderationStates[stateOf(photo)] ?? stateOf(photo)}
           returnFocus={viewerReturn}
           onGo={(id) => {
             setDeclining(null);
             view(id);
           }}
-          onApprove={(photo, at) => void approve(photo, at)}
+          onApprove={(photo, at) => approve(photo, at)}
           onDecline={(photo, at) => {
             setFailure(null);
             setDeclining({ photo, n: at + 1 });

@@ -91,6 +91,10 @@ test("пригласить сотрудника площадки в шторке
   expect(copied).toContain("«Lola»");
   expect(copied).toContain(`https://t.me/${BOT}?start=partner`);
   expect(copied).toContain(`${APPS.vendor}/?signin=1&lang=ru`);
+  // Или сразу в чат партнёра: выбор чата Telegram с тем же текстом
+  const share = sheet.getByRole("link", { name: t.shareTelegram });
+  await expect(share).toHaveAttribute("href", /^https:\/\/t\.me\/share\/url\?url=/);
+  expect(decodeURIComponent((await share.getAttribute("href")) ?? "")).toContain("Здравствуйте, Дильшод!");
   await sheet.getByRole("button", { name: t.done }).click();
   await expect(sheet).toHaveCount(0);
 

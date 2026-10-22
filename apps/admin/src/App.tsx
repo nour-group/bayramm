@@ -2,6 +2,7 @@ import { getWebApp, loadTelegramWebApp, type TelegramWebApp } from "@bayramm/tg/
 import { ConnectivityProvider, OfflineBanner, UiTextsProvider, useStickyBar } from "@bayramm/ui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createApi, type Session, SessionContext } from "./api";
+import { clearDrafts, saveDrafts } from "./drafts";
 import { Login } from "./Login";
 import { parseView, ROUTES } from "./router";
 import { Shell } from "./Shell";
@@ -23,7 +24,7 @@ import { t } from "./texts";
 type Auth =
   | { kind: "checking" }
   /** back — экран, на который вернуться после входа (сессия кончилась посреди работы) */
-  | { kind: "signedOut"; error: SignInError | null; back?: string }
+  | { kind: "signedOut"; error: SignInError | null; back?: string; kept?: boolean }
   | { kind: "signedIn"; staff: Staff; token: string };
 
 /**
@@ -119,6 +120,7 @@ export function App() {
   const onSignOut = useCallback(() => {
     if (auth.kind !== "signedIn") return;
     tokenStore.clear();
+    clearDrafts();
     void signOut(auth.token);
     window.history.replaceState(null, "", ROUTES.login);
     setAuth({ kind: "signedOut", error: null });
@@ -126,7 +128,7 @@ export function App() {
 
   // Сессия кончилась посреди работы (401). В Telegram — сразу новая по initData: экран и
   // вписанное в формы остаются, повторить действие можно сразу. В браузере — страница входа
-  // с объяснением; после входа — тот же экран. Ответы 401 приходят пачкой: решает первый,
+  // с объяснением; после входа — тот же экран, несохранённое форм — из вкладки (drafts.ts). Ответы 401 приходят пачкой: решает первый,
   // остальные (и запоздавшие ответы на старый токен) — уже не про текущую сессию
   const onExpired = useCallback((expired: string) => {
     if (tokenStore.get() !== expired) return;
@@ -139,9 +141,11 @@ export function App() {
       });
       return;
     }
+    // Вписанное в формах — во вкладку до ухода на вход: после входа тот же экран его вернёт
+    const kept = saveDrafts() > 0;
     const back = backPath();
     window.history.replaceState(null, "", ROUTES.login);
-    setAuth({ kind: "signedOut", error: "expired", back });
+    setAuth({ kind: "signedOut", error: "expired", back, kept });
   }, []);
 
   const token = auth.kind === "signedIn" ? auth.token : null;
@@ -164,6 +168,7 @@ export function App() {
           <Login
             checking={auth.kind === "checking"}
             error={auth.kind === "signedOut" ? auth.error : null}
+            kept={auth.kind === "signedOut" && auth.kept === true}
             onSignIn={onSignIn}
           />
         )}

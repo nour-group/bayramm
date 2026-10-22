@@ -204,8 +204,8 @@ test.describe("навигация на телефоне", () => {
     await start(page);
     await page.goto("/requests");
     const tabs = tabbar(page);
-    // Администратор: четыре частых раздела и «Ещё»
-    await expect(tabs.getByRole("link")).toHaveText([/Заявки/, /Модерация/, /Вендоры/, /Метрики/]);
+    // Администратор: четыре раздела, где он работает, и «Ещё» (метрики только смотрят — там)
+    await expect(tabs.getByRole("link")).toHaveText([/Заявки/, /Модерация/, /Вендоры/, /Клиенты/]);
     await expect(tabs.getByRole("link", { name: t.requests })).toHaveAttribute("aria-current", "page");
     // Счётчики из очередей: просроченная заявка и решения модерации
     await expect(tabs.getByRole("link", { name: t.requests })).toContainText("1");
@@ -219,7 +219,7 @@ test.describe("навигация на телефоне", () => {
     const sheet = page.getByRole("dialog", { name: t.moreSections });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole("link")).toContainText([
-      t.clients,
+      t.metrics,
       t.notifications,
       t.audit,
       t.team,

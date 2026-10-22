@@ -1,15 +1,19 @@
 /* Уведомления: здоровье очереди бота. Всё доставлено — одна строка; иначе — плитки только тех
    состояний, где что-то есть (и «Не доставлены» всегда), и таблица недоставленного: получатель —
    подпись (имя пользователя кабинета или вендор, имя сотрудника, код клиента), вид и начало id;
-   телефонов нет. Повторить недоставленное — администратор. */
+   телефонов нет. Почему не дошло — словами (delivery.ts): где повтор поможет, «Повторить»
+   (администратор); где нет (бот заблокирован, чата нет) — ссылка туда, где телефоны: заявка или
+   вендор. */
 
 import type { OutboxDeadItem, OutboxHealth, OutboxStatus } from "@bayramm/shared/api/staff";
+import { useToast } from "@bayramm/ui/react";
 import { useState } from "react";
 import { type Failure, useCan, useLoad, useSession } from "../api";
+import { deliveryProblem } from "../delivery";
 import { formatMoment } from "../format";
 import { useLayout } from "../layout";
 import { t } from "../texts";
-import { ErrorText, Link, LoadedView, TableWrap } from "../ui";
+import { busyLabel, ErrorText, Link, LoadedView, TableWrap } from "../ui";
 
 const COUNTS: readonly OutboxStatus[] = ["pending", "sending", "failed", "dead", "sent"];
 
@@ -94,6 +98,7 @@ function DeadTable({
 }) {
   const { api } = useSession();
   const can = useCan();
+  const toast = useToast();
   // Таблица — только на компьютере: шесть колонок на планшете обрезались бы справа
   const cards = useLayout() !== "desktop";
   const [busy, setBusy] = useState<string | null>(null);
@@ -104,7 +109,44 @@ function DeadTable({
     const result = await api.post<OutboxHealth>(`/staff/outbox/${id}/retry`);
     setBusy(null);
     setFailure(result.ok ? null : result);
-    if (result.ok) onChange(result.data);
+    if (result.ok) {
+      toast(t.retryQueued, { tone: "success" });
+      onChange(result.data);
+    }
+  };
+
+  /** Что сделать с недоставленным: повторить, где это поможет, иначе — к телефонам */
+  const action = (item: OutboxDeadItem, small: boolean) => {
+    const problem = deliveryProblem(item.error);
+    const kind = t.noticeKinds[item.kind] ?? item.kind;
+    if (problem.retry)
+      return can("outbox.retry") ? (
+        <button
+          type="button"
+          className={small ? "btn btn-sm" : "btn"}
+          onClick={() => retry(item.id)}
+          disabled={busy !== null}
+          aria-busy={busy === item.id || undefined}
+          aria-label={t.retryNotice(kind)}
+        >
+          {busyLabel(t.retry, busy === item.id)}
+        </button>
+      ) : null;
+    if (!problem.call) return null;
+    if (item.request)
+      return (
+        <Link to={{ name: "request", id: item.request.id }} className={small ? "btn btn-sm" : "btn"}>
+          {t.callRequest(item.request.publicNo)}
+        </Link>
+      );
+    if (item.vendorId)
+      return (
+        <Link to={{ name: "vendor", id: item.vendorId }} className={small ? "btn btn-sm" : "btn"}>
+          {t.callVendor}
+          <span className="visually-hidden">: {kind}</span>
+        </Link>
+      );
+    return null;
   };
 
   if (cards)
@@ -135,20 +177,8 @@ function DeadTable({
                   {item.lastAttemptAt ? ` · ${formatMoment(item.lastAttemptAt)}` : ""}
                 </dd>
               </dl>
-              <p className="rcard-error">{item.error ?? t.none}</p>
-              {can("outbox.retry") && (
-                <div className="rcard-actions">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => retry(item.id)}
-                    disabled={busy !== null}
-                    aria-label={t.retryNotice(t.noticeKinds[item.kind] ?? item.kind)}
-                  >
-                    {t.retry}
-                  </button>
-                </div>
-              )}
+              <p className="rcard-error">{deliveryProblem(item.error).text}</p>
+              {action(item, false) ? <div className="rcard-actions">{action(item, false)}</div> : null}
             </li>
           ))}
         </ul>
@@ -167,11 +197,9 @@ function DeadTable({
               <th scope="col">{t.colAttempts}</th>
               <th scope="col">{t.colError}</th>
               <th scope="col">{t.colWhen}</th>
-              {can("outbox.retry") && (
-                <th scope="col">
-                  <span className="visually-hidden">{t.retry}</span>
-                </th>
-              )}
+              <th scope="col">
+                <span className="visually-hidden">{t.colNextStep}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -193,24 +221,12 @@ function DeadTable({
                   <RecipientCell item={item} />
                 </td>
                 <td>{item.attempts}</td>
-                <td className="error-cell">{item.error ?? t.none}</td>
+                <td className="error-cell">{deliveryProblem(item.error).text}</td>
                 <td>
                   {formatMoment(item.createdAt)}
                   {item.lastAttemptAt && <span className="sub">{formatMoment(item.lastAttemptAt)}</span>}
                 </td>
-                {can("outbox.retry") && (
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => retry(item.id)}
-                      disabled={busy !== null}
-                      aria-label={t.retryNotice(t.noticeKinds[item.kind] ?? item.kind)}
-                    >
-                      {t.retry}
-                    </button>
-                  </td>
-                )}
+                <td>{action(item, true)}</td>
               </tr>
             ))}
           </tbody>

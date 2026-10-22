@@ -39,18 +39,22 @@ import {
   type AttributeDrafts,
   attributeDrafts,
   attributeErrors,
+  attributeLabel,
   attributePatch,
   attributesOf,
+  attributeText,
   type CategoryConfig,
+  draftValue,
   missingAttributes,
   parseAmount,
   videoLinkErrors,
   videoLinksValue,
 } from "@bayramm/shared/categories";
-import { Select, type SelectOption } from "@bayramm/ui/react";
+import { RadioGroup, Select, type SelectOption, useOptionalToast } from "@bayramm/ui/react";
 import {
   createContext,
   type FormEvent,
+  Fragment,
   type ReactNode,
   useCallback,
   useContext,
@@ -60,10 +64,11 @@ import {
   useState,
 } from "react";
 import type { Failure, Result } from "../api";
+import { useDraft } from "../drafts";
 import { NumberField, PhoneField, SlugField, TelegramField } from "../fields";
 import { usePhone } from "../layout";
 import { apiErrorText, t } from "../texts";
-import { ErrorText, Field, FormBar, fieldErrors, OverflowMenu, revealFirstError } from "../ui";
+import { busyLabel, ErrorText, Field, FormBar, fieldErrors, OverflowMenu, revealFirstError } from "../ui";
 import { useUnsaved } from "../unsaved";
 import { AttributeFields } from "./AttributeFields";
 
@@ -217,6 +222,106 @@ export function formErrors(category: CategoryConfig, now: FormState): string[] {
   return errors;
 }
 
+// ── свежая версия поверх вписанного ────────────────────────────────────────
+
+/** Поле, которое поменяли и здесь, и в свежей версии (по-разному): выбрать «ваш» или «новый» */
+export interface Conflict {
+  readonly key: string;
+  readonly label: string;
+  readonly mine: string;
+  readonly theirs: string;
+}
+
+/** Часть формы для сверки: значение для сравнения, текст для выбора, перенос значения */
+interface Unit {
+  readonly key: string;
+  readonly label: string;
+  readonly of: (state: FormState) => string;
+  readonly text: (state: FormState) => string;
+  readonly take: (into: FormState, from: FormState) => FormState;
+}
+
+const REBASE_KEYS = [
+  "name",
+  "slug",
+  "districtCode",
+  "addressRu",
+  "addressUz",
+  "descriptionRu",
+  "descriptionUz",
+  "capMin",
+  "capMax",
+] as const;
+
+function unitsOf(category: CategoryConfig, district: (code: string) => string): Unit[] {
+  const values = REBASE_KEYS.map(
+    (key): Unit => ({
+      key,
+      label: t.listingFields[key] ?? key,
+      of: (state) => state.values[key].trim(),
+      text: (state) => {
+        const value = state.values[key].trim();
+        return (key === "districtCode" && value !== "" ? district(value) : value) || t.none;
+      },
+      take: (into, from) => ({ ...into, values: { ...into.values, [key]: from.values[key] } }),
+    }),
+  );
+  const attributes = category.attributes.map(
+    (field): Unit => ({
+      key: `attributes.${field.key}`,
+      label: attributeLabel("ru", category, field.key),
+      of: (state) => JSON.stringify(draftValue(field, state.attributes[field.key])) ?? "",
+      text: (state) =>
+        attributeText("ru", field, draftValue(field, state.attributes[field.key]), t.yes) ?? t.none,
+      take: (into, from) => ({
+        ...into,
+        attributes: { ...into.attributes, [field.key]: from.attributes[field.key] as AttributeDraft },
+      }),
+    }),
+  );
+  const videos: Unit = {
+    key: "videoLinks",
+    label: t.revisionFields.videoLinks ?? "videoLinks",
+    of: (state) => JSON.stringify(videoLinksValue(state.videos)),
+    text: (state) => videoLinksValue(state.videos).join(", ") || t.none,
+    take: (into, from) => ({ ...into, videos: from.videos }),
+  };
+  return [...values, ...attributes, ...(category.maxVideoLinks > 0 ? [videos] : [])];
+}
+
+/**
+ * Свежая версия витрины поверх вписанного: что поменяли здесь — остаётся, остальное — из свежей
+ * версии; поле, которое поменяли и здесь, и там (по-разному), — в conflicts: по умолчанию ваш
+ * вариант, «новый» — выбором. Телефон и Telegram вписываются заново и остаются как есть
+ */
+export function rebase(
+  category: CategoryConfig,
+  before: FormState,
+  now: FormState,
+  fresh: FormState,
+  district: (code: string) => string = (code) => code,
+): { now: FormState; conflicts: Conflict[] } {
+  let next = now;
+  const conflicts: Conflict[] = [];
+  for (const unit of unitsOf(category, district)) {
+    const mine = unit.of(now);
+    if (mine === unit.of(before)) {
+      next = unit.take(next, fresh);
+      continue;
+    }
+    const theirs = unit.of(fresh);
+    if (theirs !== unit.of(before) && theirs !== mine)
+      conflicts.push({ key: unit.key, label: unit.label, mine: unit.text(now), theirs: unit.text(fresh) });
+  }
+  return { now: next, conflicts };
+}
+
+/** Выбрали «ваш вариант» или «новый» у поля из conflicts */
+export function pick(category: CategoryConfig, state: FormState, key: string, from: FormState): FormState {
+  const unit = unitsOf(category, (code) => code).find((u) => u.key === key);
+  return unit ? unit.take(state, from) : state;
+}
+
 interface ContactsProps {
   readonly hasPhone: boolean;
   readonly hasTelegram: boolean;
@@ -236,7 +341,47 @@ export interface ListingEditorProps {
   onDirtyChange?: (dirty: boolean) => void;
   /** Контакты для клиентов: что вписано и как показать (чтение пишется в журнал доступа к ПДн) */
   contacts?: ContactsProps;
+  /**
+   * Свежая витрина с сервера (её же получает страница): «Показать свежую версию», когда витрину
+   * изменили, пока здесь вписывали. Вписанное остаётся
+   */
+  refresh?: () => Promise<Result<ListingDetail>>;
   children: ReactNode;
+}
+
+/** Черновик формы во вкладке (drafts.ts): от чего начинали и что вписали */
+interface StoredForm {
+  readonly before: FormState;
+  readonly now: FormState;
+}
+
+const isFormState = (value: unknown): value is FormState => {
+  const state = value as Partial<FormState> | null;
+  return (
+    typeof state === "object" &&
+    state !== null &&
+    typeof state.values === "object" &&
+    state.values !== null &&
+    REBASE_KEYS.every(
+      (key) => typeof (state.values as unknown as Record<string, unknown>)[key] === "string",
+    ) &&
+    typeof state.attributes === "object" &&
+    Array.isArray(state.videos)
+  );
+};
+
+const isStoredForm = (value: unknown): value is StoredForm =>
+  typeof value === "object" &&
+  value !== null &&
+  isFormState((value as { before?: unknown }).before) &&
+  isFormState((value as { now?: unknown }).now);
+
+/** Свежая версия легла поверх вписанного: что выбрать в полях, которые поменяли и там, и здесь */
+interface Rebased {
+  readonly mine: FormState;
+  readonly fresh: FormState;
+  readonly conflicts: readonly Conflict[];
+  readonly picks: Readonly<Record<string, "mine" | "theirs">>;
 }
 
 /** Что ушло на модерацию и было ли в правке что-то ещё (оно сохранено сразу) */
@@ -301,6 +446,11 @@ interface Editor {
   readonly sent: Sent | null;
   readonly missing: readonly string[];
   readonly phoneRemovable: boolean;
+  /** Витрину изменили, пока здесь вписывали: показать свежую версию поверх вписанного */
+  readonly showFresh: (() => Promise<void>) | null;
+  readonly refreshing: boolean;
+  readonly rebased: Rebased | null;
+  readonly choose: (key: string, side: "mine" | "theirs") => void;
   readonly put: (key: keyof Values) => (value: string) => void;
   readonly set: (key: keyof Values) => (event: { target: { value: string } }) => void;
   readonly submit: (event: FormEvent) => Promise<void>;
@@ -324,11 +474,14 @@ export function ListingEditor({
   moderated = false,
   onDirtyChange,
   contacts,
+  refresh,
   children,
 }: ListingEditorProps) {
   const [before, setBefore] = useState(() => formState(listing, category));
   const [now, setNowState] = useState(before);
   const [failure, setFailure] = useState<Failure | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [rebased, setRebased] = useState<Rebased | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [sent, setSent] = useState<Sent | null>(null);
@@ -381,6 +534,7 @@ export function ListingEditor({
       return;
     }
     setFailure(null);
+    setRebased(null);
     setSaves((n) => n + 1);
     // Форма — как в витрине после правки: значения уже в том виде, как их хранит сервер
     const next = formState(result, category);
@@ -396,6 +550,46 @@ export function ListingEditor({
     }
     setSent(null);
     setSaved(true);
+  };
+
+  // Свежая версия поверх вписанного: ваше остаётся, чужое подтягивается, общее — на выбор
+  const districtName = (code: string) =>
+    dictionaries?.districts.find((district) => district.code === code)?.nameRu ?? code;
+  const showFresh = refresh
+    ? async () => {
+        setRefreshing(true);
+        const result = await refresh();
+        setRefreshing(false);
+        if (!result.ok) {
+          setFailure(result);
+          return;
+        }
+        const fresh = formState(result.data, category);
+        const merged = rebase(category, before, now, fresh, districtName);
+        setFailure(null);
+        setBefore(fresh);
+        setNowState(merged.now);
+        setRebased(
+          merged.conflicts.length > 0 ? { mine: now, fresh, conflicts: merged.conflicts, picks: {} } : null,
+        );
+      }
+    : null;
+  // Сессия кончилась посреди правки: вписанное — во вкладку (drafts.ts); вернулись после входа —
+  // оно поверх свежей витрины, общее с чужими правками — на выбор, как после «свежей версии»
+  const toast = useOptionalToast();
+  useDraft<StoredForm>(`listing:${listing.id}`, { before, now }, dirty, (draft) => {
+    if (!isStoredForm(draft)) return false;
+    const merged = rebase(category, draft.before, draft.now, before, districtName);
+    setNowState(merged.now);
+    if (merged.conflicts.length > 0)
+      setRebased({ mine: draft.now, fresh: before, conflicts: merged.conflicts, picks: {} });
+    toast?.(t.draftRestored, { tone: "info", duration: 8000 });
+    return true;
+  });
+  const choose = (key: string, side: "mine" | "theirs") => {
+    if (!rebased) return;
+    setRebased({ ...rebased, picks: { ...rebased.picks, [key]: side } });
+    setNow((prev) => pick(category, prev, key, side === "mine" ? rebased.mine : rebased.fresh));
   };
 
   const editor: Editor = {
@@ -418,6 +612,10 @@ export function ListingEditor({
     sent,
     missing,
     phoneRemovable,
+    showFresh,
+    refreshing,
+    rebased,
+    choose,
     put,
     set,
     submit,
@@ -473,9 +671,126 @@ function SlugLine() {
   );
 }
 
+/** Строка «подпись — значение» для просмотра без правки; пустое не показывается */
+interface Fact {
+  readonly key: string;
+  readonly label: string;
+  readonly value: ReactNode;
+  /** Длинный текст (описание): обычным начертанием, с переносами строк */
+  readonly text?: boolean;
+}
+
+/**
+ * Витрина для тех, кто её не правит (модератор): данные списком, а не формой с недоступными
+ * полями и пометками «обязательно». Пустое не показывается — чего не хватает, говорит «Что осталось»
+ */
+function Facts({ facts }: { facts: readonly Fact[] }) {
+  const shown = facts.filter((fact) => fact.value !== null && fact.value !== "");
+  if (shown.length === 0) return <p className="muted">{t.factsEmpty}</p>;
+  return (
+    <dl className="dl facts">
+      {shown.map((fact) => (
+        <Fragment key={fact.key}>
+          <dt>{fact.label}</dt>
+          <dd className={fact.text ? "dd-text" : undefined}>{fact.value}</dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
+/** «Основное» без правки: название, район, адрес страницы, адреса и описания — списком */
+function MainFacts() {
+  const { now, dictionaries, parts } = useEditor();
+  const values = now.values;
+  const district =
+    dictionaries?.districts.find((d) => d.code === values.districtCode)?.nameRu ?? values.districtCode;
+  return (
+    <section className="fs">
+      <p className="notice">{t.listingReadOnly}</p>
+      <div className="fs-head">
+        <h2 id="form-main-title" tabIndex={-1}>
+          {t.listingSections.main}
+        </h2>
+      </div>
+      <Facts
+        facts={[
+          { key: "name", label: t.listingFields.name ?? "", value: values.name.trim() },
+          ...(parts.district
+            ? [{ key: "district", label: t.listingFields.districtCode ?? "", value: district }]
+            : []),
+          { key: "slug", label: t.listingFields.slug ?? "", value: `${t.input.slugPrefix}${values.slug}` },
+          { key: "addressRu", label: t.listingFields.addressRu ?? "", value: values.addressRu.trim() },
+          { key: "addressUz", label: t.listingFields.addressUz ?? "", value: values.addressUz.trim() },
+          {
+            key: "descriptionRu",
+            label: t.listingFields.descriptionRu ?? "",
+            value: values.descriptionRu.trim(),
+            text: true,
+          },
+          {
+            key: "descriptionUz",
+            label: t.listingFields.descriptionUz ?? "",
+            value: values.descriptionUz.trim(),
+            text: true,
+          },
+        ]}
+      />
+    </section>
+  );
+}
+
+/** «Данные витрины» без правки: вместимость, поля категории и видео — списком */
+function DataFacts() {
+  const { now, category, parts } = useEditor();
+  const hasAttributes = category.attributes.length > 0 || parts.capacity;
+  const { capMin, capMax } = now.values;
+  const capacity = capMin.trim() || capMax.trim() ? t.capacityRange(capMin.trim(), capMax.trim()) : "";
+  const videos = videoLinksValue(now.videos);
+  return (
+    <section className="fs">
+      <div className="fs-head">
+        <h2 id="form-attrs-title" tabIndex={-1}>
+          {hasAttributes ? t.listingDataSections.attributes : t.listingDataSections.videos}
+        </h2>
+      </div>
+      <Facts
+        facts={[
+          ...(parts.capacity ? [{ key: "capacity", label: t.input.capacity, value: capacity }] : []),
+          ...category.attributes.map((field) => ({
+            key: field.key,
+            label: attributeLabel("ru", category, field.key),
+            value: attributeText("ru", field, draftValue(field, now.attributes[field.key]), t.yes) ?? "",
+          })),
+          ...(parts.videos && videos.length > 0
+            ? [
+                {
+                  key: "videos",
+                  label: t.listingDataSections.videos,
+                  value: (
+                    <ul className="plain">
+                      {videos.map((link) => (
+                        <li key={link}>
+                          <a href={link} target="_blank" rel="noopener noreferrer">
+                            {link}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ),
+                },
+              ]
+            : []),
+        ]}
+      />
+    </section>
+  );
+}
+
 /** «Основное» и «Описание и адрес» — одна карточка: название, район, адрес страницы, адреса и описания */
 export function MainSection() {
   const { now, put, set, errors, readOnly, moderatedHint, dictionaries, submit, formId, parts } = useEditor();
+  if (readOnly) return <MainFacts />;
 
   // Пометки у подписи — как у клиента и в кабинете: описания для публикации нужны, адрес — нет
   const textarea = (key: "descriptionRu" | "descriptionUz", lang: "ru" | "uz") => (
@@ -584,6 +899,7 @@ export function hasDataSection(category: CategoryConfig): boolean {
 export function DataSection() {
   const { now, put, setNow, errors, details, readOnly, category, parts, missing, submit } = useEditor();
   if (!hasDataSection(category)) return null;
+  if (readOnly) return <DataFacts />;
   const hasAttributes = category.attributes.length > 0 || parts.capacity;
 
   // Видео: номер поля формы ↔ номер в отправленном списке (пустые не отправляются)
@@ -990,7 +1306,7 @@ export function ContactsSection() {
 
 /** «Сохранить» одна на все части формы: на телефоне — в панели действий, шире — полоса снизу */
 export function EditorBar() {
-  const { readOnly, failure, formId, dirty, busy, saved, sent } = useEditor();
+  const { readOnly, failure, formId, dirty, busy, saved, sent, showFresh, refreshing, rebased } = useEditor();
   const phone = usePhone();
   const problem = useRef<HTMLDivElement>(null);
   // Не ошибка поля (версия устарела, нет связи) — сообщение в конце страницы: показать
@@ -1003,8 +1319,25 @@ export function EditorBar() {
   return (
     <>
       <div ref={problem} hidden={!failure}>
-        {failure ? <ErrorText failure={failure} /> : null}
+        {failure?.code === "version_conflict" && showFresh ? (
+          // Витрину изменили, пока здесь вписывали: вписанное не пропадает — свежая версия ляжет под него
+          <div className="notice notice-warn conflict" role="alert">
+            <p>{t.conflictText}</p>
+            <button
+              type="button"
+              className="btn btn-sm"
+              aria-busy={refreshing || undefined}
+              disabled={refreshing}
+              onClick={() => void showFresh()}
+            >
+              {busyLabel(t.conflictShowFresh, refreshing)}
+            </button>
+          </div>
+        ) : failure ? (
+          <ErrorText failure={failure} />
+        ) : null}
       </div>
+      {rebased && dirty ? <ConflictChoices rebased={rebased} /> : null}
       {quiet ? null : (
         <FormBar
           formId={formId}
@@ -1028,5 +1361,40 @@ export function EditorBar() {
         />
       )}
     </>
+  );
+}
+
+/** Длинный текст в выборе — началом: целиком он в поле формы */
+const clip = (text: string) => (text.length > 120 ? `${text.slice(0, 117)}…` : text);
+
+/**
+ * Поля, которые поменяли и здесь, и в свежей версии: по каждому — «ваш вариант» (по умолчанию) или
+ * «новый». Выбор сразу ставит значение в форму; сохранить — как обычно, «Сохранить»
+ */
+function ConflictChoices({ rebased }: { rebased: Rebased }) {
+  const { choose } = useEditor();
+  return (
+    <section className="notice notice-warn conflict" aria-labelledby="conflict-title">
+      <h3 id="conflict-title" className="notice-title">
+        {t.conflictChoose}
+      </h3>
+      {rebased.conflicts.map((conflict, index) => (
+        <Fragment key={conflict.key}>
+          <p className="sheet-group" id={`conflict-${index}`}>
+            {conflict.label}
+          </p>
+          <RadioGroup<"mine" | "theirs">
+            variant="row"
+            aria-labelledby={`conflict-${index}`}
+            value={rebased.picks[conflict.key] ?? "mine"}
+            onChange={(side) => choose(conflict.key, side)}
+            options={[
+              { value: "mine", label: t.conflictMine(clip(conflict.mine)) },
+              { value: "theirs", label: t.conflictTheirs(clip(conflict.theirs)) },
+            ]}
+          />
+        </Fragment>
+      ))}
+    </section>
   );
 }

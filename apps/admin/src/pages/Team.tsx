@@ -17,6 +17,8 @@ import { type Failure, useAuthMethods, useLoad, useSession } from "../api";
 import { ChoiceField, PhoneField, TelegramField } from "../fields";
 import { formatMoment } from "../format";
 import { useLayout } from "../layout";
+import { ShareToTelegram } from "../share";
+import { type TeamInviteFacts, teamInviteText } from "../team-invite";
 import { apiErrorText, t } from "../texts";
 import {
   ActionBar,
@@ -46,6 +48,8 @@ const INVITE_ROLES = (["manager", "moderator", "admin"] as const).map((role) => 
 }));
 
 type InviteBy = TeamMember["invitedBy"];
+/** Кого пригласили — для текста приглашения (team-invite.ts) */
+type Invited = Pick<TeamInviteFacts, "name" | "role" | "by" | "username">;
 const BY_OPTIONS: readonly { value: InviteBy; label: string }[] = [
   { value: "telegram", label: t.inviteByTelegram },
   { value: "phone", label: t.inviteByPhone },
@@ -62,7 +66,13 @@ const invalid = (field: string): Failure => ({
 export function TeamPage() {
   const { loaded, reload, set } = useLoad<TeamList>("/staff/team");
   const [inviting, setInviting] = useState(false);
+  // Приглашение создано: что отправить сотруднику — в том же листе
+  const [sent, setSent] = useState<Invited | null>(null);
   const inviteButton = useRef<HTMLButtonElement>(null);
+  const close = () => {
+    setInviting(false);
+    setSent(null);
+  };
   return (
     <div className="stack">
       {/* Главное действие экрана; список — сразу под ним, на любой ширине */}
@@ -82,24 +92,95 @@ export function TeamPage() {
       </LoadedView>
       <Dialog
         open={inviting}
-        title={t.inviteTitle}
-        onClose={() => setInviting(false)}
+        title={sent ? t.invited : t.inviteTitle}
+        onClose={close}
         returnFocus={inviteButton}
         className="sheet-form"
       >
-        <InviteForm
-          onDone={(list) => {
-            set(list);
-            setInviting(false);
-          }}
-          onCancel={() => setInviting(false)}
-        />
+        {sent ? (
+          <InviteSent facts={sent} onClose={close} />
+        ) : (
+          <InviteForm
+            onDone={(list, facts) => {
+              set(list);
+              setSent(facts);
+            }}
+            onCancel={close}
+          />
+        )}
       </Dialog>
     </div>
   );
 }
 
-function InviteForm({ onDone, onCancel }: { onDone: (list: TeamList) => void; onCancel: () => void }) {
+/**
+ * Приглашение создано: текст для сотрудника (бот → /start → панель) — скопировать или сразу
+ * отправить в Telegram. Буфера обмена нет (старый вебвью) — текст на виду, его можно выделить
+ */
+function InviteSent({ facts, onClose }: { facts: Invited; onClose: () => void }) {
+  const methods = useAuthMethods();
+  const toast = useToast();
+  const area = useRef<HTMLTextAreaElement>(null);
+  const text = methods
+    ? teamInviteText({
+        ...facts,
+        bot: methods.telegram.bot,
+        adminUrl: methods.apps.admin,
+        phoneLogin: methods.phone,
+      })
+    : null;
+  const copy = async () => {
+    if (text === null) return;
+    try {
+      if (typeof navigator.clipboard?.writeText !== "function") throw new Error("no clipboard");
+      await navigator.clipboard.writeText(text);
+      toast(t.vuCopied, { tone: "success" });
+    } catch {
+      area.current?.focus();
+      area.current?.select();
+    }
+  };
+  return (
+    <div className="stack invite-sent">
+      <p className="saved" role="status">
+        {t.inviteSentHint}
+      </p>
+      {text !== null ? (
+        <textarea
+          ref={area}
+          className="input vuser-copy-text"
+          readOnly
+          rows={8}
+          aria-label={t.inviteText}
+          value={text}
+          onFocus={(event) => event.currentTarget.select()}
+        />
+      ) : null}
+      <div className="acts">
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={text === null}
+          onClick={() => void copy()}
+        >
+          {t.vuCopy}
+        </button>
+        {text !== null ? <ShareToTelegram message={text}>{t.shareTelegram}</ShareToTelegram> : null}
+        <button type="button" className="btn" onClick={onClose}>
+          {t.done}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function InviteForm({
+  onDone,
+  onCancel,
+}: {
+  onDone: (list: TeamList, facts: Invited) => void;
+  onCancel: () => void;
+}) {
   const { api } = useSession();
   const methods = useAuthMethods();
   const toast = useToast();
@@ -136,7 +217,12 @@ function InviteForm({ onDone, onCancel }: { onDone: (list: TeamList) => void; on
     if (result.ok) {
       setConfirmAdmin(null);
       toast(t.invited, { tone: "success" });
-      onDone(result.data);
+      onDone(result.data, {
+        name: body.displayName.trim(),
+        role: body.role,
+        by,
+        username: "username" in body && body.username ? body.username : null,
+      });
     }
   };
 

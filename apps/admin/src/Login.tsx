@@ -31,11 +31,13 @@ interface LoginProps {
   /** Идёт проверка: сохранённый токен, возврат из хаба или вход Mini App */
   checking: boolean;
   error: SignInError | null;
+  /** Сессия кончилась, а в формах было несохранённое: оно ждёт во вкладке и вернётся */
+  kept?: boolean;
   /** В хаб входа; false — адрес сайта не узнать (API не ответило) */
   onSignIn: () => Promise<boolean>;
 }
 
-export function Login({ checking, error, onSignIn }: LoginProps) {
+export function Login({ checking, error, kept = false, onSignIn }: LoginProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -77,6 +79,7 @@ export function Login({ checking, error, onSignIn }: LoginProps) {
           {shown && (
             <p className="login-error" role="alert">
               {t.errors[shown]}
+              {kept && shown === "expired" ? ` ${t.draftsKept}` : ""}
             </p>
           )}
           {checking ? (
