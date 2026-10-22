@@ -320,14 +320,18 @@ test.describe("заявка по категории", () => {
     await expect(request.locator(".req-details")).toContainText("Район доставки: Чиланзар");
   });
 
-  test("студия: время, часы и сколько человек — обязательны; гостей не спрашивают", async ({ page }) => {
+  test("студия: часы и сколько человек — обязательны, начало — по желанию при выбранной части дня", async ({
+    page,
+  }) => {
     await prepare(page);
     await open(page, PATHS.request(STUDIO.slug), "form.request .consents");
     await page.locator("form.request label.ui-radio").first().click();
     await pickDay(page, addDays(TODAY, 19));
     await finishAndSend(page);
     await expect(page.locator(".form-error").first()).toBeVisible();
-    await expect(fieldOf(page, "Начало").locator(".fld-error")).toHaveText(ru.errTime);
+    // Повод отметил часть дня — «Начало» по желанию: ни ошибки, ни «обязательно»
+    await expect(fieldOf(page, "Начало").locator(".fld-error")).toHaveCount(0);
+    await expect(fieldOf(page, "Сколько часов").locator(".fld-error")).toHaveText(ru.errRequired);
     await chooseIn(page, "Начало", "15:00");
     await fieldOf(page, "Сколько часов").getByRole("spinbutton").fill("2");
     await fieldOf(page, "Сколько человек").getByRole("spinbutton").fill("4");
@@ -448,7 +452,7 @@ test.describe("категории в Telegram", () => {
 });
 
 test.describe("каталог «Все» и дата с витрины", () => {
-  test("каталог без раздела — «Все»: витрины всех разделов с подписью раздела, переключение туда и обратно", async ({
+  test("каталог без раздела — «Все»: витрины по разделам под их заголовками, переключение туда и обратно", async ({
     page,
   }) => {
     await prepare(page);
@@ -457,10 +461,11 @@ test.describe("каталог «Все» и дата с витрины", () => {
     const chips = page.locator(".cat-switch a");
     await expect(chips.first()).toHaveText(ru.catAll);
     await expect(chips.first()).toHaveAttribute("aria-current", "page");
-    // Карточка называет свой раздел: в общей выдаче иначе не понять, зал это или кортеж
-    await expect(page.locator(".cards .card").first()).toContainText(
-      new RegExp(Object.values(ru.catName).join("|")),
-    );
+    // По разделам: над карточками — заголовок раздела (цены разных разделов не сравнить), первым —
+    // раздел запуска; порядок выбирать не из чего
+    await expect(page.locator(".cards-section h2").first()).toHaveText(ru.catName.hall);
+    await expect(page.locator(".filter-row .sort")).toHaveCount(0);
+    await expect(page.locator(".sort-hint")).toHaveCount(0);
     await chips.filter({ hasText: ru.catName.car }).click();
     await expect(page).toHaveURL((url) => url.pathname === PATHS.catalog && url.search === "?category=car");
     await expect(page.locator(".cards .card")).toHaveCount(3);

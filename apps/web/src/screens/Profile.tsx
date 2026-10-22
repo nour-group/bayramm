@@ -2,10 +2,11 @@ import { useState } from "react";
 import { Documents } from "../components/Documents";
 import { LangSwitch } from "../components/LangSwitch";
 import { RichText } from "../components/RichText";
+import { Loading } from "../components/States";
 import { TeamHelp } from "../components/TeamHelp";
 import { canSignIn, useAccount, useLang, useServices } from "../context";
 import { tashkentToday } from "../format";
-import { useDocumentTitle } from "../hooks";
+import { useAsync, useDocumentTitle } from "../hooks";
 import { Icon } from "../icons";
 import { haptic } from "../telegram";
 import { AccountSection } from "./AccountSection";
@@ -203,9 +204,11 @@ function MyData() {
 }
 
 export function Profile() {
-  const { webApp, identity } = useServices();
+  const { api, webApp, identity } = useServices();
   const { deleted, me } = useAccount();
   const { t } = useLang();
+  // Тот же запрос, что у раздела «Аккаунт» (кэш вкладки): роли — ссылками в другие приложения
+  const methods = useAsync("auth-methods", (signal) => api.authMethods(signal));
   useDocumentTitle(t.navProfile);
   const user = deleted ? undefined : webApp?.initDataUnsafe.user;
   // Имя: из Telegram (Mini App), на сайте — из профиля аккаунта
@@ -216,19 +219,24 @@ export function Profile() {
       ? [own.firstName, own.lastName].filter(Boolean).join(" ") || null
       : null;
 
+  // Аккаунт и способы входа ещё грузятся — экран целиком после них: разделы появляются разом, а
+  // не сдвигают друг друга (имя, «Аккаунт» с ролями, «Мои данные»)
+  if (!deleted && canSignIn(identity) && (me.status === "loading" || methods.status === "loading"))
+    return (
+      <div className="screen profile screen-fallback">
+        <h1 className="screen-title" tabIndex={-1}>
+          {t.navProfile}
+        </h1>
+        <Loading />
+      </div>
+    );
+
   return (
     <div className="screen profile">
       <h1 className="screen-title" tabIndex={-1}>
         {t.navProfile}
       </h1>
-      {/* Имя аккаунта на сайте приходит с профилем — строка под него заранее, без сдвига */}
-      {name ? (
-        <p className="profile-name">{name}</p>
-      ) : !user && me.status === "loading" ? (
-        <p className="profile-name" aria-hidden="true">
-          {"\u00a0"}
-        </p>
-      ) : null}
+      {name ? <p className="profile-name">{name}</p> : null}
 
       <section className="section" aria-labelledby="profile-lang">
         <h2 className="section-title" id="profile-lang">

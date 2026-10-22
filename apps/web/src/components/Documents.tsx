@@ -20,7 +20,7 @@ export function Documents() {
   // Пока грузятся — заготовки строк тех же размеров: разделы ниже не прыгают
   if (texts.status === "loading")
     return (
-      <div className="docs" role="status">
+      <div className="docs-loading" role="status">
         {Object.keys(PURPOSE_TITLE).map((purpose) => (
           <span key={purpose} className="doc doc-skeleton" aria-hidden="true" />
         ))}

@@ -85,7 +85,9 @@ export function Favorites() {
       ) : null}
       {list.status === "error" ? <ErrorState onRetry={list.reload} /> : null}
       {empty || (list.status === "ready" && items.length === 0) ? (
+        // Высотой с экран, как заготовка экрана: подвал не подпрыгивает
         <EmptyState
+          screen
           title={t.svEmptyH}
           // «Входить не нужно» — только гостю: вошедшему список хранит аккаунт
           text={mode === "account" ? t.svEmptyPSigned : t.svEmptyP}

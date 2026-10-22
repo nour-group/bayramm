@@ -153,7 +153,7 @@ describe("каталог", () => {
     // По цене: крупно — то, по чему сортируют (сумма на 200 гостей), цена «от» — ниже
     const perGuest = cards.find((c) => c.textContent?.includes("за гостя"));
     expect(perGuest?.querySelector(".card-key")?.textContent).toMatch(/^около .+ на 200 гостей$/);
-    expect(perGuest?.querySelector(".card-estimate")?.textContent).toMatch(/^от .+ за гостя$/);
+    expect(perGuest?.querySelector(".card-price")?.textContent).toMatch(/^от .+ за гостя$/);
     const perEvent = cards.find((c) => !c.textContent?.includes("за гостя"));
     expect(perEvent?.querySelector(".card-estimate")).toBeNull();
     expect(document.querySelector(".sort-hint")?.textContent).toBe(
@@ -172,7 +172,7 @@ describe("каталог", () => {
     // У цены за мероприятие крупно — сколько это на гостя, до тысяч: по ней сортирует «Сначала
     // дешевле»; цена «от» за мероприятие — ниже
     const perEventCard = [...document.querySelectorAll(".card")].find((c) =>
-      c.querySelector(".card-estimate")?.textContent?.includes("за мероприятие"),
+      c.querySelector(".card-price")?.textContent?.includes("за мероприятие"),
     );
     expect(perEventCard?.querySelector(".card-key")?.textContent).toMatch(
       /^≈ \d+\s(тыс\.|млн)\sсум за гостя$/,

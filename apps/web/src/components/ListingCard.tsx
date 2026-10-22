@@ -147,25 +147,17 @@ export const ListingCard = memo(function ListingCard({
             <NewBadge />
           </div>
           {meta.length > 0 ? <p className="card-meta">{metaLine(meta)}</p> : null}
+          {/* По этой сумме сортирует каталог — она и крупно; цена «от» с единицей — строкой ниже */}
           {key ? (
-            <>
-              {/* По этой сумме сортирует каталог — она и крупно; цена «от» — ниже */}
-              <p className="card-price card-key">
-                <b>{key}</b>
-              </p>
-              <p className="card-estimate">
-                {price.amount} {price.unit}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="card-price">
-                {/* Пробел — между суммой и единицей, а не внутри неразрывной единицы: строка переносится */}
-                <b>{price.amount}</b> <span className="unit">{price.unit}</span>
-              </p>
-              {estimate ? <p className="card-estimate">{estimate}</p> : null}
-            </>
-          )}
+            <p className="card-key">
+              <b>{key}</b>
+            </p>
+          ) : null}
+          <p className={key ? "card-price card-price-minor" : "card-price"}>
+            {/* Пробел — между суммой и единицей, а не внутри неразрывной единицы: строка переносится */}
+            <b>{price.amount}</b> <span className="unit">{price.unit}</span>
+          </p>
+          {estimate ? <p className="card-estimate">{estimate}</p> : null}
         </div>
       </Link>
       {/* Сердечко — рядом со ссылкой, а не внутри: кнопка в ссылке недопустима */}

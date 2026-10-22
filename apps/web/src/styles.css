@@ -1021,12 +1021,28 @@ textarea.field-input {
   font-size: var(--fs-12-5);
 }
 
+/* Выдача по цене залов: крупно — ключ порядка (на гостя или на всех гостей), цена «от» — мельче */
+.card-key {
+  margin-top: 4px;
+}
+
+.card-key b,
 .card-price b,
 .bar-price b {
   color: var(--plum);
   font-family: var(--font-display);
   font-size: var(--fs-19);
   font-weight: 600;
+}
+
+.card-price-minor {
+  margin-top: 0;
+}
+
+.card-price-minor b {
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--fs-13-5);
 }
 
 /* Единица цены («за мероприятие», «за гостя») не рвётся: переносится целиком под сумму */
@@ -2037,7 +2053,8 @@ textarea.field-input {
   color: var(--coral);
 }
 
-.docs {
+.docs,
+.docs-loading {
   display: grid;
   gap: var(--gap-9);
 }
@@ -2048,19 +2065,6 @@ textarea.field-input {
   height: 50px;
   background: var(--lilac);
   animation: pulse 1.2s var(--ease-io) infinite alternate;
-}
-
-/* Раздел «Аккаунт», пока профиль грузится: высотой с разделом (способы входа, на сайте — «Выйти») */
-.account-skeleton {
-  display: grid;
-  align-content: start;
-  gap: var(--gap-12);
-  min-height: 150px;
-  margin-top: 12px;
-}
-
-.account-skeleton.with-exit {
-  min-height: 206px;
 }
 
 .doc {
