@@ -6,7 +6,8 @@
 //        сначала без ответа; sla=late — очередь просроченных и нарушенных, самый давний срок
 //        первым; category — заявки витрин этой категории; listingId — одной витрины; part — на
 //        эту часть дня (whole — на весь день, у категорий с календарём); contactName — имя из
-//        заявки, чья она
+//        заявки, чья она; lastOpsAt и lastOpsBy — последнее действие команды (напоминание,
+//        смена статуса, заметка): когда и кто
 //   GET  /staff/requests/:id                              заявка, история (кто — подписью
 //        журнала), срок ответа по шагам (timeline), заметки; client — id и код C-… для ссылки
 //   POST /staff/requests/:id/client-phone  { reason }     телефон клиента — только
@@ -156,7 +157,48 @@ async function contactNamesOf(
   return new Map(rows.map((row) => [row.id, row.contact_name]));
 }
 
-function itemView(row: Omit<RequestRow, "contact_name"> & { contact_name: RequestRow["contact_name"] }) {
+/** Последнее действие команды по заявке: когда и кто (имя сотрудника; нет имени — null) */
+interface OpsTrail {
+  readonly at: string;
+  readonly by: string | null;
+}
+
+/**
+ * Последнее действие команды по заявкам страницы: напоминание вендору, смена статуса сотрудником
+ * («связались»), заметка. Один запрос на страницу, имена — пачкой (подписи журнала)
+ */
+async function opsTrailsOf(trx: Tx, ids: readonly string[]): Promise<Map<string, OpsTrail>> {
+  if (ids.length === 0) return new Map();
+  const list = sql.join(ids.map((id) => sql`${id}::uuid`));
+  const { rows } = await sql<{ request_id: string; at: Date; staff_id: string | null }>`
+    select distinct on (x.request_id) x.request_id, x.at, x.staff_id
+    from (
+      select o.request_id, o.created_at as at, o.payload ->> 'staff_id' as staff_id
+        from app.outbox o
+       where o.request_id in (${list}) and o.kind = 'vendor.ops_reminder'
+      union all
+      select s.request_id, s.at, s.actor_id::text
+        from app.request_status_log s
+       where s.request_id in (${list}) and s.actor_kind = 'staff'
+      union all
+      select n.request_id, n.created_at, n.author_id::text
+        from app.request_notes n
+       where n.request_id in (${list})
+    ) x
+    order by x.request_id, x.at desc`.execute(trx);
+  const names = await loadLabels(
+    trx,
+    rows.map((row) => ({ type: "staff", id: row.staff_id })),
+  );
+  return new Map(
+    rows.map((row) => [row.request_id, { at: iso(row.at), by: names.get("staff", row.staff_id) }]),
+  );
+}
+
+function itemView(
+  row: Omit<RequestRow, "contact_name"> & { contact_name: RequestRow["contact_name"] },
+  ops?: OpsTrail,
+) {
   return {
     id: row.id,
     publicNo: num(row.public_no),
@@ -179,6 +221,8 @@ function itemView(row: Omit<RequestRow, "contact_name"> & { contact_name: Reques
     },
     vendor: { id: row.vendor_id, code: row.public_code, name: row.vendor_name },
     reminders: row.reminders,
+    lastOpsAt: ops?.at ?? null,
+    lastOpsBy: ops?.by ?? null,
   };
 }
 
@@ -233,6 +277,10 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
       page.map((row) => row.id),
     );
     const rows = page.map((row) => ({ ...row, contact_name: names.get(row.id) ?? null }));
+    const trails = await opsTrailsOf(
+      trx,
+      page.map((row) => row.id),
+    );
     // Без count(*) over (): оно проходит все строки выборки (page-total.ts)
     const total = await pageTotal(rows.length, limit, offset, async () => {
       // Витрина и вендор заявки есть всегда (внешние ключи) — соединять их ради числа нужно,
@@ -254,7 +302,7 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
       .select([slaState.as("sla"), sql<number>`count(*)::int`.as("n")])
       .groupBy(sql`1`)
       .execute();
-    return { rows, counts, total };
+    return { rows, counts, total, trails };
   });
 
   const counts = Object.fromEntries(SLA_STATES.map((s) => [s, 0])) as Record<SlaState, number>;
@@ -262,7 +310,7 @@ requests.get("/", requirePermission("requests.read"), async (c) => {
   const body: StaffRequestList = {
     total: result.total,
     counts,
-    items: result.rows.map(itemView),
+    items: result.rows.map((row) => itemView(row, result.trails.get(row.id))),
   };
   return c.json(body);
 });
@@ -377,8 +425,9 @@ async function loadRequest(trx: Tx, id: string): Promise<StaffRequestDetail> {
     .map(({ event }) => event);
 
   const pauseUntil = row.reminder_pause_until;
+  const trail = (await opsTrailsOf(trx, [id])).get(id);
   return {
-    ...itemView(row),
+    ...itemView(row, trail),
     client: { id: row.client_id, ref: clientRef(row.client_id) },
     details: row.details as RequestDetails,
     budgetMinUzs: num(row.budget_min_uzs),

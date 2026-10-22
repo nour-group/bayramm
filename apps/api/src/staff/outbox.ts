@@ -44,6 +44,10 @@ async function loadHealth(trx: Tx): Promise<OutboxHealth> {
   const dead = await trx
     .selectFrom("app.outbox as o")
     .leftJoin("app.requests as r", "r.id", "o.request_id")
+    // Получатель — пользователь кабинета: чей он вендор (бот заблокирован — команда звонит вендору)
+    .leftJoin("app.vendor_users as u", (join) =>
+      join.onRef("u.id", "=", "o.recipient_id").on("o.recipient_kind", "=", "vendor_user"),
+    )
     .select([
       "o.id",
       "o.kind",
@@ -55,6 +59,7 @@ async function loadHealth(trx: Tx): Promise<OutboxHealth> {
       "o.enqueued_at",
       "r.id as request_id",
       "r.public_no",
+      "u.vendor_id",
     ])
     .where("o.status", "=", "dead")
     .orderBy("o.created_at", "desc")
@@ -96,6 +101,7 @@ async function loadHealth(trx: Tx): Promise<OutboxHealth> {
           row.request_id !== null && row.public_no !== null
             ? { id: row.request_id, publicNo: num(row.public_no) }
             : null,
+        vendorId: row.vendor_id ?? null,
       }),
     ),
   };
