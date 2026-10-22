@@ -313,7 +313,9 @@ function Checklist({ vendor, onChange }: { vendor: VendorDetail; onChange: (v: V
               <li key={item}>
                 <Checkbox
                   checked={mark.done}
-                  disabled={!write || busy !== null}
+                  disabled={!write}
+                  // Пока отметка уходит — aria-busy, а не disabled: фокус остаётся на галочке
+                  busy={busy !== null}
                   onChange={(value) => void toggle(item, value)}
                 >
                   {t.checklistItems[item]}

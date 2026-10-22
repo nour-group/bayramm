@@ -295,6 +295,44 @@ test.describe("навигация на телефоне", () => {
     await expect(bar.getByRole("button", { name: t.markContacted })).toBeFocused();
   });
 
+  test("заявка: ошибка «Напомнить» — в панели над кнопками, «Связались» — всплывающей строкой", async ({
+    page,
+  }) => {
+    await page.clock.setFixedTime(NOW);
+    await mockStaffApi(page, {
+      seeded: true,
+      fail: { [`POST /staff/requests/${REQUEST_ID}/remind`]: [429, "reminder_too_soon"] },
+    });
+    await page.goto(`/requests/${REQUEST_ID}`);
+    const bar = page.getByRole("group", { name: t.requestActions });
+    await bar.getByRole("button", { name: t.remindVendor }).click();
+    // Там, куда смотрит нажавший, а не в начале страницы
+    await expect(bar.getByRole("alert")).toHaveText(t.api.reminder_too_soon ?? "");
+    await expect(bar.getByRole("alert")).toBeInViewport();
+    await bar.getByRole("button", { name: t.markContacted }).click();
+    await page
+      .getByRole("dialog", { name: t.markContacted })
+      .getByRole("button", { name: t.markContacted })
+      .click();
+    await expect(page.getByText(t.contactedDone)).toBeVisible();
+  });
+
+  test("шторка открыта: «Назад» Telegram закрывает её, а не уводит с заявки", async ({ page }) => {
+    await start(page);
+    await fakeTelegram(page);
+    await page.goto(`/requests/${REQUEST_ID}`);
+    const bar = page.getByRole("group", { name: t.requestActions });
+    await bar.getByRole("button", { name: t.markContacted }).click();
+    const sheet = page.getByRole("dialog", { name: t.markContacted });
+    await expect(sheet).toBeVisible();
+    await clickBackButton(page);
+    await expect(sheet).toBeHidden();
+    await expect(page).toHaveURL(`/requests/${REQUEST_ID}`);
+    // Шторки нет — «Назад» снова уводит с вложенного экрана
+    await clickBackButton(page);
+    await expect(page).toHaveURL("/requests");
+  });
+
   test("фокус не уходит под шапку, панель действий и нижнюю панель (WCAG 2.4.11)", async ({ page }) => {
     await start(page);
     const bars = ".appbar, .tabbar, .actionbar-slot, .net-slot";
