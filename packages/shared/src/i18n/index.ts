@@ -3,7 +3,7 @@ import { ru } from "./ru";
 import { uz } from "./uz";
 
 export type { Dict, DictKey, Lang } from "./dict";
-export { GLOSSARY_FORBIDDEN, glossaryRu } from "./glossary";
+export { BOT_GLOSSARY_FORBIDDEN, GLOSSARY_FORBIDDEN, glossaryRu } from "./glossary";
 export { ruPlural } from "./plural";
 export { REQUEST_STATUS_NAMES, requestStatusName } from "./request-status";
 export { type Block, type Inline, inlineText, type RichText, richText } from "./rich";

@@ -66,7 +66,7 @@ const ru = {
   // аккаунт: кто вошёл и в какой кабинет
   cabinetLabel: "Кабинет",
   roleOwner: "Роль: владелец",
-  roleMember: "Роль: сотрудник площадки",
+  roleMember: "Роль: сотрудник",
   roleMemberNote: "Витрину и услуги меняет владелец кабинета.",
   languageNote: "На этом языке — кабинет и сообщения бота о заявках.",
   otherApps: "Другие приложения Bayramm",
@@ -78,7 +78,7 @@ const ru = {
   // контакт команды (настройка панели, GET /auth/methods → team): будущему партнёру и в «Аккаунте»
   welcomeJoinTitle: "Стать партнёром",
   welcomeJoinText:
-    "Площадки на Bayramm подключает команда. Напишите или позвоните — расскажем, что нужно, и откроем вам кабинет.",
+    "Партнёров на Bayramm подключает команда. Напишите или позвоните — расскажем, что нужно, и откроем вам кабинет.",
   teamTitle: "Команда Bayramm",
   teamText: "Вопросы о витрине, календаре и заявках — напишите или позвоните команде.",
   teamWrite: "Написать в Telegram",
@@ -710,7 +710,7 @@ const uz: VendorDict = {
   signOut: "Chiqish",
   cabinetLabel: "Kabinet",
   roleOwner: "Rol: kabinet egasi",
-  roleMember: "Rol: maydon xodimi",
+  roleMember: "Rol: xodim",
   roleMemberNote: "Vitrina va xizmatlarni kabinet egasi oʻzgartiradi.",
   languageNote: "Kabinet va bot soʻrovlar haqidagi xabarlari shu tilda.",
   otherApps: "Boshqa Bayramm ilovalari",
@@ -721,7 +721,7 @@ const uz: VendorDict = {
   welcomeNoAccess: "Kirish yoʻqmi? Bayramm menejeri sizni ulaydi.",
   welcomeJoinTitle: "Hamkor boʻlish",
   welcomeJoinText:
-    "Bayrammda maydonlarni jamoa ulaydi. Yozing yoki qoʻngʻiroq qiling — nima kerakligini aytamiz va kabinetingizni ochamiz.",
+    "Bayrammda hamkorlarni jamoa ulaydi. Yozing yoki qoʻngʻiroq qiling — nima kerakligini aytamiz va kabinetingizni ochamiz.",
   teamTitle: "Bayramm jamoasi",
   teamText: "Vitrina, taqvim va soʻrovlar boʻyicha savollar — jamoaga yozing yoki qoʻngʻiroq qiling.",
   teamWrite: "Telegramda yozish",

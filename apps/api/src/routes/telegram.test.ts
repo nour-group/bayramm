@@ -266,7 +266,7 @@ describe("POST /telegram/sync: настройка бота", () => {
       {
         method: "setChatMenuButton",
         params: {
-          menu_button: { type: "web_app", text: "Открыть", web_app: { url: "https://staging.bayramm.uz" } },
+          menu_button: { type: "web_app", text: "Bayramm", web_app: { url: "https://staging.bayramm.uz" } },
         },
       },
     ]);

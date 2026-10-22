@@ -1,4 +1,4 @@
-import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
+import { BOT_GLOSSARY_FORBIDDEN, hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
 import { BOT_TEXTS, botProfile, DEFAULT_LANG, MENU_BUTTON_TEXT } from "./bot-profile";
 
@@ -37,13 +37,13 @@ describe("профиль бота: вызовы", () => {
     expect(steps[6]?.params).toEqual({ short_description: BOT_TEXTS.ru.shortDescription });
   });
 
-  it("кнопка меню открывает Mini App по WEB_APP_URL, подпись «Открыть»", () => {
+  it("кнопка меню открывает Mini App по WEB_APP_URL, подпись — «Bayramm» (одна на все языки)", () => {
     expect(steps.at(-1)).toEqual({
       language: "default",
       method: "setChatMenuButton",
-      params: { menu_button: { type: "web_app", text: "Открыть", web_app: { url: WEB_APP_URL } } },
+      params: { menu_button: { type: "web_app", text: "Bayramm", web_app: { url: WEB_APP_URL } } },
     });
-    expect(MENU_BUTTON_TEXT).toBe("Открыть");
+    expect(MENU_BUTTON_TEXT).toBe("Bayramm");
   });
 
   it("без адреса вебхука setWebhook не вызывается (локально API не на https)", () => {
@@ -91,6 +91,16 @@ describe("профиль бота: тексты", () => {
       ...[MENU_BUTTON_TEXT].filter((text) => /брон/i.test(text)),
       ...allTexts("uz").filter((text) => /bron|band\s+qil/i.test(text)),
     ];
+    expect(hits).toEqual([]);
+  });
+
+  // Глоссарий клиента (@bayramm/shared, glossary.ts): исполнитель / hamkor, не «вендор» и не «maydon»
+  it("глоссарий: ни «вендора», ни «подрядчика», ни «maydon»", () => {
+    const hits = LANGS.flatMap((lang) =>
+      [...allTexts(lang), MENU_BUTTON_TEXT].filter((text) =>
+        BOT_GLOSSARY_FORBIDDEN[lang].some((re) => re.test(text)),
+      ),
+    );
     expect(hits).toEqual([]);
   });
 

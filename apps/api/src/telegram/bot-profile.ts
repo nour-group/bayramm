@@ -25,17 +25,17 @@ export const BOT_TEXTS: Readonly<Record<Lang, BotTexts>> = {
   ru: {
     startCommand: "Открыть Bayramm",
     description:
-      "Bayramm — площадка поиска подрядчиков на праздники в Ташкенте.\n\n" +
-      "Цены и фото — в карточке, телефон вендора виден сразу. Выберите дату и отправьте заявку: " +
-      "вендор получит её в Telegram.\n\n" +
+      "Bayramm — площадка, где находят исполнителей на праздники в Ташкенте.\n\n" +
+      "Цены и фото — на странице исполнителя, телефон виден сразу. Выберите дату и отправьте заявку: " +
+      "исполнитель получит её в Telegram.\n\n" +
       "Для вас это бесплатно — ни комиссий, ни платы за заявку.",
-    shortDescription: "Подрядчики на праздники в Ташкенте: цены сразу, заявка вендору бесплатно.",
+    shortDescription: "Исполнители на праздники в Ташкенте: цены сразу, заявка бесплатно.",
   },
   uz: {
     startCommand: "Bayramm ilovasini ochish",
     description:
       "Bayramm — Toshkentda bayramlar uchun hamkorlarni qidirish platformasi.\n\n" +
-      "Narx va suratlar kartochkada, hamkorning telefoni darhol koʻrinadi. Sanani tanlang va soʻrov " +
+      "Narx va suratlar hamkor sahifasida, telefoni darhol koʻrinadi. Sanani tanlang va soʻrov " +
       "yuboring: hamkor uni Telegramda oladi.\n\n" +
       "Siz uchun bepul — na komissiya, na soʻrov uchun toʻlov.",
     shortDescription: "Toshkentda bayramlar uchun hamkorlar: narxlar darhol, hamkorga soʻrov bepul.",
@@ -45,8 +45,11 @@ export const BOT_TEXTS: Readonly<Record<Lang, BotTexts>> = {
 /** Язык значений по умолчанию — для пользователей Telegram не на русском и не на узбекском */
 export const DEFAULT_LANG: Lang = "ru";
 
-/** Кнопка меню одна на все языки (у setChatMenuButton нет language_code) — текст языка по умолчанию */
-export const MENU_BUTTON_TEXT = "Открыть";
+/**
+ * Кнопка меню одна на все языки (у setChatMenuButton нет language_code): название, а не глагол
+ * одного языка — узбекскому пользователю кнопка не по-русски
+ */
+export const MENU_BUTTON_TEXT = "Bayramm";
 
 /** Для какого языка значение: default — без language_code */
 export type ProfileLanguage = "default" | Lang;
