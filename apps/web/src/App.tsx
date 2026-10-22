@@ -62,9 +62,6 @@ const TAB_VIEW = {
   profile: { label: "navProfile", icon: "user", active: "userFill" },
 } as const satisfies Record<Tab, { label: string; icon: IconName; active: IconName }>;
 
-/** Уведомления — над нижней панелью вкладок (её высота с запасом), px */
-const TABS_HEIGHT = 80;
-
 /** Что подгрузить заранее, пока человек смотрит первый экран: соседние экраны вкладок */
 const PRELOAD: Readonly<Record<"site" | "telegram", readonly ScreenChunk[]>> = {
   site: ["catalog", "venue", "favorites"],
@@ -335,7 +332,7 @@ function Shell({ prerender = false }: { prerender?: boolean }) {
       {prerender ? (
         page
       ) : (
-        <ToastProvider offset={inner || auth || guest ? 16 : TABS_HEIGHT}>
+        <ToastProvider offset="bars">
           <FavoritesProvider>{page}</FavoritesProvider>
         </ToastProvider>
       )}

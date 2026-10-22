@@ -682,7 +682,9 @@ export const uz: Dict = {
   errPartBusy: (part: string) =>
     `Bu vaqt (${part}) hamkorda band — boshqasini tanlang yoki qoʻngʻiroq qiling.`,
   savedApp: "Saqlandi. Roʻyxat — «Saqlanganlar» boʻlimida.",
-  savedGuest: "Saqlandi. Roʻyxat — sahifa tepasidagi «Saqlanganlar» boʻlimida, kirish shart emas.",
+  savedGuest: "Saqlandi. Roʻyxat — «Saqlanganlar»da, kirish shart emas.",
+  // кнопка в уведомлении «Сохранили» — к списку
+  savedOpen: "Ochish",
   svEmptyPSigned: "Kartochkalardagi yurakchani bosing — roʻyxat shu yerda yigʻiladi va hisobingizda qoladi.",
   lnCatsH: "Nimalarni topish mumkin",
   metaCatDesc: (name: string, what: string) =>
