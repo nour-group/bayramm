@@ -10,6 +10,7 @@
 import { type Lang, ruPlural } from "@bayramm/shared";
 import type { DayPart, ListingStatus } from "@bayramm/shared/api/staff";
 import { type DayPartWindows, windowText } from "@bayramm/shared/categories";
+import { addDays, tashkentTime, tashkentToday } from "../time";
 
 /** Заявка глазами уведомления: только то, что можно показать получателю */
 export interface RequestFacts {
@@ -29,6 +30,11 @@ export interface RequestFacts {
   readonly occasion: string;
   /** Часов на ответ (из sla_due_at − created_at) */
   readonly slaHours: number;
+  /**
+   * Срок ответа по Ташкенту словами на языке получателя (deadlineText): «21:40 (сегодня)»,
+   * узб. «bugun 21:40»
+   */
+  readonly deadline: string;
   /** Поля заявки категории строками (detailsSummary): без ПДн */
   readonly details: readonly string[];
 }
@@ -61,6 +67,27 @@ export function partsText(lang: Lang, parts: readonly DayPart[], windows?: DayPa
     })
     .join(", ");
 }
+
+/**
+ * Срок ответа — часы и день по Ташкенту, а не «за 12 часов»: сообщение открывают позже, чем оно
+ * пришло. «21:40 (сегодня)», «09:00 (завтра)», дальше — дата («09:00 (24.10)»); узб. — «bugun
+ * 21:40», «ertaga 09:00» (перед «gacha»)
+ */
+export function deadlineText(lang: Lang, due: Date, now: Date): string {
+  const day = tashkentToday(due);
+  const today = tashkentToday(now);
+  const time = tashkentTime(due);
+  const date = `${day.slice(8, 10)}.${day.slice(5, 7)}`;
+  if (lang === "ru") {
+    const word = day === today ? "сегодня" : day === addDays(today, 1) ? "завтра" : date;
+    return `${time} (${word})`;
+  }
+  const word = day === today ? "bugun" : day === addDays(today, 1) ? "ertaga" : date;
+  return `${word} ${time}`;
+}
+
+/** Первая буква — заглавная: срок в начале узбекского предложения («Bugun 21:40 gacha…») */
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 const hoursRu = (n: number) => `${n} ${ruPlural(n, "час", "часа", "часов")}`;
 const guestsRu = (n: number) => `${n} ${ruPlural(n, "гость", "гостя", "гостей")}`;
@@ -107,11 +134,11 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
     },
     requestNew: (f) =>
       `Новая заявка №${f.no} · ${f.category}\n${summaryRu(f)}${detailsBlock(f)}\n\n` +
-      `Контакты клиента и детали — в кабинете. Ответьте за ${hoursRu(f.slaHours)}: если ответа не будет, ` +
-      "клиенту покажем похожие предложения.",
+      `Контакты клиента и детали — в кабинете. Ответьте до ${f.deadline}: на ответ — ${hoursRu(f.slaHours)}. ` +
+      "Если ответа не будет, клиенту покажем похожие предложения.",
     slaReminder: (f, left) =>
       `Напоминание: заявка №${f.no} ждёт ответа.\n${summaryRu(f)}\n\n` +
-      `Срок ответа — ${hoursRu(f.slaHours)}, осталось ${left > 0 ? hoursRu(left) : "меньше часа"}.`,
+      `Ответьте до ${f.deadline}: осталось ${left > 0 ? hoursRu(left) : "меньше часа"}.`,
     opsReminder: (f) =>
       `Команда Bayramm напоминает: заявка №${f.no} ждёт вашего ответа.\n${summaryRu(f)}\n\n` +
       "Клиент ждёт — ответьте в кабинете или позвоните ему.",
@@ -119,7 +146,7 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
       `«${f.listing}» ответил на заявку №${f.no} (${f.date}). Подробности — в «Моих заявках».`,
     contactedByTeam: (f) =>
       `Команда Bayramm связалась с «${f.listing}» по вашей заявке №${f.no} (${f.date}). ` +
-      "Площадка знает о заявке и свяжется с вами сама. Статус — в «Моих заявках».",
+      "Исполнитель знает о заявке и свяжется с вами. Статус — в «Моих заявках».",
     deal: (f) => `Вы договорились с «${f.listing}» по заявке №${f.no} (${f.date}). Хорошего праздника!`,
     declined: (f) =>
       `«${f.listing}» не сможет принять заявку №${f.no} на ${f.date}. Посмотрите похожие предложения — ` +
@@ -136,11 +163,11 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
     },
     requestNew: (f) =>
       `Yangi soʻrov №${f.no} · ${f.category}\n${summaryUz(f)}${detailsBlock(f)}\n\n` +
-      `Mijoz kontaktlari va tafsilotlar — kabinetda. ${f.slaHours} soat ichida javob bering: javob ` +
-      "boʻlmasa, mijozga oʻxshash takliflarni koʻrsatamiz.",
+      `Mijoz kontaktlari va tafsilotlar — kabinetda. ${capital(f.deadline)} gacha javob bering: javob uchun — ` +
+      `${f.slaHours} soat. Javob boʻlmasa, mijozga oʻxshash takliflarni koʻrsatamiz.`,
     slaReminder: (f, left) =>
       `Eslatma: №${f.no} soʻrov javob kutmoqda.\n${summaryUz(f)}\n\n` +
-      `Javob muddati — ${f.slaHours} soat, ${left > 0 ? `${left} soat` : "bir soatdan kam vaqt"} qoldi.`,
+      `${capital(f.deadline)} gacha javob bering: ${left > 0 ? `${left} soat` : "bir soatdan kam vaqt"} qoldi.`,
     opsReminder: (f) =>
       `Bayramm jamoasi eslatadi: №${f.no} soʻrov javobingizni kutmoqda.\n${summaryUz(f)}\n\n` +
       "Mijoz kutmoqda — kabinetda javob bering yoki unga qoʻngʻiroq qiling.",
@@ -148,7 +175,7 @@ export const NOTICE_TEXTS: Readonly<Record<Lang, NoticeTexts>> = {
       `«${f.listing}» №${f.no} soʻrovga javob berdi (${f.date}). Batafsil — «Mening soʻrovlarim»da.`,
     contactedByTeam: (f) =>
       `Bayramm jamoasi №${f.no} soʻrovingiz (${f.date}) boʻyicha «${f.listing}» bilan bogʻlandi. ` +
-      "Maydon soʻrovdan xabardor va siz bilan oʻzi bogʻlanadi. Holati — «Mening soʻrovlarim»da.",
+      "Hamkor soʻrovdan xabardor va siz bilan oʻzi bogʻlanadi. Holati — «Mening soʻrovlarim»da.",
     deal: (f) =>
       `«${f.listing}» bilan №${f.no} soʻrov boʻyicha kelishdingiz (${f.date}). Bayramingiz muborak boʻlsin!`,
     declined: (f) =>
@@ -167,7 +194,7 @@ export const OPS_BUTTON = "Открыть в панели";
 
 /** Статус витрины словами — как в панели */
 const LISTING_STATUS_RU: Readonly<Record<ListingStatus, string>> = {
-  lead: "лид",
+  lead: "не заполнена",
   draft: "черновик",
   review: "на проверке",
   active: "опубликована",
@@ -335,7 +362,7 @@ export const CONTACT_TEXTS: Readonly<
   },
 };
 
-/** Правка карточки от партнёра — команде: площадка, код вендора, какие поля */
+/** Предложение изменений витрины от партнёра — команде: витрина, код вендора, какие поля */
 export interface OpsRevisionFacts {
   /** Название площадки */
   readonly listing: string;
@@ -362,7 +389,7 @@ export function opsRevisionSubmitted(f: OpsRevisionFacts): string {
   // Вместимость — два ключа, одно слово
   const fields = [...new Set(f.fields.map((key) => REVISION_FIELDS_RU[key] ?? key))].join(", ");
   return (
-    `Правка карточки на проверке: ${f.listing} (вендор ${f.vendorCode}).\n` +
+    `Предложение изменений витрины на проверке: ${f.listing} (вендор ${f.vendorCode}).\n` +
     `Меняет: ${fields || "—"}.\n` +
     "Решение — в панели, раздел «Модерация»."
   );
@@ -387,21 +414,98 @@ export function opsPhotosSubmitted(f: OpsPhotosFacts): string {
 }
 
 export interface OpsDeadFacts {
+  /** Вид уведомления (app.outbox.kind) — в тексте словами (NOTICE_KIND_RU) */
   readonly kind: string;
   readonly requestNo: string | null;
+  /** Кому (app.outbox.recipient_kind) — в тексте словами */
   readonly recipientKind: string;
   /** Первые 8 символов id получателя — чтобы найти в панели, не раскрывая лишнего */
   readonly recipientRef: string;
   readonly attempts: number;
+  /** Последняя ошибка (app.outbox.last_error) — в тексте словами (deadReasonRu) */
   readonly error: string;
+}
+
+/** Вид уведомления словами — как в панели («Уведомления»); неизвестный — его код */
+export const NOTICE_KIND_RU: Readonly<Record<string, string>> = {
+  "vendor.request_new": "вендору — новая заявка",
+  "vendor.sla_reminder": "вендору — напоминание об ответе",
+  "vendor.ops_reminder": "вендору — напоминание от команды",
+  "client.request_status": "клиенту — статус заявки",
+  "client.sla_breach": "клиенту — вендор не ответил, похожие",
+  "ops.sla_breach": "команде — просрочка ответа",
+  "ops.outbox_dead": "команде — не доставлено",
+  "ops.revision_submitted": "команде — предложение изменений витрины",
+  "ops.daily_digest": "команде — утренняя сводка",
+  "ops.weekly_report": "команде — отчёт за неделю",
+  "ops.api_error": "команде — ошибки сервера",
+  "ops.photos_submitted": "команде — новые фото",
+  "vendor.service_decided": "вендору — решение по услуге",
+  "ops.service_submitted": "команде — услуги на проверке",
+  "ops.listing_submitted": "команде — витрина на проверке",
+  "vendor.access_granted": "вендору — добавлен в кабинет",
+  "ops.contact_change_submitted": "команде — смена контактов витрины",
+  "vendor.contact_change_decided": "вендору — решение по контактам витрины",
+  "vendor.listing_decided": "вендору — решение по витрине",
+  "vendor.revision_decided": "вендору — решение по предложению изменений",
+  "vendor.photos_decided": "вендору — решение по фото",
+};
+
+/** Получатель словами — как в панели */
+const RECIPIENT_KIND_RU: Readonly<Record<string, string>> = {
+  client: "клиент",
+  vendor_user: "пользователь кабинета",
+  staff: "сотрудник",
+  system: "система",
+};
+
+/** Почему не отправили, не дойдя до Telegram (skipped: <причина> из render.ts) */
+const SKIP_REASON_RU: Readonly<Record<string, string>> = {
+  vendor_user_unlinked: "пользователь кабинета отключён или не привязал Telegram",
+  client_not_notifiable: "клиент не разрешил уведомления или отозвал согласие",
+  staff_inactive: "сотрудник отключён или такие оповещения ему не положены",
+  staff_no_chat: "сотрудник не писал боту",
+  no_recipient: "получателя нет",
+  unsupported_recipient: "получатель этого вида не поддерживается",
+  unsupported_channel: "канал не поддерживается",
+  unknown_kind: "неизвестный вид уведомления",
+  bad_payload: "в уведомлении не хватает данных",
+  not_found: "объект уже удалён",
+  recipient_mismatch: "получатель не относится к этому объекту",
+};
+
+/**
+ * Причина недоставки словами: «skipped: …» — по SKIP_REASON_RU, ошибка Bot API («api 403: …») —
+ * что она значит и код; остальное — сбой отправки (подробности — в логах воркера)
+ */
+export function deadReasonRu(error: string): string {
+  const skipped = /^skipped: ([a-z_]+)$/.exec(error)?.[1];
+  if (skipped !== undefined) return SKIP_REASON_RU[skipped] ?? "отправлять нечего";
+  const api = /^api (\d{3})\b/.exec(error)?.[1];
+  if (api !== undefined) {
+    const code = Number(api);
+    const what = /bot was blocked/i.test(error)
+      ? "получатель остановил бота"
+      : /user is deactivated/i.test(error)
+        ? "аккаунт Telegram удалён"
+        : /chat not found/i.test(error)
+          ? "чат с ботом не найден"
+          : code === 429
+            ? "Telegram ограничил частоту отправки"
+            : "Telegram не принял сообщение";
+    return `${what} (Telegram ${code})`;
+  }
+  return "сбой отправки";
 }
 
 export function opsOutboxDead(f: OpsDeadFacts): string {
   const request = f.requestNo === null ? "" : `, заявка №${f.requestNo}`;
+  const kind = NOTICE_KIND_RU[f.kind] ?? f.kind;
+  const recipient = RECIPIENT_KIND_RU[f.recipientKind] ?? f.recipientKind;
   return (
-    `Уведомление не доставлено: ${f.kind}${request}.\n` +
-    `Получатель: ${f.recipientKind} ${f.recipientRef}…, попыток: ${f.attempts}.\n` +
-    `Причина: ${f.error}`
+    `Уведомление не доставлено: ${kind}${request}.\n` +
+    `Получатель: ${recipient} ${f.recipientRef}…, попыток: ${f.attempts}.\n` +
+    `Причина: ${deadReasonRu(f.error)}.`
   );
 }
 
@@ -430,7 +534,7 @@ export const ACCESS_TEXTS: Readonly<
       `Вас добавили в кабинет партнёра «${f.vendor}» на Bayramm.\n` +
       (f.role === "owner"
         ? "Вы — владелец кабинета: отвечаете на заявки, ведёте календарь, меняете витрину, фото и услуги."
-        : "Вы — сотрудник площадки: отвечаете на заявки и ведёте календарь.") +
+        : "Вы — сотрудник: отвечаете на заявки и ведёте календарь.") +
       "\nНовые заявки будут приходить сюда.",
   },
   uz: {
@@ -439,7 +543,128 @@ export const ACCESS_TEXTS: Readonly<
       `Bayramm: sizni «${f.vendor}» hamkor kabinetiga qoʻshishdi.\n` +
       (f.role === "owner"
         ? "Siz kabinet egasisiz: soʻrovlarga javob berasiz, taqvimni yuritasiz, vitrina, suratlar va xizmatlarni oʻzgartirasiz."
-        : "Siz maydon xodimisiz: soʻrovlarga javob berasiz va taqvimni yuritasiz.") +
+        : "Siz xodimsiz: soʻrovlarga javob berasiz va taqvimni yuritasiz.") +
       "\nYangi soʻrovlar shu yerga keladi.",
+  },
+};
+
+// ── решения команды по витрине — владельцам кабинета ───────────────────────
+
+/** Что решила команда о витрине (vendor.listing_decided — по строке истории статусов) */
+export type ListingDecision = "published" | "rejected" | "returned" | "suspended";
+
+export interface ListingDecisionFacts {
+  readonly listing: string;
+  readonly decision: ListingDecision;
+  /** Причина отказа и приостановки, комментарий к возврату на доработку; у публикации — null */
+  readonly reason: string | null;
+}
+
+/** Решение по предложению изменений витрины, которое прислал партнёр (vendor.revision_decided) */
+export interface RevisionDecisionFacts {
+  readonly listing: string;
+  readonly outcome: "approved" | "declined";
+  readonly reason: string | null;
+  /** Витрина на сайте: только тогда «клиенты видят новую / прежнюю версию» */
+  readonly live: boolean;
+}
+
+/** Решения по фото партнёра одним сообщением (vendor.photos_decided): сколько одобрено и отклонено */
+export interface PhotosDecisionFacts {
+  readonly listing: string;
+  readonly approved: number;
+  readonly declined: number;
+}
+
+interface VitrinaTexts {
+  /** Кнопка — витрина в кабинете */
+  readonly button: string;
+  listing(f: ListingDecisionFacts): string;
+  revision(f: RevisionDecisionFacts): string;
+  photos(f: PhotosDecisionFacts): string;
+}
+
+/** «: причина» или точка — причину пишет сотрудник для партнёра */
+const because = (reason: string | null) => (reason ? `: ${reason}` : ".");
+
+export const VITRINA_TEXTS: Readonly<Record<Lang, VitrinaTexts>> = {
+  ru: {
+    button: "Открыть витрину",
+    listing: (f) => {
+      switch (f.decision) {
+        case "published":
+          return `Витрина «${f.listing}» опубликована — клиенты видят её в каталоге Bayramm.`;
+        case "rejected":
+          return (
+            `Команда Bayramm отклонила витрину «${f.listing}»${because(f.reason)}\n` +
+            "Исправьте и отправьте на проверку снова в кабинете."
+          );
+        case "returned":
+          return (
+            `Витрину «${f.listing}» вернули на доработку${because(f.reason)}\n` +
+            "Исправьте и отправьте на проверку снова в кабинете."
+          );
+        case "suspended":
+          return (
+            `Витрина «${f.listing}» приостановлена${because(f.reason)}\n` +
+            "Клиенты её сейчас не видят. Вопросы — команде Bayramm."
+          );
+      }
+    },
+    revision: (f) =>
+      f.outcome === "approved"
+        ? `Изменения витрины «${f.listing}» одобрены${f.live ? " — клиенты видят новую версию." : "."}`
+        : `Команда Bayramm не приняла изменения витрины «${f.listing}»${because(f.reason)}\n` +
+          (f.live ? "Клиенты видят прежнюю версию. " : "") +
+          "Исправьте и отправьте снова в кабинете.",
+    photos: (f) => {
+      if (f.declined === 0) return `Одобрено фото витрины «${f.listing}»: ${f.approved}. Клиенты их видят.`;
+      const head =
+        f.approved === 0
+          ? `Команда Bayramm отклонила фото витрины «${f.listing}»: ${f.declined}.`
+          : `Команда Bayramm проверила фото витрины «${f.listing}»: одобрено — ${f.approved}, ` +
+            `отклонено — ${f.declined}.`;
+      return `${head}\nПричина — у каждого отклонённого фото в кабинете: загрузите вместо него другое.`;
+    },
+  },
+  uz: {
+    button: "Vitrinani ochish",
+    listing: (f) => {
+      switch (f.decision) {
+        case "published":
+          return `«${f.listing}» vitrinasi eʼlon qilindi — mijozlar uni Bayramm katalogida koʻradi.`;
+        case "rejected":
+          return (
+            `Bayramm jamoasi «${f.listing}» vitrinasini rad etdi${because(f.reason)}\n` +
+            "Tuzatib, kabinetdan qayta tekshiruvga yuboring."
+          );
+        case "returned":
+          return (
+            `«${f.listing}» vitrinasi qayta ishlashga qaytarildi${because(f.reason)}\n` +
+            "Tuzatib, kabinetdan qayta tekshiruvga yuboring."
+          );
+        case "suspended":
+          return (
+            `«${f.listing}» vitrinasi vaqtincha toʻxtatildi${because(f.reason)}\n` +
+            "Hozir mijozlar uni koʻrmaydi. Savollar boʻlsa — Bayramm jamoasiga yozing."
+          );
+      }
+    },
+    revision: (f) =>
+      f.outcome === "approved"
+        ? `«${f.listing}» vitrinasidagi oʻzgarishlar tasdiqlandi${f.live ? " — mijozlar yangi variantni koʻradi." : "."}`
+        : `Bayramm jamoasi «${f.listing}» vitrinasidagi oʻzgarishlarni qabul qilmadi${because(f.reason)}\n` +
+          (f.live ? "Mijozlar oldingi variantni koʻradi. " : "") +
+          "Tuzatib, kabinetdan qayta yuboring.",
+    photos: (f) => {
+      if (f.declined === 0)
+        return `«${f.listing}» vitrinasining suratlari tasdiqlandi: ${f.approved}. Mijozlar ularni koʻradi.`;
+      const head =
+        f.approved === 0
+          ? `Bayramm jamoasi «${f.listing}» vitrinasining ${f.declined} ta suratini rad etdi.`
+          : `Bayramm jamoasi «${f.listing}» vitrinasi suratlarini koʻrib chiqdi: tasdiqlandi — ${f.approved}, ` +
+            `rad etildi — ${f.declined}.`;
+      return `${head}\nSabab — kabinetda har bir rad etilgan surat ostida: uning oʻrniga boshqasini yuklang.`;
+    },
   },
 };

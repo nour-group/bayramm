@@ -294,8 +294,9 @@ describe("outbox: отправка и оповещение о недоставл
       expect(second).toMatchObject({ sent: 1, dead: 0 });
       expect(sent).toHaveLength(1);
       expect(sent[0]?.chat_id).toBe(staffTgId);
-      expect(sent[0]?.text).toContain("vendor.request_new");
-      expect(sent[0]?.text).toContain("skipped: bad_payload");
+      // Вид и причина — словами, без кодов
+      expect(sent[0]?.text).toContain("вендору — новая заявка");
+      expect(sent[0]?.text).toContain("в уведомлении не хватает данных");
 
       const alert = await admin.query(
         "select status, provider_msg_id from app.outbox where kind = 'ops.outbox_dead' and payload->>'outbox_id' = $1",

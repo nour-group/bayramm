@@ -11,6 +11,11 @@ export function tashkentToday(now: Date = new Date()): string {
   return new Date(now.getTime() + TASHKENT_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** Время на часах в Ташкенте, «ЧЧ:ММ» */
+export function tashkentTime(at: Date): string {
+  return new Date(at.getTime() + TASHKENT_OFFSET_MS).toISOString().slice(11, 16);
+}
+
 /** "YYYY-MM-DD" — существующий календарный день (не 2026-02-30) в разумных годах */
 export function isIsoDate(value: string): boolean {
   const m = ISO_DATE_RE.exec(value);

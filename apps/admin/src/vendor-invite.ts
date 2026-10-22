@@ -35,7 +35,7 @@ function ru(f: VendorInviteFacts): string {
     `Вас пригласили в кабинет партнёра «${f.vendor}» на Bayramm.`,
     f.role === "owner"
       ? "Вы — владелец кабинета: заявки клиентов, календарь, витрина, фото и услуги."
-      : "Вы — сотрудник площадки: заявки клиентов и календарь.",
+      : "Вы — сотрудник: заявки клиентов и календарь.",
     "",
   ];
   if (f.bot) {
@@ -62,7 +62,7 @@ function uz(f: VendorInviteFacts): string {
     `Sizni Bayramm platformasidagi «${f.vendor}» hamkor kabinetiga taklif qilishdi.`,
     f.role === "owner"
       ? "Siz kabinet egasisiz: mijozlar soʻrovlari, taqvim, vitrina, suratlar va xizmatlar."
-      : "Siz maydon xodimisiz: mijozlar soʻrovlari va taqvim.",
+      : "Siz xodimsiz: mijozlar soʻrovlari va taqvim.",
     "",
   ];
   if (f.bot) {

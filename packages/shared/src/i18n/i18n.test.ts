@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GLOSSARY_FORBIDDEN, glossaryRu } from "./glossary";
+import { BOT_GLOSSARY_FORBIDDEN, GLOSSARY_FORBIDDEN, glossaryRu } from "./glossary";
 import { type Dict, dictionaries, LANGS, type Lang, ru, ruPlural, uz } from "./index";
 import { hasNonCanonicalApostrophe, normalizeUz } from "./uz-apostrophe";
 
@@ -100,6 +100,18 @@ describe("словарь: глоссарий клиента (glossary.ts)", () =
       const hits = allTexts(lang).filter(({ text }) => GLOSSARY_FORBIDDEN[lang].some((re) => re.test(text)));
       expect(hits).toEqual([]);
     });
+
+  it("тексты бота: те же запреты и «maydon» — полей формы в уведомлениях нет", () => {
+    const hit = (lang: "ru" | "uz", text: string) => BOT_GLOSSARY_FORBIDDEN[lang].some((re) => re.test(text));
+    for (const lang of LANGS)
+      for (const re of GLOSSARY_FORBIDDEN[lang]) expect(BOT_GLOSSARY_FORBIDDEN[lang]).toContain(re);
+    expect(hit("uz", "Maydon soʻrovdan xabardor")).toBe(true);
+    expect(hit("uz", "Siz maydon xodimisiz")).toBe(true);
+    expect(hit("uz", "Hamkor soʻrovdan xabardor")).toBe(false);
+    expect(hit("ru", "телефон вендора")).toBe(true);
+    expect(hit("ru", "площадка поиска подрядчиков")).toBe(true);
+    expect(hit("ru", "Исполнитель получит заявку")).toBe(false);
+  });
 
   it("короткие названия разделов — на обоих языках, без косых черт", () => {
     expect(Object.keys(uz.catName)).toEqual(Object.keys(ru.catName));

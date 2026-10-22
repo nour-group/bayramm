@@ -1772,7 +1772,7 @@ describe("аккаунт", () => {
     insideTelegram();
     routes["GET /api/vendor/me"] = () => ({ body: me("ru", "member") });
     await mount("/account");
-    expect(container.querySelector(".account-role")?.textContent).toBe("Роль: сотрудник площадки");
+    expect(container.querySelector(".account-role")?.textContent).toBe("Роль: сотрудник");
     expect(container.textContent).toContain("Витрину и услуги меняет владелец кабинета.");
   });
 });
