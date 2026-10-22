@@ -10,7 +10,7 @@ import {
 } from "../support/a11y";
 import { labelled, spinbutton } from "../support/field-name";
 import { expect, test } from "../support/offline";
-import { clickBackButton, fakeTelegram } from "../support/telegram";
+import { clickBackButton, fakeTelegram, telegramState } from "../support/telegram";
 import {
   CAKE_ID,
   CAR_ID,
@@ -498,6 +498,60 @@ test.describe("кабинет", () => {
       .poll(() => api.calendarWrites)
       .toEqual(["PUT 2026-10-20 If-Match: 1", "DELETE 2026-10-10 If-Match: 2"]);
     expect(api.unexpected).toEqual([]);
+  });
+
+  test("шторка дня: «Назад» Telegram и браузера закрывает её, а не кабинет; после правки фокус на месте, Esc закрывает", async ({
+    page,
+  }) => {
+    test.skip(isDesktop(page), "на компьютере открытый день — колонка рядом с месяцем, не шторка");
+    await start(page);
+    await page.goto("/calendar");
+    await expect(heading(page)).toHaveText(t.calendar);
+    expect((await telegramState(page)).back.visible).toBe(false);
+
+    // Telegram: пока шторка открыта, «Назад» видна и закрывает её; кабинет остаётся на календаре
+    await dayButton(page, 20).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect.poll(async () => (await telegramState(page)).back.visible).toBe(true);
+    await clickBackButton(page);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL("/calendar");
+    await expect.poll(async () => (await telegramState(page)).back.visible).toBe(false);
+
+    // Правка дня: кнопка недоступна, пока запрос идёт, но фокус не уходит со шторки — Tab и Esc работают
+    await dayButton(page, 20).click();
+    const close = page.getByRole("dialog").getByRole("button", { name: t.closeWholeDay });
+    await close.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog").getByRole("button", { name: t.openWholeDay })).toBeFocused();
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  });
+
+  test("шторка в браузере: «назад» браузера закрывает её и остаётся на экране", async ({ page }) => {
+    test.skip(isDesktop(page), "на компьютере открытый день — колонка рядом с месяцем, не шторка");
+    await start(page, { telegram: false });
+    // Вошли через хаб раньше: сессия кабинета во вкладке
+    await page.addInitScript(() =>
+      window.sessionStorage.setItem("bayramm.vendor.session", "e2e-vendor-token"),
+    );
+    await page.goto("/calendar");
+    await expect(heading(page)).toHaveText(t.calendar);
+    await dayButton(page, 20).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL("/calendar");
+    await expect(heading(page)).toHaveText(t.calendar);
+    // Закрыли крестиком — запись шторки ушла: «назад» уводит с календаря, а не открывает пустой шаг
+    await dayButton(page, 20).click();
+    await closeDay(page);
+    await page.getByRole("navigation", { name: t.sections }).getByRole("link", { name: t.requests }).click();
+    await expect(heading(page)).toHaveText(t.requests);
+    await page.goBack();
+    await expect(heading(page)).toHaveText(t.calendar);
   });
 
   test("календарь изменил кто-то другой: правка не затирает чужую, месяц перечитан, отметить заново", async ({
@@ -1342,7 +1396,6 @@ test.describe("витрины в разных категориях", () => {
       t.legendBusy,
       t.legendPart,
       t.legendMarkFree,
-      t.legendMarkBooked,
       t.legendMarkBusy,
       t.legendRequest,
       t.legendToday,

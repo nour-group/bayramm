@@ -8,6 +8,7 @@
 
 import { getWebApp, launchedFromTelegram, loadTelegramWebApp, type TelegramWebApp } from "@bayramm/tg/webapp";
 import { base } from "@bayramm/ui";
+import { backLayerOpen, setBackButton } from "@bayramm/ui/react";
 import { useEffect } from "react";
 
 export type { TelegramWebApp };
@@ -41,6 +42,8 @@ export function announceReady(webApp: TelegramWebApp): void {
   }
   if (supports(webApp, "7.10")) webApp.setBottomBarColor?.(base.railBg);
   if (supports(webApp, "7.7")) webApp.disableVerticalSwipes?.();
+  // Открытая шторка закрывается «Назад» Telegram (и «назад» Android), а не весь кабинет
+  setBackButton(() => getWebApp()?.BackButton ?? null);
 }
 
 /**
@@ -51,10 +54,14 @@ export function useBackButton(onBack: (() => void) | null): boolean {
   useEffect(() => {
     const button = getWebApp()?.BackButton;
     if (!button || !onBack) return;
-    button.onClick?.(onBack);
+    // Нажатие, пока открыта шторка, закрывает её (@bayramm/ui/react, back.ts), экран не уходит
+    const handler = () => {
+      if (!backLayerOpen()) onBack();
+    };
+    button.onClick?.(handler);
     button.show?.();
     return () => {
-      button.offClick?.(onBack);
+      button.offClick?.(handler);
       button.hide?.();
     };
   }, [onBack]);

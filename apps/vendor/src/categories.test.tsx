@@ -1318,7 +1318,11 @@ describe("«требует внимания» у витрин", () => {
       body: { ...me("member"), listings: REFS },
     });
     await mount("/services");
-    expect(container.querySelector(".side-nav .nav-count")).toBeNull();
+    // Значок «Заявок» — заявки, которые ждут (счётчики приходят и вне входящих); «Витрины» и «Услуг» — нет
+    const counted = [...container.querySelectorAll(".side-nav a")]
+      .filter((link) => link.querySelector(".nav-count"))
+      .map((link) => link.getAttribute("href"));
+    expect(counted.every((href) => href === "/requests")).toBe(true);
     expect(container.querySelector(".vitrina-attn")).toBeNull();
   });
 });

@@ -6,7 +6,12 @@
    Ширина — телефона (кабинет прежде всего Mini App): jsdom без matchMedia отдал бы 1024px,
    то есть компьютер; раскладку компьютера тест задаёт сам. */
 
+import { setBackHistory } from "@bayramm/ui/react";
 import { vi } from "vitest";
+
+// Шторки без записей истории: шаг назад закрытой шторки одного теста пришёл бы в следующий
+// (сами записи проверяют тесты набора и e2e)
+setBackHistory(false);
 
 vi.mock("@bayramm/media/browser", () => ({ compressForUpload: vi.fn() }));
 

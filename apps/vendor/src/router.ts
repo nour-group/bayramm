@@ -1,4 +1,5 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
+import { historyBack } from "@bayramm/ui/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 /* Все экраны кабинета — в одной карте. Пути, вписанные по месту, разъезжаются
@@ -110,7 +111,8 @@ export function useRoute(guard?: RefObject<LeaveGuard | null>): readonly [Locati
         window.history.pushState(held.state, "", held.url);
         guard.current.ask(() => {
           passing.current = true;
-          window.history.back();
+          // Мимо записи открытого вопроса «Уйти без сохранения?»
+          historyBack();
         });
         return;
       }

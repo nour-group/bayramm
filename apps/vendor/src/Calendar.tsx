@@ -428,11 +428,16 @@ function DayPanel({ calendar, day, t, lang, pending, navigate, onToggle, titled,
             {wholeStateText(t, view)}
           </span>
         </p>
+        {/* Пока правка уходит — aria-disabled, а не disabled: фокус остаётся на кнопке */}
         <button
           type="button"
           className={view.entry ? "btn btn-ghost" : "btn btn-dark"}
-          disabled={locked || staffDay || pending.has(wholeKey)}
-          onClick={() => onToggle(day, null, view.entry)}
+          disabled={locked || staffDay}
+          aria-disabled={pending.has(wholeKey) || undefined}
+          aria-busy={pending.has(wholeKey) || undefined}
+          onClick={() => {
+            if (!pending.has(wholeKey)) onToggle(day, null, view.entry);
+          }}
         >
           {view.entry ? t.openWholeDay : t.closeWholeDay}
         </button>
@@ -449,7 +454,8 @@ function DayPanel({ calendar, day, t, lang, pending, navigate, onToggle, titled,
                 <Switch
                   className="day-part-switch"
                   checked={info.busy}
-                  disabled={locked || blocked || info.mark?.source === "staff" || pending.has(key)}
+                  disabled={locked || blocked || info.mark?.source === "staff"}
+                  busy={pending.has(key)}
                   onChange={() => onToggle(day, info.part, info.mark)}
                 >
                   <span className="day-part-name">

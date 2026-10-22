@@ -210,6 +210,9 @@ export const api = {
     if (listingId) query.set("listingId", listingId);
     return json<VendorRequestPage>(`/vendor/requests?${query}`);
   },
+  /** Только счётчики вкладок — для значка «Заявок» вне входящих */
+  requestCounts: () =>
+    json<VendorRequestPage>("/vendor/requests?tab=waiting&limit=1").then((page) => page.counts),
   request: (id: string) => json<VendorRequestDetail>(`/vendor/requests/${encodeURIComponent(id)}`),
   updateRequest: (id: string, patch: VendorRequestPatch) =>
     json<VendorRequestItem>(`/vendor/requests/${encodeURIComponent(id)}`, {

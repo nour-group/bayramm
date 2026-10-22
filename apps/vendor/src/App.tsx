@@ -8,6 +8,7 @@ import {
   Tooltip,
   UiTextsProvider,
   useOnReconnect,
+  useRevalidate,
   useStickyBar,
 } from "@bayramm/ui/react";
 import { type MouseEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -406,8 +407,28 @@ function Cabinet() {
       )
       .catch(() => {});
   }, []);
-  const lastSection = useRef(section);
   const signedIn = auth.kind === "ready";
+  // Значок «Заявок» — и когда кабинет открыли не на них (календарь, витрина): лёгкий запрос счётчиков.
+  // На входящих счётчики приходят со списком
+  const refreshCounts = useCallback(() => {
+    void api
+      .requestCounts()
+      .then((counts) => setFresh(counts.waiting))
+      .catch(() => {});
+  }, []);
+  const onInbox = section === "requests";
+  useEffect(() => {
+    if (signedIn && !onInbox) refreshCounts();
+  }, [signedIn, onInbox, refreshCounts]);
+  // Вернулись в кабинет (вкладка, Mini App из фона, связь) и раз в полторы минуты — значки свежие
+  useRevalidate(
+    () => {
+      if (!onInbox) refreshCounts();
+      refreshAttention();
+    },
+    { enabled: signedIn },
+  );
+  const lastSection = useRef(section);
   useEffect(() => {
     if (lastSection.current === section) return;
     lastSection.current = section;

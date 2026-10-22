@@ -356,6 +356,12 @@ body {
   opacity: 0.5;
 }
 
+/* Идёт запрос: кнопка недоступна, но фокус на ней остаётся (aria-disabled, а не disabled) */
+.btn[aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.6;
+}
+
 .icon-btn {
   display: inline-flex;
   align-items: center;
