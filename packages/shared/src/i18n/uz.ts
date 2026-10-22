@@ -440,7 +440,7 @@ export const uz: Dict = {
   ],
   estimateFor: (amount: string, guests: number) => `${guests} mehmonga taxminan ${amount}`,
   sortHintPerGuest:
-    "Tadbir narxi toʻla zal hisobida bir mehmonga qayta hisoblandi. Mehmonlar sonini kiriting — umumiy summalarni solishtiramiz.",
+    "Tadbir narxi zalning eng kam mehmon soni boʻyicha bir mehmonga qayta hisoblandi. Mehmonlar sonini kiriting — umumiy summalarni solishtiramiz.",
   perGuestApprox: (amount: string) => `≈ ${amount} mehmon boshiga`,
   sortHintTotal: (guests: number) => `${guests} mehmon uchun taxminiy summa solishtiriladi.`,
   myData: "Mening maʼlumotlarim",
@@ -682,7 +682,7 @@ export const uz: Dict = {
   budgetsSmall: ["3 mln gacha", "3–7 mln", "7–15 mln", "15 mln dan ortiq", "hali bilmayman"],
   errChoose: "Variantni tanlang",
   errChooseSome: "Kamida bitta variantni belgilang",
-  errTime: "Vaqtni koʻrsating",
+  errTime: "Boshlanish vaqtini koʻrsating",
   errRange: (min: number, max: number) => `${min} dan ${max} gacha`,
   errInvalid: "Qiymatni tekshiring",
   errServices: "Kamida bitta xizmatni tanlang",
@@ -803,4 +803,8 @@ export const uz: Dict = {
   srEmptyP: "Yozilishini tekshiring yoki boʻlimlarga qarang.",
   srClear: "Qidiruvni tozalash",
   s_relevance: "Avval mosroqlari",
+  s_section: "Boʻlimlar boʻyicha",
+  srDropped: (found: string, missed: string) => `«${found}» boʻyicha natijalar — «${missed}» topilmadi`,
+  thousandSum: "ming soʻm",
+  svDateHint: "Sanani tanlang — kim boʻshligini koʻrsatamiz.",
 };

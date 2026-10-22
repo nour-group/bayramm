@@ -15,15 +15,18 @@
 //     частично занятые (заняты не все рабочие части) — среди свободных, с пометкой; part вместе
 //     с date оставляет свободных в эту часть дня (или весь день) — по тем же правилам и тем же
 //     запросом загрузки (app.catalog_day_load отдаёт занятые рабочие части);
-//   · порядок — по цене, вместимости или (с поиском q) похожести, затем по id. Оплата, премиум и
-//     продвижение на порядок не влияют (их и нет);
+//   · порядок — по цене, вместимости, (с поиском q) похожести или (в «Все») по разделам — в
+//     порядке их показа, внутри раздела по цене; затем по id. Оплата, премиум и продвижение на
+//     порядок не влияют (их и нет);
 //   · q — поиск: app.catalog_search (документ витрины, триграммы) отбирает подходящие активные
 //     витрины и даёт оценку для порядка relevance; остальные правила выдачи — те же. Запрос
-//     уходит в базу параметром, в лог — никогда;
+//     уходит в базу параметром, в лог — никогда. Слов, которые ничего не нашли, функция не
+//     требует (по всем вместе ничего): они — в dropped выдачи;
 //   · цены сравниваются на одной шкале, хотя у одних залов цена за гостя, у других —
 //     за мероприятие (comparablePriceUzs в @bayramm/shared/api): с числом гостей —
 //     примерная сумма на это число, без него — цена за гостя (цена за мероприятие,
-//     делённая на cap_max с округлением вверх); без вместимости — цена как есть;
+//     делённая на наименьшее число гостей зала — cap_min, без него cap_max — с округлением
+//     вверх); без вместимости — цена как есть;
 //   · контакты витрины (телефон, Telegram) — по кнопке «Связаться», до заявки и без входа:
 //     POST …/contact (revealListingContacts в db/pii — с событием «открыли»); в карточке —
 //     только какие каналы есть (listingContactKinds).
@@ -155,20 +158,28 @@ export async function getConsentTexts(db: Db, locale: Locale | null): Promise<Co
 /**
  * Сравнимая цена в SQL — то же, что comparablePriceUzs из @bayramm/shared/api:
  * с гостями — цена за гостя × гости, остальное как есть; без гостей — цена за гостя,
- * цена за мероприятие / cap_max вверх (целочисленно: (p + c − 1) / c), если вместимость
- * есть, иначе как есть. Целое bigint: 1e11 сумов × 5000 гостей помещается и в bigint, и в курсор
+ * цена за мероприятие / наименьшее число гостей зала (cap_min, без него cap_max) вверх
+ * (целочисленно: (p + c − 1) / c), если вместимость есть, иначе как есть. Целое bigint: 1e11 сумов
+ * × 5000 гостей помещается и в bigint, и в курсор
  */
 function comparablePrice(guests: number | null): RawBuilder<string> {
   if (guests !== null) {
     return sql<string>`(case when l.price_unit = 'per_guest' then l.price_from_uzs * ${guests}::bigint else l.price_from_uzs end)`;
   }
-  return sql<string>`(case when l.price_unit = 'per_event' and l.cap_max is not null then (l.price_from_uzs + l.cap_max - 1) / l.cap_max else l.price_from_uzs end)`;
+  return sql<string>`(case when l.price_unit = 'per_event' and coalesce(l.cap_min, l.cap_max) is not null then (l.price_from_uzs + coalesce(l.cap_min, l.cap_max) - 1) / coalesce(l.cap_min, l.cap_max) else l.price_from_uzs end)`;
 }
+
+/**
+ * Шаг ключа «по разделам»: место раздела × шаг + сравнимая цена (без гостей). Цена «от» не больше
+ * SERVICE_LIMITS.maxPrice (< 1e11) — разделы не смешиваются, ключ — целое и в курсоре
+ */
+const SECTION_STEP = 100_000_000_000;
 
 // Ключ сортировки — всегда по возрастанию: «дороже», «больше мест» и «похожее» — минус
 // сравнимая цена, минус вместимость и минус оценка поиска (×100000, целым — как relevanceKey из
-// @bayramm/shared/search). Так курсор — одно сравнение строк (занята, ключ, id). relevance — только
-// с соединением sr (app.catalog_search)
+// @bayramm/shared/search); «по разделам» — место раздела (app.categories.sort) и цена в нём. Так
+// курсор — одно сравнение строк (занята, ключ, id). relevance — только с соединением sr
+// (app.catalog_search)
 export function sortKey(sort: CatalogSort, guests: number | null): RawBuilder<string> {
   switch (sort) {
     case "price_asc":
@@ -179,12 +190,16 @@ export function sortKey(sort: CatalogSort, guests: number | null): RawBuilder<st
       return sql<string>`(-coalesce(l.cap_max, 0))::bigint`;
     case "relevance":
       return sql<string>`(-round(sr.score * 100000))::bigint`;
+    case "section":
+      return sql<string>`(cat.sort::bigint * ${sql.lit(SECTION_STEP)} + ${comparablePrice(null)})`;
   }
 }
 
 interface SearchRow {
   listing_id: string;
   score: number;
+  /** Слова запроса, которые ничего не нашли (одинаковы у всех строк) */
+  dropped: string[];
 }
 
 /**
@@ -416,6 +431,7 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
         ),
       )
       .$if(counted, (qb) => qb.select(sql<number>`(count(*) over ())::int`.as("total")))
+      .$if(q !== null, (qb) => qb.select(sql<string[]>`sr.dropped`.as("dropped")))
       .$if(category !== ALL_CATEGORIES, (qb) => qb.where("l.category_code", "=", category))
       // Город: витрины в его районах и без района — выездные (адреса нет, приезжают сами)
       .$if(city !== null, (qb) =>
@@ -460,9 +476,12 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
         })
       : null;
   const items = page.map((row) => toCard(row, date));
-  if (!counted) return { items, nextCursor } satisfies CatalogPage;
+  // Пропущенные слова запроса — одни у всех строк; нет — все слова нашли
+  const dropped = (rows[0] as { dropped?: string[] } | undefined)?.dropped ?? [];
+  const searched = dropped.length > 0 ? { dropped } : {};
+  if (!counted) return { items, nextCursor, ...searched } satisfies CatalogPage;
   const total = (rows[0] as { total?: number } | undefined)?.total ?? 0;
-  return { items, nextCursor, total } satisfies CatalogPage;
+  return { items, nextCursor, total, ...searched } satisfies CatalogPage;
 }
 
 /**

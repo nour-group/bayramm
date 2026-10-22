@@ -23,6 +23,7 @@ import {
   firstDate,
   leadDaysOf,
   nearbyFreeDays,
+  requestDefaults,
   toCreateRequest,
   toDetails,
   validate,
@@ -262,14 +263,17 @@ describe("форма заявки по категории", () => {
     transferChecked: true,
   });
 
-  it("кортеж: время, часы и машины обязательны; гостей не спрашивают и не передают", () => {
+  it("кортеж: часы и машины обязательны, начало — когда часть дня не выбрана; гостей не спрашивают", () => {
     const oq = by("oq-kortej");
-    const errors = validate(base, context(oq), ru);
-    expect(errors).toEqual({
-      "d.start_time": ru.errTime,
+    // Часть дня выбрана (вечер) — «Начало» по желанию: «Вечер 17:00–24:00» уже говорит, когда
+    expect(validate(base, context(oq), ru)).toEqual({
       "d.hours": ru.errRequired,
       "d.cars_count": ru.errRequired,
     });
+    expect(validate({ ...base, dayParts: [] }, context(oq), ru)).toMatchObject({
+      "d.start_time": "Укажите время начала",
+    });
+    expect(requestDefaults(config("car"))).toEqual({ cars_count: "1" });
     const filled: Draft = { ...base, values: { start_time: "17:30", hours: "5", cars_count: "2" } };
     expect(validate(filled, context(oq), ru)).toEqual({});
     const body = toCreateRequest(filled, oq, config("car"), consents);

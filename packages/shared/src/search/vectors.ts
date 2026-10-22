@@ -47,6 +47,10 @@ export const MATCH_VECTORS: readonly (readonly [query: string, text: string])[] 
   ["kor", "Kortej"],
   ["toʻyxona", "Toyxona Versal"],
   ["mercedes", "Mercedes-Benz S-Class"],
+  // Служебные слова и слова о цене не ищутся
+  ["зал для банкета", "Банкетный зал"],
+  ["недорогой зал", "Зал Наврўз"],
+  ["toʻy uchun arzon tort", "Tort toʻy"],
 ];
 
 /** Пары, где запрос не подходит тексту */

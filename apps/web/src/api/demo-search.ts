@@ -5,15 +5,16 @@ import {
   type PlaceCount,
   type SearchDoc,
   type SearchQuery,
+  type SearchResult,
+  searchAll,
   searchDoc,
-  searchScore,
   suggestPlaces,
 } from "@bayramm/shared/search";
 
 /* Поиск демо-API (VITE_API=mock) — как у сервера, на TS: документ витрины собирается из тех же
    частей, что app.listing_search_refresh (название, раздел, район, услуги, текстовые поля,
-   описание), совпадение и порядок — searchScore (@bayramm/shared/search), подсказки разделов и
-   районов — suggestPlaces, общие с API. */
+   описание), совпадение и порядок — searchAll (@bayramm/shared/search: по всем словам ничего — без
+   слов, которые сами ничего не находят), подсказки разделов и районов — suggestPlaces, общие с API. */
 
 const docs = new WeakMap<ListingDetail, SearchDoc>();
 
@@ -36,18 +37,16 @@ function docOf(listing: ListingDetail, dictionaries: Dictionaries): SearchDoc {
   return doc;
 }
 
-/** Оценки подходящих витрин (id → оценка); неподходящих в ответе нет */
+/**
+ * Оценки подходящих витрин (id → оценка; неподходящих нет) и пропущенные слова — среди переданных
+ * витрин (раздел выдачи), как app.catalog_search
+ */
 export function demoSearch(
   listings: readonly ListingDetail[],
   dictionaries: Dictionaries,
   q: SearchQuery,
-): Map<string, number> {
-  const scores = new Map<string, number>();
-  for (const listing of listings) {
-    const score = searchScore(docOf(listing, dictionaries), q);
-    if (score !== null) scores.set(listing.id, score);
-  }
-  return scores;
+): SearchResult<string> {
+  return searchAll(new Map(listings.map((l) => [l.id, docOf(l, dictionaries)])), q);
 }
 
 /** Подсказки, как GET /catalog/suggest: разделы, районы в разделах, до пяти витрин по похожести */
@@ -68,7 +67,7 @@ export function demoSuggest(
     });
   }
   const places = suggestPlaces(q, dictionaries.categories, dictionaries.districts, [...counts.values()]);
-  const scores = demoSearch(listings, dictionaries, q);
+  const { scores } = demoSearch(listings, dictionaries, q);
   const found = listings
     .filter((l) => scores.has(l.id))
     .sort((a, b) => (scores.get(b.id) ?? 0) - (scores.get(a.id) ?? 0) || a.id.localeCompare(b.id))

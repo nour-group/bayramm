@@ -13,6 +13,7 @@ import {
   type DateLoad,
   type DayPart,
   type Dictionaries,
+  defaultCatalogSort,
   FAVORITES_MAX,
   type FeaturedListings,
   type ListingCard,
@@ -476,7 +477,12 @@ function checkDetails(
   const guests = body.guests ?? null;
   const bad: string[] = [];
   if (!guestsAllowed(category, guests)) bad.push("guests");
-  const parsed = validateRequestDetails(category, body.details);
+  // Части дня или весь день выбраны — время начала по желанию, как у сервера
+  const timeChosen =
+    hasDayParts(category) &&
+    listing.sessions.mode === "parts" &&
+    ((body.dayParts?.length ?? 0) > 0 || body.wholeDay === true);
+  const parsed = validateRequestDetails(category, body.details, { timeChosen });
   if (!parsed.ok) bad.push(...parsed.errors);
   if (bad.length > 0 || !parsed.ok) throw invalid(bad);
   if (guests !== null && listing.capMax !== null && guests > listing.capMax)
@@ -750,12 +756,14 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         }
         const limit = Math.min(50, Math.max(1, query.limit ?? 20));
         const offset = Number(query.cursor ?? 0) || 0;
-        // Поиск — как у сервера: короткий — не поиск, длинный — 400; подходящие и их оценка
+        // Поиск — как у сервера: короткий — не поиск, длинный — 400; подходящие в разделе, их оценка
+        // и пропущенные слова (по всем вместе ничего — без тех, что сами ничего не находят)
         const q = searchParam(query.q);
-        const scores = q === null ? null : demoSearch(listings, DEMO_DICTIONARIES, q);
-        const rows = listings
+        const inSection = listings.filter((l) => all || l.categoryCode === category);
+        const found = q === null ? null : demoSearch(inSection, DEMO_DICTIONARIES, q);
+        const scores = found?.scores ?? null;
+        const rows = inSection
           .filter((l) => scores === null || scores.has(l.id))
-          .filter((l) => all || l.categoryCode === category)
           .filter((l) => filters.every((f) => matchesAttributeFilter(l.attributes, f)))
           // Город — его районы и витрины без района (выездные), как у API
           .filter(
@@ -770,24 +778,32 @@ export function createMockApi(options: MockOptions = {}): MockApi {
           // «Время» — вместе с датой: свободные в эту часть дня (или весь день)
           .filter((l) => !query.date || !query.part || demoFreeIn(l, query.date, query.part))
           .map((l) => toCard(l, query.date));
-        // Без sort — по возрастанию цены, как у сервера; цены сравниваются по той же
+        // Порядок по умолчанию — как у сервера (defaultCatalogSort); цены сравниваются по той же
         // формуле (за мероприятие и за гостя — на одной шкале, с гостями — сумма на них)
         const price = (card: ListingCard) => comparablePriceUzs(card, query.guests ?? null);
         const relevance = (card: ListingCard) => relevanceKey(scores?.get(card.id) ?? 0);
-        const sort = query.sort ?? (scores === null ? "price_asc" : "relevance");
+        const sectionOf = (card: ListingCard) => categoryConfig(card.categoryCode)?.sort ?? 0;
+        let sort = query.sort ?? defaultCatalogSort(category, q);
+        if (sort === "relevance" && scores === null) sort = defaultCatalogSort(category, null);
         const order = (a: ListingCard, b: ListingCard) => {
-          if (sort === "relevance" && scores !== null)
-            return relevance(a) - relevance(b) || a.id.localeCompare(b.id);
-          if (query.sort === "price_desc") return price(b) - price(a) || a.id.localeCompare(b.id);
-          if (query.sort === "capacity_desc")
-            return (b.capMax ?? 0) - (a.capMax ?? 0) || a.id.localeCompare(b.id);
+          if (sort === "relevance") return relevance(a) - relevance(b) || a.id.localeCompare(b.id);
+          if (sort === "price_desc") return price(b) - price(a) || a.id.localeCompare(b.id);
+          if (sort === "capacity_desc") return (b.capMax ?? 0) - (a.capMax ?? 0) || a.id.localeCompare(b.id);
+          // По разделам — в порядке их показа, внутри раздела — дешевле (цена без гостей)
+          if (sort === "section")
+            return (
+              sectionOf(a) - sectionOf(b) ||
+              comparablePriceUzs(a, null) - comparablePriceUzs(b, null) ||
+              a.id.localeCompare(b.id)
+            );
           return price(a) - price(b) || a.id.localeCompare(b.id);
         };
         // Занятые на дату — в конце при любом порядке; оплаты в демо нет вовсе
         rows.sort((a, b) => Number(a.busyOnDate === true) - Number(b.busyOnDate === true) || order(a, b));
         const items = rows.slice(offset, offset + limit);
         const next = offset + limit;
-        const page = { items, nextCursor: next < rows.length ? String(next) : null };
+        const dropped = found !== null && found.dropped.length > 0 ? { dropped: found.dropped } : {};
+        const page = { items, nextCursor: next < rows.length ? String(next) : null, ...dropped };
         // Сколько нашлось — с поиском, на первой странице
         return scores !== null && !query.cursor ? { ...page, total: rows.length } : page;
       }),

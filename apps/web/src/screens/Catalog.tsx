@@ -1,6 +1,7 @@
 import type { CatalogSort } from "@bayramm/shared/api";
+import { splitDropped } from "@bayramm/shared/search";
 import { DateField, Dialog, NumberStepper, RadioGroup, Select } from "@bayramm/ui/react";
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import {
   CLIENT_CATEGORIES,
   categoryDesc,
@@ -49,13 +50,16 @@ import { placeChoice, placeFilters } from "./catalog-place";
    где календарь), гости (где вместимость); строка переносится, а не листается вбок — каждая
    пилюля на виду и на телефоне. Поля витрины раздела и порядок — на телефоне и планшете одной
    кнопкой «Фильтры · n» (шторка), на компьютере поля — колонкой слева, порядок — в конце строки.
-   У раздела без полей витрины порядок — пилюлей в строке везде. */
+   У раздела без полей витрины порядок — пилюлей в строке везде. «Все» — по разделам, с заголовком
+   раздела над его карточками: цены разных разделов (за гостя, за час, за штуку) не сравнить, порядка
+   по цене там нет. Поиск, где слово ничего не нашло, — без него, и строкой об этом. */
 
 const SORT_LABEL = {
   price_asc: "s_cheap",
   price_desc: "s_rich",
   capacity_desc: "s_capacity",
   relevance: "s_relevance",
+  section: "s_section",
 } as const satisfies Record<CatalogSort, string>;
 
 /** Популярных разделов в пустой выдаче поиска */
@@ -264,17 +268,25 @@ export function Catalog() {
   const sortNow = filters.sort ?? defaultSort;
   const priceSort = sortNow === "price_asc" || sortNow === "price_desc";
   const units = new Set(items.map((i) => i.priceUnit));
-  // В «Все» единицы разных разделов — только подпись у суммы
+  // В «Все» по цене не сортируют (разделы не сравнить) — и подсказки нет
   const hallUnits = category !== null && units.has("per_guest") && units.has("per_event");
-  const sortHint = !priceSort
-    ? null
-    : hallUnits
-      ? filters.guests === null
-        ? t.sortHintPerGuest
-        : t.sortHintTotal(filters.guests)
-      : units.size > 1
-        ? t.sortHintUnits
-        : null;
+  const sortHint =
+    !priceSort || category === null
+      ? null
+      : hallUnits
+        ? filters.guests === null
+          ? t.sortHintPerGuest
+          : t.sortHintTotal(filters.guests)
+        : units.size > 1
+          ? t.sortHintUnits
+          : null;
+  // «Все» по разделам: заголовок раздела над его карточками
+  const grouped = category === null && sortNow === "section";
+  // Поиск без слов, которые ничего не нашли: что показали и что пропустили — словами как ввели
+  const dropped =
+    filters.q !== null && feed.dropped.length > 0 && feed.status !== "loading"
+      ? splitDropped(filters.q, feed.dropped)
+      : null;
   // Что отсекает выдачу — каждое можно убрать по одному (пустая выдача называет его). Дата не
   // отсекает: занятые в этот день лишь уходят в конец
   const cutting: readonly { key: string; label: string; drop: Partial<CatalogFilters> }[] = [
@@ -312,6 +324,11 @@ export function Catalog() {
             телефоне первый экран — выдаче (про цены — и на лендинге, и в «О площадке») */}
         {category ? <p className="cat-lead">{categoryDesc(category.code, t)}</p> : null}
         <p className="muted small catalog-note">{t.catalogNote}</p>
+        {dropped?.found && dropped.missed ? (
+          <p className="search-dropped" role="status">
+            {t.srDropped(dropped.found, dropped.missed)}
+          </p>
+        ) : null}
       </div>
 
       {/* Поиск — над разделами, во всю ширину; в Telegram — вверху вкладки каталога */}
@@ -394,17 +411,20 @@ export function Catalog() {
               {sheetCount > 0 ? t.moreFiltersN(sheetCount) : t.moreFilters}
             </button>
           ) : null}
-          {/* Порядок: у раздела с полями витрины на телефоне и планшете — в шторке «Фильтры» */}
-          <div className={side ? "sort in-sheet" : "sort"}>
-            <Select
-              size="compact"
-              label={t.sortBy}
-              icon={<Icon name="sort" size={14} />}
-              value={filters.sort ?? defaultSort}
-              options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
-              onChange={(sort) => setFilters({ sort: sort === defaultSort ? null : sort })}
-            />
-          </div>
+          {/* Порядок: у раздела с полями витрины на телефоне и планшете — в шторке «Фильтры»; в «Все»
+              без поиска он один (по разделам) — выбирать нечего */}
+          {sorts.length > 1 ? (
+            <div className={side ? "sort in-sheet" : "sort"}>
+              <Select
+                size="compact"
+                label={t.sortBy}
+                icon={<Icon name="sort" size={14} />}
+                value={filters.sort ?? defaultSort}
+                options={sorts.map((sort) => ({ value: sort, label: t[SORT_LABEL[sort]] }))}
+                onChange={(sort) => setFilters({ sort: sort === defaultSort ? null : sort })}
+              />
+            </div>
+          ) : null}
         </div>
         {/* Пустая выдача сбрасывает фильтры сама (ниже) — второй кнопки рядом не нужно */}
         {filtered && !(loaded && items.length === 0) ? (
@@ -505,18 +525,26 @@ export function Catalog() {
           {items.length > 0 ? (
             <ul className="cards">
               {items.map((card, i) => (
-                <li key={card.id}>
-                  <ListingCard
-                    card={card}
-                    date={filters.date}
-                    guests={filters.guests}
-                    eager={i < EAGER_CARDS}
-                    priority={i === 0}
-                    sizes={side ? CARD_PHOTO_SIZES_SIDE : CARD_PHOTO_SIZES}
-                    showCategory={category === null}
-                    perGuest={priceSort && hallUnits}
-                  />
-                </li>
+                <Fragment key={card.id}>
+                  {grouped && items[i - 1]?.categoryCode !== card.categoryCode ? (
+                    <li className="cards-section">
+                      <h2 className="section-title">{categoryName(card.categoryCode, t, lang)}</h2>
+                    </li>
+                  ) : null}
+                  <li>
+                    <ListingCard
+                      card={card}
+                      date={filters.date}
+                      guests={filters.guests}
+                      eager={i < EAGER_CARDS}
+                      priority={i === 0}
+                      sizes={side ? CARD_PHOTO_SIZES_SIDE : CARD_PHOTO_SIZES}
+                      headingLevel={grouped ? 3 : 2}
+                      showCategory={category === null && !grouped}
+                      priceKey={priceSort && hallUnits}
+                    />
+                  </li>
+                </Fragment>
               ))}
             </ul>
           ) : null}

@@ -91,6 +91,18 @@ export function formatMoney(uzs: number, t: Dict): string {
   return `${groupThousands(uzs)}${NBSP}${t.sum}`;
 }
 
+/**
+ * Примерная сумма — без ложной точности: от миллиона — как formatMoney («45,5 млн сум»), от тысячи —
+ * до тысяч («129 тыс. сум»), меньше — как есть
+ */
+export function formatApproxMoney(uzs: number, t: Dict): string {
+  if (uzs >= 1_000_000 || uzs < 1000) return formatMoney(uzs, t);
+  // 999 600 до тысяч — уже миллион
+  const thousands = Math.round(uzs / 1000);
+  if (thousands >= 1000) return formatMoney(thousands * 1000, t);
+  return `${thousands}${NBSP}${t.thousandSum.replaceAll(" ", NBSP)}`;
+}
+
 /** Единица цены подписью: «за гостя», «за час», «за кг»… */
 export function unitText(unit: PriceUnit, t: Dict): string {
   switch (unit) {

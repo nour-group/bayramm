@@ -128,6 +128,8 @@ export interface IntField extends FieldBase {
   readonly min: number;
   readonly max: number;
   readonly filter?: "min" | "max";
+  /** В форме заявки — значение по умолчанию («Сколько машин» — 1); клиент его меняет */
+  readonly initial?: number;
 }
 
 /** Да / нет. filter: eq — «только где да» */

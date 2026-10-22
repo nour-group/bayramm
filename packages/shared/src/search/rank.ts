@@ -9,7 +9,9 @@
        «Шайхантахур» → «Shayxontohur»). В базе то же — через словарь слов документов
        (app.search_words: similarity слова запроса и слова витрины), чтобы искать по индексу.
    Витрина подходит, если подходят все слова запроса: почти точное — в названии, разделе, районе,
-   услугах, полях витрины и описании; с опечаткой — во всём, кроме описания.
+   услугах, полях витрины и описании; с опечаткой — во всём, кроме описания. Служебные слова («на»,
+   «для», «uchun») и слова о цене («недорогой», «arzon») не ищутся (searchTokens). По всем словам
+   ничего — ещё раз без слов, которые сами ничего не находят (searchAll).
 
    Порядок по похожести: у каждого слова (ws — word_similarity, sws — strict_word_similarity) —
      3 + ws — слово начинает слово названия;
@@ -110,6 +112,37 @@ export function searchScore(doc: SearchDoc, query: SearchQuery): number | null {
   }
   const prefix = doc.name.startsWith(query.text) ? 1 : 0;
   return Math.fround(sum / query.tokens.length + prefix);
+}
+
+/** Подходящие витрины и их оценки; что из запроса не нашлось */
+export interface SearchResult<K> {
+  readonly scores: Map<K, number>;
+  /** Слова запроса (после searchNorm), которые ничего не нашли и пропущены; иначе пусто */
+  readonly dropped: readonly string[];
+}
+
+/**
+ * Поиск по документам — как app.catalog_search: все слова запроса; по всем вместе ничего —
+ * ещё раз без слов, которые сами по себе ничего не находят («katta zal» → «zal»). Ничего не
+ * нашло ни одно слово или каждое находит что-то, но не вместе, — пусто
+ */
+export function searchAll<K>(docs: ReadonlyMap<K, SearchDoc>, q: SearchQuery): SearchResult<K> {
+  const run = (query: SearchQuery) => {
+    const scores = new Map<K, number>();
+    for (const [key, doc] of docs) {
+      const score = searchScore(doc, query);
+      if (score !== null) scores.set(key, score);
+    }
+    return scores;
+  };
+  const scores = run(q);
+  if (scores.size > 0 || q.tokens.length < 2) return { scores, dropped: [] };
+  const all = [...docs.values()];
+  const kept = q.tokens.filter((token) =>
+    all.some((doc) => searchScore(doc, { ...q, tokens: [token] }) !== null),
+  );
+  if (kept.length === 0 || kept.length === q.tokens.length) return { scores, dropped: [] };
+  return { scores: run({ ...q, tokens: kept }), dropped: q.tokens.filter((t) => !kept.includes(t)) };
 }
 
 /** Ключ порядка «по похожести» — целое, по возрастанию (как ключи остальных порядков) */

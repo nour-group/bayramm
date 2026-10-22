@@ -303,6 +303,27 @@ export function toDetails(category: CategoryConfig, listing: Pick<ListingDetail,
   return out;
 }
 
+/**
+ * Время заявки выбрано — части дня или весь день (витрина с несколькими мероприятиями в день): тогда
+ * «Начало» — по желанию (requestFieldRequired)
+ */
+export function timeChosen(
+  category: CategoryConfig,
+  listing: Pick<ListingDetail, "sessions">,
+  draft: Pick<Draft, "wholeDay" | "dayParts">,
+): boolean {
+  if (!choosesParts(category, listing)) return false;
+  return draft.wholeDay || draft.dayParts.some((p) => listing.sessions.parts.includes(p));
+}
+
+/** Значения формы заявки по умолчанию («Сколько машин» — 1) */
+export function requestDefaults(category: CategoryConfig): Record<string, DraftValue> {
+  const out: Record<string, DraftValue> = {};
+  for (const field of detailFields(category))
+    if (field.type === "int" && field.initial !== undefined) out[field.key] = String(field.initial);
+  return out;
+}
+
 /** Тексты ошибок — из словаря клиента */
 export type ErrorTexts = Dict;
 
@@ -362,9 +383,11 @@ export function validate(
   else if (mode !== "hidden" && guests !== null && listing.capMax !== null && guests > listing.capMax)
     errors.guests = t.errGuestsMax(listing.capMax);
 
-  // Поля категории — те же правила, что у сервера
+  // Поля категории — те же правила, что у сервера: выбрали части дня — начало по желанию
   const details = toDetails(category, listing, draft);
-  const parsed = validateRequestDetails(category, details);
+  const parsed = validateRequestDetails(category, details, {
+    timeChosen: timeChosen(category, listing, draft),
+  });
   if (!parsed.ok) {
     for (const path of parsed.errors) {
       const [, key = "", index, sub] = path.split(".");

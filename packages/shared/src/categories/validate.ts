@@ -611,13 +611,29 @@ function serviceChoices(
   return out;
 }
 
+/** Что заявка уже говорит о времени, кроме полей категории */
+export interface RequestTimeContext {
+  /** Выбраны части дня (или весь день) — «Время» заявки */
+  readonly timeChosen?: boolean;
+}
+
+/**
+ * Обязательно ли поле формы заявки: время начала — нет, если выбраны части дня (или весь день):
+ * «Вечер 17:00–24:00» уже говорит, когда; начало тогда — по желанию
+ */
+export function requestFieldRequired(field: RequestField, context: RequestTimeContext = {}): boolean {
+  if (field.key === "start_time" && context.timeChosen === true) return false;
+  return field.required;
+}
+
 /**
  * Поля категории из тела заявки (details). Неизвестное поле — ошибка; обязательное без
- * значения — ошибка. Ошибки — «details.<ключ>[.<номер>.<поле>]»
+ * значения (requestFieldRequired) — ошибка. Ошибки — «details.<ключ>[.<номер>.<поле>]»
  */
 export function validateRequestDetails(
   category: CategoryConfig,
   input: unknown,
+  context: RequestTimeContext = {},
 ): Result<RequestDetailsInput> {
   const body = input === undefined || input === null ? {} : input;
   if (!isObject(body)) return fail(["details"]);
@@ -631,7 +647,7 @@ export function validateRequestDetails(
     const raw = body[field.key];
     const empty = raw === undefined || raw === null || raw === "" || (Array.isArray(raw) && raw.length === 0);
     if (empty) {
-      if (field.required) errors.push(`details.${field.key}`);
+      if (requestFieldRequired(field, context)) errors.push(`details.${field.key}`);
       continue;
     }
     if (field.type === "services") {

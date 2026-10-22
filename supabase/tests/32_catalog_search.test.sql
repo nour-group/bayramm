@@ -4,7 +4,7 @@
 -- > название > раздел, район, услуги > описание
 begin;
 \ir _fixtures.psql
-select plan(81);
+select plan(84);
 
 -- Опубликовать зал, как в фикстурах: контакты, банкеты, три готовых фото, проверка → каталог
 create function pg_temp.publish(p_listing uuid)
@@ -94,6 +94,9 @@ select ok(app.search_matches('versl', 'Versal'), 'подходит: versl → Ve
 select ok(app.search_matches('kor', 'Kortej'), 'подходит: kor → Kortej');
 select ok(app.search_matches('toʻyxona', 'Toyxona Versal'), 'подходит: toʻyxona → Toyxona Versal');
 select ok(app.search_matches('mercedes', 'Mercedes-Benz S-Class'), 'подходит: mercedes → Mercedes-Benz S-Class');
+select ok(app.search_matches('зал для банкета', 'Банкетный зал'), 'подходит: зал для банкета → Банкетный зал');
+select ok(app.search_matches('недорогой зал', 'Зал Наврўз'), 'подходит: недорогой зал → Зал Наврўз');
+select ok(app.search_matches('toʻy uchun arzon tort', 'Tort toʻy'), 'подходит: toʻy uchun arzon tort → Tort toʻy');
 select ok(not app.search_matches('zal', 'ZAGS'), 'не подходит: zal → ZAGS');
 select ok(not app.search_matches('versal', 'Vesna'), 'не подходит: versal → Vesna');
 select ok(not app.search_matches('kortej mercedes', 'Kortej'), 'не подходит: kortej mercedes → Kortej');

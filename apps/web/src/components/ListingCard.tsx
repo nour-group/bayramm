@@ -4,12 +4,13 @@ import {
   comparablePriceUzs,
   type DateLoad,
   estimatedTotalUzs,
+  perGuestBasis,
 } from "@bayramm/shared/api";
 import { memo } from "react";
 import type { ClientApi } from "../api/types";
 import { categoryName, clientCategory, hasCalendar } from "../categories";
 import { useDictionaries, useLang, useServices } from "../context";
-import { formatDayMonth, formatMoney, formatPriceFrom, metaLine } from "../format";
+import { formatApproxMoney, formatDayMonth, formatMoney, formatPriceFrom, metaLine } from "../format";
 import { hrefFor } from "../router";
 import { preloadScreens } from "../screens";
 import { FavoriteButton } from "./FavoriteButton";
@@ -33,10 +34,11 @@ interface ListingCardProps {
   /** Подписать категорию: в списке из разных категорий («Сохранённое») */
   readonly showCategory?: boolean;
   /**
-   * Выдача по цене, где рядом цены за гостя и за мероприятие (залы без числа гостей): у цены за
-   * мероприятие — «≈ N сум за гостя», по которой каталог и сортирует
+   * Выдача по цене, где рядом цены за гостя и за мероприятие (залы): крупно — то, по чему каталог
+   * сортирует. Без числа гостей у цены за мероприятие — «≈ N сум за гостя», с ним у цены за гостя —
+   * «около N на столько гостей»; цена «от» — строкой ниже
    */
-  readonly perGuest?: boolean;
+  readonly priceKey?: boolean;
 }
 
 /**
@@ -82,7 +84,7 @@ export function dayLoadChip(load: DateLoad, date: string, t: Dict): { text: stri
  * занятая частью дня (кортеж, фото, декор) — «частично занято». У категорий без календаря
  * (заказ за N дней) отметки на дату нет. С числом гостей у цены за гостя — примерная сумма
  * на них: по ней и сортирует каталог; без гостей у цены за мероприятие — сколько это на гостя
- * при полном зале (perGuest)
+ * при наименьшем числе гостей зала. В выдаче по цене это и есть главная строка цены (priceKey)
  */
 export const ListingCard = memo(function ListingCard({
   card,
@@ -93,7 +95,7 @@ export const ListingCard = memo(function ListingCard({
   sizes = CARD_PHOTO_SIZES,
   headingLevel = 2,
   showCategory = false,
-  perGuest = false,
+  priceKey = false,
 }: ListingCardProps) {
   const { api } = useServices();
   const { t, lang } = useLang();
@@ -106,12 +108,18 @@ export const ListingCard = memo(function ListingCard({
     date && load !== null && hasCalendar(clientCategory(card.categoryCode))
       ? dayLoadChip(load, date, t)
       : null;
-  const estimate =
-    guests !== null && card.priceUnit === "per_guest"
-      ? t.estimateFor(formatMoney(estimatedTotalUzs(card, guests), t), guests)
-      : perGuest && guests === null && card.priceUnit === "per_event" && card.capMax !== null
-        ? t.perGuestApprox(formatMoney(comparablePriceUzs(card, null), t))
+  // Ключ порядка по цене словами: сумма на гостей у цены за гостя, цена на гостя у цены за мероприятие
+  const key = !priceKey
+    ? null
+    : guests !== null && card.priceUnit === "per_guest"
+      ? t.estimateFor(formatApproxMoney(estimatedTotalUzs(card, guests), t), guests)
+      : guests === null && card.priceUnit === "per_event" && perGuestBasis(card) !== null
+        ? t.perGuestApprox(formatApproxMoney(comparablePriceUzs(card, null), t))
         : null;
+  const estimate =
+    key === null && guests !== null && card.priceUnit === "per_guest"
+      ? t.estimateFor(formatMoney(estimatedTotalUzs(card, guests), t), guests)
+      : null;
   const href = hrefFor({ name: "venue", slug: card.slug }, { date, guests });
   const Name = headingLevel === 3 ? "h3" : "h2";
   const meta = [
@@ -139,11 +147,25 @@ export const ListingCard = memo(function ListingCard({
             <NewBadge />
           </div>
           {meta.length > 0 ? <p className="card-meta">{metaLine(meta)}</p> : null}
-          <p className="card-price">
-            {/* Пробел — между суммой и единицей, а не внутри неразрывной единицы: строка переносится */}
-            <b>{price.amount}</b> <span className="unit">{price.unit}</span>
-          </p>
-          {estimate ? <p className="card-estimate">{estimate}</p> : null}
+          {key ? (
+            <>
+              {/* По этой сумме сортирует каталог — она и крупно; цена «от» — ниже */}
+              <p className="card-price card-key">
+                <b>{key}</b>
+              </p>
+              <p className="card-estimate">
+                {price.amount} {price.unit}
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="card-price">
+                {/* Пробел — между суммой и единицей, а не внутри неразрывной единицы: строка переносится */}
+                <b>{price.amount}</b> <span className="unit">{price.unit}</span>
+              </p>
+              {estimate ? <p className="card-estimate">{estimate}</p> : null}
+            </>
+          )}
         </div>
       </Link>
       {/* Сердечко — рядом со ссылкой, а не внутри: кнопка в ссылке недопустима */}
