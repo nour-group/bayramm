@@ -61,6 +61,7 @@ import {
   Skeleton,
   StatusPill,
   toneOf,
+  UpdatedAt,
   usePagedList,
 } from "../ui";
 import { PhotoViewer } from "./PhotoViewer";
@@ -93,7 +94,8 @@ function useQueue<I, L extends { readonly total: number; readonly items: readonl
 ) {
   const phone = usePhone();
   const [offset, setOffset] = useState(0);
-  const list = usePagedList<I, L>(path, { size: PAGE, offset, append: phone });
+  // Очереди перечитываются сами: вернулись в панель, связь, раз в полторы минуты
+  const list = usePagedList<I, L>(path, { size: PAGE, offset, append: phone, live: true });
   // Сколько всего (не только показанная страница), когда загрузилась: для сегментов и заголовка
   const ready = list.loaded.state === "ready";
   const count = ready ? list.total : null;
@@ -174,6 +176,13 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
     contacts: contacts.list.loaded,
     photos: photos.list.loaded,
   };
+  const updated: Readonly<Record<Queue, number | null>> = {
+    review: review.list.at,
+    revisions: revisions.list.at,
+    services: services.list.at,
+    contacts: contacts.list.at,
+    photos: photos.list.at,
+  };
   const queues = QUEUES.filter((queue) => (queue !== "services" && queue !== "contacts") || decidesServices);
   const settled = queues.every((queue) => loaded[queue].state !== "loading");
   // Пустые очереди не показываем; не прочитавшаяся — показываем: у неё «Повторить»
@@ -227,6 +236,7 @@ export function ModerationPage({ minPhotos }: { minPhotos: number }) {
             label: counts[queue] === null ? t.queueTabs[queue] : `${t.queueTabs[queue]} ${counts[queue]}`,
           }))}
         />
+        <UpdatedAt at={updated[active]} />
       </div>
 
       <section className="stack queue" aria-labelledby={titleId(active)}>

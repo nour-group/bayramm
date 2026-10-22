@@ -1,5 +1,6 @@
 import { trimTrailingSlashes } from "@bayramm/shared";
 import type { StaffPermission } from "@bayramm/shared/api/staff";
+import { historyBack } from "@bayramm/ui/react";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
 /* Все маршруты панели — в одной карте. Пути, вписанные по месту, разъезжаются
@@ -309,7 +310,8 @@ export function useRoute(
         window.history.pushState(held.state, "", held.url);
         guard.current.ask(() => {
           passing.current = true;
-          window.history.back();
+          // Мимо записи открытого вопроса «Уйти без сохранения?»
+          historyBack();
         });
         return;
       }
@@ -354,7 +356,7 @@ export function useRoute(
  */
 export function goBack(view: View | null, navigate: Navigate): void {
   if (historyIndex() > 0) {
-    window.history.back();
+    historyBack();
     return;
   }
   navigate(view ? parentOf(view) : { name: HOME }, { replace: true });

@@ -132,6 +132,8 @@ export type Loaded<T> =
 export function useLoad<T>(path: string | null) {
   const { api } = useSession();
   const [loaded, setLoaded] = useState<Loaded<T>>({ state: "loading" });
+  // Когда пришли показанные данные: «Обновлено 10:42» у списков, которые перечитываются сами
+  const [at, setAt] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   const current = useRef(path);
   current.current = path;
@@ -146,6 +148,7 @@ export function useLoad<T>(path: string | null) {
     void api.get<T>(path).then((result) => {
       if (!active || current.current !== path) return;
       setLoaded(result.ok ? { state: "ready", data: result.data } : { state: "error", failure: result });
+      if (result.ok) setAt(Date.now());
     });
     return () => {
       active = false;
@@ -158,7 +161,7 @@ export function useLoad<T>(path: string | null) {
   useOnReconnect(() => {
     if (retryable) reload();
   });
-  return { loaded, reload, set } as const;
+  return { loaded, reload, set, at } as const;
 }
 
 /**

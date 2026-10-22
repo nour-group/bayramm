@@ -29,7 +29,15 @@ import {
   hasDayParts,
   windowText,
 } from "@bayramm/shared/categories";
-import { Dialog, RadioGroup, type RadioOption, SearchField, Select, useToast } from "@bayramm/ui/react";
+import {
+  Dialog,
+  RadioGroup,
+  type RadioOption,
+  SearchField,
+  Select,
+  useNow,
+  useToast,
+} from "@bayramm/ui/react";
 import { type FormEvent, Fragment, type ReactNode, useCallback, useId, useRef, useState } from "react";
 import { type Failure, type Result, useCan, useLoad, useSession } from "../api";
 import { CategoryChip, categoryName, categoryOptions, formatPrice, knownCategory } from "../categories";
@@ -63,6 +71,7 @@ import {
   ReasonPhoneReveal,
   TableWrap,
   toneOf,
+  UpdatedAt,
   useEntityTitle,
   useListSearch,
   usePagedList,
@@ -106,11 +115,11 @@ const OUTCOMES: ReadonlySet<RequestStatus> = new Set(["deal", "declined", "withd
  * Плашка срока: ждёт — «Ответ до 09:00», срок вышел (просрочена и нарушен срок — одно и то же для
  * того, кто разбирает) — «Просрочена 3 ч». Без срока (dueAt) и у разобранных — состояние словами
  */
-export function SlaPill({ sla, dueAt }: { sla: SlaState; dueAt?: string }) {
+export function SlaPill({ sla, dueAt, now }: { sla: SlaState; dueAt?: string; now?: number }) {
   let text = t.sla[sla] ?? sla;
-  if (dueAt !== undefined && sla === "waiting") text = t.slaUntil(formatUntil(dueAt));
+  if (dueAt !== undefined && sla === "waiting") text = t.slaUntil(formatUntil(dueAt, now));
   else if (dueAt !== undefined && (sla === "overdue" || sla === "breached"))
-    text = t.slaOverdue(formatSince(dueAt));
+    text = t.slaOverdue(formatSince(dueAt, now));
   return <Pill tone={toneOf("sla", sla)}>{text}</Pill>;
 }
 
@@ -210,11 +219,14 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
   if (part) params.set("part", part);
   if (listingId) params.set("listingId", listingId);
   if (query.q) params.set("q", query.q);
+  // Список и пилюли «Требуют действия n» перечитываются сами; «Просрочена 3 ч» тикает раз в минуту
   const list = usePagedList<StaffRequestItem, StaffRequestList>(`/staff/requests?${params}`, {
     size: PAGE,
     offset,
     append: phone,
+    live: true,
   });
+  const now = useNow(60_000);
   const data = list.loaded.state === "ready" ? list.loaded.data : null;
   const filtered = Boolean(query.q || sla || status || category || part || listingId);
   // Другой фильтр — с первой страницы
@@ -388,11 +400,12 @@ export function RequestsPage({ dictionaries }: { dictionaries: StaffDictionaries
           ) : (
             <>
               {cards ? (
-                <RequestCards items={list.items} dictionaries={dictionaries} category={category} />
+                <RequestCards items={list.items} dictionaries={dictionaries} category={category} now={now} />
               ) : (
-                <RequestTable items={list.items} dictionaries={dictionaries} category={category} />
+                <RequestTable items={list.items} dictionaries={dictionaries} category={category} now={now} />
               )}
               <ListFooter list={list} offset={offset} size={PAGE} onPage={onPage} />
+              <UpdatedAt at={list.at} />
             </>
           )
         }
@@ -406,6 +419,8 @@ interface RowsProps {
   dictionaries: StaffDictionaries | null;
   /** Фильтр категории: выбрана одна — подпись категории в строке ни к чему */
   category: string | null;
+  /** «Сейчас» для сроков: строки перерисовываются раз в минуту */
+  now: number;
 }
 
 /** «24 окт. · Утро · Свадьба · 180 гостей» — когда и что за событие */
@@ -421,7 +436,7 @@ function eventLine(request: StaffRequestItem, dictionaries: StaffDictionaries | 
 }
 
 /** Карточка телефона — три строки: № и имя с плашкой срока, витрина, событие */
-function RequestCards({ items, dictionaries, category }: RowsProps) {
+function RequestCards({ items, dictionaries, category, now }: RowsProps) {
   return (
     <ul className="rcards">
       {items.map((request) => {
@@ -433,7 +448,7 @@ function RequestCards({ items, dictionaries, category }: RowsProps) {
                 {t.requestNo(request.publicNo)}
                 {request.contactName ? ` · ${request.contactName}` : ""}
               </Link>
-              <SlaPill sla={request.sla} dueAt={request.slaDueAt} />
+              <SlaPill sla={request.sla} dueAt={request.slaDueAt} now={now} />
             </div>
             <p className="rcard-meta">
               {request.listing.name}
@@ -450,7 +465,7 @@ function RequestCards({ items, dictionaries, category }: RowsProps) {
   );
 }
 
-function RequestTable({ items, dictionaries, category }: RowsProps) {
+function RequestTable({ items, dictionaries, category, now }: RowsProps) {
   return (
     <TableWrap label={t.requests}>
       <table className="table">
@@ -491,7 +506,7 @@ function RequestTable({ items, dictionaries, category }: RowsProps) {
                   </span>
                 </td>
                 <td>
-                  <SlaPill sla={request.sla} dueAt={request.slaDueAt} />
+                  <SlaPill sla={request.sla} dueAt={request.slaDueAt} now={now} />
                   {note ? <span className="sub">{note}</span> : null}
                 </td>
               </tr>
@@ -739,6 +754,7 @@ function RequestActions({
     if (!result.ok) return result;
     setContacting(false);
     onChange(result.data);
+    toast(t.contactedDone, { tone: "success" });
     return null;
   };
 
@@ -746,7 +762,7 @@ function RequestActions({
   const paused = request.nextReminderAt !== null;
   return (
     <>
-      <ActionBar label={t.requestActions}>
+      <ActionBar label={t.requestActions} error={failure ? <ErrorText failure={failure} /> : null}>
         <button
           type="button"
           className="btn btn-primary"
@@ -771,7 +787,6 @@ function RequestActions({
           {unreachable ? t.remindUnreachable : t.remindAgainAt(formatMoment(request.nextReminderAt))}
         </p>
       ) : null}
-      {failure && <ErrorText failure={failure} />}
       <PhoneSheet
         open={contacting}
         title={t.markContacted}

@@ -3106,6 +3106,19 @@ a.rcard-title {
   flex: 0 0 auto;
 }
 
+/* Действие не удалось — причина в панели над кнопками, а не в начале страницы */
+.actionbar.has-error {
+  flex-wrap: wrap;
+}
+
+.actionbar-error {
+  flex: 1 0 100%;
+}
+
+.actionbar-error > .notice {
+  margin: 0;
+}
+
 /* Панель действий унесла кнопки вниз — пустая рамка на месте не нужна */
 .panel-actions:empty {
   display: none;

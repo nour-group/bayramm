@@ -3,7 +3,7 @@
 
 import { formatUzPhone } from "@bayramm/shared";
 import type { ListingStatus, PublishBlocker, RevealedListingContacts } from "@bayramm/shared/api/staff";
-import { Dialog } from "@bayramm/ui/react";
+import { Dialog, useRevalidate } from "@bayramm/ui/react";
 import {
   createContext,
   type FormEvent,
@@ -20,6 +20,7 @@ import {
 import { createPortal } from "react-dom";
 import { type Failure, type Loaded, type Result, useLoad, useSession } from "./api";
 import { LabelText } from "./fields";
+import { formatClock } from "./format";
 import { Icon, type IconName } from "./icons";
 import { usePhone } from "./layout";
 import { ReasonField } from "./reason";
@@ -320,7 +321,18 @@ export function offsetOf(page: string | undefined, size: number): number {
  */
 export function usePagedList<I, L extends Paged<I> = Paged<I>>(
   path: string | null,
-  { size, offset, append }: { readonly size: number; readonly offset: number; readonly append: boolean },
+  {
+    size,
+    offset,
+    append,
+    live = false,
+  }: {
+    readonly size: number;
+    readonly offset: number;
+    readonly append: boolean;
+    /** Перечитывать тихо: вернулись во вкладку или Mini App, связь, раз в полторы минуты */
+    readonly live?: boolean;
+  },
 ) {
   const { api } = useSession();
   // «/staff/vendors?» без фильтров — limit и offset сразу после «?»
@@ -336,6 +348,16 @@ export function usePagedList<I, L extends Paged<I> = Paged<I>>(
   const [failure, setFailure] = useState<Failure | null>(null);
   const extra = append && data !== null && more.base === data ? more.items : [];
   const items = data === null ? [] : extra.length > 0 ? [...data.items, ...extra] : data.items;
+
+  // Дописанные «Показать ещё» перечитывание первой страницы срезало бы: тогда ждём смены фильтра
+  const appended = useRef(0);
+  appended.current = extra.length;
+  useRevalidate(
+    () => {
+      if (appended.current === 0) first.reload();
+    },
+    { enabled: live && path !== null && first.loaded.state === "ready" },
+  );
 
   const loadMore = async () => {
     const next = data === null ? null : page(data.items.length + extra.length);
@@ -428,6 +450,12 @@ export function ShowMore({
       {failure ? <ErrorText failure={failure} /> : null}
     </div>
   );
+}
+
+/** «Обновлено 10:42» — у списков, которые перечитываются сами (заявки, модерация) */
+export function UpdatedAt({ at }: { at: number | null }) {
+  if (at === null) return null;
+  return <p className="muted small updated-at">{t.updatedAt(formatClock(at))}</p>;
 }
 
 /**
@@ -912,20 +940,35 @@ export const ActionSlotContext = createContext<HTMLElement | null>(null);
 
 /**
  * Главные действия экрана. На телефоне — панель, прилипшая к низу над нижней навигацией и
- * безопасной зоной; шире — кнопки на месте, как были
+ * безопасной зоной; шире — кнопки на месте, как были. error — почему действие не удалось: на
+ * телефоне — в той же панели над кнопками (там, куда смотрит нажавший), шире — под кнопками
  */
-export function ActionBar({ label, children }: { label: string; children: ReactNode }) {
+export function ActionBar({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: ReactNode;
+  children: ReactNode;
+}) {
   const slot = useContext(ActionSlotContext);
   const phone = usePhone();
   if (phone && slot)
     return createPortal(
       // biome-ignore lint/a11y/useSemanticElements: группа кнопок, а не полей формы
-      <div className="actionbar" role="group" aria-label={label}>
+      <div className={error ? "actionbar has-error" : "actionbar"} role="group" aria-label={label}>
+        {error ? <div className="actionbar-error">{error}</div> : null}
         {children}
       </div>,
       slot,
     );
-  return <div className="acts">{children}</div>;
+  return (
+    <>
+      <div className="acts">{children}</div>
+      {error}
+    </>
+  );
 }
 
 /**
