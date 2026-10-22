@@ -13,6 +13,7 @@ import type { ClientApi } from "../api/types";
 import { CLIENT_CATEGORIES, hasCapacity, hasDistrict } from "../categories";
 import { addDays, isIsoDate } from "../format";
 import { ALL_CATEGORIES, hrefFor } from "../routes";
+import { sessionGet, sessionRemove, sessionSet } from "../storage";
 import { type AttrFilters, NO_ATTRS, readAttrFilters } from "./catalog-filters";
 
 /* Фильтры каталога живут в адресе
@@ -109,6 +110,20 @@ export function searchText(raw: string | null | undefined): string | null {
   return searchQuery(text) === null ? null : text;
 }
 
+/** Дата из каталога — в пределах выбора: с сегодняшнего дня и не дальше DATE_HORIZON_DAYS; иначе null */
+export function catalogDate(value: string | null | undefined, today: string): string | null {
+  return isIsoDate(value) && value >= today && value <= addDays(today, DATE_HORIZON_DAYS) ? value : null;
+}
+
+/* Последняя дата, выбранная в каталоге, — во вкладке: «Сохранённое» показывает занятость на неё */
+const LAST_DATE_KEY = "bayramm.web.catalog-date";
+
+export const rememberCatalogDate = (date: string | null) =>
+  date === null ? sessionRemove(LAST_DATE_KEY) : sessionSet(LAST_DATE_KEY, date);
+
+export const lastCatalogDate = (today: string): string | null =>
+  catalogDate(sessionGet(LAST_DATE_KEY), today);
+
 /** Код города и района — как в справочнике (app.cities, app.districts) */
 const PLACE_CODE = /^[a-z_]{2,30}$/;
 
@@ -131,7 +146,7 @@ export function readFilters(query: URLSearchParams, today: string): CatalogFilte
   const city = query.get("city");
   const district = query.get("district");
   const sort = query.get("sort");
-  const day = isIsoDate(date) && date >= today && date <= addDays(today, DATE_HORIZON_DAYS) ? date : null;
+  const day = catalogDate(date, today);
   const q = searchText(query.get("q"));
   return {
     category: code,

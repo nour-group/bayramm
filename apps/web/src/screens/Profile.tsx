@@ -221,7 +221,14 @@ export function Profile() {
       <h1 className="screen-title" tabIndex={-1}>
         {t.navProfile}
       </h1>
-      {name ? <p className="profile-name">{name}</p> : null}
+      {/* Имя аккаунта на сайте приходит с профилем — строка под него заранее, без сдвига */}
+      {name ? (
+        <p className="profile-name">{name}</p>
+      ) : !user && me.status === "loading" ? (
+        <p className="profile-name" aria-hidden="true">
+          {"\u00a0"}
+        </p>
+      ) : null}
 
       <section className="section" aria-labelledby="profile-lang">
         <h2 className="section-title" id="profile-lang">

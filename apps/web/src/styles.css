@@ -689,6 +689,15 @@ textarea.field-input {
   max-width: 100%;
 }
 
+/* «Сохранённое»: дата — над карточками; подсказка рядом переносится */
+.favorites-date {
+  margin-bottom: 16px;
+}
+
+.favorites-date > p {
+  flex: 1 1 200px;
+}
+
 .filter-row .ui-select-compact {
   max-width: 260px;
 }
@@ -2031,6 +2040,27 @@ textarea.field-input {
 .docs {
   display: grid;
   gap: var(--gap-9);
+}
+
+/* Заготовка строки документа — высотой со строку (summary 48px и рамка) */
+.doc-skeleton {
+  display: block;
+  height: 50px;
+  background: var(--lilac);
+  animation: pulse 1.2s var(--ease-io) infinite alternate;
+}
+
+/* Раздел «Аккаунт», пока профиль грузится: высотой с разделом (способы входа, на сайте — «Выйти») */
+.account-skeleton {
+  display: grid;
+  align-content: start;
+  gap: var(--gap-12);
+  min-height: 150px;
+  margin-top: 12px;
+}
+
+.account-skeleton.with-exit {
+  min-height: 206px;
 }
 
 .doc {

@@ -35,6 +35,7 @@ import {
   noFiltersIn,
   parseGuests,
   readFilters,
+  rememberCatalogDate,
   searchText,
   sortsOf,
   useCatalogFeed,
@@ -229,6 +230,11 @@ export function Catalog() {
   const clearSearch = () => {
     if (filters.q !== null) setFilters({ q: null, sort: null });
   };
+
+  // Выбранная дата — и для «Сохранённого»: там видно, кто из отмеченных свободен в этот день
+  useEffect(() => {
+    if (filters.date !== null) rememberCatalogDate(filters.date);
+  }, [filters.date]);
 
   // Подгрузка при прокрутке к концу. IntersectionObserver есть не везде — тогда кнопка
   const { loadMore } = feed;

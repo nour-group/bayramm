@@ -485,23 +485,31 @@ export async function listCatalog(db: Db, params: CatalogParams): Promise<Catalo
 }
 
 /**
- * Карточки опубликованных листингов по id — в порядке ids, без занятости на дату.
- * Неопубликованных и несуществующих нет: для избранного это «площадка пропала без
- * ошибки». Читает под актором транзакции: гость (GET /catalog/cards) или клиент
- * (избранное) — RLS отдаёт обоим одно и то же
+ * Карточки опубликованных листингов по id — в порядке ids; с датой — и занятость на неё
+ * (app.listing_day_load на карточку: их не больше FAVORITES_MAX). Неопубликованных и
+ * несуществующих нет: для избранного это «площадка пропала без ошибки». Читает под актором
+ * транзакции: гость (GET /catalog/cards) или клиент (избранное) — RLS отдаёт обоим одно и то же
  */
-export async function listingCards(trx: Tx, ids: readonly string[]): Promise<ListingCard[]> {
+export async function listingCards(
+  trx: Tx,
+  ids: readonly string[],
+  date: string | null = null,
+): Promise<ListingCard[]> {
   if (ids.length === 0) return [];
-  const rows = await publicListings(trx, NO_DATE)
+  const rows = await publicListings(trx, date === null ? NO_DATE : { date, category: null })
     .where("l.id", "in", [...ids])
     .execute();
-  const byId = new Map(rows.map((row) => [row.id, toCard(row, null)]));
+  const byId = new Map(rows.map((row) => [row.id, toCard(row, date)]));
   return ids.flatMap((id) => byId.get(id) ?? []);
 }
 
-/** GET /catalog/cards: карточки по id — под гостем, как вся выдача */
-export function getListingCards(db: Db, ids: readonly string[]): Promise<ListingCard[]> {
-  return withActor(db, GUEST, (trx) => listingCards(trx, ids));
+/** GET /catalog/cards: карточки по id (с датой — и занятость на неё) — под гостем, как вся выдача */
+export function getListingCards(
+  db: Db,
+  ids: readonly string[],
+  date: string | null = null,
+): Promise<ListingCard[]> {
+  return withActor(db, GUEST, (trx) => listingCards(trx, ids, date));
 }
 
 // Строго после курсора в порядке (занята, ключ, id): false < true, как в ORDER BY

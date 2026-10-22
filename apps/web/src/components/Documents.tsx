@@ -3,7 +3,7 @@ import { useLang, useServices } from "../context";
 import { useAsync } from "../hooks";
 import { Icon } from "../icons";
 import { Paragraphs } from "./RichText";
-import { ErrorState, Loading } from "./States";
+import { ErrorState } from "./States";
 
 const PURPOSE_TITLE = {
   client_service: "cp_client_service",
@@ -17,7 +17,16 @@ export function Documents() {
   const { t, lang } = useLang();
   const texts = useAsync(`consents:${lang}`, (signal) => api.consentTexts(lang, signal));
 
-  if (texts.status === "loading") return <Loading />;
+  // Пока грузятся — заготовки строк тех же размеров: разделы ниже не прыгают
+  if (texts.status === "loading")
+    return (
+      <div className="docs" role="status">
+        {Object.keys(PURPOSE_TITLE).map((purpose) => (
+          <span key={purpose} className="doc doc-skeleton" aria-hidden="true" />
+        ))}
+        <span className="sr-only">{t.loading}</span>
+      </div>
+    );
   if (texts.status === "error") return <ErrorState onRetry={texts.reload} />;
   if (texts.data.items.length === 0) return <p className="muted">{t.docsEmpty}</p>;
 

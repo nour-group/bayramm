@@ -150,7 +150,23 @@ export function AccountSection() {
   const profile = me.status === "ready" ? me.data : null;
   const ready = methods.status === "ready" ? methods.data : null;
 
-  if (deleted || !canSignIn(identity) || profile === null) return null;
+  if (deleted || !canSignIn(identity)) return null;
+  // Аккаунт ещё грузится — место под раздел: разделы ниже не прыгают, когда он придёт
+  if (profile === null)
+    return me.status === "loading" ? (
+      <section className="section" aria-labelledby="profile-account" aria-busy="true">
+        <h2 className="section-title" id="profile-account">
+          {t.accTitle}
+        </h2>
+        <div
+          className={identity === "site" ? "account-skeleton with-exit" : "account-skeleton"}
+          aria-hidden="true"
+        >
+          <span className="skeleton short" />
+          <span className="skeleton short" />
+        </div>
+      </section>
+    ) : null;
 
   const signOut = async () => {
     setLeaving(true);

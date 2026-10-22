@@ -500,6 +500,13 @@ describe("язык и оболочка", () => {
     expect(about?.textContent).not.toMatch(/Пустой каталог|подписк|оферт/i);
   });
 
+  it("«Документы»: «О площадке» — правила для клиента, без внутренних подробностей", async () => {
+    await mount({ path: "/docs" });
+    const about = await waitFor(() => document.querySelector('[aria-labelledby="docs-about"]'), "документы");
+    expect(about.textContent).toContain("12 часов");
+    expect(about.textContent).not.toMatch(/Пустой каталог|подписк|оферт|проверенных/i);
+  });
+
   it("профиль: тексты согласий из API раскрываются", async () => {
     await mount({ path: "/profile" });
     await waitFor(() => document.querySelectorAll("details.doc").length === 3, "документы");

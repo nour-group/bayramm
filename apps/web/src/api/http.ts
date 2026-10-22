@@ -183,10 +183,10 @@ export function createHttpApi({
     consentTexts: (locale: Locale, signal) => get<ConsentTexts>("/consent-texts", signal, { locale }),
     // Из способов входа: отдельный GET /telegram/bot не нужен (он остаётся для старых сборок)
     bot: async (signal) => botInfoOf(await get<AuthMethods>("/auth/methods", signal)),
-    listingCards: (ids, signal) =>
+    listingCards: (ids, signal, date) =>
       ids.length === 0
         ? Promise.resolve({ items: [] })
-        : get<ListingCards>("/catalog/cards", signal, { ids: ids.join(",") }),
+        : get<ListingCards>("/catalog/cards", signal, { ids: ids.join(","), date: date ?? undefined }),
     createRequest: (body: CreateRequest) =>
       call<RequestCreated>(fetchFn, base, "/requests", { method: "POST", body, auth: session, source }),
     myRequests: (signal) =>

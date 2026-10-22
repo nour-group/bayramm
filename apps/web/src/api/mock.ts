@@ -837,11 +837,11 @@ export function createMockApi(options: MockOptions = {}): MockApi {
       contactEvents.push({ slug, action: channel, signedIn });
     },
 
-    listingCards: (ids, signal) =>
+    listingCards: (ids, signal, date) =>
       respond("listingCards", signal, () => ({
         items: ids.flatMap((id) => {
           const listing = published(id);
-          return listing ? [toCard(listing, undefined)] : [];
+          return listing ? [toCard(listing, date ?? undefined)] : [];
         }),
       })),
 
