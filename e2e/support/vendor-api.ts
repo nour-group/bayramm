@@ -25,6 +25,7 @@ import type {
   VendorMe,
   VendorPhoto,
   VendorPhotoList,
+  VendorRequestDay,
   VendorRequestDetail,
   VendorRequestItem,
   VendorRequestPatch,
@@ -1031,8 +1032,21 @@ export async function mockVendorApi(
       const tab = (url.searchParams.get("tab") ?? "waiting") as RequestTab;
       const listingId = url.searchParams.get("listingId");
       state.inboxQueries.push({ tab, listingId });
+      // Поиск, как у API: цифры — № заявки или конец номера клиента (от 4), иначе — часть имени
+      const q = (url.searchParams.get("q") ?? "").trim();
+      const digits = q.replace(/^[№#]/, "").replace(/[\s()+-]/g, "");
+      const date = url.searchParams.get("date");
+      const found = (r: VendorRequestDetail) =>
+        (date === null || r.eventDate === date) &&
+        (q === "" ||
+          (/^[0-9]+$/.test(digits)
+            ? String(r.publicNo) === digits ||
+              (digits.length >= 4 && (r.contact?.phone ?? "").endsWith(digits.slice(-9)))
+            : (r.contactName ?? "").toLowerCase().includes(q.toLowerCase())));
       // Чужая или несуществующая витрина — пустой список, как у API
-      const all = [...requests.values()].filter((r) => listingId === null || r.listing.id === listingId);
+      const all = [...requests.values()].filter(
+        (r) => (listingId === null || r.listing.id === listingId) && found(r),
+      );
       const counts = { waiting: 0, active: 0, closed: 0 };
       for (const r of all) counts[tabOf(r.status)]++;
       // Просрочено — ждут первого ответа, срок вышел; по всем вкладкам, как у API
@@ -1042,8 +1056,11 @@ export async function mockVendorApi(
           r.sla.firstResponseAt === null &&
           Date.parse(r.sla.dueAt) <= NOW.getTime(),
       ).length;
-      const items = all.filter((r) => tabOf(r.status) === tab).map(listItem);
-      return json(route, 200, { items, nextCursor: null, counts, overdue });
+      const shown = all.filter((r) => tabOf(r.status) === tab);
+      // По дате события — ближайшие сверху
+      if (url.searchParams.get("sort") === "event")
+        shown.sort((a, b) => a.eventDate.localeCompare(b.eventDate) || a.publicNo - b.publicNo);
+      return json(route, 200, { items: shown.map(listItem), nextCursor: null, counts, overdue });
     }
     const requestMatch = /^\/vendor\/requests\/([0-9a-f-]{36})(\/call|\/undo)?$/.exec(path);
     if (requestMatch?.[1]) {
@@ -1072,6 +1089,18 @@ export async function mockVendorApi(
         return route.fulfill({ status: 204 });
       }
       if (method === "GET") {
+        // Занятость даты — как API: у ждущих решения, у витрин с календарём
+        const eventDay = (r: VendorRequestDetail): VendorRequestDay | null => {
+          const cal = state.calendars.get(r.listing.id);
+          const lead = categoryConfig(r.listing.categoryCode)?.availability === "lead";
+          if (!cal || lead || !["new", "viewed", "contacted"].includes(r.status)) return null;
+          return {
+            sessions: { ...cal.sessions, parallelCapacity: cal.capacity },
+            busy: cal.busy.get(r.eventDate) ?? null,
+            parts: [...cal.parts.values()].filter((p) => p.day === r.eventDate),
+            bookings: cal.bookings.filter((b) => b.day === r.eventDate),
+          };
+        };
         // Открытие новой отмечает её просмотренной — как API
         if (current.status === "new") {
           const viewed: VendorRequestDetail = {
@@ -1080,9 +1109,9 @@ export async function mockVendorApi(
             history: [...current.history, { status: "viewed", at: NOW.toISOString(), by: "vendor_user" }],
           };
           requests.set(id, viewed);
-          return json(route, 200, viewed);
+          return json(route, 200, { ...viewed, eventDay: eventDay(viewed) });
         }
-        return json(route, 200, current);
+        return json(route, 200, { ...current, eventDay: eventDay(current) });
       }
       if (method === "PATCH") {
         const body = request.postDataJSON() as VendorRequestPatch;

@@ -53,8 +53,9 @@ async function chooseVitrina(page: Page, name: string) {
     await page.locator(".side-vitrinas").getByRole("button", { name }).click();
     return;
   }
-  // До четырёх витрин — пилюли (ListingPicker.tsx)
-  await page.locator("main .vitrina-pills").getByRole("button", { name }).click();
+  // Больше двух витрин — список выбора (ListingPicker.tsx)
+  await page.locator("main .vitrina-select button").click();
+  await page.getByRole("option").filter({ hasText: name }).click();
 }
 
 test.describe("фото: порядок и обложка", () => {
@@ -81,11 +82,17 @@ test.describe("фото: порядок и обложка", () => {
     await expectNoAxeViolations(page, "фото: шторка действий");
     await expectHitAreas(page, "фото: шторка действий", CONTROLS);
 
+    // В шторке — сам снимок
+    await expect(sheet.locator("img.photo-sheet-img")).toBeVisible();
     await sheet.getByRole("button", { name: t.photoLater }).click();
-    await expect(sheet).toHaveCount(0);
     await expect.poll(() => order(page)).toEqual(["1", "3", "2", "4"]);
     expect(api.photoWrites).toHaveLength(1);
     expect(api.photoWrites[0]).toMatch(/^PUT order /);
+    // Шторка остаётся открытой: фото — уже третье, что сделано — строкой в ней
+    await expect(sheet.getByRole("heading", { name: fill(t.photoSheetTitle, { n: 3 }) })).toBeVisible();
+    await expect(sheet.getByRole("status")).toHaveText(t.photoMoved);
+    await sheet.locator(".ui-dialog-head").getByRole("button", { name: t.close }).click();
+    await expect(sheet).toHaveCount(0);
     // Фокус вернулся на плитку того фото, которое двигали (теперь оно третье)
     await expect(tile(page, 3)).toBeFocused();
 
@@ -98,6 +105,7 @@ test.describe("фото: порядок и обложка", () => {
     ]);
     await page.getByRole("dialog").getByRole("button", { name: t.photoMakeCover }).click();
     await expect.poll(() => order(page)).toEqual(["2", "1", "3", "4"]);
+    await expect(page.getByRole("dialog").getByRole("status")).toHaveText(t.photoCoverSet);
     await expect(section.locator(".photo-chip").first()).toHaveText(t.photoCover);
     expect(api.photoWrites[1]).toMatch(/^POST cover /);
     expect(api.unexpected).toEqual([]);
@@ -270,8 +278,11 @@ test.describe("контакты витрины", () => {
     await expectNoAxeViolations(page, "контакты: на проверке");
     await expectHitAreas(page, "контакты: на проверке", CONTROLS);
 
-    // Отозвать: запрос ушёл
+    // Отозвать — через подтверждение: запрос ушёл
     await card.getByRole("button", { name: t.contactsWithdraw }).click();
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText(t.contactsWithdrawQ);
+    await confirm.getByRole("button", { name: t.contactsWithdraw }).click();
     await expect(card.locator(".contact-pending")).toHaveCount(0);
     expect(api.contactWrites.at(-1)).toBe("withdraw");
     await expect(card.getByRole("button", { name: t.contactsEdit })).toBeFocused();
@@ -295,10 +306,9 @@ test.describe("контакты витрины", () => {
     expect(api.contactWrites).toEqual([{ phone: "+998000000001", telegram: "kadr_studio" }]);
     await expect(card).toContainText("@kadr_studio");
     await expect(card.locator(".contact-pending")).toHaveCount(0);
-    // Те же значения ещё раз — «ничего не изменили»
+    // Ничего не изменили — отправить нечего: кнопка ждёт правки
     await card.getByRole("button", { name: t.contactsEdit }).click();
-    await page.getByRole("dialog").getByRole("button", { name: t.contactsSave }).click();
-    await expect(page.getByRole("dialog").getByRole("alert")).toHaveText(t.err_no_changes);
+    await expect(page.getByRole("dialog").getByRole("button", { name: t.contactsSave })).toBeDisabled();
     expect(api.unexpected).toEqual([]);
   });
 
