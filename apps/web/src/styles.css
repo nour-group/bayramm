@@ -887,11 +887,14 @@ textarea.field-input {
   color: var(--coral);
 }
 
-/* Как сравнили цены за гостя и за мероприятие — строкой над сеткой с планшета (ниже, @media
-   768px); на телефоне — у порядка в шторке «Фильтры» (.sheet-hint) */
+/* Как сравнили цены — строкой над сеткой. У раздела со шторкой «Фильтры» (.in-sheet) на телефоне
+   строки нет — она у порядка в шторке (.sheet-hint); с планшета (ниже, @media 768px) — над сеткой */
 .sort-hint {
-  display: none;
   margin: 0 0 12px;
+}
+
+.sort-hint.in-sheet {
+  display: none;
 }
 
 .sheet-hint {
@@ -2897,7 +2900,7 @@ textarea.field-input {
 @media (min-width: 768px) {
   .catalog-head .cat-lead,
   .catalog-head .catalog-note,
-  .sort-hint {
+  .sort-hint.in-sheet {
     display: block;
   }
 

@@ -214,11 +214,16 @@ async function insertRequest(
 // ── «Мои заявки» ───────────────────────────────────────────────────────────
 
 // Срок ответа прошёл, а вендор сам не ответил: клиенту предлагаются похожие. «Связались»,
-// отмеченное сотрудником (first_response_by = staff), — не ответ вендора, пока заявка не сдвинулась
-// дальше «связались»
+// отмеченное сотрудником (first_response_by = staff), — не ответ вендора, пока сам вендор ни разу не
+// ответил: ни «связались», ни «договорились», ни отказа от него в истории статусов (отказал и снова
+// «связались» — ответил). Историю своей заявки клиент читает (request_status_log_read →
+// app.can_see_request), поэтому условие под его актором работает
 const SLA_BREACHED = sql<boolean>`(r.sla_due_at <= now() and (
   (r.status in ('new', 'viewed') and r.first_response_at is null)
-  or (r.status = 'contacted' and r.first_response_by = 'staff')))`;
+  or (r.status = 'contacted' and r.first_response_by = 'staff' and not exists (
+    select 1 from app.request_status_log sl
+    where sl.request_id = r.id and sl.actor_kind = 'vendor_user'
+      and sl.to_status in ('contacted', 'deal', 'declined')))))`;
 
 // Заявки клиента с листингом и его обложкой. Листинг клиенту виден и после
 // снятия с публикации (RLS: есть его заявка); фото — только публичные

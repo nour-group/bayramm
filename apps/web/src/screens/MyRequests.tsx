@@ -71,10 +71,12 @@ function RequestItem({
   }, [highlighted]);
 
   const waiting = WAITING.includes(request.status) && request.firstResponseAt === null;
-  // «Связались» отметила команда, а не исполнитель: он ещё не ответил сам
+  // Первым «связались» отметила команда, а не исполнитель. Пока заявка в «связались», он сам ещё не
+  // ответил; дальше (договорились, отказ, отозвана) отметка ничего не говорит — строки о ней нет
   const byTeam = request.firstResponseBy === "staff";
+  const teamOnly = byTeam && request.status === "contacted";
   // Срок прошёл, а исполнитель сам не ответил (сервер считает и отметку команды) — похожие
-  const breached = (waiting || byTeam) && request.slaBreached;
+  const breached = (waiting || teamOnly) && request.slaBreached;
   const left = hoursLeft(request.slaDueAt, current);
   // Похожие — та же категория и дата; гости — где вместимость, район — где он есть
   const category = request.listing.categoryCode;
@@ -169,13 +171,14 @@ function RequestItem({
         </div>
       ) : null}
 
-      {/* Отметка команды — не ответ исполнителя: так же говорит бот (contactedByTeam) */}
-      {request.firstResponseAt && byTeam ? (
+      {/* Отметка команды — не ответ исполнителя: так же говорит бот (contactedByTeam). Время ответа
+          от неё не считаем — его дал не исполнитель */}
+      {teamOnly ? (
         <p className="req-sla">
           <Icon name="checkFill" size={14} />
           <span>{t.contactedByTeam}</span>
         </p>
-      ) : request.firstResponseAt ? (
+      ) : request.firstResponseAt && !byTeam ? (
         <p className="req-sla">
           <Icon name="checkFill" size={14} />
           <span>

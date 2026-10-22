@@ -302,6 +302,24 @@ describe("мои заявки", () => {
     expect(team?.querySelector(".req-breached a")?.textContent).toBe("Показать похожие");
   });
 
+  it("«связались» от команды, потом отказ исполнителя — ни «команда связалась», ни времени ответа", async () => {
+    const team = requests.at(-1);
+    if (team?.firstResponseBy !== "staff") throw new Error("нет заявки с отметкой команды");
+    const declined = {
+      ...team,
+      status: "declined" as const,
+      declineReason: "busy" as const,
+      slaBreached: false,
+    };
+    await mount({ path: "/requests", mock: { requests: [declined] } });
+    await waitFor(() => document.querySelector(".req"), "заявка");
+    const item = document.querySelector(".req");
+    expect(item?.textContent).toContain("Причина: дата занята");
+    expect(item?.textContent).not.toContain("Команда Bayramm связалась");
+    expect(item?.textContent).not.toContain("ответили за");
+    expect(item?.querySelector(".req-breached")).toBeNull();
+  });
+
   it("отозвать — с подтверждением, кнопки одного размера", async () => {
     await mount({ path: "/requests", mock: { requests } });
     await waitFor(() => document.querySelectorAll(".req").length > 0, "заявки");

@@ -745,6 +745,63 @@ describe("заявка: гость → клиент → мои заявки → 
   });
 });
 
+describe("«связались» отметила команда", () => {
+  /** В обход триггеров, как реплика: история и статус — как после отметки сотрудника и ответа вендора */
+  async function replica(text: string, params: unknown[]): Promise<void> {
+    await admin.query("begin");
+    try {
+      await admin.query("set local session_replication_role = replica");
+      await admin.query(text, params);
+      await admin.query("commit");
+    } catch (error) {
+      await admin.query("rollback");
+      throw error;
+    }
+  }
+
+  it("срок прошёл, вендор сам не ответил — похожие; ответил позже (отказ → снова связались) — нет", async () => {
+    const token = await newClient();
+    const created = await json<RequestCreated>(
+      await post(
+        "/requests",
+        token,
+        requestBody({ listingId: listings.big.id, eventDate: addDays(today, 45) }),
+      ),
+      201,
+    );
+    await replica(
+      `update app.requests set status = 'contacted', sla_due_at = now() - interval '1 hour',
+                               first_response_at = now(), first_response_by = 'staff'
+       where id = $1`,
+      [created.id],
+    );
+    await replica(
+      `insert into app.request_status_log (request_id, from_status, to_status, actor_kind, source)
+       values ($1, 'new', 'contacted', 'staff', 'admin')`,
+      [created.id],
+    );
+    expect(await myRequests(token)).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        status: "contacted",
+        firstResponseBy: "staff",
+        slaBreached: true,
+      }),
+    ]);
+
+    // Вендор отказал и снова «связались»: это его ответ — похожих больше нет
+    await replica(
+      `insert into app.request_status_log (request_id, from_status, to_status, actor_kind, source)
+       values ($1, 'contacted', 'declined', 'vendor_user', 'vendor_cabinet'),
+              ($1, 'declined', 'contacted', 'vendor_user', 'vendor_cabinet')`,
+      [created.id],
+    );
+    expect(await myRequests(token)).toEqual([
+      expect.objectContaining({ status: "contacted", firstResponseBy: "staff", slaBreached: false }),
+    ]);
+  });
+});
+
 describe("лимит заявок клиента за сутки", () => {
   it("сверх client_requests_per_day — 429 daily_request_limit", async () => {
     const { rows } = await admin.query(

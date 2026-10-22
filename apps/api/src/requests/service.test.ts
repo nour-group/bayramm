@@ -362,7 +362,7 @@ describe("listClientRequests", () => {
     expect(query?.sql).toContain('order by "r"."created_at" desc, "r"."id" desc limit $');
     // Срок прошёл без ответа вендора; «связались» от сотрудника — не его ответ
     expect(query?.sql.replace(/\s+/g, " ")).toContain(
-      "(r.sla_due_at <= now() and ( (r.status in ('new', 'viewed') and r.first_response_at is null) or (r.status = 'contacted' and r.first_response_by = 'staff'))) as \"sla_breached\"",
+      "(r.sla_due_at <= now() and ( (r.status in ('new', 'viewed') and r.first_response_at is null) or (r.status = 'contacted' and r.first_response_by = 'staff' and not exists ( select 1 from app.request_status_log sl where sl.request_id = r.id and sl.actor_kind = 'vendor_user' and sl.to_status in ('contacted', 'deal', 'declined'))))) as \"sla_breached\"",
     );
     expect(items).toEqual([
       {

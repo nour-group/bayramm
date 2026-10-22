@@ -23,19 +23,24 @@ const firstCard = (page: Page) =>
     }));
 
 test.describe("первый экран каталога на телефоне", () => {
-  for (const path of [PATHS.catalog, PATHS.category("hall")]) {
+  // «Все»: шторки «Фильтры» нет — как сравнили цены (единицы разные), остаётся над выдачей
+  for (const [path, maxTop, hint] of [
+    [PATHS.catalog, 470, true],
+    [PATHS.category("hall"), 422, false],
+  ] as const) {
     test(`сайт 390×844 ${path}: карточка начинается в верхней половине, название — на первом экране`, async ({
       page,
     }) => {
       await prepare(page);
       await open(page, path, ".catalog .card", { guest: true });
       const card = await firstCard(page);
-      expect(card.top, "верх первой карточки").toBeLessThanOrEqual(422);
+      expect(card.top, "верх первой карточки").toBeLessThanOrEqual(maxTop);
       expect(card.nameBottom, "название первой карточки").toBeLessThanOrEqual(844);
       // Пояснения — не на телефоне
       await expect(page.locator(".catalog-head .catalog-note")).toBeHidden();
       await expect(page.locator(".catalog-head .cat-lead")).toBeHidden();
-      await expect(page.locator(".catalog-list .sort-hint")).toBeHidden();
+      if (hint) await expect(page.locator(".catalog-list .sort-hint")).toHaveText(ru.sortHintUnits);
+      else await expect(page.locator(".catalog-list .sort-hint")).toBeHidden();
     });
   }
 

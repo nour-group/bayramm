@@ -439,9 +439,12 @@ export function Catalog() {
         ) : null}
 
         <div className="catalog-list">
-          {/* Как сравнили цены — над сеткой с планшета; на телефоне — у порядка в шторке
-              «Фильтры» (у карточки за мероприятие и так «≈ N за гостя») */}
-          {sortHint && items.length > 0 ? <p className="muted small sort-hint">{sortHint}</p> : null}
+          {/* Как сравнили цены — над сеткой. У раздела с шторкой «Фильтры» на телефоне — только в
+              ней, у порядка (у карточки за мероприятие и так «≈ N за гостя»); без шторки («Все»,
+              разделы без полей витрины) — здесь на любой ширине */}
+          {sortHint && items.length > 0 ? (
+            <p className={side ? "muted small sort-hint in-sheet" : "muted small sort-hint"}>{sortHint}</p>
+          ) : null}
 
           {feed.status === "loading" ? <CardsLoading /> : null}
           {feed.status === "error" ? <ErrorState onRetry={feed.retry} /> : null}
@@ -562,7 +565,7 @@ export function Catalog() {
               onChange={(sort) => setFilters({ sort: sort === defaultSort ? null : sort })}
             />
             {/* Как сравнили цены — здесь, у порядка: на телефоне над выдачей её нет */}
-            {sortHint ? <p className="muted small sheet-hint">{sortHint}</p> : null}
+            {sortHint && side ? <p className="muted small sheet-hint">{sortHint}</p> : null}
           </fieldset>
           {category ? (
             <AttrFiltersForm
