@@ -554,6 +554,9 @@ describe("заявки вендора A", () => {
       ["new", "system"],
       ["viewed", "vendor_user"],
     ]);
+    // Занятость даты заявки — как в календаре кабинета: день пока свободен
+    expect(detail.eventDay).toMatchObject({ busy: null, parts: [], bookings: [] });
+    expect(detail.eventDay?.sessions.mode).toBeDefined();
 
     const { rows: log } = await admin.query<{ actor_id: string; source: string }>(
       "select actor_id, source from app.request_status_log where request_id = $1 and to_status = 'viewed'",
@@ -577,6 +580,30 @@ describe("заявки вендора A", () => {
       await call("/vendor/requests?tab=new", bearer(A.token))
     ).json()) as VendorRequestPage;
     expect(legacy.items.map((r) => r.id)).toEqual(page.items.map((r) => r.id));
+  });
+
+  it("поиск во входящих: конец номера и имя — только свои заявки; дата праздника; по дате события", async () => {
+    const ids = async (query: string) =>
+      (
+        (await (
+          await call(`/vendor/requests?tab=waiting&${query}`, bearer(A.token))
+        ).json()) as VendorRequestPage
+      ).items.map((r) => r.id);
+    const byPhone = await ids("q=0301");
+    expect(byPhone).toEqual(expect.arrayContaining([ra1.id, ra2.id]));
+    expect(byPhone).not.toContain(rb.id);
+    expect(await ids(`q=${encodeURIComponent("client te")}`)).toEqual(
+      expect.arrayContaining([ra1.id, ra2.id]),
+    );
+    expect(await ids("q=9999")).toEqual([]);
+    expect(await ids(`date=${ra2.eventDate}`)).toEqual([ra2.id]);
+    expect(await ids("sort=event")).toEqual([ra1.id, ra2.id]);
+    // Поиск — не чтение номера: в журнал доступа к ПДн ничего не пишется
+    const { rows } = await admin.query<{ n: number }>(
+      "select count(*)::int as n from app.pii_access_log where subject_id = $1",
+      [ra2.id],
+    );
+    expect(rows[0]?.n).toBe(0);
   });
 
   it("звонок клиенту — событие в журнале действий, статус не меняется", async () => {

@@ -10,6 +10,11 @@
 // только через readRequestPhone (db/pii), каждое чтение — в pii_access_log.
 // Какие переходы статусов разрешены, решает база (app.request_transitions);
 // отказ «занято» сам занимает дату в календаре (триггер).
+//
+// Поиск во входящих (q): номер заявки, имя клиента или конец его номера (от 4 цифр,
+// requestIdsByPhoneTail из db/pii — номер не раскрывается). Запрос нигде не сохраняется и не
+// пишется в лог: в SQL — только параметром. Ещё фильтр «дата праздника» (date) и порядок «по
+// дате события» (sort=event) — у любой вкладки; счётчики вкладок — с теми же фильтрами.
 
 import {
   DECLINE_NOTE_MAX,
@@ -20,6 +25,7 @@ import {
   type RequestTab,
   TAB_STATUSES,
   VENDOR_TARGET_STATUSES,
+  type VendorRequestDay,
   type VendorRequestDetail,
   type VendorRequestItem,
   type VendorRequestPage,
@@ -28,11 +34,13 @@ import {
 } from "@bayramm/shared/api/vendor";
 import type { RequestDetails } from "@bayramm/shared/categories";
 import { sql } from "kysely";
-import { dayPartsOf, requestWindowsOf } from "../calendar/sessions";
+import { availabilityModeOf, dayPartsOf, requestWindowsOf, sessionsOfRow } from "../calendar/sessions";
 import { roleActorKind, type Tx, type VendorActor, withActor } from "../db/actor";
 import type { Db } from "../db/client";
-import { readRequestPhone, requestContactsAs } from "../db/pii";
+import { readRequestPhone, requestContactsAs, requestIdsByPhoneTail } from "../db/pii";
 import { ApiError, notFound } from "../errors";
+import { partsCalendar, toBusyDay } from "./calendar";
+import { isIsoDate, tashkentToday } from "./dates";
 
 export const PAGE_LIMIT_DEFAULT = 30;
 export const PAGE_LIMIT_MAX = 50;
@@ -60,7 +68,16 @@ const invalid = (field: string) => new ApiError(422, "invalid_input", "Invalid i
 /** Позиция последней заявки страницы */
 export type InboxCursor =
   | { readonly kind: "deadline"; readonly answered: boolean; readonly dueUs: number; readonly no: number }
-  | { readonly kind: "newest"; readonly no: number };
+  | { readonly kind: "newest"; readonly no: number }
+  | { readonly kind: "event"; readonly date: string; readonly no: number };
+
+/** Что ищут во входящих: цифры (номер заявки или конец номера клиента) или имя клиента */
+export type InboxSearch =
+  | { readonly kind: "digits"; readonly digits: string }
+  | { readonly kind: "name"; readonly text: string };
+
+/** Порядок входящих: как всегда (срок ответа, новые) или по дате события, ближайшие сверху */
+export type InboxSort = "default" | "event";
 
 export interface ListQuery {
   tab: RequestTab;
@@ -69,13 +86,60 @@ export interface ListQuery {
   /** После какой заявки продолжать; null — первая страница */
   after: InboxCursor | null;
   limit: number;
+  /** Поиск; нет — все заявки вкладки */
+  search?: InboxSearch | null;
+  /** Только заявки на эту дату события ("YYYY-MM-DD") */
+  date?: string | null;
+  sort?: InboxSort;
+}
+
+/** Длиннее — не поиск, а что-то не то (как у каталога) */
+export const SEARCH_MAX = 64;
+
+/**
+ * Строка поиска: цифры (можно с «№», пробелами, «+», скобками и дефисами — как пишут номер) —
+ * номер заявки или конец номера клиента; иначе — часть имени, от двух знаков
+ */
+export function parseSearch(raw: string | undefined): InboxSearch | null {
+  if (raw === undefined) return null;
+  const text = raw.trim();
+  if (text === "") return null;
+  if (Array.from(text).length > SEARCH_MAX) throw invalid("q");
+  const digits = text.replace(/^[№#]/, "").replace(/[\s()+-]/g, "");
+  if (/^[0-9]{1,15}$/.test(digits)) return { kind: "digits", digits };
+  return Array.from(text).length < 2 ? null : { kind: "name", text };
+}
+
+const likeText = (text: string) => `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
+/** Условие поиска для запроса с заявкой r и контактом rc (имя видно только по согласию) */
+function searchMatch(search: InboxSearch) {
+  if (search.kind === "name") return sql<boolean>`rc.contact_name ilike ${likeText(search.text)}`;
+  const byNo = sql<boolean>`r.public_no = ${search.digits}::bigint`;
+  // Номер клиента: от четырёх последних цифр; длиннее девяти — это весь номер, берём хвост
+  if (search.digits.length < 4) return byNo;
+  return sql<boolean>`(${byNo} or r.id in (${requestIdsByPhoneTail(search.digits.slice(-9))}))`;
 }
 
 const NEWEST_CURSOR_RE = /^[1-9][0-9]{0,15}$/;
 const DEADLINE_CURSOR_RE = /^([01])\.([1-9][0-9]{0,16})\.([1-9][0-9]{0,15})$/;
+const EVENT_CURSOR_RE = /^([0-9]{4}-[0-9]{2}-[0-9]{2})\.([1-9][0-9]{0,15})$/;
 
-/** Курсор вкладки: у закрытой — номер заявки, у открытых — срок ответа и номер */
-export function parseInboxCursor(tab: RequestTab, value: string): InboxCursor | null {
+/**
+ * Курсор вкладки: у закрытой — номер заявки, у открытых — срок ответа и номер; по дате события —
+ * дата и номер (у любой вкладки)
+ */
+export function parseInboxCursor(
+  tab: RequestTab,
+  value: string,
+  sort: InboxSort = "default",
+): InboxCursor | null {
+  if (sort === "event") {
+    const match = EVENT_CURSOR_RE.exec(value);
+    if (!match?.[1] || !isIsoDate(match[1])) return null;
+    const no = Number(match[2]);
+    return Number.isSafeInteger(no) ? { kind: "event", date: match[1], no } : null;
+  }
   if (tab === "closed") {
     return NEWEST_CURSOR_RE.test(value) ? { kind: "newest", no: Number(value) } : null;
   }
@@ -88,6 +152,7 @@ export function parseInboxCursor(tab: RequestTab, value: string): InboxCursor | 
 }
 
 export function formatInboxCursor(cursor: InboxCursor): string {
+  if (cursor.kind === "event") return `${cursor.date}.${cursor.no}`;
   return cursor.kind === "newest"
     ? String(cursor.no)
     : `${cursor.answered ? 1 : 0}.${cursor.dueUs}.${cursor.no}`;
@@ -101,10 +166,23 @@ export function parseListQuery(query: Record<string, string | undefined>): ListQ
   const tab = Object.hasOwn(LEGACY_TABS, asked) ? LEGACY_TABS[asked] : asked;
   if (tab === undefined || !(REQUEST_TABS as readonly string[]).includes(tab)) throw invalid("tab");
 
+  let sort: InboxSort = "default";
+  if (query.sort !== undefined && query.sort !== "") {
+    if (query.sort !== "event" && query.sort !== "default") throw invalid("sort");
+    sort = query.sort;
+  }
+
   let after: InboxCursor | null = null;
   if (query.cursor !== undefined) {
-    after = parseInboxCursor(tab as RequestTab, query.cursor);
+    after = parseInboxCursor(tab as RequestTab, query.cursor, sort);
     if (after === null) throw invalid("cursor");
+  }
+
+  const search = parseSearch(query.q);
+  let date: string | null = null;
+  if (query.date !== undefined && query.date !== "") {
+    if (!isIsoDate(query.date)) throw invalid("date");
+    date = query.date;
   }
 
   let listingId: string | null = null;
@@ -119,7 +197,15 @@ export function parseListQuery(query: Record<string, string | undefined>): ListQ
     limit = Number(query.limit);
     if (limit < 1 || limit > PAGE_LIMIT_MAX) throw invalid("limit");
   }
-  return { tab: tab as RequestTab, listingId, after, limit };
+  return {
+    tab: tab as RequestTab,
+    listingId,
+    after,
+    limit,
+    ...(search ? { search } : {}),
+    ...(date ? { date } : {}),
+    ...(sort === "event" ? { sort } : {}),
+  };
 }
 
 export function parsePatch(body: unknown): VendorRequestPatch {
@@ -243,48 +329,69 @@ const DUE_US = sql<string>`(extract(epoch from r.sla_due_at) * 1000000)::bigint`
  */
 export async function listRequests(db: Db, actor: VendorActor, query: ListQuery): Promise<VendorRequestPage> {
   return withActor(db, actor, async (trx) => {
+    const { search, date } = query;
     const base = requestsOf(trx, actor)
       .select([ANSWERED.as("answered"), DUE_US.as("due_us")])
       .where("r.status", "in", [...TAB_STATUSES[query.tab]])
       .$if(typeof query.listingId === "string", (qb) =>
         qb.where("r.listing_id", "=", query.listingId as string),
-      );
+      )
+      .$if(Boolean(search), (qb) => qb.where(searchMatch(search as InboxSearch)))
+      .$if(Boolean(date), (qb) => qb.where("r.event_date", "=", date as string));
     const { after } = query;
     const rows =
-      query.tab === "closed"
+      query.sort === "event"
         ? await base
-            .$if(after?.kind === "newest", (qb) => qb.where("r.public_no", "<", String(after?.no)))
-            .orderBy("r.public_no", "desc")
-            .limit(query.limit + 1)
-            .execute()
-        : await base
-            .$if(after?.kind === "deadline", (qb) => {
-              const c = after as Extract<InboxCursor, { kind: "deadline" }>;
-              return qb.where(
-                sql<boolean>`(${ANSWERED}, ${DUE_US}, r.public_no) > (${c.answered}::boolean, ${c.dueUs}::bigint, ${c.no}::bigint)`,
-              );
+            .$if(after?.kind === "event", (qb) => {
+              const c = after as Extract<InboxCursor, { kind: "event" }>;
+              return qb.where(sql<boolean>`(r.event_date, r.public_no) > (${c.date}::date, ${c.no}::bigint)`);
             })
-            .orderBy(ANSWERED)
-            .orderBy(DUE_US)
+            .orderBy("r.event_date")
             .orderBy("r.public_no")
             .limit(query.limit + 1)
-            .execute();
+            .execute()
+        : query.tab === "closed"
+          ? await base
+              .$if(after?.kind === "newest", (qb) => qb.where("r.public_no", "<", String(after?.no)))
+              .orderBy("r.public_no", "desc")
+              .limit(query.limit + 1)
+              .execute()
+          : await base
+              .$if(after?.kind === "deadline", (qb) => {
+                const c = after as Extract<InboxCursor, { kind: "deadline" }>;
+                return qb.where(
+                  sql<boolean>`(${ANSWERED}, ${DUE_US}, r.public_no) > (${c.answered}::boolean, ${c.dueUs}::bigint, ${c.no}::bigint)`,
+                );
+              })
+              .orderBy(ANSWERED)
+              .orderBy(DUE_US)
+              .orderBy("r.public_no")
+              .limit(query.limit + 1)
+              .execute();
 
-    // Просроченные — ждут первого ответа и срок вышел (как app.metrics_ops_now у команды)
+    // Просроченные — ждут первого ответа и срок вышел (как app.metrics_ops_now у команды). Поиск
+    // и дата — и в счётчиках: видно, в какой вкладке нашлось
     const byStatus = await trx
-      .selectFrom("app.requests")
+      .selectFrom("app.requests as r")
+      .$if(search?.kind === "name", (qb) =>
+        qb.leftJoin(requestContactsAs("rc"), (join) =>
+          join.onRef("rc.request_id", "=", "r.id").on("rc.purged_at", "is", null),
+        ),
+      )
       .select([
-        "status",
+        "r.status",
         sql<number>`count(*)::int`.as("n"),
         sql<number>`(count(*) filter (where first_response_at is null and sla_due_at <= now()))::int`.as(
           "overdue",
         ),
       ])
-      .where("vendor_id", "=", actor.vendorId)
+      .where("r.vendor_id", "=", actor.vendorId)
       .$if(typeof query.listingId === "string", (qb) =>
-        qb.where("listing_id", "=", query.listingId as string),
+        qb.where("r.listing_id", "=", query.listingId as string),
       )
-      .groupBy("status")
+      .$if(Boolean(search), (qb) => qb.where(searchMatch(search as InboxSearch)))
+      .$if(Boolean(date), (qb) => qb.where("r.event_date", "=", date as string))
+      .groupBy("r.status")
       .execute();
 
     const counts = emptyCounts();
@@ -300,9 +407,11 @@ export async function listRequests(db: Db, actor: VendorActor, query: ListQuery)
     if (rows.length > query.limit && last) {
       const no = Number(last.public_no);
       nextCursor = formatInboxCursor(
-        query.tab === "closed"
-          ? { kind: "newest", no }
-          : { kind: "deadline", answered: last.answered, dueUs: Number(last.due_us), no },
+        query.sort === "event"
+          ? { kind: "event", date: last.event_date, no }
+          : query.tab === "closed"
+            ? { kind: "newest", no }
+            : { kind: "deadline", answered: last.answered, dueUs: Number(last.due_us), no },
       );
     }
     return { items: page.map(toItem), nextCursor, counts, overdue };
@@ -315,12 +424,52 @@ async function readItem(trx: Tx, actor: VendorActor, id: string): Promise<ItemRo
   return row;
 }
 
+/** Заявки, по которым партнёр ещё решает: им нужна занятость их даты */
+const DECIDING: readonly RequestStatus[] = ["new", "viewed", "contacted"];
+
+/**
+ * Занятость даты заявки — как в календаре кабинета (отметки и договорённости того же дня). У
+ * витрины без календаря (срок заказа), решённой заявки и прошедшей даты — null
+ */
+async function eventDayOf(trx: Tx, row: ItemRow, now: Date): Promise<VendorRequestDay | null> {
+  if (!DECIDING.includes(row.status) || row.event_date < tashkentToday(now)) return null;
+  const listing = await trx
+    .selectFrom("app.listings as l")
+    .innerJoin("app.categories as c", "c.code", "l.category_code")
+    .select(["l.category_code", "l.parallel_capacity", "l.part_mode", "l.day_parts", "l.part_windows"])
+    .select("c.availability_mode")
+    .where("l.id", "=", row.listing_id)
+    .executeTakeFirst();
+  if (listing === undefined || availabilityModeOf(listing.availability_mode) === "lead") return null;
+  const sessions = sessionsOfRow(listing);
+  const busy = await trx
+    .selectFrom("app.availability")
+    .select(["day", "source", "request_id"])
+    .where("listing_id", "=", row.listing_id)
+    .where("day", "=", row.event_date)
+    .executeTakeFirst();
+  const { parts, bookings } = await partsCalendar(
+    trx,
+    row.listing_id,
+    row.event_date,
+    row.event_date,
+    sessions,
+  );
+  return { sessions, busy: busy === undefined ? null : toBusyDay(busy), parts, bookings };
+}
+
 /**
  * GET /vendor/requests/:id: карточка заявки. Новую — отмечает просмотренной
  * (new → viewed, в журнале статусов — вендор, источник vendor_cabinet).
  * Телефон клиента — через журналируемое чтение и только при видимом контакте.
+ * eventDay — занятость даты заявки сейчас: «свободно», «занято 1 из 2 мест».
  */
-export async function getRequest(db: Db, actor: VendorActor, id: string): Promise<VendorRequestDetail> {
+export async function getRequest(
+  db: Db,
+  actor: VendorActor,
+  id: string,
+  now: Date = new Date(),
+): Promise<VendorRequestDetail> {
   return withActor(db, actor, async (trx) => {
     await trx
       .updateTable("app.requests")
@@ -347,6 +496,7 @@ export async function getRequest(db: Db, actor: VendorActor, id: string): Promis
     return {
       ...toItem(row),
       declineNote: row.decline_note,
+      eventDay: await eventDayOf(trx, row, now),
       contact: row.contact_name === null ? null : { name: row.contact_name, phone, comment: row.comment },
       history: withoutUndone(history).map((entry) => ({
         status: entry.to_status,
