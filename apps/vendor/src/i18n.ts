@@ -651,6 +651,9 @@ const ru = {
   capacityMore: "Больше",
   capacityInvalid: "От 1 до 50.",
   legendPart: "занята часть дня",
+  legendMarkFree: "отметка части дня: свободна",
+  legendMarkBooked: "отметка части дня: есть договорённость, места остались",
+  legendMarkBusy: "отметка части дня: занята",
 };
 
 type Shape<T> = { readonly [K in keyof T]: T[K] extends readonly string[] ? readonly string[] : string };
@@ -1274,6 +1277,9 @@ const uz: VendorDict = {
   capacityMore: "Koʻproq",
   capacityInvalid: "1 dan 50 gacha.",
   legendPart: "kun qismi band",
+  legendMarkFree: "kun qismi belgisi: boʻsh",
+  legendMarkBooked: "kun qismi belgisi: kelishuv bor, joy qolgan",
+  legendMarkBusy: "kun qismi belgisi: band",
 };
 
 export const vendorDict: Readonly<Record<Lang, VendorDict>> = { ru, uz };

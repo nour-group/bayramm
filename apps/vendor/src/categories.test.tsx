@@ -1202,8 +1202,15 @@ describe("календарь по модели занятости", () => {
     const toggle = () => byText<HTMLButtonElement>(".cal-aside .disclosure", "Обозначения", container);
     expect(toggle()?.getAttribute("aria-expanded")).toBe("true");
     const items = [...container.querySelectorAll(".cal-legend li")].map((li) => li.textContent);
-    // «занято» и «занята часть дня» в этом месяце нет
-    expect(items).toEqual(["занято (вы отказали: дата занята)", "закрыл менеджер", "есть заявка", "сегодня"]);
+    // «занято» и «занята часть дня» в этом месяце нет; отметки частей — те, что под числами
+    expect(items).toEqual([
+      "занято (вы отказали: дата занята)",
+      "закрыл менеджер",
+      "отметка части дня: свободна",
+      "отметка части дня: занята",
+      "есть заявка",
+      "сегодня",
+    ]);
     await click(toggle());
     expect(container.querySelector(".cal-legend")).toBeNull();
     expect(window.sessionStorage.getItem("bayramm.vendor.calendar.legend")).toBe("closed");

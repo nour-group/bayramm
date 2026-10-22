@@ -1132,7 +1132,7 @@ body {
   text-align: center;
 }
 
-/* Выходные в шапке — как в календаре клиента (ui-cal) */
+/* Выходные — только цветом в шапке, как в календаре клиента (ui-cal): подложка клетки — занятость */
 .cal-wd.cal-we {
   color: var(--coral-deep);
 }
@@ -1156,11 +1156,6 @@ body {
   font-size: var(--fs-15);
   font-weight: 600;
   cursor: pointer;
-}
-
-/* Выходной — своей подложкой (та же пара токенов, что в ui-cal) */
-.cal-day.cal-we {
-  background: var(--cell-wk);
 }
 
 /* Телефон уже 390px: семь дней по 44px с полями экрана и рамкой месяца не влезают.
@@ -1195,35 +1190,45 @@ body {
   cursor: default;
 }
 
-/* Занятый день: подложка «занято» и полоса под числом. Цвет числа — ink (пара ink/busy) */
+/* Занятый день — темнее свободного и заштрихован, как в ui-cal (штриховка 3:1 к свободной клетке,
+   пара busyLine/cell): занятость видна без цвета. Число — ink на подложке без штриховки (пара
+   ink/busy): день можно открыть и освободить. Образец в «Обозначениях» (.cal-key) — та же раскраска */
+.cal-day.cal-busy,
+.cal-key.cal-busy {
+  background-color: var(--busy);
+  background-image: repeating-linear-gradient(135deg, var(--busy-line) 0 1.5px, transparent 1.5px 6px);
+}
+
 .cal-day.cal-busy {
-  background: var(--busy);
   color: var(--ink);
 }
 
-.cal-day.cal-busy::after {
-  content: "";
-  position: absolute;
-  bottom: 6px;
-  width: 16px;
-  height: 3px;
+.cal-busy .cal-num {
+  padding: 0 4px;
   border-radius: var(--r-999);
-  background: var(--berry);
+  background: var(--busy);
 }
 
-.cal-day.cal-request_decline {
+/* Вы отказали клиенту, дата занята — ещё и пунктирная рамка: отличие формой, не цветом */
+.cal-day.cal-request_decline,
+.cal-key.cal-request_decline {
   border: 1px dashed var(--berry);
 }
 
+/* Закрыл менеджер — занят, и у числа замок: изменить нельзя */
 .cal-day.cal-staff {
-  background: var(--lilac);
   color: var(--muted);
   cursor: not-allowed;
 }
 
-/* У закрытого менеджером дня вместо полосы — замок */
-.cal-day.cal-staff::after {
-  content: none;
+/* Частично занятый (заняты не все части дня): нижняя половина — подложкой занятого без штриховки,
+   по низу — полоса (3:1), как в ui-cal; какие части — отметки под числом */
+.cal-day.cal-partial,
+.cal-key.cal-partial {
+  background: linear-gradient(to top, var(--busy) 50%, var(--cell) 50%);
+  box-shadow:
+    inset 0 -3px 0 var(--busy-line),
+    inset 0 0 0 1px var(--rule);
 }
 
 /* Сегодня — точка в левом верхнем углу, а не кольцо: кольцо значит «фокус» */
@@ -1268,23 +1273,27 @@ body {
 
 .dot {
   display: inline-block;
+  flex: none;
   width: 12px;
   height: 12px;
   border-radius: var(--r-3);
 }
 
-.dot-busy {
-  border-bottom: 3px solid var(--berry);
-  background: var(--busy);
+/* Образец клетки в «Обозначениях»: те же классы состояний, что у дней */
+.cal-key {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-3);
+  background: var(--cell);
+  box-shadow: inset 0 0 0 1px var(--rule);
 }
 
-.dot-decline {
-  border: 1px dashed var(--berry);
-  background: var(--busy);
-}
-
-.dot-staff {
-  background: var(--lilac);
+.cal-key-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .dot-req {
@@ -2680,36 +2689,36 @@ body {
   min-width: 0;
 }
 
-/* Части дня под числом: утро, день, вечер — полоски; занятая — цвета «занято» */
+/* Части дня под числом: утро, день, вечер. Отличие — формой, не одним цветом (3:1 к клетке):
+   свободна — пустая рамка, есть договорённость — залита наполовину, занята — залита целиком */
 .cal-parts {
   display: flex;
   gap: 2px;
 }
 
-.cal-parts i {
-  width: 8px;
-  height: 4px;
+.cal-parts i,
+.part-key {
+  width: 10px;
+  height: 6px;
   border-radius: var(--r-999);
-  background: var(--muted-lt);
-  opacity: 0.35;
+  box-shadow: inset 0 0 0 1.5px var(--busy-line);
 }
 
-.cal-parts i.is-booked {
-  background: var(--coral);
-  opacity: 1;
+.cal-parts i.is-booked,
+.part-key.is-booked {
+  background: linear-gradient(to right, var(--coral-deep) 50%, transparent 50%);
+  box-shadow: inset 0 0 0 1.5px var(--coral-deep);
 }
 
-.cal-parts i.is-busy {
+.cal-parts i.is-busy,
+.part-key.is-busy {
   background: var(--berry);
-  opacity: 1;
+  box-shadow: none;
 }
 
-.cal-day.cal-partial {
-  background: var(--busy);
-}
-
-.cal-day.cal-full::after {
-  content: none;
+.part-key {
+  display: inline-block;
+  flex: none;
 }
 
 .day-panel {
@@ -2820,11 +2829,6 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--gap-9);
-}
-
-.dot-part {
-  border-bottom: 3px solid var(--berry);
-  background: var(--cell);
 }
 
 /* Срок заказа вместо календаря (цветы, торты, подарки) */

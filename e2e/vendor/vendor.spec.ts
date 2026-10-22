@@ -1341,6 +1341,9 @@ test.describe("витрины в разных категориях", () => {
     await expect(page.locator(".cal-legend li")).toHaveText([
       t.legendBusy,
       t.legendPart,
+      t.legendMarkFree,
+      t.legendMarkBooked,
+      t.legendMarkBusy,
       t.legendRequest,
       t.legendToday,
     ]);

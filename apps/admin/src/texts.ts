@@ -517,6 +517,11 @@ export const t = {
   legendBusy: "занято",
   legendToday: "сегодня",
   legendChosen: "в выборе",
+  legendMark: {
+    free: "отметка части дня: свободна",
+    booked: "отметка части дня: есть договорённость, места остались",
+    busy: "отметка части дня: занята",
+  },
   busySources: {
     vendor: "отметил вендор",
     staff: "отметил сотрудник",

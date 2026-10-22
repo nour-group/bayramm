@@ -4,7 +4,8 @@
    Дни — кнопки с одним местом в порядке Tab (roving tabindex): стрелки ходят по дням и
    неделям, Home/End — к началу и концу недели, PageUp/PageDown — по месяцам. Недоступные
    (вне min…max, занятые) остаются в фокусе и читаются диктором, но aria-disabled и не
-   выбираются. Занятый день выцветает, а не краснеет: красный значит «нажми».
+   выбираются. Занятый день заштрихован и выцветает, а не краснеет: красный значит «нажми».
+   Выходной — цветом дня недели в шапке, клетка у него та же, что у будня.
    Классы с префиксом ui-, обработчики — у каждой кнопки: пересечений нет (ловушка №1).
    Без onSelect (только показ, .is-view) дни — текст, а не кнопки: число занятого дня обязано
    читаться (пара muted/busy), а не только выцветать. */
@@ -256,7 +257,9 @@ export function Calendar({
             return (
               <span key={day} className={classes}>
                 {dot}
-                <span aria-hidden="true">{i + 1}</span>
+                <span className="ui-cal-num" aria-hidden="true">
+                  {i + 1}
+                </span>
                 <span className="ui-sr-only">{name}</span>
               </span>
             );
@@ -277,25 +280,41 @@ export function Calendar({
               }}
             >
               {dot}
-              {i + 1}
+              <span className="ui-cal-num">{i + 1}</span>
             </button>
           );
         })}
       </div>
       {legend ? (
         <p className="ui-cal-legend" aria-hidden="true">
-          <span className="ui-leg ui-leg-free">{texts.free}</span>
-          {partial.size > 0 && texts.partial ? (
-            <span className="ui-leg ui-leg-part">{texts.partial}</span>
-          ) : null}
-          <span className="ui-leg ui-leg-busy">{texts.busy}</span>
-          {selected ? <span className="ui-leg ui-leg-sel">{texts.selected}</span> : null}
+          <Legend kind="free" text={texts.free} />
+          {partial.size > 0 && texts.partial ? <Legend kind="part" text={texts.partial} /> : null}
+          <Legend kind="busy" text={texts.busy} />
+          {selected ? <Legend kind="sel" text={texts.selected} /> : null}
           {today && texts.today && monthOf(today) === month ? (
-            <span className="ui-leg ui-leg-today">{texts.today}</span>
+            <Legend kind="today" text={texts.today} />
           ) : null}
         </p>
       ) : null}
     </div>
+  );
+}
+
+/** Классы состояния образца — те же, что у клетки дня: легенда и сетка раскрашены одним правилом */
+const LEGEND_STATE = {
+  free: "",
+  part: "is-partial",
+  busy: "is-busy",
+  sel: "is-selected",
+  today: "is-today",
+} as const;
+
+function Legend({ kind, text }: { kind: keyof typeof LEGEND_STATE; text: string }) {
+  return (
+    <span className={`ui-leg ui-leg-${kind}`}>
+      <span className={`ui-cal-key ${LEGEND_STATE[kind]}`.trim()} />
+      {text}
+    </span>
   );
 }
 
