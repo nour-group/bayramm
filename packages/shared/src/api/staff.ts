@@ -799,6 +799,12 @@ export interface StaffRequestItem {
   readonly vendor: { readonly id: string; readonly code: string; readonly name: string | null };
   /** Сколько раз вендору напоминали (автоматически и сотрудники) */
   readonly reminders: number;
+  /**
+   * Последнее действие команды по заявке — напоминание вендору, смена статуса («связались»),
+   * заметка: когда и кто (имя сотрудника; без имени — null). Не было — null; нет поля — старый ответ
+   */
+  readonly lastOpsAt?: string | null;
+  readonly lastOpsBy?: string | null;
 }
 
 /**
@@ -1025,6 +1031,8 @@ export interface OutboxDeadItem {
   readonly createdAt: string;
   readonly lastAttemptAt: string | null;
   readonly request: { readonly id: string; readonly publicNo: number } | null;
+  /** Получатель — пользователь кабинета: id его вендора (не дошло — звонить вендору); нет поля — старый ответ */
+  readonly vendorId?: string | null;
 }
 
 /**
@@ -1087,7 +1095,10 @@ export interface PiiAccessEntry {
   readonly actorKind: ActorKind;
   /** Как в AuditEntry: сотрудник, пользователь кабинета или клиент — с подписью */
   readonly actor: { readonly id: string; readonly name: string | null } | null;
-  /** client, request_contact, vendor_contact, vendor_user, listing_contact */
+  /**
+   * client, request_contact, vendor_contact, vendor_user, listing_contact; vendor_inbox — поиск во
+   * входящих кабинета по концу номера клиента (subjectId — вендор, purpose request_search)
+   */
   readonly subjectKind: string;
   readonly subjectId: string;
   /**

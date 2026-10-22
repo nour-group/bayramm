@@ -97,6 +97,7 @@ type SearchKind = "vendor" | "listing" | "client" | "request" | "staff";
 const SEARCH_OF: Readonly<Record<string, SearchKind>> = {
   vendor: "vendor",
   vendor_contact: "vendor",
+  vendor_inbox: "vendor",
   listing: "listing",
   listing_contact: "listing",
   client: "client",
@@ -487,6 +488,7 @@ function objectView(type: string, id: string): View | null {
       return { name: "listing", id };
     case "vendor":
     case "vendor_contact":
+    case "vendor_inbox":
       return { name: "vendor", id };
     case "request":
     case "request_contact":

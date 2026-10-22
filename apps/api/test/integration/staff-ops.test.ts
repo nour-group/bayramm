@@ -329,6 +329,9 @@ describe("заявки: напомнить вендору", () => {
     expect(reminder).toMatchObject({ source: "ops", by: `Ops manager ${tag}`, recipients: 1, stage: null });
     expect(detail.reminders).toBe(1);
     expect(detail.nextReminderAt).not.toBeNull();
+    // Последнее действие команды — это напоминание: когда и кто
+    expect(detail.lastOpsBy).toBe(`Ops manager ${tag}`);
+    expect(detail.lastOpsAt).toBe(reminder?.at);
 
     const { rows } = await admin.query<{ kind: string; payload: unknown; status: string }>(
       "select kind, payload, status from app.outbox where request_id = $1 and kind = 'vendor.ops_reminder'",
@@ -352,6 +355,7 @@ describe("заявки: напомнить вендору", () => {
     const detail = await ok<StaffRequestDetail>(api("manager", "GET", `/staff/requests/${rb.id}`));
     expect(detail.vendorReachable).toBe(0);
     expect(detail.reminders).toBe(0);
+    expect(detail.lastOpsAt).toBeNull();
   });
 
   it("чужой id — 404", async () => {

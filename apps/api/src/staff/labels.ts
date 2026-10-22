@@ -14,11 +14,15 @@ export interface LabelRef {
   readonly id: string | null;
 }
 
-/** Контакт заявки, вендора и витрины — это та же заявка, вендор и витрина: подпись у них общая */
+/**
+ * Контакт заявки, вендора и витрины — это та же заявка, вендор и витрина: подпись у них общая.
+ * Входящие кабинета (поиск заявки по концу номера клиента) — вендор, чьи это входящие
+ */
 const SAME_AS: Readonly<Record<string, string>> = {
   request_contact: "request",
   vendor_contact: "vendor",
   listing_contact: "listing",
+  vendor_inbox: "vendor",
 };
 
 const canonical = (type: string): string => SAME_AS[type] ?? type;

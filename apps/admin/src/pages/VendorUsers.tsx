@@ -26,6 +26,7 @@ import { type FormEvent, type ReactNode, type RefObject, useRef, useState } from
 import { type Api, type Failure, type Result, useAuthMethods, useCan, useSession } from "../api";
 import { ChoiceField, PhoneField } from "../fields";
 import { formatMoment } from "../format";
+import { ShareToTelegram } from "../share";
 import { apiErrorText, t } from "../texts";
 import {
   busyLabel,
@@ -541,6 +542,10 @@ function InviteSheet({
             >
               {t.vuCopy}
             </button>
+            {/* Сразу в чат партнёра: без копирования и переключения приложений */}
+            {copier.textOf(invited) ? (
+              <ShareToTelegram message={copier.textOf(invited) ?? ""}>{t.shareTelegram}</ShareToTelegram>
+            ) : null}
             <button type="button" className="btn" onClick={close}>
               {t.done}
             </button>
@@ -615,6 +620,8 @@ interface InviteCopier {
   /** Что скопировано последним: «card:<id>» или «invite:<id>» — там и «Скопировано» */
   readonly copiedKey: string | null;
   readonly copy: (user: VendorUser, where: "card" | "invite") => Promise<void>;
+  /** Текст приглашения на языке партнёра; адресов ещё нет — null */
+  readonly textOf: (user: VendorUser) => string | null;
   /** Шторка с текстом, если буфер обмена недоступен (старый вебвью, нет разрешения) */
   readonly dialog: ReactNode;
 }
@@ -628,16 +635,21 @@ function useInviteCopy(vendor: VendorDetail): InviteCopier {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [manual, setManual] = useState<string | null>(null);
 
+  const textOf = (user: VendorUser): string | null =>
+    methods === null
+      ? null
+      : vendorInviteText(user.locale, {
+          name: user.fullName,
+          vendor: vendor.name ?? vendor.code,
+          role: user.role,
+          bot: methods.telegram.bot,
+          cabinetUrl: methods.apps.vendor,
+          phoneLogin: methods.phone,
+        });
+
   const copy = async (user: VendorUser, where: "card" | "invite") => {
-    if (methods === null) return;
-    const text = vendorInviteText(user.locale, {
-      name: user.fullName,
-      vendor: vendor.name ?? vendor.code,
-      role: user.role,
-      bot: methods.telegram.bot,
-      cabinetUrl: methods.apps.vendor,
-      phoneLogin: methods.phone,
-    });
+    const text = textOf(user);
+    if (text === null) return;
     setCopiedKey(null);
     try {
       // Буфера обмена нет в старых вебвью и вне https — тогда текст в шторке
@@ -653,6 +665,7 @@ function useInviteCopy(vendor: VendorDetail): InviteCopier {
     ready: methods !== null,
     copiedKey,
     copy,
+    textOf,
     dialog: <CopyDialog text={manual} onClose={() => setManual(null)} />,
   };
 }

@@ -138,6 +138,21 @@ function occasionName(dictionaries: StaffDictionaries | null, code: string): str
   return dictionaries?.occasions.find((o) => o.code === code)?.nameRu ?? code;
 }
 
+/**
+ * Что команда уже сделала по заявке: «напомнили 2× · команда 09:12, Дильноза» — сколько раз
+ * напомнили вендору (бот и команда) и последнее действие команды; ничего не было — пусто
+ */
+export function opsTrail(
+  request: Pick<StaffRequestItem, "reminders" | "lastOpsAt" | "lastOpsBy">,
+  now?: number,
+): string {
+  const parts: string[] = [];
+  if (request.reminders > 0) parts.push(t.remindedTimes(request.reminders));
+  if (request.lastOpsAt)
+    parts.push(t.opsLast(formatUntil(request.lastOpsAt, now), request.lastOpsBy ?? null));
+  return parts.join(" · ");
+}
+
 /** «Ответ с опозданием» и так далее — подпись состояния срока в списке и под фильтром */
 const slaLabel = (filter: SlaFilter): string => (filter === "late" ? t.slaLate : (t.sla[filter] ?? filter));
 
@@ -435,12 +450,16 @@ function eventLine(request: StaffRequestItem, dictionaries: StaffDictionaries | 
     .join(" · ");
 }
 
-/** Карточка телефона — три строки: № и имя с плашкой срока, витрина, событие */
+/**
+ * Карточка телефона — три строки: № и имя с плашкой срока, витрина, событие; четвёртая — что
+ * команда уже сделала, если что-то сделала
+ */
 function RequestCards({ items, dictionaries, category, now }: RowsProps) {
   return (
     <ul className="rcards">
       {items.map((request) => {
         const note = statusNote(request);
+        const trail = opsTrail(request, now);
         return (
           <li key={request.id} className="rcard rcard-tap">
             <div className="rcard-head">
@@ -458,6 +477,7 @@ function RequestCards({ items, dictionaries, category, now }: RowsProps) {
               {eventLine(request, dictionaries)}
               {note ? ` · ${note}` : ""}
             </p>
+            {trail ? <p className="rcard-meta ops-trail">{trail}</p> : null}
           </li>
         );
       })}
@@ -480,6 +500,7 @@ function RequestTable({ items, dictionaries, category, now }: RowsProps) {
         <tbody>
           {items.map((request) => {
             const note = statusNote(request);
+            const trail = opsTrail(request, now);
             return (
               <tr key={request.id}>
                 <td>
@@ -508,6 +529,7 @@ function RequestTable({ items, dictionaries, category, now }: RowsProps) {
                 <td>
                   <SlaPill sla={request.sla} dueAt={request.slaDueAt} now={now} />
                   {note ? <span className="sub">{note}</span> : null}
+                  {trail ? <span className="sub ops-trail">{trail}</span> : null}
                 </td>
               </tr>
             );
@@ -562,13 +584,14 @@ function RequestView({
   const facts = (
     <section className="panel" aria-labelledby="facts-title">
       <h2 id="facts-title">{t.requestWhatWhen}</h2>
-      <dl className="dl">
+      <dl className="dl dl-pairs">
+        {/* Строки-ссылки — высотой с палец: соседние ссылки не перекрывают друг другу зону нажатия */}
         <dt>{t.colListing}</dt>
-        <dd>
+        <dd className="dd-link">
           <Link to={{ name: "listing", id: request.listing.id }}>{request.listing.name}</Link>
         </dd>
         <dt>{t.colVendor}</dt>
-        <dd>
+        <dd className="dd-link">
           <Link to={{ name: "vendor", id: request.vendor.id }}>{vendorLabel(request.vendor)}</Link>
         </dd>
         <dt>{t.colEvent}</dt>
@@ -673,7 +696,15 @@ function RequestView({
         </p>
         {can("requests.write") && <RequestActions request={request} onChange={onChange} />}
       </div>
-      {stacked ? (
+      {stacked && request.awaiting ? (
+        // Телефон и планшет, ответа ещё нет: первым — как дозвониться вендору, это главное действие
+        <>
+          {phones}
+          {facts}
+          {client}
+          {course}
+        </>
+      ) : stacked ? (
         // Телефон и планшет: сначала главное — что и когда, клиент, как дозвониться вендору
         <>
           {facts}

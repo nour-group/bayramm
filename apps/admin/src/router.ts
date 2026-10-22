@@ -25,14 +25,15 @@ export type Route = keyof typeof ROUTES;
 /**
  * Разделы в навигации, по порядку: сначала ежедневные — в том же порядке, что кнопки нижней
  * панели телефона (TAB_SECTIONS), потом уведомления, журнал, команда и настройки. Один порядок
- * на компьютере, планшете и телефоне: раздел не переезжает, когда меняется ширина окна
+ * на компьютере, планшете и телефоне: раздел не переезжает, когда меняется ширина окна. Роль,
+ * которая в ежедневном разделе только смотрит, видит его после тех, где она работает (navFor)
  */
 export const NAV = [
   "requests",
   "moderation",
   "vendors",
-  "metrics",
   "clients",
+  "metrics",
   "notifications",
   "audit",
   "team",
@@ -61,12 +62,32 @@ export const SECTION_PERMISSION: Readonly<Record<Section, StaffPermission>> = {
 export const HOME: Section = "requests";
 
 /**
- * Нижняя панель телефона — только разделы, в которые заходят с телефона каждый день, по
- * частоте. Их названия целиком влезают в кнопку и на 320px (сокращений в панели нет).
- * Остальные — очередь уведомлений, журнал, команда, настройки — всегда в «Ещё»: «Уведомления»
- * в кнопку пятой части экрана не помещаются
+ * Нижняя панель телефона — только разделы, в которые заходят с телефона каждый день: где
+ * работают — раньше, где только смотрят (метрики) — позже. Их названия целиком влезают в кнопку
+ * и на 320px (сокращений в панели нет). Остальные — очередь уведомлений, журнал, команда,
+ * настройки — всегда в «Ещё»: «Уведомления» в кнопку пятой части экрана не помещаются
  */
-export const TAB_SECTIONS: readonly Section[] = ["requests", "moderation", "vendors", "metrics", "clients"];
+export const TAB_SECTIONS: readonly Section[] = ["requests", "moderation", "vendors", "clients", "metrics"];
+
+/**
+ * Ежедневные разделы, где роль только смотрит: менеджер в «Модерации» ничего не решает (решают
+ * модератор и администратор) — раздел уходит из кнопок в «Ещё», его место — разделам, где он
+ * работает каждый день
+ */
+export function watchOnlyOf(permissions: readonly StaffPermission[]): readonly Section[] {
+  const decides = ["listings.publish", "revisions.moderate", "photos.moderate"] as const;
+  return decides.some((permission) => permissions.includes(permission)) ? [] : ["moderation"];
+}
+
+/** Разделы роли по порядку навигации: ежедневные, где роль только смотрит, — после остальных ежедневных */
+export function navFor(sections: readonly Section[], watchOnly: readonly Section[] = []): Section[] {
+  const daily = TAB_SECTIONS.filter((section) => sections.includes(section));
+  return [
+    ...daily.filter((section) => !watchOnly.includes(section)),
+    ...daily.filter((section) => watchOnly.includes(section)),
+    ...NAV.filter((section) => sections.includes(section) && !daily.includes(section)),
+  ];
+}
 
 export const TAB_SLOTS = 5;
 
@@ -80,18 +101,21 @@ export function homeOf(sections: readonly Section[]): Section {
 }
 
 /**
- * Разделы роли → кнопки нижней панели и «Ещё» (в порядке NAV). Всё влезает — кнопками без
- * «Ещё»; иначе четыре частых кнопками, остальное — в «Ещё»
+ * Разделы роли → кнопки нижней панели и «Ещё» (в порядке navFor). Всё влезает — кнопками без
+ * «Ещё»; иначе четыре частых кнопками, остальное — в «Ещё». Где роль только смотрит (watchOnly),
+ * кнопкой не бывает, пока «Ещё» есть
  */
 export function tabsFor(
   sections: readonly Section[],
   slots = TAB_SLOTS,
+  watchOnly: readonly Section[] = [],
 ): { readonly tabs: readonly Section[]; readonly more: readonly Section[] } {
-  const daily = TAB_SECTIONS.filter((section) => sections.includes(section));
-  const rest = NAV.filter((section) => sections.includes(section) && !daily.includes(section));
+  const ordered = navFor(sections, watchOnly);
+  const daily = ordered.filter((section) => TAB_SECTIONS.includes(section));
+  const rest = ordered.filter((section) => !daily.includes(section));
   if (rest.length === 0 && daily.length <= slots) return { tabs: daily, more: [] };
-  const tabs = daily.slice(0, slots - 1);
-  return { tabs, more: NAV.filter((section) => sections.includes(section) && !tabs.includes(section)) };
+  const tabs = daily.filter((section) => !watchOnly.includes(section)).slice(0, slots - 1);
+  return { tabs, more: ordered.filter((section) => !tabs.includes(section)) };
 }
 
 /** Маршрут по пути. Корень — главный экран, неизвестный путь — null */

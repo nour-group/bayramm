@@ -32,6 +32,7 @@ import { detailText } from "./pages/Audit";
 import { courseOf } from "./pages/Requests";
 import { tokenStore } from "./session";
 import { t } from "./texts";
+import { UNDO_MS } from "./undo";
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -246,7 +247,16 @@ afterEach(() => {
   tokenStore.clear();
   window.sessionStorage.clear();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
+
+/** «Одобрить» уходит через 5 секунд — до того «Отменить» в строке уведомления: срок прошёл */
+async function passUndo() {
+  await act(async () => {
+    vi.advanceTimersByTime(UNDO_MS);
+  });
+  await settle();
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -881,18 +891,34 @@ const HEALTH: OutboxHealth = {
 };
 
 describe("уведомления", () => {
-  it("менеджер видит счётчики и причины, но не повторяет", async () => {
+  it("менеджер видит счётчики и причины словами; бот заблокирован — не «Повторить», а к телефонам", async () => {
     mockApi(staff("manager", MANAGER), { "GET /api/staff/outbox": json(HEALTH) });
     await mount("/notifications");
     const stats = [...container.querySelectorAll(".stat")].map((s) => s.textContent);
     expect(stats).toContain(`2${t.outboxCounts.pending}`);
-    expect(text()).toContain("bot was blocked by the user");
+    // Ответ Telegram — словами и что делать; повтор тут не поможет — ссылка на заявку с телефонами
+    expect(text()).toContain(t.delivery.blocked);
+    expect(text()).not.toContain("bot was blocked by the user");
+    const call = [...container.querySelectorAll("a")].find((a) => a.textContent === t.callRequest(1001));
+    expect(call?.getAttribute("href")).toMatch(/^\/requests\//);
     expect(text()).toContain(t.noticeKinds["vendor.request_new"]);
     // Получатель — кто он словами, под этим — вид и начало id
     const cell = container.querySelector("tbody td:nth-child(2)");
     expect(cell?.firstChild?.textContent).toBe("Иван П.");
     expect(cell?.querySelector(".sub")?.textContent).toBe(`${t.recipientKinds.vendor_user} · aaaaaaaa…`);
     expect(button(t.retry)).toBeUndefined();
+  });
+
+  it("бот заблокирован у клиента — словами, но без ссылки «позвонить»: звонят только вендору", async () => {
+    const [first] = HEALTH.dead;
+    const client: OutboxHealth = {
+      ...HEALTH,
+      dead: first ? [{ ...first, recipientKind: "client", recipientLabel: "C-1234" }] : [],
+    };
+    mockApi(staff("manager", MANAGER), { "GET /api/staff/outbox": json(client) });
+    await mount("/notifications");
+    expect(text()).toContain(t.delivery.blocked);
+    expect(text()).not.toContain(t.callRequest(1001));
   });
 
   it("получатель без подписи (удалён) — вид и начало id, как раньше", async () => {
@@ -905,9 +931,15 @@ describe("уведомления", () => {
     expect(cell?.querySelector(".sub")?.textContent).toBe("aaaaaaaa…");
   });
 
-  it("администратор повторяет недоставленное", async () => {
+  it("администратор повторяет недоставленное, где повтор поможет: уведомление о сделанном", async () => {
+    const [first] = HEALTH.dead;
+    // Telegram не отвечал, попытки кончились — повтор может помочь
+    const flaky: OutboxHealth = {
+      ...HEALTH,
+      dead: first ? [{ ...first, error: "attempts_exhausted: network" }] : [],
+    };
     mockApi(staff("admin", ADMIN), {
-      "GET /api/staff/outbox": json(HEALTH),
+      "GET /api/staff/outbox": json(flaky),
       [`POST /api/staff/outbox/${OUTBOX_ID}/retry`]: json({
         ...HEALTH,
         counts: { pending: 0, sending: 0, sent: 40, failed: 0, dead: 0 },
@@ -916,8 +948,10 @@ describe("уведомления", () => {
       }),
     });
     await mount("/notifications");
+    expect(text()).toContain(t.delivery.unreachable);
     await click(button(t.retry));
     expect(lastCall("/retry")?.method).toBe("POST");
+    expect(document.body.textContent).toContain(t.retryQueued);
     // Всё доставлено — одна строка вместо плиток
     expect(text()).toContain(t.outboxHealthy(40));
     expect(container.querySelector(".stat")).toBeNull();
@@ -1934,7 +1968,8 @@ describe("правки карточек", () => {
     expect(text()).not.toContain("нет.");
   });
 
-  it("новые фото: ✓ одобряет одно, очередь перечитывается тихо, фокус — на ✓ следующей плитки", async () => {
+  it("новые фото: ✓ одобряет одно через 5 секунд («Отменить» до того), фокус — на ✓ следующей плитки", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let queue = photoQueue(3);
     mockApi(staff("moderator", MODERATOR), {
       "GET /api/staff/listings?photos=pending&limit=20&offset=0": () =>
@@ -1951,8 +1986,21 @@ describe("правки карточек", () => {
     const approveFirst = container.querySelector<HTMLButtonElement>(".queue-photo .photo-approve");
     expect(approveFirst?.textContent).toBe(t.photoApproveOne(1, "Lola zali"));
     await click(approveFirst ?? undefined);
+    // Решение ещё не ушло: плитка тусклая, фокус уже на ✓ следующей, в строке — «Отменить»
+    expect(lastCall("/moderation")).toBeUndefined();
+    expect(container.querySelectorAll(".queue-photo.is-decided")).toHaveLength(1);
+    expect(document.activeElement?.classList.contains("photo-approve")).toBe(true);
+    expect(document.activeElement).not.toBe(approveFirst);
+    expect(document.body.textContent).toContain(t.photoApprovedUndo(1, "Lola zali"));
+    // «Отменить» — плитка снова ждёт, запроса не было
+    await click(buttonsOf(document.body, t.undo).find((b) => b.closest(".ui-toast")));
+    expect(container.querySelectorAll(".queue-photo.is-decided")).toHaveLength(0);
+    await passUndo();
+    expect(lastCall("/moderation")).toBeUndefined();
+    // Снова ✓ — и срок прошёл: решение ушло, очередь перечитана, плиток две
+    await click(container.querySelector(".queue-photo .photo-approve") ?? undefined);
+    await passUndo();
     expect(lastCall("/moderation")?.body).toEqual({ decision: "approved" });
-    // Очередь перечитана, на карточке осталось две плитки, фокус на ✓ той, что встала на место
     expect(container.querySelectorAll(".queue-photo")).toHaveLength(2);
     expect(document.activeElement?.classList.contains("photo-approve")).toBe(true);
     expect(container.querySelector("[aria-live=polite]")?.textContent).toBe(t.photoApprovedSaid("Lola zali"));
@@ -2049,6 +2097,7 @@ describe("правки карточек", () => {
   });
 
   it("новые фото: просмотр во весь экран — листать стрелками, решить там же; всё открыто — «Одобрить все» без вопроса", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     let queue = photoQueue(3);
     const approved: string[] = [];
     const decide = (n: number) => ({
@@ -2088,9 +2137,21 @@ describe("правки карточек", () => {
     });
     expect(title()).toBe(t.photoViewerTitle(3, 3, "Lola zali"));
     // Одобрить в просмотре — и сразу следующее нерешённое
+    // «Отклонить» — рамкой, не второй залитой кнопкой рядом с «Одобрить»
+    expect(viewer()?.querySelector(".viewer-decline")?.className).toContain("btn-danger");
+    expect(viewer()?.querySelector(".viewer-decline")?.className).not.toContain("btn-danger-fill");
     await click(viewer()?.querySelector(".viewer-approve") ?? undefined);
-    expect(approved).toEqual([photoId(3)]);
     expect(viewer()?.querySelector("img")?.getAttribute("src")).toContain(`${photoId(1)}.webp`);
+    // Второе нажатие сразу (двойной щелчок, автоповтор Enter) пришлось бы на следующее фото — не решение
+    await click(viewer()?.querySelector(".viewer-approve") ?? undefined);
+    await act(async () => {
+      viewer()
+        ?.querySelector(".viewer-approve")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+    });
+    expect(container.querySelectorAll(".queue-photo.is-decided")).toHaveLength(1);
+    await passUndo();
+    expect(approved).toEqual([photoId(3)]);
     // Закрыли — открыты все три: «Одобрить все» без подтверждения
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));

@@ -46,6 +46,8 @@ const ADMIN: StaffMe = {
     "settings.write",
     "metrics.read",
     "vendors.delete",
+    // Администратор решает в «Модерации» — она у него кнопкой
+    "photos.moderate",
   ],
 };
 
@@ -219,11 +221,12 @@ describe("телефон: оболочка", () => {
     await mount("/requests");
     expect(container.querySelector("header.top")).toBeNull();
     expect(container.querySelector("header.appbar")).not.toBeNull();
+    // Администратор: где работает — кнопками (клиенты раньше метрик: метрики только смотрят)
     expect(tabs().map((tab) => tab.querySelector(".tab-label")?.textContent)).toEqual([
       "Заявки",
       "Модерация",
       "Вендоры",
-      "Метрики",
+      "Клиенты",
       t.more,
     ]);
     expect(tabs()[0]?.getAttribute("aria-current")).toBe("page");
@@ -243,8 +246,9 @@ describe("телефон: оболочка", () => {
     // Раньше «Уведомления» вставали пятой кнопкой подписью «Уведомл.»
     mockApi(MANAGER);
     await mount("/requests");
+    // Менеджер в «Модерации» только смотрит — она в «Ещё», кнопками — где он работает
     const labels = tabs().map((tab) => tab.querySelector(".tab-label")?.textContent);
-    expect(labels).toEqual([t.requests, t.moderation, t.vendors, t.clients, t.more]);
+    expect(labels).toEqual([t.requests, t.vendors, t.clients, t.more]);
     for (const label of labels) expect(label).not.toMatch(/\.$/);
     expect(container.querySelector("nav.tabbar button")?.textContent).toContain(t.more);
   });
@@ -281,7 +285,7 @@ describe("телефон: оболочка", () => {
     expect(sheet?.getAttribute("aria-modal")).toBe("true");
     const links = [...(sheet?.querySelectorAll("a") ?? [])];
     expect(links.map((a) => a.textContent)).toEqual([
-      "Клиенты",
+      "Метрики",
       `Уведомления1, ${t.badges.notifications(1)}`,
       "Журнал",
       "Команда",
@@ -540,7 +544,7 @@ describe("телефон: читаемость списков", () => {
     expect(sheet?.querySelector("input")?.className).toBe("input");
   });
 
-  it("заявка: клиент и телефоны вендора выше хода заявки везде, где нет двух колонок", async () => {
+  it("заявка: телефоны вендора первыми, пока ждёт ответа; клиент выше хода заявки, где нет двух колонок", async () => {
     const order = () =>
       [...container.querySelectorAll("section.panel")].map((el) => el.getAttribute("aria-labelledby"));
     mockApi(ADMIN);
@@ -550,9 +554,10 @@ describe("телефон: читаемость списков", () => {
       expect(container.querySelector(".columns")).toBeNull();
       const ids = order();
       expect(ids.indexOf("client-title"), `${width}px`).toBeGreaterThan(-1);
+      // Ответа ещё нет: главное действие — дозвониться вендору, телефоны первыми
+      expect(ids[0], `${width}px`).toBe("vendor-phones-title");
       expect(ids.indexOf("facts-title"), `${width}px`).toBeLessThan(ids.indexOf("client-title"));
-      expect(ids.indexOf("client-title")).toBeLessThan(ids.indexOf("vendor-phones-title"));
-      expect(ids.indexOf("vendor-phones-title")).toBeLessThan(ids.indexOf("course-title"));
+      expect(ids.indexOf("client-title")).toBeLessThan(ids.indexOf("course-title"));
       // Откуда заявка и «просмотрена вендором» — не отдельными строками: они в ходе заявки
       expect(container.textContent).not.toContain("Откуда заявка");
       act(() => root.unmount());

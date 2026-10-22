@@ -364,6 +364,12 @@ function CategoryListing({
     },
     [api, listing.id, listing.version, onChange, onReload],
   );
+  // Свежая витрина — для «Показать свежую версию» после 409 version_conflict: страница тоже её получает
+  const refresh = useCallback(async () => {
+    const result = await api.get<ListingDetail>(`/staff/listings/${listing.id}`);
+    if (result.ok) onChange(result.data);
+    return result;
+  }, [api, listing.id, onChange]);
   // Телефон и Telegram — одним чтением (одна запись в журнале доступа к ПДн)
   const loadContacts = useCallback(
     () => api.post<RevealedListingContacts>(`/staff/listings/${listing.id}/phone`, {}),
@@ -471,6 +477,7 @@ function CategoryListing({
         readOnly={!can("listings.write")}
         moderated={moderated}
         onDirtyChange={setDirty}
+        refresh={refresh}
         contacts={{ hasPhone: listing.hasPhone, hasTelegram: listing.hasTelegram, load: loadContacts }}
       >
         {/* Две колонки на компьютере читаются так же, как одна на телефоне: сначала левая, потом правая */}

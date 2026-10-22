@@ -65,6 +65,8 @@ export const t = {
     expired:
       "Сессия закончилась: вход в панель действует 12 часов. Войдите ещё раз — откроется тот же экран.",
   },
+  // Сессия кончилась, а в формах было несохранённое: оно ждёт во вкладке
+  draftsKept: "Несохранённое в формах не пропало: оно вернётся на тот же экран после входа.",
   roles: {
     admin: "Администратор",
     manager: "Менеджер",
@@ -88,6 +90,8 @@ export const t = {
   saving: "Сохраняем…",
   saved: "Сохранено",
   cancel: "Отмена",
+  // Решение, которое ещё можно отменить: кнопка в строке уведомления
+  undo: "Отменить",
   back: "Назад",
   search: "Поиск",
   // кнопки своих контролов (@bayramm/ui/react): крестик шторки и очистка поля поиска
@@ -110,6 +114,8 @@ export const t = {
   account: "Аккаунт",
   accountOf: (name: string, role: string) => `Аккаунт: ${name}, ${role}`,
   moreSections: "Ещё разделы",
+  // Шапка компьютера: разделы, что не влезли в строку
+  moreMenu: "Ещё ▾",
   moreCurrent: (section: string) => `Ещё, открыт раздел «${section}»`,
   // Сотрудник решает по модерации, а бот ему не пишет: оповещения команды не доходят
   botBanner: "Бот вам не пишет",
@@ -142,7 +148,7 @@ export const t = {
     invalid_input: "Проверьте выделенные поля.",
     invalid_request: "Запрос не принят. Обновите страницу и попробуйте ещё раз.",
     payload_too_large: "Слишком большой файл или текст.",
-    version_conflict: "Витрину только что изменили. Обновите страницу — ваши изменения не сохранены.",
+    version_conflict: "Витрину только что изменили. Ваши изменения не сохранены — откройте свежую версию.",
     illegal_transition: "Из текущего статуса так нельзя. Обновите страницу.",
     publish_blocked: "Не хватает данных для этого шага:",
     reason_required: "Нужна причина.",
@@ -393,6 +399,18 @@ export const t = {
   } as Record<string, string>,
   category: "Категория",
   listingReadOnly: "Только просмотр: поля витрины меняют менеджер и администратор.",
+  // Витрина без правки — списком; пустое не показывается
+  factsEmpty: "Пока не заполнено — что нужно, в «Что осталось».",
+  capacityRange: (from: string, to: string) =>
+    from && to ? `${from}–${to} гостей` : from ? `от ${from} гостей` : `до ${to} гостей`,
+  // Витрину изменили, пока вписывали: свежая версия ложится под вписанное
+  conflictText: "Витрину только что изменил кто-то ещё. Вписанное здесь не пропало и ещё не сохранено.",
+  conflictShowFresh: "Показать свежую версию",
+  // Сессия кончилась посреди правки: вписанное вернулось после входа
+  draftRestored: "Вернули то, что вы вписали до конца сессии. Проверьте и сохраните.",
+  conflictChoose: "Эти поля изменили и вы, и другой сотрудник — что оставить?",
+  conflictMine: (value: string) => `Ваш вариант: ${value}`,
+  conflictTheirs: (value: string) => `Новый: ${value}`,
   phoneMissing: "Телефона нет",
   phoneChange: "Сменить номер",
   telegramLabel: "Telegram",
@@ -606,6 +624,10 @@ export const t = {
     now: "Сейчас",
     proposed: "Предлагает партнёр",
     removeTelegram: "убрать Telegram",
+    // Одно чтение — «сейчас» и «предлагает»; причина чтения в журнале доступа к ПДн — одна и та же
+    reveal: "Показать контакты",
+    revealHint: "Просмотр — в журнал доступа: решение по смене контактов.",
+    revealReason: "Решение по смене контактов витрины",
     approve: "Одобрить",
     approveHint:
       "Новые контакты сразу появятся у клиентов по кнопке «Связаться», партнёру придёт уведомление.",
@@ -631,7 +653,15 @@ export const t = {
   photoApprove: "Одобрить",
   photoDecline: "Отклонить",
   photoDecidedHere: "Решено",
-  photoViewerKeys: "← → — листать",
+  photoViewerKeys: "← → — листать, двойной щелчок — увеличить",
+  photoViewerZoomKeys: "Двойной щелчок — увеличить",
+  photoViewerGestures: "Смахните — следующее, дважды коснитесь — увеличить",
+  photoViewerZoomGestures: "Дважды коснитесь или разведите пальцы — увеличить",
+  photoZoomIn: "Увеличить",
+  photoZoomOut: "Целиком",
+  // «Одобрить» в просмотре и ✓ плитки: решение уходит через 5 секунд, до того — «Отменить»
+  // С названием витрины: строки разных витрин не заменяют друг друга, у каждой своё «Отменить»
+  photoApprovedUndo: (n: number, listing: string) => `Фото ${n} одобрено · ${listing}`,
   // «Одобрить все» — после того как каждое фото открыто, или с подтверждением числа
   photoApproveAllQ: (n: number) => `Одобрить ${n} фото, не открывая?`,
   photoApproveAllText: (n: number, seen: number) =>
@@ -725,6 +755,9 @@ export const t = {
   },
   reminderAuto: (stage: number | null) => `Напоминание вендору (авто${stage ? `, этап ${stage}` : ""})`,
   reminderOps: (by: string | null) => `Напоминание от команды${by ? ` · ${by}` : ""}`,
+  // Строка заявки в списке: что команда уже сделала — не звонить вендору второй раз
+  remindedTimes: (n: number) => `напомнили ${n}×`,
+  opsLast: (at: string, by: string | null) => `команда ${at}${by ? `, ${by}` : ""}`,
   reminderDelivery: (recipients: number, delivered: number, failed: number) =>
     `получателей: ${recipients}, доставлено: ${delivered}${failed ? `, не доставлено: ${failed}` : ""}`,
   note: "Заметка",
@@ -795,11 +828,31 @@ export const t = {
   outboxHealthy: (sent: number) => `Всё доставлено · за сутки ${sent}`,
   outboxDead: "Не доставлены",
   retryNotice: (kind: string) => `Повторить: ${kind}`,
+  retryQueued: "Поставили в очередь — бот отправит в течение минуты",
+  // Почему не дошло — словами (delivery.ts); где повтор не поможет — кому позвонить
+  delivery: {
+    blocked: "Бот заблокирован — позвоните",
+    deactivated: "Аккаунт Telegram удалён — позвоните",
+    noChat: "Чат с ботом не найден — позвоните",
+    rejected: "Telegram не принял сообщение — повтор не поможет",
+    unreachable: "Telegram не отвечал — можно повторить",
+    unlinked: "Telegram не привязан или вход отключён — позвоните",
+    clientOff: "Клиент выключил уведомления или отозвал согласие",
+    staffNoChat: "Сотрудник не писал боту — повторите, когда напишет",
+    staffInactive: "Сотрудник отключён или такие оповещения ему не положены",
+    gone: "Объекта или получателя уже нет",
+    notSent: "Отправлять было некому",
+    unknown: "Не доставлено — можно повторить",
+  },
+  callVendor: "Телефоны вендора",
+  callVendorOf: (kind: string) => `Телефоны вендора: ${kind}`,
+  callRequest: (n: number) => `Телефоны — в заявке № ${n}`,
   outboxShown: (shown: number, total: number) => `Показаны последние ${shown} из ${total}.`,
   colKind: "Вид",
   colRecipient: "Получатель",
   colAttempts: "Попыток",
   colError: "Причина",
+  colNextStep: "Что сделать",
   colWhen: "Когда",
   recipientKinds: {
     client: "клиент",
@@ -943,6 +996,7 @@ export const t = {
     vendor_contact: "Контакт вендора",
     vendor_user: "Пользователь кабинета",
     listing_contact: "Контакты витрины",
+    vendor_inbox: "Входящие кабинета",
   } as Record<string, string>,
   auditActions: {
     "listing.create": "Витрина создана",
@@ -1012,6 +1066,7 @@ export const t = {
     staff_contact_change: "новые контакты витрины",
     self_contact_change: "своя просьба о контактах",
     system_notification: "уведомление",
+    request_search: "поиск заявки по номеру клиента",
   } as Record<string, string>,
 
   // команда
@@ -1030,6 +1085,10 @@ export const t = {
   inviteRole: "Роль",
   invite: "Пригласить",
   invited: "Приглашение создано",
+  // Что отправить новому сотруднику: без /start бот не сможет присылать ему оповещения
+  inviteSentHint: "Отправьте сотруднику: откройте бота → /start → панель.",
+  inviteText: "Текст приглашения",
+  shareTelegram: "Отправить в Telegram",
   invitedByPhone: "по телефону",
   colName: "Сотрудник",
   colRole: "Роль",
@@ -1300,6 +1359,10 @@ export const t = {
   // после решения по предложению или витрине на проверке — к следующему в очереди
   nextRevision: (name: string) => `Следующее предложение: ${name}`,
   nextReview: (name: string) => `Следующая на проверке: ${name}`,
+  nextContacts: (name: string) => `Следующая смена контактов: ${name}`,
+  nextServices: (name: string) => `Следующие услуги: ${name}`,
+  nextPhotos: (name: string) => `Следующие фото: ${name}`,
+  toQueue: (n: number) => (n > 0 ? `К очереди (${n})` : "К очереди"),
   queueDone: "В этой очереди больше ничего не ждёт решения.",
   toModeration: "К модерации",
 

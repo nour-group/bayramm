@@ -20,6 +20,7 @@ import { formatSum } from "./format";
 import { monthGrid, tashkentToday } from "./pages/Calendar";
 import { tokenStore } from "./session";
 import { t } from "./texts";
+import { UNDO_MS } from "./undo";
 
 /** Подпись поля без пометки «обязательно / по желанию» (она — у подписи, как у клиента) */
 const labelText = (label: Element | null | undefined): string | undefined => {
@@ -275,6 +276,7 @@ afterEach(() => {
   tokenStore.clear();
   window.sessionStorage.clear();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("вендоры", () => {
@@ -672,6 +674,7 @@ describe("карточка", () => {
   });
 
   it("фото: «Отклонить» спрашивает причину — без неё не отправить; причина видна под отклонённым фото", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const photo = (n: number, extra: Record<string, unknown> = {}) => ({
       id: `dddddddd-0000-0000-0000-00000000000${n}`,
       key: `listings/${LISTING_ID}/dddddddd-0000-0000-0000-00000000000${n}.webp`,
@@ -739,8 +742,14 @@ describe("карточка", () => {
     );
     await act(async () => document.querySelector<HTMLButtonElement>(".ui-dialog-close")?.click());
 
-    // «Одобрить» — без причины
+    // «Одобрить» — без причины; уходит через 5 секунд, до того — «Отменить»
     await pickPhoto(2, t.approve);
+    expect(calls.filter((c) => c.url.endsWith("/moderation"))).toHaveLength(1);
+    expect(document.body.textContent).toContain(t.photoApprovedUndo(2, LISTING.name));
+    await act(async () => {
+      vi.advanceTimersByTime(UNDO_MS);
+    });
+    await settle();
     expect(calls.filter((c) => c.url.endsWith("/moderation")).at(-1)?.body).toEqual({
       decision: "approved",
     });

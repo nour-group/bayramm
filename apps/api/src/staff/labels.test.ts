@@ -27,9 +27,11 @@ describe("что подписывать", () => {
       { type: "request", id: B },
       { type: "vendor_contact", id: A },
       { type: "listing_contact", id: A },
+      { type: "vendor_inbox", id: B },
     ]);
     expect(grouped.get("request")).toEqual([A, B]);
-    expect(grouped.get("vendor")).toEqual([A]);
+    // Входящие кабинета — вендор, чьи они
+    expect(grouped.get("vendor")).toEqual([A, B]);
     expect(grouped.get("listing")).toEqual([A]);
   });
 

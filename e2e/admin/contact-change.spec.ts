@@ -39,14 +39,18 @@ test.describe("смена контактов витрины", () => {
     await expectNoAxeViolations(page, "контакты: предложение");
     await expectHitAreas(page, "контакты: предложение", CONTROLS);
 
-    await region.getByRole("button", { name: t.show }).click();
+    await region.getByRole("button", { name: t.contactChange.reveal }).click();
     await expect(region).toContainText(PROPOSED);
     await expect(region).toContainText(t.contactChange.removeTelegram);
     // «Сейчас» — то, что у витрины в базе
     await expect(region.locator(".change").first()).toContainText("+998 90 111 22 33");
     await expect(region.locator(".change").first()).toContainText(`@${CAR_CONTACTS.telegram}`);
-    expect(api.contactChanges.map((c) => c.key)).toEqual([
-      `POST /staff/listings/${CAR_LISTING_ID}/contact-change/reveal`,
+    // Одно чтение — «сейчас» и «предлагает»; зачем открыли — в журнал доступа к ПДн
+    expect(api.contactChanges).toEqual([
+      {
+        key: `POST /staff/listings/${CAR_LISTING_ID}/contact-change/reveal`,
+        body: { reason: t.contactChange.revealReason },
+      },
     ]);
     await expectNoAxeViolations(page, "контакты: показаны");
     await expectHitAreas(page, "контакты: показаны", CONTROLS);
@@ -58,6 +62,9 @@ test.describe("смена контактов витрины", () => {
     await sheet.getByRole("button", { name: t.contactChange.approve }).click();
     await expect(page.getByRole("status").filter({ hasText: t.contactChange.approved })).toBeVisible();
     await expect(region).toHaveCount(0);
+    // Решили — путь дальше по очереди: других смен контактов нет, «К модерации»
+    await expect(page.getByText(t.queueDone)).toBeVisible();
+    await expect(page.getByRole("link", { name: t.toModeration })).toBeFocused();
     expect(api.contactChanges.at(-1)?.key).toBe(
       `POST /staff/listings/${CAR_LISTING_ID}/contact-change/approve`,
     );
@@ -68,7 +75,7 @@ test.describe("смена контактов витрины", () => {
     const api = await start(page, { role: "admin" });
     await page.goto(`/listings/${CAR_LISTING_ID}`);
     const region = block(page);
-    await region.getByRole("button", { name: t.show }).click();
+    await region.getByRole("button", { name: t.contactChange.reveal }).click();
     await region.getByRole("button", { name: t.contactChange.decline }).click();
     const sheet = confirmForm(page);
     await expect(sheet).toContainText(t.contactChange.declineHint);

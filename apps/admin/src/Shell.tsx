@@ -5,7 +5,8 @@
      · телефон — шапка (назад, заголовок, аккаунт), нижняя панель с частыми разделами и
        «Ещё» с остальными; действия экрана — в панели над ней (ActionBar);
      · планшет — та же шапка и узкая колонка разделов слева;
-     · компьютер — шапка с разделами в строку, как раньше.
+     · компьютер — шапка с разделами в строку; что не влезло — в «Ещё ▾» (DesktopNav), а не за
+       край строки с прокруткой вбок.
    В Telegram «назад» — кнопка Telegram (BackButton), своя в шапке не рисуется. */
 
 import type { OpsQueues, StaffDictionaries, StaffPermission, StaffQueues } from "@bayramm/shared/api/staff";
@@ -25,6 +26,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -37,15 +39,18 @@ import {
   homeOf,
   isNested,
   NAV,
+  navFor,
   pathOf,
   restoreScroll,
   SECTION_PERMISSION,
   type Section,
   savedScroll,
   sectionOf,
+  TAB_SLOTS,
   tabsFor,
   useRoute,
   type View,
+  watchOnlyOf,
 } from "./router";
 import {
   AuditPage,
@@ -497,8 +502,32 @@ function isTextEntry(element: EventTarget | null): boolean {
  */
 const TYPING_OUT_MS = 300;
 
-function useTyping(enabled: boolean): boolean {
+/**
+ * Экранная клавиатура бывает там, где палец (pointer: coarse): с клавиатурой и мышью (компьютер
+ * в узком окне, увеличение 200 %) панели не прячутся — Tab не теряет нижнюю панель. Без matchMedia
+ * (старый вебвью) — считаем, что палец
+ */
+function coarsePointer(): boolean {
+  try {
+    return typeof window.matchMedia !== "function" || window.matchMedia("(pointer: coarse)").matches;
+  } catch {
+    return true;
+  }
+}
+
+function useTyping(phone: boolean): boolean {
+  const enabled = phone && coarsePointer();
   const [typing, setTyping] = useState(false);
+  // Панели вернулись — элемент в фокусе мог оказаться под нижней: подвинуть его в видимую часть
+  const was = useRef(false);
+  useEffect(() => {
+    if (was.current && !typing) {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && focused !== document.body)
+        requestAnimationFrame(() => focused.scrollIntoView?.({ block: "nearest" }));
+    }
+    was.current = typing;
+  }, [typing]);
   useEffect(() => {
     if (!enabled) {
       setTyping(false);
@@ -623,9 +652,107 @@ function Rail({ sections, current, badges }: NavProps) {
 }
 
 interface TabBarProps extends NavProps {
+  /** Где роль только смотрит: кнопкой не бывает, пока есть «Ещё» */
+  watchOnly: readonly Section[];
   moreRef: RefObject<HTMLButtonElement | null>;
   moreOpen: boolean;
   onMore: () => void;
+}
+
+interface DesktopNavProps extends NavProps {
+  /** Сколько разделов влезло в строку; null — меряем (показаны все) */
+  fit: number | null;
+  onFit: (fit: number | null) => void;
+  moreRef: RefObject<HTMLButtonElement | null>;
+  moreOpen: boolean;
+  onMore: () => void;
+}
+
+/**
+ * Разделы в шапке компьютера: влезающие — в строку, остальные — в «Ещё ▾» (тот же лист, что у
+ * нижней панели телефона). Ширины пунктов меряются, когда разделы или числа у них поменялись,
+ * сколько влезает — при каждом изменении ширины строки. Без ResizeObserver (старый движок) —
+ * мерка один раз
+ */
+function DesktopNav({ sections, current, badges, fit, onFit, moreRef, moreOpen, onMore }: DesktopNavProps) {
+  const nav = useRef<HTMLElement>(null);
+  const sizes = useRef<{ items: number[]; more: number; gap: number } | null>(null);
+  const badgeKey = sections.map((section) => badges[section] ?? 0).join(",");
+  const fits = useCallback((): number => {
+    const box = nav.current;
+    const measured = sizes.current;
+    if (!box || !measured) return sections.length;
+    const width = box.clientWidth;
+    const { items, more, gap } = measured;
+    const all = items.reduce((sum, item) => sum + item, 0) + gap * Math.max(0, items.length - 1);
+    if (all <= width) return items.length;
+    let used = more;
+    let count = 0;
+    for (const item of items) {
+      if (used + gap + item > width) break;
+      used += gap + item;
+      count += 1;
+    }
+    return count;
+  }, [sections.length]);
+  // Другие разделы или числа у них — перемерить: на миг показаны все
+  // biome-ignore lint/correctness/useExhaustiveDependencies: перемерить — именно по этим двум
+  useLayoutEffect(() => onFit(null), [sections, badgeKey, onFit]);
+  useLayoutEffect(() => {
+    const box = nav.current;
+    if (fit !== null || !box) return;
+    const items = [...box.querySelectorAll<HTMLElement>(":scope > a")].map(
+      (item) => item.getBoundingClientRect().width,
+    );
+    const more = box.querySelector<HTMLElement>(":scope > .nav-more")?.getBoundingClientRect().width ?? 0;
+    const gap = Number.parseFloat(getComputedStyle(box).columnGap) || 0;
+    sizes.current = { items, more, gap };
+    onFit(fits());
+  }, [fit, fits, onFit]);
+  useEffect(() => {
+    const box = nav.current;
+    if (!box || typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(() => {
+      if (sizes.current) onFit(fits());
+    });
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, [fits, onFit]);
+  const shown = fit === null ? sections : sections.slice(0, fit);
+  const hidden = fit === null ? [] : sections.slice(fit);
+  const inMore = current !== null && hidden.includes(current);
+  const hiddenCount = hidden.reduce((sum, section) => sum + (badges[section] ?? 0), 0);
+  return (
+    <nav ref={nav} className="nav" aria-label={t.sections}>
+      {shown.map((item) => (
+        <Link
+          key={item}
+          to={{ name: item }}
+          current={current === item}
+          onPrefetch={() => preloadSections([item])}
+        >
+          {t[item]}
+          <Badge section={item} count={badges[item]} />
+        </Link>
+      ))}
+      {/* Пока меряем — кнопка есть, но не видна: её ширина нужна для расчёта */}
+      {fit === null || hidden.length > 0 ? (
+        <button
+          ref={moreRef}
+          type="button"
+          className={`nav-more${inMore ? " is-current" : ""}${fit === null ? " is-measuring" : ""}`}
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen}
+          aria-label={inMore && current ? t.moreCurrent(t[current]) : t.more}
+          tabIndex={fit === null ? -1 : undefined}
+          onClick={onMore}
+        >
+          <span aria-hidden="true">{t.moreMenu}</span>
+          {hiddenCount > 0 ? <span className="badge badge-dot" aria-hidden="true" /> : null}
+        </button>
+      ) : null}
+    </nav>
+  );
 }
 
 /** Шапка компьютера с разделами — тоже прилипает к верху */
@@ -640,8 +767,8 @@ function DesktopTop({ children }: { children: ReactNode }) {
 }
 
 /** Нижняя панель телефона: частые разделы роли и «Ещё» с остальными */
-function TabBar({ sections, current, badges, moreRef, moreOpen, onMore }: TabBarProps) {
-  const { tabs, more } = tabsFor(sections);
+function TabBar({ sections, current, badges, watchOnly, moreRef, moreOpen, onMore }: TabBarProps) {
+  const { tabs, more } = tabsFor(sections, TAB_SLOTS, watchOnly);
   const inMore = current !== null && more.includes(current);
   const moreCount = more.reduce((sum, section) => sum + (badges[section] ?? 0), 0);
   // Нижняя панель прилипла к низу: Tab и прокрутка к полю останавливаются над ней
@@ -708,9 +835,15 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
   const webApp = getWebApp();
   // Несохранённые правки на экране: уход — по ссылке, «назад», выход — с вопросом
   const unsaved = useUnsavedGuard(webApp);
+  // Где роль только смотрит (менеджер в «Модерации») — после разделов, где она работает
+  const watchOnly = useMemo(() => watchOnlyOf(staff.permissions), [staff]);
   const sections = useMemo(
-    () => NAV.filter((item) => staff.permissions.includes(SECTION_PERMISSION[item])),
-    [staff],
+    () =>
+      navFor(
+        NAV.filter((item) => staff.permissions.includes(SECTION_PERMISSION[item])),
+        watchOnly,
+      ),
+    [staff, watchOnly],
   );
   // Главный экран — первый раздел нижней панели, доступный роли
   const home = homeOf(sections);
@@ -755,6 +888,14 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
       : [];
   const badges = useBadges(staff.permissions, current);
   const [sheet, setSheet] = useState<"more" | "account" | null>(null);
+  // Компьютер: сколько разделов влезло в шапку, остальные — в «Ещё ▾»
+  const [navFit, setNavFit] = useState<number | null>(null);
+  const moreSections =
+    layout === "phone"
+      ? tabsFor(sections, TAB_SLOTS, watchOnly).more
+      : layout === "desktop" && navFit !== null
+        ? sections.slice(navFit)
+        : [];
   const moreButton = useRef<HTMLButtonElement>(null);
   const accountButton = useRef<HTMLButtonElement>(null);
   const titleShown = useScrolledPast(heading, path, compact);
@@ -782,12 +923,12 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
 
   // Пока человек смотрит на первый экран — подгрузить разделы нижней панели (или все)
   useEffect(() => {
-    const next = layout === "phone" ? tabsFor(sections).tabs : sections;
+    const next = layout === "phone" ? tabsFor(sections, TAB_SLOTS, watchOnly).tabs : sections;
     const run = () => preloadSections(next);
     const idle = (window as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
     if (typeof idle === "function") idle(run);
     else setTimeout(run, 1500);
-  }, [layout, sections]);
+  }, [layout, sections, watchOnly]);
 
   const closeSheet = useCallback(() => setSheet(null), []);
   const { confirmLeave } = unsaved;
@@ -821,19 +962,16 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
               <Link to={{ name: home }} className="brand">
                 Bayramm <span className="brand-area">{t.area}</span>
               </Link>
-              <nav className="nav" aria-label={t.sections}>
-                {sections.map((item) => (
-                  <Link
-                    key={item}
-                    to={{ name: item }}
-                    current={current === item}
-                    onPrefetch={() => preloadSections([item])}
-                  >
-                    {t[item]}
-                    <Badge section={item} count={badges[item]} />
-                  </Link>
-                ))}
-              </nav>
+              <DesktopNav
+                sections={sections}
+                current={current}
+                badges={badges}
+                fit={navFit}
+                onFit={setNavFit}
+                moreRef={moreButton}
+                moreOpen={sheet === "more"}
+                onMore={() => setSheet("more")}
+              />
               <button
                 ref={accountButton}
                 type="button"
@@ -872,6 +1010,7 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
           {layout === "phone" ? (
             <TabBar
               sections={sections}
+              watchOnly={watchOnly}
               current={current}
               badges={badges}
               moreRef={moreButton}
@@ -887,7 +1026,7 @@ export function Shell({ staff, token, onSignOut }: ShellProps) {
           >
             <nav aria-label={t.moreSections}>
               <ul className="menu">
-                {tabsFor(sections).more.map((section) => (
+                {moreSections.map((section) => (
                   <li key={section}>
                     <Link
                       to={{ name: section }}

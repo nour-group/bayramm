@@ -64,7 +64,8 @@ import {
   UpdatedAt,
   usePagedList,
 } from "../ui";
-import { PhotoViewer } from "./PhotoViewer";
+import { useUndoable } from "../undo";
+import { PhotoViewer, REPEAT_MS } from "./PhotoViewer";
 import { ServiceChanges, ServiceDecision } from "./Services";
 
 type Queue = "review" | "revisions" | "services" | "contacts" | "photos";
@@ -400,6 +401,15 @@ function PhotoQueueList({ state, decides, onDecided, onFocused }: PhotoQueueProp
   const { loaded, reload } = state.list;
   const list = useRef<HTMLUListElement>(null);
   const decidedAt = useRef<DecidedPhoto | null>(null);
+  // ✓ плиток — одно решение на нажатие: после ✓ фокус уже на ✓ следующей плитки (может быть,
+  // другой карточки) — автоповтор Enter не должен одобрить её. Один на всю очередь
+  const lastTile = useRef(0);
+  const repeated = useCallback((): boolean => {
+    const now = Date.now();
+    if (now - lastTile.current < REPEAT_MS) return true;
+    lastTile.current = now;
+    return false;
+  }, []);
   const [said, setSaid] = useState("");
   useEffect(() => {
     if (loaded.state !== "ready" || decidedAt.current === null) return;
@@ -418,8 +428,9 @@ function PhotoQueueList({ state, decides, onDecided, onFocused }: PhotoQueueProp
       onFocused();
     }
   }, [loaded, onFocused]);
+  // Одобрение с «Отменить» уходит позже: фокус к тому времени уже на следующей плитке — at нет
   const decided = useCallback(
-    (at: DecidedPhoto, text: string) => {
+    (at: DecidedPhoto | null, text: string) => {
       decidedAt.current = at;
       setSaid(text);
       onDecided();
@@ -441,6 +452,7 @@ function PhotoQueueList({ state, decides, onDecided, onFocused }: PhotoQueueProp
                 listing={listing}
                 index={index}
                 decides={decides}
+                repeated={repeated}
                 onDecided={decided}
               />
             ))}
@@ -462,15 +474,22 @@ function PhotoCard({
   listing,
   index,
   decides,
+  repeated,
   onDecided,
 }: {
   listing: ListingListItem;
   index: number;
   decides: boolean;
-  onDecided: (at: DecidedPhoto, said: string) => void;
+  /** Нажатие ✓ — повтор предыдущего (раньше REPEAT_MS): не решение */
+  repeated: () => boolean;
+  onDecided: (at: DecidedPhoto | null, said: string) => void;
 }) {
   const { api } = useSession();
+  const undoable = useUndoable();
   const photos = listing.pendingPhotos ?? [];
+  const card = useRef<HTMLLIElement>(null);
+  // Одобрили с плитки: фокус — на ✓ следующей нерешённой (эта стала недоступной)
+  const focusFrom = useRef<number | null>(null);
   const [decidedIds, setDecidedIds] = useState<ReadonlySet<string>>(new Set());
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState<Failure | null>(null);
@@ -485,12 +504,31 @@ function PhotoCard({
   const open = photos.filter((photo) => !decidedIds.has(photo.id));
   const more = Math.max(0, listing.photos.pending - photos.length);
   const mark = (id: string) => setDecidedIds((prev) => new Set(prev).add(id));
+  const unmark = (id: string) =>
+    setDecidedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   const policy = categoryConfig(listing.categoryCode)?.photoPolicy;
+  // После отрисовки с новой отметкой: ✓ решённой плитки уже недоступна
+  // biome-ignore lint/correctness/useExhaustiveDependencies: перенос фокуса — именно после смены отметок
+  useEffect(() => {
+    const from = focusFrom.current;
+    if (from === null) return;
+    focusFrom.current = null;
+    const own = card.current?.querySelectorAll<HTMLButtonElement>(".photo-approve:not(:disabled)");
+    const next =
+      own && own.length > 0
+        ? own[Math.min(from, own.length - 1)]
+        : card.current?.parentElement?.querySelector<HTMLButtonElement>(".photo-approve:not(:disabled)");
+    next?.focus();
+  }, [decidedIds]);
 
-  const view = (id: string) => {
-    setViewing(id);
-    setSeen((prev) => new Set(prev).add(id));
-  };
+  // Открытым фото считается, когда его снимок показан во весь экран (onShown), а не когда до него
+  // перелистнули: после «Одобрить» следующее открывается само
+  const view = (id: string) => setViewing(id);
+  const shown = (id: string) => setSeen((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
   /** После решения в просмотре — следующее нерешённое фото; кончились — просмотр закрывается */
   const nextAfter = (id: string): string | null => {
     const rest = photos.filter((photo) => photo.id !== id && !decidedIds.has(photo.id));
@@ -499,22 +537,36 @@ function PhotoCard({
     return (rest.find((photo) => photos.indexOf(photo) > at) ?? rest[0] ?? null)?.id ?? null;
   };
 
-  const approve = async (photo: PendingPhoto, tile: number) => {
-    setWorking(true);
+  /**
+   * Одобрить: плитка сразу тускнеет, решение уходит через 5 секунд — до того «Отменить» в строке
+   * уведомления возвращает её без запроса. Сервер отказал — плитка снова ждёт, причина под карточкой
+   */
+  const approve = (photo: PendingPhoto, tile: number) => {
     setFailure(null);
-    const result = await api.post(`${base}/${photo.id}/moderation`, { decision: "approved" });
-    setWorking(false);
-    if (!result.ok) {
-      setFailure(result);
-      return;
-    }
     mark(photo.id);
     if (viewing === photo.id) {
       const next = nextAfter(photo.id);
       if (next) view(next);
       else setViewing(null);
-    }
-    onDecided({ listing: listing.id, tile, card: index }, t.photoApprovedSaid(listing.name));
+    } else focusFrom.current = tile;
+    undoable({
+      key: photo.id,
+      text: t.photoApprovedUndo(tile + 1, listing.name),
+      undo: () => unmark(photo.id),
+      commit: async (urgent) => {
+        const result = await api.post(
+          `${base}/${photo.id}/moderation`,
+          { decision: "approved" },
+          { keepalive: urgent },
+        );
+        if (!result.ok) {
+          unmark(photo.id);
+          setFailure(result);
+          return;
+        }
+        onDecided(null, t.photoApprovedSaid(listing.name));
+      },
+    });
   };
 
   const approveAll = async () => {
@@ -573,7 +625,7 @@ function PhotoCard({
   const current = viewed === -1 ? null : (photos[viewed] ?? null);
 
   return (
-    <li className="rcard photo-card" data-listing={listing.id}>
+    <li ref={card} className="rcard photo-card" data-listing={listing.id}>
       <div className="rcard-head">
         {/* Витрина — сразу на блоке фото: целиком посмотреть и решить там */}
         <Link to={{ name: "listing", id: listing.id, query: { focus: "photos" } }} className="rcard-title">
@@ -601,7 +653,7 @@ function PhotoCard({
                 <img
                   src={photoSrc(photo.key, 640)}
                   srcSet={photoSrcSet(photo.key)}
-                  sizes="(max-width: 719px) 50vw, 200px"
+                  sizes="(max-width: 719px) 50vw, 280px"
                   width={photo.width > 0 ? photo.width : undefined}
                   height={photo.height > 0 ? photo.height : undefined}
                   alt=""
@@ -616,7 +668,11 @@ function PhotoCard({
                     type="button"
                     className="btn btn-icon photo-approve"
                     disabled={working || decidedHere}
-                    onClick={() => void approve(photo, tile)}
+                    onClick={(event) => {
+                      // Второй щелчок или автоповтор Enter — уже по следующей плитке: не решение
+                      if (event.detail > 1 || repeated()) return;
+                      approve(photo, tile);
+                    }}
                   >
                     <Icon name="check" size={20} />
                     <span>{t.photoApproveOne(tile + 1, listing.name)}</span>
@@ -645,7 +701,7 @@ function PhotoCard({
           <button
             ref={allButton}
             type="button"
-            className="btn btn-primary photo-approve-all"
+            className="btn btn-sm photo-approve-all"
             aria-busy={working || undefined}
             disabled={working}
             onClick={askAll}
@@ -682,7 +738,8 @@ function PhotoCard({
             setDeclining(null);
             view(id);
           }}
-          onApprove={(photo, tile) => void approve(photo, tile)}
+          onApprove={(photo, tile) => approve(photo, tile)}
+          onShown={shown}
           onDecline={(photo, tile) => {
             setFailure(null);
             setDeclining({ photo, n: tile + 1 });

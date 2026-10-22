@@ -10,6 +10,7 @@ import {
   matchRoute,
   matchSection,
   NAV,
+  navFor,
   parentOf,
   parseView,
   pathOf,
@@ -20,7 +21,9 @@ import {
   savedScroll,
   sectionOf,
   TAB_SECTIONS,
+  TAB_SLOTS,
   tabsFor,
+  watchOnlyOf,
   writeQuery,
 } from "./router";
 import { t } from "./texts";
@@ -57,8 +60,8 @@ describe("маршруты панели оператора", () => {
       "requests",
       "moderation",
       "vendors",
-      "metrics",
       "clients",
+      "metrics",
       "notifications",
       "audit",
       "team",
@@ -156,15 +159,41 @@ describe("маршруты панели оператора", () => {
   });
 
   it("нижняя панель: разделов больше пяти — четыре частых и «Ещё» с остальными в порядке навигации", () => {
+    // Администратор: работает и в клиентах, метрики только смотрит — они в «Ещё»
     expect(tabsFor(NAV)).toEqual({
-      tabs: ["requests", "moderation", "vendors", "metrics"],
-      more: ["clients", "notifications", "audit", "team", "settings"],
+      tabs: ["requests", "moderation", "vendors", "clients"],
+      more: ["metrics", "notifications", "audit", "team", "settings"],
+    });
+  });
+
+  it("нижняя панель по роли: где роль только смотрит — не кнопкой; навигация — тем же порядком", () => {
+    // Менеджер в «Модерации» ничего не решает: кнопки — заявки, вендоры, клиенты, метрики
+    const manager = ["requests", "moderation", "vendors", "clients", "metrics", "notifications"] as const;
+    const watch = watchOnlyOf(["catalog.read", "requests.read", "listings.write", "clients.read"]);
+    expect(watch).toEqual(["moderation"]);
+    expect(tabsFor(manager, TAB_SLOTS, watch)).toEqual({
+      tabs: ["requests", "vendors", "clients", "metrics"],
+      more: ["moderation", "notifications"],
+    });
+    expect(navFor(manager, watch)).toEqual([
+      "requests",
+      "vendors",
+      "clients",
+      "metrics",
+      "moderation",
+      "notifications",
+    ]);
+    // Модератор решает в «Модерации»: она первая
+    expect(watchOnlyOf(["catalog.read", "photos.moderate", "metrics.read"])).toEqual([]);
+    expect(tabsFor(["moderation", "vendors", "metrics"], TAB_SLOTS, [])).toEqual({
+      tabs: ["moderation", "vendors", "metrics"],
+      more: [],
     });
   });
 
   it("нижняя панель: ежедневные разделы — кнопками по частоте; пять и меньше — без «Ещё»", () => {
     expect(tabsFor(["vendors", "moderation", "requests", "clients", "metrics"])).toEqual({
-      tabs: ["requests", "moderation", "vendors", "metrics", "clients"],
+      tabs: ["requests", "moderation", "vendors", "clients", "metrics"],
       more: [],
     });
     expect(tabsFor(["vendors", "moderation"])).toEqual({ tabs: ["moderation", "vendors"], more: [] });
@@ -179,10 +208,10 @@ describe("маршруты панели оператора", () => {
       tabs: ["requests", "moderation", "vendors", "metrics"],
       more: ["notifications"],
     });
-    // Менеджер (шесть разделов) и модератор (три) — как и были
+    // Шесть разделов без «только смотрит»: четыре кнопки, клиенты раньше метрик
     expect(tabsFor(["vendors", "moderation", "requests", "metrics", "clients", "notifications"])).toEqual({
-      tabs: ["requests", "moderation", "vendors", "metrics"],
-      more: ["clients", "notifications"],
+      tabs: ["requests", "moderation", "vendors", "clients"],
+      more: ["metrics", "notifications"],
     });
     expect(tabsFor(["vendors", "moderation", "metrics"])).toEqual({
       tabs: ["moderation", "vendors", "metrics"],
