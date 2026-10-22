@@ -419,6 +419,11 @@ export interface StaffPhoto {
   readonly moderation: PhotoModeration;
   /** Причина отказа — у отклонённого (её видит партнёр в кабинете); иначе null */
   readonly declineReason: string | null;
+  /**
+   * Что отметил загрузивший (лиц нет / люди согласны): модератор сверяет это с правилом фото
+   * категории (photoPolicy из @bayramm/shared/categories — у витрины она одна на все фото)
+   */
+  readonly ack: PhotoAck;
   readonly createdAt: string;
 }
 
@@ -574,11 +579,14 @@ export type ListingAction = "submit" | "publish" | "suspend" | "reject" | "draft
 /**
  * Тело действия. reason обязателен для suspend и reject; для остальных — комментарий в
  * историю. 422 publish_blocked (details — PublishBlocker[]), 409 illegal_transition.
- * publish одобряет готовые фото и услуги карточки, ещё ждущие решения
+ * publish одобряет услуги карточки, ещё ждущие решения, а из ждущих фото — только названные в
+ * approvePhotos (их модератор открыл во весь экран); остальные ждут решения и клиентам не видны
  */
 export interface ListingActionInput {
   readonly version: number;
   readonly reason?: string;
+  /** Только у publish: id ждущих решения фото, которые публикация одобряет (не больше 50) */
+  readonly approvePhotos?: readonly string[];
 }
 
 // ── фото ───────────────────────────────────────────────────────────────────

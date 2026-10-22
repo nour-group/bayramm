@@ -135,7 +135,7 @@ test.describe("фото: отказ с причиной", () => {
       .locator(".photo-tile")
       .nth(n - 1);
 
-  /** Причина отказа n-го фото — в шторке его плитки (шторка закрывается) */
+  /** Причина отказа n-го фото — в просмотре его плитки (просмотр закрывается) */
   async function sheetReason(page: Page, n: number) {
     await tile(page, n).click();
     const reason = await page.locator(".ui-dialog .photo-reason").textContent();
@@ -143,16 +143,15 @@ test.describe("фото: отказ с причиной", () => {
     return reason;
   }
 
-  /** Начать отказ по n-му фото: плитка → «Отклонить» → на телефоне шторка, на компьютере форма под рядом */
+  /** Просмотр n-го фото во весь экран (у витрины их три) */
+  const viewer = (page: Page, n: number) =>
+    page.getByRole("dialog", { name: t.photoViewerTitle(n, 3, "Kadr studio") });
+
+  /** Начать отказ по n-му фото: плитка → просмотр → «Отклонить»: причина — там же */
   async function startDecline(page: Page, n: number) {
     await tile(page, n).click();
-    await page
-      .getByRole("dialog", { name: t.photoN(n) })
-      .getByRole("button", { name: t.decline, exact: true })
-      .click();
-    return isPhone(page)
-      ? page.getByRole("dialog", { name: t.declinePhotoTitle(n) })
-      : photos(page).locator(".decline-photo");
+    await viewer(page, n).getByRole("button", { name: t.photoDecline, exact: true }).click();
+    return viewer(page, n).locator("form.confirm");
   }
 
   test("причина обязательна; уходит с отказом и видна под фото; длинная не ломает ширину", async ({
@@ -186,6 +185,9 @@ test.describe("фото: отказ с причиной", () => {
     await expect(submit).toBeEnabled();
     await submit.click();
     await expect(form).toHaveCount(0);
+    // Решено — просмотр перешёл к следующему ждущему фото; закрыть его
+    await expect(viewer(page, 2)).toBeVisible();
+    await viewer(page, 2).getByRole("button", { name: t.close }).click();
     expect(api.photoDecisions).toEqual([
       {
         listingId: PHOTO_LISTING_ID,
@@ -213,7 +215,9 @@ test.describe("фото: отказ с причиной", () => {
     await first.getByRole("button", { name: t.cancel }).click();
     await expect(first).toHaveCount(0);
     expect(api.photoDecisions).toEqual([]);
-    const again = await startDecline(page, 2);
+    // Просмотр остался открытым: «Отклонить» ещё раз — там же
+    await viewer(page, 2).getByRole("button", { name: t.photoDecline, exact: true }).click();
+    const again = viewer(page, 2).locator("form.confirm");
     // Поле снова пустое: прежний текст не остался
     await expect(field(again, t.reason)).toHaveValue("");
   });

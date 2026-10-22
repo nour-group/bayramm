@@ -329,7 +329,8 @@ async function seedVenue(
       status = "review";
     }
     if (PUBLISHABLE.has(status)) {
-      await applyListingAction(trx, venue.listingId, "publish", version);
+      // Демо-фото — свои иллюстрации с плашкой DEMO: публикация одобряет их все
+      await applyListingAction(trx, venue.listingId, "publish", version, null, { approvePhotos: "all" });
       publishedNow = true;
     }
     // Журнал: только коды и числа

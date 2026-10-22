@@ -514,15 +514,47 @@ describe("вендор → карточка → проверка → публи�
     expect(Object.values(vendor.checklist).every((mark) => mark.done)).toBe(true);
   });
 
-  it("публикует модератор: фото и услуги одобряются, карточка в каталоге", async () => {
-    listing = await ok<ListingDetail>(
-      api("moderator", "POST", `/staff/listings/${listing.id}/publish`, { version: listing.version }),
+  it("публикует модератор: услуги одобряются, из ждущих фото — только открытые им; карточка в каталоге", async () => {
+    // Четвёртое фото модератор не открывал: оно останется ждать решения
+    const unseen = randomUUID();
+    await admin.query(
+      `insert into app.photos (id, listing_id, status, storage_key, mime, bytes, width, height, sha256, sort, no_faces_ack)
+       values ($1, $2, 'ready', $3, 'image/webp', 1000, 1600, 1200, $4, 9, true)`,
+      [unseen, listing.id, `listings/${listing.id}/${randomUUID()}.webp`, randomBytes(32)],
     );
+    const photos = await ok<StaffPhoto[]>(api("moderator", "GET", `/staff/listings/${listing.id}/photos`));
+    // Что отметил загрузивший — у каждого фото (здесь: лиц нет)
+    expect(photos).toHaveLength(4);
+    expect(photos.every((p) => p.ack === "no_faces")).toBe(true);
+    const viewed = photos.filter((p) => p.id !== unseen).map((p) => p.id);
+    const publish = (body: Record<string, unknown>) =>
+      api("moderator", "POST", `/staff/listings/${listing.id}/publish`, {
+        version: listing.version,
+        ...body,
+      });
+
+    // Ни одного фото не открыли — сама публикация их не одобряет: одобренных меньше минимума
+    expect(await error(publish({}))).toEqual({ status: 422, code: "publish_blocked", details: ["photos"] });
+    expect(await error(publish({ approvePhotos: ["not-a-uuid"] }))).toMatchObject({
+      status: 422,
+      details: ["approvePhotos"],
+    });
+    // Чужой id ничего не одобряет
+    expect(await error(publish({ approvePhotos: [randomUUID()] }))).toMatchObject({
+      code: "publish_blocked",
+    });
+
+    listing = await ok<ListingDetail>(publish({ approvePhotos: viewed }));
     expect(listing.status).toBe("active");
     expect(listing.publishedAt).not.toBeNull();
-    expect(listing.photos.every((p) => p.moderation === "approved")).toBe(true);
+    expect(listing.photos.filter((p) => p.id !== unseen).every((p) => p.moderation === "approved")).toBe(
+      true,
+    );
+    expect(listing.photos.find((p) => p.id === unseen)?.moderation).toBe("pending");
     expect(listing.services.every((s) => s.status === "active")).toBe(true);
     expect(listing.blockers.active).toEqual([]);
+    // Непросмотренное — в очереди «Новые фото», клиентам не видно; убираем, чтобы не мешало дальше
+    await admin.query("update app.photos set deleted_at = now() where id = $1", [unseen]);
   });
 
   it("опубликованную карточку менеджер меняет правкой: описание — на модерацию, адрес — сразу, цена — предложением услуги", async () => {
