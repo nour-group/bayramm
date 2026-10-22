@@ -557,6 +557,8 @@ export interface MockOptions {
   readonly turnstileSiteKey?: string | null;
   /** Избранное демо-аккаунта (id площадок, последние отмеченные — первыми) */
   readonly favorites?: readonly string[];
+  /** Контакт команды (настройка панели); по умолчанию не указан */
+  readonly team?: { readonly telegram: string | null; readonly phone: string | null };
   /** Площадки «сняты с публикации»: в выдаче, карточках и избранном их нет, карточка — 404 */
   readonly hidden?: readonly string[];
 }
@@ -995,7 +997,7 @@ export function createMockApi(options: MockOptions = {}): MockApi {
         phone: options.phone ?? true,
         turnstileSiteKey: options.turnstileSiteKey ?? null,
         apps,
-        team: { telegram: null, phone: null },
+        team: options.team ?? { telegram: null, phone: null },
       })),
 
     signInWidget: () => respond("signInWidget", undefined, demoSession),

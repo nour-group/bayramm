@@ -5,6 +5,7 @@ import { saveSiteSession } from "../api/session";
 import { Link } from "../components/Link";
 import { authErrorText, humanProofFor, PhoneCode } from "../components/PhoneCode";
 import { ErrorState, Loading } from "../components/States";
+import { needsTeam, TeamHelp } from "../components/TeamHelp";
 import { telegramLink } from "../components/TelegramCta";
 import { TelegramLogin } from "../components/TelegramLogin";
 import { useAccount, useLang, useServices } from "../context";
@@ -41,7 +42,12 @@ import { pendingSend } from "./request-prefill";
    войти ещё раз. После входа страница загружается заново — сессия есть у всего сайта. */
 
 type Phase =
-  | { readonly kind: "form"; readonly notice: string | null }
+  | {
+      readonly kind: "form";
+      readonly notice: string | null;
+      /** После этой ошибки остаётся написать команде: её контакт — под сообщением */
+      readonly team?: boolean;
+    }
   | { readonly kind: "continuing" }
   | { readonly kind: "badLink" };
 
@@ -82,10 +88,11 @@ function useContinue(setPhase: (phase: Phase) => void) {
             clearHubRequest();
             browser.replace(redirectUrl);
           },
-          (again: unknown) => setPhase({ kind: "form", notice: authErrorText(t, again) }),
+          (again: unknown) =>
+            setPhase({ kind: "form", notice: authErrorText(t, again), team: needsTeam(again) }),
         ));
       }
-      setPhase({ kind: "form", notice: authErrorText(t, error) });
+      setPhase({ kind: "form", notice: authErrorText(t, error), team: needsTeam(error) });
     }
   }, [api, identity, t, setPhase, navigate]);
 }
@@ -239,6 +246,7 @@ export function SignIn() {
               <span>{phase.notice}</span>
             </div>
           ) : null}
+          {phase.notice && phase.team ? <TeamHelp /> : null}
           {methods.status === "loading" ? <Loading /> : null}
           {ready && linkPhone ? (
             ready.phone ? (
@@ -292,6 +300,7 @@ export function TelegramCallback() {
   const replaceMe = me.replace;
   useDocumentTitle(t.authTitle);
   const [error, setError] = useState<string | null>(null);
+  const [team, setTeam] = useState(false);
   const done = useRef(false);
 
   useEffect(() => {
@@ -317,7 +326,10 @@ export function TelegramCallback() {
           saveSiteSession(session);
           browser.replace(AUTH_PATH);
         });
-    run.catch((err: unknown) => setError(authErrorText(t, err)));
+    run.catch((err: unknown) => {
+      setError(authErrorText(t, err));
+      setTeam(needsTeam(err));
+    });
   }, [api, lang, t, replaceMe, navigate]);
 
   return (
@@ -331,6 +343,7 @@ export function TelegramCallback() {
             <Icon name="warnD" size={17} />
             <span>{error}</span>
           </div>
+          {team ? <TeamHelp /> : null}
           <a className="btn btn-secondary wide" href={AUTH_PATH}>
             {t.authSignIn}
           </a>

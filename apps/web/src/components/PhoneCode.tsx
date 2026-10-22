@@ -6,6 +6,7 @@ import type { PhoneProof } from "../api/types";
 import { useLang, useServices } from "../context";
 import { formatPhone, maskPhoneDigits, PHONE_PREFIX, phoneDigits } from "../format";
 import { HumanCheck, type HumanCheckHandle } from "./HumanCheck";
+import { needsTeam, TeamHelp } from "./TeamHelp";
 
 /* Вход и добавление телефона кодом из сообщения: номер → «Получить код» → код → «Войти».
    Номер — одно поле после неизменного +998, цифры группируются по мере ввода (вставка целиком,
@@ -103,6 +104,8 @@ export function PhoneCode({ onCode, submitLabel, human = null, initialPhone = ""
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Ошибка, после которой остаётся написать команде (аккаунт отключён, номер у другого аккаунта)
+  const [team, setTeam] = useState(false);
   const [, setTick] = useState(0);
   const codeInput = useRef<HTMLInputElement>(null);
   const check = useRef<HumanCheckHandle>(null);
@@ -136,6 +139,7 @@ export function PhoneCode({ onCode, submitLabel, human = null, initialPhone = ""
       setTimeout(() => codeInput.current?.focus({ preventScroll: true }), 0);
     } catch (err) {
       setError(authErrorText(t, err));
+      setTeam(needsTeam(err));
     } finally {
       // Токен Turnstile потрачен, чем бы ни кончилось: для следующей попытки — новый
       if (human?.kind === "turnstile") check.current?.reset();
@@ -172,6 +176,7 @@ export function PhoneCode({ onCode, submitLabel, human = null, initialPhone = ""
       await onCode(step.phone, clean);
     } catch (err) {
       setError(authErrorText(t, err));
+      setTeam(needsTeam(err));
       setBusy(false);
       return;
     }
@@ -207,6 +212,7 @@ export function PhoneCode({ onCode, submitLabel, human = null, initialPhone = ""
             {error}
           </p>
         ) : null}
+        {error && team ? <TeamHelp /> : null}
         <button
           type="submit"
           className="btn btn-secondary wide"
@@ -260,6 +266,7 @@ export function PhoneCode({ onCode, submitLabel, human = null, initialPhone = ""
           {error}
         </p>
       ) : null}
+      {error && team ? <TeamHelp /> : null}
       <button type="submit" className="btn btn-primary wide" disabled={busy}>
         {submitLabel}
       </button>

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Documents } from "../components/Documents";
 import { LangSwitch } from "../components/LangSwitch";
 import { RichText } from "../components/RichText";
+import { TeamHelp } from "../components/TeamHelp";
 import { canSignIn, useAccount, useLang, useServices } from "../context";
 import { tashkentToday } from "../format";
 import { useDocumentTitle } from "../hooks";
@@ -253,6 +254,8 @@ export function Profile() {
           {t.meAbout}
         </h2>
         <RichText blocks={t.aboutRules} />
+        {/* Вопрос или жалоба — команде; контакт не указан — строки нет */}
+        <TeamHelp lead={t.teamAbout} />
       </section>
     </div>
   );

@@ -1379,6 +1379,7 @@ button.ui-cal-day.is-selected.is-partial:not(.is-out):not(.is-busy) {
 .ui-btn:focus-visible,
 .ui-icon-btn:focus-visible,
 .ui-toast-action:focus-visible,
+.ui-team-link:focus-visible,
 .ui-dialog-body:focus-visible,
 .ui-select:focus-visible,
 .ui-cal .ui-cal-day:focus-visible,
@@ -1474,6 +1475,30 @@ button.ui-cal-day.is-selected.is-partial:not(.is-out):not(.is-busy) {
   .ui-dialog .ui-sheet-grab {
     display: none;
   }
+}
+
+/* Контакт команды (TeamContact): кнопками — строкой с переносом; ссылками — строкой текста,
+   зона нажатия 44px по высоте */
+.ui-team {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-9);
+}
+
+.ui-team-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap-7);
+  min-height: var(--hit-min);
+  color: var(--plum);
+  text-decoration: none;
+}
+
+.ui-team-links .ui-team-link {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {

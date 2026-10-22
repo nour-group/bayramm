@@ -1471,8 +1471,10 @@ textarea.field-input {
    рядом (320px, «Заявка на другую дату») — заявка строкой ниже, во всю ширину */
 .bar-actions {
   display: flex;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   justify-content: flex-end;
   gap: var(--gap-9);
@@ -2527,6 +2529,22 @@ textarea.field-input {
 
 .footer-lang [aria-current] {
   font-weight: 700;
+}
+
+/* Связь с командой — строкой, как язык: подпись и ссылки (@bayramm/ui/react, TeamContact) */
+.footer-team {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-7);
+  font-size: var(--fs-13-5);
+}
+
+/* Контакт команды под ошибкой и в «О площадке»: строка и кнопки */
+.team-help {
+  display: grid;
+  gap: var(--gap-7);
+  margin-top: 12px;
 }
 
 .footer-copy {

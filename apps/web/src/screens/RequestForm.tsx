@@ -27,6 +27,7 @@ import { Link } from "../components/Link";
 import { Photo } from "../components/Photo";
 import { Paragraphs } from "../components/RichText";
 import { EmptyState, ErrorState, Loading } from "../components/States";
+import { needsTeam, TeamHelp } from "../components/TeamHelp";
 import { BotLink } from "../components/TelegramCta";
 import { canSignIn, pick, useDictionaries, useLang, useServices } from "../context";
 import {
@@ -681,6 +682,8 @@ function Form({
   const [submitted, setSubmitted] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  // Заявки с аккаунта ограничены: тут поможет только команда — её контакт под ошибкой
+  const [sendTeam, setSendTeam] = useState(false);
   const [serverErrors, setServerErrors] = useState<Partial<Record<Field, string>>>({});
   const calendarTexts = useCalendarTexts();
   const id = useId();
@@ -860,6 +863,7 @@ function Form({
         return;
       }
       setSendError(sendErrorText(error, t, listing.capMax ?? MAX_GUESTS));
+      setSendTeam(needsTeam(error));
       setServerErrors(serverFieldErrors(error, draft, category, t));
       // День занят целиком — в календаре формы он тоже станет занятым
       const sentDate = draft.date;
@@ -1214,6 +1218,7 @@ function Form({
           {sendError}
         </p>
       ) : null}
+      {sendError && sendTeam ? <TeamHelp /> : null}
 
       {/* Над кнопками: на телефоне панель прилипает к низу, пометка — в конце формы */}
       {guest ? <BotLink slug={listing.slug} /> : <p className="bar-note">{t.requestNote}</p>}
