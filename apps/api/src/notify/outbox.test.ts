@@ -49,6 +49,8 @@ interface World {
   service?: Record<string, unknown> | null;
   /** Последний запрос на смену контактов витрины (app.contact_change_state) */
   contactChange?: Record<string, unknown> | null;
+  /** Шаг истории статусов витрины (vendor.listing_decided) */
+  statusLog?: Record<string, unknown> | null;
 }
 
 function db(world: World = {}) {
@@ -91,6 +93,8 @@ function db(world: World = {}) {
         },
       ];
     }
+    if (q.sql.includes('from "app"."listing_status_log" as "s"'))
+      return world.statusLog ? [world.statusLog] : [];
     if (q.sql.includes('from "app"."listing_revisions" as "rv"'))
       return world.revision ? [world.revision] : [];
     if (q.sql.includes('from "app"."listing_services" as "s"')) return world.service ? [world.service] : [];
@@ -161,6 +165,8 @@ describe("dispatchOutbox: сообщения", () => {
     for (const part of ["№1001", "Test Hall", "12.12.2026", "200 гостей", "Свадьба", "12 часов"]) {
       expect(message?.text).toContain(part);
     }
+    // Срок — часы и день по Ташкенту: создана в 10:00, ответ — до 22:00 того же дня
+    expect(message?.text).toContain("Ответьте до 22:00 (сегодня)");
     expect(message?.text).not.toMatch(/\+?998\d{9}/);
     expect(message?.reply_markup).toEqual({
       inline_keyboard: [
@@ -179,7 +185,7 @@ describe("dispatchOutbox: сообщения", () => {
       rows: [outboxRow({ kind: "vendor.sla_reminder", payload: { request_id: REQUEST_ID, stage: 1 } })],
     });
     // создана в 05:00Z, срок — 17:00Z, сейчас 09:00Z: осталось 8 часов
-    expect(tg.calls[0]?.text).toContain("осталось 8 часов");
+    expect(tg.calls[0]?.text).toContain("Ответьте до 22:00 (сегодня): осталось 8 часов");
   });
 
   it("напоминание от команды: без счёта часов (срок мог пройти), кнопка — заявка в кабинете", async () => {
@@ -397,7 +403,7 @@ describe("dispatchOutbox: сообщения", () => {
     expect(report.sent).toBe(1);
     expect(tg.calls[0]?.chat_id).toBe(5001);
     expect(tg.calls[0]?.text).toContain("«Lola» hamkor kabinetiga");
-    expect(tg.calls[0]?.text).toContain("maydon xodimisiz");
+    expect(tg.calls[0]?.text).toContain("Siz xodimsiz");
     expect(tg.calls[0]?.reply_markup).toEqual({
       inline_keyboard: [[{ text: "Kabinetni ochish", web_app: { url: "https://vendor.example" } }]],
     });
@@ -583,6 +589,115 @@ describe("dispatchOutbox: сообщения", () => {
     expect(other.report.dead).toBe(1);
   });
 
+  it("решение по витрине — владельцу кабинета: что решили, причина, кнопка к витрине; чужая — в dead", async () => {
+    const LISTING = "aaaaaaaa-0000-4000-8000-000000000102";
+    const decidedRow = outboxRow({
+      kind: "vendor.listing_decided",
+      request_id: null,
+      payload: { listing_id: LISTING, log_id: "41" },
+    });
+    const step = (patch: Record<string, unknown>) => ({
+      from_status: "review",
+      to_status: "active",
+      reason: "внутренний комментарий",
+      name: "Lola zali",
+      vendor_id: VENDOR_ID,
+      ...patch,
+    });
+    const published = await run({ statusLog: step({}), rows: [decidedRow] });
+    expect(published.report.sent).toBe(1);
+    expect(published.tg.calls[0]?.text).toBe(
+      "Витрина «Lola zali» опубликована — клиенты видят её в каталоге Bayramm.",
+    );
+    expect(published.tg.calls[0]?.reply_markup).toEqual({
+      inline_keyboard: [[{ text: "Открыть витрину", web_app: { url: "https://vendor.example/card" } }]],
+    });
+    const returned = await run({
+      statusLog: step({ to_status: "draft", reason: "Добавьте фото зала" }),
+      rows: [decidedRow],
+    });
+    expect(returned.tg.calls[0]?.text).toContain("вернули на доработку: Добавьте фото зала");
+    const rejected = await run({
+      statusLog: step({ to_status: "rejected", reason: "Нет договора" }),
+      rows: [decidedRow],
+    });
+    expect(rejected.tg.calls[0]?.text).toContain("отклонила витрину «Lola zali»: Нет договора");
+    // На узбекском — язык профиля партнёра
+    const uz = await run({
+      vendorUser: {
+        vendor_id: VENDOR_ID,
+        locale: "uz",
+        disabled_at: null,
+        tg_linked_at: CREATED,
+        telegram_chat_id: "5001",
+      },
+      statusLog: step({ from_status: "active", to_status: "suspended", reason: "Taʼmirlash" }),
+      rows: [decidedRow],
+    });
+    expect(uz.tg.calls[0]?.text).toContain("vaqtincha toʻxtatildi: Taʼmirlash");
+    // Шаг — не решение (на проверку), чужая витрина — в dead без отправки
+    const submitted = await run({
+      statusLog: step({ from_status: "draft", to_status: "review" }),
+      rows: [decidedRow],
+    });
+    expect(submitted.tg.calls).toHaveLength(0);
+    const other = await run({
+      statusLog: step({ vendor_id: "bbbbbbbb-0000-4000-8000-000000000001" }),
+      rows: [decidedRow],
+    });
+    expect(other.tg.calls).toHaveLength(0);
+    expect(other.report.dead).toBe(1);
+  });
+
+  it("решение по предложению изменений — владельцу кабинета: одобрено или не принято с причиной", async () => {
+    const decidedRow = outboxRow({
+      kind: "vendor.revision_decided",
+      request_id: null,
+      payload: { revision_id: "0e0e0e0e-0000-4000-8000-000000000001", decision: "declined" },
+    });
+    const declined = await run({
+      revision: {
+        status: "declined",
+        decision_reason: "Название не как на вывеске",
+        name: "Lola zali",
+        vendor_id: VENDOR_ID,
+      },
+      rows: [decidedRow],
+    });
+    expect(declined.report.sent).toBe(1);
+    expect(declined.tg.calls[0]?.text).toContain(
+      "не приняла изменения витрины «Lola zali»: Название не как на вывеске",
+    );
+    const approved = await run({
+      revision: { status: "approved", decision_reason: null, name: "Lola zali", vendor_id: VENDOR_ID },
+      rows: [decidedRow],
+    });
+    expect(approved.tg.calls[0]?.text).toContain("одобрены — клиенты видят новую версию");
+  });
+
+  it("решения по фото — одним сообщением: сколько одобрено и отклонено; решать не о чем — в dead", async () => {
+    const decidedRow = outboxRow({
+      kind: "vendor.photos_decided",
+      request_id: null,
+      payload: { listing_id: "aaaaaaaa-0000-4000-8000-000000000102", since: "2026-10-01T08:58:00.000+00:00" },
+    });
+    const listing = { name: "Lola zali", status: "active", vendor_id: VENDOR_ID, approved: 2, declined: 1 };
+    const mixed = await run({ listing, rows: [decidedRow] });
+    expect(mixed.report.sent).toBe(1);
+    expect(mixed.tg.calls[0]?.text).toContain("одобрено — 2, отклонено — 1");
+    // Решения считаются с первого — с since из payload
+    const count = mixed.fake.queries.find((q) => q.sql.includes("p.moderated_at >="));
+    expect(count?.parameters).toContain("2026-10-01T08:58:00.000+00:00");
+    const none = await run({ listing: { ...listing, approved: 0, declined: 0 }, rows: [decidedRow] });
+    expect(none.tg.calls).toHaveLength(0);
+    expect(none.report.dead).toBe(1);
+    const broken = await run({
+      listing,
+      rows: [outboxRow({ ...decidedRow, payload: { listing_id: "x", since: "вчера" } })],
+    });
+    expect(broken.tg.calls).toHaveLength(0);
+  });
+
   it("решение по услуге — владельцу кабинета, кнопка ведёт в «Услуги»", async () => {
     const { tg, report } = await run({
       service: {
@@ -639,7 +754,7 @@ describe("dispatchOutbox: сообщения", () => {
     expect(tg.calls[1]?.text).toContain("V101");
   });
 
-  it("недоставленное — администратору: вид, заявка, получатель и причина", async () => {
+  it("недоставленное — администратору: вид, заявка, получатель и причина — словами", async () => {
     const { tg } = await run({
       rows: [
         outboxRow({
@@ -659,9 +774,9 @@ describe("dispatchOutbox: сообщения", () => {
         public_no: "1001",
       },
     });
-    expect(tg.calls[0]?.text).toContain("vendor.request_new, заявка №1001");
-    expect(tg.calls[0]?.text).toContain("vendor_user aaaaaaaa…");
-    expect(tg.calls[0]?.text).toContain("bot was blocked");
+    expect(tg.calls[0]?.text).toContain("вендору — новая заявка, заявка №1001");
+    expect(tg.calls[0]?.text).toContain("пользователь кабинета aaaaaaaa…");
+    expect(tg.calls[0]?.text).toContain("получатель остановил бота (Telegram 403)");
   });
 });
 

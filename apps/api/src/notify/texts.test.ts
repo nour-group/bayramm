@@ -1,8 +1,13 @@
-import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
+import { BOT_GLOSSARY_FORBIDDEN, hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
+import { NOTICE_KINDS } from "./render";
 import {
   ACCESS_TEXTS,
+  CONTACT_TEXTS,
+  deadlineText,
+  deadReasonRu,
   formatDate,
+  NOTICE_KIND_RU,
   NOTICE_TEXTS,
   OPS_BUTTON,
   opsListingSubmitted,
@@ -13,6 +18,7 @@ import {
   partsText,
   type RequestFacts,
   SERVICE_TEXTS,
+  VITRINA_TEXTS,
 } from "./texts";
 
 const FACTS: RequestFacts = {
@@ -24,6 +30,7 @@ const FACTS: RequestFacts = {
   parts: "Вечер",
   occasion: "Свадьба",
   slaHours: 12,
+  deadline: "21:40 (сегодня)",
   details: [],
 };
 
@@ -36,9 +43,11 @@ const CAR: RequestFacts = {
   details: ["Начало: 14:00", "Сколько часов: 3", "Сколько машин: 2"],
 };
 
-// Все тексты языка на наборе фактов
-function rendered(lang: "ru" | "uz", facts = FACTS): string[] {
+// Все тексты клиенту и партнёру на языке получателя (срок ответа — тоже на его языке)
+function rendered(lang: "ru" | "uz", base = FACTS): string[] {
   const t = NOTICE_TEXTS[lang];
+  const facts = lang === "uz" ? { ...base, deadline: "bugun 21:40" } : base;
+  const v = VITRINA_TEXTS[lang];
   return [
     t.requestNew(facts),
     t.slaReminder(facts, 4),
@@ -75,6 +84,19 @@ function rendered(lang: "ru" | "uz", facts = FACTS): string[] {
     ACCESS_TEXTS[lang].button,
     ACCESS_TEXTS[lang].granted({ vendor: "V", role: "owner" }),
     ACCESS_TEXTS[lang].granted({ vendor: "V", role: "member" }),
+    CONTACT_TEXTS[lang].button,
+    CONTACT_TEXTS[lang].decided({ listing: "L", outcome: "approved", reason: null }),
+    CONTACT_TEXTS[lang].decided({ listing: "L", outcome: "declined", reason: "x" }),
+    v.button,
+    ...(["published", "rejected", "returned", "suspended"] as const).flatMap((decision) => [
+      v.listing({ listing: "L", decision, reason: null }),
+      v.listing({ listing: "L", decision, reason: "Нужны фото зала" }),
+    ]),
+    v.revision({ listing: "L", outcome: "approved", reason: null }),
+    v.revision({ listing: "L", outcome: "declined", reason: "x" }),
+    v.photos({ listing: "L", approved: 3, declined: 0 }),
+    v.photos({ listing: "L", approved: 2, declined: 1 }),
+    v.photos({ listing: "L", approved: 0, declined: 2 }),
   ];
 }
 
@@ -90,12 +112,97 @@ describe("тексты уведомлений", () => {
     }
   });
 
-  it("новая заявка: номер, площадка, дата, гости, повод и срок ответа", () => {
+  it("новая заявка: номер, площадка, дата, гости, повод и срок ответа — часы и день", () => {
     const ru = NOTICE_TEXTS.ru.requestNew(FACTS);
-    for (const part of ["№1001", "Test Hall", "12.10.2026", "200 гостей", "Свадьба", "12 часов"]) {
+    for (const part of [
+      "№1001",
+      "Test Hall",
+      "12.10.2026",
+      "200 гостей",
+      "Свадьба",
+      "12 часов",
+      "Ответьте до 21:40 (сегодня)",
+    ]) {
       expect(ru).toContain(part);
     }
-    expect(NOTICE_TEXTS.uz.requestNew(FACTS)).toContain("200 mehmon");
+    const uz = NOTICE_TEXTS.uz.requestNew({ ...FACTS, deadline: "ertaga 09:00" });
+    expect(uz).toContain("200 mehmon");
+    expect(uz).toContain("Ertaga 09:00 gacha javob bering");
+  });
+
+  it("напоминание: срок — часы и день, и сколько осталось", () => {
+    expect(NOTICE_TEXTS.ru.slaReminder({ ...FACTS, deadline: "09:00 (завтра)" }, 3)).toContain(
+      "Ответьте до 09:00 (завтра): осталось 3 часа.",
+    );
+    expect(NOTICE_TEXTS.uz.slaReminder({ ...FACTS, deadline: "bugun 21:40" }, 3)).toContain(
+      "Bugun 21:40 gacha javob bering: 3 soat qoldi.",
+    );
+  });
+
+  it("срок ответа по Ташкенту: сегодня, завтра, дальше — дата", () => {
+    // 14:00 в Ташкенте (09:00 UTC)
+    const now = new Date("2026-10-01T09:00:00Z");
+    expect(deadlineText("ru", new Date("2026-10-01T16:40:00Z"), now)).toBe("21:40 (сегодня)");
+    expect(deadlineText("uz", new Date("2026-10-01T16:40:00Z"), now)).toBe("bugun 21:40");
+    // 19:30 UTC — уже 00:30 следующего дня по Ташкенту
+    expect(deadlineText("ru", new Date("2026-10-01T19:30:00Z"), now)).toBe("00:30 (завтра)");
+    expect(deadlineText("uz", new Date("2026-10-02T04:00:00Z"), now)).toBe("ertaga 09:00");
+    expect(deadlineText("ru", new Date("2026-10-03T04:00:00Z"), now)).toBe("09:00 (03.10)");
+    // Поздно вечером по Ташкенту (23:30) «завтра» — следующий ташкентский день
+    expect(deadlineText("ru", new Date("2026-10-02T06:30:00Z"), new Date("2026-10-01T18:30:00Z"))).toBe(
+      "11:30 (завтра)",
+    );
+  });
+
+  it("глоссарий: клиенту — исполнитель / hamkor; ни «вендора», ни «подрядчика», ни «maydon»", () => {
+    for (const lang of LANGS) {
+      const hits = rendered(lang).filter((text) => BOT_GLOSSARY_FORBIDDEN[lang].some((re) => re.test(text)));
+      expect(hits, lang).toEqual([]);
+    }
+    // «Площадка» по-русски — только Bayramm: исполнителя так не называем
+    expect(NOTICE_TEXTS.ru.contactedByTeam(FACTS)).not.toMatch(/площадк/i);
+    expect(ACCESS_TEXTS.ru.granted({ vendor: "V", role: "member" })).toContain("Вы — сотрудник:");
+    expect(ACCESS_TEXTS.uz.granted({ vendor: "V", role: "member" })).toContain("Siz xodimsiz:");
+  });
+
+  it("решения по витрине — владельцу кабинета: опубликована, отклонена, вернули, приостановлена — с причиной", () => {
+    const ru = VITRINA_TEXTS.ru;
+    expect(ru.listing({ listing: "Lola", decision: "published", reason: null })).toBe(
+      "Витрина «Lola» опубликована — клиенты видят её в каталоге Bayramm.",
+    );
+    expect(ru.listing({ listing: "Lola", decision: "rejected", reason: "Нет договора" })).toContain(
+      "отклонила витрину «Lola»: Нет договора\nИсправьте и отправьте на проверку снова",
+    );
+    expect(ru.listing({ listing: "Lola", decision: "returned", reason: null })).toContain(
+      "вернули на доработку.\n",
+    );
+    expect(ru.listing({ listing: "Lola", decision: "suspended", reason: "Ремонт" })).toContain(
+      "приостановлена: Ремонт\nКлиенты её сейчас не видят",
+    );
+    expect(VITRINA_TEXTS.uz.listing({ listing: "Lola", decision: "published", reason: null })).toContain(
+      "eʼlon qilindi",
+    );
+    expect(ru.revision({ listing: "Lola", outcome: "declined", reason: "Не то фото" })).toContain(
+      "не приняла изменения витрины «Lola»: Не то фото\nКлиенты видят прежнюю версию",
+    );
+    expect(ru.button).toBe("Открыть витрину");
+    expect(VITRINA_TEXTS.uz.button).toBe("Vitrinani ochish");
+  });
+
+  it("решения по фото — одним сообщением: сколько одобрено и отклонено, где причина", () => {
+    const ru = VITRINA_TEXTS.ru;
+    expect(ru.photos({ listing: "Lola", approved: 3, declined: 0 })).toBe(
+      "Одобрено фото витрины «Lola»: 3. Клиенты их видят.",
+    );
+    const mixed = ru.photos({ listing: "Lola", approved: 2, declined: 1 });
+    expect(mixed).toContain("одобрено — 2, отклонено — 1");
+    expect(mixed).toContain("Причина — у каждого отклонённого фото в кабинете");
+    expect(ru.photos({ listing: "Lola", approved: 0, declined: 2 })).toContain(
+      "отклонила фото витрины «Lola»: 2.",
+    );
+    expect(VITRINA_TEXTS.uz.photos({ listing: "Lola", approved: 0, declined: 2 })).toContain(
+      "2 ta suratini rad etdi",
+    );
   });
 
   it("новая заявка другой категории: категория, без гостей, поля заявки строками — без ПДн", () => {
@@ -164,7 +271,7 @@ describe("тексты уведомлений", () => {
     expect(NOTICE_TEXTS.ru.buttons.similar).toBe("Посмотреть похожие");
   });
 
-  it("команде: код вендора, номер заявки; недоставленное — вид, получатель и причина", () => {
+  it("команде: код вендора, номер заявки; недоставленное — вид, получатель и причина словами", () => {
     expect(opsSlaBreach({ ...FACTS, vendorCode: "V101" })).toContain("V101");
     const dead = opsOutboxDead({
       kind: "vendor.request_new",
@@ -174,8 +281,15 @@ describe("тексты уведомлений", () => {
       attempts: 1,
       error: "api 403: Forbidden: bot was blocked by the user",
     });
-    for (const part of ["vendor.request_new", "№1001", "vendor_user aaaaaaaa", "403"])
+    for (const part of [
+      "вендору — новая заявка",
+      "№1001",
+      "пользователь кабинета aaaaaaaa",
+      "получатель остановил бота (Telegram 403)",
+    ])
       expect(dead).toContain(part);
+    expect(dead).not.toContain("vendor.request_new");
+    expect(dead).not.toContain("Forbidden");
     expect(
       opsOutboxDead({
         kind: "x.y",
@@ -198,13 +312,14 @@ describe("тексты уведомлений", () => {
     expect(uz).not.toContain("javob berdi");
   });
 
-  it("правка карточки — команде: площадка, код вендора, поля словами", () => {
+  it("предложение изменений витрины — команде: витрина, код вендора, поля словами", () => {
     const text = opsRevisionSubmitted({
       listing: "Test Hall",
       vendorCode: "V101",
       fields: ["name", "attributes", "video_links", "unknown_key"],
     });
     for (const part of [
+      "Предложение изменений витрины на проверке",
       "Test Hall",
       "V101",
       "название, поля витрины, ссылки на видео, unknown_key",
@@ -232,6 +347,29 @@ describe("тексты уведомлений", () => {
     expect(partsText("ru", ["morning", "evening"], windows)).toBe("Утро 06:00–10:00, вечер 18:00–24:00");
     expect(partsText("uz", ["evening"], windows)).toBe("Kechqurun 18:00–24:00");
     expect(partsText("ru", [], windows)).toBe("Весь день");
+  });
+
+  it("недоставленное: каждый вид уведомления — словами; причины — словами", () => {
+    expect(NOTICE_KINDS.filter((kind) => NOTICE_KIND_RU[kind] === undefined)).toEqual([]);
+    expect(deadReasonRu("skipped: vendor_user_unlinked")).toBe(
+      "пользователь кабинета отключён или не привязал Telegram",
+    );
+    expect(deadReasonRu("skipped: client_not_notifiable")).toContain("клиент не разрешил уведомления");
+    expect(deadReasonRu("api 400: Bad Request: chat not found")).toBe("чат с ботом не найден (Telegram 400)");
+    expect(deadReasonRu("api 502: Bad Gateway")).toBe("Telegram не принял сообщение (Telegram 502)");
+    expect(deadReasonRu("TypeError: fetch failed")).toBe("сбой отправки");
+  });
+
+  it("статус витрины «не заполнена» — как в панели, не «лид»", () => {
+    expect(
+      opsServicesSubmitted({
+        listing: "Шарк",
+        vendorCode: "V101",
+        category: "Кортеж",
+        status: "lead",
+        pending: 1,
+      }),
+    ).toContain("Витрина ещё не на сайте (не заполнена)");
   });
 
   it("дата события — ДД.ММ.ГГГГ", () => {

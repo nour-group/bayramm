@@ -807,6 +807,9 @@ export const t = {
     "vendor.access_granted": "Вендору: добавлен в кабинет",
     "ops.contact_change_submitted": "Команде: партнёр просит сменить контакты витрины",
     "vendor.contact_change_decided": "Вендору: решение по новым контактам витрины",
+    "vendor.listing_decided": "Вендору: решение по витрине",
+    "vendor.revision_decided": "Вендору: решение по предложению изменений",
+    "vendor.photos_decided": "Вендору: решение по фото",
   } as Record<string, string>,
 
   // журнал
