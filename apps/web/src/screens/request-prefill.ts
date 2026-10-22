@@ -1,4 +1,5 @@
 import { isIsoDate, isPhoneDigits, phoneDigits } from "../format";
+import { matchRoute } from "../routes";
 import { sessionGet, sessionGetJson, sessionRemove, sessionSet, sessionSetJson } from "../storage";
 
 /* Следующая заявка — без повторного ввода: имя, телефон и повод из последней заявки, ушедшей в
@@ -15,6 +16,11 @@ import { sessionGet, sessionGetJson, sessionRemove, sessionSet, sessionSetJson }
 /** Под префиксом черновиков (request-draft.ts, «bayramm.web.draft.»): «_» в slug не бывает */
 const LAST_KEY = "bayramm.web.draft._last";
 const PENDING_PREFIX = "bayramm.web.draft._send.";
+/** Черновик формы витрины (request-draft.ts): хабу из него нужен только телефон */
+const DRAFT_PREFIX = "bayramm.web.draft.";
+
+const hasPhone = (value: unknown): value is { readonly phone: string } =>
+  typeof value === "object" && value !== null && typeof (value as { phone?: unknown }).phone === "string";
 
 export interface LastRequest {
   readonly name: string;
@@ -55,13 +61,45 @@ export function rememberLastRequest(last: LastRequest): void {
 /** Контакты и повод последней заявки этой вкладки; не было — null */
 export const lastRequest = (): LastRequest | null => sessionGetJson(LAST_KEY, isLastRequest);
 
-/** Гость нажал «Отправить»: после входа форма этой витрины скажет, что остался один шаг */
-export const markSendAfterSignIn = (slug: string): void => sessionSet(`${PENDING_PREFIX}${slug}`, "1");
+/**
+ * Гость нажал «Отправить»: после входа форма этой витрины скажет, что остался один шаг. В метке —
+ * имя витрины: хаб входа говорит, какая заявка ждёт («Отправка заявки в «…»»)
+ */
+export const markSendAfterSignIn = (slug: string, name: string): void =>
+  sessionSet(`${PENDING_PREFIX}${slug}`, name.trim() || slug);
 
 /** Вернулись из входа с неотправленной заявкой? Метка — одноразовая */
 export function takeSendAfterSignIn(slug: string): boolean {
   const key = `${PENDING_PREFIX}${slug}`;
-  const pending = sessionGet(key) === "1";
+  const pending = sessionGet(key) !== null;
   if (pending) sessionRemove(key);
   return pending;
+}
+
+/** Заявка, которая ждёт входа: витрина, её имя, телефон из черновика и путь назад к форме */
+export interface PendingSend {
+  readonly slug: string;
+  /** null — метка прежней вкладки, без имени */
+  readonly name: string | null;
+  /** 9 цифр после +998 из черновика; нет — "" */
+  readonly phone: string;
+  /** Форма заявки — куда хаб вернёт после входа */
+  readonly href: string;
+}
+
+/** Хаб входа: путь возврата — форма заявки, у её витрины метка «отправить после входа» */
+export function pendingSend(returnPath: string | null): PendingSend | null {
+  if (!returnPath) return null;
+  const pathname = returnPath.split("?")[0] ?? "";
+  const match = matchRoute(pathname);
+  if (match?.name !== "request") return null;
+  const name = sessionGet(`${PENDING_PREFIX}${match.slug}`);
+  if (name === null) return null;
+  const draftPhone = phoneDigits(sessionGetJson(`${DRAFT_PREFIX}${match.slug}`, hasPhone)?.phone ?? "");
+  return {
+    slug: match.slug,
+    name: name === "1" ? null : name,
+    phone: isPhoneDigits(draftPhone) ? draftPhone : "",
+    href: returnPath,
+  };
 }

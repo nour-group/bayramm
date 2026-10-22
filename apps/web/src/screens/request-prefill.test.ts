@@ -50,7 +50,7 @@ describe("подстановка в следующую заявку", () => {
   });
 
   it("метка «отправить после входа» — у своей витрины и одноразовая", () => {
-    markSendAfterSignIn("lola-zali");
+    markSendAfterSignIn("lola-zali", "Lola zali");
     expect(takeSendAfterSignIn("anor-zali")).toBe(false);
     expect(takeSendAfterSignIn("lola-zali")).toBe(true);
     expect(takeSendAfterSignIn("lola-zali")).toBe(false);

@@ -1742,6 +1742,12 @@ textarea.field-input {
   padding: 0 12px;
 }
 
+/* Пометка гостя — строкой над кнопками, внутри панели (на телефоне она прилипает к низу) */
+.form-bar .form-bar-note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .sent {
   display: flex;
   flex-direction: column;

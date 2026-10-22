@@ -2,6 +2,7 @@ import type { AuthMethods } from "@bayramm/shared/api/account";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
 import { saveSiteSession } from "../api/session";
+import { Link } from "../components/Link";
 import { authErrorText, humanProofFor, PhoneCode } from "../components/PhoneCode";
 import { ErrorState, Loading } from "../components/States";
 import { telegramLink } from "../components/TelegramCta";
@@ -16,6 +17,7 @@ import {
   isTelegramLink,
   loadHubRequest,
   parseHubRequest,
+  peekReturn,
   readWidgetFields,
   saveHubRequest,
   saveReturn,
@@ -25,6 +27,7 @@ import {
 } from "../hub";
 import { Icon } from "../icons";
 import { useNav } from "../router";
+import { pendingSend } from "./request-prefill";
 
 /* Хаб входа — /auth. Один вход для всего Bayramm:
      · вход на сайт: виджет Telegram (только на домене бота) или код из сообщения;
@@ -92,14 +95,25 @@ function useContinue(setPhase: (phase: Phase) => void) {
  * виджетом — на случай, когда он сам показывает ошибку (домен боту ещё не задан): тогда
  * выход — Bayramm в Telegram, а телефон упоминается, только если вход по нему здесь есть
  */
-function TelegramBlock({ methods, link, phone }: { methods: AuthMethods; link: boolean; phone: boolean }) {
+function TelegramBlock({
+  methods,
+  link,
+  phone,
+  slug,
+}: {
+  methods: AuthMethods;
+  link: boolean;
+  phone: boolean;
+  /** Заявка ждёт входа: бот откроет её витрину (черновик формы — в этой вкладке) */
+  slug: string | null;
+}) {
   const { t } = useLang();
   const [failed, setFailed] = useState(false);
   const onError = useCallback(() => setFailed(true), []);
   const bot = methods.telegram.bot;
   const here =
     methods.telegram.loginDomain !== null && methods.telegram.loginDomain === window.location.hostname;
-  const botHref = bot ? telegramLink(bot) : null;
+  const botHref = bot ? telegramLink(bot, slug ?? undefined) : null;
 
   return (
     <section className="section auth-block" aria-labelledby="auth-telegram">
@@ -188,6 +202,8 @@ export function SignIn() {
   }
 
   const hub = loadHubRequest();
+  // Гость отправлял заявку: хаб называет её, подставляет телефон из формы и ведёт назад к ней
+  const pending = hub === null && !link && !linkPhone ? pendingSend(peekReturn()) : null;
   const ready = methods.status === "ready" ? methods.data : null;
   const human = ready ? humanProofFor(ready, webApp?.initData) : null;
   const title = linkPhone ? t.authLinkPhoneTitle : link ? t.authLinkTitle : t.authTitle;
@@ -202,7 +218,17 @@ export function SignIn() {
         </p>
       ) : (
         <>
-          {linkPhone ? null : (
+          {pending ? (
+            <>
+              <Link className="link-btn auth-back" href={pending.href}>
+                <Icon name="prev" size={17} />
+                {t.authBackToRequest}
+              </Link>
+              <p className="auth-lead">
+                <strong>{pending.name ? t.authForRequest(pending.name) : t.authForRequestAny}</strong>
+              </p>
+            </>
+          ) : linkPhone ? null : (
             <p className="auth-lead">
               {hub?.app === "vendor" ? t.authForVendor : hub?.app === "admin" ? t.authForAdmin : t.authLead}
             </p>
@@ -228,13 +254,23 @@ export function SignIn() {
           ) : null}
           {ready && !linkPhone ? (
             <>
-              <TelegramBlock methods={ready} link={link} phone={ready.phone && !link} />
+              <TelegramBlock
+                methods={ready}
+                link={link}
+                phone={ready.phone && !link}
+                slug={pending?.slug ?? null}
+              />
               {ready.phone && !link ? (
                 <section className="section auth-block" aria-labelledby="auth-phone">
                   <h2 className="section-title" id="auth-phone">
                     {t.authPhone}
                   </h2>
-                  <PhoneCode onCode={onPhoneCode} submitLabel={t.authSignIn} human={human} />
+                  <PhoneCode
+                    onCode={onPhoneCode}
+                    submitLabel={t.authSignIn}
+                    human={human}
+                    initialPhone={pending?.phone}
+                  />
                 </section>
               ) : null}
             </>

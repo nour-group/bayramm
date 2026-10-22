@@ -261,6 +261,7 @@ export const uz: Dict = {
   rqReq: "majburiy",
   rqOpt: "ixtiyoriy",
   rqSend: "Soʻrov yuborish",
+  rqSendGuest: "Kirib yuborish",
   rqNote: "Soʻrov joyni biriktirmaydi. Sanani hamkor tasdiqlaydi.",
   permTitle: "Maʼlumotlar hamkorga berilsinmi?",
   permWho: (n: string) => `«${n}» hamkori koʻradi:`,
@@ -471,6 +472,9 @@ export const uz: Dict = {
   // ── вход и аккаунт (хаб /auth, профиль) ─────────────────────────────────
   authTitle: "Bayrammga kirish",
   authLead: "Soʻrov yuborish va javoblarni koʻrish uchun kiring. Parol kerak emas.",
+  authForRequest: (name: string) => `«${name}»ga soʻrov yuborish — faqat kirish qoldi`,
+  authForRequestAny: "Soʻrov toʻldirildi — faqat kirish qoldi",
+  authBackToRequest: "Soʻrovga qaytish",
   authForVendor: "Kirgandan keyin hamkor kabineti ochiladi.",
   authForAdmin: "Kirgandan keyin jamoa paneli ochiladi.",
   authLinkTitle: "Telegramni ulash",
@@ -749,8 +753,8 @@ export const uz: Dict = {
       : "Soʻrov bepul. Uni Telegram orqali kirgandan keyin yuborasiz: shunda hamkor sizga javob bera oladi.",
   rqGuestSend: (phone: boolean): string =>
     phone
-      ? "Kirgandan keyin yuboramiz — Telegram yoki telefon raqami orqali. Toʻldirilganlar shaklda qoladi."
-      : "Telegram orqali kirgandan keyin yuboramiz. Toʻldirilganlar shaklda qoladi.",
+      ? "Kirgandan keyin yuboramiz — Telegram yoki raqam orqali. Toʻldirilganlar qoladi."
+      : "Telegram orqali kirgandan keyin yuboramiz. Toʻldirilganlar qoladi.",
   rqConsentAfterSignIn:
     "Maʼlumotlarni hamkorga berishga rozilikni kirgandan keyin — yuborishdan oldin belgilaysiz.",
   rqSignedIn: "Kirdingiz, toʻldirilganlar joyida. Rozilikni belgilang va soʻrovni yuboring.",

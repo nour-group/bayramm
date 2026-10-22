@@ -83,6 +83,8 @@ interface PhoneCodeProps {
   readonly submitLabel: string;
   /** Проверка «не робот» у запроса кода; нет — не нужна (выключена в окружении) */
   readonly human?: HumanProof | null;
+  /** Номер, уже введённый в форме заявки: 9 цифр после +998 */
+  readonly initialPhone?: string;
 }
 
 /** Цифр в коде из сообщения */
@@ -92,12 +94,12 @@ type Step =
   | { readonly kind: "phone" }
   | { readonly kind: "code"; readonly phone: string; readonly until: number };
 
-export function PhoneCode({ onCode, submitLabel, human = null }: PhoneCodeProps) {
+export function PhoneCode({ onCode, submitLabel, human = null, initialPhone = "" }: PhoneCodeProps) {
   const { api, now } = useServices();
   const { t } = useLang();
   const id = useId();
   const [step, setStep] = useState<Step>({ kind: "phone" });
-  const [digits, setDigits] = useState("");
+  const [digits, setDigits] = useState(() => (initialPhone ? maskPhoneDigits(initialPhone) : ""));
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -18,6 +18,7 @@ import {
   startTelegramLink,
   widgetReturnPath,
 } from "./hub";
+import { markSendAfterSignIn } from "./screens/request-prefill";
 import {
   byText,
   cleanup,
@@ -142,6 +143,28 @@ describe("хаб входа /auth", () => {
     expect(byText("a", /Открыть Bayramm в Telegram/)?.getAttribute("href")).toBe(
       "https://t.me/bayramm_demo_bot?startapp",
     );
+  });
+
+  it("гость отправлял заявку: хаб называет её, телефон — из формы, бот — на эту витрину, путь назад", async () => {
+    const venue = LISTINGS[0];
+    if (!venue) throw new Error("нет демо-площадки");
+    const form = `/venue/${venue.slug}/request?date=2026-10-15`;
+    markSendAfterSignIn(venue.slug, venue.name);
+    window.sessionStorage.setItem(
+      `bayramm.web.draft.${venue.slug}`,
+      JSON.stringify({ phone: "90 123 45 67" }),
+    );
+    await mount({ path: authHref({ return: form }), identity: "guest", api: api({ phone: true }) });
+    await waitFor(() => document.querySelector("form.phone-code"), "форма телефона");
+    expect(document.querySelector(".auth-lead")?.textContent).toBe(
+      `Отправка заявки в «${venue.name}» — осталось войти`,
+    );
+    expect(field("Номер телефона")?.value).toBe("90 123 45 67");
+    expect(byText("a", /Открыть Bayramm в Telegram/)?.getAttribute("href")).toBe(
+      `https://t.me/bayramm_demo_bot?startapp=vendor_${venue.slug}`,
+    );
+    await click(byText("a", "Вернуться к заявке"));
+    await waitFor(() => `${window.location.pathname}${window.location.search}` === form, "назад к форме");
   });
 
   it("вход по телефону включён: подсказка под кнопкой Telegram упоминает и телефон", async () => {

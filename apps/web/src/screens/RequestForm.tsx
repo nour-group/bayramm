@@ -826,7 +826,7 @@ function Form({
     const first = fieldOrder(category, draft, parts).find((field) => found[field]);
     if (guest && !first) {
       saveDraft(listing.slug, draft);
-      markSendAfterSignIn(listing.slug);
+      markSendAfterSignIn(listing.slug, listing.name);
       continueAtHub();
       return;
     }
@@ -1215,16 +1215,17 @@ function Form({
         </p>
       ) : null}
 
-      {/* Над кнопками: на телефоне панель прилипает к низу, пометка — в конце формы. Гостю — что
-          заявка уйдёт после входа и чем войти (телефон — если вход по нему включён) */}
-      <p className="bar-note">
-        {guest
-          ? t.rqGuestSend(methods.status === "ready" && methods.data !== null && methods.data.phone)
-          : t.requestNote}
-      </p>
-      {guest ? <BotLink slug={listing.slug} /> : null}
-      {/* Отказ и отправка — одного размера (правило продукта о согласии) */}
-      <div className="action-bar form-bar" ref={formBar}>
+      {/* Над кнопками: на телефоне панель прилипает к низу, пометка — в конце формы */}
+      {guest ? <BotLink slug={listing.slug} /> : <p className="bar-note">{t.requestNote}</p>}
+      {/* Отказ и отправка — одного размера (правило продукта о согласии). Гостю пометка — в самой
+          панели, над «Войти и отправить»: что заявка уйдёт после входа и чем войти (телефон —
+          если вход по нему включён); на телефоне — у прилипшей кнопки, а не в конце страницы */}
+      <div className={guest ? "action-bar form-bar with-note" : "action-bar form-bar"} ref={formBar}>
+        {guest ? (
+          <p className="bar-note form-bar-note">
+            {t.rqGuestSend(methods.status === "ready" && methods.data !== null && methods.data.phone)}
+          </p>
+        ) : null}
         <button type="button" className="btn btn-secondary" onClick={back}>
           {t.back}
         </button>
@@ -1234,7 +1235,7 @@ function Form({
           disabled={sending || (!guest && !transferText)}
           aria-busy={sending}
         >
-          {sending ? t.sending : t.rqSend}
+          {sending ? t.sending : guest ? t.rqSendGuest : t.rqSend}
         </button>
       </div>
     </form>
