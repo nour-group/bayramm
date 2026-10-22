@@ -232,7 +232,7 @@ export function SignIn() {
                 {t.authBackToRequest}
               </Link>
               <p className="auth-lead">
-                <strong>{pending.name ? t.authForRequest(pending.name) : t.authForRequestAny}</strong>
+                <strong>{t.authForRequest(pending.name)}</strong>
               </p>
             </>
           ) : linkPhone ? null : (

@@ -472,8 +472,8 @@ export const uz: Dict = {
   // ── вход и аккаунт (хаб /auth, профиль) ─────────────────────────────────
   authTitle: "Bayrammga kirish",
   authLead: "Soʻrov yuborish va javoblarni koʻrish uchun kiring. Parol kerak emas.",
-  authForRequest: (name: string) => `«${name}»ga soʻrov yuborish — faqat kirish qoldi`,
-  authForRequestAny: "Soʻrov toʻldirildi — faqat kirish qoldi",
+  authForRequest: (name: string | null) =>
+    name ? `«${name}»ga soʻrov yuborish — faqat kirish qoldi` : "Soʻrov toʻldirildi — faqat kirish qoldi",
   authBackToRequest: "Soʻrovga qaytish",
   authForVendor: "Kirgandan keyin hamkor kabineti ochiladi.",
   authForAdmin: "Kirgandan keyin jamoa paneli ochiladi.",
