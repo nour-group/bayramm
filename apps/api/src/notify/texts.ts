@@ -177,12 +177,12 @@ const LISTING_STATUS_RU: Readonly<Record<ListingStatus, string>> = {
 
 /**
  * Витрина ещё не на сайте (черновик, на проверке): решить по ней можно уже сейчас, а что не
- * решили — одобрит публикация. У опубликованной — пусто
+ * решили — одобрит публикация (фото — только открытые модератором). У опубликованной — пусто
  */
-const notLiveNote = (status: ListingStatus) =>
+const notLiveNote = (status: ListingStatus, rest = "остальное одобрит публикация") =>
   status === "active" || status === "suspended"
     ? ""
-    : `\nВитрина ещё не на сайте (${LISTING_STATUS_RU[status]}): решить можно сейчас, остальное одобрит публикация.`;
+    : `\nВитрина ещё не на сайте (${LISTING_STATUS_RU[status]}): решить можно сейчас, ${rest}.`;
 
 export interface OpsSlaFacts extends RequestFacts {
   /** Публичный код вендора (V101) */
@@ -380,7 +380,8 @@ export interface OpsPhotosFacts {
 export function opsPhotosSubmitted(f: OpsPhotosFacts): string {
   return (
     `Новые фото на проверке: ${f.listing} (вендор ${f.vendorCode}).\n` +
-    `Ждут решения: ${f.pending}. Клиенты их не видят, пока фото не одобрят.${notLiveNote(f.status)}\n` +
+    `Ждут решения: ${f.pending}. Клиенты их не видят, пока фото не одобрят.` +
+    `${notLiveNote(f.status, "публикация одобрит только открытые во весь экран")}\n` +
     "Решение — в панели, раздел «Модерация»."
   );
 }
