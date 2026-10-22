@@ -92,8 +92,10 @@ function rendered(lang: "ru" | "uz", base = FACTS): string[] {
       v.listing({ listing: "L", decision, reason: null }),
       v.listing({ listing: "L", decision, reason: "Нужны фото зала" }),
     ]),
-    v.revision({ listing: "L", outcome: "approved", reason: null }),
-    v.revision({ listing: "L", outcome: "declined", reason: "x" }),
+    v.revision({ listing: "L", outcome: "approved", reason: null, live: true }),
+    v.revision({ listing: "L", outcome: "approved", reason: null, live: false }),
+    v.revision({ listing: "L", outcome: "declined", reason: "x", live: true }),
+    v.revision({ listing: "L", outcome: "declined", reason: "x", live: false }),
     v.photos({ listing: "L", approved: 3, declined: 0 }),
     v.photos({ listing: "L", approved: 2, declined: 1 }),
     v.photos({ listing: "L", approved: 0, declined: 2 }),
@@ -182,8 +184,15 @@ describe("тексты уведомлений", () => {
     expect(VITRINA_TEXTS.uz.listing({ listing: "Lola", decision: "published", reason: null })).toContain(
       "eʼlon qilindi",
     );
-    expect(ru.revision({ listing: "Lola", outcome: "declined", reason: "Не то фото" })).toContain(
+    expect(ru.revision({ listing: "Lola", outcome: "declined", reason: "Не то фото", live: true })).toContain(
       "не приняла изменения витрины «Lola»: Не то фото\nКлиенты видят прежнюю версию",
+    );
+    // Витрина не на сайте (на проверке, приостановлена) — про то, что видят клиенты, ни слова
+    const notLive = ru.revision({ listing: "Lola", outcome: "declined", reason: "Не то фото", live: false });
+    expect(notLive).not.toContain("Клиенты");
+    expect(notLive).toContain("Исправьте и отправьте снова");
+    expect(ru.revision({ listing: "Lola", outcome: "approved", reason: null, live: false })).toBe(
+      "Изменения витрины «Lola» одобрены.",
     );
     expect(ru.button).toBe("Открыть витрину");
     expect(VITRINA_TEXTS.uz.button).toBe("Vitrinani ochish");

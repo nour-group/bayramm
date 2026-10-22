@@ -1,4 +1,4 @@
-import { hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
+import { BOT_GLOSSARY_FORBIDDEN, hasNonCanonicalApostrophe, LANGS, normalizeUz } from "@bayramm/shared";
 import { describe, expect, it } from "vitest";
 import { BOT_TEXTS, type BotStats, botLang, STAFF_TEXTS } from "./texts";
 
@@ -37,6 +37,16 @@ describe("тексты бота", () => {
   it("правила продукта: заявка, не бронь", () => {
     for (const text of [...all("ru"), ...all("uz")]) {
       expect(text).not.toMatch(/брон|bron/i);
+    }
+  });
+
+  // Клиенту и партнёру — по глоссарию клиента (@bayramm/shared, glossary.ts); команде — свои слова
+  it("глоссарий: тексты клиенту и партнёру — без «вендора», «akkaunt», «maydon»", () => {
+    for (const lang of LANGS) {
+      const hits = Object.values(BOT_TEXTS[lang]).filter((text) =>
+        BOT_GLOSSARY_FORBIDDEN[lang].some((re) => re.test(text)),
+      );
+      expect(hits, lang).toEqual([]);
     }
   });
 

@@ -564,6 +564,8 @@ export interface RevisionDecisionFacts {
   readonly listing: string;
   readonly outcome: "approved" | "declined";
   readonly reason: string | null;
+  /** Витрина на сайте: только тогда «клиенты видят новую / прежнюю версию» */
+  readonly live: boolean;
 }
 
 /** Решения по фото партнёра одним сообщением (vendor.photos_decided): сколько одобрено и отклонено */
@@ -610,9 +612,10 @@ export const VITRINA_TEXTS: Readonly<Record<Lang, VitrinaTexts>> = {
     },
     revision: (f) =>
       f.outcome === "approved"
-        ? `Изменения витрины «${f.listing}» одобрены — клиенты видят новую версию.`
+        ? `Изменения витрины «${f.listing}» одобрены${f.live ? " — клиенты видят новую версию." : "."}`
         : `Команда Bayramm не приняла изменения витрины «${f.listing}»${because(f.reason)}\n` +
-          "Клиенты видят прежнюю версию. Исправьте и отправьте снова в кабинете.",
+          (f.live ? "Клиенты видят прежнюю версию. " : "") +
+          "Исправьте и отправьте снова в кабинете.",
     photos: (f) => {
       if (f.declined === 0) return `Одобрено фото витрины «${f.listing}»: ${f.approved}. Клиенты их видят.`;
       const head =
@@ -648,9 +651,10 @@ export const VITRINA_TEXTS: Readonly<Record<Lang, VitrinaTexts>> = {
     },
     revision: (f) =>
       f.outcome === "approved"
-        ? `«${f.listing}» vitrinasidagi oʻzgarishlar tasdiqlandi — mijozlar yangi variantni koʻradi.`
+        ? `«${f.listing}» vitrinasidagi oʻzgarishlar tasdiqlandi${f.live ? " — mijozlar yangi variantni koʻradi." : "."}`
         : `Bayramm jamoasi «${f.listing}» vitrinasidagi oʻzgarishlarni qabul qilmadi${because(f.reason)}\n` +
-          "Mijozlar oldingi variantni koʻradi. Tuzatib, kabinetdan qayta yuboring.",
+          (f.live ? "Mijozlar oldingi variantni koʻradi. " : "") +
+          "Tuzatib, kabinetdan qayta yuboring.",
     photos: (f) => {
       if (f.declined === 0)
         return `«${f.listing}» vitrinasining suratlari tasdiqlandi: ${f.approved}. Mijozlar ularni koʻradi.`;

@@ -75,7 +75,7 @@ export const BOT_TEXTS: Readonly<Record<Lang, BotTexts>> = {
     notFound:
       "Bu raqam Bayramm hamkorlari orasida topilmadi. Agar biz bilan ishlasangiz, menejeringizga " +
       "yozing — u raqamni tekshiradi.",
-    linkedElsewhere: "Bu raqam boshqa Telegram akkauntiga ulangan. Menejeringizga yozing.",
+    linkedElsewhere: "Bu raqam boshqa Telegram hisobiga ulangan. Menejeringizga yozing.",
     telegramTaken: "Bu Telegram boshqa hamkor kabinetiga ulangan. Menejeringizga yozing.",
   },
 };

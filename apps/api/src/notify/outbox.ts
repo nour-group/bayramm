@@ -43,7 +43,9 @@ export type Outcome =
       /** false — попытка не считается (429: ограничение частоты, а не сбой) */
       readonly countAttempt: boolean;
     }
-  | { readonly status: "dead"; readonly error: string; readonly blocked: boolean };
+  | { readonly status: "dead"; readonly error: string; readonly blocked: boolean }
+  /** Сообщать уже не о чем (render: quiet) — строка закрыта без отправки, команде не сообщаем */
+  | { readonly status: "skipped"; readonly reason: string };
 
 /** Пауза перед повтором после attempts-й неудачной попытки */
 export function backoffSeconds(attempts: number): number {
@@ -90,6 +92,8 @@ export interface DispatchReport {
   sent: number;
   retry: number;
   dead: number;
+  /** Закрыты без отправки: сообщать уже не о чем */
+  skipped: number;
 }
 
 /** Берёт до limit строк, срок которых подошёл, и помечает их sending */
@@ -159,6 +163,17 @@ async function finish(db: Db, row: OutboxRow, outcome: Outcome): Promise<void> {
           }))
           .execute();
         return;
+      case "skipped":
+        // Не dead: это не недоставка (оповещения о ней нет), причина — для разбора
+        await base
+          .set({
+            status: "sent",
+            sent_at: sql<Date>`now()`,
+            provider_msg_id: null,
+            last_error: `skipped: ${outcome.reason}`,
+          })
+          .execute();
+        return;
       case "dead":
         await base.set({ status: "dead", last_error: outcome.error }).execute();
         // Клиент заблокировал бота — больше ему не пишем, пока сам не откроет бота
@@ -176,7 +191,10 @@ async function finish(db: Db, row: OutboxRow, outcome: Outcome): Promise<void> {
 
 async function deliver(deps: DispatchDeps, row: OutboxRow, now: Date): Promise<Outcome> {
   const rendered = await withActor(deps.db, SYSTEM, (trx) => renderNotice(trx, row, deps.urls, now));
-  if (!rendered.ok) return { status: "dead", error: `skipped: ${rendered.reason}`, blocked: false };
+  if (!rendered.ok)
+    return rendered.quiet
+      ? { status: "skipped", reason: rendered.reason }
+      : { status: "dead", error: `skipped: ${rendered.reason}`, blocked: false };
   try {
     const sent = await deps.telegram.call("sendMessage", rendered.message);
     return { status: "sent", providerMsgId: String(sent.message_id) };
@@ -199,7 +217,7 @@ function errorName(err: unknown): string {
 export async function dispatchOutbox(deps: DispatchDeps): Promise<DispatchReport> {
   const now = deps.now ?? (() => new Date());
   const rows = await claimDue(deps.db, deps.limit ?? OUTBOX_BATCH);
-  const report: DispatchReport = { claimed: rows.length, sent: 0, retry: 0, dead: 0 };
+  const report: DispatchReport = { claimed: rows.length, sent: 0, retry: 0, dead: 0, skipped: 0 };
   for (const row of rows) {
     let outcome: Outcome;
     try {
@@ -217,6 +235,7 @@ export async function dispatchOutbox(deps: DispatchDeps): Promise<DispatchReport
       continue;
     }
     if (outcome.status === "sent") report.sent++;
+    else if (outcome.status === "skipped") report.skipped++;
     else if (outcome.status === "failed") report.retry++;
     else {
       report.dead++;

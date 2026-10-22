@@ -127,10 +127,15 @@ export interface Urls {
 
 export type Rendered =
   | { readonly ok: true; readonly message: SendMessageParams }
-  /** Отправлять нечего и некому — строка уходит в dead с этой причиной */
-  | { readonly ok: false; readonly reason: string };
+  /**
+   * Отправлять нечего и некому — строка уходит в dead с этой причиной. quiet — так и должно
+   * быть (решения отменили, витрину отклонили): строка закрывается без сообщения и без
+   * оповещения команды о недоставке
+   */
+  | { readonly ok: false; readonly reason: string; readonly quiet?: true };
 
 const skip = (reason: string): Rendered => ({ ok: false, reason });
+const nothingToSay = (reason: string): Rendered => ({ ok: false, reason, quiet: true });
 
 // ── ссылки ─────────────────────────────────────────────────────────────────
 // Кнопка открывает Mini App сразу на нужном экране (web_app с путём):
@@ -583,7 +588,7 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
     const revision = await trx
       .selectFrom("app.listing_revisions as rv")
       .innerJoin("app.listings as l", "l.id", "rv.listing_id")
-      .select(["rv.status", "rv.decision_reason", "l.name", "l.vendor_id"])
+      .select(["rv.status", "rv.decision_reason", "l.name", "l.vendor_id", "l.status as listing_status"])
       .where("rv.id", "=", revisionId)
       .executeTakeFirst();
     if (revision === undefined) return skip("not_found");
@@ -595,6 +600,7 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
         listing: revision.name,
         outcome: revision.status,
         reason: revision.status === "declined" ? revision.decision_reason : null,
+        live: revision.listing_status === "active",
       }),
       button(t.button, vendorVitrinaUrl(urls)),
     );
@@ -632,8 +638,8 @@ export async function renderNotice(trx: Tx, row: OutboxRow, urls: Urls, now: Dat
     if (listing === undefined) return skip("not_found");
     if (recipient.vendorId !== listing.vendor_id) return skip("recipient_mismatch");
     // Витрину отклонили — о ней пришло своё сообщение; фото удалили или решение сменили — не о чем
-    if (listing.status === "rejected") return skip("listing_rejected");
-    if (listing.approved + listing.declined === 0) return skip("photos_decided");
+    if (listing.status === "rejected") return nothingToSay("listing_rejected");
+    if (listing.approved + listing.declined === 0) return nothingToSay("photos_decided");
     const t = VITRINA_TEXTS[recipient.lang];
     return message(
       t.photos({ listing: listing.name, approved: listing.approved, declined: listing.declined }),

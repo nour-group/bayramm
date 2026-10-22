@@ -158,7 +158,7 @@ describe("dispatchOutbox: взять строки", () => {
 describe("dispatchOutbox: сообщения", () => {
   it("новая заявка вендору: номер, площадка, дата, гости, повод; кнопка — заявка в кабинете; без данных клиента", async () => {
     const { fake, tg, report } = await run({});
-    expect(report).toEqual({ claimed: 1, sent: 1, retry: 0, dead: 0 });
+    expect(report).toEqual({ claimed: 1, sent: 1, retry: 0, dead: 0, skipped: 0 });
     expect(tg.calls).toHaveLength(1);
     const message = tg.calls[0];
     expect(message?.chat_id).toBe(5001);
@@ -661,6 +661,7 @@ describe("dispatchOutbox: сообщения", () => {
         decision_reason: "Название не как на вывеске",
         name: "Lola zali",
         vendor_id: VENDOR_ID,
+        listing_status: "active",
       },
       rows: [decidedRow],
     });
@@ -669,13 +670,31 @@ describe("dispatchOutbox: сообщения", () => {
       "не приняла изменения витрины «Lola zali»: Название не как на вывеске",
     );
     const approved = await run({
-      revision: { status: "approved", decision_reason: null, name: "Lola zali", vendor_id: VENDOR_ID },
+      revision: {
+        status: "approved",
+        decision_reason: null,
+        name: "Lola zali",
+        vendor_id: VENDOR_ID,
+        listing_status: "active",
+      },
       rows: [decidedRow],
     });
     expect(approved.tg.calls[0]?.text).toContain("одобрены — клиенты видят новую версию");
+    // Витрина на проверке — клиентам её не видно, про версии ни слова
+    const inReview = await run({
+      revision: {
+        status: "declined",
+        decision_reason: "Позже",
+        name: "Lola zali",
+        vendor_id: VENDOR_ID,
+        listing_status: "review",
+      },
+      rows: [decidedRow],
+    });
+    expect(inReview.tg.calls[0]?.text).not.toContain("Клиенты");
   });
 
-  it("решения по фото — одним сообщением: сколько одобрено и отклонено; решать не о чем — в dead", async () => {
+  it("решения по фото — одним сообщением: сколько одобрено и отклонено; решать не о чем — без сообщения и не недоставка", async () => {
     const decidedRow = outboxRow({
       kind: "vendor.photos_decided",
       request_id: null,
@@ -688,9 +707,20 @@ describe("dispatchOutbox: сообщения", () => {
     // Решения считаются с первого — с since из payload
     const count = mixed.fake.queries.find((q) => q.sql.includes("p.moderated_at >="));
     expect(count?.parameters).toContain("2026-10-01T08:58:00.000+00:00");
+    // Решать уже не о чем (решения сменили, фото удалили) — строка закрыта без сообщения и не
+    // считается недоставкой: команде об этом не пишем
     const none = await run({ listing: { ...listing, approved: 0, declined: 0 }, rows: [decidedRow] });
     expect(none.tg.calls).toHaveLength(0);
-    expect(none.report.dead).toBe(1);
+    expect(none.report).toMatchObject({ dead: 0, skipped: 1 });
+    expect(finishQuery(none.fake)?.parameters).toEqual([
+      "sent",
+      null,
+      "skipped: photos_decided",
+      decidedRow.id,
+      "sending",
+    ]);
+    const rejected = await run({ listing: { ...listing, status: "rejected" }, rows: [decidedRow] });
+    expect(rejected.report).toMatchObject({ dead: 0, skipped: 1 });
     const broken = await run({
       listing,
       rows: [outboxRow({ ...decidedRow, payload: { listing_id: "x", since: "вчера" } })],
@@ -924,7 +954,7 @@ describe("dispatchOutbox: ошибки Telegram", () => {
         return { message_id: 78 };
       },
     );
-    expect(report).toEqual({ claimed: 2, sent: 1, retry: 1, dead: 0 });
+    expect(report).toEqual({ claimed: 2, sent: 1, retry: 1, dead: 0, skipped: 0 });
     expect(tg.calls).toHaveLength(2);
     expect(logged()).not.toContain("Test Hall");
   });

@@ -28,7 +28,7 @@ describe("текст приглашения в кабинет", () => {
     const ru = vendorInviteText("ru", FACTS);
     expect(ru).toContain("Здравствуйте, Dilshod!");
     expect(ru).toContain("«Lola»");
-    expect(ru).toContain("сотрудник площадки");
+    expect(ru).toContain("Вы — сотрудник:");
     expect(ru).toContain("https://t.me/bayramm_bot?start=partner");
     expect(ru).toContain("«Я партнёр»");
     expect(ru).toContain("кодом на этот номер: https://vendor.example/?signin=1&lang=ru");
