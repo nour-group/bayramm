@@ -19,7 +19,7 @@
     "@bayramm/shared": "workspace:*",
     "@bayramm/tg": "workspace:*",
     "hono": "^4.13.13",
-    "kysely": "^0.29.6",
+    "kysely": "^0.29.7",
     "pg": "^8.23.1"
   },
   "devDependencies": {
