@@ -20,8 +20,8 @@
     "@bayramm/shared": "workspace:*",
     "@bayramm/tg": "workspace:*",
     "@bayramm/ui": "workspace:*",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.63.1",
